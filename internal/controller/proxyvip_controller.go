@@ -64,6 +64,9 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	// - For BGP/OSPF mode: determine announcing nodes
 	// - Update status with active/announcing nodes
 
+	// Trigger config update for all nodes
+	TriggerConfigUpdate()
+
 	return ctrl.Result{}, nil
 }
 

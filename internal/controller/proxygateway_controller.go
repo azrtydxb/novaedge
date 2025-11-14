@@ -63,6 +63,9 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// - Update listener status
 	// - Build gateway configuration for snapshot
 
+	// Trigger config update for all nodes
+	TriggerConfigUpdate()
+
 	return ctrl.Result{}, nil
 }
 

@@ -18,8 +18,10 @@ package main
 
 import (
 	"flag"
+	"net"
 	"os"
 
+	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -31,6 +33,7 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller"
+	"github.com/piwi3910/novaedge/internal/controller/snapshot"
 )
 
 var (
@@ -47,9 +50,11 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+	var grpcAddr string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&grpcAddr, "grpc-bind-address", ":9090", "The address the gRPC config server binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -125,9 +130,34 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create and start gRPC server for config distribution
+	configServer := snapshot.NewServer(mgr.GetClient())
+	grpcServer := grpc.NewServer()
+	configServer.RegisterServer(grpcServer)
+
+	// Start gRPC server in a goroutine
+	go func() {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			setupLog.Error(err, "failed to listen for gRPC")
+			os.Exit(1)
+		}
+		setupLog.Info("starting gRPC config server", "address", grpcAddr)
+		if err := grpcServer.Serve(lis); err != nil {
+			setupLog.Error(err, "failed to serve gRPC")
+			os.Exit(1)
+		}
+	}()
+
+	// Pass config server to reconcilers so they can trigger updates
+	controller.SetConfigServer(configServer)
+
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+
+	// Graceful shutdown of gRPC server
+	grpcServer.GracefulStop()
 }

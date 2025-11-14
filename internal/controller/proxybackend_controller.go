@@ -64,6 +64,9 @@ func (r *ProxyBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// - Update status with endpoint count
 	// - Build backend configuration for snapshot
 
+	// Trigger config update for all nodes
+	TriggerConfigUpdate()
+
 	return ctrl.Result{}, nil
 }
 

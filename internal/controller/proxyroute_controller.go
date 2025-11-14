@@ -61,6 +61,9 @@ func (r *ProxyRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// - Build routing rules for snapshot
 	// - Validate match conditions
 
+	// Trigger config update for all nodes
+	TriggerConfigUpdate()
+
 	return ctrl.Result{}, nil
 }
 

@@ -61,6 +61,9 @@ func (r *ProxyPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// - Validate policy configuration based on type
 	// - Build policy configuration for snapshot
 
+	// Trigger config update for all nodes
+	TriggerConfigUpdate()
+
 	return ctrl.Result{}, nil
 }
 

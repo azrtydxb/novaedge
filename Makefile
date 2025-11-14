@@ -37,6 +37,14 @@ generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and
 .PHONY: generate-crds
 generate-crds: manifests ## Alias for manifests target.
 
+.PHONY: generate-proto
+generate-proto: protoc-gen-go protoc-gen-go-grpc ## Generate Go code from protobuf definitions.
+	mkdir -p internal/proto/gen
+	PATH=$(LOCALBIN):$$PATH protoc --go_out=internal/proto/gen --go_opt=paths=source_relative \
+		--go-grpc_out=internal/proto/gen --go-grpc_opt=paths=source_relative \
+		--proto_path=api/proto \
+		api/proto/config.proto
+
 .PHONY: fmt
 fmt: ## Run go fmt against code.
 	go fmt ./...
@@ -129,10 +137,14 @@ $(LOCALBIN):
 ## Tool Binaries
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+PROTOC_GEN_GO ?= $(LOCALBIN)/protoc-gen-go
+PROTOC_GEN_GO_GRPC ?= $(LOCALBIN)/protoc-gen-go-grpc
 
 ## Tool Versions
 CONTROLLER_TOOLS_VERSION ?= v0.16.5
 GOLANGCI_LINT_VERSION ?= v1.62.0
+PROTOC_GEN_GO_VERSION ?= v1.35.1
+PROTOC_GEN_GO_GRPC_VERSION ?= v1.5.1
 
 .PHONY: controller-gen
 controller-gen: $(CONTROLLER_GEN) ## Download controller-gen locally if necessary.
@@ -144,8 +156,19 @@ golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	GOBIN=$(LOCALBIN) go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
+.PHONY: protoc-gen-go
+protoc-gen-go: $(PROTOC_GEN_GO) ## Download protoc-gen-go locally if necessary.
+$(PROTOC_GEN_GO): $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install google.golang.org/protobuf/cmd/protoc-gen-go@$(PROTOC_GEN_GO_VERSION)
+
+.PHONY: protoc-gen-go-grpc
+protoc-gen-go-grpc: $(PROTOC_GEN_GO_GRPC) ## Download protoc-gen-go-grpc locally if necessary.
+$(PROTOC_GEN_GO_GRPC): $(LOCALBIN)
+	GOBIN=$(LOCALBIN) go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@$(PROTOC_GEN_GO_GRPC_VERSION)
+
 .PHONY: clean
 clean: ## Clean build artifacts.
 	rm -rf bin/
 	rm -rf $(LOCALBIN)/
+	rm -rf internal/proto/gen/
 	rm -f cover.out coverage.html

@@ -1,0 +1,314 @@
+syntax = "proto3";
+
+package novaedge.proto;
+
+option go_package = "github.com/piwi3910/novaedge/internal/proto/gen;proto";
+
+// ConfigSnapshot represents a complete, versioned configuration
+// sent from controller to node agents
+message ConfigSnapshot {
+  // Version is a monotonically increasing version number
+  string version = 1;
+
+  // Generation timestamp
+  int64 generation_time = 2;
+
+  // Gateways assigned to this node
+  repeated Gateway gateways = 3;
+
+  // Routes for all gateways
+  repeated Route routes = 4;
+
+  // Backend clusters
+  repeated Cluster clusters = 5;
+
+  // Endpoint mappings for each cluster
+  map<string, EndpointList> endpoints = 6;
+
+  // VIP assignments for this node
+  repeated VIPAssignment vip_assignments = 7;
+
+  // Policies to apply
+  repeated Policy policies = 8;
+}
+
+// Gateway represents a ProxyGateway resource
+message Gateway {
+  string name = 1;
+  string namespace = 2;
+  string vip_ref = 3;
+  string ingress_class_name = 4;
+  repeated Listener listeners = 5;
+}
+
+// Listener represents a port and protocol to listen on
+message Listener {
+  string name = 1;
+  int32 port = 2;
+  Protocol protocol = 3;
+  TLSConfig tls = 4;
+  repeated string hostnames = 5;
+}
+
+// Protocol defines the application protocol
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  HTTP = 1;
+  HTTPS = 2;
+  TCP = 3;
+  TLS = 4;
+}
+
+// TLSConfig contains TLS certificate and configuration
+message TLSConfig {
+  bytes cert = 1;
+  bytes key = 2;
+  string min_version = 3;
+  repeated string cipher_suites = 4;
+}
+
+// Route represents a ProxyRoute resource
+message Route {
+  string name = 1;
+  string namespace = 2;
+  repeated string hostnames = 3;
+  repeated RouteRule rules = 4;
+}
+
+// RouteRule defines matching and routing logic
+message RouteRule {
+  repeated RouteMatch matches = 1;
+  repeated RouteFilter filters = 2;
+  BackendRef backend_ref = 3;
+}
+
+// RouteMatch defines conditions for matching requests
+message RouteMatch {
+  PathMatch path = 1;
+  repeated HeaderMatch headers = 2;
+  string method = 3;
+}
+
+// PathMatch defines path matching criteria
+message PathMatch {
+  PathMatchType type = 1;
+  string value = 2;
+}
+
+enum PathMatchType {
+  PATH_MATCH_TYPE_UNSPECIFIED = 0;
+  EXACT = 1;
+  PATH_PREFIX = 2;
+  REGULAR_EXPRESSION = 3;
+}
+
+// HeaderMatch defines header matching criteria
+message HeaderMatch {
+  HeaderMatchType type = 1;
+  string name = 2;
+  string value = 3;
+}
+
+enum HeaderMatchType {
+  HEADER_MATCH_TYPE_UNSPECIFIED = 0;
+  HEADER_EXACT = 1;
+  HEADER_REGULAR_EXPRESSION = 2;
+}
+
+// RouteFilter defines request/response modifications
+message RouteFilter {
+  RouteFilterType type = 1;
+  repeated HTTPHeader add_headers = 2;
+  repeated string remove_headers = 3;
+  string redirect_url = 4;
+  string rewrite_path = 5;
+}
+
+enum RouteFilterType {
+  ROUTE_FILTER_TYPE_UNSPECIFIED = 0;
+  ADD_HEADER = 1;
+  REMOVE_HEADER = 2;
+  REQUEST_REDIRECT = 3;
+  URL_REWRITE = 4;
+}
+
+// HTTPHeader represents a name-value pair
+message HTTPHeader {
+  string name = 1;
+  string value = 2;
+}
+
+// BackendRef references a backend cluster
+message BackendRef {
+  string name = 1;
+  string namespace = 2;
+  int32 weight = 3;
+}
+
+// Cluster represents a ProxyBackend resource
+message Cluster {
+  string name = 1;
+  string namespace = 2;
+  LoadBalancingPolicy lb_policy = 3;
+  int64 connect_timeout_ms = 4;
+  int64 idle_timeout_ms = 5;
+  CircuitBreaker circuit_breaker = 6;
+  HealthCheck health_check = 7;
+  BackendTLS tls = 8;
+}
+
+enum LoadBalancingPolicy {
+  LB_POLICY_UNSPECIFIED = 0;
+  ROUND_ROBIN = 1;
+  P2C = 2;
+  EWMA = 3;
+  RING_HASH = 4;
+  MAGLEV = 5;
+}
+
+// CircuitBreaker defines circuit breaker settings
+message CircuitBreaker {
+  int32 max_connections = 1;
+  int32 max_pending_requests = 2;
+  int32 max_requests = 3;
+  int32 max_retries = 4;
+}
+
+// HealthCheck defines active health check configuration
+message HealthCheck {
+  int64 interval_ms = 1;
+  int64 timeout_ms = 2;
+  int32 healthy_threshold = 3;
+  int32 unhealthy_threshold = 4;
+  string http_path = 5;
+}
+
+// BackendTLS defines TLS settings for backend connections
+message BackendTLS {
+  bool enabled = 1;
+  bool insecure_skip_verify = 2;
+  bytes ca_cert = 3;
+}
+
+// EndpointList contains endpoints for a cluster
+message EndpointList {
+  repeated Endpoint endpoints = 1;
+}
+
+// Endpoint represents a single backend endpoint
+message Endpoint {
+  string address = 1;
+  int32 port = 2;
+  bool ready = 3;
+  map<string, string> labels = 4;
+}
+
+// VIPAssignment tells this node which VIPs to manage
+message VIPAssignment {
+  string vip_name = 1;
+  string address = 2;
+  VIPMode mode = 3;
+  repeated int32 ports = 4;
+  bool is_active = 5; // For L2ARP mode
+}
+
+enum VIPMode {
+  VIP_MODE_UNSPECIFIED = 0;
+  L2_ARP = 1;
+  BGP = 2;
+  OSPF = 3;
+}
+
+// Policy represents a ProxyPolicy resource
+message Policy {
+  string name = 1;
+  string namespace = 2;
+  PolicyType type = 3;
+  TargetRef target_ref = 4;
+
+  // Policy-specific configuration
+  RateLimitConfig rate_limit = 5;
+  JWTConfig jwt = 6;
+  IPListConfig ip_list = 7;
+  CORSConfig cors = 8;
+}
+
+enum PolicyType {
+  POLICY_TYPE_UNSPECIFIED = 0;
+  RATE_LIMIT = 1;
+  JWT = 2;
+  IP_ALLOW_LIST = 3;
+  IP_DENY_LIST = 4;
+  CORS = 5;
+}
+
+// TargetRef identifies the resource a policy applies to
+message TargetRef {
+  string kind = 1;
+  string name = 2;
+  string namespace = 3;
+}
+
+// RateLimitConfig defines rate limiting settings
+message RateLimitConfig {
+  int32 requests_per_second = 1;
+  int32 burst = 2;
+  string key = 3;
+}
+
+// JWTConfig defines JWT authentication settings
+message JWTConfig {
+  string issuer = 1;
+  repeated string audience = 2;
+  string jwks_uri = 3;
+  string header_name = 4;
+  string header_prefix = 5;
+}
+
+// IPListConfig defines IP allow/deny list
+message IPListConfig {
+  repeated string cidrs = 1;
+  string source_header = 2;
+}
+
+// CORSConfig defines CORS settings
+message CORSConfig {
+  repeated string allow_origins = 1;
+  repeated string allow_methods = 2;
+  repeated string allow_headers = 3;
+  repeated string expose_headers = 4;
+  int64 max_age_seconds = 5;
+  bool allow_credentials = 6;
+}
+
+// ConfigService is the gRPC service for distributing config snapshots
+service ConfigService {
+  // StreamConfig streams config snapshots to agents
+  // Agents connect and receive initial snapshot, then updates when config changes
+  rpc StreamConfig(StreamConfigRequest) returns (stream ConfigSnapshot);
+
+  // ReportStatus allows agents to report their status back to controller
+  rpc ReportStatus(AgentStatus) returns (StatusResponse);
+}
+
+// StreamConfigRequest is sent by agents to subscribe to config updates
+message StreamConfigRequest {
+  string node_name = 1;
+  string agent_version = 2;
+  string last_applied_version = 3;
+}
+
+// AgentStatus is sent by agents to report their health and stats
+message AgentStatus {
+  string node_name = 1;
+  string applied_config_version = 2;
+  int64 timestamp = 3;
+  bool healthy = 4;
+  map<string, int64> metrics = 5;
+  repeated string errors = 6;
+}
+
+// StatusResponse acknowledges status reports
+message StatusResponse {
+  bool acknowledged = 1;
+}
