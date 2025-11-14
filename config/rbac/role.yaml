@@ -1,0 +1,62 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: novaedge-controller-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - secrets
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - novaedge.io
+  resources:
+  - proxybackends
+  - proxygateways
+  - proxypolicies
+  - proxyroutes
+  - proxyvips
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - novaedge.io
+  resources:
+  - proxybackends/finalizers
+  - proxygateways/finalizers
+  - proxypolicies/finalizers
+  - proxyroutes/finalizers
+  - proxyvips/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - novaedge.io
+  resources:
+  - proxybackends/status
+  - proxygateways/status
+  - proxypolicies/status
+  - proxyroutes/status
+  - proxyvips/status
+  verbs:
+  - get
+  - patch
+  - update

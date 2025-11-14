@@ -1,0 +1,36 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: example-route
+  namespace: default
+spec:
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+          method: GET
+        - path:
+            type: PathPrefix
+            value: /v1
+          method: POST
+      filters:
+        - type: AddHeader
+          add:
+            - name: X-Version
+              value: "v1"
+      backendRef:
+        name: api-backend
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v2
+      filters:
+        - type: AddHeader
+          add:
+            - name: X-Version
+              value: "v2"
+      backendRef:
+        name: api-backend-v2

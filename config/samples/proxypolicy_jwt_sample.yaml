@@ -1,0 +1,18 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: api-jwt-auth
+  namespace: default
+spec:
+  type: JWT
+  targetRef:
+    kind: ProxyRoute
+    name: example-route
+    namespace: default
+  jwt:
+    issuer: https://auth.example.com
+    audience:
+      - api.example.com
+    jwksUri: https://auth.example.com/.well-known/jwks.json
+    headerName: Authorization
+    headerPrefix: "Bearer "

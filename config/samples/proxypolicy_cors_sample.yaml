@@ -1,0 +1,29 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: api-cors
+  namespace: default
+spec:
+  type: CORS
+  targetRef:
+    kind: ProxyGateway
+    name: external-gateway
+    namespace: default
+  cors:
+    allowOrigins:
+      - https://app.example.com
+      - https://www.example.com
+    allowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allowHeaders:
+      - Content-Type
+      - Authorization
+      - X-Requested-With
+    exposeHeaders:
+      - X-Custom-Header
+    maxAge: 3600s
+    allowCredentials: true

@@ -1,0 +1,26 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: api-backend
+  namespace: default
+spec:
+  serviceRef:
+    name: api-svc
+    namespace: default
+    port: 8080
+  lbPolicy: EWMA
+  connectTimeout: 2s
+  idleTimeout: 60s
+  circuitBreaker:
+    maxConnections: 1000
+    maxPendingRequests: 200
+    maxRequests: 500
+    maxRetries: 3
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    healthyThreshold: 2
+    unhealthyThreshold: 3
+    httpPath: /health
+  tls:
+    enabled: false

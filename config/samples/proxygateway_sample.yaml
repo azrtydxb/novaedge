@@ -1,0 +1,25 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: external-gateway
+  namespace: default
+spec:
+  vipRef: public-vip
+  ingressClassName: novaedge
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: tls-cert
+          namespace: default
+      hostnames:
+        - example.com
+        - api.example.com
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostnames:
+        - example.com
+        - api.example.com

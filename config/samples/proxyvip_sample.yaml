@@ -1,0 +1,15 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: public-vip
+spec:
+  address: 203.0.113.10/32
+  mode: BGP     # L2ARP | BGP | OSPF
+  ports:
+    - 80
+    - 443
+  nodeSelector:
+    matchLabels:
+      novaedge-role: edge
+  healthPolicy:
+    minHealthyNodes: 2
