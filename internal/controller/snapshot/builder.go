@@ -131,16 +131,36 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 
 	var assignments []*pb.VIPAssignment
 	for _, vip := range vipList.Items {
-		// TODO: Implement node selector matching
-		// For now, assign all VIPs to all nodes in BGP mode
-		assignment := &pb.VIPAssignment{
-			VipName:  vip.Name,
-			Address:  vip.Spec.Address,
-			Mode:     convertVIPMode(vip.Spec.Mode),
-			Ports:    vip.Spec.Ports,
-			IsActive: vip.Spec.Mode == novaedgev1alpha1.VIPModeBGP || vip.Spec.Mode == novaedgev1alpha1.VIPModeOSPF,
+		// Check if this node should handle this VIP
+		isActive := false
+
+		switch vip.Spec.Mode {
+		case novaedgev1alpha1.VIPModeL2ARP:
+			// For L2ARP mode: only active if this node is the elected active node
+			isActive = vip.Status.ActiveNode == nodeName
+
+		case novaedgev1alpha1.VIPModeBGP, novaedgev1alpha1.VIPModeOSPF:
+			// For BGP/OSPF mode: active if this node is in the announcing nodes list
+			for _, announcingNode := range vip.Status.AnnouncingNodes {
+				if announcingNode == nodeName {
+					isActive = true
+					break
+				}
+			}
 		}
-		assignments = append(assignments, assignment)
+
+		// Only include assignment if this node should handle the VIP
+		// (either as active node or as announcing node)
+		if isActive {
+			assignment := &pb.VIPAssignment{
+				VipName:  vip.Name,
+				Address:  vip.Spec.Address,
+				Mode:     convertVIPMode(vip.Spec.Mode),
+				Ports:    vip.Spec.Ports,
+				IsActive: true,
+			}
+			assignments = append(assignments, assignment)
+		}
 	}
 
 	return assignments, nil

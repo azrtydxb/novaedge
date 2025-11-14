@@ -30,6 +30,7 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/server"
+	"github.com/piwi3910/novaedge/internal/agent/vip"
 )
 
 var (
@@ -73,19 +74,39 @@ func main() {
 		logger.Fatal("Failed to create config watcher", zap.Error(err))
 	}
 
+	// Create VIP manager
+	vipManager, err := vip.NewManager(logger)
+	if err != nil {
+		logger.Fatal("Failed to create VIP manager", zap.Error(err))
+	}
+
 	// Create HTTP server
 	httpServer := server.NewHTTPServer(logger)
+
+	// Start VIP manager
+	if err := vipManager.Start(ctx); err != nil {
+		logger.Fatal("Failed to start VIP manager", zap.Error(err))
+	}
 
 	// Start config watcher
 	configChan := make(chan error, 1)
 	go func() {
 		configChan <- watcher.Start(func(snapshot *config.Snapshot) error {
-			// Apply new configuration to HTTP server
+			// Apply new configuration to HTTP server and VIP manager
 			logger.Info("Applying new configuration",
 				zap.String("version", snapshot.Version),
 				zap.Int("gateways", len(snapshot.Gateways)),
 				zap.Int("routes", len(snapshot.Routes)),
+				zap.Int("vips", len(snapshot.VipAssignments)),
 			)
+
+			// Apply VIP assignments
+			if err := vipManager.ApplyVIPs(snapshot.VipAssignments); err != nil {
+				logger.Error("Failed to apply VIP assignments", zap.Error(err))
+				// Don't fail the whole config update
+			}
+
+			// Apply HTTP server config
 			return httpServer.ApplyConfig(snapshot)
 		})
 	}()
@@ -125,6 +146,13 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
+	// Release VIPs first to allow failover
+	logger.Info("Releasing VIPs...")
+	if err := vipManager.Release(); err != nil {
+		logger.Error("Error releasing VIPs", zap.Error(err))
+	}
+
+	// Shutdown HTTP server
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during HTTP server shutdown", zap.Error(err))
 	}

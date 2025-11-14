@@ -43,6 +43,9 @@ func TestBuildSnapshot(t *testing.T) {
 			Mode:    novaedgev1alpha1.VIPModeBGP,
 			Ports:   []int32{80, 443},
 		},
+		Status: novaedgev1alpha1.ProxyVIPStatus{
+			AnnouncingNodes: []string{"test-node"},
+		},
 	}
 
 	gateway := &novaedgev1alpha1.ProxyGateway{
@@ -68,6 +71,7 @@ func TestBuildSnapshot(t *testing.T) {
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(vip, gateway).
+		WithStatusSubresource(vip).
 		Build()
 
 	// Create builder and build snapshot
