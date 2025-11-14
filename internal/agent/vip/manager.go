@@ -62,11 +62,17 @@ func NewManager(logger *zap.Logger) (*VIPManager, error) {
 		return nil, fmt.Errorf("failed to create L2 handler: %w", err)
 	}
 
+	bgpHandler, err := NewBGPHandler(logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create BGP handler: %w", err)
+	}
+
 	return &VIPManager{
 		logger:      logger,
 		assignments: make(map[string]*pb.VIPAssignment),
 		l2Handler:   l2Handler,
-		// BGP and OSPF handlers will be implemented in later phases
+		bgpHandler:  bgpHandler,
+		// OSPF handler will be implemented in Phase 6
 	}, nil
 }
 
@@ -77,6 +83,11 @@ func (m *VIPManager) Start(ctx context.Context) error {
 	// Start L2 handler
 	if err := m.l2Handler.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start L2 handler: %w", err)
+	}
+
+	// Start BGP handler
+	if err := m.bgpHandler.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start BGP handler: %w", err)
 	}
 
 	return nil
@@ -148,9 +159,7 @@ func (m *VIPManager) applyVIP(assignment *pb.VIPAssignment) error {
 	case pb.VIPMode_L2_ARP:
 		return m.l2Handler.AddVIP(assignment)
 	case pb.VIPMode_BGP:
-		// TODO: Implement BGP mode in Phase 5
-		m.logger.Warn("BGP mode not yet implemented", zap.String("vip", assignment.VipName))
-		return nil
+		return m.bgpHandler.AddVIP(assignment)
 	case pb.VIPMode_OSPF:
 		// TODO: Implement OSPF mode in Phase 6
 		m.logger.Warn("OSPF mode not yet implemented", zap.String("vip", assignment.VipName))
@@ -166,7 +175,7 @@ func (m *VIPManager) releaseVIP(assignment *pb.VIPAssignment) error {
 	case pb.VIPMode_L2_ARP:
 		return m.l2Handler.RemoveVIP(assignment)
 	case pb.VIPMode_BGP:
-		return nil // TODO: BGP
+		return m.bgpHandler.RemoveVIP(assignment)
 	case pb.VIPMode_OSPF:
 		return nil // TODO: OSPF
 	default:
@@ -236,9 +245,6 @@ func assignmentsEqual(a, b *pb.VIPAssignment) bool {
 	}
 	return true
 }
-
-// BGPHandler handles BGP VIP mode (placeholder for Phase 5)
-type BGPHandler struct{}
 
 // OSPFHandler handles OSPF VIP mode (placeholder for Phase 6)
 type OSPFHandler struct{}

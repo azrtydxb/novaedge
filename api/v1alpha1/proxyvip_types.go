@@ -41,6 +41,54 @@ type HealthPolicy struct {
 	MinHealthyNodes int32 `json:"minHealthyNodes,omitempty"`
 }
 
+// BGPConfig defines BGP configuration for BGP mode VIPs
+type BGPConfig struct {
+	// LocalAS is the local BGP AS number
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4294967295
+	LocalAS uint32 `json:"localAS"`
+
+	// RouterID is the BGP router ID (usually an IP address)
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}$`
+	RouterID string `json:"routerID"`
+
+	// Peers lists BGP peer configurations
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	Peers []BGPPeer `json:"peers"`
+
+	// Communities are BGP communities to attach to announced routes
+	// +optional
+	Communities []string `json:"communities,omitempty"`
+
+	// LocalPreference for iBGP routes
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=4294967295
+	LocalPreference *uint32 `json:"localPreference,omitempty"`
+}
+
+// BGPPeer defines a BGP peer configuration
+type BGPPeer struct {
+	// Address is the peer IP address
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}$`
+	Address string `json:"address"`
+
+	// AS is the peer AS number
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4294967295
+	AS uint32 `json:"as"`
+
+	// Port is the BGP port (default 179)
+	// +optional
+	// +kubebuilder:default=179
+	Port uint16 `json:"port,omitempty"`
+}
+
 // ProxyVIPSpec defines the desired state of ProxyVIP
 type ProxyVIPSpec struct {
 	// Address is the VIP as CIDR notation, usually /32 for a single IP
@@ -64,6 +112,11 @@ type ProxyVIPSpec struct {
 	// HealthPolicy defines node health requirements
 	// +optional
 	HealthPolicy *HealthPolicy `json:"healthPolicy,omitempty"`
+
+	// BGPConfig defines BGP configuration for BGP mode VIPs
+	// Required when Mode is BGP
+	// +optional
+	BGPConfig *BGPConfig `json:"bgpConfig,omitempty"`
 }
 
 // ProxyVIPStatus defines the observed state of ProxyVIP

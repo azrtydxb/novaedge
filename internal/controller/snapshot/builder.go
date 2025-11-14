@@ -159,6 +159,12 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 				Ports:    vip.Spec.Ports,
 				IsActive: true,
 			}
+
+			// Add BGP config for BGP mode VIPs
+			if vip.Spec.Mode == novaedgev1alpha1.VIPModeBGP && vip.Spec.BGPConfig != nil {
+				assignment.BgpConfig = convertBGPConfig(vip.Spec.BGPConfig)
+			}
+
 			assignments = append(assignments, assignment)
 		}
 	}
@@ -499,6 +505,34 @@ func convertVIPMode(mode novaedgev1alpha1.VIPMode) pb.VIPMode {
 	default:
 		return pb.VIPMode_VIP_MODE_UNSPECIFIED
 	}
+}
+
+func convertBGPConfig(config *novaedgev1alpha1.BGPConfig) *pb.BGPConfig {
+	if config == nil {
+		return nil
+	}
+
+	pbConfig := &pb.BGPConfig{
+		LocalAs:     config.LocalAS,
+		RouterId:    config.RouterID,
+		Peers:       make([]*pb.BGPPeer, 0, len(config.Peers)),
+		Communities: config.Communities,
+	}
+
+	if config.LocalPreference != nil {
+		pbConfig.LocalPreference = *config.LocalPreference
+	}
+
+	for _, peer := range config.Peers {
+		pbPeer := &pb.BGPPeer{
+			Address: peer.Address,
+			As:      peer.AS,
+			Port:    uint32(peer.Port),
+		}
+		pbConfig.Peers = append(pbConfig.Peers, pbPeer)
+	}
+
+	return pbConfig
 }
 
 func convertProtocol(protocol novaedgev1alpha1.ProtocolType) pb.Protocol {

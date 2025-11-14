@@ -210,6 +210,7 @@ message VIPAssignment {
   VIPMode mode = 3;
   repeated int32 ports = 4;
   bool is_active = 5; // For L2ARP mode
+  BGPConfig bgp_config = 6; // BGP configuration (when mode is BGP)
 }
 
 enum VIPMode {
@@ -217,6 +218,22 @@ enum VIPMode {
   L2_ARP = 1;
   BGP = 2;
   OSPF = 3;
+}
+
+// BGPConfig defines BGP speaker configuration
+message BGPConfig {
+  uint32 local_as = 1;
+  string router_id = 2;
+  repeated BGPPeer peers = 3;
+  repeated string communities = 4;
+  uint32 local_preference = 5;
+}
+
+// BGPPeer defines a BGP peer
+message BGPPeer {
+  string address = 1;
+  uint32 as = 2;
+  uint32 port = 3;
 }
 
 // Policy represents a ProxyPolicy resource

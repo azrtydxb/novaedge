@@ -58,6 +58,63 @@ spec:
                   a single IP
                 pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$
                 type: string
+              bgpConfig:
+                description: |-
+                  BGPConfig defines BGP configuration for BGP mode VIPs
+                  Required when Mode is BGP
+                properties:
+                  communities:
+                    description: Communities are BGP communities to attach to announced
+                      routes
+                    items:
+                      type: string
+                    type: array
+                  localAS:
+                    description: LocalAS is the local BGP AS number
+                    format: int32
+                    maximum: 4294967295
+                    minimum: 1
+                    type: integer
+                  localPreference:
+                    description: LocalPreference for iBGP routes
+                    format: int32
+                    maximum: 4294967295
+                    minimum: 0
+                    type: integer
+                  peers:
+                    description: Peers lists BGP peer configurations
+                    items:
+                      description: BGPPeer defines a BGP peer configuration
+                      properties:
+                        address:
+                          description: Address is the peer IP address
+                          pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
+                          type: string
+                        as:
+                          description: AS is the peer AS number
+                          format: int32
+                          maximum: 4294967295
+                          minimum: 1
+                          type: integer
+                        port:
+                          default: 179
+                          description: Port is the BGP port (default 179)
+                          type: integer
+                      required:
+                      - address
+                      - as
+                      type: object
+                    minItems: 1
+                    type: array
+                  routerID:
+                    description: RouterID is the BGP router ID (usually an IP address)
+                    pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
+                    type: string
+                required:
+                - localAS
+                - peers
+                - routerID
+                type: object
               healthPolicy:
                 description: HealthPolicy defines node health requirements
                 properties:
