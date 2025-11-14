@@ -28,6 +28,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/piwi3910/novaedge/internal/agent/health"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -43,6 +44,13 @@ type Pool struct {
 	// Reverse proxies per endpoint
 	mu      sync.RWMutex
 	proxies map[string]*httputil.ReverseProxy
+
+	// Health checker for endpoints
+	healthChecker *health.HealthChecker
+
+	// Context for health checker
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // NewPool creates a new connection pool
@@ -60,13 +68,22 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 		ExpectContinueTimeout: 1 * time.Second,
 	}
 
+	// Create context for health checker
+	ctx, cancel := context.WithCancel(context.Background())
+
 	pool := &Pool{
 		logger:    logger,
 		cluster:   cluster,
 		endpoints: endpoints,
 		transport: transport,
 		proxies:   make(map[string]*httputil.ReverseProxy),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
+
+	// Create and start health checker
+	pool.healthChecker = health.NewHealthChecker(cluster, endpoints, logger)
+	pool.healthChecker.Start(ctx)
 
 	// Create reverse proxies for each endpoint
 	pool.createProxies()
@@ -81,6 +98,11 @@ func (p *Pool) UpdateEndpoints(endpoints []*pb.Endpoint) {
 
 	p.endpoints = endpoints
 	p.createProxies()
+
+	// Update health checker with new endpoints
+	if p.healthChecker != nil {
+		p.healthChecker.UpdateEndpoints(endpoints)
+	}
 }
 
 // createProxies creates reverse proxies for all endpoints
@@ -162,8 +184,41 @@ func (p *Pool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	// Stop health checker
+	if p.healthChecker != nil {
+		p.healthChecker.Stop()
+	}
+	if p.cancel != nil {
+		p.cancel()
+	}
+
 	p.transport.CloseIdleConnections()
 	p.proxies = make(map[string]*httputil.ReverseProxy)
+}
+
+// RecordSuccess records a successful request to an endpoint
+func (p *Pool) RecordSuccess(endpoint *pb.Endpoint) {
+	if p.healthChecker != nil {
+		p.healthChecker.RecordSuccess(endpoint)
+	}
+}
+
+// RecordFailure records a failed request to an endpoint
+func (p *Pool) RecordFailure(endpoint *pb.Endpoint) {
+	if p.healthChecker != nil {
+		p.healthChecker.RecordFailure(endpoint)
+	}
+}
+
+// GetHealthyEndpoints returns only healthy endpoints
+func (p *Pool) GetHealthyEndpoints() []*pb.Endpoint {
+	if p.healthChecker != nil {
+		return p.healthChecker.GetHealthyEndpoints()
+	}
+	// Fallback to all endpoints if no health checker
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.endpoints
 }
 
 // GetStats returns pool statistics

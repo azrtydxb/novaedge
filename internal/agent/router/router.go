@@ -307,13 +307,18 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 
 	// Forward request to backend
 	if err := pool.Forward(endpoint, req, w); err != nil {
+		// Record failure for passive health checking
+		pool.RecordFailure(endpoint)
+
 		r.logger.Error("Failed to forward request",
 			zap.String("cluster", clusterKey),
 			zap.String("endpoint", fmt.Sprintf("%s:%d", endpoint.Address, endpoint.Port)),
 			zap.Error(err),
 		)
 		http.Error(w, "Backend error", http.StatusBadGateway)
-		return
+	} else {
+		// Record success for passive health checking
+		pool.RecordSuccess(endpoint)
 	}
 }
 
