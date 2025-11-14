@@ -81,12 +81,20 @@ build-agent: fmt vet ## Build agent binary.
 .PHONY: build-all
 build-all: build-controller build-agent ## Build all binaries.
 
+.PHONY: run-agent
+run-agent: fmt vet ## Run agent from your host.
+	go run ./cmd/novaedge-agent/main.go --node-name=$(NODE_NAME) --controller-address=$(CONTROLLER_ADDR)
+
 .PHONY: run-controller
 run-controller: fmt vet ## Run controller from your host.
 	go run ./cmd/novaedge-controller/main.go
 
 .PHONY: docker-build
 docker-build: docker-build-controller docker-build-agent ## Build all docker images.
+
+.PHONY: test-agent
+test-agent: ## Run agent tests.
+	go test ./internal/agent/... -v
 
 .PHONY: docker-build-controller
 docker-build-controller: ## Build controller docker image.
