@@ -265,8 +265,13 @@ func (r *Router) matchHeader(match *pb.HeaderMatch, value string) bool {
 
 // handleRoute handles a matched route
 func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
-	// Apply filters
-	r.applyFilters(entry.Rule.Filters, req, w)
+	// Apply filters - stop if any filter returns false
+	modifiedReq, shouldContinue := applyFilters(entry.Rule.Filters, w, req)
+	if !shouldContinue {
+		// Filter handled the response (e.g., redirect)
+		return
+	}
+	req = modifiedReq
 
 	// Get backend reference
 	backendRef := entry.Rule.BackendRef
@@ -313,29 +318,6 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 }
 
 // applyFilters applies route filters to request/response
-func (r *Router) applyFilters(filters []*pb.RouteFilter, req *http.Request, w http.ResponseWriter) {
-	for _, filter := range filters {
-		switch filter.Type {
-		case pb.RouteFilterType_ADD_HEADER:
-			for _, header := range filter.AddHeaders {
-				req.Header.Add(header.Name, header.Value)
-			}
-		case pb.RouteFilterType_REMOVE_HEADER:
-			for _, headerName := range filter.RemoveHeaders {
-				req.Header.Del(headerName)
-			}
-		case pb.RouteFilterType_REQUEST_REDIRECT:
-			if filter.RedirectUrl != "" {
-				http.Redirect(w, req, filter.RedirectUrl, http.StatusFound)
-			}
-		case pb.RouteFilterType_URL_REWRITE:
-			if filter.RewritePath != "" {
-				req.URL.Path = filter.RewritePath
-			}
-		}
-	}
-}
-
 // createPathMatcher creates a path matcher from a route rule
 func createPathMatcher(rule *pb.RouteRule) PathMatcher {
 	if len(rule.Matches) == 0 {
