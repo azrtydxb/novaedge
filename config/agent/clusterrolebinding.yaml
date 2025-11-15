@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: novaedge-agent
+  labels:
+    app.kubernetes.io/name: novaedge-agent
+    app.kubernetes.io/component: agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: novaedge-agent
+subjects:
+- kind: ServiceAccount
+  name: novaedge-agent
+  namespace: novaedge-system

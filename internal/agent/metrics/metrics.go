@@ -244,6 +244,74 @@ var (
 		[]string{"cipher"},
 	)
 
+	// HTTP/3 and QUIC Metrics
+
+	// HTTP3ConnectionsTotal tracks total HTTP/3 connections
+	HTTP3ConnectionsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_http3_connections_total",
+			Help: "Total number of HTTP/3 connections established",
+		},
+	)
+
+	// HTTP3RequestsTotal tracks total HTTP/3 requests
+	HTTP3RequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_http3_requests_total",
+			Help: "Total number of HTTP/3 requests",
+		},
+		[]string{"method", "status"},
+	)
+
+	// QUICStreamsActive tracks active QUIC streams
+	QUICStreamsActive = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "novaedge_quic_streams_active",
+			Help: "Number of active QUIC streams",
+		},
+	)
+
+	// QUIC0RTTAccepted tracks 0-RTT resumption success
+	QUIC0RTTAccepted = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_quic_0rtt_accepted_total",
+			Help: "Total number of successful 0-RTT resumptions",
+		},
+	)
+
+	// QUIC0RTTRejected tracks 0-RTT resumption rejections
+	QUIC0RTTRejected = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_quic_0rtt_rejected_total",
+			Help: "Total number of rejected 0-RTT resumptions",
+		},
+	)
+
+	// QUICPacketsReceived tracks QUIC packets received
+	QUICPacketsReceived = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_quic_packets_received_total",
+			Help: "Total number of QUIC packets received",
+		},
+	)
+
+	// QUICPacketsSent tracks QUIC packets sent
+	QUICPacketsSent = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_quic_packets_sent_total",
+			Help: "Total number of QUIC packets sent",
+		},
+	)
+
+	// QUICConnectionErrors tracks QUIC connection errors
+	QUICConnectionErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_quic_connection_errors_total",
+			Help: "Total number of QUIC connection errors",
+		},
+		[]string{"error_type"},
+	)
+
 	// Policy Metrics
 
 	// RateLimitAllowed tracks allowed requests

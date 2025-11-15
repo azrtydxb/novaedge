@@ -1,0 +1,93 @@
+---
+# Example ProxyGateway with HTTP/3 listener
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: http3-gateway
+  namespace: default
+spec:
+  vipRef: default-vip
+  listeners:
+  # HTTP/3 listener on port 443
+  - name: http3
+    port: 443
+    protocol: HTTP3
+    hostnames:
+    - "*.example.com"
+    - "app.example.com"
+    tls:
+      secretRef:
+        name: example-tls
+        namespace: default
+      minVersion: "TLS1.3"  # HTTP/3 requires TLS 1.3
+    quic:
+      maxIdleTimeout: "30s"
+      maxBiStreams: 100
+      maxUniStreams: 100
+      enable0RTT: true
+
+  # Optional: HTTP/2 listener for fallback
+  - name: https
+    port: 443
+    protocol: HTTPS
+    hostnames:
+    - "*.example.com"
+    - "app.example.com"
+    tls:
+      secretRef:
+        name: example-tls
+        namespace: default
+      minVersion: "TLS1.2"
+
+---
+# Example ProxyRoute for HTTP/3
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: http3-route
+  namespace: default
+spec:
+  hostnames:
+  - "app.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: "/"
+    backendRef:
+      name: app-backend
+
+---
+# Example ProxyBackend
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: app-backend
+  namespace: default
+spec:
+  serviceRef:
+    name: app-service
+    namespace: default
+    port: 8080
+  lbPolicy: RoundRobin
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    healthyThreshold: 2
+    unhealthyThreshold: 3
+    httpHealthCheck:
+      path: /health
+      expectedStatuses: [200]
+
+---
+# Example TLS Secret (you would create this with actual certificates)
+# kubectl create secret tls example-tls --cert=cert.pem --key=key.pem
+apiVersion: v1
+kind: Secret
+metadata:
+  name: example-tls
+  namespace: default
+type: kubernetes.io/tls
+data:
+  tls.crt: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0t...  # Base64 encoded certificate
+  tls.key: LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0t...  # Base64 encoded private key

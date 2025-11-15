@@ -41,22 +41,24 @@ type ListenerInfo struct {
 	TLSConfig *tls.Config
 }
 
-// HTTPServer manages HTTP/HTTPS listeners and routing
+// HTTPServer manages HTTP/HTTPS/HTTP3 listeners and routing
 type HTTPServer struct {
-	logger    *zap.Logger
-	mu        sync.RWMutex
-	servers   map[int32]*http.Server  // Port -> Server
-	listeners map[int32]*ListenerInfo // Port -> Listener config
-	router    *router.Router
+	logger      *zap.Logger
+	mu          sync.RWMutex
+	servers     map[int32]*http.Server   // Port -> HTTP/1.1 or HTTP/2 Server
+	http3servers map[int32]*HTTP3Server  // Port -> HTTP/3 Server
+	listeners   map[int32]*ListenerInfo  // Port -> Listener config
+	router      *router.Router
 }
 
 // NewHTTPServer creates a new HTTP server
 func NewHTTPServer(logger *zap.Logger) *HTTPServer {
 	return &HTTPServer{
-		logger:    logger,
-		servers:   make(map[int32]*http.Server),
-		listeners: make(map[int32]*ListenerInfo),
-		router:    router.NewRouter(logger),
+		logger:       logger,
+		servers:      make(map[int32]*http.Server),
+		http3servers: make(map[int32]*HTTP3Server),
+		listeners:    make(map[int32]*ListenerInfo),
+		router:       router.NewRouter(logger),
 	}
 }
 
@@ -116,7 +118,7 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 	// Stop servers on ports we no longer need
 	for port, server := range s.servers {
 		if _, needed := newListeners[port]; !needed {
-			s.logger.Info("Stopping listener on unused port",
+			s.logger.Info("Stopping HTTP/1.1 or HTTP/2 listener on unused port",
 				zap.Int32("port", port),
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -127,9 +129,25 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 		}
 	}
 
+	// Stop HTTP/3 servers on ports we no longer need
+	for port, server := range s.http3servers {
+		if _, needed := newListeners[port]; !needed {
+			s.logger.Info("Stopping HTTP/3 listener on unused port",
+				zap.Int32("port", port),
+			)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			server.Shutdown(ctx)
+			cancel()
+			delete(s.http3servers, port)
+		}
+	}
+
 	// Start new listeners
 	for port, listenerInfo := range newListeners {
-		if _, exists := s.servers[port]; !exists {
+		// Check if listener already exists (either HTTP or HTTP/3)
+		_, httpExists := s.servers[port]
+		_, http3Exists := s.http3servers[port]
+		if !httpExists && !http3Exists {
 			if err := s.startListener(port, listenerInfo); err != nil {
 				s.logger.Error("Failed to start listener",
 					zap.Int32("port", port),
@@ -144,7 +162,8 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 	s.listeners = newListeners
 
 	s.logger.Info("HTTP server configuration applied successfully",
-		zap.Int("active_listeners", len(s.servers)),
+		zap.Int("active_http_listeners", len(s.servers)),
+		zap.Int("active_http3_listeners", len(s.http3servers)),
 	)
 
 	return nil
@@ -164,8 +183,13 @@ func (s *HTTPServer) isVIPActive(snapshot *config.Snapshot, vipRef string, port 
 	return false
 }
 
-// startListener starts an HTTP or HTTPS listener on the specified port
+// startListener starts an HTTP, HTTPS, or HTTP/3 listener on the specified port
 func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error {
+	// Check if this is an HTTP/3 listener
+	if listenerInfo.Listener.Protocol == pb.Protocol_HTTP3 {
+		return s.startHTTP3Listener(port, listenerInfo)
+	}
+
 	protocol := "HTTP"
 	if listenerInfo.TLSConfig != nil {
 		protocol = "HTTPS (HTTP/2)"
@@ -173,7 +197,7 @@ func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error
 		protocol = "HTTP (HTTP/2 h2c)"
 	}
 
-	s.logger.Info("Starting listener",
+	s.logger.Info("Starting HTTP/1.1 or HTTP/2 listener",
 		zap.Int32("port", port),
 		zap.String("protocol", protocol),
 		zap.String("gateway", listenerInfo.Gateway),
@@ -228,6 +252,81 @@ func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error
 	}()
 
 	return nil
+}
+
+// startHTTP3Listener starts an HTTP/3 listener on the specified port
+func (s *HTTPServer) startHTTP3Listener(port int32, listenerInfo *ListenerInfo) error {
+	// HTTP/3 requires TLS
+	if listenerInfo.TLSConfig == nil {
+		return fmt.Errorf("HTTP/3 requires TLS configuration")
+	}
+
+	s.logger.Info("Starting HTTP/3 listener",
+		zap.Int32("port", port),
+		zap.String("gateway", listenerInfo.Gateway),
+		zap.String("listener", listenerInfo.Listener.Name),
+	)
+
+	// Get QUIC configuration, use defaults if not provided
+	quicConfig := listenerInfo.Listener.Quic
+	if quicConfig == nil {
+		quicConfig = &pb.QUICConfig{
+			MaxIdleTimeout: "30s",
+			MaxBiStreams:   100,
+			MaxUniStreams:  100,
+			Enable_0Rtt:    true,
+		}
+	}
+
+	// Create HTTP/3 server
+	http3Server := NewHTTP3Server(
+		s.logger,
+		port,
+		listenerInfo.TLSConfig,
+		quicConfig,
+		s, // Use HTTPServer as handler for routing
+	)
+
+	s.http3servers[port] = http3Server
+
+	// Start server in goroutine
+	go func() {
+		ctx := context.Background()
+		if err := http3Server.Start(ctx); err != nil && err != http.ErrServerClosed {
+			s.logger.Error("HTTP/3 server error",
+				zap.Int32("port", port),
+				zap.Error(err),
+			)
+		}
+	}()
+
+	// Add Alt-Svc header advertising to corresponding HTTP/2 listener
+	// This allows clients to upgrade to HTTP/3
+	s.enableAltSvcAdvertising(port)
+
+	return nil
+}
+
+// enableAltSvcAdvertising enables Alt-Svc header advertising for HTTP/3 on the corresponding HTTP/2 port
+func (s *HTTPServer) enableAltSvcAdvertising(http3Port int32) {
+	// The Alt-Svc header is added in the ServeHTTP method
+	// This function is here for clarity and future enhancements
+}
+
+// addAltSvcHeader adds the Alt-Svc header to advertise HTTP/3 availability
+func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// Check if there's an HTTP/3 server on any port
+	for port := range s.http3servers {
+		// Advertise HTTP/3 on the same port
+		// Format: Alt-Svc: h3=":443"; ma=2592000
+		// ma = max age in seconds (30 days = 2592000 seconds)
+		altSvc := fmt.Sprintf("h3=\":%d\"; ma=2592000", port)
+		w.Header().Set("Alt-Svc", altSvc)
+		break // Only advertise one HTTP/3 endpoint for now
+	}
 }
 
 // createTLSConfig creates a tls.Config from protobuf TLS configuration
@@ -310,6 +409,9 @@ func (s *HTTPServer) parseCipherSuites(suites []string) []uint16 {
 // ServeHTTP handles HTTP requests (implements http.Handler)
 func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
+
+	// Add Alt-Svc header to advertise HTTP/3 availability
+	s.addAltSvcHeader(w, r)
 
 	s.logger.Debug("Incoming request",
 		zap.String("method", r.Method),

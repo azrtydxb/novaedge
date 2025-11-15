@@ -1,0 +1,89 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: novaedge-agent
+  labels:
+    app.kubernetes.io/name: novaedge-agent
+    app.kubernetes.io/component: agent
+rules:
+# Nodes - read node metadata for VIP binding and network configuration
+- apiGroups: [""]
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+
+# Node status - update node status with agent health information (optional)
+- apiGroups: [""]
+  resources:
+  - nodes/status
+  verbs:
+  - patch
+  - update
+
+# Secrets - read TLS certificates and authentication credentials
+- apiGroups: [""]
+  resources:
+  - secrets
+  verbs:
+  - get
+  - list
+  - watch
+
+# ConfigMaps - read agent configuration
+- apiGroups: [""]
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+
+# Services - read service definitions for backend discovery
+- apiGroups: [""]
+  resources:
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+
+# Endpoints/EndpointSlices - read backend endpoints
+- apiGroups: [""]
+  resources:
+  - endpoints
+  verbs:
+  - get
+  - list
+  - watch
+
+- apiGroups: ["discovery.k8s.io"]
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+
+# Events - create events for important agent activities
+- apiGroups: [""]
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+
+# Leases - for agent coordination and failover (L2 VIP mode)
+- apiGroups: ["coordination.k8s.io"]
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete

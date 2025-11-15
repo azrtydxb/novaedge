@@ -30,6 +30,8 @@ const (
 	ProtocolTypeHTTP ProtocolType = "HTTP"
 	// ProtocolTypeHTTPS is HTTP over TLS
 	ProtocolTypeHTTPS ProtocolType = "HTTPS"
+	// ProtocolTypeHTTP3 is HTTP/3 over QUIC
+	ProtocolTypeHTTP3 ProtocolType = "HTTP3"
 	// ProtocolTypeTCP is plain TCP
 	ProtocolTypeTCP ProtocolType = "TCP"
 	// ProtocolTypeTLS is TLS-encrypted TCP
@@ -52,6 +54,29 @@ type TLSConfig struct {
 	CipherSuites []string `json:"cipherSuites,omitempty"`
 }
 
+// QUICConfig defines QUIC-specific configuration for HTTP/3
+type QUICConfig struct {
+	// MaxIdleTimeout is the maximum idle timeout for QUIC connections
+	// +optional
+	// +kubebuilder:default="30s"
+	MaxIdleTimeout string `json:"maxIdleTimeout,omitempty"`
+
+	// MaxBiStreams is the maximum number of concurrent bidirectional streams
+	// +optional
+	// +kubebuilder:default=100
+	MaxBiStreams int64 `json:"maxBiStreams,omitempty"`
+
+	// MaxUniStreams is the maximum number of concurrent unidirectional streams
+	// +optional
+	// +kubebuilder:default=100
+	MaxUniStreams int64 `json:"maxUniStreams,omitempty"`
+
+	// Enable0RTT enables 0-RTT resumption (reduces connection establishment latency)
+	// +optional
+	// +kubebuilder:default=true
+	Enable0RTT bool `json:"enable0RTT,omitempty"`
+}
+
 // Listener defines a port and protocol to listen on
 type Listener struct {
 	// Name is a unique name for this listener
@@ -70,11 +95,15 @@ type Listener struct {
 	// +kubebuilder:validation:Required
 	Protocol ProtocolType `json:"protocol"`
 
-	// TLS contains TLS configuration (required for HTTPS/TLS protocols)
+	// TLS contains TLS configuration (required for HTTPS/TLS/HTTP3 protocols)
 	// +optional
 	TLS *TLSConfig `json:"tls,omitempty"`
 
-	// Hostnames is a list of hostnames this listener accepts (for HTTP/HTTPS)
+	// QUIC contains QUIC-specific configuration (optional for HTTP3 protocol)
+	// +optional
+	QUIC *QUICConfig `json:"quic,omitempty"`
+
+	// Hostnames is a list of hostnames this listener accepts (for HTTP/HTTPS/HTTP3)
 	// +optional
 	Hostnames []string `json:"hostnames,omitempty"`
 }

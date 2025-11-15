@@ -207,6 +207,16 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 				pbListener.Tls = tlsConfig
 			}
 
+			// Load QUIC configuration if present (for HTTP/3)
+			if listener.QUIC != nil {
+				pbListener.Quic = &pb.QUICConfig{
+					MaxIdleTimeout: listener.QUIC.MaxIdleTimeout,
+					MaxBiStreams:   listener.QUIC.MaxBiStreams,
+					MaxUniStreams:  listener.QUIC.MaxUniStreams,
+					Enable_0Rtt:    listener.QUIC.Enable0RTT,
+				}
+			}
+
 			gateway.Listeners = append(gateway.Listeners, pbListener)
 		}
 
@@ -564,6 +574,8 @@ func convertProtocol(protocol novaedgev1alpha1.ProtocolType) pb.Protocol {
 		return pb.Protocol_HTTP
 	case novaedgev1alpha1.ProtocolTypeHTTPS:
 		return pb.Protocol_HTTPS
+	case novaedgev1alpha1.ProtocolTypeHTTP3:
+		return pb.Protocol_HTTP3
 	case novaedgev1alpha1.ProtocolTypeTCP:
 		return pb.Protocol_TCP
 	case novaedgev1alpha1.ProtocolTypeTLS:

@@ -74,6 +74,10 @@ type Router struct {
 	// Load balancers per cluster
 	loadBalancers map[string]lb.LoadBalancer
 
+	// Hash-based load balancers (RingHash, Maglev) stored separately
+	// These require a key for consistent hashing
+	hashBasedLBs map[string]interface{}
+
 	// gRPC handler for gRPC-specific request processing
 	grpcHandler *grpchandler.GRPCHandler
 }
@@ -131,6 +135,7 @@ func NewRouter(logger *zap.Logger) *Router {
 		routes:        make(map[string][]*RouteEntry),
 		pools:         make(map[string]*upstream.Pool),
 		loadBalancers: make(map[string]lb.LoadBalancer),
+		hashBasedLBs:  make(map[string]interface{}),
 		grpcHandler:   grpchandler.NewGRPCHandler(logger),
 	}
 }
@@ -148,6 +153,7 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 	// Clear existing configuration
 	r.routes = make(map[string][]*RouteEntry)
 	r.loadBalancers = make(map[string]lb.LoadBalancer)
+	r.hashBasedLBs = make(map[string]interface{})
 
 	// Build routing table
 	for _, route := range snapshot.Routes {
@@ -187,8 +193,38 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 			newPools[clusterKey] = pool
 		}
 
-		// Create load balancer
-		r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
+		// Create load balancer based on cluster policy
+		switch cluster.LbPolicy {
+		case pb.LoadBalancingPolicy_P2C:
+			r.loadBalancers[clusterKey] = lb.NewP2C(endpointList.Endpoints)
+			r.logger.Debug("Created P2C load balancer", zap.String("cluster", clusterKey))
+
+		case pb.LoadBalancingPolicy_EWMA:
+			r.loadBalancers[clusterKey] = lb.NewEWMA(endpointList.Endpoints)
+			r.logger.Debug("Created EWMA load balancer", zap.String("cluster", clusterKey))
+
+		case pb.LoadBalancingPolicy_RING_HASH:
+			// RingHash uses consistent hashing - store separately
+			r.hashBasedLBs[clusterKey] = lb.NewRingHash(endpointList.Endpoints)
+			r.logger.Debug("Created RingHash load balancer", zap.String("cluster", clusterKey))
+
+		case pb.LoadBalancingPolicy_MAGLEV:
+			// Maglev uses consistent hashing - store separately
+			r.hashBasedLBs[clusterKey] = lb.NewMaglev(endpointList.Endpoints)
+			r.logger.Debug("Created Maglev load balancer", zap.String("cluster", clusterKey))
+
+		case pb.LoadBalancingPolicy_ROUND_ROBIN, pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
+			r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
+			r.logger.Debug("Created RoundRobin load balancer", zap.String("cluster", clusterKey))
+
+		default:
+			// Fallback to round robin for unknown policies
+			r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
+			r.logger.Warn("Unknown LB policy, using RoundRobin",
+				zap.String("cluster", clusterKey),
+				zap.Int32("policy", int32(cluster.LbPolicy)),
+			)
+		}
 	}
 
 	// Close pools that are no longer needed
@@ -377,14 +413,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 
 	clusterKey := fmt.Sprintf("%s/%s", backendRef.Namespace, backendRef.Name)
 
-	// Get load balancer and pool
-	loadBalancer, ok := r.loadBalancers[clusterKey]
-	if !ok {
-		r.logger.Error("No load balancer for cluster", zap.String("cluster", clusterKey))
-		http.Error(w, "Backend not available", http.StatusServiceUnavailable)
-		return
-	}
-
+	// Get pool
 	pool, ok := r.pools[clusterKey]
 	if !ok {
 		r.logger.Error("No pool for cluster", zap.String("cluster", clusterKey))
@@ -392,8 +421,40 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		return
 	}
 
-	// Select endpoint using load balancer
-	endpoint := loadBalancer.Select()
+	// Select endpoint using appropriate load balancer
+	var endpoint *pb.Endpoint
+
+	// Check if this cluster uses hash-based load balancing
+	if hashLB, ok := r.hashBasedLBs[clusterKey]; ok {
+		// Use client IP as the hash key for consistent hashing
+		// Extract client IP from request
+		clientIP := req.RemoteAddr
+		if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
+			clientIP = clientIP[:idx]
+		}
+
+		// Type assert to the specific hash-based LB type
+		switch hashBalancer := hashLB.(type) {
+		case *lb.RingHash:
+			endpoint = hashBalancer.Select(clientIP)
+		case *lb.Maglev:
+			endpoint = hashBalancer.Select(clientIP)
+		default:
+			r.logger.Error("Unknown hash-based load balancer type", zap.String("cluster", clusterKey))
+			http.Error(w, "Backend configuration error", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Use standard load balancer
+		loadBalancer, ok := r.loadBalancers[clusterKey]
+		if !ok {
+			r.logger.Error("No load balancer for cluster", zap.String("cluster", clusterKey))
+			http.Error(w, "Backend not available", http.StatusServiceUnavailable)
+			return
+		}
+		endpoint = loadBalancer.Select()
+	}
+
 	if endpoint == nil {
 		r.logger.Error("No healthy endpoint available", zap.String("cluster", clusterKey))
 		http.Error(w, "No healthy backend", http.StatusServiceUnavailable)

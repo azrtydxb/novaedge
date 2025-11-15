@@ -48,6 +48,7 @@ message Listener {
   Protocol protocol = 3;
   TLSConfig tls = 4;
   repeated string hostnames = 5;
+  QUICConfig quic = 6;
 }
 
 // Protocol defines the application protocol
@@ -55,8 +56,9 @@ enum Protocol {
   PROTOCOL_UNSPECIFIED = 0;
   HTTP = 1;
   HTTPS = 2;
-  TCP = 3;
-  TLS = 4;
+  HTTP3 = 3;
+  TCP = 4;
+  TLS = 5;
 }
 
 // TLSConfig contains TLS certificate and configuration
@@ -65,6 +67,14 @@ message TLSConfig {
   bytes key = 2;
   string min_version = 3;
   repeated string cipher_suites = 4;
+}
+
+// QUICConfig contains QUIC-specific configuration for HTTP/3
+message QUICConfig {
+  string max_idle_timeout = 1;
+  int64 max_bi_streams = 2;
+  int64 max_uni_streams = 3;
+  bool enable_0rtt = 4;
 }
 
 // Route represents a ProxyRoute resource
