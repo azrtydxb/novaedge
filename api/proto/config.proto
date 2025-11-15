@@ -46,9 +46,10 @@ message Listener {
   string name = 1;
   int32 port = 2;
   Protocol protocol = 3;
-  TLSConfig tls = 4;
+  TLSConfig tls = 4; // Default TLS config (deprecated, use tls_certificates)
   repeated string hostnames = 5;
   QUICConfig quic = 6;
+  map<string, TLSConfig> tls_certificates = 7; // SNI: hostname -> TLS cert/key
 }
 
 // Protocol defines the application protocol
@@ -89,7 +90,7 @@ message Route {
 message RouteRule {
   repeated RouteMatch matches = 1;
   repeated RouteFilter filters = 2;
-  BackendRef backend_ref = 3;
+  repeated BackendRef backend_refs = 3; // Support multiple weighted backends
 }
 
 // RouteMatch defines conditions for matching requests

@@ -233,8 +233,10 @@ func (t *IngressTranslator) translateRouteRule(ingress *networkingv1.Ingress, pa
 	rule := novaedgev1alpha1.HTTPRouteRule{
 		Matches: []novaedgev1alpha1.HTTPRouteMatch{},
 		Filters: []novaedgev1alpha1.HTTPRouteFilter{},
-		BackendRef: novaedgev1alpha1.BackendRef{
-			Name: t.generateBackendName(ingress, ruleIdx, pathIdx),
+		BackendRefs: []novaedgev1alpha1.BackendRef{
+			{
+				Name: t.generateBackendName(ingress, ruleIdx, pathIdx),
+			},
 		},
 	}
 

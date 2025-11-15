@@ -58,26 +58,32 @@ spec:
                   description: HTTPRouteRule defines semantics for matching an HTTP
                     request and routing it
                   properties:
-                    backendRef:
-                      description: BackendRef references the backend to route to
-                      properties:
-                        name:
-                          description: Name is the name of the ProxyBackend
-                          type: string
-                        namespace:
-                          description: Namespace is the namespace of the ProxyBackend
-                            (defaults to route namespace)
-                          type: string
-                        weight:
-                          default: 1
-                          description: Weight defines the proportion of requests sent
-                            to this backend
-                          format: int32
-                          minimum: 0
-                          type: integer
-                      required:
-                      - name
-                      type: object
+                    backendRefs:
+                      description: BackendRefs references the backends to route to
+                        with optional weights
+                      items:
+                        description: BackendRef references a backend for routing
+                        properties:
+                          name:
+                            description: Name is the name of the ProxyBackend
+                            type: string
+                          namespace:
+                            description: Namespace is the namespace of the ProxyBackend
+                              (defaults to route namespace)
+                            type: string
+                          weight:
+                            default: 1
+                            description: Weight defines the proportion of requests
+                              sent to this backend
+                            format: int32
+                            minimum: 0
+                            type: integer
+                        required:
+                        - name
+                        type: object
+                      maxItems: 16
+                      minItems: 1
+                      type: array
                     filters:
                       description: Filters define processing steps that must be completed
                         during the request or response lifecycle
@@ -200,7 +206,7 @@ spec:
                       maxItems: 8
                       type: array
                   required:
-                  - backendRef
+                  - backendRefs
                   type: object
                 maxItems: 16
                 minItems: 1

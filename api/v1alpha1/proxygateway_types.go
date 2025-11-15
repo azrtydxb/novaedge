@@ -96,8 +96,15 @@ type Listener struct {
 	Protocol ProtocolType `json:"protocol"`
 
 	// TLS contains TLS configuration (required for HTTPS/TLS/HTTP3 protocols)
+	// Use TLSCertificates for SNI support with multiple certificates
 	// +optional
 	TLS *TLSConfig `json:"tls,omitempty"`
+
+	// TLSCertificates provides SNI support with multiple TLS certificates per listener
+	// Key is the hostname, value is the TLS configuration for that hostname
+	// Supports wildcard hostnames (e.g., "*.example.com")
+	// +optional
+	TLSCertificates map[string]TLSConfig `json:"tlsCertificates,omitempty"`
 
 	// QUIC contains QUIC-specific configuration (optional for HTTP3 protocol)
 	// +optional

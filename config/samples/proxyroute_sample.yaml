@@ -21,8 +21,11 @@ spec:
           add:
             - name: X-Version
               value: "v1"
-      backendRef:
-        name: api-backend
+      backendRefs:
+        - name: api-backend
+          weight: 80
+        - name: api-backend-canary
+          weight: 20
     - matches:
         - path:
             type: PathPrefix
@@ -32,5 +35,5 @@ spec:
           add:
             - name: X-Version
               value: "v2"
-      backendRef:
-        name: api-backend-v2
+      backendRefs:
+        - name: api-backend-v2

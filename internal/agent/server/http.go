@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -98,8 +99,8 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 			}
 
 			// Create TLS config if listener uses TLS
-			if listener.Tls != nil {
-				tlsConfig, err := s.createTLSConfig(listener.Tls, listener.Hostnames)
+			if listener.Tls != nil || len(listener.TlsCertificates) > 0 {
+				tlsConfig, err := s.createTLSConfigWithSNI(listener)
 				if err != nil {
 					s.logger.Error("Failed to create TLS config",
 						zap.String("gateway", listenerInfo.Gateway),
@@ -329,12 +330,12 @@ func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// createTLSConfig creates a tls.Config from protobuf TLS configuration
+// createTLSConfig creates a tls.Config from protobuf TLS configuration with SNI support
 func (s *HTTPServer) createTLSConfig(tlsConfig *pb.TLSConfig, hostnames []string) (*tls.Config, error) {
-	// Parse certificate and key
+	// Parse default certificate and key
 	cert, err := tls.X509KeyPair(tlsConfig.Cert, tlsConfig.Key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+		return nil, fmt.Errorf("failed to parse default certificate: %w", err)
 	}
 
 	config := &tls.Config{
@@ -343,22 +344,104 @@ func (s *HTTPServer) createTLSConfig(tlsConfig *pb.TLSConfig, hostnames []string
 		CipherSuites: s.parseCipherSuites(tlsConfig.CipherSuites),
 	}
 
-	// Enable SNI for multiple hostnames
-	if len(hostnames) > 0 {
+	return config, nil
+}
+
+// createTLSConfigWithSNI creates a tls.Config with SNI support for multiple certificates
+func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config, error) {
+	// Parse all certificates for SNI
+	certMap := make(map[string]*tls.Certificate)
+	var defaultCert *tls.Certificate
+
+	// If listener has tls_certificates map, use it for SNI
+	if len(listener.TlsCertificates) > 0 {
+		for hostname, tlsConfig := range listener.TlsCertificates {
+			cert, err := tls.X509KeyPair(tlsConfig.Cert, tlsConfig.Key)
+			if err != nil {
+				s.logger.Error("Failed to parse certificate for hostname",
+					zap.String("hostname", hostname),
+					zap.Error(err))
+				continue
+			}
+			certMap[hostname] = &cert
+
+			// Use first certificate as default
+			if defaultCert == nil {
+				defaultCert = &cert
+			}
+		}
+	}
+
+	// Fallback to single TLS config if no SNI certificates
+	if defaultCert == nil && listener.Tls != nil {
+		cert, err := tls.X509KeyPair(listener.Tls.Cert, listener.Tls.Key)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse default certificate: %w", err)
+		}
+		defaultCert = &cert
+	}
+
+	if defaultCert == nil {
+		return nil, fmt.Errorf("no TLS certificates configured")
+	}
+
+	// Get TLS settings from first certificate config
+	var minVersion string
+	var cipherSuites []string
+	if listener.Tls != nil {
+		minVersion = listener.Tls.MinVersion
+		cipherSuites = listener.Tls.CipherSuites
+	} else if len(listener.TlsCertificates) > 0 {
+		// Get settings from first certificate
+		for _, tlsConfig := range listener.TlsCertificates {
+			minVersion = tlsConfig.MinVersion
+			cipherSuites = tlsConfig.CipherSuites
+			break
+		}
+	}
+
+	config := &tls.Config{
+		Certificates: []tls.Certificate{*defaultCert},
+		MinVersion:   s.parseTLSVersion(minVersion),
+		CipherSuites: s.parseCipherSuites(cipherSuites),
+	}
+
+	// Enable SNI certificate selection
+	if len(certMap) > 0 {
 		config.GetCertificate = func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			// Track TLS metrics
 			metrics.TLSHandshakes.Inc()
 
-			// Simple SNI: return the cert if it matches any hostname
-			// In production, you'd want more sophisticated certificate selection
-			for _, hostname := range hostnames {
-				if clientHello.ServerName == hostname || clientHello.ServerName == "" {
-					return &cert, nil
+			serverName := clientHello.ServerName
+			s.logger.Debug("SNI certificate selection",
+				zap.String("server_name", serverName),
+				zap.Int("available_certs", len(certMap)))
+
+			// Look for exact match
+			if cert, ok := certMap[serverName]; ok {
+				s.logger.Debug("SNI certificate found",
+					zap.String("server_name", serverName))
+				return cert, nil
+			}
+
+			// Check for wildcard match (*.example.com)
+			if serverName != "" {
+				labels := strings.Split(serverName, ".")
+				if len(labels) > 1 {
+					wildcardName := "*." + strings.Join(labels[1:], ".")
+					if cert, ok := certMap[wildcardName]; ok {
+						s.logger.Debug("SNI wildcard certificate found",
+							zap.String("server_name", serverName),
+							zap.String("wildcard", wildcardName))
+						return cert, nil
+					}
 				}
 			}
 
 			// Return default certificate if no match
-			return &cert, nil
+			s.logger.Debug("SNI using default certificate",
+				zap.String("server_name", serverName))
+			return defaultCert, nil
 		}
 	}
 

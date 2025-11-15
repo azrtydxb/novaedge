@@ -23,8 +23,10 @@ import (
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -44,7 +46,20 @@ type Watcher struct {
 	logger         *zap.Logger
 	ctx            context.Context
 
+	// TLS configuration for mTLS
+	tlsCertFile string
+	tlsKeyFile  string
+	tlsCAFile   string
+	tlsEnabled  bool
+
 	currentVersion string
+}
+
+// TLSConfig holds TLS configuration for the watcher
+type TLSConfig struct {
+	CertFile string
+	KeyFile  string
+	CAFile   string
 }
 
 // NewWatcher creates a new config watcher
@@ -55,6 +70,26 @@ func NewWatcher(ctx context.Context, nodeName, agentVersion, controllerAddr stri
 		controllerAddr: controllerAddr,
 		logger:         logger,
 		ctx:            ctx,
+		tlsEnabled:     false,
+	}, nil
+}
+
+// NewWatcherWithTLS creates a new config watcher with mTLS enabled
+func NewWatcherWithTLS(ctx context.Context, nodeName, agentVersion, controllerAddr string, tlsConfig *TLSConfig, logger *zap.Logger) (*Watcher, error) {
+	if tlsConfig == nil || tlsConfig.CertFile == "" || tlsConfig.KeyFile == "" || tlsConfig.CAFile == "" {
+		return nil, fmt.Errorf("TLS configuration is incomplete")
+	}
+
+	return &Watcher{
+		nodeName:       nodeName,
+		agentVersion:   agentVersion,
+		controllerAddr: controllerAddr,
+		logger:         logger,
+		ctx:            ctx,
+		tlsCertFile:    tlsConfig.CertFile,
+		tlsKeyFile:     tlsConfig.KeyFile,
+		tlsCAFile:      tlsConfig.CAFile,
+		tlsEnabled:     true,
 	}, nil
 }
 
@@ -105,12 +140,33 @@ func (w *Watcher) connectWithRetry() (*grpc.ClientConn, error) {
 		default:
 		}
 
-		w.logger.Info("Connecting to controller", zap.String("address", w.controllerAddr))
+		w.logger.Info("Connecting to controller",
+			zap.String("address", w.controllerAddr),
+			zap.Bool("tls_enabled", w.tlsEnabled))
 
-		conn, err := grpc.NewClient(
-			w.controllerAddr,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-		)
+		var opts []grpc.DialOption
+		var creds credentials.TransportCredentials
+
+		if w.tlsEnabled {
+			// Load TLS credentials for mTLS
+			var err error
+			creds, err = tlsutil.LoadClientTLSCredentials(
+				w.tlsCertFile,
+				w.tlsKeyFile,
+				w.tlsCAFile,
+				"novaedge-controller", // Server name for SNI
+			)
+			if err != nil {
+				w.logger.Error("Failed to load TLS credentials", zap.Error(err))
+				return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
+			}
+			opts = append(opts, grpc.WithTransportCredentials(creds))
+		} else {
+			// Use insecure connection (development only)
+			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		}
+
+		conn, err := grpc.NewClient(w.controllerAddr, opts...)
 		if err != nil {
 			w.logger.Warn("Failed to connect to controller",
 				zap.Error(err),
@@ -124,7 +180,11 @@ func (w *Watcher) connectWithRetry() (*grpc.ClientConn, error) {
 			continue
 		}
 
-		w.logger.Info("Connected to controller")
+		if w.tlsEnabled {
+			w.logger.Info("Connected to controller with mTLS")
+		} else {
+			w.logger.Info("Connected to controller (insecure)")
+		}
 		return conn, nil
 	}
 }

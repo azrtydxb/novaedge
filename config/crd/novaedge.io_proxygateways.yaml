@@ -62,7 +62,7 @@ spec:
                   properties:
                     hostnames:
                       description: Hostnames is a list of hostnames this listener
-                        accepts (for HTTP/HTTPS)
+                        accepts (for HTTP/HTTPS/HTTP3)
                       items:
                         type: string
                       type: array
@@ -85,9 +85,37 @@ spec:
                       - TCP
                       - TLS
                       type: string
+                    quic:
+                      description: QUIC contains QUIC-specific configuration (optional
+                        for HTTP3 protocol)
+                      properties:
+                        enable0RTT:
+                          default: true
+                          description: Enable0RTT enables 0-RTT resumption (reduces
+                            connection establishment latency)
+                          type: boolean
+                        maxBiStreams:
+                          default: 100
+                          description: MaxBiStreams is the maximum number of concurrent
+                            bidirectional streams
+                          format: int64
+                          type: integer
+                        maxIdleTimeout:
+                          default: 30s
+                          description: MaxIdleTimeout is the maximum idle timeout
+                            for QUIC connections
+                          type: string
+                        maxUniStreams:
+                          default: 100
+                          description: MaxUniStreams is the maximum number of concurrent
+                            unidirectional streams
+                          format: int64
+                          type: integer
+                      type: object
                     tls:
-                      description: TLS contains TLS configuration (required for HTTPS/TLS
-                        protocols)
+                      description: |-
+                        TLS contains TLS configuration (required for HTTPS/TLS/HTTP3 protocols)
+                        Use TLSCertificates for SNI support with multiple certificates
                       properties:
                         cipherSuites:
                           description: CipherSuites is a list of allowed cipher suites
@@ -117,6 +145,45 @@ spec:
                           x-kubernetes-map-type: atomic
                       required:
                       - secretRef
+                      type: object
+                    tlsCertificates:
+                      additionalProperties:
+                        description: TLSConfig defines TLS configuration for a listener
+                        properties:
+                          cipherSuites:
+                            description: CipherSuites is a list of allowed cipher
+                              suites
+                            items:
+                              type: string
+                            type: array
+                          minVersion:
+                            description: 'MinVersion is the minimum TLS version (default:
+                              TLS 1.2)'
+                            enum:
+                            - TLS1.2
+                            - TLS1.3
+                            type: string
+                          secretRef:
+                            description: SecretRef references a Kubernetes Secret
+                              containing TLS certificate and key
+                            properties:
+                              name:
+                                description: name is unique within a namespace to
+                                  reference a secret resource.
+                                type: string
+                              namespace:
+                                description: namespace defines the space within which
+                                  the secret name must be unique.
+                                type: string
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        required:
+                        - secretRef
+                        type: object
+                      description: |-
+                        TLSCertificates provides SNI support with multiple TLS certificates per listener
+                        Key is the hostname, value is the TLS configuration for that hostname
+                        Supports wildcard hostnames (e.g., "*.example.com")
                       type: object
                   required:
                   - name

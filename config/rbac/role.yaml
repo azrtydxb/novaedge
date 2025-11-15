@@ -23,41 +23,24 @@ rules:
   - list
   - watch
 - apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses
-  verbs:
-  - get
-  - list
-  - watch
-  - update
-  - patch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses/status
-  verbs:
-  - get
-  - update
-  - patch
-- apiGroups:
-  - networking.k8s.io
-  resources:
-  - ingresses/finalizers
-  verbs:
-  - update
-- apiGroups:
   - gateway.networking.k8s.io
   resources:
-  - gateways
-  - httproutes
   - gatewayclasses
   verbs:
   - get
   - list
   - watch
-  - update
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gateways
+  - httproutes
+  verbs:
+  - get
+  - list
   - patch
+  - update
+  - watch
 - apiGroups:
   - gateway.networking.k8s.io
   resources:
@@ -65,8 +48,32 @@ rules:
   - httproutes/status
   verbs:
   - get
-  - update
   - patch
+  - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses/status
+  verbs:
+  - get
+  - patch
+  - update
 - apiGroups:
   - novaedge.io
   resources:

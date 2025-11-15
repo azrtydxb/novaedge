@@ -35,6 +35,7 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller"
 	"github.com/piwi3910/novaedge/internal/controller/snapshot"
+	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 )
 
 var (
@@ -53,10 +54,16 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var grpcAddr string
+	var grpcTLSCert string
+	var grpcTLSKey string
+	var grpcTLSCA string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&grpcAddr, "grpc-bind-address", ":9090", "The address the gRPC config server binds to.")
+	flag.StringVar(&grpcTLSCert, "grpc-tls-cert", "", "Path to gRPC server TLS certificate file (enables mTLS if provided)")
+	flag.StringVar(&grpcTLSKey, "grpc-tls-key", "", "Path to gRPC server TLS key file")
+	flag.StringVar(&grpcTLSCA, "grpc-tls-ca", "", "Path to gRPC CA certificate file for client verification")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -158,7 +165,26 @@ func main() {
 
 	// Create and start gRPC server for config distribution
 	configServer := snapshot.NewServer(mgr.GetClient())
-	grpcServer := grpc.NewServer()
+
+	// Create gRPC server with optional mTLS
+	var grpcServer *grpc.Server
+	if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {
+		// Load TLS credentials for mTLS
+		creds, err := tlsutil.LoadServerTLSCredentials(grpcTLSCert, grpcTLSKey, grpcTLSCA)
+		if err != nil {
+			setupLog.Error(err, "failed to load gRPC TLS credentials")
+			os.Exit(1)
+		}
+		grpcServer = grpc.NewServer(grpc.Creds(creds))
+		setupLog.Info("gRPC server configured with mTLS",
+			"cert", grpcTLSCert,
+			"ca", grpcTLSCA)
+	} else {
+		// Create insecure gRPC server (for development only)
+		grpcServer = grpc.NewServer()
+		setupLog.Info("WARNING: gRPC server running without TLS (insecure)")
+	}
+
 	configServer.RegisterServer(grpcServer)
 
 	// Start gRPC server in a goroutine

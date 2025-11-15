@@ -169,9 +169,11 @@ type HTTPRouteRule struct {
 	// +kubebuilder:validation:MaxItems=16
 	Filters []HTTPRouteFilter `json:"filters,omitempty"`
 
-	// BackendRef references the backend to route to
+	// BackendRefs references the backends to route to with optional weights
 	// +kubebuilder:validation:Required
-	BackendRef BackendRef `json:"backendRef"`
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=16
+	BackendRefs []BackendRef `json:"backendRefs"`
 }
 
 // ProxyRouteSpec defines the desired state of ProxyRoute

@@ -80,21 +80,23 @@ func (r *ProxyRouteReconciler) validateAndUpdateStatus(ctx context.Context, rout
 
 	// Validate backend references exist
 	for i, rule := range route.Spec.Rules {
-		backendNamespace := route.Namespace
-		if rule.BackendRef.Namespace != nil {
-			backendNamespace = *rule.BackendRef.Namespace
-		}
+		for j, backendRef := range rule.BackendRefs {
+			backendNamespace := route.Namespace
+			if backendRef.Namespace != nil {
+				backendNamespace = *backendRef.Namespace
+			}
 
-		backend := &novaedgev1alpha1.ProxyBackend{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      rule.BackendRef.Name,
-			Namespace: backendNamespace,
-		}, backend); err != nil {
-			if errors.IsNotFound(err) {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("Backend %s not found for rule %d", rule.BackendRef.Name, i))
-			} else {
-				logger.Error(err, "Failed to get backend", "backend", rule.BackendRef.Name)
+			backend := &novaedgev1alpha1.ProxyBackend{}
+			if err := r.Get(ctx, types.NamespacedName{
+				Name:      backendRef.Name,
+				Namespace: backendNamespace,
+			}, backend); err != nil {
+				if errors.IsNotFound(err) {
+					validationErrors = append(validationErrors,
+						fmt.Sprintf("Backend %s not found for rule %d, backend %d", backendRef.Name, i, j))
+				} else {
+					logger.Error(err, "Failed to get backend", "backend", backendRef.Name)
+				}
 			}
 		}
 	}

@@ -42,6 +42,11 @@ var (
 	healthProbeAddr string
 	metricsPort     int
 
+	// TLS configuration for controller-agent mTLS
+	grpcTLSCert string
+	grpcTLSKey  string
+	grpcTLSCA   string
+
 	// Tracing configuration
 	tracingEnabled    bool
 	tracingEndpoint   string
@@ -54,6 +59,11 @@ func main() {
 	flag.StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 	flag.StringVar(&healthProbeAddr, "health-probe-address", ":8082", "Address for health probe endpoint")
 	flag.IntVar(&metricsPort, "metrics-port", 9090, "Port for Prometheus metrics endpoint")
+
+	// TLS flags for mTLS with controller
+	flag.StringVar(&grpcTLSCert, "grpc-tls-cert", "", "Path to gRPC client TLS certificate file (enables mTLS if provided)")
+	flag.StringVar(&grpcTLSKey, "grpc-tls-key", "", "Path to gRPC client TLS key file")
+	flag.StringVar(&grpcTLSCA, "grpc-tls-ca", "", "Path to gRPC CA certificate file for server verification")
 
 	// Tracing flags
 	flag.BoolVar(&tracingEnabled, "tracing-enabled", false, "Enable OpenTelemetry distributed tracing")
@@ -101,10 +111,29 @@ func main() {
 		}
 	}()
 
-	// Create config watcher
-	watcher, err := config.NewWatcher(ctx, nodeName, agentVersion, controllerAddr, logger)
-	if err != nil {
-		logger.Fatal("Failed to create config watcher", zap.Error(err))
+	// Create config watcher with optional mTLS
+	var watcher *config.Watcher
+	if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {
+		// Create watcher with mTLS enabled
+		watcher, err = config.NewWatcherWithTLS(ctx, nodeName, agentVersion, controllerAddr,
+			&config.TLSConfig{
+				CertFile: grpcTLSCert,
+				KeyFile:  grpcTLSKey,
+				CAFile:   grpcTLSCA,
+			}, logger)
+		if err != nil {
+			logger.Fatal("Failed to create config watcher with TLS", zap.Error(err))
+		}
+		logger.Info("Config watcher configured with mTLS",
+			zap.String("cert", grpcTLSCert),
+			zap.String("ca", grpcTLSCA))
+	} else {
+		// Create watcher without TLS (insecure, development only)
+		watcher, err = config.NewWatcher(ctx, nodeName, agentVersion, controllerAddr, logger)
+		if err != nil {
+			logger.Fatal("Failed to create config watcher", zap.Error(err))
+		}
+		logger.Warn("WARNING: Config watcher running without TLS (insecure)")
 	}
 
 	// Create VIP manager

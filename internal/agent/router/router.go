@@ -18,6 +18,7 @@ package router
 
 import (
 	"fmt"
+	"math/rand"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -95,38 +96,6 @@ type RouteEntry struct {
 type policyMiddleware struct {
 	name    string
 	handler func(http.Handler) http.Handler
-}
-
-// PathMatcher matches request paths
-type PathMatcher interface {
-	Match(path string) bool
-}
-
-// ExactMatcher matches exact paths
-type ExactMatcher struct {
-	Path string
-}
-
-func (m *ExactMatcher) Match(path string) bool {
-	return path == m.Path
-}
-
-// PrefixMatcher matches path prefixes
-type PrefixMatcher struct {
-	Prefix string
-}
-
-func (m *PrefixMatcher) Match(path string) bool {
-	return strings.HasPrefix(path, m.Prefix)
-}
-
-// RegexMatcher matches paths with regex
-type RegexMatcher struct {
-	Pattern *regexp.Regexp
-}
-
-func (m *RegexMatcher) Match(path string) bool {
-	return m.Pattern.MatchString(path)
 }
 
 // NewRouter creates a new router
@@ -414,8 +383,8 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	}
 	req = modifiedReq
 
-	// Get backend reference
-	backendRef := entry.Rule.BackendRef
+	// Select backend using weighted selection
+	backendRef := selectWeightedBackend(entry.Rule.BackendRefs)
 	if backendRef == nil {
 		http.Error(w, "No backend configured", http.StatusInternalServerError)
 		return
@@ -590,34 +559,6 @@ func (r *Router) createPolicyMiddleware(route *pb.Route, snapshot *config.Snapsh
 	return middlewares
 }
 
-// applyFilters applies route filters to request/response
-// createPathMatcher creates a path matcher from a route rule
-func createPathMatcher(rule *pb.RouteRule) PathMatcher {
-	if len(rule.Matches) == 0 {
-		return nil
-	}
-
-	// Use the first match's path (simplified for now)
-	match := rule.Matches[0]
-	if match.Path == nil {
-		return nil
-	}
-
-	switch match.Path.Type {
-	case pb.PathMatchType_EXACT:
-		return &ExactMatcher{Path: match.Path.Value}
-	case pb.PathMatchType_PATH_PREFIX:
-		return &PrefixMatcher{Prefix: match.Path.Value}
-	case pb.PathMatchType_REGULAR_EXPRESSION:
-		if regex, err := regexp.Compile(match.Path.Value); err == nil {
-			return &RegexMatcher{Pattern: regex}
-		}
-		return nil
-	default:
-		return nil
-	}
-}
-
 // compileHeaderRegexes pre-compiles all header regex patterns for a route rule
 // This prevents regex compilation on every request (performance optimization)
 func compileHeaderRegexes(rule *pb.RouteRule) map[int]*regexp.Regexp {
@@ -636,4 +577,46 @@ func compileHeaderRegexes(rule *pb.RouteRule) map[int]*regexp.Regexp {
 	}
 
 	return regexes
+}
+
+// selectWeightedBackend selects a backend from multiple backends based on their weights
+// Uses weighted random selection algorithm
+func selectWeightedBackend(backends []*pb.BackendRef) *pb.BackendRef {
+	if len(backends) == 0 {
+		return nil
+	}
+
+	// If only one backend, return it directly
+	if len(backends) == 1 {
+		return backends[0]
+	}
+
+	// Calculate total weight
+	totalWeight := int32(0)
+	for _, backend := range backends {
+		weight := backend.Weight
+		if weight <= 0 {
+			weight = 1 // Default weight
+		}
+		totalWeight += weight
+	}
+
+	// Generate random number between 0 and totalWeight
+	randVal := rand.Int31n(totalWeight)
+
+	// Select backend based on weight
+	currentWeight := int32(0)
+	for _, backend := range backends {
+		weight := backend.Weight
+		if weight <= 0 {
+			weight = 1 // Default weight
+		}
+		currentWeight += weight
+		if randVal < currentWeight {
+			return backend
+		}
+	}
+
+	// Fallback to first backend (should never reach here)
+	return backends[0]
 }

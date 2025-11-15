@@ -198,28 +198,34 @@ func translateHTTPRouteRule(gwRule gatewayv1.HTTPRouteRule, namespace string, ru
 		rule.Filters = append(rule.Filters, filter)
 	}
 
-	// Translate backend refs
-	// Gateway API supports multiple backend refs with weights, but we'll use the first one for now
-	// TODO: Support multiple backends with weighted load balancing
+	// Translate backend refs with weights
 	if len(gwRule.BackendRefs) == 0 {
 		return rule, fmt.Errorf("rule has no backend refs")
 	}
 
-	backendRef := gwRule.BackendRefs[0]
+	// Translate all backend refs
+	rule.BackendRefs = make([]novaedgev1alpha1.BackendRef, 0, len(gwRule.BackendRefs))
+	for _, gwBackendRef := range gwRule.BackendRefs {
+		// Determine namespace for backend
+		backendNamespace := namespace
+		if gwBackendRef.Namespace != nil {
+			backendNamespace = string(*gwBackendRef.Namespace)
+		}
 
-	// Determine namespace for backend
-	backendNamespace := namespace
-	if backendRef.Namespace != nil {
-		backendNamespace = string(*backendRef.Namespace)
-	}
+		backendRef := novaedgev1alpha1.BackendRef{
+			Name:      string(gwBackendRef.Name),
+			Namespace: &backendNamespace,
+		}
 
-	rule.BackendRef = novaedgev1alpha1.BackendRef{
-		Name:      string(backendRef.Name),
-		Namespace: &backendNamespace,
-	}
+		// Copy weight if specified, otherwise default to 1
+		if gwBackendRef.Weight != nil {
+			backendRef.Weight = gwBackendRef.Weight
+		} else {
+			defaultWeight := int32(1)
+			backendRef.Weight = &defaultWeight
+		}
 
-	if backendRef.Weight != nil {
-		rule.BackendRef.Weight = backendRef.Weight
+		rule.BackendRefs = append(rule.BackendRefs, backendRef)
 	}
 
 	return rule, nil
