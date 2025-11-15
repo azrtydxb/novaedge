@@ -1,0 +1,35 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-httproute
+  namespace: default
+spec:
+  parentRefs:
+  - name: example-gateway
+    namespace: default
+  hostnames:
+  - "example.com"
+  - "www.example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        add:
+        - name: X-Custom-Header
+          value: example-value
+    backendRefs:
+    - name: api-service
+      port: 8080
+      weight: 1
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /
+    backendRefs:
+    - name: web-service
+      port: 80
+      weight: 1
