@@ -39,6 +39,7 @@ var (
 	agentVersion    = "0.1.0"
 	logLevel        string
 	healthProbeAddr string
+	metricsPort     int
 )
 
 func main() {
@@ -46,6 +47,7 @@ func main() {
 	flag.StringVar(&controllerAddr, "controller-address", "localhost:9090", "Address of the controller gRPC server")
 	flag.StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 	flag.StringVar(&healthProbeAddr, "health-probe-address", ":8082", "Address for health probe endpoint")
+	flag.IntVar(&metricsPort, "metrics-port", 9090, "Port for Prometheus metrics endpoint")
 	flag.Parse()
 
 	// Validate required flags
@@ -83,6 +85,9 @@ func main() {
 	// Create HTTP server
 	httpServer := server.NewHTTPServer(logger)
 
+	// Create metrics server
+	metricsServer := server.NewMetricsServer(logger, metricsPort)
+
 	// Start VIP manager
 	if err := vipManager.Start(ctx); err != nil {
 		logger.Fatal("Failed to start VIP manager", zap.Error(err))
@@ -117,6 +122,12 @@ func main() {
 		serverChan <- httpServer.Start(ctx)
 	}()
 
+	// Start metrics server
+	metricsChan := make(chan error, 1)
+	go func() {
+		metricsChan <- metricsServer.Start(ctx)
+	}()
+
 	// Start health probe server
 	healthChan := make(chan error, 1)
 	go func() {
@@ -132,6 +143,8 @@ func main() {
 		logger.Error("Config watcher failed", zap.Error(err))
 	case err := <-serverChan:
 		logger.Error("HTTP server failed", zap.Error(err))
+	case err := <-metricsChan:
+		logger.Error("Metrics server failed", zap.Error(err))
 	case err := <-healthChan:
 		logger.Error("Health probe failed", zap.Error(err))
 	case sig := <-sigChan:
@@ -155,6 +168,11 @@ func main() {
 	// Shutdown HTTP server
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during HTTP server shutdown", zap.Error(err))
+	}
+
+	// Shutdown metrics server
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Error during metrics server shutdown", zap.Error(err))
 	}
 
 	logger.Info("Agent stopped")

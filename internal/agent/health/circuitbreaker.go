@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 )
 
 // CircuitBreakerState represents the state of a circuit breaker
@@ -89,19 +91,31 @@ type CircuitBreaker struct {
 	consecutiveSuccesses uint32
 	requestCount         uint32
 
-	// Endpoint identifier
+	// Cluster and endpoint identifiers for metrics
+	cluster  string
 	endpoint string
 }
 
 // NewCircuitBreaker creates a new circuit breaker
 func NewCircuitBreaker(endpoint string, config CircuitBreakerConfig, logger *zap.Logger) *CircuitBreaker {
-	return &CircuitBreaker{
+	cb := &CircuitBreaker{
 		logger:         logger,
 		config:         config,
 		state:          StateClosed,
 		stateChangedAt: time.Now(),
 		endpoint:       endpoint,
 	}
+	// Initialize state metric (will be updated when cluster is set)
+	return cb
+}
+
+// SetCluster sets the cluster identifier for metrics
+func (cb *CircuitBreaker) SetCluster(cluster string) {
+	cb.mu.Lock()
+	defer cb.mu.Unlock()
+	cb.cluster = cluster
+	// Update initial state metric
+	metrics.SetCircuitBreakerState(cluster, cb.endpoint, int(cb.state))
 }
 
 // Allow checks if a request should be allowed through
@@ -213,11 +227,18 @@ func (cb *CircuitBreaker) Reset() {
 
 // transitionToOpen transitions to open state
 func (cb *CircuitBreaker) transitionToOpen() {
+	oldState := cb.state
 	cb.state = StateOpen
 	cb.stateChangedAt = time.Now()
 	cb.consecutiveFailures = 0
 	cb.consecutiveSuccesses = 0
 	cb.requestCount = 0
+
+	// Record metrics if cluster is set
+	if cb.cluster != "" {
+		metrics.SetCircuitBreakerState(cb.cluster, cb.endpoint, int(StateOpen))
+		metrics.RecordCircuitBreakerTransition(cb.cluster, cb.endpoint, oldState.String(), StateOpen.String())
+	}
 }
 
 // transitionToHalfOpen transitions to half-open state
@@ -225,20 +246,34 @@ func (cb *CircuitBreaker) transitionToHalfOpen() {
 	cb.logger.Info("Circuit breaker entering half-open state",
 		zap.String("endpoint", cb.endpoint),
 	)
+	oldState := cb.state
 	cb.state = StateHalfOpen
 	cb.stateChangedAt = time.Now()
 	cb.consecutiveFailures = 0
 	cb.consecutiveSuccesses = 0
 	cb.requestCount = 0
+
+	// Record metrics if cluster is set
+	if cb.cluster != "" {
+		metrics.SetCircuitBreakerState(cb.cluster, cb.endpoint, int(StateHalfOpen))
+		metrics.RecordCircuitBreakerTransition(cb.cluster, cb.endpoint, oldState.String(), StateHalfOpen.String())
+	}
 }
 
 // transitionToClosed transitions to closed state
 func (cb *CircuitBreaker) transitionToClosed() {
+	oldState := cb.state
 	cb.state = StateClosed
 	cb.stateChangedAt = time.Now()
 	cb.consecutiveFailures = 0
 	cb.consecutiveSuccesses = 0
 	cb.requestCount = 0
+
+	// Record metrics if cluster is set
+	if cb.cluster != "" {
+		metrics.SetCircuitBreakerState(cb.cluster, cb.endpoint, int(StateClosed))
+		metrics.RecordCircuitBreakerTransition(cb.cluster, cb.endpoint, oldState.String(), StateClosed.String())
+	}
 }
 
 // GetStats returns circuit breaker statistics

@@ -28,6 +28,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
 
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -133,6 +134,9 @@ func (h *BGPHandler) AddVIP(assignment *pb.VIPAssignment) error {
 		Announced:  true,
 	}
 
+	// Update metrics
+	metrics.BGPAnnouncedRoutes.Set(float64(len(h.activeVIPs)))
+
 	h.logger.Info("VIP announced via BGP successfully",
 		zap.String("vip", assignment.VipName),
 		zap.String("address", assignment.Address),
@@ -168,6 +172,9 @@ func (h *BGPHandler) RemoveVIP(assignment *pb.VIPAssignment) error {
 	}
 
 	delete(h.activeVIPs, assignment.VipName)
+
+	// Update metrics
+	metrics.BGPAnnouncedRoutes.Set(float64(len(h.activeVIPs)))
 
 	h.logger.Info("VIP withdrawn from BGP successfully",
 		zap.String("vip", assignment.VipName),

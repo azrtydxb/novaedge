@@ -20,16 +20,42 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/lb"
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// responseWriterWithStatus wraps http.ResponseWriter to capture status code
+type responseWriterWithStatus struct {
+	http.ResponseWriter
+	statusCode int
+	written    bool
+}
+
+func (rw *responseWriterWithStatus) WriteHeader(code int) {
+	if !rw.written {
+		rw.statusCode = code
+		rw.written = true
+		rw.ResponseWriter.WriteHeader(code)
+	}
+}
+
+func (rw *responseWriterWithStatus) Write(b []byte) (int, error) {
+	if !rw.written {
+		rw.statusCode = http.StatusOK
+		rw.written = true
+	}
+	return rw.ResponseWriter.Write(b)
+}
 
 // Router routes HTTP requests to backends
 type Router struct {
@@ -170,6 +196,25 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 
 // ServeHTTP routes incoming HTTP requests
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Track request start time and in-flight requests
+	startTime := time.Now()
+	metrics.HTTPRequestsInFlight.Inc()
+	defer metrics.HTTPRequestsInFlight.Dec()
+
+	// Wrap response writer to capture status code
+	wrappedWriter := &responseWriterWithStatus{
+		ResponseWriter: w,
+		statusCode:     http.StatusOK,
+	}
+
+	// Defer metrics recording
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		statusCode := strconv.Itoa(wrappedWriter.statusCode)
+		// We'll set cluster in handleRoute, for now use "unknown"
+		metrics.RecordHTTPRequest(req.Method, statusCode, "unknown", duration)
+	}()
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
@@ -183,14 +228,14 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	routes, ok := r.routes[hostname]
 	if !ok {
 		r.logger.Warn("No route for hostname", zap.String("hostname", hostname))
-		http.Error(w, "No route found", http.StatusNotFound)
+		http.Error(wrappedWriter, "No route found", http.StatusNotFound)
 		return
 	}
 
 	// Match against route rules
 	for _, entry := range routes {
 		if r.matchRoute(entry, req) {
-			r.handleRoute(entry, w, req)
+			r.handleRoute(entry, wrappedWriter, req)
 			return
 		}
 	}
@@ -200,7 +245,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		zap.String("hostname", hostname),
 		zap.String("path", req.URL.Path),
 	)
-	http.Error(w, "No matching route rule", http.StatusNotFound)
+	http.Error(wrappedWriter, "No matching route rule", http.StatusNotFound)
 }
 
 // matchRoute checks if a request matches a route entry
@@ -305,20 +350,32 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		return
 	}
 
+	// Track backend request timing
+	backendStart := time.Now()
+	endpointKey := fmt.Sprintf("%s:%d", endpoint.Address, endpoint.Port)
+
 	// Forward request to backend
 	if err := pool.Forward(endpoint, req, w); err != nil {
 		// Record failure for passive health checking
 		pool.RecordFailure(endpoint)
 
+		// Record backend failure metrics
+		backendDuration := time.Since(backendStart).Seconds()
+		metrics.RecordBackendRequest(clusterKey, endpointKey, "failure", backendDuration)
+
 		r.logger.Error("Failed to forward request",
 			zap.String("cluster", clusterKey),
-			zap.String("endpoint", fmt.Sprintf("%s:%d", endpoint.Address, endpoint.Port)),
+			zap.String("endpoint", endpointKey),
 			zap.Error(err),
 		)
 		http.Error(w, "Backend error", http.StatusBadGateway)
 	} else {
 		// Record success for passive health checking
 		pool.RecordSuccess(endpoint)
+
+		// Record backend success metrics
+		backendDuration := time.Since(backendStart).Seconds()
+		metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
 	}
 }
 

@@ -23,6 +23,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -151,36 +152,53 @@ func (m *VIPManager) ApplyVIPs(assignments []*pb.VIPAssignment) error {
 // applyVIP applies a single VIP assignment
 func (m *VIPManager) applyVIP(assignment *pb.VIPAssignment) error {
 	if !assignment.IsActive {
-		// Not active on this node, skip
+		// Not active on this node, update metric and skip
+		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), false)
 		return nil
 	}
 
+	var err error
 	switch assignment.Mode {
 	case pb.VIPMode_L2_ARP:
-		return m.l2Handler.AddVIP(assignment)
+		err = m.l2Handler.AddVIP(assignment)
 	case pb.VIPMode_BGP:
-		return m.bgpHandler.AddVIP(assignment)
+		err = m.bgpHandler.AddVIP(assignment)
 	case pb.VIPMode_OSPF:
 		// TODO: Implement OSPF mode in Phase 6
 		m.logger.Warn("OSPF mode not yet implemented", zap.String("vip", assignment.VipName))
-		return nil
+		err = nil
 	default:
-		return fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
+		err = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
 	}
+
+	// Update VIP status metric
+	if err == nil {
+		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), assignment.IsActive)
+	}
+
+	return err
 }
 
 // releaseVIP releases a single VIP
 func (m *VIPManager) releaseVIP(assignment *pb.VIPAssignment) error {
+	var err error
 	switch assignment.Mode {
 	case pb.VIPMode_L2_ARP:
-		return m.l2Handler.RemoveVIP(assignment)
+		err = m.l2Handler.RemoveVIP(assignment)
 	case pb.VIPMode_BGP:
-		return m.bgpHandler.RemoveVIP(assignment)
+		err = m.bgpHandler.RemoveVIP(assignment)
 	case pb.VIPMode_OSPF:
-		return nil // TODO: OSPF
+		err = nil // TODO: OSPF
 	default:
-		return fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
+		err = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
 	}
+
+	// Update VIP status metric to inactive
+	if err == nil {
+		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), false)
+	}
+
+	return err
 }
 
 // Release releases all VIPs

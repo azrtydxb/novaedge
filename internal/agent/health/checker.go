@@ -26,6 +26,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -95,6 +96,7 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 	)
 
 	// Initialize results and circuit breakers for all endpoints
+	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
 	hc.mu.Lock()
 	for _, ep := range hc.endpoints {
 		key := endpointKey(ep)
@@ -103,11 +105,13 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 			Healthy:   true, // Optimistically assume healthy initially
 			LastCheck: time.Now(),
 		}
-		hc.circuitBreakers[key] = NewCircuitBreaker(
+		cb := NewCircuitBreaker(
 			key,
 			DefaultCircuitBreakerConfig(),
 			hc.logger,
 		)
+		cb.SetCluster(clusterKey)
+		hc.circuitBreakers[key] = cb
 	}
 	hc.mu.Unlock()
 
@@ -129,6 +133,7 @@ func (hc *HealthChecker) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	defer hc.mu.Unlock()
 
 	hc.endpoints = endpoints
+	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
 
 	// Add new endpoints
 	for _, ep := range endpoints {
@@ -139,11 +144,13 @@ func (hc *HealthChecker) UpdateEndpoints(endpoints []*pb.Endpoint) {
 				Healthy:   true,
 				LastCheck: time.Now(),
 			}
-			hc.circuitBreakers[key] = NewCircuitBreaker(
+			cb := NewCircuitBreaker(
 				key,
 				DefaultCircuitBreakerConfig(),
 				hc.logger,
 			)
+			cb.SetCluster(clusterKey)
+			hc.circuitBreakers[key] = cb
 		}
 	}
 
@@ -251,9 +258,21 @@ func (hc *HealthChecker) performHealthChecks() {
 // checkEndpoint performs a health check on a single endpoint
 func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 	key := endpointKey(ep)
+	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
+
+	// Track health check timing
+	checkStart := time.Now()
 
 	// Perform HTTP health check
 	healthy, err := hc.performHTTPCheck(ep)
+
+	// Record health check metrics
+	checkDuration := time.Since(checkStart).Seconds()
+	checkResult := "success"
+	if !healthy {
+		checkResult = "failure"
+	}
+	metrics.RecordHealthCheck(clusterKey, key, checkResult, checkDuration)
 
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
@@ -278,6 +297,8 @@ func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 				)
 			}
 			result.Healthy = true
+			// Update health status metric
+			metrics.SetBackendHealth(clusterKey, key, true)
 		}
 
 		// Record success in circuit breaker
@@ -297,6 +318,8 @@ func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 				)
 			}
 			result.Healthy = false
+			// Update health status metric
+			metrics.SetBackendHealth(clusterKey, key, false)
 		}
 
 		// Record failure in circuit breaker
