@@ -29,23 +29,88 @@ import (
 
 // WebSocketProxy handles WebSocket connection proxying
 type WebSocketProxy struct {
-	logger   *zap.Logger
-	upgrader websocket.Upgrader
+	logger         *zap.Logger
+	upgrader       websocket.Upgrader
+	allowedOrigins []string // List of allowed origins (supports wildcards)
 }
 
 // NewWebSocketProxy creates a new WebSocket proxy
 func NewWebSocketProxy(logger *zap.Logger) *WebSocketProxy {
-	return &WebSocketProxy{
-		logger: logger,
-		upgrader: websocket.Upgrader{
-			ReadBufferSize:  4096,
-			WriteBufferSize: 4096,
-			// Allow all origins for now - should be configurable in production
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
-		},
+	return NewWebSocketProxyWithOrigins(logger, nil)
+}
+
+// NewWebSocketProxyWithOrigins creates a new WebSocket proxy with allowed origins
+// If allowedOrigins is nil or empty, all origins are allowed (insecure - for development only)
+// Supports wildcard patterns like "*.example.com"
+func NewWebSocketProxyWithOrigins(logger *zap.Logger, allowedOrigins []string) *WebSocketProxy {
+	proxy := &WebSocketProxy{
+		logger:         logger,
+		allowedOrigins: allowedOrigins,
 	}
+
+	proxy.upgrader = websocket.Upgrader{
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
+		CheckOrigin:     proxy.checkOrigin,
+	}
+
+	return proxy
+}
+
+// checkOrigin validates the Origin header against allowed origins
+func (p *WebSocketProxy) checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+
+	// If no allowed origins configured, allow all (insecure - log warning)
+	if len(p.allowedOrigins) == 0 {
+		p.logger.Warn("WebSocket origin validation disabled - allowing all origins",
+			zap.String("origin", origin),
+			zap.String("remote_addr", r.RemoteAddr))
+		return true
+	}
+
+	// If no Origin header, reject (WebSocket spec requires Origin)
+	if origin == "" {
+		p.logger.Warn("WebSocket upgrade rejected - missing Origin header",
+			zap.String("remote_addr", r.RemoteAddr))
+		return false
+	}
+
+	// Check if origin is in allowed list
+	for _, allowed := range p.allowedOrigins {
+		// Support wildcard "*" to allow all
+		if allowed == "*" {
+			return true
+		}
+
+		// Exact match
+		if origin == allowed {
+			return true
+		}
+
+		// Wildcard pattern match (e.g., "*.example.com")
+		if matchWildcardOrigin(allowed, origin) {
+			return true
+		}
+	}
+
+	// Origin not allowed
+	p.logger.Warn("WebSocket upgrade rejected - origin not allowed",
+		zap.String("origin", origin),
+		zap.Strings("allowed_origins", p.allowedOrigins),
+		zap.String("remote_addr", r.RemoteAddr))
+	return false
+}
+
+// matchWildcardOrigin checks if origin matches a wildcard pattern
+func matchWildcardOrigin(pattern, origin string) bool {
+	// Simple wildcard matching for patterns like "*.example.com"
+	if !strings.HasPrefix(pattern, "*") {
+		return false
+	}
+
+	suffix := strings.TrimPrefix(pattern, "*")
+	return strings.HasSuffix(origin, suffix)
 }
 
 // IsWebSocketUpgrade checks if the request is a WebSocket upgrade request

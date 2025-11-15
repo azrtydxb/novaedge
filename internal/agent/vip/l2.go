@@ -20,10 +20,13 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"net/netip"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/mdlayher/arp"
+	"github.com/mdlayher/ethernet"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 
@@ -242,20 +245,52 @@ func (h *L2Handler) sendGARP(ip net.IP) error {
 	// - Sender IP = Target IP (the IP we're announcing)
 	// - Sender MAC = our MAC
 	// - Target MAC = broadcast (ff:ff:ff:ff:ff:ff)
-	// - Operation = ARP Request (1) or ARP Reply (2), we use Reply
+	// - Operation = ARP Reply (2) for GARP
 
-	// For production use, consider using github.com/mdlayher/arp library
-	// For now, we'll log that GARP would be sent
-	// The IP is already added to the interface, which is the critical part
-	// GARP is an optimization for faster failover
+	// Create ARP client for the interface
+	client, err := arp.Dial(iface)
+	if err != nil {
+		// If we can't send GARP, log but don't fail - the IP is already added to the interface
+		h.logger.Warn("Failed to create ARP client for GARP, continuing anyway",
+			zap.String("interface", h.interfaceName),
+			zap.Error(err))
+		return nil
+	}
+	defer client.Close()
 
-	h.logger.Debug("VIP added to interface, GARP announcement would be sent here",
+	// Convert net.IP to netip.Addr
+	senderIP, ok := netip.AddrFromSlice(ipv4)
+	if !ok {
+		return fmt.Errorf("failed to convert IP address to netip.Addr")
+	}
+
+	// Create gratuitous ARP packet
+	// Both sender and target IP are set to the VIP we're announcing
+	packet := &arp.Packet{
+		HardwareType:       1,      // Ethernet
+		ProtocolType:       0x0800, // IPv4
+		HardwareAddrLength: 6,
+		IPLength:           4,
+		Operation:          arp.OperationReply, // Gratuitous ARP uses Reply
+		SenderHardwareAddr: hwAddr,
+		SenderIP:           senderIP,
+		TargetHardwareAddr: ethernet.Broadcast, // Broadcast MAC
+		TargetIP:           senderIP,           // Same as sender for GARP
+	}
+
+	// Send the GARP packet
+	if err := client.WriteTo(packet, ethernet.Broadcast); err != nil {
+		// Log but don't fail - GARP is optimization, not critical
+		h.logger.Warn("Failed to send GARP announcement",
+			zap.String("ip", ip.String()),
+			zap.Error(err))
+		return nil
+	}
+
+	h.logger.Debug("Sent GARP announcement for VIP",
 		zap.String("ip", ip.String()),
 		zap.String("mac", hwAddr.String()),
 		zap.String("interface", h.interfaceName))
-
-	// TODO: Implement actual GARP sending using github.com/mdlayher/arp
-	// or raw socket ARP packet construction for production use
 
 	return nil
 }
