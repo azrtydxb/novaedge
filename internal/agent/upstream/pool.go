@@ -18,6 +18,8 @@ package upstream
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"net/http"
@@ -66,6 +68,11 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 		IdleConnTimeout:       time.Duration(cluster.IdleTimeoutMs) * time.Millisecond,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	// Configure backend TLS if enabled
+	if cluster.Tls != nil && cluster.Tls.Enabled {
+		transport.TLSClientConfig = createBackendTLSConfig(cluster.Tls, logger)
 	}
 
 	// Create context for health checker
@@ -231,4 +238,24 @@ func (p *Pool) GetStats() map[string]interface{} {
 		"healthy_endpoints": len(p.proxies),
 		"cluster":           fmt.Sprintf("%s/%s", p.cluster.Namespace, p.cluster.Name),
 	}
+}
+
+// createBackendTLSConfig creates a TLS config for backend connections
+func createBackendTLSConfig(backendTLS *pb.BackendTLS, logger *zap.Logger) *tls.Config {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: backendTLS.InsecureSkipVerify,
+		MinVersion:         tls.VersionTLS12,
+	}
+
+	// Load CA certificate if provided
+	if len(backendTLS.CaCert) > 0 {
+		caCertPool := x509.NewCertPool()
+		if ok := caCertPool.AppendCertsFromPEM(backendTLS.CaCert); !ok {
+			logger.Warn("Failed to parse CA certificate for backend TLS")
+		} else {
+			tlsConfig.RootCAs = caCertPool
+		}
+	}
+
+	return tlsConfig
 }

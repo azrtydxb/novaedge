@@ -189,6 +189,43 @@ var (
 		},
 		[]string{"cluster"},
 	)
+
+	// TLS Metrics
+
+	// TLSHandshakes tracks total TLS handshakes
+	TLSHandshakes = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_tls_handshakes_total",
+			Help: "Total number of TLS handshakes",
+		},
+	)
+
+	// TLSHandshakeErrors tracks TLS handshake errors
+	TLSHandshakeErrors = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_tls_handshake_errors_total",
+			Help: "Total number of TLS handshake errors",
+		},
+		[]string{"error_type"},
+	)
+
+	// TLSVersion tracks TLS version usage
+	TLSVersion = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_tls_version_total",
+			Help: "Total connections by TLS version",
+		},
+		[]string{"version"}, // tls1.2, tls1.3
+	)
+
+	// TLSCipherSuite tracks cipher suite usage
+	TLSCipherSuite = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_tls_cipher_suite_total",
+			Help: "Total connections by cipher suite",
+		},
+		[]string{"cipher"},
+	)
 )
 
 // RecordHTTPRequest records an HTTP request

@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net/http"
 	"sync"
@@ -26,23 +27,34 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	"github.com/piwi3910/novaedge/internal/agent/router"
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// HTTPServer manages HTTP listeners and routing
+// ListenerInfo contains information about a configured listener
+type ListenerInfo struct {
+	Gateway   string
+	Listener  *pb.Listener
+	TLSConfig *tls.Config
+}
+
+// HTTPServer manages HTTP/HTTPS listeners and routing
 type HTTPServer struct {
-	logger  *zap.Logger
-	mu      sync.RWMutex
-	servers map[int32]*http.Server // Port -> Server
-	router  *router.Router
+	logger    *zap.Logger
+	mu        sync.RWMutex
+	servers   map[int32]*http.Server  // Port -> Server
+	listeners map[int32]*ListenerInfo // Port -> Listener config
+	router    *router.Router
 }
 
 // NewHTTPServer creates a new HTTP server
 func NewHTTPServer(logger *zap.Logger) *HTTPServer {
 	return &HTTPServer{
-		logger:  logger,
-		servers: make(map[int32]*http.Server),
-		router:  router.NewRouter(logger),
+		logger:    logger,
+		servers:   make(map[int32]*http.Server),
+		listeners: make(map[int32]*ListenerInfo),
+		router:    router.NewRouter(logger),
 	}
 }
 
@@ -67,57 +79,107 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 		return fmt.Errorf("failed to update router: %w", err)
 	}
 
-	// Collect ports we need to listen on from VIP assignments
-	portsNeeded := make(map[int32]bool)
-	for _, vip := range snapshot.VipAssignments {
-		if vip.IsActive {
-			for _, port := range vip.Ports {
-				portsNeeded[port] = true
+	// Build listener configurations from gateways
+	newListeners := make(map[int32]*ListenerInfo)
+	for _, gateway := range snapshot.Gateways {
+		for _, listener := range gateway.Listeners {
+			// Only configure listeners on active VIPs
+			if !s.isVIPActive(snapshot, gateway.VipRef, listener.Port) {
+				continue
 			}
+
+			listenerInfo := &ListenerInfo{
+				Gateway:  fmt.Sprintf("%s/%s", gateway.Namespace, gateway.Name),
+				Listener: listener,
+			}
+
+			// Create TLS config if listener uses TLS
+			if listener.Tls != nil {
+				tlsConfig, err := s.createTLSConfig(listener.Tls, listener.Hostnames)
+				if err != nil {
+					s.logger.Error("Failed to create TLS config",
+						zap.String("gateway", listenerInfo.Gateway),
+						zap.String("listener", listener.Name),
+						zap.Error(err),
+					)
+					continue
+				}
+				listenerInfo.TLSConfig = tlsConfig
+			}
+
+			newListeners[listener.Port] = listenerInfo
 		}
 	}
 
 	// Stop servers on ports we no longer need
 	for port, server := range s.servers {
-		if !portsNeeded[port] {
-			s.logger.Info("Stopping HTTP listener on unused port",
+		if _, needed := newListeners[port]; !needed {
+			s.logger.Info("Stopping listener on unused port",
 				zap.Int32("port", port),
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			server.Shutdown(ctx)
 			cancel()
 			delete(s.servers, port)
+			delete(s.listeners, port)
 		}
 	}
 
-	// Start servers on new ports
-	for port := range portsNeeded {
+	// Start new listeners
+	for port, listenerInfo := range newListeners {
 		if _, exists := s.servers[port]; !exists {
-			if err := s.startListener(port); err != nil {
+			if err := s.startListener(port, listenerInfo); err != nil {
 				s.logger.Error("Failed to start listener",
 					zap.Int32("port", port),
+					zap.String("gateway", listenerInfo.Gateway),
 					zap.Error(err),
 				)
-				// Don't fail the whole config update, continue with other ports
 				continue
 			}
 		}
 	}
 
+	s.listeners = newListeners
+
 	s.logger.Info("HTTP server configuration applied successfully",
-		zap.Int("active_ports", len(s.servers)),
+		zap.Int("active_listeners", len(s.servers)),
 	)
 
 	return nil
 }
 
-// startListener starts an HTTP listener on the specified port
-func (s *HTTPServer) startListener(port int32) error {
-	s.logger.Info("Starting HTTP listener", zap.Int32("port", port))
+// isVIPActive checks if a VIP is active for the given port
+func (s *HTTPServer) isVIPActive(snapshot *config.Snapshot, vipRef string, port int32) bool {
+	for _, vip := range snapshot.VipAssignments {
+		if vip.VipName == vipRef && vip.IsActive {
+			for _, vipPort := range vip.Ports {
+				if vipPort == port {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// startListener starts an HTTP or HTTPS listener on the specified port
+func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error {
+	protocol := "HTTP"
+	if listenerInfo.TLSConfig != nil {
+		protocol = "HTTPS"
+	}
+
+	s.logger.Info("Starting listener",
+		zap.Int32("port", port),
+		zap.String("protocol", protocol),
+		zap.String("gateway", listenerInfo.Gateway),
+		zap.String("listener", listenerInfo.Listener.Name),
+	)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
 		Handler:      s,
+		TLSConfig:    listenerInfo.TLSConfig,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
@@ -127,15 +189,103 @@ func (s *HTTPServer) startListener(port int32) error {
 
 	// Start server in goroutine
 	go func() {
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.logger.Error("HTTP server error",
+		var err error
+		if listenerInfo.TLSConfig != nil {
+			// Start HTTPS listener
+			// Note: We pass empty cert/key files because TLSConfig already has certificates
+			err = server.ListenAndServeTLS("", "")
+		} else {
+			// Start HTTP listener
+			err = server.ListenAndServe()
+		}
+
+		if err != nil && err != http.ErrServerClosed {
+			s.logger.Error("Server error",
 				zap.Int32("port", port),
+				zap.String("protocol", protocol),
 				zap.Error(err),
 			)
 		}
 	}()
 
 	return nil
+}
+
+// createTLSConfig creates a tls.Config from protobuf TLS configuration
+func (s *HTTPServer) createTLSConfig(tlsConfig *pb.TLSConfig, hostnames []string) (*tls.Config, error) {
+	// Parse certificate and key
+	cert, err := tls.X509KeyPair(tlsConfig.Cert, tlsConfig.Key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse certificate: %w", err)
+	}
+
+	config := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   s.parseTLSVersion(tlsConfig.MinVersion),
+		CipherSuites: s.parseCipherSuites(tlsConfig.CipherSuites),
+	}
+
+	// Enable SNI for multiple hostnames
+	if len(hostnames) > 0 {
+		config.GetCertificate = func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			// Track TLS metrics
+			metrics.TLSHandshakes.Inc()
+
+			// Simple SNI: return the cert if it matches any hostname
+			// In production, you'd want more sophisticated certificate selection
+			for _, hostname := range hostnames {
+				if clientHello.ServerName == hostname || clientHello.ServerName == "" {
+					return &cert, nil
+				}
+			}
+
+			// Return default certificate if no match
+			return &cert, nil
+		}
+	}
+
+	return config, nil
+}
+
+// parseTLSVersion converts string TLS version to constant
+func (s *HTTPServer) parseTLSVersion(version string) uint16 {
+	switch version {
+	case "TLS1.2":
+		return tls.VersionTLS12
+	case "TLS1.3":
+		return tls.VersionTLS13
+	default:
+		return tls.VersionTLS12 // Default to TLS 1.2
+	}
+}
+
+// parseCipherSuites converts cipher suite names to constants
+func (s *HTTPServer) parseCipherSuites(suites []string) []uint16 {
+	if len(suites) == 0 {
+		return nil // Use Go's default secure cipher suites
+	}
+
+	// Map of cipher suite names to constants
+	cipherMap := map[string]uint16{
+		"TLS_AES_128_GCM_SHA256":                        tls.TLS_AES_128_GCM_SHA256,
+		"TLS_AES_256_GCM_SHA384":                        tls.TLS_AES_256_GCM_SHA384,
+		"TLS_CHACHA20_POLY1305_SHA256":                  tls.TLS_CHACHA20_POLY1305_SHA256,
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+	}
+
+	var result []uint16
+	for _, name := range suites {
+		if id, ok := cipherMap[name]; ok {
+			result = append(result, id)
+		}
+	}
+
+	return result
 }
 
 // ServeHTTP handles HTTP requests (implements http.Handler)
