@@ -226,6 +226,51 @@ var (
 		},
 		[]string{"cipher"},
 	)
+
+	// Policy Metrics
+
+	// RateLimitAllowed tracks allowed requests
+	RateLimitAllowed = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_rate_limit_allowed_total",
+			Help: "Total number of requests allowed by rate limiter",
+		},
+	)
+
+	// RateLimitDenied tracks denied requests
+	RateLimitDenied = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_rate_limit_denied_total",
+			Help: "Total number of requests denied by rate limiter",
+		},
+	)
+
+	// CORSRequestsTotal tracks CORS requests
+	CORSRequestsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_cors_requests_total",
+			Help: "Total number of CORS requests",
+		},
+		[]string{"type"}, // preflight, simple
+	)
+
+	// IPFilterDenied tracks IP filter denials
+	IPFilterDenied = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_ip_filter_denied_total",
+			Help: "Total number of requests denied by IP filter",
+		},
+		[]string{"filter_type"}, // allow_list, deny_list
+	)
+
+	// JWTValidationTotal tracks JWT validation attempts
+	JWTValidationTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_jwt_validation_total",
+			Help: "Total number of JWT validation attempts",
+		},
+		[]string{"result"}, // success, failure
+	)
 )
 
 // RecordHTTPRequest records an HTTP request

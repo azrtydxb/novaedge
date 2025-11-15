@@ -30,6 +30,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/lb"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
+	"github.com/piwi3910/novaedge/internal/agent/policy"
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -77,6 +78,13 @@ type RouteEntry struct {
 	Route       *pb.Route
 	Rule        *pb.RouteRule
 	PathMatcher PathMatcher
+	Policies    []policyMiddleware
+}
+
+// policyMiddleware wraps a policy handler
+type policyMiddleware struct {
+	name    string
+	handler func(http.Handler) http.Handler
 }
 
 // PathMatcher matches request paths
@@ -143,6 +151,7 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 					Route:       route,
 					Rule:        rule,
 					PathMatcher: createPathMatcher(rule),
+					Policies:    r.createPolicyMiddleware(route, snapshot),
 				}
 				r.routes[hostname] = append(r.routes[hostname], entry)
 			}
@@ -310,13 +319,22 @@ func (r *Router) matchHeader(match *pb.HeaderMatch, value string) bool {
 
 // handleRoute handles a matched route
 func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
-	// Apply filters - stop if any filter returns false
-	modifiedReq, shouldContinue := applyFilters(entry.Rule.Filters, w, req)
-	if !shouldContinue {
-		// Filter handled the response (e.g., redirect)
-		return
+	// Create the final handler that forwards to backend
+	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.forwardToBackend(entry, w, req)
+	})
+
+	// Apply policy middleware in reverse order (last policy wraps first)
+	for i := len(entry.Policies) - 1; i >= 0; i-- {
+		handler = entry.Policies[i].handler(handler)
 	}
-	req = modifiedReq
+
+	// Execute the handler chain (policies + backend forwarding)
+	handler.ServeHTTP(w, req)
+}
+
+// forwardToBackend forwards the request to the backend
+func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
 
 	// Get backend reference
 	backendRef := entry.Rule.BackendRef
@@ -377,6 +395,87 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		backendDuration := time.Since(backendStart).Seconds()
 		metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
 	}
+}
+
+// createPolicyMiddleware creates policy middleware for a route
+func (r *Router) createPolicyMiddleware(route *pb.Route, snapshot *config.Snapshot) []policyMiddleware {
+	var middlewares []policyMiddleware
+
+	// Find policies attached to this route
+	routeRef := fmt.Sprintf("%s/%s", route.Namespace, route.Name)
+
+	for _, policyProto := range snapshot.Policies {
+		// Check if policy targets this route
+		if policyProto.TargetRef == nil {
+			continue
+		}
+
+		targetRef := fmt.Sprintf("%s/%s", policyProto.TargetRef.Namespace, policyProto.TargetRef.Name)
+		if targetRef != routeRef {
+			continue
+		}
+
+		// Create middleware based on policy type
+		switch policyProto.Type {
+		case pb.PolicyType_RATE_LIMIT:
+			if policyProto.RateLimit != nil {
+				limiter := policy.NewRateLimiter(policyProto.RateLimit)
+				middlewares = append(middlewares, policyMiddleware{
+					name:    fmt.Sprintf("rate-limit-%s", policyProto.Name),
+					handler: policy.HandleRateLimit(limiter),
+				})
+			}
+
+		case pb.PolicyType_CORS:
+			if policyProto.Cors != nil {
+				cors := policy.NewCORS(policyProto.Cors)
+				middlewares = append(middlewares, policyMiddleware{
+					name:    fmt.Sprintf("cors-%s", policyProto.Name),
+					handler: policy.HandleCORS(cors),
+				})
+			}
+
+		case pb.PolicyType_IP_ALLOW_LIST:
+			if policyProto.IpList != nil {
+				filter, err := policy.NewIPAllowListFilter(policyProto.IpList.Cidrs)
+				if err == nil {
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("ip-allow-%s", policyProto.Name),
+						handler: policy.HandleIPFilter(filter),
+					})
+				}
+			}
+
+		case pb.PolicyType_IP_DENY_LIST:
+			if policyProto.IpList != nil {
+				filter, err := policy.NewIPDenyListFilter(policyProto.IpList.Cidrs)
+				if err == nil {
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("ip-deny-%s", policyProto.Name),
+						handler: policy.HandleIPFilter(filter),
+					})
+				}
+			}
+
+		case pb.PolicyType_JWT:
+			if policyProto.Jwt != nil {
+				validator, err := policy.NewJWTValidator(policyProto.Jwt)
+				if err == nil {
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("jwt-%s", policyProto.Name),
+						handler: policy.HandleJWT(validator),
+					})
+				} else {
+					r.logger.Error("Failed to create JWT validator",
+						zap.String("policy", policyProto.Name),
+						zap.Error(err),
+					)
+				}
+			}
+		}
+	}
+
+	return middlewares
 }
 
 // applyFilters applies route filters to request/response
