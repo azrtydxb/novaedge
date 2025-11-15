@@ -159,6 +159,23 @@ var (
 		},
 	)
 
+	// OSPFNeighborStatus tracks OSPF neighbor status (1=full, 0=down)
+	OSPFNeighborStatus = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "novaedge_ospf_neighbor_status",
+			Help: "OSPF neighbor status (1=full, 0=down)",
+		},
+		[]string{"neighbor_address", "area_id"},
+	)
+
+	// OSPFAnnouncedRoutes tracks number of announced OSPF LSAs
+	OSPFAnnouncedRoutes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "novaedge_ospf_announced_routes",
+			Help: "Number of OSPF LSAs currently announced",
+		},
+	)
+
 	// Load Balancer Metrics
 
 	// LoadBalancerSelections tracks load balancer endpoint selections
@@ -328,6 +345,15 @@ func SetBGPSessionStatus(peerAddress, peerAS string, established bool) {
 		value = 1.0
 	}
 	BGPSessionStatus.WithLabelValues(peerAddress, peerAS).Set(value)
+}
+
+// SetOSPFNeighborStatus sets OSPF neighbor status
+func SetOSPFNeighborStatus(neighborAddress, areaID string, full bool) {
+	value := 0.0
+	if full {
+		value = 1.0
+	}
+	OSPFNeighborStatus.WithLabelValues(neighborAddress, areaID).Set(value)
 }
 
 // RecordLoadBalancerSelection records a load balancer selection
