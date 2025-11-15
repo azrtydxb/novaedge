@@ -1,0 +1,66 @@
+---
+# Example Kubernetes Ingress resource that will be handled by NovaEdge
+# This demonstrates how to use standard Ingress resources with NovaEdge as the controller
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: example-ingress
+  namespace: default
+  annotations:
+    # NovaEdge-specific annotations
+    novaedge.io/vip-ref: "example-vip"
+    novaedge.io/load-balancing: "RoundRobin"
+    novaedge.io/rewrite-target: "/api"
+    novaedge.io/rate-limit: "100/m"
+spec:
+  # Specify NovaEdge as the Ingress class
+  ingressClassName: novaedge
+
+  # TLS configuration
+  tls:
+  - hosts:
+    - example.com
+    - www.example.com
+    secretName: example-tls-secret
+
+  # Ingress rules
+  rules:
+  - host: example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: api-service
+            port:
+              number: 8080
+      - path: /admin
+        pathType: Exact
+        backend:
+          service:
+            name: admin-service
+            port:
+              number: 9090
+
+  - host: www.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+
+---
+# IngressClass definition for NovaEdge
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: novaedge
+  annotations:
+    ingressclass.kubernetes.io/is-default-class: "false"
+spec:
+  controller: novaedge.io/ingress-controller
