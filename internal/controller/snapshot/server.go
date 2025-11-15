@@ -31,6 +31,35 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const (
+	// AgentExpiryDuration is the duration after which an agent is considered disconnected
+	AgentExpiryDuration = 30 * time.Second
+
+	// StatusCleanupInterval is how often the status cleanup goroutine runs
+	StatusCleanupInterval = 10 * time.Second
+)
+
+// AgentStatusInfo tracks the health and connectivity of a node agent
+type AgentStatusInfo struct {
+	NodeName             string
+	AgentVersion         string
+	AppliedConfigVersion string
+	Healthy              bool
+	LastSeen             time.Time
+	Connected            bool
+	ActiveConnections    int64
+	Errors               []string
+	Metrics              map[string]int64
+}
+
+// ConnectionStatus represents the connection state of an agent
+type ConnectionStatus string
+
+const (
+	ConnectionStatusConnected    ConnectionStatus = "connected"
+	ConnectionStatusDisconnected ConnectionStatus = "disconnected"
+)
+
 // Server implements the ConfigService gRPC server
 type Server struct {
 	pb.UnimplementedConfigServiceServer
@@ -42,19 +71,31 @@ type Server struct {
 	// Channels for notifying clients of updates
 	updateNotifier chan string
 
+	// Agent status tracking
+	statusMap sync.Map // map[string]*AgentStatusInfo
+
 	// Metrics
 	activeStreams int64
 	streamsMu     sync.RWMutex
+
+	// Shutdown channel for cleanup goroutine
+	shutdownCh chan struct{}
 }
 
 // NewServer creates a new gRPC config server
 func NewServer(client client.Client) *Server {
-	return &Server{
+	s := &Server{
 		client:         client,
 		builder:        NewBuilder(client),
 		cache:          NewSnapshotCache(),
 		updateNotifier: make(chan string, 100),
+		shutdownCh:     make(chan struct{}),
 	}
+
+	// Start the status cleanup goroutine
+	go s.cleanupStaleAgents()
+
+	return s
 }
 
 // StreamConfig implements the StreamConfig RPC method
@@ -64,6 +105,10 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 		"agentVersion", req.AgentVersion,
 	)
 	logger.Info("Agent connected for config stream")
+
+	// Mark agent as connected
+	s.updateAgentConnection(req.NodeName, req.AgentVersion, true)
+	defer s.updateAgentConnection(req.NodeName, req.AgentVersion, false)
 
 	s.incrementStreams()
 	defer s.decrementStreams()
@@ -163,8 +208,8 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.AgentStatus) (*pb.Sta
 	// Update metrics
 	UpdateAgentStatus(req.NodeName, req.AppliedConfigVersion, req.Healthy)
 
-	// TODO: Store agent status for monitoring/observability
-	// Could be stored in ConfigMap or custom resource
+	// Store agent status for monitoring/observability
+	s.storeAgentStatus(req)
 
 	return &pb.StatusResponse{
 		Acknowledged: true,
@@ -206,6 +251,140 @@ func (s *Server) decrementStreams() {
 // RegisterServer registers the config service with a gRPC server
 func (s *Server) RegisterServer(grpcServer *grpc.Server) {
 	pb.RegisterConfigServiceServer(grpcServer, s)
+}
+
+// storeAgentStatus stores the status information from an agent report
+func (s *Server) storeAgentStatus(req *pb.AgentStatus) {
+	// Get or create agent status info
+	var status *AgentStatusInfo
+	if val, ok := s.statusMap.Load(req.NodeName); ok {
+		status = val.(*AgentStatusInfo)
+	} else {
+		status = &AgentStatusInfo{
+			NodeName: req.NodeName,
+		}
+	}
+
+	// Update status fields
+	status.AppliedConfigVersion = req.AppliedConfigVersion
+	status.Healthy = req.Healthy
+	status.LastSeen = time.Now()
+	status.Errors = req.Errors
+	status.Metrics = req.Metrics
+
+	// Extract active connections from metrics if present
+	if activeConns, ok := req.Metrics["active_connections"]; ok {
+		status.ActiveConnections = activeConns
+	}
+
+	// Store updated status
+	s.statusMap.Store(req.NodeName, status)
+}
+
+// updateAgentConnection updates the connection status of an agent
+func (s *Server) updateAgentConnection(nodeName, agentVersion string, connected bool) {
+	// Get or create agent status info
+	var status *AgentStatusInfo
+	if val, ok := s.statusMap.Load(nodeName); ok {
+		status = val.(*AgentStatusInfo)
+	} else {
+		status = &AgentStatusInfo{
+			NodeName: nodeName,
+		}
+	}
+
+	// Update connection fields
+	status.Connected = connected
+	status.AgentVersion = agentVersion
+	status.LastSeen = time.Now()
+
+	// Store updated status
+	s.statusMap.Store(nodeName, status)
+}
+
+// GetAgentStatus retrieves the status of a specific agent
+func (s *Server) GetAgentStatus(nodeName string) (*AgentStatusInfo, bool) {
+	val, ok := s.statusMap.Load(nodeName)
+	if !ok {
+		return nil, false
+	}
+
+	status := val.(*AgentStatusInfo)
+	// Create a copy to avoid concurrent modification issues
+	statusCopy := *status
+	if status.Errors != nil {
+		statusCopy.Errors = make([]string, len(status.Errors))
+		copy(statusCopy.Errors, status.Errors)
+	}
+	if status.Metrics != nil {
+		statusCopy.Metrics = make(map[string]int64)
+		for k, v := range status.Metrics {
+			statusCopy.Metrics[k] = v
+		}
+	}
+
+	return &statusCopy, true
+}
+
+// GetAllAgentStatuses retrieves the status of all agents
+func (s *Server) GetAllAgentStatuses() []*AgentStatusInfo {
+	statuses := make([]*AgentStatusInfo, 0)
+
+	s.statusMap.Range(func(key, value interface{}) bool {
+		status := value.(*AgentStatusInfo)
+		// Create a copy to avoid concurrent modification issues
+		statusCopy := *status
+		if status.Errors != nil {
+			statusCopy.Errors = make([]string, len(status.Errors))
+			copy(statusCopy.Errors, status.Errors)
+		}
+		if status.Metrics != nil {
+			statusCopy.Metrics = make(map[string]int64)
+			for k, v := range status.Metrics {
+				statusCopy.Metrics[k] = v
+			}
+		}
+		statuses = append(statuses, &statusCopy)
+		return true
+	})
+
+	return statuses
+}
+
+// cleanupStaleAgents runs periodically to mark agents as disconnected if they haven't reported in
+func (s *Server) cleanupStaleAgents() {
+	ticker := time.NewTicker(StatusCleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			now := time.Now()
+			s.statusMap.Range(func(key, value interface{}) bool {
+				status := value.(*AgentStatusInfo)
+
+				// If agent hasn't been seen in AgentExpiryDuration, mark as disconnected
+				if now.Sub(status.LastSeen) > AgentExpiryDuration && status.Connected {
+					status.Connected = false
+					s.statusMap.Store(key, status)
+
+					// Log the disconnection
+					log.Log.Info("Agent marked as disconnected due to inactivity",
+						"node", status.NodeName,
+						"lastSeen", status.LastSeen,
+					)
+				}
+				return true
+			})
+		case <-s.shutdownCh:
+			return
+		}
+	}
+}
+
+// Shutdown gracefully shuts down the server
+func (s *Server) Shutdown() {
+	close(s.shutdownCh)
 }
 
 // SnapshotCache caches config snapshots and manages update notifications
