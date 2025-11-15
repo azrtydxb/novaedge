@@ -283,7 +283,30 @@ func (b *Builder) buildClusters(ctx context.Context) ([]*pb.Cluster, map[string]
 				Enabled:            backend.Spec.TLS.Enabled,
 				InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify,
 			}
-			// TODO: Load CA cert from secret if specified
+
+			// Load CA cert from secret if specified
+			if backend.Spec.TLS.CACertSecretRef != nil && *backend.Spec.TLS.CACertSecretRef != "" {
+				secret := &corev1.Secret{}
+				secretName := *backend.Spec.TLS.CACertSecretRef
+				if err := b.client.Get(ctx, types.NamespacedName{
+					Namespace: backend.Namespace,
+					Name:      secretName,
+				}, secret); err != nil {
+					log.FromContext(ctx).Error(err, "Failed to load CA cert secret",
+						"backend", backend.Name,
+						"secret", secretName,
+					)
+				} else {
+					// Try common CA cert keys
+					if caCert, ok := secret.Data["ca.crt"]; ok {
+						cluster.Tls.CaCert = caCert
+					} else if caCert, ok := secret.Data["tls.crt"]; ok {
+						cluster.Tls.CaCert = caCert
+					} else if caCert, ok := secret.Data["ca-bundle.crt"]; ok {
+						cluster.Tls.CaCert = caCert
+					}
+				}
+			}
 		}
 
 		clusters = append(clusters, cluster)

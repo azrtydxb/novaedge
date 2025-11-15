@@ -335,6 +335,13 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 
 // forwardToBackend forwards the request to the backend
 func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
+	// Apply route filters first (header modifications, redirects, rewrites)
+	modifiedReq, shouldContinue := applyFilters(entry.Rule.Filters, w, req)
+	if !shouldContinue {
+		// Filter handled the response (e.g., redirect)
+		return
+	}
+	req = modifiedReq
 
 	// Get backend reference
 	backendRef := entry.Rule.BackendRef

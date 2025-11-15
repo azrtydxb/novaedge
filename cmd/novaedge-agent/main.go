@@ -88,6 +88,9 @@ func main() {
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
 
+	// Create health probe server
+	healthServer := server.NewHealthServer(logger, 8080)
+
 	// Start VIP manager
 	if err := vipManager.Start(ctx); err != nil {
 		logger.Fatal("Failed to start VIP manager", zap.Error(err))
@@ -112,7 +115,14 @@ func main() {
 			}
 
 			// Apply HTTP server config
-			return httpServer.ApplyConfig(snapshot)
+			if err := httpServer.ApplyConfig(snapshot); err != nil {
+				healthServer.SetReady(false)
+				return err
+			}
+
+			// Mark agent as ready after successful config application
+			healthServer.SetReady(true)
+			return nil
 		})
 	}()
 
@@ -131,7 +141,7 @@ func main() {
 	// Start health probe server
 	healthChan := make(chan error, 1)
 	go func() {
-		healthChan <- startHealthProbe(healthProbeAddr, logger)
+		healthChan <- healthServer.Start(ctx)
 	}()
 
 	// Wait for shutdown signal
@@ -201,11 +211,4 @@ func initLogger(level string) *zap.Logger {
 	}
 
 	return logger
-}
-
-func startHealthProbe(addr string, logger *zap.Logger) error {
-	// TODO: Implement proper health probe server
-	// For now, just sleep
-	logger.Info("Health probe would start here", zap.String("address", addr))
-	select {}
 }
