@@ -28,10 +28,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	grpchandler "github.com/piwi3910/novaedge/internal/agent/grpc"
 	"github.com/piwi3910/novaedge/internal/agent/lb"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	"github.com/piwi3910/novaedge/internal/agent/policy"
-	grpchandler "github.com/piwi3910/novaedge/internal/agent/grpc"
 	"github.com/piwi3910/novaedge/internal/agent/protocol"
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"

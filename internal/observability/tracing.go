@@ -35,10 +35,10 @@ import (
 
 // TracingConfig holds the configuration for OpenTelemetry tracing
 type TracingConfig struct {
-	Enabled       bool
-	Endpoint      string
-	SampleRate    float64
-	ServiceName   string
+	Enabled        bool
+	Endpoint       string
+	SampleRate     float64
+	ServiceName    string
 	ServiceVersion string
 }
 

@@ -78,8 +78,12 @@ build-controller: fmt vet ## Build controller binary.
 build-agent: fmt vet ## Build agent binary.
 	go build -o bin/novaedge-agent cmd/novaedge-agent/main.go
 
+.PHONY: build-novactl
+build-novactl: fmt vet ## Build novactl CLI tool.
+	go build -o bin/novactl cmd/novactl/main.go
+
 .PHONY: build-all
-build-all: build-controller build-agent ## Build all binaries.
+build-all: build-controller build-agent build-novactl ## Build all binaries.
 
 .PHONY: run-agent
 run-agent: fmt vet ## Run agent from your host.
