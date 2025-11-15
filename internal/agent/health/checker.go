@@ -249,10 +249,19 @@ func (hc *HealthChecker) performHealthChecks() {
 	copy(endpoints, hc.endpoints)
 	hc.mu.RUnlock()
 
+	// Use WaitGroup to ensure all health checks complete before returning
+	var wg sync.WaitGroup
 	for _, ep := range endpoints {
+		wg.Add(1)
 		// Perform check in goroutine for concurrency
-		go hc.checkEndpoint(ep)
+		go func(endpoint *pb.Endpoint) {
+			defer wg.Done()
+			hc.checkEndpoint(endpoint)
+		}(ep)
 	}
+
+	// Wait for all health checks to complete
+	wg.Wait()
 }
 
 // checkEndpoint performs a health check on a single endpoint

@@ -84,10 +84,11 @@ type Router struct {
 
 // RouteEntry represents a single route rule
 type RouteEntry struct {
-	Route       *pb.Route
-	Rule        *pb.RouteRule
-	PathMatcher PathMatcher
-	Policies    []policyMiddleware
+	Route         *pb.Route
+	Rule          *pb.RouteRule
+	PathMatcher   PathMatcher
+	Policies      []policyMiddleware
+	HeaderRegexes map[int]*regexp.Regexp // Cached compiled header regex patterns (index -> regex)
 }
 
 // policyMiddleware wraps a policy handler
@@ -160,10 +161,11 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 		for _, hostname := range route.Hostnames {
 			for _, rule := range route.Rules {
 				entry := &RouteEntry{
-					Route:       route,
-					Rule:        rule,
-					PathMatcher: createPathMatcher(rule),
-					Policies:    r.createPolicyMiddleware(route, snapshot),
+					Route:         route,
+					Rule:          rule,
+					PathMatcher:   createPathMatcher(rule),
+					Policies:      r.createPolicyMiddleware(route, snapshot),
+					HeaderRegexes: compileHeaderRegexes(rule),
 				}
 				r.routes[hostname] = append(r.routes[hostname], entry)
 			}
@@ -308,8 +310,8 @@ func (r *Router) matchRoute(entry *RouteEntry, req *http.Request) bool {
 	}
 
 	// Check each match condition
-	for _, match := range entry.Rule.Matches {
-		if r.matchCondition(match, req, entry.PathMatcher) {
+	for matchIdx, match := range entry.Rule.Matches {
+		if r.matchCondition(match, matchIdx, req, entry.PathMatcher, entry.HeaderRegexes) {
 			return true
 		}
 	}
@@ -318,7 +320,7 @@ func (r *Router) matchRoute(entry *RouteEntry, req *http.Request) bool {
 }
 
 // matchCondition checks if a request matches a specific match condition
-func (r *Router) matchCondition(match *pb.RouteMatch, req *http.Request, pathMatcher PathMatcher) bool {
+func (r *Router) matchCondition(match *pb.RouteMatch, matchIdx int, req *http.Request, pathMatcher PathMatcher, cachedRegexes map[int]*regexp.Regexp) bool {
 	// Check path match
 	if match.Path != nil {
 		if pathMatcher != nil {
@@ -334,9 +336,9 @@ func (r *Router) matchCondition(match *pb.RouteMatch, req *http.Request, pathMat
 	}
 
 	// Check header matches
-	for _, headerMatch := range match.Headers {
+	for headerIdx, headerMatch := range match.Headers {
 		headerValue := req.Header.Get(headerMatch.Name)
-		if !r.matchHeader(headerMatch, headerValue) {
+		if !r.matchHeader(headerMatch, headerIdx, matchIdx, headerValue, cachedRegexes) {
 			return false
 		}
 	}
@@ -344,12 +346,20 @@ func (r *Router) matchCondition(match *pb.RouteMatch, req *http.Request, pathMat
 	return true
 }
 
-// matchHeader checks if a header value matches
-func (r *Router) matchHeader(match *pb.HeaderMatch, value string) bool {
+// matchHeader checks if a header value matches, using cached regexes when available
+func (r *Router) matchHeader(match *pb.HeaderMatch, headerIdx, matchIdx int, value string, cachedRegexes map[int]*regexp.Regexp) bool {
 	switch match.Type {
 	case pb.HeaderMatchType_HEADER_EXACT:
 		return value == match.Value
 	case pb.HeaderMatchType_HEADER_REGULAR_EXPRESSION:
+		// Use cached regex if available (performance optimization)
+		key := matchIdx*1000 + headerIdx
+		if regex, ok := cachedRegexes[key]; ok {
+			return regex.MatchString(value)
+		}
+		// Fallback: compile on the fly (shouldn't happen if caching is working)
+		// Log this as it indicates a problem with caching
+		r.logger.Warn("Regex not cached, compiling on-the-fly", zap.String("pattern", match.Value))
 		if regex, err := regexp.Compile(match.Value); err == nil {
 			return regex.MatchString(value)
 		}
@@ -606,4 +616,24 @@ func createPathMatcher(rule *pb.RouteRule) PathMatcher {
 	default:
 		return nil
 	}
+}
+
+// compileHeaderRegexes pre-compiles all header regex patterns for a route rule
+// This prevents regex compilation on every request (performance optimization)
+func compileHeaderRegexes(rule *pb.RouteRule) map[int]*regexp.Regexp {
+	regexes := make(map[int]*regexp.Regexp)
+
+	for matchIdx, match := range rule.Matches {
+		for headerIdx, header := range match.Headers {
+			if header.Type == pb.HeaderMatchType_HEADER_REGULAR_EXPRESSION {
+				if regex, err := regexp.Compile(header.Value); err == nil {
+					// Store with a unique key combining match and header index
+					key := matchIdx*1000 + headerIdx
+					regexes[key] = regex
+				}
+			}
+		}
+	}
+
+	return regexes
 }

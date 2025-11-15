@@ -24,11 +24,100 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 )
 
+// Global list of trusted proxy IP ranges (can be configured at package level)
+var trustedProxyCIDRs []*net.IPNet
+
+// SetGlobalTrustedProxies sets the global list of trusted proxy IP ranges
+// This is used by rate limiters and other policies that need IP extraction
+func SetGlobalTrustedProxies(cidrs []string) error {
+	trustedProxyCIDRs = nil
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			// Try parsing as single IP
+			ip := net.ParseIP(cidr)
+			if ip == nil {
+				return err
+			}
+			// Convert single IP to CIDR
+			if ip.To4() != nil {
+				_, ipNet, _ = net.ParseCIDR(cidr + "/32")
+			} else {
+				_, ipNet, _ = net.ParseCIDR(cidr + "/128")
+			}
+		}
+		trustedProxyCIDRs = append(trustedProxyCIDRs, ipNet)
+	}
+	return nil
+}
+
+// isGlobalTrustedProxy checks if an IP is in the global trusted proxy list
+func isGlobalTrustedProxy(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	for _, ipNet := range trustedProxyCIDRs {
+		if ipNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractClientIP is a package-level function to extract client IP with trusted proxy validation
+// This can be used by rate limiters and other policies
+func extractClientIP(r *http.Request) string {
+	// Get the direct connection IP (RemoteAddr)
+	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remoteIP = r.RemoteAddr
+	}
+
+	// If no trusted proxies configured, don't trust forwarded headers
+	if len(trustedProxyCIDRs) == 0 {
+		return remoteIP
+	}
+
+	// Only trust X-Forwarded-For if request comes from a trusted proxy
+	if !isGlobalTrustedProxy(remoteIP) {
+		return remoteIP
+	}
+
+	// Check X-Forwarded-For header
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		// X-Forwarded-For format: client, proxy1, proxy2, ...
+		// We need to find the rightmost IP that is NOT a trusted proxy
+		// This is the real client IP
+		ips := strings.Split(xff, ",")
+
+		// Iterate from right to left, skipping trusted proxies
+		for i := len(ips) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(ips[i])
+			if !isGlobalTrustedProxy(ip) {
+				// Found the rightmost non-proxy IP
+				return ip
+			}
+		}
+	}
+
+	// Check X-Real-IP header as fallback
+	xri := r.Header.Get("X-Real-IP")
+	if xri != "" {
+		return xri
+	}
+
+	// Fall back to RemoteAddr
+	return remoteIP
+}
+
 // IPFilter implements IP address filtering
 type IPFilter struct {
-	allowList []*net.IPNet
-	denyList  []*net.IPNet
-	mode      string // "allow" or "deny"
+	allowList    []*net.IPNet
+	denyList     []*net.IPNet
+	mode         string       // "allow" or "deny"
+	trustedProxy []*net.IPNet // Trusted proxy IP ranges for X-Forwarded-For validation
 }
 
 // NewIPAllowListFilter creates an IP allow list filter
@@ -85,9 +174,46 @@ func NewIPDenyListFilter(cidrs []string) (*IPFilter, error) {
 	return filter, nil
 }
 
+// SetTrustedProxies sets the list of trusted proxy IP ranges
+func (f *IPFilter) SetTrustedProxies(cidrs []string) error {
+	f.trustedProxy = nil
+	for _, cidr := range cidrs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			// Try parsing as single IP
+			ip := net.ParseIP(cidr)
+			if ip == nil {
+				return err
+			}
+			// Convert single IP to CIDR
+			if ip.To4() != nil {
+				_, ipNet, _ = net.ParseCIDR(cidr + "/32")
+			} else {
+				_, ipNet, _ = net.ParseCIDR(cidr + "/128")
+			}
+		}
+		f.trustedProxy = append(f.trustedProxy, ipNet)
+	}
+	return nil
+}
+
+// isTrustedProxy checks if an IP is a trusted proxy
+func (f *IPFilter) isTrustedProxy(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+	for _, ipNet := range f.trustedProxy {
+		if ipNet.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // Allow checks if a request should be allowed
 func (f *IPFilter) Allow(r *http.Request) bool {
-	clientIP := extractClientIP(r)
+	clientIP := f.extractClientIP(r)
 	ip := net.ParseIP(clientIP)
 	if ip == nil {
 		// If we can't parse IP, deny by default
@@ -129,28 +255,48 @@ func HandleIPFilter(filter *IPFilter) func(http.Handler) http.Handler {
 	}
 }
 
-// extractClientIP extracts the client IP from the request
-func extractClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header first
+// extractClientIP extracts the client IP from the request with trusted proxy validation
+func (f *IPFilter) extractClientIP(r *http.Request) string {
+	// Get the direct connection IP (RemoteAddr)
+	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remoteIP = r.RemoteAddr
+	}
+
+	// If no trusted proxies configured, don't trust forwarded headers
+	if len(f.trustedProxy) == 0 {
+		return remoteIP
+	}
+
+	// Only trust X-Forwarded-For if request comes from a trusted proxy
+	if !f.isTrustedProxy(remoteIP) {
+		return remoteIP
+	}
+
+	// Check X-Forwarded-For header
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff != "" {
-		// X-Forwarded-For can contain multiple IPs, take the first one
+		// X-Forwarded-For format: client, proxy1, proxy2, ...
+		// We need to find the rightmost IP that is NOT a trusted proxy
+		// This is the real client IP
 		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
+
+		// Iterate from right to left, skipping trusted proxies
+		for i := len(ips) - 1; i >= 0; i-- {
+			ip := strings.TrimSpace(ips[i])
+			if !f.isTrustedProxy(ip) {
+				// Found the rightmost non-proxy IP
+				return ip
+			}
 		}
 	}
 
-	// Check X-Real-IP header
+	// Check X-Real-IP header as fallback
 	xri := r.Header.Get("X-Real-IP")
 	if xri != "" {
 		return xri
 	}
 
 	// Fall back to RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
-	}
-	return ip
+	return remoteIP
 }

@@ -43,12 +43,12 @@ type ListenerInfo struct {
 
 // HTTPServer manages HTTP/HTTPS/HTTP3 listeners and routing
 type HTTPServer struct {
-	logger      *zap.Logger
-	mu          sync.RWMutex
-	servers     map[int32]*http.Server   // Port -> HTTP/1.1 or HTTP/2 Server
+	logger       *zap.Logger
+	mu           sync.RWMutex
+	servers      map[int32]*http.Server  // Port -> HTTP/1.1 or HTTP/2 Server
 	http3servers map[int32]*HTTP3Server  // Port -> HTTP/3 Server
-	listeners   map[int32]*ListenerInfo  // Port -> Listener config
-	router      *router.Router
+	listeners    map[int32]*ListenerInfo // Port -> Listener config
+	router       *router.Router
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -373,7 +373,7 @@ func (s *HTTPServer) parseTLSVersion(version string) uint16 {
 	case "TLS1.3":
 		return tls.VersionTLS13
 	default:
-		return tls.VersionTLS12 // Default to TLS 1.2
+		return tls.VersionTLS13 // Default to TLS 1.3 for security
 	}
 }
 

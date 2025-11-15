@@ -17,6 +17,7 @@ limitations under the License.
 package router
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -95,34 +96,56 @@ func (p *WebSocketProxy) ProxyWebSocket(w http.ResponseWriter, r *http.Request, 
 		zap.String("backend", backendWSURL),
 	)
 
-	// Bidirectional proxy
+	// Bidirectional proxy with context for coordinated shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	errChan := make(chan error, 2)
 
 	// Client to backend
 	go func() {
-		errChan <- p.copyWebSocketMessages(clientConn, backendConn, "client->backend")
+		err := p.copyWebSocketMessages(ctx, clientConn, backendConn, "client->backend")
+		errChan <- err
+		cancel() // Signal other goroutine to stop
 	}()
 
 	// Backend to client
 	go func() {
-		errChan <- p.copyWebSocketMessages(backendConn, clientConn, "backend->client")
+		err := p.copyWebSocketMessages(ctx, backendConn, clientConn, "backend->client")
+		errChan <- err
+		cancel() // Signal other goroutine to stop
 	}()
 
-	// Wait for either direction to close or error
-	err = <-errChan
+	// Wait for both goroutines to complete
+	var firstErr error
+	for i := 0; i < 2; i++ {
+		if err := <-errChan; err != nil && firstErr == nil {
+			firstErr = err // Capture first error
+		}
+	}
 
 	p.logger.Info("WebSocket connection closed",
 		zap.String("client", r.RemoteAddr),
 		zap.String("backend", backendWSURL),
-		zap.Error(err),
+		zap.Error(firstErr),
 	)
 
 	return nil
 }
 
-// copyWebSocketMessages copies messages from src to dst
-func (p *WebSocketProxy) copyWebSocketMessages(src, dst *websocket.Conn, direction string) error {
+// copyWebSocketMessages copies messages from src to dst with context cancellation support
+func (p *WebSocketProxy) copyWebSocketMessages(ctx context.Context, src, dst *websocket.Conn, direction string) error {
 	for {
+		// Check if context is cancelled (other goroutine finished)
+		select {
+		case <-ctx.Done():
+			p.logger.Debug("WebSocket copy cancelled by context",
+				zap.String("direction", direction),
+			)
+			return ctx.Err()
+		default:
+		}
+
 		messageType, message, err := src.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {

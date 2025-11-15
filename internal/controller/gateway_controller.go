@@ -180,7 +180,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					LastTransitionTime: metav1.Now(),
 				},
 			},
-			AttachedRoutes: 0, // TODO: Count attached routes
+			AttachedRoutes: r.countAttachedRoutes(ctx, gateway.Name, gateway.Namespace, string(listener.Name)),
 		}
 		listenerStatuses = append(listenerStatuses, listenerStatus)
 	}
@@ -239,6 +239,39 @@ func (r *GatewayReconciler) updateGatewayStatus(ctx context.Context, gateway *ga
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{Requeue: true}, nil
+}
+
+// countAttachedRoutes counts how many HTTPRoutes reference this gateway listener
+func (r *GatewayReconciler) countAttachedRoutes(ctx context.Context, gatewayName, gatewayNamespace, listenerName string) int32 {
+	// List all HTTPRoute resources from Gateway API in the same namespace
+	routeList := &gatewayv1.HTTPRouteList{}
+	if err := r.List(ctx, routeList, client.InNamespace(gatewayNamespace)); err != nil {
+		// Log error but don't fail - return 0
+		return 0
+	}
+
+	count := int32(0)
+	for _, route := range routeList.Items {
+		// Check if this route references our gateway
+		for _, parentRef := range route.Spec.ParentRefs {
+			// Match gateway name and listener name (if specified)
+			if string(parentRef.Name) == gatewayName {
+				// If listener name is specified in parentRef, it must match
+				if parentRef.SectionName != nil && string(*parentRef.SectionName) != "" {
+					if string(*parentRef.SectionName) == listenerName {
+						count++
+						break // Count this route only once per gateway
+					}
+				} else {
+					// No specific listener specified - count it
+					count++
+					break
+				}
+			}
+		}
+	}
+
+	return count
 }
 
 // SetupWithManager sets up the controller with the Manager

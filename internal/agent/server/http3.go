@@ -23,9 +23,9 @@ import (
 	"net/http"
 	"time"
 
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 	"go.uber.org/zap"
 )
 
@@ -58,9 +58,9 @@ func NewHTTP3Server(logger *zap.Logger, port int32, tlsConfig *tls.Config, quicC
 				Allow0RTT:                      quicConfig.GetEnable_0Rtt(),
 				EnableDatagrams:                true,
 				DisablePathMTUDiscovery:        false,
-				InitialStreamReceiveWindow:     1 << 20, // 1 MB
-				MaxStreamReceiveWindow:         6 << 20, // 6 MB
-				InitialConnectionReceiveWindow: 1 << 20, // 1 MB
+				InitialStreamReceiveWindow:     1 << 20,  // 1 MB
+				MaxStreamReceiveWindow:         6 << 20,  // 6 MB
+				InitialConnectionReceiveWindow: 1 << 20,  // 1 MB
 				MaxConnectionReceiveWindow:     15 << 20, // 15 MB
 			},
 		},
