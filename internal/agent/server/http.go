@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
@@ -166,7 +168,9 @@ func (s *HTTPServer) isVIPActive(snapshot *config.Snapshot, vipRef string, port 
 func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error {
 	protocol := "HTTP"
 	if listenerInfo.TLSConfig != nil {
-		protocol = "HTTPS"
+		protocol = "HTTPS (HTTP/2)"
+	} else {
+		protocol = "HTTP (HTTP/2 h2c)"
 	}
 
 	s.logger.Info("Starting listener",
@@ -176,13 +180,28 @@ func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error
 		zap.String("listener", listenerInfo.Listener.Name),
 	)
 
+	// Create base handler - wrap with h2c for cleartext HTTP/2 support
+	var handler http.Handler = s
+	if listenerInfo.TLSConfig == nil {
+		// Enable h2c (HTTP/2 without TLS) for cleartext connections
+		h2s := &http2.Server{}
+		handler = h2c.NewHandler(s, h2s)
+	}
+
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      s,
+		Handler:      handler,
 		TLSConfig:    listenerInfo.TLSConfig,
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  120 * time.Second,
+	}
+
+	// Enable HTTP/2 for TLS connections
+	if listenerInfo.TLSConfig != nil {
+		if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
+			return fmt.Errorf("failed to configure HTTP/2: %w", err)
+		}
 	}
 
 	s.servers[port] = server
@@ -191,11 +210,11 @@ func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error
 	go func() {
 		var err error
 		if listenerInfo.TLSConfig != nil {
-			// Start HTTPS listener
+			// Start HTTPS listener with HTTP/2
 			// Note: We pass empty cert/key files because TLSConfig already has certificates
 			err = server.ListenAndServeTLS("", "")
 		} else {
-			// Start HTTP listener
+			// Start HTTP listener with h2c support
 			err = server.ListenAndServe()
 		}
 

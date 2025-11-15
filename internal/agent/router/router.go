@@ -31,6 +31,8 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/lb"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	"github.com/piwi3910/novaedge/internal/agent/policy"
+	grpchandler "github.com/piwi3910/novaedge/internal/agent/grpc"
+	"github.com/piwi3910/novaedge/internal/agent/protocol"
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -71,6 +73,9 @@ type Router struct {
 
 	// Load balancers per cluster
 	loadBalancers map[string]lb.LoadBalancer
+
+	// gRPC handler for gRPC-specific request processing
+	grpcHandler *grpchandler.GRPCHandler
 }
 
 // RouteEntry represents a single route rule
@@ -126,6 +131,7 @@ func NewRouter(logger *zap.Logger) *Router {
 		routes:        make(map[string][]*RouteEntry),
 		pools:         make(map[string]*upstream.Pool),
 		loadBalancers: make(map[string]lb.LoadBalancer),
+		grpcHandler:   grpchandler.NewGRPCHandler(logger),
 	}
 }
 
