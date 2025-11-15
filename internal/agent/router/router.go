@@ -341,6 +341,25 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 
 // forwardToBackend forwards the request to the backend
 func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
+	// Check if this is a gRPC request
+	isGRPC := protocol.IsGRPCRequest(req)
+	if isGRPC {
+		r.logger.Debug("Detected gRPC request",
+			zap.String("path", req.URL.Path),
+			zap.String("content-type", req.Header.Get("Content-Type")),
+		)
+
+		// Validate gRPC request
+		if err := r.grpcHandler.ValidateGRPCRequest(req); err != nil {
+			r.logger.Error("Invalid gRPC request", zap.Error(err))
+			http.Error(w, "Invalid gRPC request", http.StatusBadRequest)
+			return
+		}
+
+		// Prepare gRPC request for backend
+		req = r.grpcHandler.PrepareGRPCRequest(req)
+	}
+
 	// Apply route filters first (header modifications, redirects, rewrites)
 	modifiedReq, shouldContinue := applyFilters(entry.Rule.Filters, w, req)
 	if !shouldContinue {
@@ -397,6 +416,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		r.logger.Error("Failed to forward request",
 			zap.String("cluster", clusterKey),
 			zap.String("endpoint", endpointKey),
+			zap.Bool("grpc", isGRPC),
 			zap.Error(err),
 		)
 		http.Error(w, "Backend error", http.StatusBadGateway)
@@ -407,6 +427,14 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		// Record backend success metrics
 		backendDuration := time.Since(backendStart).Seconds()
 		metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
+
+		if isGRPC {
+			r.logger.Debug("Successfully forwarded gRPC request",
+				zap.String("cluster", clusterKey),
+				zap.String("endpoint", endpointKey),
+				zap.Duration("duration", time.Since(backendStart)),
+			)
+		}
 	}
 }
 

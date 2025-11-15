@@ -47,6 +47,27 @@ rules:
   verbs:
   - update
 - apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gateways
+  - httproutes
+  - gatewayclasses
+  verbs:
+  - get
+  - list
+  - watch
+  - update
+  - patch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gateways/status
+  - httproutes/status
+  verbs:
+  - get
+  - update
+  - patch
+- apiGroups:
   - novaedge.io
   resources:
   - proxybackends

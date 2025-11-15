@@ -31,6 +31,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
+	"github.com/piwi3910/novaedge/internal/observability"
 )
 
 var (
@@ -40,6 +41,11 @@ var (
 	logLevel        string
 	healthProbeAddr string
 	metricsPort     int
+
+	// Tracing configuration
+	tracingEnabled    bool
+	tracingEndpoint   string
+	tracingSampleRate float64
 )
 
 func main() {
@@ -48,6 +54,12 @@ func main() {
 	flag.StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
 	flag.StringVar(&healthProbeAddr, "health-probe-address", ":8082", "Address for health probe endpoint")
 	flag.IntVar(&metricsPort, "metrics-port", 9090, "Port for Prometheus metrics endpoint")
+
+	// Tracing flags
+	flag.BoolVar(&tracingEnabled, "tracing-enabled", false, "Enable OpenTelemetry distributed tracing")
+	flag.StringVar(&tracingEndpoint, "tracing-endpoint", "localhost:4317", "OTLP gRPC endpoint for trace export")
+	flag.Float64Var(&tracingSampleRate, "tracing-sample-rate", 0.1, "Trace sampling rate (0.0 to 1.0)")
+
 	flag.Parse()
 
 	// Validate required flags
@@ -69,6 +81,25 @@ func main() {
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize OpenTelemetry tracing
+	tracerProvider, err := observability.NewTracerProvider(ctx, observability.TracingConfig{
+		Enabled:        tracingEnabled,
+		Endpoint:       tracingEndpoint,
+		SampleRate:     tracingSampleRate,
+		ServiceName:    "novaedge-agent",
+		ServiceVersion: agentVersion,
+	}, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize tracing", zap.Error(err))
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Failed to shutdown tracer provider", zap.Error(err))
+		}
+	}()
 
 	// Create config watcher
 	watcher, err := config.NewWatcher(ctx, nodeName, agentVersion, controllerAddr, logger)
