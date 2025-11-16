@@ -22,10 +22,22 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	"go.uber.org/zap"
 )
+
+// Buffer pool for WebSocket message copying to reduce allocations
+// Note: gorilla/websocket manages its own message buffers, but we can still
+// use pools for other temporary allocations if needed in the future
+var wsMessagePool = sync.Pool{
+	New: func() interface{} {
+		// Pre-allocate 64KB buffer for large WebSocket messages
+		buf := make([]byte, 65536)
+		return &buf
+	},
+}
 
 // WebSocketProxy handles WebSocket connection proxying
 type WebSocketProxy struct {
@@ -49,8 +61,8 @@ func NewWebSocketProxyWithOrigins(logger *zap.Logger, allowedOrigins []string) *
 	}
 
 	proxy.upgrader = websocket.Upgrader{
-		ReadBufferSize:  4096,
-		WriteBufferSize: 4096,
+		ReadBufferSize:  DefaultWebSocketReadBufferSize,
+		WriteBufferSize: DefaultWebSocketWriteBufferSize,
 		CheckOrigin:     proxy.checkOrigin,
 	}
 

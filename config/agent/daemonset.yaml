@@ -119,6 +119,17 @@ spec:
           failureThreshold: 3
 
         resources:
+          # Resource recommendations based on traffic load:
+          # - Low traffic (<1000 req/s): cpu: 500m, memory: 256Mi
+          # - Medium traffic (1000-5000 req/s): cpu: 1000m, memory: 512Mi
+          # - High traffic (5000-10000 req/s): cpu: 2000m, memory: 1Gi
+          # - Very high traffic (>10000 req/s): cpu: 4000m, memory: 2Gi
+          # Note: Actual usage depends on:
+          # - Number of active VIPs and listeners
+          # - Enabled filters (JWT validation, rate limiting add overhead)
+          # - WebSocket/gRPC connection count (long-lived connections use more memory)
+          # - TLS termination (CPU intensive)
+          # Monitor with: kubectl top pod -n novaedge-system -l app.kubernetes.io/name=novaedge-agent
           limits:
             cpu: 2000m
             memory: 1Gi

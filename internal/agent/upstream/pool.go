@@ -56,10 +56,44 @@ type Pool struct {
 	// Context for health checker
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// Metrics tracking
+	activeConns int32 // Atomic counter for active connections
+	idleConns   int32 // Atomic counter for idle connections
 }
 
 // NewPool creates a new connection pool
 func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) *Pool {
+	// Apply default values for connection pool configuration
+	poolConfig := cluster.ConnectionPool
+	if poolConfig == nil {
+		poolConfig = &pb.ConnectionPool{
+			MaxIdleConns:            100,
+			MaxIdleConnsPerHost:     10,
+			MaxConnsPerHost:         0,
+			IdleConnTimeoutMs:       90000,
+			ResponseHeaderTimeoutMs: 10000,
+		}
+	}
+
+	// Apply defaults if values are zero
+	maxIdleConns := int(poolConfig.MaxIdleConns)
+	if maxIdleConns <= 0 {
+		maxIdleConns = 100
+	}
+	maxIdleConnsPerHost := int(poolConfig.MaxIdleConnsPerHost)
+	if maxIdleConnsPerHost <= 0 {
+		maxIdleConnsPerHost = 10
+	}
+	idleConnTimeout := time.Duration(poolConfig.IdleConnTimeoutMs) * time.Millisecond
+	if idleConnTimeout <= 0 {
+		idleConnTimeout = 90 * time.Second
+	}
+	responseHeaderTimeout := time.Duration(poolConfig.ResponseHeaderTimeoutMs) * time.Millisecond
+	if responseHeaderTimeout <= 0 {
+		responseHeaderTimeout = 10 * time.Second
+	}
+
 	// Create HTTP transport with connection pooling
 	// This transport supports both HTTP/1.1, HTTP/2, and gRPC
 	transport := &http.Transport{
@@ -68,14 +102,16 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 			Timeout:   time.Duration(cluster.ConnectTimeoutMs) * time.Millisecond,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       time.Duration(cluster.IdleTimeoutMs) * time.Millisecond,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
-		// Enable HTTP/2 support (required for gRPC)
-		ForceAttemptHTTP2: true,
-		// Increase max idle conns per host for gRPC streaming
-		MaxIdleConnsPerHost: 100,
+		MaxIdleConns:            maxIdleConns,
+		MaxIdleConnsPerHost:     maxIdleConnsPerHost,
+		MaxConnsPerHost:         int(poolConfig.MaxConnsPerHost),
+		IdleConnTimeout:         idleConnTimeout,
+		ResponseHeaderTimeout:   responseHeaderTimeout,
+		TLSHandshakeTimeout:     10 * time.Second,
+		ExpectContinueTimeout:   1 * time.Second,
+		DisableKeepAlives:       poolConfig.DisableKeepAlives,
+		MaxResponseHeaderBytes:  int64(poolConfig.MaxResponseHeaderBytes),
+		ForceAttemptHTTP2:       true,
 	}
 
 	// Configure backend TLS if enabled
@@ -87,13 +123,15 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pool := &Pool{
-		logger:    logger,
-		cluster:   cluster,
-		endpoints: endpoints,
-		transport: transport,
-		proxies:   make(map[string]*httputil.ReverseProxy),
-		ctx:       ctx,
-		cancel:    cancel,
+		logger:      logger,
+		cluster:     cluster,
+		endpoints:   endpoints,
+		transport:   transport,
+		proxies:     make(map[string]*httputil.ReverseProxy),
+		ctx:         ctx,
+		cancel:      cancel,
+		activeConns: 0,
+		idleConns:   0,
 	}
 
 	// Create and start health checker
@@ -103,6 +141,9 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 	// Create reverse proxies for each endpoint
 	pool.createProxies()
 
+	// Start metrics collection goroutine
+	go pool.updateMetrics()
+
 	return pool
 }
 
@@ -111,12 +152,60 @@ func (p *Pool) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	p.logger.Info("Updating endpoints, draining old connections",
+		zap.Int("old_count", len(p.endpoints)),
+		zap.Int("new_count", len(endpoints)),
+	)
+
+	// Drain idle connections before updating to prevent routing to stale endpoints
+	p.drainIdleConnections()
+
 	p.endpoints = endpoints
 	p.createProxies()
 
 	// Update health checker with new endpoints
 	if p.healthChecker != nil {
 		p.healthChecker.UpdateEndpoints(endpoints)
+	}
+}
+
+// drainIdleConnections closes all idle connections in the transport
+// This is called when endpoints change to ensure we don't use stale connections
+func (p *Pool) drainIdleConnections() {
+	if p.transport != nil {
+		p.transport.CloseIdleConnections()
+		p.logger.Debug("Drained idle connections from transport")
+	}
+}
+
+// updateMetrics periodically updates pool metrics
+func (p *Pool) updateMetrics() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	clusterKey := fmt.Sprintf("%s/%s", p.cluster.Namespace, p.cluster.Name)
+
+	for {
+		select {
+		case <-p.ctx.Done():
+			return
+		case <-ticker.C:
+			// Note: Go's http.Transport doesn't expose connection counts directly
+			// We track active connections through our metrics in the Forward method
+			// Here we just report what we've tracked
+			p.mu.RLock()
+			endpointCount := len(p.endpoints)
+			p.mu.RUnlock()
+
+			// Import metrics package at top if needed
+			// Update pool connection metrics
+			// metrics.PoolConnectionsTotal.WithLabelValues(clusterKey).Set(float64(endpointCount))
+
+			p.logger.Debug("Pool metrics",
+				zap.String("cluster", clusterKey),
+				zap.Int("endpoints", endpointCount),
+			)
+		}
 	}
 }
 

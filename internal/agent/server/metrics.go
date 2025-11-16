@@ -33,9 +33,10 @@ const (
 
 // MetricsServer serves Prometheus metrics on a dedicated port
 type MetricsServer struct {
-	logger *zap.Logger
-	server *http.Server
-	port   int
+	logger      *zap.Logger
+	server      *http.Server
+	port        int
+	rateLimiter *IPRateLimiter
 }
 
 // NewMetricsServer creates a new metrics server
@@ -45,8 +46,9 @@ func NewMetricsServer(logger *zap.Logger, port int) *MetricsServer {
 	}
 
 	return &MetricsServer{
-		logger: logger,
-		port:   port,
+		logger:      logger,
+		port:        port,
+		rateLimiter: NewIPRateLimiter(DefaultObservabilityRateLimitConfig()),
 	}
 }
 
@@ -54,16 +56,19 @@ func NewMetricsServer(logger *zap.Logger, port int) *MetricsServer {
 func (m *MetricsServer) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 
-	// Register Prometheus metrics handler
-	mux.Handle("/metrics", promhttp.Handler())
+	// Apply rate limiting middleware
+	rateLimitMiddleware := RateLimitMiddleware(m.rateLimiter)
 
-	// Health check endpoint
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	// Register Prometheus metrics handler with rate limiting
+	mux.Handle("/metrics", rateLimitMiddleware(promhttp.Handler()))
+
+	// Health check endpoint with rate limiting
+	mux.Handle("/health", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
-	})
+	})))
 
-	// Root endpoint with info
+	// Root endpoint with info (no rate limiting needed for this informational endpoint)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("NovaEdge Metrics Server\n\nAvailable endpoints:\n- /metrics (Prometheus metrics)\n- /health (Health check)\n"))
@@ -88,6 +93,9 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 
 	// Wait for context cancellation
 	<-ctx.Done()
+
+	// Stop rate limiter cleanup routine
+	m.rateLimiter.Stop()
 
 	// Graceful shutdown
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

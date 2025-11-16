@@ -28,17 +28,19 @@ import (
 
 // HealthServer provides health and readiness endpoints for Kubernetes probes
 type HealthServer struct {
-	logger *zap.Logger
-	port   int
-	server *http.Server
-	ready  atomic.Bool
+	logger      *zap.Logger
+	port        int
+	server      *http.Server
+	ready       atomic.Bool
+	rateLimiter *IPRateLimiter
 }
 
 // NewHealthServer creates a new health probe server
 func NewHealthServer(logger *zap.Logger, port int) *HealthServer {
 	return &HealthServer{
-		logger: logger,
-		port:   port,
+		logger:      logger,
+		port:        port,
+		rateLimiter: NewIPRateLimiter(DefaultObservabilityRateLimitConfig()),
 	}
 }
 
@@ -46,14 +48,17 @@ func NewHealthServer(logger *zap.Logger, port int) *HealthServer {
 func (h *HealthServer) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 
+	// Apply rate limiting middleware to all endpoints
+	rateLimitMiddleware := RateLimitMiddleware(h.rateLimiter)
+
 	// Liveness probe - returns 200 if process is running
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/healthz", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
-	})
+	})))
 
 	// Readiness probe - returns 200 if agent has received valid config
-	mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/ready", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.ready.Load() {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Ready"))
@@ -61,10 +66,10 @@ func (h *HealthServer) Start(ctx context.Context) error {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			w.Write([]byte("Not Ready"))
 		}
-	})
+	})))
 
 	// Detailed status endpoint
-	mux.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/status", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if h.ready.Load() {
@@ -72,7 +77,7 @@ func (h *HealthServer) Start(ctx context.Context) error {
 		} else {
 			w.Write([]byte(`{"status":"not_ready","healthy":false}`))
 		}
-	})
+	})))
 
 	h.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", h.port),
@@ -84,6 +89,10 @@ func (h *HealthServer) Start(ctx context.Context) error {
 	go func() {
 		<-ctx.Done()
 		h.logger.Info("Shutting down health probe server")
+
+		// Stop rate limiter cleanup routine
+		h.rateLimiter.Stop()
+
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := h.server.Shutdown(shutdownCtx); err != nil {

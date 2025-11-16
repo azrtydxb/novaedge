@@ -17,9 +17,110 @@ limitations under the License.
 package metrics
 
 import (
+	"hash/fnv"
+	"sync"
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
+
+// MetricsConfig holds configuration for metrics collection
+type MetricsConfig struct {
+	// EnableSampling enables sampling for high-frequency metrics
+	EnableSampling bool
+	// SampleRate is the percentage of metrics to sample (0-100)
+	SampleRate int
+	// MaxEndpointCardinality limits the number of tracked endpoints per cluster
+	MaxEndpointCardinality int
+}
+
+var (
+	// Default configuration
+	defaultConfig = MetricsConfig{
+		EnableSampling:         false,
+		SampleRate:             10,
+		MaxEndpointCardinality: 100,
+	}
+
+	// Endpoint tracking to limit cardinality
+	endpointTracker = &endpointCardinalityTracker{
+		endpoints: make(map[string]map[string]bool),
+		mu:        sync.RWMutex{},
+	}
+)
+
+// endpointCardinalityTracker tracks endpoints per cluster to limit metric cardinality
+type endpointCardinalityTracker struct {
+	endpoints map[string]map[string]bool // cluster -> endpoint -> bool
+	mu        sync.RWMutex
+}
+
+// shouldTrackEndpoint determines if we should track metrics for this endpoint
+func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint string) bool {
+	t.mu.RLock()
+	clusterEndpoints, exists := t.endpoints[cluster]
+	if exists {
+		_, tracked := clusterEndpoints[endpoint]
+		t.mu.RUnlock()
+		return tracked
+	}
+	t.mu.RUnlock()
+
+	// Need to check if we should add this endpoint
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	// Double check after acquiring write lock
+	if t.endpoints[cluster] == nil {
+		t.endpoints[cluster] = make(map[string]bool)
+	}
+
+	// Check cardinality limit
+	if len(t.endpoints[cluster]) >= defaultConfig.MaxEndpointCardinality {
+		// Already at limit, don't track this endpoint
+		return false
+	}
+
+	// Add endpoint to tracking
+	t.endpoints[cluster][endpoint] = true
+	return true
+}
+
+// removeEndpoint removes an endpoint from tracking
+func (t *endpointCardinalityTracker) removeEndpoint(cluster, endpoint string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if clusterEndpoints, exists := t.endpoints[cluster]; exists {
+		delete(clusterEndpoints, endpoint)
+		if len(clusterEndpoints) == 0 {
+			delete(t.endpoints, cluster)
+		}
+	}
+}
+
+// cleanupCluster removes all endpoints for a cluster
+func (t *endpointCardinalityTracker) cleanupCluster(cluster string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.endpoints, cluster)
+}
+
+// shouldSample determines if we should record this metric based on sampling rate
+func shouldSample(key string) bool {
+	if !defaultConfig.EnableSampling {
+		return true
+	}
+
+	// Use hash-based sampling for consistent decisions
+	h := fnv.New32a()
+	h.Write([]byte(key))
+	h.Write([]byte(time.Now().Format("2006-01-02-15-04"))) // Include minute for time-based sampling
+	hash := h.Sum32()
+
+	return int(hash%100) < defaultConfig.SampleRate
+}
 
 var (
 	// HTTP Request Metrics
@@ -366,14 +467,29 @@ func RecordHTTPRequest(method, status, cluster string, duration float64) {
 
 // RecordBackendRequest records a backend request
 func RecordBackendRequest(cluster, endpoint, result string, duration float64) {
-	BackendRequestsTotal.WithLabelValues(cluster, endpoint, result).Inc()
-	if duration > 0 {
-		BackendResponseDuration.WithLabelValues(cluster, endpoint).Observe(duration)
+	// Check cardinality limit for endpoint-specific metrics
+	if !endpointTracker.shouldTrackEndpoint(cluster, endpoint) {
+		// Use aggregated label for endpoints beyond cardinality limit
+		endpoint = "other"
+	}
+
+	// Sample high-frequency metrics
+	metricKey := cluster + ":" + endpoint
+	if shouldSample(metricKey) {
+		BackendRequestsTotal.WithLabelValues(cluster, endpoint, result).Inc()
+		if duration > 0 {
+			BackendResponseDuration.WithLabelValues(cluster, endpoint).Observe(duration)
+		}
 	}
 }
 
 // RecordHealthCheck records a health check
 func RecordHealthCheck(cluster, endpoint, result string, duration float64) {
+	// Check cardinality limit
+	if !endpointTracker.shouldTrackEndpoint(cluster, endpoint) {
+		endpoint = "other"
+	}
+
 	HealthChecksTotal.WithLabelValues(cluster, endpoint, result).Inc()
 	HealthCheckDuration.WithLabelValues(cluster, endpoint).Observe(duration)
 }
@@ -426,5 +542,23 @@ func SetOSPFNeighborStatus(neighborAddress, areaID string, full bool) {
 
 // RecordLoadBalancerSelection records a load balancer selection
 func RecordLoadBalancerSelection(cluster, algorithm, endpoint string) {
-	LoadBalancerSelections.WithLabelValues(cluster, algorithm, endpoint).Inc()
+	// Check cardinality limit
+	if !endpointTracker.shouldTrackEndpoint(cluster, endpoint) {
+		endpoint = "other"
+	}
+
+	// Sample this high-frequency metric
+	if shouldSample(cluster + ":" + endpoint) {
+		LoadBalancerSelections.WithLabelValues(cluster, algorithm, endpoint).Inc()
+	}
+}
+
+// CleanupClusterMetrics removes tracking for a cluster that no longer exists
+func CleanupClusterMetrics(cluster string) {
+	endpointTracker.cleanupCluster(cluster)
+}
+
+// ConfigureMetrics updates the metrics configuration
+func ConfigureMetrics(config MetricsConfig) {
+	defaultConfig = config
 }

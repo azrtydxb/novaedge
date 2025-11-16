@@ -41,10 +41,16 @@ const (
 type ServiceReference struct {
 	// Name is the name of the Service
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
 	Name string `json:"name"`
 
 	// Namespace is the namespace of the Service (defaults to backend namespace)
 	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`
 	Namespace *string `json:"namespace,omitempty"`
 
 	// Port is the port number on the Service
@@ -59,22 +65,54 @@ type CircuitBreaker struct {
 	// MaxConnections is the maximum number of connections to the backend
 	// +optional
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100000
 	MaxConnections *int32 `json:"maxConnections,omitempty"`
 
 	// MaxPendingRequests is the maximum number of pending requests
 	// +optional
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100000
 	MaxPendingRequests *int32 `json:"maxPendingRequests,omitempty"`
 
 	// MaxRequests is the maximum number of parallel requests
 	// +optional
 	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=100000
 	MaxRequests *int32 `json:"maxRequests,omitempty"`
 
 	// MaxRetries is the maximum number of parallel retries
 	// +optional
 	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=10
 	MaxRetries *int32 `json:"maxRetries,omitempty"`
+}
+
+// ConnectionPool defines connection pool configuration
+type ConnectionPool struct {
+	// MaxIdleConns is the maximum number of idle connections across all hosts
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10000
+	// +kubebuilder:default=100
+	MaxIdleConns *int32 `json:"maxIdleConns,omitempty"`
+
+	// MaxIdleConnsPerHost is the maximum number of idle connections per host
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=1000
+	// +kubebuilder:default=10
+	MaxIdleConnsPerHost *int32 `json:"maxIdleConnsPerHost,omitempty"`
+
+	// MaxConnsPerHost is the maximum number of connections per host (0 = unlimited)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=10000
+	MaxConnsPerHost *int32 `json:"maxConnsPerHost,omitempty"`
+
+	// IdleConnTimeout is the maximum time an idle connection is kept
+	// +optional
+	// +kubebuilder:default="90s"
+	IdleConnTimeout metav1.Duration `json:"idleConnTimeout,omitempty"`
 }
 
 // HealthCheck defines active health check configuration
@@ -138,6 +176,10 @@ type ProxyBackendSpec struct {
 	// TLS enables TLS for connections to this backend
 	// +optional
 	TLS *BackendTLSConfig `json:"tls,omitempty"`
+
+	// ConnectionPool defines connection pool configuration
+	// +optional
+	ConnectionPool *ConnectionPool `json:"connectionPool,omitempty"`
 }
 
 // BackendTLSConfig defines TLS settings for backend connections
@@ -152,6 +194,8 @@ type BackendTLSConfig struct {
 
 	// CACertSecretRef references a Secret containing CA certificates
 	// +optional
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=253
 	CACertSecretRef *string `json:"caCertSecretRef,omitempty"`
 }
 

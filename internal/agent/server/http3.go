@@ -94,17 +94,42 @@ func (s *HTTP3Server) Start(ctx context.Context) error {
 }
 
 // Shutdown gracefully shuts down the HTTP/3 server
+// HTTP/3 uses QUIC which has built-in graceful connection closure
 func (s *HTTP3Server) Shutdown(ctx context.Context) error {
-	s.logger.Info("Shutting down HTTP/3 server")
+	s.logger.Info("Shutting down HTTP/3 server gracefully")
 
-	// Close the server
-	if err := s.server.Close(); err != nil {
-		s.logger.Error("Error closing HTTP/3 server", zap.Error(err))
-		return err
+	// Create a channel to signal completion
+	done := make(chan error, 1)
+
+	go func() {
+		// CloseGracefully sends GOAWAY frames to all connections
+		// and waits for them to close naturally
+		err := s.server.CloseGracefully(5 * time.Second)
+		done <- err
+	}()
+
+	// Wait for graceful close or context timeout
+	select {
+	case err := <-done:
+		if err != nil {
+			s.logger.Error("Error during graceful HTTP/3 shutdown", zap.Error(err))
+			// Fall back to immediate close
+			if closeErr := s.server.Close(); closeErr != nil {
+				s.logger.Error("Error during immediate HTTP/3 close", zap.Error(closeErr))
+			}
+			return err
+		}
+		s.logger.Info("HTTP/3 server graceful shutdown complete")
+		return nil
+	case <-ctx.Done():
+		s.logger.Warn("HTTP/3 graceful shutdown timeout, forcing close")
+		// Context timed out, force close
+		if err := s.server.Close(); err != nil {
+			s.logger.Error("Error forcing HTTP/3 server close", zap.Error(err))
+			return err
+		}
+		return ctx.Err()
 	}
-
-	s.logger.Info("HTTP/3 server shutdown complete")
-	return nil
 }
 
 // parseTimeout parses a duration string or returns a default

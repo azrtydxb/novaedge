@@ -1,0 +1,19 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: novaedge-agent-pdb
+  namespace: novaedge-system
+  labels:
+    app.kubernetes.io/name: novaedge-agent
+    app.kubernetes.io/component: agent
+spec:
+  # Ensure at least N-1 agents remain available during disruptions
+  # This is critical for maintaining VIP availability and traffic flow
+  minAvailable: "80%"
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: novaedge-agent
+
+  # Unhealthy pods are not counted toward PDB
+  unhealthyPodEvictionPolicy: IfHealthyBudget
