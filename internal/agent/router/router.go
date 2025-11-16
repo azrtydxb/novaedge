@@ -18,6 +18,7 @@ package router
 
 import (
 	"fmt"
+	"hash/fnv"
 	"math/rand"
 	"net/http"
 	"regexp"
@@ -37,29 +38,6 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
-
-// responseWriterWithStatus wraps http.ResponseWriter to capture status code
-type responseWriterWithStatus struct {
-	http.ResponseWriter
-	statusCode int
-	written    bool
-}
-
-func (rw *responseWriterWithStatus) WriteHeader(code int) {
-	if !rw.written {
-		rw.statusCode = code
-		rw.written = true
-		rw.ResponseWriter.WriteHeader(code)
-	}
-}
-
-func (rw *responseWriterWithStatus) Write(b []byte) (int, error) {
-	if !rw.written {
-		rw.statusCode = http.StatusOK
-		rw.written = true
-	}
-	return rw.ResponseWriter.Write(b)
-}
 
 // Router routes HTTP requests to backends
 type Router struct {
@@ -81,32 +59,27 @@ type Router struct {
 
 	// gRPC handler for gRPC-specific request processing
 	grpcHandler *grpchandler.GRPCHandler
-}
 
-// RouteEntry represents a single route rule
-type RouteEntry struct {
-	Route         *pb.Route
-	Rule          *pb.RouteRule
-	PathMatcher   PathMatcher
-	Policies      []policyMiddleware
-	HeaderRegexes map[int]*regexp.Regexp // Cached compiled header regex patterns (index -> regex)
-}
+	// LB state caching: track endpoint versions to avoid unnecessary LB recreation
+	endpointVersions map[string]uint64 // clusterKey -> hash of endpoint list
 
-// policyMiddleware wraps a policy handler
-type policyMiddleware struct {
-	name    string
-	handler func(http.Handler) http.Handler
+	// Request size limits (in bytes)
+	maxRequestBodyBytes int64
+	maxUploadBodyBytes  int64
 }
 
 // NewRouter creates a new router
 func NewRouter(logger *zap.Logger) *Router {
 	return &Router{
-		logger:        logger,
-		routes:        make(map[string][]*RouteEntry),
-		pools:         make(map[string]*upstream.Pool),
-		loadBalancers: make(map[string]lb.LoadBalancer),
-		hashBasedLBs:  make(map[string]interface{}),
-		grpcHandler:   grpchandler.NewGRPCHandler(logger),
+		logger:              logger,
+		routes:              make(map[string][]*RouteEntry),
+		pools:               make(map[string]*upstream.Pool),
+		loadBalancers:       make(map[string]lb.LoadBalancer),
+		hashBasedLBs:        make(map[string]interface{}),
+		grpcHandler:         grpchandler.NewGRPCHandler(logger),
+		endpointVersions:    make(map[string]uint64),
+		maxRequestBodyBytes: 10 * 1024 * 1024,  // Default: 10MB
+		maxUploadBodyBytes:  100 * 1024 * 1024, // Default: 100MB
 	}
 }
 
@@ -119,6 +92,9 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 		zap.Int("routes", len(snapshot.Routes)),
 		zap.Int("clusters", len(snapshot.Clusters)),
 	)
+
+	// Update request size limits from gateway configuration
+	r.updateRequestLimits(snapshot)
 
 	// Clear existing configuration
 	r.routes = make(map[string][]*RouteEntry)
@@ -164,36 +140,55 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 			newPools[clusterKey] = pool
 		}
 
-		// Create load balancer based on cluster policy
-		switch cluster.LbPolicy {
-		case pb.LoadBalancingPolicy_P2C:
-			r.loadBalancers[clusterKey] = lb.NewP2C(endpointList.Endpoints)
-			r.logger.Debug("Created P2C load balancer", zap.String("cluster", clusterKey))
+		// Check if endpoints changed by computing hash
+		endpointHash := hashEndpointList(endpointList.Endpoints)
+		previousHash, exists := r.endpointVersions[clusterKey]
 
-		case pb.LoadBalancingPolicy_EWMA:
-			r.loadBalancers[clusterKey] = lb.NewEWMA(endpointList.Endpoints)
-			r.logger.Debug("Created EWMA load balancer", zap.String("cluster", clusterKey))
-
-		case pb.LoadBalancingPolicy_RING_HASH:
-			// RingHash uses consistent hashing - store separately
-			r.hashBasedLBs[clusterKey] = lb.NewRingHash(endpointList.Endpoints)
-			r.logger.Debug("Created RingHash load balancer", zap.String("cluster", clusterKey))
-
-		case pb.LoadBalancingPolicy_MAGLEV:
-			// Maglev uses consistent hashing - store separately
-			r.hashBasedLBs[clusterKey] = lb.NewMaglev(endpointList.Endpoints)
-			r.logger.Debug("Created Maglev load balancer", zap.String("cluster", clusterKey))
-
-		case pb.LoadBalancingPolicy_ROUND_ROBIN, pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
-			r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
-			r.logger.Debug("Created RoundRobin load balancer", zap.String("cluster", clusterKey))
-
-		default:
-			// Fallback to round robin for unknown policies
-			r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
-			r.logger.Warn("Unknown LB policy, using RoundRobin",
+		// Only recreate load balancer if endpoints actually changed
+		if !exists || previousHash != endpointHash {
+			r.logger.Debug("Endpoints changed, recreating load balancer",
 				zap.String("cluster", clusterKey),
-				zap.Int32("policy", int32(cluster.LbPolicy)),
+				zap.Bool("new_cluster", !exists),
+			)
+
+			// Create load balancer based on cluster policy
+			switch cluster.LbPolicy {
+			case pb.LoadBalancingPolicy_P2C:
+				r.loadBalancers[clusterKey] = lb.NewP2C(endpointList.Endpoints)
+				r.logger.Debug("Created P2C load balancer", zap.String("cluster", clusterKey))
+
+			case pb.LoadBalancingPolicy_EWMA:
+				r.loadBalancers[clusterKey] = lb.NewEWMA(endpointList.Endpoints)
+				r.logger.Debug("Created EWMA load balancer", zap.String("cluster", clusterKey))
+
+			case pb.LoadBalancingPolicy_RING_HASH:
+				// RingHash uses consistent hashing - store separately
+				r.hashBasedLBs[clusterKey] = lb.NewRingHash(endpointList.Endpoints)
+				r.logger.Debug("Created RingHash load balancer", zap.String("cluster", clusterKey))
+
+			case pb.LoadBalancingPolicy_MAGLEV:
+				// Maglev uses consistent hashing - store separately
+				r.hashBasedLBs[clusterKey] = lb.NewMaglev(endpointList.Endpoints)
+				r.logger.Debug("Created Maglev load balancer", zap.String("cluster", clusterKey))
+
+			case pb.LoadBalancingPolicy_ROUND_ROBIN, pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
+				r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
+				r.logger.Debug("Created RoundRobin load balancer", zap.String("cluster", clusterKey))
+
+			default:
+				// Fallback to round robin for unknown policies
+				r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
+				r.logger.Warn("Unknown LB policy, using RoundRobin",
+					zap.String("cluster", clusterKey),
+					zap.Int32("policy", int32(cluster.LbPolicy)),
+				)
+			}
+
+			// Update version tracking
+			r.endpointVersions[clusterKey] = endpointHash
+		} else {
+			r.logger.Debug("Endpoints unchanged, reusing load balancer",
+				zap.String("cluster", clusterKey),
 			)
 		}
 	}
@@ -218,16 +213,26 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 
 // ServeHTTP routes incoming HTTP requests
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Determine request body size limit based on content type
+	maxBodySize := r.maxRequestBodyBytes
+
+	// For file uploads (multipart/form-data), use larger limit
+	contentType := req.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		maxBodySize = r.maxUploadBodyBytes
+	}
+
+	// Limit request body size to prevent memory exhaustion attacks
+	req.Body = http.MaxBytesReader(w, req.Body, maxBodySize)
+
 	// Track request start time and in-flight requests
 	startTime := time.Now()
 	metrics.HTTPRequestsInFlight.Inc()
 	defer metrics.HTTPRequestsInFlight.Dec()
 
-	// Wrap response writer to capture status code
-	wrappedWriter := &responseWriterWithStatus{
-		ResponseWriter: w,
-		statusCode:     http.StatusOK,
-	}
+	// Get a response writer from the pool to reduce allocations
+	wrappedWriter := getResponseWriter(w)
+	defer putResponseWriter(wrappedWriter)
 
 	// Defer metrics recording
 	defer func() {
@@ -478,145 +483,33 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	}
 }
 
-// createPolicyMiddleware creates policy middleware for a route
-func (r *Router) createPolicyMiddleware(route *pb.Route, snapshot *config.Snapshot) []policyMiddleware {
-	var middlewares []policyMiddleware
+// updateRequestLimits updates request size limits from gateway configuration
+func (r *Router) updateRequestLimits(snapshot *config.Snapshot) {
+	// Find the maximum request size limits across all gateways
+	maxRequest := r.maxRequestBodyBytes
+	maxUpload := r.maxUploadBodyBytes
 
-	// Find policies attached to this route
-	routeRef := fmt.Sprintf("%s/%s", route.Namespace, route.Name)
-
-	for _, policyProto := range snapshot.Policies {
-		// Check if policy targets this route
-		if policyProto.TargetRef == nil {
-			continue
-		}
-
-		targetRef := fmt.Sprintf("%s/%s", policyProto.TargetRef.Namespace, policyProto.TargetRef.Name)
-		if targetRef != routeRef {
-			continue
-		}
-
-		// Create middleware based on policy type
-		switch policyProto.Type {
-		case pb.PolicyType_RATE_LIMIT:
-			if policyProto.RateLimit != nil {
-				limiter := policy.NewRateLimiter(policyProto.RateLimit)
-				middlewares = append(middlewares, policyMiddleware{
-					name:    fmt.Sprintf("rate-limit-%s", policyProto.Name),
-					handler: policy.HandleRateLimit(limiter),
-				})
-			}
-
-		case pb.PolicyType_CORS:
-			if policyProto.Cors != nil {
-				cors := policy.NewCORS(policyProto.Cors)
-				middlewares = append(middlewares, policyMiddleware{
-					name:    fmt.Sprintf("cors-%s", policyProto.Name),
-					handler: policy.HandleCORS(cors),
-				})
-			}
-
-		case pb.PolicyType_IP_ALLOW_LIST:
-			if policyProto.IpList != nil {
-				filter, err := policy.NewIPAllowListFilter(policyProto.IpList.Cidrs)
-				if err == nil {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("ip-allow-%s", policyProto.Name),
-						handler: policy.HandleIPFilter(filter),
-					})
+	for _, gateway := range snapshot.Gateways {
+		for _, listener := range gateway.Listeners {
+			if listener.MaxRequestBodyBytes > 0 {
+				if listener.MaxRequestBodyBytes > maxRequest {
+					maxRequest = listener.MaxRequestBodyBytes
 				}
 			}
-
-		case pb.PolicyType_IP_DENY_LIST:
-			if policyProto.IpList != nil {
-				filter, err := policy.NewIPDenyListFilter(policyProto.IpList.Cidrs)
-				if err == nil {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("ip-deny-%s", policyProto.Name),
-						handler: policy.HandleIPFilter(filter),
-					})
-				}
-			}
-
-		case pb.PolicyType_JWT:
-			if policyProto.Jwt != nil {
-				validator, err := policy.NewJWTValidator(policyProto.Jwt)
-				if err == nil {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("jwt-%s", policyProto.Name),
-						handler: policy.HandleJWT(validator),
-					})
-				} else {
-					r.logger.Error("Failed to create JWT validator",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
+			if listener.MaxUploadBodyBytes > 0 {
+				if listener.MaxUploadBodyBytes > maxUpload {
+					maxUpload = listener.MaxUploadBodyBytes
 				}
 			}
 		}
 	}
 
-	return middlewares
-}
-
-// compileHeaderRegexes pre-compiles all header regex patterns for a route rule
-// This prevents regex compilation on every request (performance optimization)
-func compileHeaderRegexes(rule *pb.RouteRule) map[int]*regexp.Regexp {
-	regexes := make(map[int]*regexp.Regexp)
-
-	for matchIdx, match := range rule.Matches {
-		for headerIdx, header := range match.Headers {
-			if header.Type == pb.HeaderMatchType_HEADER_REGULAR_EXPRESSION {
-				if regex, err := regexp.Compile(header.Value); err == nil {
-					// Store with a unique key combining match and header index
-					key := matchIdx*1000 + headerIdx
-					regexes[key] = regex
-				}
-			}
-		}
+	// Update limits if they changed
+	if maxRequest != r.maxRequestBodyBytes || maxUpload != r.maxUploadBodyBytes {
+		r.logger.Info("Updated request size limits",
+			zap.Int64("max_request_body_bytes", maxRequest),
+			zap.Int64("max_upload_body_bytes", maxUpload))
+		r.maxRequestBodyBytes = maxRequest
+		r.maxUploadBodyBytes = maxUpload
 	}
-
-	return regexes
-}
-
-// selectWeightedBackend selects a backend from multiple backends based on their weights
-// Uses weighted random selection algorithm
-func selectWeightedBackend(backends []*pb.BackendRef) *pb.BackendRef {
-	if len(backends) == 0 {
-		return nil
-	}
-
-	// If only one backend, return it directly
-	if len(backends) == 1 {
-		return backends[0]
-	}
-
-	// Calculate total weight
-	totalWeight := int32(0)
-	for _, backend := range backends {
-		weight := backend.Weight
-		if weight <= 0 {
-			weight = 1 // Default weight
-		}
-		totalWeight += weight
-	}
-
-	// Generate random number between 0 and totalWeight
-	randVal := rand.Int31n(totalWeight)
-
-	// Select backend based on weight
-	currentWeight := int32(0)
-	for _, backend := range backends {
-		weight := backend.Weight
-		if weight <= 0 {
-			weight = 1 // Default weight
-		}
-		currentWeight += weight
-		if randVal < currentWeight {
-			return backend
-		}
-	}
-
-	// Fallback to first backend (should never reach here)
-	return backends[0]
 }

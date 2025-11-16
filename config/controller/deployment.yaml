@@ -47,6 +47,12 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 10
         resources:
+          # Resource recommendations based on workload:
+          # - Small cluster (<50 nodes, <100 gateways): cpu: 100m, memory: 128Mi
+          # - Medium cluster (50-200 nodes, 100-500 gateways): cpu: 250m, memory: 256Mi
+          # - Large cluster (200-500 nodes, 500-1000 gateways): cpu: 500m, memory: 512Mi
+          # - XL cluster (>500 nodes, >1000 gateways): cpu: 1000m, memory: 1Gi
+          # Monitor actual usage with: kubectl top pod -n novaedge-system
           limits:
             cpu: 500m
             memory: 512Mi

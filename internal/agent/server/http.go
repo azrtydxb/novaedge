@@ -18,38 +18,29 @@ package server
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
-	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
-	"golang.org/x/net/http2"
-	"golang.org/x/net/http2/h2c"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
-	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	"github.com/piwi3910/novaedge/internal/agent/router"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// ListenerInfo contains information about a configured listener
-type ListenerInfo struct {
-	Gateway   string
-	Listener  *pb.Listener
-	TLSConfig *tls.Config
-}
-
 // HTTPServer manages HTTP/HTTPS/HTTP3 listeners and routing
 type HTTPServer struct {
-	logger       *zap.Logger
-	mu           sync.RWMutex
-	servers      map[int32]*http.Server  // Port -> HTTP/1.1 or HTTP/2 Server
-	http3servers map[int32]*HTTP3Server  // Port -> HTTP/3 Server
-	listeners    map[int32]*ListenerInfo // Port -> Listener config
-	router       *router.Router
+	logger           *zap.Logger
+	mu               sync.RWMutex
+	servers          map[int32]*http.Server  // Port -> HTTP/1.1 or HTTP/2 Server
+	http3servers     map[int32]*HTTP3Server  // Port -> HTTP/3 Server
+	listeners        map[int32]*ListenerInfo // Port -> Listener config
+	router           *router.Router
+	inFlightRequests sync.WaitGroup // Track in-flight requests for graceful shutdown
+	shuttingDown     atomic.Bool    // Flag to indicate shutdown in progress
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -184,313 +175,18 @@ func (s *HTTPServer) isVIPActive(snapshot *config.Snapshot, vipRef string, port 
 	return false
 }
 
-// startListener starts an HTTP, HTTPS, or HTTP/3 listener on the specified port
-func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error {
-	// Check if this is an HTTP/3 listener
-	if listenerInfo.Listener.Protocol == pb.Protocol_HTTP3 {
-		return s.startHTTP3Listener(port, listenerInfo)
-	}
-
-	protocol := "HTTP"
-	if listenerInfo.TLSConfig != nil {
-		protocol = "HTTPS (HTTP/2)"
-	} else {
-		protocol = "HTTP (HTTP/2 h2c)"
-	}
-
-	s.logger.Info("Starting HTTP/1.1 or HTTP/2 listener",
-		zap.Int32("port", port),
-		zap.String("protocol", protocol),
-		zap.String("gateway", listenerInfo.Gateway),
-		zap.String("listener", listenerInfo.Listener.Name),
-	)
-
-	// Create base handler - wrap with h2c for cleartext HTTP/2 support
-	var handler http.Handler = s
-	if listenerInfo.TLSConfig == nil {
-		// Enable h2c (HTTP/2 without TLS) for cleartext connections
-		h2s := &http2.Server{}
-		handler = h2c.NewHandler(s, h2s)
-	}
-
-	server := &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      handler,
-		TLSConfig:    listenerInfo.TLSConfig,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  120 * time.Second,
-	}
-
-	// Enable HTTP/2 for TLS connections
-	if listenerInfo.TLSConfig != nil {
-		if err := http2.ConfigureServer(server, &http2.Server{}); err != nil {
-			return fmt.Errorf("failed to configure HTTP/2: %w", err)
-		}
-	}
-
-	s.servers[port] = server
-
-	// Start server in goroutine
-	go func() {
-		var err error
-		if listenerInfo.TLSConfig != nil {
-			// Start HTTPS listener with HTTP/2
-			// Note: We pass empty cert/key files because TLSConfig already has certificates
-			err = server.ListenAndServeTLS("", "")
-		} else {
-			// Start HTTP listener with h2c support
-			err = server.ListenAndServe()
-		}
-
-		if err != nil && err != http.ErrServerClosed {
-			s.logger.Error("Server error",
-				zap.Int32("port", port),
-				zap.String("protocol", protocol),
-				zap.Error(err),
-			)
-		}
-	}()
-
-	return nil
-}
-
-// startHTTP3Listener starts an HTTP/3 listener on the specified port
-func (s *HTTPServer) startHTTP3Listener(port int32, listenerInfo *ListenerInfo) error {
-	// HTTP/3 requires TLS
-	if listenerInfo.TLSConfig == nil {
-		return fmt.Errorf("HTTP/3 requires TLS configuration")
-	}
-
-	s.logger.Info("Starting HTTP/3 listener",
-		zap.Int32("port", port),
-		zap.String("gateway", listenerInfo.Gateway),
-		zap.String("listener", listenerInfo.Listener.Name),
-	)
-
-	// Get QUIC configuration, use defaults if not provided
-	quicConfig := listenerInfo.Listener.Quic
-	if quicConfig == nil {
-		quicConfig = &pb.QUICConfig{
-			MaxIdleTimeout: "30s",
-			MaxBiStreams:   100,
-			MaxUniStreams:  100,
-			Enable_0Rtt:    true,
-		}
-	}
-
-	// Create HTTP/3 server
-	http3Server := NewHTTP3Server(
-		s.logger,
-		port,
-		listenerInfo.TLSConfig,
-		quicConfig,
-		s, // Use HTTPServer as handler for routing
-	)
-
-	s.http3servers[port] = http3Server
-
-	// Start server in goroutine
-	go func() {
-		ctx := context.Background()
-		if err := http3Server.Start(ctx); err != nil && err != http.ErrServerClosed {
-			s.logger.Error("HTTP/3 server error",
-				zap.Int32("port", port),
-				zap.Error(err),
-			)
-		}
-	}()
-
-	// Add Alt-Svc header advertising to corresponding HTTP/2 listener
-	// This allows clients to upgrade to HTTP/3
-	s.enableAltSvcAdvertising(port)
-
-	return nil
-}
-
-// enableAltSvcAdvertising enables Alt-Svc header advertising for HTTP/3 on the corresponding HTTP/2 port
-func (s *HTTPServer) enableAltSvcAdvertising(http3Port int32) {
-	// The Alt-Svc header is added in the ServeHTTP method
-	// This function is here for clarity and future enhancements
-}
-
-// addAltSvcHeader adds the Alt-Svc header to advertise HTTP/3 availability
-func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Check if there's an HTTP/3 server on any port
-	for port := range s.http3servers {
-		// Advertise HTTP/3 on the same port
-		// Format: Alt-Svc: h3=":443"; ma=2592000
-		// ma = max age in seconds (30 days = 2592000 seconds)
-		altSvc := fmt.Sprintf("h3=\":%d\"; ma=2592000", port)
-		w.Header().Set("Alt-Svc", altSvc)
-		break // Only advertise one HTTP/3 endpoint for now
-	}
-}
-
-// createTLSConfig creates a tls.Config from protobuf TLS configuration with SNI support
-func (s *HTTPServer) createTLSConfig(tlsConfig *pb.TLSConfig, hostnames []string) (*tls.Config, error) {
-	// Parse default certificate and key
-	cert, err := tls.X509KeyPair(tlsConfig.Cert, tlsConfig.Key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse default certificate: %w", err)
-	}
-
-	config := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   s.parseTLSVersion(tlsConfig.MinVersion),
-		CipherSuites: s.parseCipherSuites(tlsConfig.CipherSuites),
-	}
-
-	return config, nil
-}
-
-// createTLSConfigWithSNI creates a tls.Config with SNI support for multiple certificates
-func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config, error) {
-	// Parse all certificates for SNI
-	certMap := make(map[string]*tls.Certificate)
-	var defaultCert *tls.Certificate
-
-	// If listener has tls_certificates map, use it for SNI
-	if len(listener.TlsCertificates) > 0 {
-		for hostname, tlsConfig := range listener.TlsCertificates {
-			cert, err := tls.X509KeyPair(tlsConfig.Cert, tlsConfig.Key)
-			if err != nil {
-				s.logger.Error("Failed to parse certificate for hostname",
-					zap.String("hostname", hostname),
-					zap.Error(err))
-				continue
-			}
-			certMap[hostname] = &cert
-
-			// Use first certificate as default
-			if defaultCert == nil {
-				defaultCert = &cert
-			}
-		}
-	}
-
-	// Fallback to single TLS config if no SNI certificates
-	if defaultCert == nil && listener.Tls != nil {
-		cert, err := tls.X509KeyPair(listener.Tls.Cert, listener.Tls.Key)
-		if err != nil {
-			return nil, fmt.Errorf("failed to parse default certificate: %w", err)
-		}
-		defaultCert = &cert
-	}
-
-	if defaultCert == nil {
-		return nil, fmt.Errorf("no TLS certificates configured")
-	}
-
-	// Get TLS settings from first certificate config
-	var minVersion string
-	var cipherSuites []string
-	if listener.Tls != nil {
-		minVersion = listener.Tls.MinVersion
-		cipherSuites = listener.Tls.CipherSuites
-	} else if len(listener.TlsCertificates) > 0 {
-		// Get settings from first certificate
-		for _, tlsConfig := range listener.TlsCertificates {
-			minVersion = tlsConfig.MinVersion
-			cipherSuites = tlsConfig.CipherSuites
-			break
-		}
-	}
-
-	config := &tls.Config{
-		Certificates: []tls.Certificate{*defaultCert},
-		MinVersion:   s.parseTLSVersion(minVersion),
-		CipherSuites: s.parseCipherSuites(cipherSuites),
-	}
-
-	// Enable SNI certificate selection
-	if len(certMap) > 0 {
-		config.GetCertificate = func(clientHello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-			// Track TLS metrics
-			metrics.TLSHandshakes.Inc()
-
-			serverName := clientHello.ServerName
-			s.logger.Debug("SNI certificate selection",
-				zap.String("server_name", serverName),
-				zap.Int("available_certs", len(certMap)))
-
-			// Look for exact match
-			if cert, ok := certMap[serverName]; ok {
-				s.logger.Debug("SNI certificate found",
-					zap.String("server_name", serverName))
-				return cert, nil
-			}
-
-			// Check for wildcard match (*.example.com)
-			if serverName != "" {
-				labels := strings.Split(serverName, ".")
-				if len(labels) > 1 {
-					wildcardName := "*." + strings.Join(labels[1:], ".")
-					if cert, ok := certMap[wildcardName]; ok {
-						s.logger.Debug("SNI wildcard certificate found",
-							zap.String("server_name", serverName),
-							zap.String("wildcard", wildcardName))
-						return cert, nil
-					}
-				}
-			}
-
-			// Return default certificate if no match
-			s.logger.Debug("SNI using default certificate",
-				zap.String("server_name", serverName))
-			return defaultCert, nil
-		}
-	}
-
-	return config, nil
-}
-
-// parseTLSVersion converts string TLS version to constant
-func (s *HTTPServer) parseTLSVersion(version string) uint16 {
-	switch version {
-	case "TLS1.2":
-		return tls.VersionTLS12
-	case "TLS1.3":
-		return tls.VersionTLS13
-	default:
-		return tls.VersionTLS13 // Default to TLS 1.3 for security
-	}
-}
-
-// parseCipherSuites converts cipher suite names to constants
-func (s *HTTPServer) parseCipherSuites(suites []string) []uint16 {
-	if len(suites) == 0 {
-		return nil // Use Go's default secure cipher suites
-	}
-
-	// Map of cipher suite names to constants
-	cipherMap := map[string]uint16{
-		"TLS_AES_128_GCM_SHA256":                        tls.TLS_AES_128_GCM_SHA256,
-		"TLS_AES_256_GCM_SHA384":                        tls.TLS_AES_256_GCM_SHA384,
-		"TLS_CHACHA20_POLY1305_SHA256":                  tls.TLS_CHACHA20_POLY1305_SHA256,
-		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256":         tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384":         tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256":       tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384":       tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256":   tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
-	}
-
-	var result []uint16
-	for _, name := range suites {
-		if id, ok := cipherMap[name]; ok {
-			result = append(result, id)
-		}
-	}
-
-	return result
-}
-
 // ServeHTTP handles HTTP requests (implements http.Handler)
 func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Check if shutdown is in progress
+	if s.shuttingDown.Load() {
+		http.Error(w, "Server is shutting down", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Track in-flight request
+	s.inFlightRequests.Add(1)
+	defer s.inFlightRequests.Done()
+
 	startTime := time.Now()
 
 	// Add Alt-Svc header to advertise HTTP/3 availability
@@ -516,38 +212,106 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-// Shutdown gracefully shuts down all HTTP servers
+// Shutdown gracefully shuts down all HTTP servers with timeout
 func (s *HTTPServer) Shutdown(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.logger.Info("Shutting down HTTP servers", zap.Int("count", len(s.servers)))
+	// Mark as shutting down to reject new requests
+	s.shuttingDown.Store(true)
 
+	s.logger.Info("Shutting down HTTP servers",
+		zap.Int("http_servers", len(s.servers)),
+		zap.Int("http3_servers", len(s.http3servers)))
+
+	// Determine shutdown timeout from configuration or use default
+	shutdownTimeout := 30 * time.Second
+
+	// Check if any listener has a custom graceful shutdown timeout
+	for _, listenerInfo := range s.listeners {
+		if listenerInfo.Listener.GracefulShutdownTimeoutMs > 0 {
+			timeout := time.Duration(listenerInfo.Listener.GracefulShutdownTimeoutMs) * time.Millisecond
+			if timeout > shutdownTimeout {
+				shutdownTimeout = timeout
+			}
+		}
+	}
+
+	// Create context with timeout for shutdown
+	shutdownCtx, cancel := context.WithTimeout(ctx, shutdownTimeout)
+	defer cancel()
+
+	s.logger.Info("Graceful shutdown initiated",
+		zap.Duration("timeout", shutdownTimeout))
+
+	// Shutdown HTTP/1.1 and HTTP/2 servers
 	var wg sync.WaitGroup
-	errors := make(chan error, len(s.servers))
+	errors := make(chan error, len(s.servers)+len(s.http3servers))
 
 	for port, server := range s.servers {
 		wg.Add(1)
 		go func(port int32, srv *http.Server) {
 			defer wg.Done()
-			s.logger.Info("Shutting down listener", zap.Int32("port", port))
-			if err := srv.Shutdown(ctx); err != nil {
-				errors <- fmt.Errorf("error shutting down port %d: %w", port, err)
+			s.logger.Info("Shutting down HTTP listener", zap.Int32("port", port))
+			if err := srv.Shutdown(shutdownCtx); err != nil {
+				s.logger.Error("Error shutting down HTTP listener",
+					zap.Int32("port", port),
+					zap.Error(err))
+				errors <- fmt.Errorf("error shutting down HTTP port %d: %w", port, err)
 			}
 		}(port, server)
 	}
 
+	// Shutdown HTTP/3 servers
+	for port, http3Server := range s.http3servers {
+		wg.Add(1)
+		go func(port int32, srv *HTTP3Server) {
+			defer wg.Done()
+			s.logger.Info("Shutting down HTTP/3 listener", zap.Int32("port", port))
+			if err := srv.Shutdown(shutdownCtx); err != nil {
+				s.logger.Error("Error shutting down HTTP/3 listener",
+					zap.Int32("port", port),
+					zap.Error(err))
+				errors <- fmt.Errorf("error shutting down HTTP/3 port %d: %w", port, err)
+			}
+		}(port, http3Server)
+	}
+
+	// Wait for all server shutdowns to complete
 	wg.Wait()
 	close(errors)
+
+	// Wait for in-flight requests to complete or timeout
+	done := make(chan struct{})
+	go func() {
+		s.inFlightRequests.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.logger.Info("All in-flight requests completed")
+	case <-shutdownCtx.Done():
+		s.logger.Warn("Shutdown timeout reached, some requests may have been interrupted")
+	}
 
 	// Collect any errors
 	var shutdownErr error
 	for err := range errors {
 		if shutdownErr == nil {
 			shutdownErr = err
+		} else {
+			s.logger.Error("Additional shutdown error", zap.Error(err))
 		}
 	}
 
 	s.servers = make(map[int32]*http.Server)
-	return shutdownErr
+	s.http3servers = make(map[int32]*HTTP3Server)
+
+	if shutdownErr != nil {
+		return shutdownErr
+	}
+
+	s.logger.Info("HTTP server shutdown completed successfully")
+	return nil
 }

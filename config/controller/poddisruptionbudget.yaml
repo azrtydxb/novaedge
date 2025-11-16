@@ -1,0 +1,19 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: novaedge-controller-pdb
+  namespace: novaedge-system
+  labels:
+    app.kubernetes.io/name: novaedge-controller
+    app.kubernetes.io/component: controller
+spec:
+  # Ensure at least 1 controller remains available during disruptions
+  # This maintains control plane availability for config updates
+  minAvailable: 1
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: novaedge-controller
+
+  # Unhealthy pods are not counted toward PDB
+  unhealthyPodEvictionPolicy: IfHealthyBudget

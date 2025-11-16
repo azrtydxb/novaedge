@@ -50,6 +50,9 @@ message Listener {
   repeated string hostnames = 5;
   QUICConfig quic = 6;
   map<string, TLSConfig> tls_certificates = 7; // SNI: hostname -> TLS cert/key
+  int64 max_request_body_bytes = 8; // Maximum request body size in bytes (default: 10MB)
+  int64 max_upload_body_bytes = 9; // Maximum upload body size in bytes (default: 100MB)
+  int64 graceful_shutdown_timeout_ms = 10; // Graceful shutdown timeout in milliseconds (default: 30000)
 }
 
 // Protocol defines the application protocol
@@ -166,6 +169,18 @@ message Cluster {
   CircuitBreaker circuit_breaker = 6;
   HealthCheck health_check = 7;
   BackendTLS tls = 8;
+  ConnectionPool connection_pool = 9;
+}
+
+// ConnectionPool defines connection pool configuration
+message ConnectionPool {
+  int32 max_idle_conns = 1;              // Maximum total idle connections (default: 100)
+  int32 max_idle_conns_per_host = 2;     // Maximum idle connections per host (default: 10)
+  int32 max_conns_per_host = 3;          // Maximum total connections per host (0 = unlimited)
+  int64 idle_conn_timeout_ms = 4;        // Idle connection timeout in milliseconds (default: 90000)
+  int64 response_header_timeout_ms = 5;  // Response header timeout in milliseconds (default: 10000)
+  bool disable_keep_alives = 6;          // Disable keep-alives (default: false)
+  int32 max_response_header_bytes = 7;   // Max response header bytes (0 = 10MB default)
 }
 
 enum LoadBalancingPolicy {

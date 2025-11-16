@@ -76,10 +76,10 @@ func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap
 		results:         make(map[string]*HealthResult),
 		circuitBreakers: make(map[string]*CircuitBreaker),
 		httpClient: &http.Client{
-			Timeout: 3 * time.Second,
+			Timeout: DefaultHealthCheckTimeout,
 			Transport: &http.Transport{
 				DialContext: (&net.Dialer{
-					Timeout:   2 * time.Second,
+					Timeout:   DefaultHealthCheckDialTimeout,
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
 			},
@@ -215,7 +215,7 @@ func (hc *HealthChecker) RecordFailure(endpoint *pb.Endpoint) {
 		result.ConsecutiveFailures++
 
 		// Mark unhealthy after threshold
-		if result.ConsecutiveFailures >= 3 {
+		if result.ConsecutiveFailures >= DefaultUnhealthyThreshold {
 			result.Healthy = false
 		}
 	}
@@ -269,10 +269,33 @@ func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 	key := endpointKey(ep)
 	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
 
+	// Check circuit breaker before performing health check
+	hc.mu.RLock()
+	cb, cbExists := hc.circuitBreakers[key]
+	hc.mu.RUnlock()
+
+	if cbExists {
+		// If circuit breaker is open, skip health check to avoid overloading failing backend
+		if cb.IsOpen() {
+			hc.logger.Debug("Skipping health check - circuit breaker is open",
+				zap.String("endpoint", key),
+				zap.String("cluster", clusterKey))
+			return
+		}
+
+		// Check if request is allowed by circuit breaker
+		if !cb.Allow() {
+			hc.logger.Debug("Health check rejected by circuit breaker",
+				zap.String("endpoint", key),
+				zap.String("cluster", clusterKey))
+			return
+		}
+	}
+
 	// Track health check timing
 	checkStart := time.Now()
 
-	// Perform HTTP health check
+	// Perform HTTP health check with circuit breaker protection
 	healthy, err := hc.performHTTPCheck(ep)
 
 	// Record health check metrics
@@ -298,8 +321,8 @@ func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 		result.ConsecutiveSuccesses++
 		result.ConsecutiveFailures = 0
 
-		// Mark healthy after threshold (default: 2)
-		if result.ConsecutiveSuccesses >= 2 {
+		// Mark healthy after threshold
+		if result.ConsecutiveSuccesses >= DefaultHealthyThreshold {
 			if !result.Healthy {
 				hc.logger.Info("Endpoint became healthy",
 					zap.String("endpoint", key),
@@ -318,8 +341,8 @@ func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 		result.ConsecutiveSuccesses = 0
 		result.ConsecutiveFailures++
 
-		// Mark unhealthy after threshold (default: 3)
-		if result.ConsecutiveFailures >= 3 {
+		// Mark unhealthy after threshold
+		if result.ConsecutiveFailures >= DefaultUnhealthyThreshold {
 			if result.Healthy {
 				hc.logger.Warn("Endpoint became unhealthy",
 					zap.String("endpoint", key),

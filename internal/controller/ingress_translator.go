@@ -166,6 +166,7 @@ func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) (*no
 }
 
 // createHTTPSListener creates an HTTPS listener from Ingress TLS configuration
+// Supports multiple TLS certificates via SNI when multiple TLS entries are present
 func (t *IngressTranslator) createHTTPSListener(ingress *networkingv1.Ingress) novaedgev1alpha1.Listener {
 	// Collect all TLS hostnames
 	tlsHostnames := make([]string, 0)
@@ -173,26 +174,66 @@ func (t *IngressTranslator) createHTTPSListener(ingress *networkingv1.Ingress) n
 		tlsHostnames = append(tlsHostnames, tls.Hosts...)
 	}
 
-	// Use the first TLS secret as the primary certificate
-	// TODO: Support multiple certificates via SNI in future iterations
-	var tlsConfig *novaedgev1alpha1.TLSConfig
+	listener := novaedgev1alpha1.Listener{
+		Name:      "https",
+		Port:      443,
+		Protocol:  novaedgev1alpha1.ProtocolTypeHTTPS,
+		Hostnames: tlsHostnames,
+	}
+
+	// Always use SNI with TLSCertificates map for full multi-certificate support
+	// This allows the agent to select the correct certificate based on SNI hostname
+	tlsCertificates := make(map[string]novaedgev1alpha1.TLSConfig)
+	hasAnyCertificate := false
+
+	for _, tls := range ingress.Spec.TLS {
+		if tls.SecretName == "" {
+			continue
+		}
+
+		// Map each host to its corresponding TLS certificate secret
+		for _, host := range tls.Hosts {
+			tlsCertificates[host] = novaedgev1alpha1.TLSConfig{
+				SecretRef: corev1.SecretReference{
+					Name:      tls.SecretName,
+					Namespace: ingress.Namespace,
+				},
+				MinVersion: "TLS1.3", // Use TLS 1.3 for better security
+			}
+			hasAnyCertificate = true
+		}
+
+		// If no specific hosts are defined, use wildcard "*" for this certificate
+		if len(tls.Hosts) == 0 && tls.SecretName != "" {
+			tlsCertificates["*"] = novaedgev1alpha1.TLSConfig{
+				SecretRef: corev1.SecretReference{
+					Name:      tls.SecretName,
+					Namespace: ingress.Namespace,
+				},
+				MinVersion: "TLS1.3",
+			}
+			hasAnyCertificate = true
+		}
+	}
+
+	// Set TLSCertificates map for SNI support
+	if hasAnyCertificate {
+		listener.TLSCertificates = tlsCertificates
+	}
+
+	// For backward compatibility, also set the TLS field with the first certificate
+	// This serves as a default fallback for older agent versions
 	if len(ingress.Spec.TLS) > 0 && ingress.Spec.TLS[0].SecretName != "" {
-		tlsConfig = &novaedgev1alpha1.TLSConfig{
+		listener.TLS = &novaedgev1alpha1.TLSConfig{
 			SecretRef: corev1.SecretReference{
 				Name:      ingress.Spec.TLS[0].SecretName,
 				Namespace: ingress.Namespace,
 			},
-			MinVersion: "TLS1.2",
+			MinVersion: "TLS1.3",
 		}
 	}
 
-	return novaedgev1alpha1.Listener{
-		Name:      "https",
-		Port:      443,
-		Protocol:  novaedgev1alpha1.ProtocolTypeHTTPS,
-		TLS:       tlsConfig,
-		Hostnames: tlsHostnames,
-	}
+	return listener
 }
 
 // translateRoute creates a ProxyRoute from an Ingress rule
