@@ -5,9 +5,13 @@ go 1.25.2
 require (
 	github.com/golang-jwt/jwt/v5 v5.3.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
+	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875
+	github.com/mdlayher/ethernet v0.0.0-20220221185849-529eae5b6118
 	github.com/osrg/gobgp/v3 v3.37.0
 	github.com/prometheus/client_golang v1.23.2
+	github.com/quic-go/quic-go v0.56.0
 	github.com/spf13/cobra v1.10.1
+	github.com/vishvananda/netlink v1.2.1
 	go.opentelemetry.io/otel v1.37.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.34.0
 	go.opentelemetry.io/otel/sdk v1.37.0
@@ -58,8 +62,6 @@ require (
 	github.com/k-sone/critbitgo v1.4.0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
-	github.com/mdlayher/arp v0.0.0-20220512170110-6706a2966875 // indirect
-	github.com/mdlayher/ethernet v0.0.0-20220221185849-529eae5b6118 // indirect
 	github.com/mdlayher/packet v1.0.0 // indirect
 	github.com/mdlayher/socket v0.2.1 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
@@ -72,7 +74,6 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.17.0 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
-	github.com/quic-go/quic-go v0.56.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/afero v1.9.5 // indirect
 	github.com/spf13/cast v1.5.1 // indirect
@@ -80,7 +81,6 @@ require (
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/spf13/viper v1.16.0 // indirect
 	github.com/subosito/gotenv v1.4.2 // indirect
-	github.com/vishvananda/netlink v1.2.1 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect

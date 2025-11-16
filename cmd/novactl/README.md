@@ -379,11 +379,17 @@ cmd/novactl/
 │   ├── delete.go          # Resource deletion
 │   ├── apply.go           # Resource creation/update
 │   ├── agents.go          # Agent management
+│   ├── agent_query.go     # Agent gRPC queries
 │   ├── debug.go           # Debugging commands
-│   ├── metrics.go         # Metrics viewing
+│   ├── metrics.go         # Metrics viewing (CRD-based)
+│   ├── metrics_query.go   # Prometheus queries
+│   ├── trace.go           # Distributed trace queries
 │   └── logs.go            # Log streaming
 └── pkg/                    # Shared packages
     ├── client/            # Kubernetes API clients
+    ├── grpc/              # Agent gRPC client
+    ├── prometheus/        # Prometheus query client
+    ├── trace/             # OpenTelemetry trace client
     ├── printer/           # Output formatting
     └── util/              # Utility functions
 ```
@@ -409,17 +415,89 @@ export KUBECONFIG=~/.kube/config
 ./bin/novactl agents list
 ```
 
+## Advanced Features
+
+### Agent Query Commands
+
+Query NovaEdge agents directly via gRPC:
+
+```bash
+# Get agent configuration
+novactl agent config worker-1
+
+# Get backend health from agent
+novactl agent backends worker-1
+
+# Get active VIPs from agent
+novactl agent vips worker-1
+```
+
+**Note**: These commands require the agent gRPC service to implement additional RPC methods beyond the current `StreamConfig` and `ReportStatus`. The infrastructure is in place, but the following proto additions are needed:
+
+```protobuf
+rpc GetCurrentConfig(GetConfigRequest) returns (ConfigSnapshot);
+rpc GetBackendHealth(GetBackendHealthRequest) returns (BackendHealthResponse);
+rpc GetVIPs(GetVIPsRequest) returns (VIPsResponse);
+```
+
+### Trace Query Commands
+
+Query distributed traces from OpenTelemetry backend (Jaeger/Tempo):
+
+```bash
+# List recent traces
+novactl trace list --limit 20 --lookback 1h
+
+# Get specific trace details
+novactl trace get abc123def456
+
+# Search traces by criteria
+novactl trace search --service novaedge-agent --operation "HTTP GET /api/users"
+
+# Search with time range and duration filters
+novactl trace search --service novaedge-agent --start "2025-11-15T10:00:00Z" --min-duration 1s
+
+# List services with traces
+novactl trace services
+```
+
+**Configuration**: Set the trace endpoint with `--trace-endpoint` flag (default: `http://localhost:16686`)
+
+### Prometheus Query Commands
+
+Execute PromQL queries and view metrics:
+
+```bash
+# Execute custom PromQL query
+novactl metrics query 'rate(novaedge_agent_requests_total[5m])'
+
+# Query with time range
+novactl metrics query 'rate(novaedge_agent_requests_total[5m])' --start "2025-11-15T10:00:00Z" --end "2025-11-15T12:00:00Z"
+
+# Query with JSON output
+novactl metrics query 'novaedge_agent_active_connections' -o json
+
+# Show top backends by request rate
+novactl metrics top-backends --limit 10
+
+# Show top routes by latency
+novactl metrics top-routes --limit 10
+
+# Display metrics dashboard
+novactl metrics dashboard
+```
+
+**Configuration**: Set the Prometheus endpoint with `--prometheus-endpoint` flag (default: `http://localhost:9090`)
+
 ## Future Enhancements
 
-The following features are planned or partially implemented:
+The following features are planned:
 
-1. **Agent Config Inspection**: Implement gRPC client to retrieve agent configuration snapshots
-2. **Trace Viewing**: Implement OpenTelemetry trace query from OTLP endpoint
-3. **Metrics Integration**: Implement Prometheus query API client for real-time metrics
-4. **Resource Validation**: Add client-side validation before applying resources
-5. **Batch Operations**: Support for applying multiple resources from directories
-6. **Interactive Mode**: Interactive terminal UI for resource management
-7. **Export/Import**: Export resources to files and import from backups
+1. **Resource Validation**: Add client-side validation before applying resources
+2. **Batch Operations**: Support for applying multiple resources from directories
+3. **Interactive Mode**: Interactive terminal UI for resource management
+4. **Export/Import**: Export resources to files and import from backups
+5. **Agent gRPC Methods**: Complete implementation of agent query RPCs in the proto definition
 
 ## Contributing
 
