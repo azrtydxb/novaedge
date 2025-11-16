@@ -62,4 +62,6 @@ func init() {
 	rootCmd.AddCommand(newDebugCommand())
 	rootCmd.AddCommand(newMetricsCommand())
 	rootCmd.AddCommand(newLogsCommand())
+	rootCmd.AddCommand(newAgentQueryCommand())
+	rootCmd.AddCommand(newTraceCommand())
 }

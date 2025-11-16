@@ -18,8 +18,6 @@ package router
 
 import (
 	"fmt"
-	"hash/fnv"
-	"math/rand"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -33,7 +31,6 @@ import (
 	grpchandler "github.com/piwi3910/novaedge/internal/agent/grpc"
 	"github.com/piwi3910/novaedge/internal/agent/lb"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
-	"github.com/piwi3910/novaedge/internal/agent/policy"
 	"github.com/piwi3910/novaedge/internal/agent/protocol"
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"

@@ -21,6 +21,10 @@ func newMetricsCommand() *cobra.Command {
 	cmd.AddCommand(newMetricsAgentCommand())
 	cmd.AddCommand(newMetricsBackendsCommand())
 	cmd.AddCommand(newMetricsVIPsCommand())
+	cmd.AddCommand(newMetricsQueryCommand())
+	cmd.AddCommand(newMetricsTopBackendsCommand())
+	cmd.AddCommand(newMetricsTopRoutesCommand())
+	cmd.AddCommand(newMetricsDashboardCommand())
 
 	return cmd
 }
