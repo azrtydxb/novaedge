@@ -693,6 +693,9 @@ For multi-cluster deployments, deploy NovaEdge controller and agents to each clu
 ### Observability Integration
 
 **OpenTelemetry Tracing:**
+
+NovaEdge provides full distributed tracing support with W3C TraceContext propagation. Traces are automatically created for each HTTP request flowing through the proxy.
+
 ```yaml
 # Configure in agent DaemonSet
 env:
@@ -701,6 +704,36 @@ env:
 - name: OTEL_TRACE_SAMPLE_RATE
   value: "0.1"
 ```
+
+**Span Attributes:**
+
+Each request creates spans with the following attributes:
+
+| Attribute | Description |
+|-----------|-------------|
+| `http.method` | HTTP method (GET, POST, etc.) |
+| `http.url` | Full request URL |
+| `http.host` | Request host header |
+| `http.status_code` | Response status code |
+| `http.duration_seconds` | Request duration |
+| `novaedge.route.name` | Matched route name |
+| `novaedge.route.namespace` | Route namespace |
+| `novaedge.backend.cluster` | Backend cluster key |
+| `novaedge.lb.type` | Load balancer type (round_robin, ring_hash, maglev, etc.) |
+| `novaedge.endpoint` | Selected backend endpoint |
+| `novaedge.backend.duration_seconds` | Backend request duration |
+
+**Trace Context Propagation:**
+
+NovaEdge automatically:
+
+- Extracts incoming trace context from request headers
+- Creates parent spans for each HTTP request
+- Creates child spans for backend forwarding
+- Propagates trace context to backend services via headers
+- Records errors and sets span status appropriately
+
+Compatible with Jaeger, Tempo, Zipkin, and any OpenTelemetry-compatible backend.
 
 **Prometheus:**
 ```yaml

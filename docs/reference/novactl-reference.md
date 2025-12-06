@@ -452,6 +452,137 @@ Validation Summary:
   Invalid: 1
 ```
 
+### novactl trace
+
+Query distributed traces from the OpenTelemetry backend (Jaeger, Tempo, etc.).
+
+**Syntax:**
+```bash
+novactl trace <subcommand> [flags]
+```
+
+**Global Trace Flags:**
+```
+--trace-endpoint string   OpenTelemetry trace backend endpoint (default: http://localhost:16686)
+```
+
+**Subcommands:**
+
+#### novactl trace list
+
+List recent traces from the tracing backend.
+
+```bash
+# List last 20 traces from the past hour
+novactl trace list
+
+# List last 50 traces from the past 24 hours
+novactl trace list --limit 50 --lookback 24h
+
+# List traces from custom endpoint
+novactl trace list --trace-endpoint http://jaeger:16686
+```
+
+**Flags:**
+```
+--limit int        Maximum number of traces to return (default: 20)
+--lookback string  How far back to search (e.g., 1h, 24h, 7d) (default: 1h)
+```
+
+**Output:**
+```
+Recent Traces (last 1h):
+
+TRACE ID          OPERATION                  SERVICE         DURATION   SPANS   START TIME
+abc123def456      HTTP GET /api/users        novaedge-agent  45.32ms    3       14:30:05
+def456ghi789      HTTP POST /api/orders      novaedge-agent  123.45ms   5       14:29:58
+...
+
+Use 'novactl trace get <trace-id>' to view details
+```
+
+#### novactl trace get
+
+Get details of a specific trace by ID.
+
+```bash
+# Get trace details
+novactl trace get abc123def456
+
+# Get trace from custom endpoint
+novactl trace get abc123def456 --trace-endpoint http://jaeger:16686
+```
+
+**Output:**
+```
+Trace: abc123def456789
+Operation: HTTP GET /api/users
+Service: novaedge-agent
+Duration: 45.32ms
+Start Time: 2024-11-15 14:30:05.123
+Spans: 3
+
+Span Tree:
+
+├─ HTTP GET [novaedge-agent] 45.32ms
+│  http.method: GET
+│  http.status_code: 200
+│  ├─ backend_forward [novaedge-agent] 42.15ms
+│  │  novaedge.backend.cluster: default/api-backend
+│  │  novaedge.endpoint: 10.0.1.5:8080
+│  │  ├─ upstream_request [api-service] 40.02ms
+```
+
+#### novactl trace search
+
+Search for traces matching specific criteria.
+
+```bash
+# Search for traces from novaedge-agent service
+novactl trace search --service novaedge-agent
+
+# Search for specific operation
+novactl trace search --service novaedge-agent --operation "HTTP GET /api/users"
+
+# Search with time range
+novactl trace search --service novaedge-agent --start "2024-11-15T10:00:00Z" --end "2024-11-15T12:00:00Z"
+
+# Search for slow traces (duration > 1s)
+novactl trace search --min-duration 1s
+
+# Search with tags
+novactl trace search --tag http.method=GET --tag http.status_code=500
+```
+
+**Flags:**
+```
+--service string       Service name to filter by
+--operation string     Operation name to filter by
+--start string         Start time (RFC3339 format)
+--end string           End time (RFC3339 format)
+--min-duration string  Minimum duration (e.g., 100ms, 1s)
+--max-duration string  Maximum duration (e.g., 5s)
+--tag stringArray      Tags to filter by (format: key=value)
+--limit int            Maximum traces to return (default: 20)
+```
+
+#### novactl trace services
+
+List all services that have sent traces.
+
+```bash
+novactl trace services
+```
+
+**Output:**
+```
+Services (3):
+
+  novaedge-agent
+  api-service
+  database-service
+```
+
 ### novactl config
 
 View and modify novactl configuration.
