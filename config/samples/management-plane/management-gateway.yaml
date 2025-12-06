@@ -1,0 +1,254 @@
+# NovaEdge Management Plane Protection
+# This example shows how to run the NovaEdge web UI, Prometheus, and API
+# behind NovaEdge's own reverse proxy with full security policies
+
+---
+# ProxyCertificate for the management plane (ACME/Let's Encrypt)
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyCertificate
+metadata:
+  name: management-cert
+  namespace: novaedge-system
+spec:
+  domains:
+    - management.example.com
+  issuer:
+    type: acme
+    acme:
+      email: admin@example.com
+      server: https://acme-v02.api.letsencrypt.org/directory
+      challengeType: http-01
+  renewBefore: 720h  # 30 days
+
+---
+# ProxyGateway for the management plane
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: novaedge-management
+  namespace: novaedge-system
+spec:
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        certificateRef:
+          name: management-cert
+          namespace: novaedge-system
+        minVersion: "1.2"
+        cipherSuites:
+          - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+          - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+          - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+          - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+      hostnames:
+        - management.example.com
+
+---
+# Backend for the NovaEdge Web UI
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: novaedge-webui
+  namespace: novaedge-system
+spec:
+  endpoints:
+    - address: localhost
+      port: 9080
+  healthCheck:
+    path: /api/v1/health
+    interval: 10s
+    timeout: 5s
+    healthyThreshold: 2
+    unhealthyThreshold: 3
+
+---
+# Backend for Prometheus
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: prometheus
+  namespace: novaedge-system
+spec:
+  endpoints:
+    - address: prometheus.novaedge-system.svc.cluster.local
+      port: 9090
+  healthCheck:
+    path: /-/healthy
+    interval: 30s
+    timeout: 5s
+
+---
+# Route for the Web UI
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: management-webui
+  namespace: novaedge-system
+spec:
+  parentRefs:
+    - name: novaedge-management
+      namespace: novaedge-system
+  hostnames:
+    - management.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: novaedge-webui
+          namespace: novaedge-system
+      filters:
+        # Add security headers to all responses
+        - type: ResponseSetHeader
+          responseSet:
+            - name: X-Frame-Options
+              value: DENY
+            - name: X-Content-Type-Options
+              value: nosniff
+            - name: X-XSS-Protection
+              value: "1; mode=block"
+            - name: Referrer-Policy
+              value: strict-origin-when-cross-origin
+
+---
+# Route for Prometheus (under /prometheus path)
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: management-metrics
+  namespace: novaedge-system
+spec:
+  parentRefs:
+    - name: novaedge-management
+      namespace: novaedge-system
+  hostnames:
+    - management.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /prometheus
+      backendRefs:
+        - name: prometheus
+          namespace: novaedge-system
+      filters:
+        # Strip /prometheus prefix when forwarding to Prometheus
+        - type: URLRewrite
+          rewritePath: /
+
+---
+# Security Policy: Rate Limiting
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: management-ratelimit
+  namespace: novaedge-system
+spec:
+  targetRef:
+    kind: ProxyGateway
+    name: novaedge-management
+    namespace: novaedge-system
+  type: RateLimit
+  rateLimit:
+    requestsPerSecond: 100
+    burst: 200
+    key: client_ip
+
+---
+# Security Policy: IP Allow List (restrict to internal networks)
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: management-ipfilter
+  namespace: novaedge-system
+spec:
+  targetRef:
+    kind: ProxyGateway
+    name: novaedge-management
+    namespace: novaedge-system
+  type: IPAllowList
+  ipFilter:
+    cidrs:
+      - 10.0.0.0/8       # Private networks
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+
+---
+# Security Policy: Security Headers (HSTS, CSP, etc.)
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: management-security-headers
+  namespace: novaedge-system
+spec:
+  targetRef:
+    kind: ProxyGateway
+    name: novaedge-management
+    namespace: novaedge-system
+  type: SecurityHeaders
+  securityHeaders:
+    hsts:
+      enabled: true
+      maxAgeSeconds: 31536000  # 1 year
+      includeSubdomains: true
+      preload: false
+    contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"
+    xFrameOptions: DENY
+    xContentTypeOptions: true
+    xXssProtection: "1; mode=block"
+    referrerPolicy: strict-origin-when-cross-origin
+
+---
+# Optional: JWT Authentication Policy
+# Uncomment to require JWT tokens for access
+# apiVersion: proxy.novaedge.io/v1alpha1
+# kind: ProxyPolicy
+# metadata:
+#   name: management-jwt
+#   namespace: novaedge-system
+# spec:
+#   targetRef:
+#     kind: ProxyGateway
+#     name: novaedge-management
+#     namespace: novaedge-system
+#   type: JWT
+#   jwt:
+#     issuer: https://auth.example.com
+#     audience:
+#       - novaedge-management
+#     jwksUri: https://auth.example.com/.well-known/jwks.json
+#     headerName: Authorization
+#     headerPrefix: Bearer
+
+---
+# Optional: CORS Policy for API access
+# Uncomment if you need CORS support
+# apiVersion: proxy.novaedge.io/v1alpha1
+# kind: ProxyPolicy
+# metadata:
+#   name: management-cors
+#   namespace: novaedge-system
+# spec:
+#   targetRef:
+#     kind: ProxyGateway
+#     name: novaedge-management
+#     namespace: novaedge-system
+#   type: CORS
+#   cors:
+#     allowOrigins:
+#       - https://dashboard.example.com
+#     allowMethods:
+#       - GET
+#       - POST
+#       - PUT
+#       - DELETE
+#     allowHeaders:
+#       - Authorization
+#       - Content-Type
+#     exposeHeaders:
+#       - X-Request-Id
+#     maxAgeSeconds: 86400
+#     allowCredentials: true

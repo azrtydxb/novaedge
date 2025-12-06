@@ -21,7 +21,7 @@ import (
 )
 
 // PolicyType defines the type of policy
-// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS
+// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders
 type PolicyType string
 
 const (
@@ -35,6 +35,8 @@ const (
 	PolicyTypeIPDenyList PolicyType = "IPDenyList"
 	// PolicyTypeCORS applies CORS headers
 	PolicyTypeCORS PolicyType = "CORS"
+	// PolicyTypeSecurityHeaders applies security headers (HSTS, CSP, etc.)
+	PolicyTypeSecurityHeaders PolicyType = "SecurityHeaders"
 )
 
 // RateLimitConfig defines rate limiting configuration
@@ -119,6 +121,76 @@ type CORSConfig struct {
 	AllowCredentials bool `json:"allowCredentials,omitempty"`
 }
 
+// SecurityHeadersConfig defines security headers policy configuration
+type SecurityHeadersConfig struct {
+	// HSTS configures HTTP Strict Transport Security
+	// +optional
+	HSTS *HSTSConfig `json:"hsts,omitempty"`
+
+	// ContentSecurityPolicy sets the Content-Security-Policy header
+	// +optional
+	ContentSecurityPolicy string `json:"contentSecurityPolicy,omitempty"`
+
+	// XFrameOptions sets the X-Frame-Options header (DENY, SAMEORIGIN, ALLOW-FROM uri)
+	// +optional
+	// +kubebuilder:validation:Enum=DENY;SAMEORIGIN
+	XFrameOptions string `json:"xFrameOptions,omitempty"`
+
+	// XContentTypeOptions enables X-Content-Type-Options: nosniff
+	// +optional
+	// +kubebuilder:default=true
+	XContentTypeOptions bool `json:"xContentTypeOptions,omitempty"`
+
+	// XXSSProtection sets the X-XSS-Protection header (e.g., "1; mode=block")
+	// +optional
+	XXSSProtection string `json:"xXssProtection,omitempty"`
+
+	// ReferrerPolicy sets the Referrer-Policy header
+	// +optional
+	// +kubebuilder:validation:Enum=no-referrer;no-referrer-when-downgrade;origin;origin-when-cross-origin;same-origin;strict-origin;strict-origin-when-cross-origin;unsafe-url
+	ReferrerPolicy string `json:"referrerPolicy,omitempty"`
+
+	// PermissionsPolicy sets the Permissions-Policy header (replaces Feature-Policy)
+	// +optional
+	PermissionsPolicy string `json:"permissionsPolicy,omitempty"`
+
+	// CrossOriginEmbedderPolicy sets the Cross-Origin-Embedder-Policy header
+	// +optional
+	// +kubebuilder:validation:Enum=unsafe-none;require-corp;credentialless
+	CrossOriginEmbedderPolicy string `json:"crossOriginEmbedderPolicy,omitempty"`
+
+	// CrossOriginOpenerPolicy sets the Cross-Origin-Opener-Policy header
+	// +optional
+	// +kubebuilder:validation:Enum=unsafe-none;same-origin-allow-popups;same-origin
+	CrossOriginOpenerPolicy string `json:"crossOriginOpenerPolicy,omitempty"`
+
+	// CrossOriginResourcePolicy sets the Cross-Origin-Resource-Policy header
+	// +optional
+	// +kubebuilder:validation:Enum=same-site;same-origin;cross-origin
+	CrossOriginResourcePolicy string `json:"crossOriginResourcePolicy,omitempty"`
+}
+
+// HSTSConfig defines HSTS (HTTP Strict Transport Security) settings
+type HSTSConfig struct {
+	// Enabled enables HSTS
+	// +optional
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MaxAge is the time in seconds that the browser should remember this site is HTTPS only
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=31536000
+	MaxAge int64 `json:"maxAge,omitempty"`
+
+	// IncludeSubDomains applies HSTS to all subdomains
+	// +optional
+	IncludeSubDomains bool `json:"includeSubDomains,omitempty"`
+
+	// Preload adds the site to the browser HSTS preload list
+	// +optional
+	Preload bool `json:"preload,omitempty"`
+}
+
 // TargetRef identifies the resource(s) this policy applies to
 type TargetRef struct {
 	// Kind is the kind of resource (e.g., ProxyGateway, ProxyRoute)
@@ -160,6 +232,10 @@ type ProxyPolicySpec struct {
 	// CORS configuration (for CORS type)
 	// +optional
 	CORS *CORSConfig `json:"cors,omitempty"`
+
+	// SecurityHeaders configuration (for SecurityHeaders type)
+	// +optional
+	SecurityHeaders *SecurityHeadersConfig `json:"securityHeaders,omitempty"`
 }
 
 // ProxyPolicyStatus defines the observed state of ProxyPolicy

@@ -96,7 +96,7 @@ backends:
 ```
 
 ### Policies
-Add rate limiting, CORS, and more:
+Add rate limiting, CORS, security headers, and more:
 ```yaml
 policies:
   - name: rate-limit
@@ -105,6 +105,17 @@ policies:
       requestsPerSecond: 100
       burstSize: 150
       key: client_ip
+
+  - name: security-headers
+    type: SecurityHeaders
+    securityHeaders:
+      hsts:
+        enabled: true
+        maxAgeSeconds: 31536000
+        includeSubdomains: true
+      xFrameOptions: DENY
+      xContentTypeOptions: true
+      referrerPolicy: strict-origin-when-cross-origin
 ```
 
 ## TLS Configuration
@@ -179,6 +190,23 @@ Prometheus metrics available at `http://localhost:9090/metrics`:
                     | (Prometheus)    |
                     +-----------------+
 ```
+
+## Management Plane Protection
+
+Run the Web UI and Prometheus behind NovaEdge's reverse proxy for enhanced security:
+
+```bash
+# Use the management plane example configuration
+./bin/novaedge-standalone --config=config/samples/management-plane/standalone-management.yaml
+```
+
+This configuration includes:
+- HTTPS with ACME/Let's Encrypt certificates
+- Rate limiting (100 req/s per IP)
+- IP allow list (internal networks only)
+- Security headers (HSTS, CSP, X-Frame-Options)
+
+See `config/samples/management-plane/standalone-management.yaml` for the full example.
 
 ## Differences from Kubernetes Mode
 

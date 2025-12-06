@@ -1,0 +1,147 @@
+# NovaEdge Management Plane - Standalone Configuration
+# This example shows how to protect the management plane in standalone (non-Kubernetes) mode
+
+version: "1.0"
+
+# Certificate configuration
+certificates:
+  # ACME/Let's Encrypt certificate for management plane
+  - name: management-cert
+    domains:
+      - management.example.com
+    issuer:
+      type: acme
+      acme:
+        email: admin@example.com
+        server: https://acme-v02.api.letsencrypt.org/directory
+        challengeType: http-01
+    renewBefore: 720h  # 30 days
+
+  # Self-signed certificate (alternative for development/internal use)
+  # - name: management-cert-selfsigned
+  #   domains:
+  #     - management.local
+  #   issuer:
+  #     type: self-signed
+  #     selfSigned:
+  #       validity: 8760h  # 1 year
+
+# Gateways
+gateways:
+  - name: management-gateway
+    listeners:
+      - name: https
+        port: 443
+        protocol: HTTPS
+        certificate: management-cert
+        hostnames:
+          - management.example.com
+        tls:
+          minVersion: "1.2"
+          cipherSuites:
+            - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+            - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+
+# Backends (internal services)
+backends:
+  - name: webui
+    endpoints:
+      - address: 127.0.0.1
+        port: 9080
+    healthCheck:
+      path: /api/v1/health
+      interval: 10s
+      timeout: 5s
+      healthyThreshold: 2
+      unhealthyThreshold: 3
+
+  - name: prometheus
+    endpoints:
+      - address: 127.0.0.1
+        port: 9090
+    healthCheck:
+      path: /-/healthy
+      interval: 30s
+      timeout: 5s
+
+# Routes
+routes:
+  # Web UI route
+  - name: webui-route
+    hostnames:
+      - management.example.com
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /
+        backendRefs:
+          - name: webui
+        filters:
+          # Add security headers
+          - type: ResponseSetHeader
+            responseSet:
+              - name: X-Frame-Options
+                value: DENY
+              - name: X-Content-Type-Options
+                value: nosniff
+
+  # Prometheus route (under /prometheus path)
+  - name: prometheus-route
+    hostnames:
+      - management.example.com
+    rules:
+      - matches:
+          - path:
+              type: PathPrefix
+              value: /prometheus
+        backendRefs:
+          - name: prometheus
+        filters:
+          # Strip /prometheus prefix
+          - type: URLRewrite
+            rewritePath: /
+
+# Policies
+policies:
+  # Rate limiting
+  - name: management-ratelimit
+    type: RateLimit
+    targetRef:
+      kind: Gateway
+      name: management-gateway
+    rateLimit:
+      requestsPerSecond: 100
+      burst: 200
+      key: client_ip
+
+  # IP Allow List (restrict to internal networks)
+  - name: management-ipfilter
+    type: IPAllowList
+    targetRef:
+      kind: Gateway
+      name: management-gateway
+    ipFilter:
+      cidrs:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - 127.0.0.1/32  # localhost
+
+  # Security Headers (HSTS, CSP, etc.)
+  - name: management-security-headers
+    type: SecurityHeaders
+    targetRef:
+      kind: Gateway
+      name: management-gateway
+    securityHeaders:
+      hsts:
+        enabled: true
+        maxAgeSeconds: 31536000
+        includeSubdomains: true
+        preload: false
+      contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"
+      xFrameOptions: DENY
+      xContentTypeOptions: true
+      xXssProtection: "1; mode=block"
+      referrerPolicy: strict-origin-when-cross-origin

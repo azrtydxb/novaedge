@@ -277,21 +277,52 @@ type ProxyBackendSpec struct {
 	Protocol string `json:"protocol,omitempty"`
 }
 
+// BackendTLSMode defines the TLS verification mode for backend connections
+// +kubebuilder:validation:Enum=verify;skip-verify;mtls
+type BackendTLSMode string
+
+const (
+	// BackendTLSModeVerify verifies the backend certificate (default)
+	BackendTLSModeVerify BackendTLSMode = "verify"
+	// BackendTLSModeSkipVerify skips certificate verification
+	BackendTLSModeSkipVerify BackendTLSMode = "skip-verify"
+	// BackendTLSModeMTLS enables mutual TLS with client certificate
+	BackendTLSModeMTLS BackendTLSMode = "mtls"
+)
+
 // BackendTLSConfig defines TLS settings for backend connections
 type BackendTLSConfig struct {
 	// Enabled indicates whether to use TLS
 	// +kubebuilder:default=false
 	Enabled bool `json:"enabled"`
 
-	// InsecureSkipVerify skips certificate validation (not recommended for production)
+	// Mode specifies the TLS verification mode
+	// +optional
+	// +kubebuilder:default="verify"
+	Mode BackendTLSMode `json:"mode,omitempty"`
+
+	// InsecureSkipVerify is deprecated, use Mode: skip-verify instead
 	// +optional
 	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 
-	// CACertSecretRef references a Secret containing CA certificates
+	// CACertSecretRef references a Secret containing CA certificates for verification
 	// +optional
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	CACertSecretRef *string `json:"caCertSecretRef,omitempty"`
+
+	// ClientCertSecretRef references a Secret containing client certificate for mTLS
+	// The Secret should contain tls.crt and tls.key
+	// +optional
+	ClientCertSecretRef *string `json:"clientCertSecretRef,omitempty"`
+
+	// SelfSigned generates a self-signed client certificate for mTLS
+	// +optional
+	SelfSigned bool `json:"selfSigned,omitempty"`
+
+	// ServerName overrides the server name for SNI and certificate verification
+	// +optional
+	ServerName string `json:"serverName,omitempty"`
 }
 
 // ProxyBackendStatus defines the observed state of ProxyBackend

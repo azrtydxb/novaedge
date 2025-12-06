@@ -22,6 +22,12 @@ var (
 	webMode               string
 	webStandaloneConfig   string
 	webReadOnly           bool
+	// TLS flags
+	webTLSCert    string
+	webTLSKey     string
+	webTLSAuto    bool
+	webACMEEmail  string
+	webACMEDomain string
 )
 
 func newWebCommand() *cobra.Command {
@@ -57,7 +63,16 @@ The mode is auto-detected but can be explicitly set with --mode.`,
   novactl web --read-only
 
   # Start and open browser automatically
-  novactl web --open`,
+  novactl web --open
+
+  # Start with TLS using manual certificates
+  novactl web --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
+
+  # Start with auto-generated self-signed certificate
+  novactl web --tls-auto
+
+  # Start with self-signed certificate for a specific domain
+  novactl web --tls-auto --acme-domain dashboard.example.com`,
 		RunE: runWeb,
 	}
 
@@ -74,6 +89,18 @@ The mode is auto-detected but can be explicitly set with --mode.`,
 	cmd.Flags().BoolVar(&webReadOnly, "read-only", false,
 		"Disable write operations (view-only mode)")
 
+	// TLS flags
+	cmd.Flags().StringVar(&webTLSCert, "tls-cert", "",
+		"Path to TLS certificate file (PEM format)")
+	cmd.Flags().StringVar(&webTLSKey, "tls-key", "",
+		"Path to TLS private key file (PEM format)")
+	cmd.Flags().BoolVar(&webTLSAuto, "tls-auto", false,
+		"Auto-generate a self-signed certificate")
+	cmd.Flags().StringVar(&webACMEEmail, "acme-email", "",
+		"Email for ACME/Let's Encrypt certificate (reserved for future use)")
+	cmd.Flags().StringVar(&webACMEDomain, "acme-domain", "",
+		"Domain name for certificate (used with --tls-auto)")
+
 	return cmd
 }
 
@@ -85,6 +112,12 @@ func runWeb(cmd *cobra.Command, args []string) error {
 		Mode:                 webMode,
 		StandaloneConfigPath: webStandaloneConfig,
 		ReadOnly:             webReadOnly,
+		// TLS configuration
+		TLSCert:    webTLSCert,
+		TLSKey:     webTLSKey,
+		TLSAuto:    webTLSAuto,
+		ACMEEmail:  webACMEEmail,
+		ACMEDomain: webACMEDomain,
 	}
 
 	// For Kubernetes mode (or auto mode), try to load kubeconfig
@@ -134,9 +167,13 @@ func runWeb(cmd *cobra.Command, args []string) error {
 
 	// Open browser if requested
 	if webOpenBrowser {
-		url := fmt.Sprintf("http://localhost%s", webAddress)
+		scheme := "http"
+		if server.IsTLSEnabled() {
+			scheme = "https"
+		}
+		url := fmt.Sprintf("%s://localhost%s", scheme, webAddress)
 		if webAddress[0] != ':' {
-			url = fmt.Sprintf("http://%s", webAddress)
+			url = fmt.Sprintf("%s://%s", scheme, webAddress)
 		}
 		fmt.Printf("Opening browser at %s\n", url)
 		openBrowser(url)

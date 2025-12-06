@@ -113,13 +113,13 @@ type HTTPRouteMatch struct {
 }
 
 // HTTPRouteFilterType identifies a type of filter
-// +kubebuilder:validation:Enum=AddHeader;RemoveHeader;RequestRedirect;URLRewrite;RequestMirror
+// +kubebuilder:validation:Enum=AddHeader;RemoveHeader;RequestRedirect;URLRewrite;RequestMirror;ResponseAddHeader;ResponseRemoveHeader;ResponseSetHeader
 type HTTPRouteFilterType string
 
 const (
-	// HTTPRouteFilterAddHeader adds HTTP headers
+	// HTTPRouteFilterAddHeader adds HTTP request headers
 	HTTPRouteFilterAddHeader HTTPRouteFilterType = "AddHeader"
-	// HTTPRouteFilterRemoveHeader removes HTTP headers
+	// HTTPRouteFilterRemoveHeader removes HTTP request headers
 	HTTPRouteFilterRemoveHeader HTTPRouteFilterType = "RemoveHeader"
 	// HTTPRouteFilterRequestRedirect redirects the request
 	HTTPRouteFilterRequestRedirect HTTPRouteFilterType = "RequestRedirect"
@@ -127,6 +127,12 @@ const (
 	HTTPRouteFilterURLRewrite HTTPRouteFilterType = "URLRewrite"
 	// HTTPRouteFilterRequestMirror mirrors the request to another backend
 	HTTPRouteFilterRequestMirror HTTPRouteFilterType = "RequestMirror"
+	// HTTPRouteFilterResponseAddHeader adds HTTP response headers
+	HTTPRouteFilterResponseAddHeader HTTPRouteFilterType = "ResponseAddHeader"
+	// HTTPRouteFilterResponseRemoveHeader removes HTTP response headers
+	HTTPRouteFilterResponseRemoveHeader HTTPRouteFilterType = "ResponseRemoveHeader"
+	// HTTPRouteFilterResponseSetHeader sets HTTP response headers (replaces existing)
+	HTTPRouteFilterResponseSetHeader HTTPRouteFilterType = "ResponseSetHeader"
 )
 
 // HTTPHeader represents an HTTP header name and value
@@ -173,6 +179,19 @@ type HTTPRouteFilter struct {
 	// +kubebuilder:validation:Maximum=100
 	// +kubebuilder:default=100
 	MirrorPercent *int32 `json:"mirrorPercent,omitempty"`
+
+	// ResponseAdd contains headers to add to the response (for ResponseAddHeader type)
+	// +optional
+	ResponseAdd []HTTPHeader `json:"responseAdd,omitempty"`
+
+	// ResponseRemove contains header names to remove from the response (for ResponseRemoveHeader type)
+	// +optional
+	ResponseRemove []string `json:"responseRemove,omitempty"`
+
+	// ResponseSet contains headers to set on the response (for ResponseSetHeader type)
+	// These headers will replace any existing values
+	// +optional
+	ResponseSet []HTTPHeader `json:"responseSet,omitempty"`
 }
 
 // BackendRef references a backend for routing

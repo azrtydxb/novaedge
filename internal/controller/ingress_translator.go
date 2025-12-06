@@ -348,7 +348,7 @@ func (t *IngressTranslator) createHTTPSListener(ingress *networkingv1.Ingress) n
 		// Map each host to its corresponding TLS certificate secret
 		for _, host := range tls.Hosts {
 			tlsCertificates[host] = novaedgev1alpha1.TLSConfig{
-				SecretRef: corev1.SecretReference{
+				SecretRef: &corev1.SecretReference{
 					Name:      tls.SecretName,
 					Namespace: ingress.Namespace,
 				},
@@ -360,7 +360,7 @@ func (t *IngressTranslator) createHTTPSListener(ingress *networkingv1.Ingress) n
 		// If no specific hosts are defined, use wildcard "*" for this certificate
 		if len(tls.Hosts) == 0 && tls.SecretName != "" {
 			tlsCertificates["*"] = novaedgev1alpha1.TLSConfig{
-				SecretRef: corev1.SecretReference{
+				SecretRef: &corev1.SecretReference{
 					Name:      tls.SecretName,
 					Namespace: ingress.Namespace,
 				},
@@ -379,7 +379,7 @@ func (t *IngressTranslator) createHTTPSListener(ingress *networkingv1.Ingress) n
 	// This serves as a default fallback for older agent versions
 	if len(ingress.Spec.TLS) > 0 && ingress.Spec.TLS[0].SecretName != "" {
 		listener.TLS = &novaedgev1alpha1.TLSConfig{
-			SecretRef: corev1.SecretReference{
+			SecretRef: &corev1.SecretReference{
 				Name:      ingress.Spec.TLS[0].SecretName,
 				Namespace: ingress.Namespace,
 			},

@@ -136,6 +136,10 @@ message RouteFilter {
   repeated string remove_headers = 3;
   string redirect_url = 4;
   string rewrite_path = 5;
+  // Response header modifications
+  repeated HTTPHeader response_add_headers = 6;
+  repeated string response_remove_headers = 7;
+  repeated HTTPHeader response_set_headers = 8;
 }
 
 enum RouteFilterType {
@@ -144,6 +148,9 @@ enum RouteFilterType {
   REMOVE_HEADER = 2;
   REQUEST_REDIRECT = 3;
   URL_REWRITE = 4;
+  RESPONSE_ADD_HEADER = 5;
+  RESPONSE_REMOVE_HEADER = 6;
+  RESPONSE_SET_HEADER = 7;
 }
 
 // HTTPHeader represents a name-value pair
@@ -292,6 +299,7 @@ message Policy {
   JWTConfig jwt = 6;
   IPListConfig ip_list = 7;
   CORSConfig cors = 8;
+  SecurityHeadersConfig security_headers = 9;
 }
 
 enum PolicyType {
@@ -301,6 +309,7 @@ enum PolicyType {
   IP_ALLOW_LIST = 3;
   IP_DENY_LIST = 4;
   CORS = 5;
+  SECURITY_HEADERS = 6;
 }
 
 // TargetRef identifies the resource a policy applies to
@@ -340,6 +349,54 @@ message CORSConfig {
   repeated string expose_headers = 4;
   int64 max_age_seconds = 5;
   bool allow_credentials = 6;
+}
+
+// SecurityHeadersConfig defines security headers settings
+message SecurityHeadersConfig {
+  // HSTS (HTTP Strict Transport Security) configuration
+  HSTSConfig hsts = 1;
+
+  // Content Security Policy header value
+  string content_security_policy = 2;
+
+  // X-Frame-Options header value (DENY, SAMEORIGIN, ALLOW-FROM uri)
+  string x_frame_options = 3;
+
+  // X-Content-Type-Options: nosniff
+  bool x_content_type_options = 4;
+
+  // X-XSS-Protection header value (e.g., "1; mode=block")
+  string x_xss_protection = 5;
+
+  // Referrer-Policy header value
+  string referrer_policy = 6;
+
+  // Permissions-Policy header value (replaces Feature-Policy)
+  string permissions_policy = 7;
+
+  // Cross-Origin-Embedder-Policy header value
+  string cross_origin_embedder_policy = 8;
+
+  // Cross-Origin-Opener-Policy header value
+  string cross_origin_opener_policy = 9;
+
+  // Cross-Origin-Resource-Policy header value
+  string cross_origin_resource_policy = 10;
+}
+
+// HSTSConfig defines HSTS settings
+message HSTSConfig {
+  // Whether HSTS is enabled
+  bool enabled = 1;
+
+  // Max age in seconds (e.g., 31536000 for 1 year)
+  int64 max_age_seconds = 2;
+
+  // Include subdomains in the HSTS policy
+  bool include_subdomains = 3;
+
+  // Add site to browser HSTS preload list
+  bool preload = 4;
 }
 
 // ConfigService is the gRPC service for distributing config snapshots
