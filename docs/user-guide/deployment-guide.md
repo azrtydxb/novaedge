@@ -2,6 +2,52 @@
 
 This guide walks through deploying NovaEdge to a Kubernetes cluster, from initial setup to serving traffic.
 
+## Deployment Architecture
+
+```mermaid
+flowchart TB
+    subgraph K8s["Kubernetes Cluster"]
+        subgraph NS["novaedge-system namespace"]
+            CTRL["Controller<br/>(Deployment)<br/>1-3 replicas"]
+            AGENT1["Agent<br/>(Node 1)"]
+            AGENT2["Agent<br/>(Node 2)"]
+            AGENT3["Agent<br/>(Node 3)"]
+        end
+
+        subgraph CRDs["Custom Resources"]
+            VIP["ProxyVIP"]
+            GW["ProxyGateway"]
+            RT["ProxyRoute"]
+            BE["ProxyBackend"]
+            POL["ProxyPolicy"]
+        end
+
+        subgraph Apps["Your Applications"]
+            SVC1["Service A"]
+            SVC2["Service B"]
+        end
+    end
+
+    Client((Client))
+    VIPAddr{{"VIP<br/>192.168.1.100"}}
+
+    Client --> VIPAddr
+    VIPAddr --> AGENT1
+    VIPAddr --> AGENT2
+    VIPAddr --> AGENT3
+
+    CTRL -->|"gRPC<br/>Config Push"| AGENT1
+    CTRL -->|"gRPC<br/>Config Push"| AGENT2
+    CTRL -->|"gRPC<br/>Config Push"| AGENT3
+
+    CTRL -->|"Watches"| CRDs
+    AGENT1 --> SVC1
+    AGENT2 --> SVC2
+
+    style NS fill:#e6f3ff
+    style CRDs fill:#fff5e6
+```
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
@@ -38,9 +84,54 @@ NovaEdge agents run with `hostNetwork: true` and require the following:
 
 ## Quick Start
 
-### Using Helm (Recommended)
+### Using the Operator (Recommended)
 
-The fastest way to deploy NovaEdge:
+The simplest way to deploy and manage NovaEdge:
+
+```bash
+# Install the NovaEdge Operator
+helm install novaedge-operator ./charts/novaedge-operator \
+  --namespace novaedge-system \
+  --create-namespace
+
+# Create a NovaEdgeCluster resource
+kubectl apply -f - <<EOF
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeCluster
+metadata:
+  name: novaedge
+  namespace: novaedge-system
+spec:
+  version: "v0.1.0"
+  controller:
+    replicas: 1
+    leaderElection: true
+  agent:
+    hostNetwork: true
+    vip:
+      enabled: true
+      mode: L2
+  webUI:
+    enabled: true
+    service:
+      type: ClusterIP
+EOF
+
+# Verify deployment
+kubectl get novaedgecluster -n novaedge-system
+kubectl get pods -n novaedge-system
+```
+
+The operator automatically manages:
+- Controller deployment with leader election
+- Agent DaemonSet on all nodes
+- Web UI deployment (optional)
+- RBAC configuration
+- Rolling upgrades when you change the version
+
+### Using Helm (Direct)
+
+Deploy NovaEdge components directly without the operator:
 
 ```bash
 # Add the NovaEdge Helm repository (when published)
@@ -176,7 +267,31 @@ You should see one agent pod per node in your cluster.
 
 ### Step 6: Configure VIP
 
-Create a ProxyVIP resource to define how traffic reaches your cluster:
+Create a ProxyVIP resource to define how traffic reaches your cluster.
+
+```mermaid
+flowchart TB
+    subgraph VIPModes["VIP Modes"]
+        subgraph L2["L2 ARP Mode"]
+            L2A["Single active node<br/>owns the VIP"]
+            L2B["Automatic failover<br/>via GARP"]
+        end
+
+        subgraph BGP["BGP Mode"]
+            BGPA["All nodes announce<br/>VIP via BGP"]
+            BGPB["ECMP load<br/>distribution"]
+        end
+
+        subgraph OSPF["OSPF Mode"]
+            OSPFA["Announce via<br/>OSPF LSA"]
+            OSPFB["L3 routing<br/>active-active"]
+        end
+    end
+
+    style L2 fill:#90EE90
+    style BGP fill:#FFE4B5
+    style OSPF fill:#ADD8E6
+```
 
 ```yaml
 # vip.yaml
@@ -283,6 +398,25 @@ EOF
 
 ### Step 9: Test Traffic
 
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant V as VIP (192.168.1.100)
+    participant A as Agent
+    participant R as Router
+    participant B as Backend (echo)
+
+    C->>V: curl -H "Host: echo.example.com" http://VIP/
+    V->>A: Route to agent
+    A->>R: Match route rules
+    Note over R: Match: host=echo.example.com<br/>path=/*
+    R->>B: Forward to echo-backend
+    B-->>R: Response
+    R-->>A: Response
+    A-->>V: Response
+    V-->>C: HTTP 200 OK
+```
+
 ```bash
 # Test from within cluster
 kubectl run -it --rm debug --image=curlimages/curl --restart=Never -- \
@@ -370,6 +504,30 @@ spec:
 ### Policy Configuration
 
 Apply policies to routes for traffic management:
+
+```mermaid
+flowchart LR
+    subgraph Policies["Available Policy Types"]
+        RL["Rate Limit<br/>100 req/s"]
+        CORS["CORS<br/>Cross-Origin"]
+        JWT["JWT Validation<br/>Auth"]
+        SEC["Security Headers<br/>HSTS, CSP"]
+        IP["IP Filter<br/>Allow/Deny"]
+    end
+
+    subgraph Target["Policy Target"]
+        GW["ProxyGateway"]
+        RT["ProxyRoute"]
+    end
+
+    RL --> RT
+    CORS --> RT
+    JWT --> RT
+    SEC --> GW
+    IP --> GW
+
+    style Policies fill:#fff5e6
+```
 
 ```yaml
 # Rate Limiting
@@ -696,6 +854,33 @@ For multi-cluster deployments, deploy NovaEdge controller and agents to each clu
 
 NovaEdge provides full distributed tracing support with W3C TraceContext propagation. Traces are automatically created for each HTTP request flowing through the proxy.
 
+```mermaid
+flowchart LR
+    subgraph Request["Request Flow with Tracing"]
+        C((Client))
+        A["Agent<br/>(creates span)"]
+        R["Router<br/>(adds attributes)"]
+        B["Backend<br/>(child span)"]
+    end
+
+    subgraph Export["Trace Export"]
+        OTEL["OTLP<br/>Endpoint"]
+        JAEGER["Jaeger"]
+        TEMPO["Grafana<br/>Tempo"]
+        ZIPKIN["Zipkin"]
+    end
+
+    C -->|"traceparent header"| A
+    A --> R
+    R --> B
+    B -.->|"Export spans"| OTEL
+    OTEL --> JAEGER
+    OTEL --> TEMPO
+    OTEL --> ZIPKIN
+
+    style Export fill:#e6f3ff
+```
+
 ```yaml
 # Configure in agent DaemonSet
 env:
@@ -810,6 +995,7 @@ See `config/samples/proxypolicy_securityheaders_sample.yaml` for more examples.
 
 ## Next Steps
 
+- Review [Operator Guide](operator.md) for operator-based deployments
 - Review [Gateway API documentation](gateway-api.md)
 - Explore sample configurations in `config/samples/`
 - Set up monitoring and alerting

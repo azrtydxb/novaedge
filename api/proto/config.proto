@@ -414,6 +414,11 @@ message StreamConfigRequest {
   string node_name = 1;
   string agent_version = 2;
   string last_applied_version = 3;
+  // Remote cluster identification (for hub-spoke deployments)
+  string cluster_name = 4;     // Name of the remote cluster (empty for local agents)
+  string cluster_region = 5;   // Geographic region of the remote cluster
+  string cluster_zone = 6;     // Availability zone within the region
+  map<string, string> cluster_labels = 7; // Additional labels for the cluster
 }
 
 // AgentStatus is sent by agents to report their health and stats
@@ -424,6 +429,8 @@ message AgentStatus {
   bool healthy = 4;
   map<string, int64> metrics = 5;
   repeated string errors = 6;
+  // Remote cluster identification (for hub-spoke deployments)
+  string cluster_name = 7;     // Name of the remote cluster (empty for local agents)
 }
 
 // StatusResponse acknowledges status reports

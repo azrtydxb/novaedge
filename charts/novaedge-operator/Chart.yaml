@@ -1,0 +1,18 @@
+apiVersion: v2
+name: novaedge-operator
+description: A Helm chart for deploying the NovaEdge Operator - manages NovaEdge clusters on Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - novaedge
+  - operator
+  - load-balancer
+  - proxy
+  - kubernetes
+home: https://github.com/piwi3910/novaedge
+sources:
+  - https://github.com/piwi3910/novaedge
+maintainers:
+  - name: piwi3910
+    url: https://github.com/piwi3910

@@ -47,6 +47,11 @@ var (
 	grpcTLSKey  string
 	grpcTLSCA   string
 
+	// Remote cluster identification (for hub-spoke deployments)
+	clusterName   string
+	clusterRegion string
+	clusterZone   string
+
 	// Tracing configuration
 	tracingEnabled    bool
 	tracingEndpoint   string
@@ -64,6 +69,11 @@ func main() {
 	flag.StringVar(&grpcTLSCert, "grpc-tls-cert", "", "Path to gRPC client TLS certificate file (enables mTLS if provided)")
 	flag.StringVar(&grpcTLSKey, "grpc-tls-key", "", "Path to gRPC client TLS key file")
 	flag.StringVar(&grpcTLSCA, "grpc-tls-ca", "", "Path to gRPC CA certificate file for server verification")
+
+	// Remote cluster identification flags (for hub-spoke deployments)
+	flag.StringVar(&clusterName, "cluster-name", "", "Name of the remote cluster (empty for local agents)")
+	flag.StringVar(&clusterRegion, "cluster-region", "", "Geographic region of the remote cluster")
+	flag.StringVar(&clusterZone, "cluster-zone", "", "Availability zone within the region")
 
 	// Tracing flags
 	flag.BoolVar(&tracingEnabled, "tracing-enabled", false, "Enable OpenTelemetry distributed tracing")
@@ -111,10 +121,39 @@ func main() {
 		}
 	}()
 
-	// Create config watcher with optional mTLS
+	// Create config watcher with optional mTLS and cluster identification
 	var watcher *config.Watcher
-	if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {
-		// Create watcher with mTLS enabled
+	isRemoteAgent := clusterName != ""
+
+	if isRemoteAgent {
+		// Remote agents require mTLS
+		if grpcTLSCert == "" || grpcTLSKey == "" || grpcTLSCA == "" {
+			logger.Fatal("Remote agents require mTLS configuration",
+				zap.String("clusterName", clusterName))
+		}
+		// Create remote watcher with mTLS and cluster identification
+		watcher, err = config.NewRemoteWatcher(ctx, nodeName, agentVersion, controllerAddr,
+			&config.TLSConfig{
+				CertFile: grpcTLSCert,
+				KeyFile:  grpcTLSKey,
+				CAFile:   grpcTLSCA,
+			},
+			&config.ClusterConfig{
+				Name:   clusterName,
+				Region: clusterRegion,
+				Zone:   clusterZone,
+			}, logger)
+		if err != nil {
+			logger.Fatal("Failed to create remote config watcher", zap.Error(err))
+		}
+		logger.Info("Remote agent configured with mTLS",
+			zap.String("clusterName", clusterName),
+			zap.String("clusterRegion", clusterRegion),
+			zap.String("clusterZone", clusterZone),
+			zap.String("cert", grpcTLSCert),
+			zap.String("ca", grpcTLSCA))
+	} else if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {
+		// Local agent with mTLS enabled
 		watcher, err = config.NewWatcherWithTLS(ctx, nodeName, agentVersion, controllerAddr,
 			&config.TLSConfig{
 				CertFile: grpcTLSCert,
@@ -128,7 +167,7 @@ func main() {
 			zap.String("cert", grpcTLSCert),
 			zap.String("ca", grpcTLSCA))
 	} else {
-		// Create watcher without TLS (insecure, development only)
+		// Local agent without TLS (insecure, development only)
 		watcher, err = config.NewWatcher(ctx, nodeName, agentVersion, controllerAddr, logger)
 		if err != nil {
 			logger.Fatal("Failed to create config watcher", zap.Error(err))

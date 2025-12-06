@@ -5,6 +5,7 @@ IMG_CONTROLLER ?= novaedge-controller:latest
 IMG_AGENT ?= novaedge-agent:latest
 IMG_NOVACTL ?= novaedge-novactl:latest
 IMG_STANDALONE ?= novaedge-standalone:latest
+IMG_OPERATOR ?= novaedge-operator:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -88,8 +89,12 @@ build-novactl: fmt vet ## Build novactl CLI tool.
 build-standalone: fmt vet ## Build standalone agent binary.
 	go build -o bin/novaedge-standalone cmd/novaedge-standalone/main.go
 
+.PHONY: build-operator
+build-operator: fmt vet ## Build operator binary.
+	go build -o bin/novaedge-operator cmd/novaedge-operator/main.go
+
 .PHONY: build-all
-build-all: build-controller build-agent build-novactl build-standalone ## Build all binaries.
+build-all: build-controller build-agent build-novactl build-standalone build-operator ## Build all binaries.
 
 .PHONY: run-agent
 run-agent: fmt vet ## Run agent from your host.
@@ -126,8 +131,12 @@ docker-build-novactl: ## Build novactl docker image (includes web UI).
 docker-build-standalone: ## Build standalone agent docker image.
 	docker build -t ${IMG_STANDALONE} -f Dockerfile.standalone .
 
+.PHONY: docker-build-operator
+docker-build-operator: ## Build operator docker image.
+	docker build -t ${IMG_OPERATOR} -f Dockerfile.operator .
+
 .PHONY: docker-push
-docker-push: docker-push-controller docker-push-agent docker-push-novactl ## Push all docker images.
+docker-push: docker-push-controller docker-push-agent docker-push-novactl docker-push-operator ## Push all docker images.
 
 .PHONY: docker-push-controller
 docker-push-controller: ## Push controller docker image.
@@ -140,6 +149,10 @@ docker-push-agent: ## Push agent docker image.
 .PHONY: docker-push-novactl
 docker-push-novactl: ## Push novactl docker image.
 	docker push ${IMG_NOVACTL}
+
+.PHONY: docker-push-operator
+docker-push-operator: ## Push operator docker image.
+	docker push ${IMG_OPERATOR}
 
 ##@ Deployment
 
@@ -220,6 +233,28 @@ helm-uninstall: ## Uninstall NovaEdge using Helm.
 .PHONY: helm-template
 helm-template: ## Generate Helm templates for debugging.
 	helm template novaedge charts/novaedge -n novaedge-system
+
+##@ Operator
+
+.PHONY: operator-install
+operator-install: ## Install NovaEdge Operator using Helm.
+	helm install novaedge-operator charts/novaedge-operator -n novaedge-system --create-namespace
+
+.PHONY: operator-upgrade
+operator-upgrade: ## Upgrade NovaEdge Operator using Helm.
+	helm upgrade novaedge-operator charts/novaedge-operator -n novaedge-system
+
+.PHONY: operator-uninstall
+operator-uninstall: ## Uninstall NovaEdge Operator using Helm.
+	helm uninstall novaedge-operator -n novaedge-system
+
+.PHONY: operator-template
+operator-template: ## Generate Operator Helm templates for debugging.
+	helm template novaedge-operator charts/novaedge-operator -n novaedge-system
+
+.PHONY: run-operator
+run-operator: fmt vet ## Run operator from your host.
+	go run ./cmd/novaedge-operator/main.go
 
 ##@ Build Dependencies
 

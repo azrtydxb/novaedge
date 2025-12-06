@@ -7,6 +7,44 @@ Run NovaEdge as a standalone load balancer without Kubernetes. This mode is idea
 - Development and testing
 - Edge locations without Kubernetes
 
+## Architecture Overview
+
+```mermaid
+flowchart TB
+    subgraph Standalone["Standalone NovaEdge"]
+        CFG["config.yaml<br/>(File-based config)"]
+        NE["NovaEdge<br/>Standalone Binary"]
+
+        subgraph Components["Internal Components"]
+            RT["Router"]
+            LB["Load Balancer"]
+            HC["Health Checker"]
+            VIP["VIP Manager"]
+        end
+    end
+
+    subgraph Backends["Backend Servers"]
+        B1["server1:8080"]
+        B2["server2:8080"]
+        B3["server3:8080"]
+    end
+
+    Client((Client))
+
+    CFG --> NE
+    NE --> Components
+    Client --> VIP
+    VIP --> RT
+    RT --> LB
+    LB --> HC
+    HC --> B1
+    HC --> B2
+    HC --> B3
+
+    style Standalone fill:#e6f3ff
+    style Backends fill:#90EE90
+```
+
 ## Quick Start
 
 ### Using Docker Compose
@@ -46,6 +84,22 @@ make build-standalone
 ## Configuration
 
 Edit `config.yaml` to customize your load balancer.
+
+```mermaid
+flowchart TB
+    subgraph ConfigFile["config.yaml Structure"]
+        L["listeners:<br/>- HTTP :80<br/>- HTTPS :443"]
+        R["routes:<br/>- host matching<br/>- path matching"]
+        B["backends:<br/>- endpoints<br/>- lb policy<br/>- health checks"]
+        P["policies:<br/>- rate limit<br/>- security headers"]
+    end
+
+    L --> R
+    R --> B
+    R --> P
+
+    style ConfigFile fill:#fff5e6
+```
 
 ### Listeners
 
@@ -275,6 +329,31 @@ policies:
 
 ## Differences from Kubernetes Mode
 
+```mermaid
+flowchart LR
+    subgraph Standalone["Standalone Mode"]
+        S1["YAML Config"]
+        S2["Static Endpoints"]
+        S3["File-based TLS"]
+        S4["Single Process"]
+    end
+
+    subgraph K8s["Kubernetes Mode"]
+        K1["CRDs"]
+        K2["EndpointSlices"]
+        K3["K8s Secrets"]
+        K4["DaemonSet"]
+    end
+
+    S1 -.->|"equivalent"| K1
+    S2 -.->|"equivalent"| K2
+    S3 -.->|"equivalent"| K3
+    S4 -.->|"equivalent"| K4
+
+    style Standalone fill:#FFE4B5
+    style K8s fill:#ADD8E6
+```
+
 | Feature | Standalone | Kubernetes |
 |---------|-----------|------------|
 | Config Source | YAML file | CRDs + Secrets |
@@ -284,6 +363,29 @@ policies:
 | Scaling | Manual | Horizontal Pod Autoscaler |
 
 ## Docker Compose Example
+
+```mermaid
+flowchart TB
+    subgraph Docker["Docker Compose Stack"]
+        NE["novaedge<br/>:80 :443"]
+        PROM["prometheus<br/>:9091"]
+        GRAF["grafana<br/>:3000"]
+    end
+
+    subgraph Volumes["Mounted Volumes"]
+        CFG["./config.yaml"]
+        CERTS["./certs/"]
+        PROMCFG["./prometheus.yml"]
+    end
+
+    CFG --> NE
+    CERTS --> NE
+    NE -.->|"metrics"| PROM
+    PROM --> GRAF
+    PROMCFG --> PROM
+
+    style Docker fill:#e6f3ff
+```
 
 ```yaml
 version: '3.8'

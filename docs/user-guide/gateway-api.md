@@ -6,6 +6,30 @@ NovaEdge provides native support for the Kubernetes Gateway API, allowing you to
 
 The Gateway API implementation in NovaEdge translates Gateway API resources into NovaEdge's native CRDs:
 
+```mermaid
+flowchart LR
+    subgraph GatewayAPI["Gateway API Resources"]
+        GC["GatewayClass<br/>(novaedge)"]
+        GW["Gateway"]
+        HR["HTTPRoute"]
+        SVC["Service"]
+    end
+
+    subgraph NovaEdge["NovaEdge Native CRDs"]
+        PGW["ProxyGateway"]
+        PRT["ProxyRoute"]
+        PBE["ProxyBackend"]
+    end
+
+    GC --> GW
+    GW -->|"translates"| PGW
+    HR -->|"translates"| PRT
+    SVC -->|"translates"| PBE
+
+    style GatewayAPI fill:#e6f3ff
+    style NovaEdge fill:#90EE90
+```
+
 - **Gateway** → **ProxyGateway**
 - **HTTPRoute** → **ProxyRoute**
 - **Service references** → **ProxyBackend**
@@ -96,6 +120,26 @@ spec:
 
 ### Translation Process
 
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant K as Kubernetes API
+    participant GC as Gateway Controller
+    participant HC as HTTPRoute Controller
+    participant CRD as NovaEdge CRDs
+
+    U->>K: Apply Gateway
+    K->>GC: Gateway event
+    GC->>CRD: Create ProxyGateway
+    GC->>K: Update Gateway status
+
+    U->>K: Apply HTTPRoute
+    K->>HC: HTTPRoute event
+    HC->>CRD: Create ProxyRoute
+    HC->>CRD: Create ProxyBackend(s)
+    HC->>K: Update HTTPRoute status
+```
+
 1. **Gateway Controller** watches Gateway resources with `gatewayClassName: novaedge`
 2. For each Gateway, it creates a corresponding ProxyGateway with:
    - Same name and namespace
@@ -154,6 +198,42 @@ NovaEdge supports Gateway API **v1** (stable) resources:
 - Gateway address assignment
 
 ## Examples
+
+### Routing Types Overview
+
+```mermaid
+flowchart TB
+    subgraph RoutingTypes["HTTPRoute Matching Options"]
+        subgraph Path["Path Matching"]
+            P1["PathPrefix<br/>/api/v1"]
+            P2["Exact<br/>/login"]
+            P3["RegularExpression<br/>/user/[0-9]+"]
+        end
+
+        subgraph Header["Header Matching"]
+            H1["Exact<br/>X-Version: v2"]
+            H2["Present<br/>Authorization"]
+        end
+
+        subgraph Method["Method Matching"]
+            M1["GET"]
+            M2["POST"]
+        end
+    end
+
+    subgraph Filters["Request Filters"]
+        F1["Header Modifier<br/>Add/Remove headers"]
+        F2["URL Rewrite<br/>Change path"]
+        F3["Redirect<br/>301/302"]
+    end
+
+    Path --> Filters
+    Header --> Filters
+    Method --> Filters
+
+    style RoutingTypes fill:#e6f3ff
+    style Filters fill:#fff5e6
+```
 
 ### Path-Based Routing
 

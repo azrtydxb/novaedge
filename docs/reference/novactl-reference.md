@@ -53,6 +53,7 @@ novactl get <resource-type> [name] [flags]
 ```
 
 **Resource Types:**
+- `clusters` or `cluster` or `cl` (NovaEdgeCluster)
 - `gateways` or `gateway` or `gw`
 - `routes` or `route` or `rt`
 - `backends` or `backend` or `be`
@@ -62,6 +63,10 @@ novactl get <resource-type> [name] [flags]
 **Examples:**
 
 ```bash
+# List all NovaEdge clusters
+novactl get clusters
+novactl get clusters -A
+
 # List all gateways in current namespace
 novactl get gateways
 
@@ -82,6 +87,7 @@ novactl get gateways -o json
 novactl get gateways -o yaml
 
 # List all resource types
+novactl get clusters
 novactl get routes
 novactl get backends
 novactl get vips
@@ -89,6 +95,12 @@ novactl get policies
 ```
 
 **Table Output Format:**
+
+NovaEdgeClusters:
+```
+NAMESPACE        NAME       VERSION   PHASE     CONTROLLER   AGENTS   AGE
+novaedge-system  novaedge   v0.1.0    Running   1/1          3/3      5d
+```
 
 Gateways:
 ```
@@ -132,6 +144,9 @@ novactl describe <resource-type> <name> [flags]
 **Examples:**
 
 ```bash
+# Describe a NovaEdge cluster
+novactl describe cluster novaedge -n novaedge-system
+
 # Describe a gateway
 novactl describe gateway main-gateway
 
@@ -382,6 +397,16 @@ novactl status
 ```
 NovaEdge Status Report
 
+Operator:
+  Installed:   Yes
+  Version:     v0.1.0
+
+Cluster:
+  Name:        novaedge
+  Namespace:   novaedge-system
+  Phase:       Running
+  Version:     v0.1.0
+
 Controller:
   Replicas:    1/1 Ready
   Version:     v1.0.0
@@ -399,14 +424,21 @@ Agents:
   worker-1        Ready     0       203
   worker-2        Ready     0       198
 
+Web UI:
+  Enabled:     Yes
+  Replicas:    1/1 Ready
+  URL:         http://novaedge-webui.novaedge-system:9080
+
 Resources:
-  ProxyGateways:  5
-  ProxyRoutes:    12
-  ProxyBackends:  8
-  ProxyVIPs:      2
-  ProxyPolicies:  6
+  NovaEdgeClusters:  1
+  ProxyGateways:     5
+  ProxyRoutes:       12
+  ProxyBackends:     8
+  ProxyVIPs:         2
+  ProxyPolicies:     6
 
 Health:
+  Operator:    ✓ Healthy
   Controller:  ✓ Healthy
   Agents:      ✓ All Ready
   VIPs:        ✓ All Active
@@ -714,7 +746,7 @@ novactl logs agent --node=worker-1
 novactl describe backend myapp-backend
 
 # Check all resources
-novactl get gateways,routes,backends,vips,policies
+novactl get clusters,gateways,routes,backends,vips,policies
 ```
 
 ### Cleaning Up
@@ -783,7 +815,9 @@ You can use both tools interchangeably. `novactl` provides convenience shortcuts
 
 ## See Also
 
+- [Operator Guide](../user-guide/operator.md)
 - [Deployment Guide](../user-guide/deployment-guide.md)
 - [Gateway API Documentation](../user-guide/gateway-api.md)
-- [NovaEdge Architecture](../NovaEdge_FullSpec.md)
+- [CRD Reference](crd-reference.md)
+- [Helm Values Reference](helm-values.md)
 - [kubectl Reference](https://kubernetes.io/docs/reference/kubectl/)

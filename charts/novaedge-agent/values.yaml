@@ -1,0 +1,220 @@
+# NovaEdge Agent Chart - For Remote/Edge Cluster Deployments
+# This chart deploys only the NovaEdge agent in a hub-spoke architecture
+# The agents connect back to a central controller in the hub cluster
+
+# -- Cluster identification
+cluster:
+  # -- Unique name for this remote cluster (required)
+  name: ""
+  # -- Geographic region of this cluster
+  region: ""
+  # -- Availability zone
+  zone: ""
+  # -- Additional labels for this cluster
+  labels: {}
+
+# -- Connection to hub controller
+connection:
+  # -- Mode: Direct (direct gRPC) or Tunnel (through relay)
+  mode: Direct
+  # -- Hub controller endpoint (required)
+  # For direct mode: "controller.novaedge-system.svc.hub-cluster:9090"
+  # For external: "novaedge-controller.example.com:9090"
+  controllerEndpoint: ""
+  # -- Reconnect interval when disconnected
+  reconnectInterval: 30s
+  # -- Connection timeout
+  timeout: 10s
+
+# -- mTLS configuration for secure communication with hub
+tls:
+  # -- Enable mTLS (highly recommended for production)
+  enabled: true
+  # -- CA certificate for validating the controller
+  # If using cert-manager, this can be auto-generated
+  caSecretName: novaedge-ca
+  # -- Client certificate for agent authentication
+  clientCertSecretName: novaedge-agent-cert
+  # -- Expected server name for TLS verification
+  serverName: ""
+  # -- Skip TLS verification (NOT recommended for production)
+  insecureSkipVerify: false
+
+# -- Tunnel configuration (when connection.mode=Tunnel)
+tunnel:
+  # -- Tunnel type: WireGuard, SSH, or WebSocket
+  type: WireGuard
+  # -- Relay endpoint for tunnel connection
+  relayEndpoint: ""
+  wireGuard:
+    # -- Secret containing WireGuard private key
+    privateKeySecretName: ""
+    # -- Hub's WireGuard public key
+    publicKey: ""
+    # -- Hub's WireGuard endpoint
+    endpoint: ""
+    # -- Allowed IP ranges for the tunnel
+    allowedIPs:
+      - 10.0.0.0/8
+    # -- Keepalive interval (seconds)
+    persistentKeepalive: 25
+
+# -- Agent image configuration
+image:
+  repository: ghcr.io/piwi3910/novaedge/novaedge-agent
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag (default: chart appVersion)
+  tag: ""
+
+# -- Image pull secrets
+imagePullSecrets: []
+
+# -- Override chart name
+nameOverride: ""
+# -- Override full name
+fullnameOverride: ""
+
+# -- Service account configuration
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# -- Pod annotations
+podAnnotations: {}
+
+# -- Pod labels
+podLabels: {}
+
+# -- Pod security context
+podSecurityContext: {}
+
+# -- Container security context (agents require elevated privileges)
+securityContext:
+  capabilities:
+    add:
+      - NET_ADMIN
+      - NET_RAW
+      - NET_BIND_SERVICE
+  privileged: true
+
+# -- Resource limits and requests
+resources:
+  limits:
+    cpu: 2000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 256Mi
+
+# -- Node selector for agent pods
+nodeSelector: {}
+
+# -- Tolerations for agent pods
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+
+# -- Affinity rules
+affinity: {}
+
+# -- Host networking (required for VIP and traffic handling)
+hostNetwork: true
+# -- DNS policy (should be ClusterFirstWithHostNet when using hostNetwork)
+dnsPolicy: ClusterFirstWithHostNet
+
+# -- Agent ports
+ports:
+  http: 80
+  https: 443
+  metrics: 9090
+  health: 8080
+
+# -- VIP configuration
+vip:
+  # -- Enable VIP management
+  enabled: true
+  # -- VIP mode: L2, BGP, or OSPF
+  mode: L2
+  # -- Network interface for VIP binding (L2 mode)
+  interface: ""
+  # -- BGP configuration (when mode=BGP)
+  bgp:
+    # -- Local ASN
+    asn: 0
+    # -- Router ID
+    routerID: ""
+    # -- BGP peers
+    peers: []
+    # Example:
+    # - address: 192.168.1.1
+    #   asn: 65001
+    #   port: 179
+
+# -- Metrics configuration
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+
+# -- Health probes
+probes:
+  liveness:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# -- Update strategy for DaemonSet
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+# -- Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  maxUnavailable: 1
+
+# -- Additional environment variables
+extraEnv: []
+# - name: MY_VAR
+#   value: my-value
+
+# -- Additional command-line arguments
+extraArgs: []
+
+# -- Additional volumes
+extraVolumes: []
+
+# -- Additional volume mounts
+extraVolumeMounts: []
+
+# -- Priority class name
+priorityClassName: ""
+
+# -- Logging configuration
+logging:
+  level: info
+  format: json
+
+# -- Tracing configuration
+tracing:
+  enabled: false
+  endpoint: ""
+  samplingRate: 10
+
+# -- RBAC configuration
+rbac:
+  create: true

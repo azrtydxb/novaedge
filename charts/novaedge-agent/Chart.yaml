@@ -1,0 +1,21 @@
+apiVersion: v2
+name: novaedge-agent
+description: NovaEdge Agent for remote/edge cluster deployments in a hub-spoke architecture
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - novaedge
+  - load-balancer
+  - proxy
+  - agent
+  - edge
+  - multi-cluster
+home: https://github.com/piwi3910/novaedge
+sources:
+  - https://github.com/piwi3910/novaedge
+maintainers:
+  - name: NovaEdge Authors
+    url: https://github.com/piwi3910/novaedge
+annotations:
+  category: Networking
