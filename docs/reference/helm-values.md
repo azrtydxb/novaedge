@@ -467,6 +467,159 @@ webui:
 
 ---
 
+## Federation (Multi-Controller)
+
+Federation settings enable active-active multi-controller deployments with automatic state synchronization and split-brain protection.
+
+### Basic Federation Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.enabled` | Enable federation mode | `false` |
+| `federation.federationID` | Unique federation ID (same across all controllers) | `""` |
+| `federation.paused` | Temporarily pause federation sync | `false` |
+
+### Local Member Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.localMember.name` | Unique name for this controller | `""` |
+| `federation.localMember.region` | Geographic region | `""` |
+| `federation.localMember.zone` | Availability zone | `""` |
+| `federation.localMember.endpoint` | gRPC endpoint for federation | `""` |
+
+### Peer Members
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.members` | List of peer controllers | `[]` |
+
+Each member in the list supports:
+
+| Field | Description |
+|-------|-------------|
+| `name` | Unique peer name |
+| `endpoint` | gRPC endpoint (host:port) |
+| `region` | Geographic region |
+| `tls.enabled` | Enable mTLS |
+| `tls.caSecretRef.name` | CA certificate secret |
+| `tls.clientCertSecretRef.name` | Client certificate secret |
+
+### Synchronization Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.sync.interval` | Sync interval | `5s` |
+| `federation.sync.timeout` | Sync timeout | `30s` |
+| `federation.sync.batchSize` | Max resources per batch | `100` |
+| `federation.sync.compression` | Enable compression | `true` |
+
+### Conflict Resolution
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.conflictResolution.strategy` | Strategy: `LastWriterWins`, `Merge`, `Manual` | `LastWriterWins` |
+| `federation.conflictResolution.vectorClocks` | Enable vector clocks | `true` |
+| `federation.conflictResolution.tombstoneTTL` | Deletion record TTL | `24h` |
+
+### Health Check
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.healthCheck.interval` | Peer health check interval | `10s` |
+| `federation.healthCheck.timeout` | Health check timeout | `5s` |
+| `federation.healthCheck.failureThreshold` | Failures before unhealthy | `3` |
+| `federation.healthCheck.successThreshold` | Successes before healthy | `1` |
+
+### Split-Brain Detection
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.splitBrain.enabled` | Enable split-brain detection | `true` |
+| `federation.splitBrain.partitionTimeout` | Time before declaring partition | `30s` |
+| `federation.splitBrain.quorumMode` | `Controllers` or `AgentAssisted` | `Controllers` |
+| `federation.splitBrain.quorumRequired` | Require quorum for writes | `false` |
+| `federation.splitBrain.fencingEnabled` | Block writes during partition | `false` |
+| `federation.splitBrain.healingGracePeriod` | Grace period after partition heals | `5s` |
+| `federation.splitBrain.autoResolveOnHeal` | Auto-resolve conflicts on heal | `true` |
+
+### Agent-Assisted Quorum
+
+For 2-datacenter deployments, use agent-assisted quorum:
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `federation.splitBrain.agentQuorum.controllerWeight` | Voting weight per controller | `10` |
+| `federation.splitBrain.agentQuorum.agentWeight` | Voting weight per agent | `1` |
+| `federation.splitBrain.agentQuorum.minAgentsForQuorum` | Minimum agents required | `1` |
+
+---
+
+## NovaEdge Agent Chart
+
+The standalone agent chart (`charts/novaedge-agent`) deploys agents in remote/edge clusters that connect back to a hub controller.
+
+### Cluster Identification
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `cluster.name` | Unique cluster name (required) | `""` |
+| `cluster.region` | Geographic region | `""` |
+| `cluster.zone` | Availability zone | `""` |
+| `cluster.labels` | Additional cluster labels | `{}` |
+
+### Controller Connection
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `connection.mode` | `Direct` or `Tunnel` | `Direct` |
+| `connection.controllerEndpoint` | Hub controller endpoint | `""` |
+| `connection.reconnectInterval` | Reconnect interval | `30s` |
+| `connection.timeout` | Connection timeout | `10s` |
+
+### TLS Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `tls.enabled` | Enable mTLS | `true` |
+| `tls.caSecretName` | CA certificate secret | `novaedge-ca` |
+| `tls.clientCertSecretName` | Client certificate secret | `novaedge-agent-cert` |
+| `tls.serverName` | Expected server name | `""` |
+| `tls.insecureSkipVerify` | Skip TLS verification | `false` |
+
+### VIP Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `vip.enabled` | Enable VIP management | `true` |
+| `vip.mode` | VIP mode: `L2`, `BGP`, `OSPF` | `L2` |
+| `vip.interface` | Network interface for L2 | `""` |
+| `vip.bgp.asn` | BGP ASN | `0` |
+| `vip.bgp.routerID` | BGP router ID | `""` |
+| `vip.bgp.peers` | BGP peer list | `[]` |
+
+### Controller Reachability (Agent-Assisted Quorum)
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `controllerReachability.enabled` | Enable controller probing | `false` |
+| `controllerReachability.probeInterval` | Probe interval | `10s` |
+| `controllerReachability.probeTimeout` | Probe timeout | `5s` |
+| `controllerReachability.controllerEndpoints` | All controllers to probe | `[]` |
+
+### Failover Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `failover.enabled` | Enable controller failover | `true` |
+| `failover.backupControllers` | Backup controller list | `[]` |
+| `failover.failoverTimeout` | Time before failover | `30s` |
+| `failover.healthCheckInterval` | Primary health check interval | `10s` |
+| `failover.persistConfig` | Persist config locally | `true` |
+| `failover.persistPath` | Config persistence path | `/var/lib/novaedge/config` |
+
+---
+
 ## Example Configurations
 
 ### Minimal Development
@@ -563,4 +716,112 @@ webui:
   image:
     repository: my-registry.example.com/novaedge-novactl
     tag: v1.0.0
+```
+
+### Federated Multi-Datacenter (3+ Controllers)
+
+```yaml
+# DC1 Controller values
+federation:
+  enabled: true
+  federationID: production-cluster
+  localMember:
+    name: controller-dc1
+    region: us-west
+    zone: us-west-2a
+    endpoint: controller-dc1.novaedge.example.com:9090
+  members:
+    - name: controller-dc2
+      endpoint: controller-dc2.novaedge.example.com:9090
+      region: us-east
+      tls:
+        enabled: true
+        caSecretRef:
+          name: novaedge-federation-ca
+        clientCertSecretRef:
+          name: novaedge-federation-client-cert
+    - name: controller-dc3
+      endpoint: controller-dc3.novaedge.example.com:9090
+      region: eu-west
+      tls:
+        enabled: true
+        caSecretRef:
+          name: novaedge-federation-ca
+        clientCertSecretRef:
+          name: novaedge-federation-client-cert
+  sync:
+    interval: 5s
+    compression: true
+  splitBrain:
+    enabled: true
+    quorumMode: Controllers
+    quorumRequired: true
+    fencingEnabled: true
+```
+
+### Agent-Assisted Quorum (2 Datacenters)
+
+```yaml
+# DC1 Controller values
+federation:
+  enabled: true
+  federationID: two-dc-cluster
+  localMember:
+    name: controller-dc1
+    region: us-west
+    endpoint: controller-dc1.novaedge.example.com:9090
+  members:
+    - name: controller-dc2
+      endpoint: controller-dc2.novaedge.example.com:9090
+      region: us-east
+      tls:
+        enabled: true
+        caSecretRef:
+          name: novaedge-federation-ca
+  splitBrain:
+    enabled: true
+    quorumMode: AgentAssisted
+    quorumRequired: true
+    fencingEnabled: true
+    agentQuorum:
+      controllerWeight: 10
+      agentWeight: 1
+      minAgentsForQuorum: 1
+```
+
+### Remote Agent with Controller Reachability
+
+```yaml
+# Remote cluster agent values
+cluster:
+  name: edge-us-west-1
+  region: us-west
+  zone: us-west-2a
+
+connection:
+  mode: Direct
+  controllerEndpoint: controller-dc1.novaedge.example.com:9090
+
+tls:
+  enabled: true
+  caSecretName: novaedge-ca
+  clientCertSecretName: novaedge-agent-cert
+
+# Enable for agent-assisted quorum
+controllerReachability:
+  enabled: true
+  probeInterval: 10s
+  probeTimeout: 5s
+  controllerEndpoints:
+    - name: controller-dc1
+      endpoint: controller-dc1.novaedge.example.com:9090
+    - name: controller-dc2
+      endpoint: controller-dc2.novaedge.example.com:9090
+
+failover:
+  enabled: true
+  backupControllers:
+    - endpoint: controller-dc2.novaedge.example.com:9090
+      priority: 100
+  persistConfig: true
 ```

@@ -9,6 +9,7 @@ flowchart TB
     subgraph Cluster["Cluster Management"]
         NEC["NovaEdgeCluster<br/>Operator-managed deployment"]
         NERC["NovaEdgeRemoteCluster<br/>Multi-cluster registration"]
+        FED["NovaEdgeFederation<br/>Active-active controllers"]
     end
 
     subgraph DataPlane["Data Plane Configuration"]
@@ -22,6 +23,7 @@ flowchart TB
     NEC --> GW
     NEC --> VIP
     NERC --> NEC
+    FED --> NEC
 
     VIP --> GW
     GW --> RT
@@ -383,6 +385,174 @@ status:
 | `Degraded` | Some agents are unhealthy |
 | `Disconnected` | No active connections from remote cluster |
 | `Failed` | Remote cluster configuration failed |
+
+---
+
+## NovaEdgeFederation
+
+Configures active-active federation between multiple NovaEdge controllers for multi-datacenter deployments with state synchronization and split-brain protection.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeFederation
+metadata:
+  name: production-federation
+  namespace: novaedge-system
+spec:
+  # Unique federation identifier
+  federationID: prod-fed-01
+
+  # This controller's identity
+  localMember:
+    name: controller-dc1
+    region: us-west
+    zone: us-west-2a
+    endpoint: controller-dc1.novaedge.example.com:9090
+
+  # Peer controllers
+  members:
+    - name: controller-dc2
+      endpoint: controller-dc2.novaedge.example.com:9090
+      region: us-east
+      zone: us-east-1a
+      tls:
+        enabled: true
+        caSecretRef:
+          name: novaedge-federation-ca
+        clientCertSecretRef:
+          name: novaedge-federation-client-cert
+      priority: 100
+
+  # Synchronization settings
+  sync:
+    interval: 5s
+    timeout: 30s
+    batchSize: 100
+    compression: true
+
+  # Conflict resolution
+  conflictResolution:
+    strategy: LastWriterWins  # LastWriterWins, Merge, Manual
+    vectorClocks: true
+    tombstoneTTL: 24h
+
+  # Health checking
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    failureThreshold: 3
+    successThreshold: 1
+
+  # Split-brain detection and protection
+  splitBrain:
+    enabled: true
+    partitionTimeout: 30s
+    quorumMode: AgentAssisted  # Controllers or AgentAssisted
+    quorumRequired: true
+    fencingEnabled: true
+    healingGracePeriod: 5s
+    autoResolveOnHeal: true
+    agentQuorum:
+      controllerWeight: 10
+      agentWeight: 1
+      minAgentsForQuorum: 1
+```
+
+### NovaEdgeFederation Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `spec.federationID` | string | Yes | Unique federation identifier |
+| `spec.localMember` | object | Yes | This controller's identity |
+| `spec.members` | array | No | Peer controller configurations |
+| `spec.sync` | object | No | Synchronization settings |
+| `spec.conflictResolution` | object | No | Conflict resolution settings |
+| `spec.healthCheck` | object | No | Health check configuration |
+| `spec.splitBrain` | object | No | Split-brain detection settings |
+| `spec.paused` | bool | No | Suspend federation sync |
+
+### Split-Brain Configuration
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | true | Enable split-brain detection |
+| `partitionTimeout` | duration | 30s | Time before confirming partition |
+| `quorumMode` | string | Controllers | `Controllers` or `AgentAssisted` |
+| `quorumRequired` | bool | false | Require quorum for writes |
+| `fencingEnabled` | bool | false | Block writes during partition |
+| `healingGracePeriod` | duration | 5s | Grace period after partition heals |
+| `autoResolveOnHeal` | bool | true | Auto-resolve conflicts on heal |
+
+### Agent-Assisted Quorum Configuration
+
+For 2-datacenter deployments, agent-assisted quorum enables split-brain prevention:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `agentQuorum.controllerWeight` | int | 10 | Voting weight per controller |
+| `agentQuorum.agentWeight` | int | 1 | Voting weight per agent |
+| `agentQuorum.minAgentsForQuorum` | int | 1 | Minimum agents required |
+
+### NovaEdgeFederation Status
+
+```yaml
+status:
+  phase: Healthy
+  observedGeneration: 1
+  conditions:
+    - type: Ready
+      status: "True"
+      reason: AllPeersHealthy
+    - type: Synced
+      status: "True"
+  members:
+    - name: controller-dc2
+      healthy: true
+      lastSeen: "2024-01-15T12:00:00Z"
+      lastSyncTime: "2024-01-15T11:59:55Z"
+      syncLag: 5s
+      vectorClock:
+        controller-dc1: 150
+        controller-dc2: 148
+      agentCount: 5
+  lastSyncTime: "2024-01-15T11:59:55Z"
+  syncLag: 5s
+  localVectorClock:
+    controller-dc1: 150
+    controller-dc2: 148
+  conflictsPending: 0
+  splitBrain:
+    partitionState: Healthy
+    haveQuorum: true
+    writesFenced: false
+    reachablePeers:
+      - controller-dc2
+    agentQuorumStatus:
+      totalAgents: 10
+      reachableAgents: 10
+      ourVotes: 20
+      totalVotes: 30
+      quorumThreshold: 16
+```
+
+### Federation Phases
+
+| Phase | Description |
+|-------|-------------|
+| `Initializing` | Federation is starting up |
+| `Syncing` | Initial sync in progress |
+| `Healthy` | All members healthy and in sync |
+| `Degraded` | Some members unhealthy or out of sync |
+| `Partitioned` | Network partition detected |
+
+### Partition States
+
+| State | Description |
+|-------|-------------|
+| `Healthy` | All peers reachable |
+| `Suspected` | Some peers not responding |
+| `Confirmed` | Partition confirmed, fencing may be active |
+| `Healing` | Partition healing, reconciliation in progress |
 
 ---
 
