@@ -151,14 +151,18 @@ type FailoverWatcher struct {
 	// Remote cluster config
 	clusterConfig *ClusterConfig
 
+	// Config persistence for autonomous mode
+	persistence *ConfigPersistence
+
 	// Callbacks
 	onStateChange func(FailoverState, *ControllerEndpoint)
 	onSnapshot    ApplyFunc
 
 	// Metrics
-	failoverCount      int64
-	connectionErrors   int64
-	autonomousDuration time.Duration
+	failoverCount        int64
+	connectionErrors     int64
+	autonomousStartTime  time.Time
+	autonomousDuration   time.Duration
 }
 
 // NewFailoverWatcher creates a new failover-aware config watcher
@@ -184,7 +188,7 @@ func NewFailoverWatcher(
 
 	ctx, cancel := context.WithCancel(ctx)
 
-	return &FailoverWatcher{
+	fw := &FailoverWatcher{
 		nodeName:      nodeName,
 		agentVersion:  agentVersion,
 		controllers:   sortedControllers,
@@ -196,6 +200,20 @@ func NewFailoverWatcher(
 		ctx:           ctx,
 		cancel:        cancel,
 	}
+
+	// Initialize config persistence if path is configured
+	if config.ConfigPersistPath != "" {
+		persistence, err := NewConfigPersistence(config.ConfigPersistPath, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize config persistence, autonomous mode may not work",
+				zap.Error(err),
+			)
+		} else {
+			fw.persistence = persistence
+		}
+	}
+
+	return fw
 }
 
 // Start begins the failover watcher
@@ -422,13 +440,31 @@ func (w *FailoverWatcher) handleRecoveryCheck() error {
 func (w *FailoverWatcher) handleAutonomous() error {
 	w.logger.Info("Operating in autonomous mode")
 
+	// Track autonomous mode duration
+	w.autonomousStartTime = time.Now()
+	defer func() {
+		w.autonomousDuration += time.Since(w.autonomousStartTime)
+	}()
+
 	// Load cached config if available
-	if w.currentSnapshot == nil && w.config.ConfigPersistPath != "" {
+	if w.currentSnapshot == nil {
 		if snapshot, err := w.loadCachedConfig(); err == nil {
+			w.snapshotMu.Lock()
 			w.currentSnapshot = snapshot
+			w.currentVersion = snapshot.Version
+			w.snapshotMu.Unlock()
+
 			if w.onSnapshot != nil {
-				w.onSnapshot(snapshot)
+				if err := w.onSnapshot(snapshot); err != nil {
+					w.logger.Error("Failed to apply cached config", zap.Error(err))
+				} else {
+					w.logger.Info("Applied cached config in autonomous mode",
+						zap.String("version", snapshot.Version),
+					)
+				}
 			}
+		} else {
+			w.logger.Warn("No cached config available for autonomous mode", zap.Error(err))
 		}
 	}
 
@@ -451,12 +487,17 @@ func (w *FailoverWatcher) handleAutonomous() error {
 				if err := w.pingController(ctrl); err == nil {
 					w.logger.Info("Controller available, exiting autonomous mode",
 						zap.String("controller", ctrl.Name),
+						zap.Duration("autonomousDuration", time.Since(w.autonomousStartTime)),
 					)
 					ctrl.FailureCount = 0
 					w.transitionTo(StateFailingOver, nil)
 					return nil
 				}
 			}
+
+			w.logger.Debug("Still in autonomous mode, no controllers available",
+				zap.Duration("duration", time.Since(w.autonomousStartTime)),
+			)
 		}
 	}
 }
@@ -724,21 +765,57 @@ func (w *FailoverWatcher) getPrimaryController() *ControllerEndpoint {
 
 // persistConfig saves the current config for autonomous mode
 func (w *FailoverWatcher) persistConfig(snapshot *Snapshot) {
-	// This would serialize the snapshot to disk
-	// Implementation depends on the storage format
-	w.logger.Debug("Persisting config for autonomous mode",
+	if w.persistence == nil {
+		return
+	}
+
+	if snapshot == nil || snapshot.ConfigSnapshot == nil {
+		return
+	}
+
+	if err := w.persistence.SaveSnapshot(snapshot.ConfigSnapshot); err != nil {
+		w.logger.Error("Failed to persist config for autonomous mode",
+			zap.String("version", snapshot.Version),
+			zap.Error(err),
+		)
+		return
+	}
+
+	w.logger.Debug("Persisted config for autonomous mode",
 		zap.String("version", snapshot.Version),
 	)
-	// TODO: Implement actual persistence
 }
 
 // loadCachedConfig loads the cached config for autonomous mode
 func (w *FailoverWatcher) loadCachedConfig() (*Snapshot, error) {
-	// This would deserialize the snapshot from disk
-	// Implementation depends on the storage format
-	w.logger.Debug("Loading cached config for autonomous mode")
-	// TODO: Implement actual loading
-	return nil, fmt.Errorf("not implemented")
+	if w.persistence == nil {
+		return nil, fmt.Errorf("config persistence not initialized")
+	}
+
+	// Check if we have a cached config
+	if !w.persistence.HasCachedConfig() {
+		return nil, fmt.Errorf("no cached config available")
+	}
+
+	// Check config age - warn if stale
+	age := w.persistence.ConfigAge()
+	if age > 24*time.Hour {
+		w.logger.Warn("Cached config is stale",
+			zap.Duration("age", age),
+		)
+	}
+
+	pbSnapshot, err := w.persistence.LoadSnapshot()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load cached config: %w", err)
+	}
+
+	w.logger.Info("Loaded cached config for autonomous mode",
+		zap.String("version", pbSnapshot.Version),
+		zap.Duration("age", age),
+	)
+
+	return &Snapshot{ConfigSnapshot: pbSnapshot}, nil
 }
 
 // cleanup cleans up resources
@@ -768,4 +845,66 @@ func (w *FailoverWatcher) GetMetrics() map[string]interface{} {
 		"autonomous_duration": w.autonomousDuration.String(),
 		"current_controller": controllerName(w.GetActiveController()),
 	}
+}
+
+// GetControllerConnectionInfo returns information for status reporting
+func (w *FailoverWatcher) GetControllerConnectionInfo() *pb.ControllerConnectionInfo {
+	w.stateMu.RLock()
+	state := w.state
+	ctrl := w.activeCtrl
+	w.stateMu.RUnlock()
+
+	w.snapshotMu.RLock()
+	vectorClock := w.lastVectorClock
+	w.snapshotMu.RUnlock()
+
+	info := &pb.ControllerConnectionInfo{
+		FailoverState: string(state),
+		FailoverCount: int32(w.failoverCount),
+	}
+
+	// Set controller info if connected
+	if ctrl != nil {
+		info.ConnectedController = ctrl.Name
+		info.IsPrimary = ctrl.Priority == 0
+		info.ConnectedSince = ctrl.LastHealthy.Unix()
+		info.ControllerLatencyMs = ctrl.Latency.Milliseconds()
+	}
+
+	// Set vector clock
+	if vectorClock != nil {
+		info.LastVectorClock = vectorClock
+	}
+
+	// Check autonomous mode
+	if state == StateAutonomous {
+		info.AutonomousMode = true
+		info.AutonomousDurationSeconds = int64(w.autonomousDuration.Seconds())
+		if !w.autonomousStartTime.IsZero() {
+			info.AutonomousDurationSeconds += int64(time.Since(w.autonomousStartTime).Seconds())
+		}
+	}
+
+	return info
+}
+
+// GetVectorClock returns the last known vector clock
+func (w *FailoverWatcher) GetVectorClock() map[string]int64 {
+	w.snapshotMu.RLock()
+	defer w.snapshotMu.RUnlock()
+
+	if w.lastVectorClock == nil {
+		return nil
+	}
+
+	result := make(map[string]int64, len(w.lastVectorClock))
+	for k, v := range w.lastVectorClock {
+		result[k] = v
+	}
+	return result
+}
+
+// GetPersistence returns the config persistence handler
+func (w *FailoverWatcher) GetPersistence() *ConfigPersistence {
+	return w.persistence
 }

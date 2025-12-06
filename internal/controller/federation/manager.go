@@ -71,6 +71,34 @@ func NewManagerFromCRD(federation *novaedgev1alpha1.NovaEdgeFederation, logger *
 	return NewManager(config, logger), nil
 }
 
+// TLSCredentials holds TLS certificate data for a peer
+type TLSCredentials struct {
+	CACert     []byte
+	ClientCert []byte
+	ClientKey  []byte
+}
+
+// NewManagerFromCRDWithCreds creates a federation manager from a NovaEdgeFederation CRD with TLS credentials
+func NewManagerFromCRDWithCreds(federation *novaedgev1alpha1.NovaEdgeFederation, tlsCreds map[string]*TLSCredentials, logger *zap.Logger) (*Manager, error) {
+	config := crdToConfig(federation)
+
+	// Apply TLS credentials to peers
+	for _, peer := range config.Peers {
+		if creds, ok := tlsCreds[peer.Name]; ok && creds != nil {
+			peer.CACert = creds.CACert
+			peer.ClientCert = creds.ClientCert
+			peer.ClientKey = creds.ClientKey
+			logger.Debug("Applied TLS credentials to peer",
+				zap.String("peer", peer.Name),
+				zap.Bool("hasCA", len(creds.CACert) > 0),
+				zap.Bool("hasClientCert", len(creds.ClientCert) > 0),
+			)
+		}
+	}
+
+	return NewManager(config, logger), nil
+}
+
 // crdToConfig converts a NovaEdgeFederation CRD to a FederationConfig
 func crdToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *FederationConfig {
 	config := DefaultFederationConfig()

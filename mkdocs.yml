@@ -74,6 +74,7 @@ nav:
     - Health Checks: user-guide/health-checks.md
   - Advanced:
     - Multi-Cluster: advanced/multi-cluster.md
+    - Federation Setup: advanced/federation-setup.md
     - HTTP/3 & QUIC: advanced/http3-quic.md
     - Gateway API: advanced/gateway-api.md
   - Operations:

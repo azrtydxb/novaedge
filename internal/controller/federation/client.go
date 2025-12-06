@@ -432,8 +432,29 @@ func (c *PeerClient) buildTLSConfig() (*tls.Config, error) {
 		config.ServerName = c.peer.TLSServerName
 	}
 
-	// TODO: Load CA certificates and client certificates from secrets
-	// This would be populated from the FederationTLS configuration
+	// Add CA certificate from PeerInfo if available
+	if len(c.peer.CACert) > 0 {
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(c.peer.CACert) {
+			return nil, fmt.Errorf("failed to parse CA certificate for peer %s", c.peer.Name)
+		}
+		config.RootCAs = certPool
+		c.logger.Debug("Loaded CA certificate for peer",
+			zap.String("peer", c.peer.Name),
+		)
+	}
+
+	// Add client certificate for mTLS from PeerInfo if available
+	if len(c.peer.ClientCert) > 0 && len(c.peer.ClientKey) > 0 {
+		cert, err := tls.X509KeyPair(c.peer.ClientCert, c.peer.ClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate for peer %s: %w", c.peer.Name, err)
+		}
+		config.Certificates = []tls.Certificate{cert}
+		c.logger.Debug("Loaded client certificate for peer",
+			zap.String("peer", c.peer.Name),
+		)
+	}
 
 	return config, nil
 }

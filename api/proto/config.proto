@@ -482,6 +482,39 @@ message AgentStatus {
   repeated string errors = 6;
   // Remote cluster identification (for hub-spoke deployments)
   string cluster_name = 7;     // Name of the remote cluster (empty for local agents)
+
+  // Controller connection information (for federation/failover awareness)
+  ControllerConnectionInfo controller_connection = 8;
+}
+
+// ControllerConnectionInfo contains information about the agent's controller connection
+message ControllerConnectionInfo {
+  // Name of the currently connected controller
+  string connected_controller = 1;
+
+  // Whether this is the primary controller
+  bool is_primary = 2;
+
+  // Current failover state
+  string failover_state = 3;
+
+  // Time connected to current controller
+  int64 connected_since = 4;
+
+  // Number of failovers since agent start
+  int32 failover_count = 5;
+
+  // Last known vector clock from current controller
+  map<string, int64> last_vector_clock = 6;
+
+  // Whether agent is in autonomous mode
+  bool autonomous_mode = 7;
+
+  // Duration in autonomous mode (seconds)
+  int64 autonomous_duration_seconds = 8;
+
+  // Latency to current controller (milliseconds)
+  int64 controller_latency_ms = 9;
 }
 
 // StatusResponse acknowledges status reports
