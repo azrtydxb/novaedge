@@ -89,6 +89,73 @@ const (
 	// AnnotationCanaryHeaderValue specifies the header value for canary routing
 	AnnotationCanaryHeaderValue = "novaedge.io/canary-header-value"
 
+	// AnnotationRetryAttempts specifies the number of retry attempts
+	AnnotationRetryAttempts = "novaedge.io/retry-attempts"
+	// AnnotationRetryOn specifies conditions that trigger a retry
+	AnnotationRetryOn = "novaedge.io/retry-on"
+	// AnnotationRetryPerTryTimeout specifies the timeout for each retry
+	AnnotationRetryPerTryTimeout = "novaedge.io/retry-per-try-timeout"
+
+	// AnnotationCircuitBreakerMaxConnections sets max connections for circuit breaker
+	AnnotationCircuitBreakerMaxConnections = "novaedge.io/circuit-breaker-max-connections"
+	// AnnotationCircuitBreakerMaxPendingRequests sets max pending requests
+	AnnotationCircuitBreakerMaxPendingRequests = "novaedge.io/circuit-breaker-max-pending-requests"
+	// AnnotationCircuitBreakerMaxRequests sets max parallel requests
+	AnnotationCircuitBreakerMaxRequests = "novaedge.io/circuit-breaker-max-requests"
+	// AnnotationCircuitBreakerConsecutiveFailures sets failures before circuit opens
+	AnnotationCircuitBreakerConsecutiveFailures = "novaedge.io/circuit-breaker-consecutive-failures"
+
+	// AnnotationCORSAllowOrigins sets allowed CORS origins (comma-separated)
+	AnnotationCORSAllowOrigins = "novaedge.io/cors-allow-origins"
+	// AnnotationCORSAllowMethods sets allowed CORS methods
+	AnnotationCORSAllowMethods = "novaedge.io/cors-allow-methods"
+	// AnnotationCORSAllowHeaders sets allowed CORS headers
+	AnnotationCORSAllowHeaders = "novaedge.io/cors-allow-headers"
+	// AnnotationCORSExposeHeaders sets CORS expose headers
+	AnnotationCORSExposeHeaders = "novaedge.io/cors-expose-headers"
+	// AnnotationCORSMaxAge sets CORS max age
+	AnnotationCORSMaxAge = "novaedge.io/cors-max-age"
+	// AnnotationCORSAllowCredentials enables CORS credentials
+	AnnotationCORSAllowCredentials = "novaedge.io/cors-allow-credentials"
+
+	// AnnotationGRPCBackend marks backend as gRPC
+	AnnotationGRPCBackend = "novaedge.io/grpc-backend"
+	// AnnotationGRPCHealthCheck enables gRPC health check
+	AnnotationGRPCHealthCheck = "novaedge.io/grpc-health-check"
+
+	// AnnotationTracingEnabled enables request tracing
+	AnnotationTracingEnabled = "novaedge.io/tracing-enabled"
+	// AnnotationTracingSamplingRate sets tracing sampling rate (0-100)
+	AnnotationTracingSamplingRate = "novaedge.io/tracing-sampling-rate"
+
+	// AnnotationAccessLogEnabled enables access logging
+	AnnotationAccessLogEnabled = "novaedge.io/access-log-enabled"
+	// AnnotationAccessLogFormat sets access log format (json, common, combined)
+	AnnotationAccessLogFormat = "novaedge.io/access-log-format"
+
+	// AnnotationCustomErrorPages sets custom error pages (JSON format)
+	AnnotationCustomErrorPages = "novaedge.io/custom-error-pages"
+
+	// AnnotationMirrorBackend specifies backend to mirror requests to
+	AnnotationMirrorBackend = "novaedge.io/mirror-backend"
+	// AnnotationMirrorPercent specifies percentage of requests to mirror
+	AnnotationMirrorPercent = "novaedge.io/mirror-percent"
+
+	// AnnotationRateLimitRPS sets rate limit requests per second
+	AnnotationRateLimitRPS = "novaedge.io/rate-limit-rps"
+	// AnnotationRateLimitBurst sets rate limit burst size
+	AnnotationRateLimitBurst = "novaedge.io/rate-limit-burst"
+	// AnnotationRateLimitKey sets rate limit key (source-ip, header, etc.)
+	AnnotationRateLimitKey = "novaedge.io/rate-limit-key"
+
+	// AnnotationHealthCheckPath sets the health check path
+	AnnotationHealthCheckPath = "novaedge.io/health-check-path"
+	// AnnotationHealthCheckInterval sets health check interval
+	AnnotationHealthCheckInterval = "novaedge.io/health-check-interval"
+
+	// AnnotationUseRegex enables regex path matching
+	AnnotationUseRegex = "novaedge.io/use-regex"
+
 	// Default VIP reference if not specified
 	DefaultVIPRef = "default-vip"
 )
@@ -234,6 +301,21 @@ func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) (*no
 		gateway.Spec.Listeners = append(gateway.Spec.Listeners, httpsListener)
 	}
 
+	// Apply tracing configuration
+	if tracing := t.getTracingConfig(ingress); tracing != nil {
+		gateway.Spec.Tracing = tracing
+	}
+
+	// Apply access log configuration
+	if accessLog := t.getAccessLogConfig(ingress); accessLog != nil {
+		gateway.Spec.AccessLog = accessLog
+	}
+
+	// Apply custom error pages
+	if errorPages := t.getCustomErrorPages(ingress); len(errorPages) > 0 {
+		gateway.Spec.CustomErrorPages = errorPages
+	}
+
 	return gateway, nil
 }
 
@@ -361,8 +443,8 @@ func (t *IngressTranslator) translateRouteRule(ingress *networkingv1.Ingress, pa
 		},
 	}
 
-	// Convert path match type
-	pathMatch := t.convertPathMatch(path)
+	// Convert path match type (with regex support)
+	pathMatch := t.convertPathMatchWithIngress(ingress, path)
 	if pathMatch != nil {
 		match := novaedgev1alpha1.HTTPRouteMatch{
 			Path: pathMatch,
@@ -415,6 +497,15 @@ func (t *IngressTranslator) translateRouteRule(ingress *networkingv1.Ingress, pa
 		})
 	}
 
+	// Add request mirror filter if configured
+	if mirrorBackend, mirrorPercent := t.getMirrorConfig(ingress); mirrorBackend != nil {
+		rule.Filters = append(rule.Filters, novaedgev1alpha1.HTTPRouteFilter{
+			Type:          novaedgev1alpha1.HTTPRouteFilterRequestMirror,
+			MirrorBackend: mirrorBackend,
+			MirrorPercent: mirrorPercent,
+		})
+	}
+
 	return rule
 }
 
@@ -441,6 +532,44 @@ func (t *IngressTranslator) convertPathMatch(path networkingv1.HTTPIngressPath) 
 		}
 	} else {
 		// Default to prefix if not specified
+		pathMatch.Type = novaedgev1alpha1.PathMatchPathPrefix
+	}
+
+	return pathMatch
+}
+
+// convertPathMatchWithIngress converts path with regex support from annotation
+func (t *IngressTranslator) convertPathMatchWithIngress(ingress *networkingv1.Ingress, path networkingv1.HTTPIngressPath) *novaedgev1alpha1.HTTPPathMatch {
+	if path.Path == "" {
+		return nil
+	}
+
+	pathMatch := &novaedgev1alpha1.HTTPPathMatch{
+		Value: path.Path,
+	}
+
+	// Check if regex path matching is enabled
+	if t.useRegexPathMatching(ingress) {
+		pathMatch.Type = novaedgev1alpha1.PathMatchRegularExpression
+		return pathMatch
+	}
+
+	// Convert path type
+	if path.PathType != nil {
+		switch *path.PathType {
+		case networkingv1.PathTypeExact:
+			pathMatch.Type = novaedgev1alpha1.PathMatchExact
+		case networkingv1.PathTypePrefix:
+			pathMatch.Type = novaedgev1alpha1.PathMatchPathPrefix
+		case networkingv1.PathTypeImplementationSpecific:
+			// For implementation-specific, check if path looks like regex
+			if strings.ContainsAny(path.Path, "^$.*+?[](){}|\\") {
+				pathMatch.Type = novaedgev1alpha1.PathMatchRegularExpression
+			} else {
+				pathMatch.Type = novaedgev1alpha1.PathMatchPathPrefix
+			}
+		}
+	} else {
 		pathMatch.Type = novaedgev1alpha1.PathMatchPathPrefix
 	}
 
@@ -484,6 +613,21 @@ func (t *IngressTranslator) translateBackend(ingress *networkingv1.Ingress, back
 
 	// Apply upstream hash annotation (for consistent hashing)
 	t.applyUpstreamHash(ingress, proxyBackend)
+
+	// Apply retry policy
+	t.applyRetryPolicy(ingress, proxyBackend)
+
+	// Apply circuit breaker
+	t.applyCircuitBreaker(ingress, proxyBackend)
+
+	// Apply session affinity with cookie config
+	t.applySessionAffinityConfig(ingress, proxyBackend)
+
+	// Apply health check configuration
+	t.applyHealthCheck(ingress, proxyBackend)
+
+	// Apply gRPC backend configuration
+	t.applyGRPCBackend(ingress, proxyBackend)
 
 	return proxyBackend
 }
@@ -806,4 +950,261 @@ func (t *IngressTranslator) getCanaryHeader(ingress *networkingv1.Ingress) (stri
 	}
 
 	return header, value
+}
+
+// applyRetryPolicy applies retry annotations to the backend
+func (t *IngressTranslator) applyRetryPolicy(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	attemptsStr, hasAttempts := ingress.Annotations[AnnotationRetryAttempts]
+	retryOn := ingress.Annotations[AnnotationRetryOn]
+	perTryTimeoutStr := ingress.Annotations[AnnotationRetryPerTryTimeout]
+
+	if !hasAttempts && retryOn == "" && perTryTimeoutStr == "" {
+		return
+	}
+
+	policy := &novaedgev1alpha1.RetryPolicy{}
+
+	if hasAttempts {
+		if attempts, err := strconv.ParseInt(attemptsStr, 10, 32); err == nil && attempts >= 0 && attempts <= 10 {
+			numRetries := int32(attempts)
+			policy.NumRetries = &numRetries
+		}
+	}
+
+	if retryOn != "" {
+		policy.RetryOn = retryOn
+	}
+
+	if perTryTimeoutStr != "" {
+		if duration, err := time.ParseDuration(perTryTimeoutStr); err == nil {
+			policy.PerTryTimeout = metav1.Duration{Duration: duration}
+		}
+	}
+
+	backend.Spec.RetryPolicy = policy
+}
+
+// applyCircuitBreaker applies circuit breaker annotations to the backend
+func (t *IngressTranslator) applyCircuitBreaker(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	maxConnsStr := ingress.Annotations[AnnotationCircuitBreakerMaxConnections]
+	maxPendingStr := ingress.Annotations[AnnotationCircuitBreakerMaxPendingRequests]
+	maxRequestsStr := ingress.Annotations[AnnotationCircuitBreakerMaxRequests]
+	consecutiveFailuresStr := ingress.Annotations[AnnotationCircuitBreakerConsecutiveFailures]
+
+	if maxConnsStr == "" && maxPendingStr == "" && maxRequestsStr == "" && consecutiveFailuresStr == "" {
+		return
+	}
+
+	cb := &novaedgev1alpha1.CircuitBreaker{}
+
+	if maxConnsStr != "" {
+		if val, err := strconv.ParseInt(maxConnsStr, 10, 32); err == nil && val > 0 {
+			v := int32(val)
+			cb.MaxConnections = &v
+		}
+	}
+
+	if maxPendingStr != "" {
+		if val, err := strconv.ParseInt(maxPendingStr, 10, 32); err == nil && val > 0 {
+			v := int32(val)
+			cb.MaxPendingRequests = &v
+		}
+	}
+
+	if maxRequestsStr != "" {
+		if val, err := strconv.ParseInt(maxRequestsStr, 10, 32); err == nil && val > 0 {
+			v := int32(val)
+			cb.MaxRequests = &v
+		}
+	}
+
+	if consecutiveFailuresStr != "" {
+		if val, err := strconv.ParseInt(consecutiveFailuresStr, 10, 32); err == nil && val > 0 {
+			v := int32(val)
+			cb.ConsecutiveFailures = &v
+		}
+	}
+
+	backend.Spec.CircuitBreaker = cb
+}
+
+// applySessionAffinityConfig applies session affinity cookie configuration
+func (t *IngressTranslator) applySessionAffinityConfig(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	affinity, exists := ingress.Annotations[AnnotationSessionAffinity]
+	if !exists || strings.ToLower(affinity) != "cookie" {
+		return
+	}
+
+	config := &novaedgev1alpha1.SessionAffinityConfig{
+		Type: "Cookie",
+	}
+
+	if cookieName := ingress.Annotations[AnnotationSessionAffinityCookieName]; cookieName != "" {
+		config.CookieName = cookieName
+	}
+
+	if ttlStr := ingress.Annotations[AnnotationSessionAffinityCookieTTL]; ttlStr != "" {
+		if duration, err := time.ParseDuration(ttlStr); err == nil {
+			config.CookieTTL = metav1.Duration{Duration: duration}
+		}
+	}
+
+	backend.Spec.SessionAffinity = config
+	// Also ensure consistent hashing is used
+	backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
+}
+
+// applyHealthCheck applies health check annotations to the backend
+func (t *IngressTranslator) applyHealthCheck(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	healthPath := ingress.Annotations[AnnotationHealthCheckPath]
+	intervalStr := ingress.Annotations[AnnotationHealthCheckInterval]
+	isGRPC := strings.ToLower(ingress.Annotations[AnnotationGRPCHealthCheck]) == "true"
+
+	if healthPath == "" && intervalStr == "" && !isGRPC {
+		return
+	}
+
+	hc := &novaedgev1alpha1.HealthCheck{}
+
+	if healthPath != "" {
+		hc.HTTPPath = &healthPath
+	}
+
+	if intervalStr != "" {
+		if duration, err := time.ParseDuration(intervalStr); err == nil {
+			hc.Interval = metav1.Duration{Duration: duration}
+		}
+	}
+
+	backend.Spec.HealthCheck = hc
+}
+
+// applyGRPCBackend applies gRPC-specific configuration
+func (t *IngressTranslator) applyGRPCBackend(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	isGRPC := strings.ToLower(ingress.Annotations[AnnotationGRPCBackend]) == "true"
+	protocol := strings.ToUpper(ingress.Annotations[AnnotationBackendProtocol])
+
+	if isGRPC || protocol == "GRPC" {
+		backend.Spec.Protocol = "gRPC"
+	} else if protocol == "GRPCS" {
+		backend.Spec.Protocol = "gRPCS"
+		if backend.Spec.TLS == nil {
+			backend.Spec.TLS = &novaedgev1alpha1.BackendTLSConfig{Enabled: true}
+		}
+	} else if protocol == "HTTP2" {
+		backend.Spec.Protocol = "HTTP2"
+	}
+}
+
+// getTracingConfig returns tracing configuration from annotations
+func (t *IngressTranslator) getTracingConfig(ingress *networkingv1.Ingress) *novaedgev1alpha1.TracingConfig {
+	enabledStr := ingress.Annotations[AnnotationTracingEnabled]
+	samplingRateStr := ingress.Annotations[AnnotationTracingSamplingRate]
+
+	// Default enabled if any tracing annotation is present
+	if enabledStr == "" && samplingRateStr == "" {
+		return nil
+	}
+
+	config := &novaedgev1alpha1.TracingConfig{
+		Enabled:            true,
+		GenerateRequestID:  true,
+		PropagateRequestID: true,
+		RequestIDHeader:    "X-Request-ID",
+	}
+
+	if enabledStr != "" {
+		config.Enabled = strings.ToLower(enabledStr) == "true"
+	}
+
+	if samplingRateStr != "" {
+		if rate, err := strconv.ParseInt(samplingRateStr, 10, 32); err == nil && rate >= 0 && rate <= 100 {
+			r := int32(rate)
+			config.SamplingRate = &r
+		}
+	}
+
+	return config
+}
+
+// getAccessLogConfig returns access log configuration from annotations
+func (t *IngressTranslator) getAccessLogConfig(ingress *networkingv1.Ingress) *novaedgev1alpha1.AccessLogConfig {
+	enabledStr := ingress.Annotations[AnnotationAccessLogEnabled]
+	format := ingress.Annotations[AnnotationAccessLogFormat]
+
+	if enabledStr == "" && format == "" {
+		return nil
+	}
+
+	config := &novaedgev1alpha1.AccessLogConfig{
+		Enabled: true,
+		Format:  "json",
+	}
+
+	if enabledStr != "" {
+		config.Enabled = strings.ToLower(enabledStr) == "true"
+	}
+
+	if format != "" {
+		config.Format = format
+	}
+
+	return config
+}
+
+// getCustomErrorPages parses custom error pages from annotation
+func (t *IngressTranslator) getCustomErrorPages(ingress *networkingv1.Ingress) []novaedgev1alpha1.CustomErrorPage {
+	pagesJSON := ingress.Annotations[AnnotationCustomErrorPages]
+	if pagesJSON == "" {
+		return nil
+	}
+
+	var pages []novaedgev1alpha1.CustomErrorPage
+	if err := json.Unmarshal([]byte(pagesJSON), &pages); err != nil {
+		return nil
+	}
+	return pages
+}
+
+// getMirrorConfig returns mirror backend configuration from annotations
+func (t *IngressTranslator) getMirrorConfig(ingress *networkingv1.Ingress) (*novaedgev1alpha1.BackendRef, *int32) {
+	mirrorBackend := ingress.Annotations[AnnotationMirrorBackend]
+	if mirrorBackend == "" {
+		return nil, nil
+	}
+
+	backend := &novaedgev1alpha1.BackendRef{
+		Name: mirrorBackend,
+	}
+
+	var percent *int32
+	if percentStr := ingress.Annotations[AnnotationMirrorPercent]; percentStr != "" {
+		if p, err := strconv.ParseInt(percentStr, 10, 32); err == nil && p >= 0 && p <= 100 {
+			pVal := int32(p)
+			percent = &pVal
+		}
+	}
+
+	return backend, percent
+}
+
+// useRegexPathMatching checks if regex path matching should be used
+func (t *IngressTranslator) useRegexPathMatching(ingress *networkingv1.Ingress) bool {
+	return strings.ToLower(ingress.Annotations[AnnotationUseRegex]) == "true"
+}
+
+// splitCommaSeparated splits a comma-separated string and trims whitespace
+func splitCommaSeparated(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

@@ -1123,3 +1123,733 @@ func findListener(listeners []novaedgev1alpha1.Listener, name string) *novaedgev
 	}
 	return nil
 }
+
+func TestIngressRetryAnnotations(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "retry-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "retry-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"novaedge.io/retry-attempts":        "3",
+				"novaedge.io/retry-on":              "5xx,gateway-error",
+				"novaedge.io/retry-per-try-timeout": "2s",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: strPtr("novaedge"),
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: (*networkingv1.PathType)(strPtr(string(networkingv1.PathTypePrefix))),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "retry-service",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 8080,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := env.client.Create(ctx, service); err != nil {
+		t.Fatalf("failed to create Service: %v", err)
+	}
+
+	if err := env.client.Create(ctx, ingress); err != nil {
+		t.Fatalf("failed to create Ingress: %v", err)
+	}
+
+	if err := env.reconcileIngress(ctx, ingress.Name, ingress.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	// Check ProxyBackend has retry policy
+	proxyBackendList := &novaedgev1alpha1.ProxyBackendList{}
+	if err := env.client.List(ctx, proxyBackendList); err != nil {
+		t.Fatalf("failed to list ProxyBackends: %v", err)
+	}
+
+	if len(proxyBackendList.Items) == 0 {
+		t.Fatal("expected at least one ProxyBackend")
+	}
+
+	backend := &proxyBackendList.Items[0]
+	if backend.Spec.RetryPolicy == nil {
+		t.Fatal("expected retry policy to be set")
+	}
+
+	if backend.Spec.RetryPolicy.NumRetries == nil || *backend.Spec.RetryPolicy.NumRetries != 3 {
+		t.Errorf("expected 3 retries, got %v", backend.Spec.RetryPolicy.NumRetries)
+	}
+
+	if backend.Spec.RetryPolicy.RetryOn != "5xx,gateway-error" {
+		t.Errorf("expected retry on '5xx,gateway-error', got %s", backend.Spec.RetryPolicy.RetryOn)
+	}
+
+	if backend.Spec.RetryPolicy.PerTryTimeout.Duration.String() != "2s" {
+		t.Errorf("expected per-try timeout 2s, got %s", backend.Spec.RetryPolicy.PerTryTimeout.Duration.String())
+	}
+}
+
+func TestIngressCircuitBreakerAnnotations(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cb-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "cb-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"novaedge.io/circuit-breaker-max-connections":      "100",
+				"novaedge.io/circuit-breaker-max-pending-requests": "50",
+				"novaedge.io/circuit-breaker-max-requests":         "200",
+				"novaedge.io/circuit-breaker-consecutive-failures": "5",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: strPtr("novaedge"),
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: (*networkingv1.PathType)(strPtr(string(networkingv1.PathTypePrefix))),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "cb-service",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 8080,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := env.client.Create(ctx, service); err != nil {
+		t.Fatalf("failed to create Service: %v", err)
+	}
+
+	if err := env.client.Create(ctx, ingress); err != nil {
+		t.Fatalf("failed to create Ingress: %v", err)
+	}
+
+	if err := env.reconcileIngress(ctx, ingress.Name, ingress.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	// Check ProxyBackend has circuit breaker
+	proxyBackendList := &novaedgev1alpha1.ProxyBackendList{}
+	if err := env.client.List(ctx, proxyBackendList); err != nil {
+		t.Fatalf("failed to list ProxyBackends: %v", err)
+	}
+
+	if len(proxyBackendList.Items) == 0 {
+		t.Fatal("expected at least one ProxyBackend")
+	}
+
+	backend := &proxyBackendList.Items[0]
+	if backend.Spec.CircuitBreaker == nil {
+		t.Fatal("expected circuit breaker to be set")
+	}
+
+	if backend.Spec.CircuitBreaker.MaxConnections == nil || *backend.Spec.CircuitBreaker.MaxConnections != 100 {
+		t.Errorf("expected max connections 100, got %v", backend.Spec.CircuitBreaker.MaxConnections)
+	}
+
+	if backend.Spec.CircuitBreaker.MaxPendingRequests == nil || *backend.Spec.CircuitBreaker.MaxPendingRequests != 50 {
+		t.Errorf("expected max pending requests 50, got %v", backend.Spec.CircuitBreaker.MaxPendingRequests)
+	}
+
+	if backend.Spec.CircuitBreaker.MaxRequests == nil || *backend.Spec.CircuitBreaker.MaxRequests != 200 {
+		t.Errorf("expected max requests 200, got %v", backend.Spec.CircuitBreaker.MaxRequests)
+	}
+
+	if backend.Spec.CircuitBreaker.ConsecutiveFailures == nil || *backend.Spec.CircuitBreaker.ConsecutiveFailures != 5 {
+		t.Errorf("expected consecutive failures 5, got %v", backend.Spec.CircuitBreaker.ConsecutiveFailures)
+	}
+}
+
+func TestIngressTracingAndAccessLog(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tracing-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "tracing-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"novaedge.io/tracing-enabled":       "true",
+				"novaedge.io/tracing-sampling-rate": "50",
+				"novaedge.io/access-log-enabled":    "true",
+				"novaedge.io/access-log-format":     "json",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: strPtr("novaedge"),
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: (*networkingv1.PathType)(strPtr(string(networkingv1.PathTypePrefix))),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "tracing-service",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 8080,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := env.client.Create(ctx, service); err != nil {
+		t.Fatalf("failed to create Service: %v", err)
+	}
+
+	if err := env.client.Create(ctx, ingress); err != nil {
+		t.Fatalf("failed to create Ingress: %v", err)
+	}
+
+	if err := env.reconcileIngress(ctx, ingress.Name, ingress.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	// Check ProxyGateway has tracing and access log config
+	gatewayName := fmt.Sprintf("%s-gateway", ingress.Name)
+	proxyGateway := &novaedgev1alpha1.ProxyGateway{}
+	if err := env.client.Get(ctx, types.NamespacedName{
+		Name:      gatewayName,
+		Namespace: ingress.Namespace,
+	}, proxyGateway); err != nil {
+		t.Fatalf("expected ProxyGateway to be created: %v", err)
+	}
+
+	// Verify tracing config
+	if proxyGateway.Spec.Tracing == nil {
+		t.Fatal("expected tracing config to be set")
+	}
+
+	if !proxyGateway.Spec.Tracing.Enabled {
+		t.Error("expected tracing to be enabled")
+	}
+
+	if proxyGateway.Spec.Tracing.SamplingRate == nil || *proxyGateway.Spec.Tracing.SamplingRate != 50 {
+		t.Errorf("expected sampling rate 50, got %v", proxyGateway.Spec.Tracing.SamplingRate)
+	}
+
+	// Verify access log config
+	if proxyGateway.Spec.AccessLog == nil {
+		t.Fatal("expected access log config to be set")
+	}
+
+	if !proxyGateway.Spec.AccessLog.Enabled {
+		t.Error("expected access log to be enabled")
+	}
+
+	if proxyGateway.Spec.AccessLog.Format != "json" {
+		t.Errorf("expected format json, got %s", proxyGateway.Spec.AccessLog.Format)
+	}
+}
+
+func TestIngressMirrorAnnotations(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mirror-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "mirror-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"novaedge.io/mirror-backend": "shadow-backend",
+				"novaedge.io/mirror-percent": "10",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: strPtr("novaedge"),
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: (*networkingv1.PathType)(strPtr(string(networkingv1.PathTypePrefix))),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "mirror-service",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 8080,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := env.client.Create(ctx, service); err != nil {
+		t.Fatalf("failed to create Service: %v", err)
+	}
+
+	if err := env.client.Create(ctx, ingress); err != nil {
+		t.Fatalf("failed to create Ingress: %v", err)
+	}
+
+	if err := env.reconcileIngress(ctx, ingress.Name, ingress.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	// Check ProxyRoute has mirror filter
+	proxyRouteList := &novaedgev1alpha1.ProxyRouteList{}
+	if err := env.client.List(ctx, proxyRouteList); err != nil {
+		t.Fatalf("failed to list ProxyRoutes: %v", err)
+	}
+
+	if len(proxyRouteList.Items) == 0 {
+		t.Fatal("expected at least one ProxyRoute")
+	}
+
+	route := &proxyRouteList.Items[0]
+	if len(route.Spec.Rules) == 0 {
+		t.Fatal("expected at least one rule")
+	}
+
+	rule := route.Spec.Rules[0]
+
+	// Find mirror filter
+	hasMirror := false
+	for _, filter := range rule.Filters {
+		if filter.Type == novaedgev1alpha1.HTTPRouteFilterRequestMirror {
+			hasMirror = true
+			if filter.MirrorBackend == nil || filter.MirrorBackend.Name != "shadow-backend" {
+				t.Error("expected mirror backend to be 'shadow-backend'")
+			}
+			if filter.MirrorPercent == nil || *filter.MirrorPercent != 10 {
+				t.Errorf("expected mirror percent 10, got %v", filter.MirrorPercent)
+			}
+		}
+	}
+
+	if !hasMirror {
+		t.Error("expected request mirror filter")
+	}
+}
+
+func TestIngressRegexPathMatching(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "regex-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "regex-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"novaedge.io/use-regex": "true",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: strPtr("novaedge"),
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/api/v[0-9]+/.*",
+									PathType: (*networkingv1.PathType)(strPtr(string(networkingv1.PathTypeImplementationSpecific))),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "regex-service",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 8080,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := env.client.Create(ctx, service); err != nil {
+		t.Fatalf("failed to create Service: %v", err)
+	}
+
+	if err := env.client.Create(ctx, ingress); err != nil {
+		t.Fatalf("failed to create Ingress: %v", err)
+	}
+
+	if err := env.reconcileIngress(ctx, ingress.Name, ingress.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	// Check ProxyRoute has regex path match
+	proxyRouteList := &novaedgev1alpha1.ProxyRouteList{}
+	if err := env.client.List(ctx, proxyRouteList); err != nil {
+		t.Fatalf("failed to list ProxyRoutes: %v", err)
+	}
+
+	if len(proxyRouteList.Items) == 0 {
+		t.Fatal("expected at least one ProxyRoute")
+	}
+
+	route := &proxyRouteList.Items[0]
+	if len(route.Spec.Rules) == 0 {
+		t.Fatal("expected at least one rule")
+	}
+
+	rule := route.Spec.Rules[0]
+	if len(rule.Matches) == 0 {
+		t.Fatal("expected at least one match")
+	}
+
+	match := rule.Matches[0]
+	if match.Path == nil {
+		t.Fatal("expected path match")
+	}
+
+	if match.Path.Type != novaedgev1alpha1.PathMatchRegularExpression {
+		t.Errorf("expected path type RegularExpression, got %s", match.Path.Type)
+	}
+
+	if match.Path.Value != "/api/v[0-9]+/.*" {
+		t.Errorf("expected path value '/api/v[0-9]+/.*', got %s", match.Path.Value)
+	}
+}
+
+func TestIngressSessionAffinityWithCookie(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sticky-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       8080,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+		},
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "sticky-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"novaedge.io/session-affinity":             "cookie",
+				"novaedge.io/session-affinity-cookie-name": "MY_SESSION",
+				"novaedge.io/session-affinity-cookie-ttl":  "1h",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: strPtr("novaedge"),
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: (*networkingv1.PathType)(strPtr(string(networkingv1.PathTypePrefix))),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "sticky-service",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 8080,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := env.client.Create(ctx, service); err != nil {
+		t.Fatalf("failed to create Service: %v", err)
+	}
+
+	if err := env.client.Create(ctx, ingress); err != nil {
+		t.Fatalf("failed to create Ingress: %v", err)
+	}
+
+	if err := env.reconcileIngress(ctx, ingress.Name, ingress.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	// Check ProxyBackend has session affinity config
+	proxyBackendList := &novaedgev1alpha1.ProxyBackendList{}
+	if err := env.client.List(ctx, proxyBackendList); err != nil {
+		t.Fatalf("failed to list ProxyBackends: %v", err)
+	}
+
+	if len(proxyBackendList.Items) == 0 {
+		t.Fatal("expected at least one ProxyBackend")
+	}
+
+	backend := &proxyBackendList.Items[0]
+
+	// Verify session affinity config
+	if backend.Spec.SessionAffinity == nil {
+		t.Fatal("expected session affinity config to be set")
+	}
+
+	if backend.Spec.SessionAffinity.Type != "Cookie" {
+		t.Errorf("expected session affinity type Cookie, got %s", backend.Spec.SessionAffinity.Type)
+	}
+
+	if backend.Spec.SessionAffinity.CookieName != "MY_SESSION" {
+		t.Errorf("expected cookie name MY_SESSION, got %s", backend.Spec.SessionAffinity.CookieName)
+	}
+
+	if backend.Spec.SessionAffinity.CookieTTL.Duration.String() != "1h0m0s" {
+		t.Errorf("expected cookie TTL 1h, got %s", backend.Spec.SessionAffinity.CookieTTL.Duration.String())
+	}
+
+	// Should use RingHash for consistent hashing
+	if backend.Spec.LBPolicy != novaedgev1alpha1.LBPolicyRingHash {
+		t.Errorf("expected LB policy RingHash, got %s", backend.Spec.LBPolicy)
+	}
+}
+
+func TestIngressGRPCBackend(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	service := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "grpc-service",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port:       9090,
+					TargetPort: intstr.FromInt(9090),
+				},
+			},
+		},
+	}
+
+	ingress := &networkingv1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "grpc-ingress",
+			Namespace: "default",
+			Annotations: map[string]string{
+				"novaedge.io/backend-protocol":   "GRPCS",
+				"novaedge.io/grpc-health-check":  "true",
+				"novaedge.io/health-check-path":  "/grpc.health.v1.Health/Check",
+			},
+		},
+		Spec: networkingv1.IngressSpec{
+			IngressClassName: strPtr("novaedge"),
+			Rules: []networkingv1.IngressRule{
+				{
+					Host: "grpc.example.com",
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
+								{
+									Path:     "/",
+									PathType: (*networkingv1.PathType)(strPtr(string(networkingv1.PathTypePrefix))),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: "grpc-service",
+											Port: networkingv1.ServiceBackendPort{
+												Number: 9090,
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := env.client.Create(ctx, service); err != nil {
+		t.Fatalf("failed to create Service: %v", err)
+	}
+
+	if err := env.client.Create(ctx, ingress); err != nil {
+		t.Fatalf("failed to create Ingress: %v", err)
+	}
+
+	if err := env.reconcileIngress(ctx, ingress.Name, ingress.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	// Check ProxyBackend has gRPC config
+	proxyBackendList := &novaedgev1alpha1.ProxyBackendList{}
+	if err := env.client.List(ctx, proxyBackendList); err != nil {
+		t.Fatalf("failed to list ProxyBackends: %v", err)
+	}
+
+	if len(proxyBackendList.Items) == 0 {
+		t.Fatal("expected at least one ProxyBackend")
+	}
+
+	backend := &proxyBackendList.Items[0]
+
+	// Verify protocol
+	if backend.Spec.Protocol != "gRPCS" {
+		t.Errorf("expected protocol gRPCS, got %s", backend.Spec.Protocol)
+	}
+
+	// Verify TLS enabled
+	if backend.Spec.TLS == nil || !backend.Spec.TLS.Enabled {
+		t.Error("expected TLS to be enabled for GRPCS")
+	}
+
+	// Verify health check
+	if backend.Spec.HealthCheck == nil {
+		t.Fatal("expected health check to be set")
+	}
+
+	if backend.Spec.HealthCheck.HTTPPath == nil || *backend.Spec.HealthCheck.HTTPPath != "/grpc.health.v1.Health/Check" {
+		t.Errorf("expected health check path to be set")
+	}
+}

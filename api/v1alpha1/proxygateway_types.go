@@ -128,6 +128,79 @@ type Listener struct {
 	AllowedSourceRanges []string `json:"allowedSourceRanges,omitempty"`
 }
 
+// TracingConfig defines request tracing configuration
+type TracingConfig struct {
+	// Enabled enables request tracing
+	// +optional
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// SamplingRate is the percentage of requests to trace (0-100)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=100
+	SamplingRate *int32 `json:"samplingRate,omitempty"`
+
+	// RequestIDHeader is the header name for the request ID
+	// +optional
+	// +kubebuilder:default="X-Request-ID"
+	RequestIDHeader string `json:"requestIdHeader,omitempty"`
+
+	// PropagateRequestID propagates the request ID to upstream backends
+	// +optional
+	// +kubebuilder:default=true
+	PropagateRequestID bool `json:"propagateRequestId,omitempty"`
+
+	// GenerateRequestID generates a request ID if not present
+	// +optional
+	// +kubebuilder:default=true
+	GenerateRequestID bool `json:"generateRequestId,omitempty"`
+}
+
+// AccessLogConfig defines access logging configuration
+type AccessLogConfig struct {
+	// Enabled enables access logging
+	// +optional
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Format specifies the log format (json, common, combined)
+	// +optional
+	// +kubebuilder:validation:Enum=json;common;combined
+	// +kubebuilder:default="json"
+	Format string `json:"format,omitempty"`
+
+	// IncludeHeaders includes specified request/response headers in logs
+	// +optional
+	IncludeHeaders []string `json:"includeHeaders,omitempty"`
+
+	// ExcludePaths excludes specified paths from logging (e.g., health checks)
+	// +optional
+	ExcludePaths []string `json:"excludePaths,omitempty"`
+}
+
+// CustomErrorPage defines a custom error page configuration
+type CustomErrorPage struct {
+	// Codes is a list of HTTP status codes this page applies to
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	Codes []int32 `json:"codes"`
+
+	// Path is the path to serve for these error codes
+	// +optional
+	Path string `json:"path,omitempty"`
+
+	// Body is the response body to return for these error codes
+	// +optional
+	Body string `json:"body,omitempty"`
+
+	// ContentType is the content type of the error response
+	// +optional
+	// +kubebuilder:default="text/html"
+	ContentType string `json:"contentType,omitempty"`
+}
+
 // ProxyGatewaySpec defines the desired state of ProxyGateway
 type ProxyGatewaySpec struct {
 	// VIPRef references the ProxyVIP to use for this gateway
@@ -142,6 +215,18 @@ type ProxyGatewaySpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
 	Listeners []Listener `json:"listeners"`
+
+	// Tracing defines request tracing configuration
+	// +optional
+	Tracing *TracingConfig `json:"tracing,omitempty"`
+
+	// AccessLog defines access logging configuration
+	// +optional
+	AccessLog *AccessLogConfig `json:"accessLog,omitempty"`
+
+	// CustomErrorPages defines custom error pages
+	// +optional
+	CustomErrorPages []CustomErrorPage `json:"customErrorPages,omitempty"`
 }
 
 // ProxyGatewayStatus defines the observed state of ProxyGateway

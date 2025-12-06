@@ -85,6 +85,87 @@ type CircuitBreaker struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=10
 	MaxRetries *int32 `json:"maxRetries,omitempty"`
+
+	// ConsecutiveFailures is the number of consecutive failures before opening the circuit
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=5
+	ConsecutiveFailures *int32 `json:"consecutiveFailures,omitempty"`
+
+	// Interval is the time window for counting failures
+	// +optional
+	// +kubebuilder:default="10s"
+	Interval metav1.Duration `json:"interval,omitempty"`
+
+	// BaseEjectionTime is how long a host is ejected for
+	// +optional
+	// +kubebuilder:default="30s"
+	BaseEjectionTime metav1.Duration `json:"baseEjectionTime,omitempty"`
+}
+
+// RetryPolicy defines retry behavior for failed requests
+type RetryPolicy struct {
+	// NumRetries is the number of retry attempts
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=10
+	// +kubebuilder:default=1
+	NumRetries *int32 `json:"numRetries,omitempty"`
+
+	// PerTryTimeout is the timeout for each retry attempt
+	// +optional
+	// +kubebuilder:default="2s"
+	PerTryTimeout metav1.Duration `json:"perTryTimeout,omitempty"`
+
+	// RetryOn specifies conditions that trigger a retry (comma-separated)
+	// Valid values: 5xx, gateway-error, connect-failure, retriable-4xx, refused-stream, reset
+	// +optional
+	// +kubebuilder:default="5xx,gateway-error,connect-failure"
+	RetryOn string `json:"retryOn,omitempty"`
+
+	// RetryBackoff configures exponential backoff for retries
+	// +optional
+	RetryBackoff *RetryBackoff `json:"retryBackoff,omitempty"`
+}
+
+// RetryBackoff defines exponential backoff parameters for retries
+type RetryBackoff struct {
+	// BaseInterval is the initial backoff interval
+	// +optional
+	// +kubebuilder:default="25ms"
+	BaseInterval metav1.Duration `json:"baseInterval,omitempty"`
+
+	// MaxInterval is the maximum backoff interval
+	// +optional
+	// +kubebuilder:default="250ms"
+	MaxInterval metav1.Duration `json:"maxInterval,omitempty"`
+}
+
+// SessionAffinityConfig defines session affinity (sticky sessions) configuration
+type SessionAffinityConfig struct {
+	// Type specifies the session affinity type
+	// +kubebuilder:validation:Enum=Cookie;Header;SourceIP
+	// +kubebuilder:default="Cookie"
+	Type string `json:"type,omitempty"`
+
+	// CookieName is the name of the cookie for cookie-based affinity
+	// +optional
+	// +kubebuilder:default="NOVAEDGE_AFFINITY"
+	CookieName string `json:"cookieName,omitempty"`
+
+	// CookieTTL is the TTL for the affinity cookie
+	// +optional
+	// +kubebuilder:default="0s"
+	CookieTTL metav1.Duration `json:"cookieTTL,omitempty"`
+
+	// CookiePath is the path for the affinity cookie
+	// +optional
+	// +kubebuilder:default="/"
+	CookiePath string `json:"cookiePath,omitempty"`
+
+	// HeaderName is the header name for header-based affinity
+	// +optional
+	HeaderName string `json:"headerName,omitempty"`
 }
 
 // ConnectionPool defines connection pool configuration
@@ -180,6 +261,20 @@ type ProxyBackendSpec struct {
 	// ConnectionPool defines connection pool configuration
 	// +optional
 	ConnectionPool *ConnectionPool `json:"connectionPool,omitempty"`
+
+	// RetryPolicy defines retry behavior for failed requests
+	// +optional
+	RetryPolicy *RetryPolicy `json:"retryPolicy,omitempty"`
+
+	// SessionAffinity defines sticky session configuration
+	// +optional
+	SessionAffinity *SessionAffinityConfig `json:"sessionAffinity,omitempty"`
+
+	// Protocol specifies the backend protocol (HTTP, HTTPS, gRPC, gRPCS, HTTP2)
+	// +optional
+	// +kubebuilder:validation:Enum=HTTP;HTTPS;gRPC;gRPCS;HTTP2
+	// +kubebuilder:default="HTTP"
+	Protocol string `json:"protocol,omitempty"`
 }
 
 // BackendTLSConfig defines TLS settings for backend connections

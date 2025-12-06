@@ -73,6 +73,23 @@ type HTTPHeaderMatch struct {
 	Value string `json:"value"`
 }
 
+// HTTPQueryParamMatch describes how to match a query parameter
+type HTTPQueryParamMatch struct {
+	// Type specifies how to match against the query parameter value
+	// +optional
+	// +kubebuilder:default=Exact
+	Type HeaderMatchType `json:"type,omitempty"`
+
+	// Name is the name of the query parameter
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Name string `json:"name"`
+
+	// Value is the value of the query parameter
+	// +kubebuilder:validation:Required
+	Value string `json:"value"`
+}
+
 // HTTPRouteMatch defines a match for an HTTP request
 type HTTPRouteMatch struct {
 	// Path specifies a HTTP request path matcher
@@ -84,6 +101,11 @@ type HTTPRouteMatch struct {
 	// +kubebuilder:validation:MaxItems=16
 	Headers []HTTPHeaderMatch `json:"headers,omitempty"`
 
+	// QueryParams specifies HTTP query parameter matchers
+	// +optional
+	// +kubebuilder:validation:MaxItems=16
+	QueryParams []HTTPQueryParamMatch `json:"queryParams,omitempty"`
+
 	// Method matches the HTTP method
 	// +optional
 	// +kubebuilder:validation:Enum=GET;HEAD;POST;PUT;PATCH;DELETE;CONNECT;OPTIONS;TRACE
@@ -91,7 +113,7 @@ type HTTPRouteMatch struct {
 }
 
 // HTTPRouteFilterType identifies a type of filter
-// +kubebuilder:validation:Enum=AddHeader;RemoveHeader;RequestRedirect;URLRewrite
+// +kubebuilder:validation:Enum=AddHeader;RemoveHeader;RequestRedirect;URLRewrite;RequestMirror
 type HTTPRouteFilterType string
 
 const (
@@ -103,6 +125,8 @@ const (
 	HTTPRouteFilterRequestRedirect HTTPRouteFilterType = "RequestRedirect"
 	// HTTPRouteFilterURLRewrite rewrites the request URL
 	HTTPRouteFilterURLRewrite HTTPRouteFilterType = "URLRewrite"
+	// HTTPRouteFilterRequestMirror mirrors the request to another backend
+	HTTPRouteFilterRequestMirror HTTPRouteFilterType = "RequestMirror"
 )
 
 // HTTPHeader represents an HTTP header name and value
@@ -138,6 +162,17 @@ type HTTPRouteFilter struct {
 	// RewritePath is the path to rewrite to (for URLRewrite type)
 	// +optional
 	RewritePath *string `json:"rewritePath,omitempty"`
+
+	// MirrorBackend specifies the backend to mirror requests to (for RequestMirror type)
+	// +optional
+	MirrorBackend *BackendRef `json:"mirrorBackend,omitempty"`
+
+	// MirrorPercent specifies the percentage of requests to mirror (0-100)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=100
+	MirrorPercent *int32 `json:"mirrorPercent,omitempty"`
 }
 
 // BackendRef references a backend for routing
@@ -174,6 +209,15 @@ type HTTPRouteRule struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	BackendRefs []BackendRef `json:"backendRefs"`
+
+	// Timeout is the request timeout for this rule
+	// +optional
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+
+	// MaxRequestBodySize is the maximum request body size for this rule (0 = unlimited)
+	// Overrides the listener-level setting for this specific route
+	// +optional
+	MaxRequestBodySize *int64 `json:"maxRequestBodySize,omitempty"`
 }
 
 // ProxyRouteSpec defines the desired state of ProxyRoute
