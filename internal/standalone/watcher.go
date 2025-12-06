@@ -35,13 +35,13 @@ import (
 
 // ConfigWatcher watches a config file for changes and provides ConfigSnapshots
 type ConfigWatcher struct {
-	configPath  string
-	nodeName    string
-	logger      *zap.Logger
-	converter   *Converter
-	mu          sync.RWMutex
-	lastHash    string
-	lastConfig  *Config
+	configPath   string
+	nodeName     string
+	logger       *zap.Logger
+	converter    *Converter
+	mu           sync.RWMutex
+	lastHash     string
+	lastConfig   *Config
 	lastSnapshot *pb.ConfigSnapshot
 }
 

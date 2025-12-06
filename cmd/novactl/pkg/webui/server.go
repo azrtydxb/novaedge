@@ -16,7 +16,6 @@ import (
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/mode"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
@@ -120,13 +119,15 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/config/validate", s.handleConfigValidate)
 	mux.HandleFunc("/api/v1/config/export", s.handleConfigExport)
 	mux.HandleFunc("/api/v1/config/import", s.handleConfigImport)
+	mux.HandleFunc("/api/v1/config/history", s.handleConfigHistory)
+	mux.HandleFunc("/api/v1/config/history/", s.handleConfigHistoryRestore)
 
-	// Static files
+	// Static files with SPA fallback
 	staticFS, err := fs.Sub(staticFiles, "static")
 	if err != nil {
 		return fmt.Errorf("failed to get static files: %w", err)
 	}
-	mux.Handle("/", http.FileServer(http.FS(staticFS)))
+	mux.Handle("/", spaHandler(http.FS(staticFS)))
 
 	s.server = &http.Server{
 		Addr:              s.addr,
@@ -159,6 +160,43 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
+	})
+}
+
+// spaHandler serves static files and falls back to index.html for SPA routing
+func spaHandler(fsys http.FileSystem) http.Handler {
+	fileServer := http.FileServer(fsys)
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		// Try to open the requested file
+		f, err := fsys.Open(path)
+		if err != nil {
+			// File not found, serve index.html for SPA routing
+			r.URL.Path = "/"
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		// Check if it's a directory
+		stat, err := f.Stat()
+		f.Close()
+		if err == nil && stat.IsDir() {
+			// Try to serve index.html from the directory
+			indexPath := strings.TrimSuffix(path, "/") + "/index.html"
+			indexFile, err := fsys.Open(indexPath)
+			if err != nil {
+				// No index.html in directory, serve root index.html
+				r.URL.Path = "/"
+				fileServer.ServeHTTP(w, r)
+				return
+			}
+			indexFile.Close()
+		}
+
+		// Serve the file
+		fileServer.ServeHTTP(w, r)
 	})
 }
 
@@ -314,31 +352,32 @@ func (s *Server) handleGateways(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
 	ctx := r.Context()
 	namespace := parseNamespaceFromQuery(r)
 
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == "all" {
-		// List across all namespaces
-		list, err = s.k8sClient.Dynamic.Resource(client.GetGVR(client.ResourceGateway)).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = s.k8sClient.ListResources(ctx, client.ResourceGateway, namespace)
-	}
-
+	gateways, err := s.backend.ListGateways(ctx, namespace)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list gateways: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, list.Items)
+	writeJSON(w, http.StatusOK, gateways)
 }
 
 // handleGateway handles GET /api/v1/gateways/{namespace}/{name}
 func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
 		return
 	}
 
@@ -351,7 +390,7 @@ func (s *Server) handleGateway(w http.ResponseWriter, r *http.Request) {
 	namespace, name := parts[0], parts[1]
 	ctx := r.Context()
 
-	gateway, err := s.k8sClient.GetResource(ctx, client.ResourceGateway, namespace, name)
+	gateway, err := s.backend.GetGateway(ctx, namespace, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("gateway not found: %v", err))
 		return
@@ -367,30 +406,32 @@ func (s *Server) handleRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
 	ctx := r.Context()
 	namespace := parseNamespaceFromQuery(r)
 
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == "all" {
-		list, err = s.k8sClient.Dynamic.Resource(client.GetGVR(client.ResourceRoute)).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = s.k8sClient.ListResources(ctx, client.ResourceRoute, namespace)
-	}
-
+	routes, err := s.backend.ListRoutes(ctx, namespace)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list routes: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, list.Items)
+	writeJSON(w, http.StatusOK, routes)
 }
 
 // handleRoute handles GET /api/v1/routes/{namespace}/{name}
 func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
 		return
 	}
 
@@ -403,7 +444,7 @@ func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 	namespace, name := parts[0], parts[1]
 	ctx := r.Context()
 
-	route, err := s.k8sClient.GetResource(ctx, client.ResourceRoute, namespace, name)
+	route, err := s.backend.GetRoute(ctx, namespace, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("route not found: %v", err))
 		return
@@ -419,30 +460,32 @@ func (s *Server) handleBackends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
 	ctx := r.Context()
 	namespace := parseNamespaceFromQuery(r)
 
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == "all" {
-		list, err = s.k8sClient.Dynamic.Resource(client.GetGVR(client.ResourceBackend)).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = s.k8sClient.ListResources(ctx, client.ResourceBackend, namespace)
-	}
-
+	backends, err := s.backend.ListBackends(ctx, namespace)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list backends: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, list.Items)
+	writeJSON(w, http.StatusOK, backends)
 }
 
 // handleBackend handles GET /api/v1/backends/{namespace}/{name}
 func (s *Server) handleBackend(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
 		return
 	}
 
@@ -455,7 +498,7 @@ func (s *Server) handleBackend(w http.ResponseWriter, r *http.Request) {
 	namespace, name := parts[0], parts[1]
 	ctx := r.Context()
 
-	backend, err := s.k8sClient.GetResource(ctx, client.ResourceBackend, namespace, name)
+	backend, err := s.backend.GetBackend(ctx, namespace, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("backend not found: %v", err))
 		return
@@ -471,30 +514,32 @@ func (s *Server) handleVIPs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
 	ctx := r.Context()
 	namespace := parseNamespaceFromQuery(r)
 
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == "all" {
-		list, err = s.k8sClient.Dynamic.Resource(client.GetGVR(client.ResourceVIP)).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = s.k8sClient.ListResources(ctx, client.ResourceVIP, namespace)
-	}
-
+	vips, err := s.backend.ListVIPs(ctx, namespace)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list vips: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, list.Items)
+	writeJSON(w, http.StatusOK, vips)
 }
 
 // handleVIP handles GET /api/v1/vips/{namespace}/{name}
 func (s *Server) handleVIP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
 		return
 	}
 
@@ -507,7 +552,7 @@ func (s *Server) handleVIP(w http.ResponseWriter, r *http.Request) {
 	namespace, name := parts[0], parts[1]
 	ctx := r.Context()
 
-	vip, err := s.k8sClient.GetResource(ctx, client.ResourceVIP, namespace, name)
+	vip, err := s.backend.GetVIP(ctx, namespace, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("vip not found: %v", err))
 		return
@@ -523,30 +568,32 @@ func (s *Server) handlePolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
 	ctx := r.Context()
 	namespace := parseNamespaceFromQuery(r)
 
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == "all" {
-		list, err = s.k8sClient.Dynamic.Resource(client.GetGVR(client.ResourcePolicy)).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = s.k8sClient.ListResources(ctx, client.ResourcePolicy, namespace)
-	}
-
+	policies, err := s.backend.ListPolicies(ctx, namespace)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list policies: %v", err))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, list.Items)
+	writeJSON(w, http.StatusOK, policies)
 }
 
 // handlePolicy handles GET /api/v1/policies/{namespace}/{name}
 func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
 		return
 	}
 
@@ -559,7 +606,7 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 	namespace, name := parts[0], parts[1]
 	ctx := r.Context()
 
-	policy, err := s.k8sClient.GetResource(ctx, client.ResourcePolicy, namespace, name)
+	policy, err := s.backend.GetPolicy(ctx, namespace, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("policy not found: %v", err))
 		return
@@ -572,6 +619,26 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// In standalone mode, return empty list or mock agent
+	if s.backend != nil && s.backend.Mode() == mode.ModeStandalone {
+		// Return a single "standalone" agent
+		agents := []AgentInfo{{
+			Name:      "standalone-agent",
+			Namespace: "standalone",
+			NodeName:  "localhost",
+			PodIP:     "127.0.0.1",
+			Phase:     "Running",
+			Ready:     true,
+		}}
+		writeJSON(w, http.StatusOK, agents)
+		return
+	}
+
+	if s.clientset == nil {
+		writeError(w, http.StatusServiceUnavailable, "kubernetes client not initialized")
 		return
 	}
 
@@ -635,25 +702,36 @@ func (s *Server) handleNamespaces(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
 	ctx := r.Context()
 
-	namespaces, err := s.clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+	namespaces, err := s.backend.ListNamespaces(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list namespaces: %v", err))
 		return
 	}
 
-	names := make([]string, 0, len(namespaces.Items))
-	for _, ns := range namespaces.Items {
-		names = append(names, ns.Name)
-	}
-
-	writeJSON(w, http.StatusOK, names)
+	writeJSON(w, http.StatusOK, namespaces)
 }
 
 // handleHealth handles GET /api/v1/health
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
+}
+
+// WorkerMetrics represents resource metrics for a single worker/agent
+type WorkerMetrics struct {
+	Instance     string  `json:"instance"`
+	CPUUsage     float64 `json:"cpuUsage"`     // CPU usage percentage (0-100)
+	MemoryUsage  float64 `json:"memoryUsage"`  // Memory usage in bytes
+	MemoryLimit  float64 `json:"memoryLimit"`  // Memory limit in bytes (if set)
+	Goroutines   float64 `json:"goroutines"`   // Number of goroutines
+	Uptime       float64 `json:"uptime"`       // Uptime in seconds
+	RequestsRate float64 `json:"requestsRate"` // Requests per second for this worker
 }
 
 // DashboardMetrics represents aggregated metrics for the dashboard
@@ -665,7 +743,13 @@ type DashboardMetrics struct {
 	VIPFailovers      *float64 `json:"vipFailovers,omitempty"`
 	HealthyAgents     *float64 `json:"healthyAgents,omitempty"`
 	TotalAgents       *float64 `json:"totalAgents,omitempty"`
-	Timestamp         int64    `json:"timestamp"`
+	// Resource metrics (totals across all workers)
+	TotalCPUUsage    *float64 `json:"totalCpuUsage,omitempty"`    // Total CPU usage percentage
+	TotalMemoryUsage *float64 `json:"totalMemoryUsage,omitempty"` // Total memory usage in bytes
+	TotalGoroutines  *float64 `json:"totalGoroutines,omitempty"`  // Total goroutines across all workers
+	// Per-worker metrics
+	Workers   []WorkerMetrics `json:"workers,omitempty"`
+	Timestamp int64           `json:"timestamp"`
 }
 
 // handleMetricsDashboard handles GET /api/v1/metrics/dashboard
@@ -685,56 +769,175 @@ func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) 
 		Timestamp: time.Now().Unix(),
 	}
 
-	// Query request rate
-	if result, err := s.prometheusClient.Query(ctx, `sum(rate(novaedge_agent_requests_total[5m]))`); err == nil && len(result.Data.Result) > 0 {
+	// Query request rate (use novaedge_http_requests_total metric)
+	if result, err := s.prometheusClient.Query(ctx, `sum(rate(novaedge_http_requests_total[5m]))`); err == nil && len(result.Data.Result) > 0 {
 		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
 			metrics.RequestRate = &value
 		}
 	}
 
-	// Query active connections
-	if result, err := s.prometheusClient.Query(ctx, `sum(novaedge_agent_active_connections)`); err == nil && len(result.Data.Result) > 0 {
+	// Query active connections (use novaedge_backend_active_connections or novaedge_http_requests_in_flight)
+	if result, err := s.prometheusClient.Query(ctx, `sum(novaedge_backend_active_connections) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
 		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
 			metrics.ActiveConnections = &value
 		}
 	}
 
-	// Query error rate
-	if result, err := s.prometheusClient.Query(ctx, `sum(rate(novaedge_agent_requests_total{status=~"5.."}[5m]))`); err == nil && len(result.Data.Result) > 0 {
+	// Query error rate (use novaedge_http_requests_total with 5xx status)
+	if result, err := s.prometheusClient.Query(ctx, `sum(rate(novaedge_http_requests_total{status=~"5.."}[5m])) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
 		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
 			metrics.ErrorRate = &value
 		}
 	}
 
-	// Query average latency
-	if result, err := s.prometheusClient.Query(ctx, `avg(novaedge_agent_request_duration_seconds)`); err == nil && len(result.Data.Result) > 0 {
+	// Query average latency (use novaedge_http_request_duration_seconds histogram)
+	if result, err := s.prometheusClient.Query(ctx, `histogram_quantile(0.5, sum(rate(novaedge_http_request_duration_seconds_bucket[5m])) by (le)) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
 		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
 			metrics.AvgLatency = &value
 		}
 	}
 
-	// Query VIP failovers
-	if result, err := s.prometheusClient.Query(ctx, `sum(increase(novaedge_vip_failovers_total[24h]))`); err == nil && len(result.Data.Result) > 0 {
+	// Query VIP failovers (no change, metric name is correct)
+	if result, err := s.prometheusClient.Query(ctx, `sum(increase(novaedge_vip_failovers_total[24h])) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
 		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
 			metrics.VIPFailovers = &value
 		}
 	}
 
-	// Query healthy agents
-	if result, err := s.prometheusClient.Query(ctx, `count(up{job="novaedge-agent"} == 1)`); err == nil && len(result.Data.Result) > 0 {
+	// Query healthy agents (use novaedge job name)
+	if result, err := s.prometheusClient.Query(ctx, `count(up{job="novaedge"} == 1) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
 		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
 			metrics.HealthyAgents = &value
 		}
 	}
 
-	// Query total agents
-	if result, err := s.prometheusClient.Query(ctx, `count(up{job="novaedge-agent"})`); err == nil && len(result.Data.Result) > 0 {
+	// Query total agents (use novaedge job name)
+	if result, err := s.prometheusClient.Query(ctx, `count(up{job="novaedge"}) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
 		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
 			metrics.TotalAgents = &value
 		}
 	}
 
+	// Query total CPU usage (rate of process_cpu_seconds_total * 100 for percentage)
+	if result, err := s.prometheusClient.Query(ctx, `sum(rate(process_cpu_seconds_total{job="novaedge"}[1m])) * 100`); err == nil && len(result.Data.Result) > 0 {
+		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
+			metrics.TotalCPUUsage = &value
+		}
+	}
+
+	// Query total memory usage (resident memory)
+	if result, err := s.prometheusClient.Query(ctx, `sum(process_resident_memory_bytes{job="novaedge"})`); err == nil && len(result.Data.Result) > 0 {
+		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
+			metrics.TotalMemoryUsage = &value
+		}
+	}
+
+	// Query total goroutines
+	if result, err := s.prometheusClient.Query(ctx, `sum(go_goroutines{job="novaedge"})`); err == nil && len(result.Data.Result) > 0 {
+		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
+			metrics.TotalGoroutines = &value
+		}
+	}
+
+	// Query per-worker metrics
+	metrics.Workers = s.queryWorkerMetrics(ctx)
+
 	writeJSON(w, http.StatusOK, metrics)
+}
+
+// queryWorkerMetrics queries per-worker metrics from Prometheus
+func (s *Server) queryWorkerMetrics(ctx context.Context) []WorkerMetrics {
+	workers := []WorkerMetrics{}
+
+	if s.prometheusClient == nil {
+		return workers
+	}
+
+	// Get list of instances from up metric
+	instancesResult, err := s.prometheusClient.Query(ctx, `up{job="novaedge"}`)
+	if err != nil || len(instancesResult.Data.Result) == 0 {
+		return workers
+	}
+
+	// Build a map of instance -> WorkerMetrics
+	workerMap := make(map[string]*WorkerMetrics)
+	for _, result := range instancesResult.Data.Result {
+		if instance, ok := result.Metric["instance"]; ok {
+			workerMap[instance] = &WorkerMetrics{Instance: instance}
+		}
+	}
+
+	// Query CPU usage per instance
+	if result, err := s.prometheusClient.Query(ctx, `rate(process_cpu_seconds_total{job="novaedge"}[1m]) * 100`); err == nil {
+		for _, r := range result.Data.Result {
+			if instance, ok := r.Metric["instance"]; ok {
+				if w, exists := workerMap[instance]; exists {
+					if val, err := prometheus.ValueAsFloat(r); err == nil {
+						w.CPUUsage = val
+					}
+				}
+			}
+		}
+	}
+
+	// Query memory usage per instance
+	if result, err := s.prometheusClient.Query(ctx, `process_resident_memory_bytes{job="novaedge"}`); err == nil {
+		for _, r := range result.Data.Result {
+			if instance, ok := r.Metric["instance"]; ok {
+				if w, exists := workerMap[instance]; exists {
+					if val, err := prometheus.ValueAsFloat(r); err == nil {
+						w.MemoryUsage = val
+					}
+				}
+			}
+		}
+	}
+
+	// Query goroutines per instance
+	if result, err := s.prometheusClient.Query(ctx, `go_goroutines{job="novaedge"}`); err == nil {
+		for _, r := range result.Data.Result {
+			if instance, ok := r.Metric["instance"]; ok {
+				if w, exists := workerMap[instance]; exists {
+					if val, err := prometheus.ValueAsFloat(r); err == nil {
+						w.Goroutines = val
+					}
+				}
+			}
+		}
+	}
+
+	// Query uptime per instance (current time - start time)
+	if result, err := s.prometheusClient.Query(ctx, `time() - process_start_time_seconds{job="novaedge"}`); err == nil {
+		for _, r := range result.Data.Result {
+			if instance, ok := r.Metric["instance"]; ok {
+				if w, exists := workerMap[instance]; exists {
+					if val, err := prometheus.ValueAsFloat(r); err == nil {
+						w.Uptime = val
+					}
+				}
+			}
+		}
+	}
+
+	// Query requests rate per instance
+	if result, err := s.prometheusClient.Query(ctx, `sum by (instance) (rate(novaedge_http_requests_total{job="novaedge"}[5m]))`); err == nil {
+		for _, r := range result.Data.Result {
+			if instance, ok := r.Metric["instance"]; ok {
+				if w, exists := workerMap[instance]; exists {
+					if val, err := prometheus.ValueAsFloat(r); err == nil {
+						w.RequestsRate = val
+					}
+				}
+			}
+		}
+	}
+
+	// Convert map to slice
+	for _, w := range workerMap {
+		workers = append(workers, *w)
+	}
+
+	return workers
 }
 
 // handleMetricsQuery handles GET /api/v1/metrics/query

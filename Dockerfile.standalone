@@ -1,5 +1,5 @@
 # Build the standalone agent binary
-FROM golang:1.23 as builder
+FROM golang:1.24 as builder
 
 WORKDIR /workspace
 
@@ -9,6 +9,8 @@ COPY go.sum go.sum
 
 # Cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
+# Set GOTOOLCHAIN=auto to allow downloading newer Go versions if required by go.mod
+ENV GOTOOLCHAIN=auto
 RUN go mod download
 
 # Copy the go source
