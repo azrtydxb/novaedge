@@ -1,0 +1,318 @@
+syntax = "proto3";
+
+package novaedge.proto;
+
+option go_package = "github.com/piwi3910/novaedge/internal/proto/gen;proto";
+
+import "config.proto";
+
+// FederationService handles controller-to-controller synchronization
+// for active/active federated deployments
+service FederationService {
+  // SyncStream establishes a bidirectional sync stream between federation peers
+  // Each controller sends and receives config changes
+  rpc SyncStream(stream SyncMessage) returns (stream SyncMessage);
+
+  // GetState returns the current state of the federation peer
+  rpc GetState(GetStateRequest) returns (GetStateResponse);
+
+  // Ping is a lightweight health check
+  rpc Ping(PingRequest) returns (PingResponse);
+
+  // RequestFullSync requests a full state sync from peer
+  rpc RequestFullSync(FullSyncRequest) returns (stream ResourceBatch);
+}
+
+// SyncMessage is the main message type for federation sync
+message SyncMessage {
+  oneof message {
+    // Initial handshake
+    SyncHandshake handshake = 1;
+
+    // Resource change notification
+    ResourceChange change = 2;
+
+    // Acknowledgment of received changes
+    SyncAck ack = 3;
+
+    // Heartbeat to keep connection alive
+    Heartbeat heartbeat = 4;
+
+    // Conflict notification (when merge strategy detects conflicts)
+    ConflictNotification conflict = 5;
+  }
+}
+
+// SyncHandshake is exchanged when peers first connect
+message SyncHandshake {
+  // Federation ID - must match between peers
+  string federation_id = 1;
+
+  // Member name of this controller
+  string member_name = 2;
+
+  // Member region
+  string region = 3;
+
+  // Member zone
+  string zone = 4;
+
+  // Current vector clock state
+  map<string, int64> vector_clock = 5;
+
+  // Protocol version for compatibility checking
+  int32 protocol_version = 6;
+
+  // Supported features
+  repeated string features = 7;
+
+  // Compression enabled
+  bool compression = 8;
+}
+
+// ResourceChange represents a change to a NovaEdge resource
+message ResourceChange {
+  // Unique change ID
+  string change_id = 1;
+
+  // Vector clock after this change
+  map<string, int64> vector_clock = 2;
+
+  // Type of change
+  ChangeType change_type = 3;
+
+  // Resource type (ProxyGateway, ProxyRoute, ProxyBackend, etc.)
+  string resource_type = 4;
+
+  // Resource namespace
+  string namespace = 5;
+
+  // Resource name
+  string name = 6;
+
+  // Resource version (from Kubernetes)
+  string resource_version = 7;
+
+  // The actual resource data (serialized as JSON or protobuf)
+  bytes resource_data = 8;
+
+  // Hash of the resource for quick comparison
+  string resource_hash = 9;
+
+  // Timestamp of the change (Unix nanoseconds)
+  int64 timestamp = 10;
+
+  // Origin - which member made this change
+  string origin_member = 11;
+
+  // Labels for filtering
+  map<string, string> labels = 12;
+}
+
+enum ChangeType {
+  CHANGE_TYPE_UNSPECIFIED = 0;
+  CREATED = 1;
+  UPDATED = 2;
+  DELETED = 3;
+}
+
+// SyncAck acknowledges receipt of changes
+message SyncAck {
+  // List of change IDs being acknowledged
+  repeated string change_ids = 1;
+
+  // Current vector clock after processing
+  map<string, int64> vector_clock = 2;
+
+  // Any changes that failed to apply
+  repeated ChangeError errors = 3;
+}
+
+// ChangeError reports a failure to apply a change
+message ChangeError {
+  string change_id = 1;
+  string error_code = 2;
+  string error_message = 3;
+  bool retryable = 4;
+}
+
+// Heartbeat keeps the connection alive and provides status
+message Heartbeat {
+  // Sender's current vector clock
+  map<string, int64> vector_clock = 1;
+
+  // Timestamp
+  int64 timestamp = 2;
+
+  // Number of pending changes in queue
+  int32 pending_changes = 3;
+
+  // Number of connected agents
+  int32 agent_count = 4;
+
+  // Is this member the leader for L2 VIP coordination
+  bool vip_leader = 5;
+}
+
+// ConflictNotification is sent when a conflict is detected
+message ConflictNotification {
+  // Resource identification
+  string resource_type = 1;
+  string namespace = 2;
+  string name = 3;
+
+  // The local version of the resource
+  bytes local_resource = 4;
+  map<string, int64> local_vector_clock = 5;
+
+  // The remote version of the resource
+  bytes remote_resource = 6;
+  map<string, int64> remote_vector_clock = 7;
+
+  // How the conflict was resolved (if automatic)
+  ConflictResolution resolution = 8;
+
+  // Requires manual intervention
+  bool requires_manual = 9;
+}
+
+enum ConflictResolution {
+  CONFLICT_RESOLUTION_UNSPECIFIED = 0;
+  LAST_WRITER_WINS = 1;
+  MERGED = 2;
+  PENDING_MANUAL = 3;
+}
+
+// GetStateRequest requests the current state of a peer
+message GetStateRequest {
+  string federation_id = 1;
+  string requester_member = 2;
+}
+
+// GetStateResponse returns the peer's current state
+message GetStateResponse {
+  string member_name = 1;
+  string region = 2;
+  string zone = 3;
+
+  // Current vector clock
+  map<string, int64> vector_clock = 4;
+
+  // Last sync time with each peer
+  map<string, int64> last_sync_times = 5;
+
+  // Number of resources by type
+  map<string, int32> resource_counts = 6;
+
+  // Health status
+  bool healthy = 7;
+  string phase = 8;
+
+  // Number of connected agents
+  int32 agent_count = 9;
+
+  // Pending conflicts count
+  int32 conflicts_pending = 10;
+}
+
+// PingRequest is a simple health check
+message PingRequest {
+  string federation_id = 1;
+  string sender = 2;
+  int64 timestamp = 3;
+}
+
+// PingResponse returns ping status
+message PingResponse {
+  string member_name = 1;
+  int64 timestamp = 2;
+  bool healthy = 3;
+}
+
+// FullSyncRequest requests a complete state sync
+message FullSyncRequest {
+  string federation_id = 1;
+  string requester_member = 2;
+
+  // Optional: only sync specific resource types
+  repeated string resource_types = 3;
+
+  // Optional: only sync specific namespaces
+  repeated string namespaces = 4;
+
+  // Vector clock of requester (to determine what's needed)
+  map<string, int64> vector_clock = 5;
+}
+
+// ResourceBatch contains a batch of resources for full sync
+message ResourceBatch {
+  // Batch number (for ordering)
+  int32 batch_number = 1;
+
+  // Is this the last batch?
+  bool is_last = 2;
+
+  // Resources in this batch
+  repeated ResourceChange resources = 3;
+
+  // Total number of resources being synced
+  int32 total_resources = 4;
+
+  // Vector clock after this batch
+  map<string, int64> vector_clock = 5;
+}
+
+// VectorClock represents a vector clock for causal ordering
+message VectorClock {
+  // Map of member name to clock value
+  map<string, int64> clocks = 1;
+}
+
+// Tombstone represents a deleted resource that needs to be propagated
+message Tombstone {
+  string resource_type = 1;
+  string namespace = 2;
+  string name = 3;
+  int64 deletion_timestamp = 4;
+  map<string, int64> vector_clock = 5;
+  string origin_member = 6;
+}
+
+// AgentFailover message for agent-to-controller communication during failover
+message AgentFailoverRequest {
+  string node_name = 1;
+  string cluster_name = 2;
+
+  // The controller the agent is failing over from
+  string from_controller = 3;
+
+  // Last applied config version from primary
+  string last_applied_version = 4;
+
+  // Last known vector clock
+  map<string, int64> last_vector_clock = 5;
+
+  // Agent's current state
+  AgentFailoverState state = 6;
+}
+
+enum AgentFailoverState {
+  AGENT_FAILOVER_STATE_UNSPECIFIED = 0;
+  FAILING_OVER = 1;
+  CONNECTED_SECONDARY = 2;
+  RECOVERING = 3;
+}
+
+message AgentFailoverResponse {
+  // Whether the failover is accepted
+  bool accepted = 1;
+
+  // New config snapshot to apply (if different from last)
+  ConfigSnapshot config_snapshot = 2;
+
+  // Any changes since agent's last known state
+  repeated ResourceChange incremental_changes = 3;
+
+  // Controller's current vector clock
+  map<string, int64> vector_clock = 4;
+}

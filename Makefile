@@ -46,7 +46,7 @@ generate-proto: protoc-gen-go protoc-gen-go-grpc ## Generate Go code from protob
 	PATH=$(LOCALBIN):$$PATH protoc --go_out=internal/proto/gen --go_opt=paths=source_relative \
 		--go-grpc_out=internal/proto/gen --go-grpc_opt=paths=source_relative \
 		--proto_path=api/proto \
-		api/proto/config.proto
+		api/proto/config.proto api/proto/federation.proto
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.

@@ -1,0 +1,771 @@
+/*
+Copyright 2024 NovaEdge Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package config
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"sync"
+	"time"
+
+	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+
+	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+// FailoverState represents the current state of the failover state machine
+type FailoverState string
+
+const (
+	// StateConnectedPrimary - connected to primary controller
+	StateConnectedPrimary FailoverState = "ConnectedPrimary"
+
+	// StateFailingOver - attempting to failover to secondary
+	StateFailingOver FailoverState = "FailingOver"
+
+	// StateConnectedSecondary - connected to a secondary controller
+	StateConnectedSecondary FailoverState = "ConnectedSecondary"
+
+	// StateRecoveryCheck - checking if primary is available again
+	StateRecoveryCheck FailoverState = "RecoveryCheck"
+
+	// StateAutonomous - operating without controller connection
+	StateAutonomous FailoverState = "Autonomous"
+)
+
+// ControllerEndpoint represents a controller endpoint for failover
+type ControllerEndpoint struct {
+	// Name is the controller's name
+	Name string
+
+	// Endpoint is the gRPC address (host:port)
+	Endpoint string
+
+	// Priority (lower = higher priority, 0 = primary)
+	Priority int32
+
+	// Region is the geographic region
+	Region string
+
+	// Zone is the availability zone
+	Zone string
+
+	// LastHealthy is when we last successfully communicated
+	LastHealthy time.Time
+
+	// FailureCount is the number of consecutive failures
+	FailureCount int32
+
+	// Latency is the last measured latency
+	Latency time.Duration
+}
+
+// FailoverConfig configures the failover behavior
+type FailoverConfig struct {
+	// Timeout before initiating failover
+	Timeout time.Duration
+
+	// HealthCheckInterval is how often to check controller health
+	HealthCheckInterval time.Duration
+
+	// FailureThreshold is failures before marking controller unhealthy
+	FailureThreshold int32
+
+	// RecoveryDelay is how long to wait before checking for primary recovery
+	RecoveryDelay time.Duration
+
+	// LatencyAware enables latency-based controller selection
+	LatencyAware bool
+
+	// AutonomousModeEnabled enables autonomous operation when no controllers available
+	AutonomousModeEnabled bool
+
+	// ConfigPersistPath is where to persist config for autonomous mode
+	ConfigPersistPath string
+}
+
+// DefaultFailoverConfig returns sensible defaults
+func DefaultFailoverConfig() *FailoverConfig {
+	return &FailoverConfig{
+		Timeout:               30 * time.Second,
+		HealthCheckInterval:   10 * time.Second,
+		FailureThreshold:      3,
+		RecoveryDelay:         60 * time.Second,
+		LatencyAware:          true,
+		AutonomousModeEnabled: true,
+		ConfigPersistPath:     "/var/lib/novaedge/config-cache",
+	}
+}
+
+// FailoverWatcher manages connections to multiple controllers with failover
+type FailoverWatcher struct {
+	// Configuration
+	nodeName     string
+	agentVersion string
+	tlsConfig    *TLSConfig
+	logger       *zap.Logger
+	config       *FailoverConfig
+
+	// Controllers
+	controllers   []*ControllerEndpoint
+	controllersMu sync.RWMutex
+
+	// Current state
+	state      FailoverState
+	stateMu    sync.RWMutex
+	activeConn *grpc.ClientConn
+	activeCtrl *ControllerEndpoint
+
+	// Current config
+	currentSnapshot   *Snapshot
+	currentVersion    string
+	lastVectorClock   map[string]int64
+	snapshotMu        sync.RWMutex
+
+	// Context management
+	ctx            context.Context
+	cancel         context.CancelFunc
+	healthCheckCtx context.Context
+	healthCancel   context.CancelFunc
+
+	// Remote cluster config
+	clusterConfig *ClusterConfig
+
+	// Callbacks
+	onStateChange func(FailoverState, *ControllerEndpoint)
+	onSnapshot    ApplyFunc
+
+	// Metrics
+	failoverCount      int64
+	connectionErrors   int64
+	autonomousDuration time.Duration
+}
+
+// NewFailoverWatcher creates a new failover-aware config watcher
+func NewFailoverWatcher(
+	ctx context.Context,
+	nodeName, agentVersion string,
+	controllers []*ControllerEndpoint,
+	tlsConfig *TLSConfig,
+	clusterConfig *ClusterConfig,
+	config *FailoverConfig,
+	logger *zap.Logger,
+) *FailoverWatcher {
+	if config == nil {
+		config = DefaultFailoverConfig()
+	}
+
+	// Sort controllers by priority
+	sortedControllers := make([]*ControllerEndpoint, len(controllers))
+	copy(sortedControllers, controllers)
+	sort.Slice(sortedControllers, func(i, j int) bool {
+		return sortedControllers[i].Priority < sortedControllers[j].Priority
+	})
+
+	ctx, cancel := context.WithCancel(ctx)
+
+	return &FailoverWatcher{
+		nodeName:      nodeName,
+		agentVersion:  agentVersion,
+		controllers:   sortedControllers,
+		tlsConfig:     tlsConfig,
+		clusterConfig: clusterConfig,
+		config:        config,
+		logger:        logger.Named("failover"),
+		state:         StateConnectedPrimary,
+		ctx:           ctx,
+		cancel:        cancel,
+	}
+}
+
+// Start begins the failover watcher
+func (w *FailoverWatcher) Start(applyFunc ApplyFunc) error {
+	w.onSnapshot = applyFunc
+
+	w.logger.Info("Starting failover watcher",
+		zap.Int("controllers", len(w.controllers)),
+		zap.Duration("timeout", w.config.Timeout),
+	)
+
+	// Start health checker
+	w.healthCheckCtx, w.healthCancel = context.WithCancel(w.ctx)
+	go w.runHealthChecker()
+
+	// Main connection loop
+	for {
+		select {
+		case <-w.ctx.Done():
+			w.cleanup()
+			return w.ctx.Err()
+		default:
+		}
+
+		if err := w.runStateMachine(); err != nil {
+			w.logger.Error("State machine error", zap.Error(err))
+			time.Sleep(time.Second)
+		}
+	}
+}
+
+// Stop stops the failover watcher
+func (w *FailoverWatcher) Stop() {
+	w.cancel()
+}
+
+// GetState returns the current failover state
+func (w *FailoverWatcher) GetState() FailoverState {
+	w.stateMu.RLock()
+	defer w.stateMu.RUnlock()
+	return w.state
+}
+
+// GetActiveController returns the currently active controller
+func (w *FailoverWatcher) GetActiveController() *ControllerEndpoint {
+	w.stateMu.RLock()
+	defer w.stateMu.RUnlock()
+	return w.activeCtrl
+}
+
+// OnStateChange sets a callback for state changes
+func (w *FailoverWatcher) OnStateChange(fn func(FailoverState, *ControllerEndpoint)) {
+	w.onStateChange = fn
+}
+
+// UpdateControllers updates the list of available controllers
+func (w *FailoverWatcher) UpdateControllers(controllers []*ControllerEndpoint) {
+	w.controllersMu.Lock()
+	defer w.controllersMu.Unlock()
+
+	// Sort by priority
+	sortedControllers := make([]*ControllerEndpoint, len(controllers))
+	copy(sortedControllers, controllers)
+	sort.Slice(sortedControllers, func(i, j int) bool {
+		return sortedControllers[i].Priority < sortedControllers[j].Priority
+	})
+
+	w.controllers = sortedControllers
+	w.logger.Info("Updated controller list", zap.Int("count", len(controllers)))
+}
+
+// runStateMachine runs the failover state machine
+func (w *FailoverWatcher) runStateMachine() error {
+	state := w.GetState()
+
+	switch state {
+	case StateConnectedPrimary:
+		return w.handleConnectedPrimary()
+
+	case StateFailingOver:
+		return w.handleFailingOver()
+
+	case StateConnectedSecondary:
+		return w.handleConnectedSecondary()
+
+	case StateRecoveryCheck:
+		return w.handleRecoveryCheck()
+
+	case StateAutonomous:
+		return w.handleAutonomous()
+
+	default:
+		return fmt.Errorf("unknown state: %s", state)
+	}
+}
+
+// handleConnectedPrimary handles the connected-to-primary state
+func (w *FailoverWatcher) handleConnectedPrimary() error {
+	primary := w.getPrimaryController()
+	if primary == nil {
+		w.transitionTo(StateFailingOver, nil)
+		return nil
+	}
+
+	// Try to connect and stream
+	if err := w.connectAndStream(primary); err != nil {
+		w.logger.Warn("Primary connection failed",
+			zap.String("controller", primary.Name),
+			zap.Error(err),
+		)
+
+		primary.FailureCount++
+		if primary.FailureCount >= w.config.FailureThreshold {
+			w.transitionTo(StateFailingOver, nil)
+		}
+		return nil
+	}
+
+	return nil
+}
+
+// handleFailingOver handles the failover state
+func (w *FailoverWatcher) handleFailingOver() error {
+	w.failoverCount++
+
+	w.controllersMu.RLock()
+	controllers := w.controllers
+	w.controllersMu.RUnlock()
+
+	// Try each controller in priority order
+	for _, ctrl := range controllers {
+		if ctrl.FailureCount >= w.config.FailureThreshold {
+			continue // Skip unhealthy controllers
+		}
+
+		w.logger.Info("Attempting failover to controller",
+			zap.String("controller", ctrl.Name),
+			zap.Int32("priority", ctrl.Priority),
+		)
+
+		if err := w.connectAndStream(ctrl); err != nil {
+			w.logger.Warn("Failover connection failed",
+				zap.String("controller", ctrl.Name),
+				zap.Error(err),
+			)
+			ctrl.FailureCount++
+			continue
+		}
+
+		// Successfully connected
+		if ctrl.Priority == 0 {
+			w.transitionTo(StateConnectedPrimary, ctrl)
+		} else {
+			w.transitionTo(StateConnectedSecondary, ctrl)
+		}
+		return nil
+	}
+
+	// No controllers available - enter autonomous mode if enabled
+	if w.config.AutonomousModeEnabled {
+		w.transitionTo(StateAutonomous, nil)
+	} else {
+		// Wait and retry
+		time.Sleep(5 * time.Second)
+	}
+
+	return nil
+}
+
+// handleConnectedSecondary handles the connected-to-secondary state
+func (w *FailoverWatcher) handleConnectedSecondary() error {
+	// Start recovery timer
+	recoveryTimer := time.NewTimer(w.config.RecoveryDelay)
+	defer recoveryTimer.Stop()
+
+	select {
+	case <-w.ctx.Done():
+		return w.ctx.Err()
+
+	case <-recoveryTimer.C:
+		// Time to check if primary is back
+		w.transitionTo(StateRecoveryCheck, w.activeCtrl)
+	}
+
+	return nil
+}
+
+// handleRecoveryCheck checks if primary is available again
+func (w *FailoverWatcher) handleRecoveryCheck() error {
+	primary := w.getPrimaryController()
+	if primary == nil {
+		w.transitionTo(StateConnectedSecondary, w.activeCtrl)
+		return nil
+	}
+
+	// Try to ping primary
+	if err := w.pingController(primary); err != nil {
+		w.logger.Debug("Primary still unavailable",
+			zap.String("controller", primary.Name),
+			zap.Error(err),
+		)
+		w.transitionTo(StateConnectedSecondary, w.activeCtrl)
+		return nil
+	}
+
+	// Primary is back - reconnect
+	w.logger.Info("Primary recovered, reconnecting",
+		zap.String("controller", primary.Name),
+	)
+
+	// Close secondary connection
+	if w.activeConn != nil {
+		w.activeConn.Close()
+		w.activeConn = nil
+	}
+
+	primary.FailureCount = 0
+	w.transitionTo(StateConnectedPrimary, nil)
+
+	return nil
+}
+
+// handleAutonomous handles autonomous mode
+func (w *FailoverWatcher) handleAutonomous() error {
+	w.logger.Info("Operating in autonomous mode")
+
+	// Load cached config if available
+	if w.currentSnapshot == nil && w.config.ConfigPersistPath != "" {
+		if snapshot, err := w.loadCachedConfig(); err == nil {
+			w.currentSnapshot = snapshot
+			if w.onSnapshot != nil {
+				w.onSnapshot(snapshot)
+			}
+		}
+	}
+
+	// Periodically try to reconnect
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-w.ctx.Done():
+			return w.ctx.Err()
+
+		case <-ticker.C:
+			// Try to connect to any controller
+			w.controllersMu.RLock()
+			controllers := w.controllers
+			w.controllersMu.RUnlock()
+
+			for _, ctrl := range controllers {
+				if err := w.pingController(ctrl); err == nil {
+					w.logger.Info("Controller available, exiting autonomous mode",
+						zap.String("controller", ctrl.Name),
+					)
+					ctrl.FailureCount = 0
+					w.transitionTo(StateFailingOver, nil)
+					return nil
+				}
+			}
+		}
+	}
+}
+
+// transitionTo transitions to a new state
+func (w *FailoverWatcher) transitionTo(newState FailoverState, ctrl *ControllerEndpoint) {
+	w.stateMu.Lock()
+	oldState := w.state
+	w.state = newState
+	w.activeCtrl = ctrl
+	w.stateMu.Unlock()
+
+	w.logger.Info("State transition",
+		zap.String("from", string(oldState)),
+		zap.String("to", string(newState)),
+		zap.String("controller", controllerName(ctrl)),
+	)
+
+	if w.onStateChange != nil {
+		w.onStateChange(newState, ctrl)
+	}
+}
+
+// connectAndStream connects to a controller and streams config
+func (w *FailoverWatcher) connectAndStream(ctrl *ControllerEndpoint) error {
+	conn, err := w.connect(ctrl)
+	if err != nil {
+		return err
+	}
+
+	// Store connection
+	w.stateMu.Lock()
+	if w.activeConn != nil {
+		w.activeConn.Close()
+	}
+	w.activeConn = conn
+	w.activeCtrl = ctrl
+	w.stateMu.Unlock()
+
+	client := pb.NewConfigServiceClient(conn)
+
+	// Create stream request
+	req := &pb.StreamConfigRequest{
+		NodeName:           w.nodeName,
+		AgentVersion:       w.agentVersion,
+		LastAppliedVersion: w.currentVersion,
+	}
+
+	if w.clusterConfig != nil {
+		req.ClusterName = w.clusterConfig.Name
+		req.ClusterRegion = w.clusterConfig.Region
+		req.ClusterZone = w.clusterConfig.Zone
+		req.ClusterLabels = w.clusterConfig.Labels
+	}
+
+	// Start streaming
+	ctx, cancel := context.WithCancel(w.ctx)
+	defer cancel()
+
+	stream, err := client.StreamConfig(ctx, req)
+	if err != nil {
+		return fmt.Errorf("failed to start stream: %w", err)
+	}
+
+	ctrl.LastHealthy = time.Now()
+	ctrl.FailureCount = 0
+
+	// Receive snapshots
+	for {
+		select {
+		case <-w.ctx.Done():
+			return w.ctx.Err()
+		default:
+		}
+
+		snapshot, err := stream.Recv()
+		if err != nil {
+			w.connectionErrors++
+			return fmt.Errorf("stream error: %w", err)
+		}
+
+		ctrl.LastHealthy = time.Now()
+
+		// Update controllers list from snapshot
+		if len(snapshot.AvailableControllers) > 0 {
+			w.updateControllersFromSnapshot(snapshot.AvailableControllers)
+		}
+
+		// Store vector clock
+		if snapshot.FederationMetadata != nil {
+			w.snapshotMu.Lock()
+			w.lastVectorClock = snapshot.FederationMetadata.VectorClock
+			w.snapshotMu.Unlock()
+		}
+
+		// Apply snapshot
+		wrapped := &Snapshot{ConfigSnapshot: snapshot}
+		if w.onSnapshot != nil {
+			if err := w.onSnapshot(wrapped); err != nil {
+				w.logger.Error("Failed to apply snapshot", zap.Error(err))
+				continue
+			}
+		}
+
+		w.snapshotMu.Lock()
+		w.currentSnapshot = wrapped
+		w.currentVersion = snapshot.Version
+		w.snapshotMu.Unlock()
+
+		// Persist config for autonomous mode
+		if w.config.ConfigPersistPath != "" {
+			go w.persistConfig(wrapped)
+		}
+	}
+}
+
+// connect establishes a gRPC connection to a controller
+func (w *FailoverWatcher) connect(ctrl *ControllerEndpoint) (*grpc.ClientConn, error) {
+	var opts []grpc.DialOption
+
+	if w.tlsConfig != nil && w.tlsConfig.CertFile != "" {
+		creds, err := tlsutil.LoadClientTLSCredentials(
+			w.tlsConfig.CertFile,
+			w.tlsConfig.KeyFile,
+			w.tlsConfig.CAFile,
+			ctrl.Name,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS: %w", err)
+		}
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	ctx, cancel := context.WithTimeout(w.ctx, w.config.Timeout)
+	defer cancel()
+
+	start := time.Now()
+	conn, err := grpc.DialContext(ctx, ctrl.Endpoint, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	ctrl.Latency = time.Since(start)
+	return conn, nil
+}
+
+// pingController checks if a controller is reachable
+func (w *FailoverWatcher) pingController(ctrl *ControllerEndpoint) error {
+	conn, err := w.connect(ctrl)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	client := pb.NewConfigServiceClient(conn)
+
+	ctx, cancel := context.WithTimeout(w.ctx, 5*time.Second)
+	defer cancel()
+
+	_, err = client.ReportStatus(ctx, &pb.AgentStatus{
+		NodeName:             w.nodeName,
+		AppliedConfigVersion: w.currentVersion,
+		Timestamp:            time.Now().Unix(),
+		Healthy:              true,
+	})
+
+	if err != nil {
+		if s, ok := status.FromError(err); ok {
+			if s.Code() == codes.Unavailable {
+				return err
+			}
+		}
+		// Non-unavailable errors might still mean controller is reachable
+		return nil
+	}
+
+	return nil
+}
+
+// runHealthChecker periodically checks controller health
+func (w *FailoverWatcher) runHealthChecker() {
+	ticker := time.NewTicker(w.config.HealthCheckInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-w.healthCheckCtx.Done():
+			return
+
+		case <-ticker.C:
+			w.controllersMu.Lock()
+			for _, ctrl := range w.controllers {
+				// Skip if recently healthy
+				if time.Since(ctrl.LastHealthy) < w.config.HealthCheckInterval {
+					continue
+				}
+
+				go func(c *ControllerEndpoint) {
+					if err := w.pingController(c); err == nil {
+						c.FailureCount = 0
+						c.LastHealthy = time.Now()
+					}
+				}(ctrl)
+			}
+			w.controllersMu.Unlock()
+		}
+	}
+}
+
+// updateControllersFromSnapshot updates the controller list from snapshot metadata
+func (w *FailoverWatcher) updateControllersFromSnapshot(pbControllers []*pb.ControllerInfo) {
+	w.controllersMu.Lock()
+	defer w.controllersMu.Unlock()
+
+	// Build map of existing controllers
+	existing := make(map[string]*ControllerEndpoint)
+	for _, ctrl := range w.controllers {
+		existing[ctrl.Name] = ctrl
+	}
+
+	// Update or add controllers
+	var updated []*ControllerEndpoint
+	for _, pbCtrl := range pbControllers {
+		if ctrl, ok := existing[pbCtrl.Name]; ok {
+			// Update existing
+			ctrl.Endpoint = pbCtrl.Endpoint
+			ctrl.Priority = pbCtrl.Priority
+			ctrl.Region = pbCtrl.Region
+			ctrl.Zone = pbCtrl.Zone
+			updated = append(updated, ctrl)
+		} else {
+			// Add new
+			updated = append(updated, &ControllerEndpoint{
+				Name:     pbCtrl.Name,
+				Endpoint: pbCtrl.Endpoint,
+				Priority: pbCtrl.Priority,
+				Region:   pbCtrl.Region,
+				Zone:     pbCtrl.Zone,
+			})
+		}
+	}
+
+	// Sort by priority
+	sort.Slice(updated, func(i, j int) bool {
+		return updated[i].Priority < updated[j].Priority
+	})
+
+	w.controllers = updated
+}
+
+// getPrimaryController returns the primary controller (priority 0)
+func (w *FailoverWatcher) getPrimaryController() *ControllerEndpoint {
+	w.controllersMu.RLock()
+	defer w.controllersMu.RUnlock()
+
+	for _, ctrl := range w.controllers {
+		if ctrl.Priority == 0 {
+			return ctrl
+		}
+	}
+	return nil
+}
+
+// persistConfig saves the current config for autonomous mode
+func (w *FailoverWatcher) persistConfig(snapshot *Snapshot) {
+	// This would serialize the snapshot to disk
+	// Implementation depends on the storage format
+	w.logger.Debug("Persisting config for autonomous mode",
+		zap.String("version", snapshot.Version),
+	)
+	// TODO: Implement actual persistence
+}
+
+// loadCachedConfig loads the cached config for autonomous mode
+func (w *FailoverWatcher) loadCachedConfig() (*Snapshot, error) {
+	// This would deserialize the snapshot from disk
+	// Implementation depends on the storage format
+	w.logger.Debug("Loading cached config for autonomous mode")
+	// TODO: Implement actual loading
+	return nil, fmt.Errorf("not implemented")
+}
+
+// cleanup cleans up resources
+func (w *FailoverWatcher) cleanup() {
+	if w.healthCancel != nil {
+		w.healthCancel()
+	}
+	if w.activeConn != nil {
+		w.activeConn.Close()
+	}
+}
+
+// controllerName safely gets a controller's name
+func controllerName(ctrl *ControllerEndpoint) string {
+	if ctrl == nil {
+		return "<none>"
+	}
+	return ctrl.Name
+}
+
+// GetMetrics returns failover metrics
+func (w *FailoverWatcher) GetMetrics() map[string]interface{} {
+	return map[string]interface{}{
+		"state":              string(w.GetState()),
+		"failover_count":     w.failoverCount,
+		"connection_errors":  w.connectionErrors,
+		"autonomous_duration": w.autonomousDuration.String(),
+		"current_controller": controllerName(w.GetActiveController()),
+	}
+}
