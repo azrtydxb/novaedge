@@ -47,6 +47,7 @@
             <div class="sidebar-footer">
                 <button class="btn btn-sm btn-secondary" onclick="exportConfig()">Export Config</button>
                 <button class="btn btn-sm btn-secondary" onclick="showImportDialog()">Import Config</button>
+                <button class="btn btn-sm btn-secondary" onclick="showConfigHistory()">History</button>
             </div>
         </nav>
 
@@ -62,6 +63,7 @@
                             <option value="all">All Namespaces</option>
                         </select>
                     </div>
+                    <button id="template-btn" class="btn btn-secondary" style="display:none;" onclick="handleShowTemplates()">Templates</button>
                     <button id="create-btn" class="btn btn-primary" style="display:none;" onclick="handleCreate()">+ Create</button>
                     <button class="refresh-btn" onclick="refreshCurrentPage()">Refresh</button>
                 </div>
