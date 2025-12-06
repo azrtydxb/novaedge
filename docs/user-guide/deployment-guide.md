@@ -23,7 +23,7 @@ This guide walks through deploying NovaEdge to a Kubernetes cluster, from initia
 
 ### Optional
 
-- **Helm**: For simplified deployment (coming soon)
+- **Helm**: For simplified deployment (v3.0+)
 - **OpenTelemetry Collector**: For distributed tracing
 - **Prometheus**: For metrics collection
 - **Grafana**: For metrics visualization
@@ -37,6 +37,26 @@ NovaEdge agents run with `hostNetwork: true` and require the following:
 - **BGP/OSPF**: If using BGP or OSPF VIP modes, ensure network allows the required protocols
 
 ## Quick Start
+
+### Using Helm (Recommended)
+
+The fastest way to deploy NovaEdge:
+
+```bash
+# Add the NovaEdge Helm repository (when published)
+# helm repo add novaedge https://piwi3910.github.io/novaedge/charts
+# helm repo update
+
+# Or install from local charts directory
+helm install novaedge ./charts/novaedge \
+  --namespace novaedge-system \
+  --create-namespace
+
+# Verify deployment
+kubectl get pods -n novaedge-system
+```
+
+### Using kubectl
 
 For testing in a local cluster (kind/k3s/minikube):
 

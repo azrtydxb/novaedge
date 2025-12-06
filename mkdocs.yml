@@ -50,6 +50,7 @@ nav:
   - Getting Started:
     - Quick Start: getting-started/quickstart.md
     - Installation: getting-started/installation.md
+    - Helm Chart: getting-started/helm.md
   - User Guide:
     - Deployment Guide: user-guide/deployment-guide.md
     - Standalone Mode: user-guide/standalone-mode.md
@@ -58,6 +59,7 @@ nav:
   - Reference:
     - novactl CLI: reference/novactl-reference.md
     - CRD Reference: reference/crd-reference.md
+    - Helm Values: reference/helm-values.md
   - Development:
     - Development Guide: development/development-guide.md
     - Contributing: development/contributing.md
