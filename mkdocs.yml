@@ -59,6 +59,7 @@ nav:
   - Architecture:
     - Overview: architecture/overview.md
     - Components: architecture/components.md
+    - Federation: architecture/federation.md
   - Installation:
     - Operator (Recommended): installation/operator.md
     - Kubernetes: installation/kubernetes.md
