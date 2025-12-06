@@ -725,7 +725,7 @@ For standalone deployments, use:
 ./bin/novaedge-standalone --config=config/samples/management-plane/standalone-management.yaml
 ```
 
-See [Standalone README](../deploy/standalone/README.md) for details.
+See [Standalone Mode Guide](standalone-mode.md) for details.
 
 ### Security Headers Policy
 

@@ -316,5 +316,4 @@ Both APIs can coexist and are translated to the same NovaEdge internal resources
 
 - [Gateway API Documentation](https://gateway-api.sigs.k8s.io/)
 - [NovaEdge Architecture](../NovaEdge_FullSpec.md)
-- [ProxyGateway CRD Reference](../api/v1alpha1/proxygateway_types.go)
-- [ProxyRoute CRD Reference](../api/v1alpha1/proxyroute_types.go)
+- [CRD Reference](../reference/crd-reference.md)

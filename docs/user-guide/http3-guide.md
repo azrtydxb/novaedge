@@ -536,7 +536,5 @@ spec:
 ## See Also
 
 - [Deployment Guide](deployment-guide.md)
-- [TLS Configuration](../README.md#tlshttps-configuration)
-- [Performance Tuning](../README.md#performance-considerations)
 - [QUIC Specification](https://www.rfc-editor.org/rfc/rfc9000.html)
 - [HTTP/3 Specification](https://www.rfc-editor.org/rfc/rfc9114.html)
