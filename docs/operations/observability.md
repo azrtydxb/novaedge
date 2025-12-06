@@ -469,4 +469,4 @@ scrape_configs:
 
 - [Web UI](web-ui.md) - Dashboard for monitoring
 - [Troubleshooting](troubleshooting.md) - Common issues
-- [Metrics Reference](../reference/metrics.md) - Complete metrics list
+- [CRD Reference](../reference/crd-reference.md) - Resource specifications

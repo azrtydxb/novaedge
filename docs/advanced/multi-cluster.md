@@ -653,7 +653,7 @@ kubectl exec -n novaedge-system <agent-pod> -- \
 
 ## Next Steps
 
-- [Operator Guide](operator.md) - Managing the hub cluster
+- [Operator Guide](../installation/operator.md) - Managing the hub cluster
 - [CRD Reference](../reference/crd-reference.md) - NovaEdgeRemoteCluster details
 - [Helm Values Reference](../reference/helm-values.md) - Agent chart configuration
-- [Observability Guide](observability.md) - Monitoring multi-cluster deployments
+- [Observability Guide](../operations/observability.md) - Monitoring multi-cluster deployments
