@@ -25,6 +25,11 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
@@ -35,6 +40,9 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// tracerName is the instrumentation name for the router tracer
+const tracerName = "github.com/piwi3910/novaedge/internal/agent/router"
 
 // Router routes HTTP requests to backends
 type Router struct {
@@ -211,6 +219,30 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 
 // ServeHTTP routes incoming HTTP requests
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Extract trace context from incoming request headers (W3C TraceContext propagation)
+	ctx := req.Context()
+	propagator := otel.GetTextMapPropagator()
+	ctx = propagator.Extract(ctx, propagation.HeaderCarrier(req.Header))
+
+	// Start the main request span
+	tracer := otel.Tracer(tracerName)
+	ctx, span := tracer.Start(ctx, "HTTP "+req.Method,
+		trace.WithSpanKind(trace.SpanKindServer),
+		trace.WithAttributes(
+			attribute.String("http.method", req.Method),
+			attribute.String("http.url", req.URL.String()),
+			attribute.String("http.host", req.Host),
+			attribute.String("http.scheme", req.URL.Scheme),
+			attribute.String("http.user_agent", req.UserAgent()),
+			attribute.String("http.target", req.URL.Path),
+			attribute.String("net.peer.ip", req.RemoteAddr),
+		),
+	)
+	defer span.End()
+
+	// Store context with span in the request
+	req = req.WithContext(ctx)
+
 	// Determine request body size limit based on content type
 	maxBodySize := r.maxRequestBodyBytes
 
@@ -232,10 +264,23 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	wrappedWriter := getResponseWriter(w)
 	defer putResponseWriter(wrappedWriter)
 
-	// Defer metrics recording
+	// Defer metrics and span status recording
 	defer func() {
 		duration := time.Since(startTime).Seconds()
 		statusCode := strconv.Itoa(wrappedWriter.statusCode)
+
+		// Record span status based on HTTP status code
+		span.SetAttributes(
+			attribute.Int("http.status_code", wrappedWriter.statusCode),
+			attribute.Float64("http.duration_seconds", duration),
+		)
+
+		if wrappedWriter.statusCode >= 400 {
+			span.SetStatus(codes.Error, http.StatusText(wrappedWriter.statusCode))
+		} else {
+			span.SetStatus(codes.Ok, "")
+		}
+
 		// We'll set cluster in handleRoute, for now use "unknown"
 		metrics.RecordHTTPRequest(req.Method, statusCode, "unknown", duration)
 	}()
@@ -249,9 +294,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		hostname = hostname[:idx]
 	}
 
+	// Add hostname to span
+	span.SetAttributes(attribute.String("http.hostname", hostname))
+
 	// Find matching route
 	routes, ok := r.routes[hostname]
 	if !ok {
+		span.AddEvent("route_not_found", trace.WithAttributes(
+			attribute.String("hostname", hostname),
+		))
 		r.logger.Warn("No route for hostname", zap.String("hostname", hostname))
 		http.Error(wrappedWriter, "No route found", http.StatusNotFound)
 		return
@@ -260,12 +311,25 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Match against route rules
 	for _, entry := range routes {
 		if r.matchRoute(entry, req) {
+			// Add route matching info to span
+			span.AddEvent("route_matched", trace.WithAttributes(
+				attribute.String("route.name", entry.Route.Name),
+				attribute.String("route.namespace", entry.Route.Namespace),
+			))
+			span.SetAttributes(
+				attribute.String("novaedge.route.name", entry.Route.Name),
+				attribute.String("novaedge.route.namespace", entry.Route.Namespace),
+			)
 			r.handleRoute(entry, wrappedWriter, req)
 			return
 		}
 	}
 
 	// No matching rule
+	span.AddEvent("no_matching_rule", trace.WithAttributes(
+		attribute.String("hostname", hostname),
+		attribute.String("path", req.URL.Path),
+	))
 	r.logger.Warn("No matching rule for request",
 		zap.String("hostname", hostname),
 		zap.String("path", req.URL.Path),
@@ -365,9 +429,25 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 
 // forwardToBackend forwards the request to the backend
 func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
+	// Get the parent span from request context
+	ctx := req.Context()
+	parentSpan := trace.SpanFromContext(ctx)
+
+	// Start a child span for backend forwarding
+	tracer := otel.Tracer(tracerName)
+	ctx, backendSpan := tracer.Start(ctx, "backend_forward",
+		trace.WithSpanKind(trace.SpanKindClient),
+	)
+	defer backendSpan.End()
+
+	// Update request context with the new span
+	req = req.WithContext(ctx)
+
 	// Check if this is a gRPC request
 	isGRPC := protocol.IsGRPCRequest(req)
 	if isGRPC {
+		backendSpan.SetAttributes(attribute.Bool("rpc.system", true))
+		backendSpan.AddEvent("grpc_request_detected")
 		r.logger.Debug("Detected gRPC request",
 			zap.String("path", req.URL.Path),
 			zap.String("content-type", req.Header.Get("Content-Type")),
@@ -375,6 +455,8 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 
 		// Validate gRPC request
 		if err := r.grpcHandler.ValidateGRPCRequest(req); err != nil {
+			backendSpan.SetStatus(codes.Error, "Invalid gRPC request")
+			backendSpan.RecordError(err)
 			r.logger.Error("Invalid gRPC request", zap.Error(err))
 			http.Error(w, "Invalid gRPC request", http.StatusBadRequest)
 			return
@@ -388,6 +470,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	modifiedReq, shouldContinue := applyFilters(entry.Rule.Filters, w, req)
 	if !shouldContinue {
 		// Filter handled the response (e.g., redirect)
+		backendSpan.AddEvent("filter_handled_response")
 		return
 	}
 	req = modifiedReq
@@ -395,15 +478,22 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	// Select backend using weighted selection
 	backendRef := selectWeightedBackend(entry.Rule.BackendRefs)
 	if backendRef == nil {
+		backendSpan.SetStatus(codes.Error, "No backend configured")
 		http.Error(w, "No backend configured", http.StatusInternalServerError)
 		return
 	}
 
 	clusterKey := fmt.Sprintf("%s/%s", backendRef.Namespace, backendRef.Name)
+	backendSpan.SetAttributes(
+		attribute.String("novaedge.backend.cluster", clusterKey),
+		attribute.String("novaedge.backend.namespace", backendRef.Namespace),
+		attribute.String("novaedge.backend.name", backendRef.Name),
+	)
 
 	// Get pool
 	pool, ok := r.pools[clusterKey]
 	if !ok {
+		backendSpan.SetStatus(codes.Error, "No pool for cluster")
 		r.logger.Error("No pool for cluster", zap.String("cluster", clusterKey))
 		http.Error(w, "Backend not available", http.StatusServiceUnavailable)
 		return
@@ -411,6 +501,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 
 	// Select endpoint using appropriate load balancer
 	var endpoint *pb.Endpoint
+	var lbType string
 
 	// Check if this cluster uses hash-based load balancing
 	if hashLB, ok := r.hashBasedLBs[clusterKey]; ok {
@@ -425,9 +516,12 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		switch hashBalancer := hashLB.(type) {
 		case *lb.RingHash:
 			endpoint = hashBalancer.Select(clientIP)
+			lbType = "ring_hash"
 		case *lb.Maglev:
 			endpoint = hashBalancer.Select(clientIP)
+			lbType = "maglev"
 		default:
+			backendSpan.SetStatus(codes.Error, "Unknown hash-based load balancer type")
 			r.logger.Error("Unknown hash-based load balancer type", zap.String("cluster", clusterKey))
 			http.Error(w, "Backend configuration error", http.StatusInternalServerError)
 			return
@@ -436,14 +530,19 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		// Use standard load balancer
 		loadBalancer, ok := r.loadBalancers[clusterKey]
 		if !ok {
+			backendSpan.SetStatus(codes.Error, "No load balancer for cluster")
 			r.logger.Error("No load balancer for cluster", zap.String("cluster", clusterKey))
 			http.Error(w, "Backend not available", http.StatusServiceUnavailable)
 			return
 		}
 		endpoint = loadBalancer.Select()
+		lbType = "standard"
 	}
 
+	backendSpan.SetAttributes(attribute.String("novaedge.lb.type", lbType))
+
 	if endpoint == nil {
+		backendSpan.SetStatus(codes.Error, "No healthy endpoint available")
 		r.logger.Error("No healthy endpoint available", zap.String("cluster", clusterKey))
 		http.Error(w, "No healthy backend", http.StatusServiceUnavailable)
 		return
@@ -453,6 +552,19 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	backendStart := time.Now()
 	endpointKey := fmt.Sprintf("%s:%d", endpoint.Address, endpoint.Port)
 
+	backendSpan.SetAttributes(
+		attribute.String("net.peer.name", endpoint.Address),
+		attribute.Int("net.peer.port", int(endpoint.Port)),
+		attribute.String("novaedge.endpoint", endpointKey),
+	)
+	backendSpan.AddEvent("forwarding_to_backend", trace.WithAttributes(
+		attribute.String("endpoint", endpointKey),
+	))
+
+	// Propagate trace context to backend request headers
+	propagator := otel.GetTextMapPropagator()
+	propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+
 	// Forward request to backend
 	if err := pool.Forward(endpoint, req, w); err != nil {
 		// Record failure for passive health checking
@@ -461,6 +573,14 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		// Record backend failure metrics
 		backendDuration := time.Since(backendStart).Seconds()
 		metrics.RecordBackendRequest(clusterKey, endpointKey, "failure", backendDuration)
+
+		// Record error on span
+		backendSpan.RecordError(err)
+		backendSpan.SetStatus(codes.Error, "Backend request failed")
+		backendSpan.SetAttributes(
+			attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
+			attribute.String("novaedge.backend.status", "failure"),
+		)
 
 		r.logger.Error("Failed to forward request",
 			zap.String("cluster", clusterKey),
@@ -477,6 +597,13 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		backendDuration := time.Since(backendStart).Seconds()
 		metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
 
+		// Record success on span
+		backendSpan.SetStatus(codes.Ok, "")
+		backendSpan.SetAttributes(
+			attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
+			attribute.String("novaedge.backend.status", "success"),
+		)
+
 		if isGRPC {
 			r.logger.Debug("Successfully forwarded gRPC request",
 				zap.String("cluster", clusterKey),
@@ -485,6 +612,9 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 			)
 		}
 	}
+
+	// Link to parent span if available (for debugging)
+	_ = parentSpan // Use parentSpan to avoid unused variable warning if we need it later
 }
 
 // updateRequestLimits updates request size limits from gateway configuration
