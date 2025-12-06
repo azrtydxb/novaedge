@@ -30,6 +30,57 @@ message ConfigSnapshot {
 
   // Policies to apply
   repeated Policy policies = 8;
+
+  // Federation metadata (optional, only set when federation is enabled)
+  FederationMetadata federation_metadata = 9;
+
+  // List of available controllers for agent failover
+  repeated ControllerInfo available_controllers = 10;
+}
+
+// FederationMetadata contains federation-related metadata for the snapshot
+message FederationMetadata {
+  // Vector clock state at the time of snapshot generation
+  map<string, int64> vector_clock = 1;
+
+  // Federation ID this snapshot belongs to
+  string federation_id = 2;
+
+  // Name of the controller that generated this snapshot
+  string origin_controller = 3;
+
+  // Hash of the snapshot content for change detection
+  string content_hash = 4;
+
+  // Sequence number for ordering (within this controller)
+  int64 sequence_number = 5;
+
+  // Whether this snapshot is from a federated sync (vs local change)
+  bool from_federation = 6;
+}
+
+// ControllerInfo provides information about a controller for agent failover
+message ControllerInfo {
+  // Name of the controller
+  string name = 1;
+
+  // gRPC endpoint (host:port)
+  string endpoint = 2;
+
+  // Priority (lower = higher priority, 0 = primary)
+  int32 priority = 3;
+
+  // Geographic region
+  string region = 4;
+
+  // Availability zone
+  string zone = 5;
+
+  // Whether the controller is currently healthy
+  bool healthy = 6;
+
+  // Last known vector clock from this controller
+  map<string, int64> vector_clock = 7;
 }
 
 // Gateway represents a ProxyGateway resource
