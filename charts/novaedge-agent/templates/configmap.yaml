@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "novaedge-agent.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "novaedge-agent.labels" . | nindent 4 }}
+data:
+  agent-config.yaml: |
+    # NovaEdge Agent Configuration
+    # Remote/Edge Cluster Mode
+
+    cluster:
+      name: {{ .Values.cluster.name | quote }}
+      {{- if .Values.cluster.region }}
+      region: {{ .Values.cluster.region | quote }}
+      {{- end }}
+      {{- if .Values.cluster.zone }}
+      zone: {{ .Values.cluster.zone | quote }}
+      {{- end }}
+      {{- if .Values.cluster.labels }}
+      labels:
+        {{- toYaml .Values.cluster.labels | nindent 8 }}
+      {{- end }}
+
+    connection:
+      mode: {{ .Values.connection.mode }}
+      controllerEndpoint: {{ .Values.connection.controllerEndpoint | quote }}
+      reconnectInterval: {{ .Values.connection.reconnectInterval }}
+      timeout: {{ .Values.connection.timeout }}
+
+    {{- if .Values.tls.enabled }}
+    tls:
+      enabled: true
+      {{- if .Values.tls.caSecretName }}
+      caFile: /etc/novaedge/tls/ca.crt
+      {{- end }}
+      {{- if .Values.tls.clientCertSecretName }}
+      certFile: /etc/novaedge/tls/tls.crt
+      keyFile: /etc/novaedge/tls/tls.key
+      {{- end }}
+      {{- if .Values.tls.serverName }}
+      serverName: {{ .Values.tls.serverName | quote }}
+      {{- end }}
+      insecureSkipVerify: {{ .Values.tls.insecureSkipVerify }}
+    {{- end }}
+
+    {{- if eq .Values.connection.mode "Tunnel" }}
+    tunnel:
+      type: {{ .Values.tunnel.type }}
+      relayEndpoint: {{ .Values.tunnel.relayEndpoint | quote }}
+      {{- if eq .Values.tunnel.type "WireGuard" }}
+      wireGuard:
+        publicKey: {{ .Values.tunnel.wireGuard.publicKey | quote }}
+        endpoint: {{ .Values.tunnel.wireGuard.endpoint | quote }}
+        allowedIPs:
+          {{- toYaml .Values.tunnel.wireGuard.allowedIPs | nindent 10 }}
+        persistentKeepalive: {{ .Values.tunnel.wireGuard.persistentKeepalive }}
+      {{- end }}
+    {{- end }}
+
+    ports:
+      http: {{ .Values.ports.http }}
+      https: {{ .Values.ports.https }}
+      metrics: {{ .Values.ports.metrics }}
+      health: {{ .Values.ports.health }}
+
+    vip:
+      enabled: {{ .Values.vip.enabled }}
+      mode: {{ .Values.vip.mode }}
+      {{- if .Values.vip.interface }}
+      interface: {{ .Values.vip.interface | quote }}
+      {{- end }}
+      {{- if and (eq .Values.vip.mode "BGP") .Values.vip.bgp.asn }}
+      bgp:
+        asn: {{ .Values.vip.bgp.asn }}
+        {{- if .Values.vip.bgp.routerID }}
+        routerID: {{ .Values.vip.bgp.routerID | quote }}
+        {{- end }}
+        {{- if .Values.vip.bgp.peers }}
+        peers:
+          {{- toYaml .Values.vip.bgp.peers | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+    logging:
+      level: {{ .Values.logging.level }}
+      format: {{ .Values.logging.format }}
+
+    {{- if .Values.tracing.enabled }}
+    tracing:
+      enabled: true
+      endpoint: {{ .Values.tracing.endpoint | quote }}
+      samplingRate: {{ .Values.tracing.samplingRate }}
+    {{- end }}
+
+    metrics:
+      enabled: {{ .Values.metrics.enabled }}
+      port: {{ .Values.ports.metrics }}

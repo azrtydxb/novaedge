@@ -1,6 +1,170 @@
 # Helm Values Reference
 
-Complete reference for all configurable values in the NovaEdge Helm chart.
+Complete reference for all configurable values in the NovaEdge Helm charts.
+
+NovaEdge provides two Helm charts:
+
+1. **novaedge-operator** - Deploys the NovaEdge Operator which manages the lifecycle of NovaEdge components (recommended)
+2. **novaedge** - Directly deploys NovaEdge components without the operator
+
+---
+
+## NovaEdge Operator Chart
+
+The operator chart (`charts/novaedge-operator`) deploys the NovaEdge Operator, which then manages the controller, agents, and web UI through the `NovaEdgeCluster` CRD.
+
+### Basic Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `replicaCount` | Number of operator replicas | `1` |
+| `nameOverride` | Override the chart name | `""` |
+| `fullnameOverride` | Override the full name | `""` |
+
+### Image
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `image.repository` | Operator image repository | `ghcr.io/piwi3910/novaedge/novaedge-operator` |
+| `image.tag` | Image tag (defaults to chart appVersion) | `""` |
+| `image.pullPolicy` | Image pull policy | `IfNotPresent` |
+| `imagePullSecrets` | List of image pull secrets | `[]` |
+
+### Service Account
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `serviceAccount.create` | Create a service account | `true` |
+| `serviceAccount.annotations` | Service account annotations | `{}` |
+| `serviceAccount.name` | Service account name | `""` |
+
+### Security
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `podSecurityContext.runAsNonRoot` | Run as non-root user | `true` |
+| `podSecurityContext.seccompProfile.type` | Seccomp profile | `RuntimeDefault` |
+| `securityContext.allowPrivilegeEscalation` | Allow privilege escalation | `false` |
+| `securityContext.capabilities.drop` | Dropped capabilities | `["ALL"]` |
+| `securityContext.readOnlyRootFilesystem` | Read-only root filesystem | `true` |
+
+### Resources
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `resources.limits.cpu` | CPU limit | `500m` |
+| `resources.limits.memory` | Memory limit | `128Mi` |
+| `resources.requests.cpu` | CPU request | `10m` |
+| `resources.requests.memory` | Memory request | `64Mi` |
+
+### Probes
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `livenessProbe.httpGet.path` | Liveness probe path | `/healthz` |
+| `livenessProbe.httpGet.port` | Liveness probe port | `8081` |
+| `livenessProbe.initialDelaySeconds` | Initial delay | `15` |
+| `livenessProbe.periodSeconds` | Period seconds | `20` |
+| `readinessProbe.httpGet.path` | Readiness probe path | `/readyz` |
+| `readinessProbe.httpGet.port` | Readiness probe port | `8081` |
+| `readinessProbe.initialDelaySeconds` | Initial delay | `5` |
+| `readinessProbe.periodSeconds` | Period seconds | `10` |
+
+### Leader Election
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `leaderElection.enabled` | Enable leader election | `true` |
+
+### Metrics
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `metrics.enabled` | Enable Prometheus metrics | `true` |
+| `metrics.port` | Metrics service port | `8080` |
+| `metrics.serviceMonitor.enabled` | Create ServiceMonitor | `false` |
+| `metrics.serviceMonitor.interval` | Scrape interval | `30s` |
+| `metrics.serviceMonitor.labels` | Additional ServiceMonitor labels | `{}` |
+
+### Health
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `health.port` | Health probe port | `8081` |
+
+### Scheduling
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `nodeSelector` | Node selector | `{}` |
+| `tolerations` | Tolerations | `[]` |
+| `affinity` | Affinity rules | `{}` |
+| `podAnnotations` | Pod annotations | `{}` |
+| `podLabels` | Pod labels | `{}` |
+
+### CRDs
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `crds.install` | Install CRDs with the chart | `true` |
+| `crds.keep` | Keep CRDs on uninstall | `true` |
+
+### RBAC
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `rbac.create` | Create RBAC resources | `true` |
+
+### Additional Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `extraEnv` | Additional environment variables | `[]` |
+| `extraArgs` | Additional command-line arguments | `[]` |
+| `extraVolumes` | Additional volumes | `[]` |
+| `extraVolumeMounts` | Additional volume mounts | `[]` |
+
+### Operator Chart Example
+
+```yaml
+# Production operator configuration
+replicaCount: 1
+
+image:
+  repository: ghcr.io/piwi3910/novaedge/novaedge-operator
+  tag: v0.1.0
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+
+leaderElection:
+  enabled: true
+
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+```
+
+---
+
+## NovaEdge Chart (Direct Deployment)
+
+The main chart (`charts/novaedge`) directly deploys NovaEdge components without using the operator.
 
 ## Global Settings
 

@@ -1,0 +1,169 @@
+---
+# Example: Basic NovaEdgeCluster deployment
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeCluster
+metadata:
+  name: novaedge
+  namespace: novaedge-system
+spec:
+  version: "v0.1.0"
+
+  controller:
+    replicas: 1
+    leaderElection: true
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+
+  agent:
+    hostNetwork: true
+    httpPort: 80
+    httpsPort: 443
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    vip:
+      enabled: true
+      mode: L2
+
+  webUI:
+    enabled: true
+    replicas: 1
+    port: 9080
+    service:
+      type: ClusterIP
+
+---
+# Example: Production NovaEdgeCluster with HA and observability
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeCluster
+metadata:
+  name: novaedge-prod
+  namespace: novaedge-system
+spec:
+  version: "v0.1.0"
+  imageRepository: "ghcr.io/piwi3910/novaedge"
+  imagePullPolicy: IfNotPresent
+
+  controller:
+    replicas: 3
+    leaderElection: true
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    affinity:
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: controller
+              topologyKey: kubernetes.io/hostname
+
+  agent:
+    hostNetwork: true
+    httpPort: 80
+    httpsPort: 443
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "2000m"
+        memory: "2Gi"
+    tolerations:
+      - key: node-role.kubernetes.io/master
+        operator: Exists
+        effect: NoSchedule
+      - key: node-role.kubernetes.io/control-plane
+        operator: Exists
+        effect: NoSchedule
+    vip:
+      enabled: true
+      mode: L2
+    updateStrategy:
+      type: RollingUpdate
+      maxUnavailable: 1
+
+  webUI:
+    enabled: true
+    replicas: 2
+    port: 9080
+    readOnly: false
+    service:
+      type: LoadBalancer
+      annotations:
+        service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    prometheusEndpoint: "http://prometheus.monitoring.svc:9090"
+
+  tls:
+    enabled: true
+    certManager:
+      enabled: true
+      issuerRef:
+        name: letsencrypt-prod
+        kind: ClusterIssuer
+
+  observability:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+        interval: "30s"
+        labels:
+          release: prometheus
+    tracing:
+      enabled: true
+      endpoint: "jaeger-collector.tracing.svc:4317"
+      samplingRate: 10
+    logging:
+      level: info
+      format: json
+
+---
+# Example: NovaEdgeCluster with BGP VIP mode
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeCluster
+metadata:
+  name: novaedge-bgp
+  namespace: novaedge-system
+spec:
+  version: "v0.1.0"
+
+  controller:
+    replicas: 2
+    leaderElection: true
+
+  agent:
+    hostNetwork: true
+    vip:
+      enabled: true
+      mode: BGP
+      bgp:
+        asn: 65000
+        routerID: "10.0.0.1"
+        peers:
+          - address: "10.0.0.254"
+            asn: 65001
+            port: 179
+          - address: "10.0.0.253"
+            asn: 65001
+            port: 179
+
+  webUI:
+    enabled: true
+    service:
+      type: ClusterIP

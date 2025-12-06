@@ -1,0 +1,31 @@
+# Build stage
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /workspace
+
+# Install git for fetching dependencies
+RUN apk add --no-cache git
+
+# Copy go mod files
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the operator
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o novaedge-operator cmd/novaedge-operator/main.go
+
+# Runtime stage
+FROM gcr.io/distroless/static:nonroot
+
+WORKDIR /
+
+# Copy the binary
+COPY --from=builder /workspace/novaedge-operator .
+
+USER 65532:65532
+
+ENTRYPOINT ["/novaedge-operator"]

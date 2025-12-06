@@ -1,0 +1,118 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "novaedge-operator.fullname" . }}
+  labels:
+    {{- include "novaedge-operator.labels" . | nindent 4 }}
+rules:
+  # NovaEdgeCluster management
+  - apiGroups:
+      - novaedge.io
+    resources:
+      - novaedgeclusters
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - novaedge.io
+    resources:
+      - novaedgeclusters/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - novaedge.io
+    resources:
+      - novaedgeclusters/finalizers
+    verbs:
+      - update
+  # Deployments and DaemonSets
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - daemonsets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Core resources
+  - apiGroups:
+      - ""
+    resources:
+      - services
+      - serviceaccounts
+      - configmaps
+      - secrets
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # RBAC resources (for creating RBAC for managed components)
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterroles
+      - clusterrolebindings
+      - roles
+      - rolebindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Leader election
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  # Events
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "novaedge-operator.fullname" . }}
+  labels:
+    {{- include "novaedge-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "novaedge-operator.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "novaedge-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

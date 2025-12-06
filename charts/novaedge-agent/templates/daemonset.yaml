@@ -1,0 +1,221 @@
+{{- include "novaedge-agent.validateValues" . -}}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "novaedge-agent.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "novaedge-agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "novaedge-agent.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    type: {{ .Values.updateStrategy.type }}
+    {{- if eq .Values.updateStrategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxUnavailable: {{ .Values.updateStrategy.rollingUpdate.maxUnavailable }}
+    {{- end }}
+  template:
+    metadata:
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        {{- include "novaedge-agent.selectorLabels" . | nindent 8 }}
+        novaedge.io/component: agent
+        {{- if .Values.cluster.name }}
+        novaedge.io/cluster: {{ .Values.cluster.name }}
+        {{- end }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "novaedge-agent.serviceAccountName" . }}
+      hostNetwork: {{ .Values.hostNetwork }}
+      dnsPolicy: {{ .Values.dnsPolicy }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: agent
+          image: {{ include "novaedge-agent.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          args:
+            - --config=/etc/novaedge/agent-config.yaml
+            - --cluster-name={{ .Values.cluster.name }}
+            - --controller-addr={{ .Values.connection.controllerEndpoint }}
+            - --mode=remote
+            {{- if .Values.connection.mode }}
+            - --connection-mode={{ .Values.connection.mode }}
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - --tls-enabled=true
+            {{- if .Values.tls.caSecretName }}
+            - --tls-ca-cert=/etc/novaedge/tls/ca.crt
+            {{- end }}
+            {{- if .Values.tls.clientCertSecretName }}
+            - --tls-cert=/etc/novaedge/tls/tls.crt
+            - --tls-key=/etc/novaedge/tls/tls.key
+            {{- end }}
+            {{- if .Values.tls.serverName }}
+            - --tls-server-name={{ .Values.tls.serverName }}
+            {{- end }}
+            {{- if .Values.tls.insecureSkipVerify }}
+            - --tls-insecure-skip-verify=true
+            {{- end }}
+            {{- end }}
+            {{- if .Values.vip.enabled }}
+            - --vip-enabled=true
+            - --vip-mode={{ .Values.vip.mode }}
+            {{- if .Values.vip.interface }}
+            - --vip-interface={{ .Values.vip.interface }}
+            {{- end }}
+            {{- end }}
+            - --http-port={{ .Values.ports.http }}
+            - --https-port={{ .Values.ports.https }}
+            - --metrics-port={{ .Values.ports.metrics }}
+            - --health-port={{ .Values.ports.health }}
+            - --log-level={{ .Values.logging.level }}
+            - --log-format={{ .Values.logging.format }}
+            {{- if .Values.tracing.enabled }}
+            - --tracing-enabled=true
+            - --tracing-endpoint={{ .Values.tracing.endpoint }}
+            - --tracing-sampling-rate={{ .Values.tracing.samplingRate }}
+            {{- end }}
+            {{- with .Values.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: NODE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NOVAEDGE_CLUSTER_NAME
+              value: {{ .Values.cluster.name | quote }}
+            {{- if .Values.cluster.region }}
+            - name: NOVAEDGE_CLUSTER_REGION
+              value: {{ .Values.cluster.region | quote }}
+            {{- end }}
+            {{- if .Values.cluster.zone }}
+            - name: NOVAEDGE_CLUSTER_ZONE
+              value: {{ .Values.cluster.zone | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+              hostPort: {{ .Values.ports.http }}
+              protocol: TCP
+            - name: https
+              containerPort: {{ .Values.ports.https }}
+              hostPort: {{ .Values.ports.https }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.ports.metrics }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.ports.health }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.liveness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: health
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.readiness.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/novaedge
+              readOnly: true
+            {{- if .Values.tls.enabled }}
+            {{- if .Values.tls.caSecretName }}
+            - name: tls-ca
+              mountPath: /etc/novaedge/tls/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            {{- end }}
+            {{- if .Values.tls.clientCertSecretName }}
+            - name: tls-client
+              mountPath: /etc/novaedge/tls
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "novaedge-agent.fullname" . }}-config
+        {{- if .Values.tls.enabled }}
+        {{- if .Values.tls.caSecretName }}
+        - name: tls-ca
+          secret:
+            secretName: {{ .Values.tls.caSecretName }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}
+        {{- if .Values.tls.clientCertSecretName }}
+        - name: tls-client
+          secret:
+            secretName: {{ .Values.tls.clientCertSecretName }}
+        {{- end }}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

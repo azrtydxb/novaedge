@@ -52,6 +52,12 @@ type Watcher struct {
 	tlsCAFile   string
 	tlsEnabled  bool
 
+	// Remote cluster identification (for hub-spoke deployments)
+	clusterName   string
+	clusterRegion string
+	clusterZone   string
+	clusterLabels map[string]string
+
 	currentVersion string
 }
 
@@ -60,6 +66,14 @@ type TLSConfig struct {
 	CertFile string
 	KeyFile  string
 	CAFile   string
+}
+
+// ClusterConfig holds cluster identification for remote agents
+type ClusterConfig struct {
+	Name   string
+	Region string
+	Zone   string
+	Labels map[string]string
 }
 
 // NewWatcher creates a new config watcher
@@ -90,6 +104,32 @@ func NewWatcherWithTLS(ctx context.Context, nodeName, agentVersion, controllerAd
 		tlsKeyFile:     tlsConfig.KeyFile,
 		tlsCAFile:      tlsConfig.CAFile,
 		tlsEnabled:     true,
+	}, nil
+}
+
+// NewRemoteWatcher creates a new config watcher for remote cluster agents with mTLS and cluster identification
+func NewRemoteWatcher(ctx context.Context, nodeName, agentVersion, controllerAddr string, tlsConfig *TLSConfig, clusterConfig *ClusterConfig, logger *zap.Logger) (*Watcher, error) {
+	if tlsConfig == nil || tlsConfig.CertFile == "" || tlsConfig.KeyFile == "" || tlsConfig.CAFile == "" {
+		return nil, fmt.Errorf("TLS configuration is required for remote agents")
+	}
+	if clusterConfig == nil || clusterConfig.Name == "" {
+		return nil, fmt.Errorf("cluster configuration is required for remote agents")
+	}
+
+	return &Watcher{
+		nodeName:       nodeName,
+		agentVersion:   agentVersion,
+		controllerAddr: controllerAddr,
+		logger:         logger,
+		ctx:            ctx,
+		tlsCertFile:    tlsConfig.CertFile,
+		tlsKeyFile:     tlsConfig.KeyFile,
+		tlsCAFile:      tlsConfig.CAFile,
+		tlsEnabled:     true,
+		clusterName:    clusterConfig.Name,
+		clusterRegion:  clusterConfig.Region,
+		clusterZone:    clusterConfig.Zone,
+		clusterLabels:  clusterConfig.Labels,
 	}, nil
 }
 
@@ -196,6 +236,10 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 		NodeName:           w.nodeName,
 		AgentVersion:       w.agentVersion,
 		LastAppliedVersion: w.currentVersion,
+		ClusterName:        w.clusterName,
+		ClusterRegion:      w.clusterRegion,
+		ClusterZone:        w.clusterZone,
+		ClusterLabels:      w.clusterLabels,
 	}
 
 	// Start streaming
@@ -266,10 +310,21 @@ func (w *Watcher) reportStatus(client pb.ConfigServiceClient) {
 		Timestamp:            time.Now().Unix(),
 		Healthy:              true,
 		Metrics:              make(map[string]int64),
+		ClusterName:          w.clusterName,
 	}
 
 	_, err := client.ReportStatus(ctx, status)
 	if err != nil {
 		w.logger.Warn("Failed to report status", zap.Error(err))
 	}
+}
+
+// IsRemote returns true if this watcher is for a remote cluster agent
+func (w *Watcher) IsRemote() bool {
+	return w.clusterName != ""
+}
+
+// GetClusterName returns the cluster name (empty for local agents)
+func (w *Watcher) GetClusterName() string {
+	return w.clusterName
 }

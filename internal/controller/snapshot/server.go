@@ -50,6 +50,10 @@ type AgentStatusInfo struct {
 	ActiveConnections    int64
 	Errors               []string
 	Metrics              map[string]int64
+	// Remote cluster information (empty for local agents)
+	ClusterName   string
+	ClusterRegion string
+	ClusterZone   string
 }
 
 // ConnectionStatus represents the connection state of an agent
@@ -74,6 +78,9 @@ type Server struct {
 	// Agent status tracking
 	statusMap sync.Map // map[string]*AgentStatusInfo
 
+	// Remote agent tracking for hub-spoke deployments
+	remoteAgentTracker *RemoteAgentTracker
+
 	// Metrics
 	activeStreams int64
 	streamsMu     sync.RWMutex
@@ -85,11 +92,12 @@ type Server struct {
 // NewServer creates a new gRPC config server
 func NewServer(client client.Client) *Server {
 	s := &Server{
-		client:         client,
-		builder:        NewBuilder(client),
-		cache:          NewSnapshotCache(),
-		updateNotifier: make(chan string, 100),
-		shutdownCh:     make(chan struct{}),
+		client:             client,
+		builder:            NewBuilder(client),
+		cache:              NewSnapshotCache(),
+		updateNotifier:     make(chan string, 100),
+		remoteAgentTracker: NewRemoteAgentTracker(),
+		shutdownCh:         make(chan struct{}),
 	}
 
 	// Start the status cleanup goroutine
@@ -98,17 +106,48 @@ func NewServer(client client.Client) *Server {
 	return s
 }
 
+// SetRemoteClusterHandler sets the handler for remote cluster updates
+func (s *Server) SetRemoteClusterHandler(handler RemoteClusterHandler) {
+	s.remoteAgentTracker.SetHandler(handler)
+}
+
+// GetRemoteAgentTracker returns the remote agent tracker for external access
+func (s *Server) GetRemoteAgentTracker() *RemoteAgentTracker {
+	return s.remoteAgentTracker
+}
+
 // StreamConfig implements the StreamConfig RPC method
 func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigService_StreamConfigServer) error {
+	isRemote := req.ClusterName != ""
 	logger := log.FromContext(stream.Context()).WithValues(
 		"node", req.NodeName,
 		"agentVersion", req.AgentVersion,
+		"clusterName", req.ClusterName,
+		"clusterRegion", req.ClusterRegion,
+		"isRemote", isRemote,
 	)
 	logger.Info("Agent connected for config stream")
 
 	// Mark agent as connected
-	s.updateAgentConnection(req.NodeName, req.AgentVersion, true)
-	defer s.updateAgentConnection(req.NodeName, req.AgentVersion, false)
+	s.updateAgentConnectionWithCluster(req.NodeName, req.AgentVersion, req.ClusterName, req.ClusterRegion, req.ClusterZone, true)
+	defer s.updateAgentConnectionWithCluster(req.NodeName, req.AgentVersion, req.ClusterName, req.ClusterRegion, req.ClusterZone, false)
+
+	// Track remote agents separately
+	if isRemote {
+		info := &RemoteAgentInfo{
+			NodeName:      req.NodeName,
+			ClusterName:   req.ClusterName,
+			ClusterRegion: req.ClusterRegion,
+			ClusterZone:   req.ClusterZone,
+			AgentVersion:  req.AgentVersion,
+			Connected:     true,
+			Healthy:       true,
+			LastSeen:      time.Now(),
+			Labels:        req.ClusterLabels,
+		}
+		s.remoteAgentTracker.RegisterAgent(info)
+		defer s.remoteAgentTracker.UnregisterAgent(req.ClusterName, req.NodeName)
+	}
 
 	s.incrementStreams()
 	defer s.decrementStreams()
@@ -195,10 +234,13 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 
 // ReportStatus implements the ReportStatus RPC method
 func (s *Server) ReportStatus(ctx context.Context, req *pb.AgentStatus) (*pb.StatusResponse, error) {
+	isRemote := req.ClusterName != ""
 	logger := log.FromContext(ctx).WithValues(
 		"node", req.NodeName,
 		"version", req.AppliedConfigVersion,
 		"healthy", req.Healthy,
+		"clusterName", req.ClusterName,
+		"isRemote", isRemote,
 	)
 
 	if !req.Healthy {
@@ -210,6 +252,11 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.AgentStatus) (*pb.Sta
 
 	// Store agent status for monitoring/observability
 	s.storeAgentStatus(req)
+
+	// Update remote agent tracker if this is a remote agent
+	if isRemote {
+		s.remoteAgentTracker.UpdateAgentStatus(req.ClusterName, req.NodeName, req.Healthy)
+	}
 
 	return &pb.StatusResponse{
 		Acknowledged: true,
@@ -283,9 +330,20 @@ func (s *Server) storeAgentStatus(req *pb.AgentStatus) {
 
 // updateAgentConnection updates the connection status of an agent
 func (s *Server) updateAgentConnection(nodeName, agentVersion string, connected bool) {
+	s.updateAgentConnectionWithCluster(nodeName, agentVersion, "", "", "", connected)
+}
+
+// updateAgentConnectionWithCluster updates the connection status of an agent with cluster info
+func (s *Server) updateAgentConnectionWithCluster(nodeName, agentVersion, clusterName, clusterRegion, clusterZone string, connected bool) {
+	// For remote agents, use cluster-scoped key
+	key := nodeName
+	if clusterName != "" {
+		key = clusterName + "/" + nodeName
+	}
+
 	// Get or create agent status info
 	var status *AgentStatusInfo
-	if val, ok := s.statusMap.Load(nodeName); ok {
+	if val, ok := s.statusMap.Load(key); ok {
 		status = val.(*AgentStatusInfo)
 	} else {
 		status = &AgentStatusInfo{
@@ -297,9 +355,12 @@ func (s *Server) updateAgentConnection(nodeName, agentVersion string, connected 
 	status.Connected = connected
 	status.AgentVersion = agentVersion
 	status.LastSeen = time.Now()
+	status.ClusterName = clusterName
+	status.ClusterRegion = clusterRegion
+	status.ClusterZone = clusterZone
 
 	// Store updated status
-	s.statusMap.Store(nodeName, status)
+	s.statusMap.Store(key, status)
 }
 
 // GetAgentStatus retrieves the status of a specific agent

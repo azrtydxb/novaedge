@@ -1,0 +1,19 @@
+{{- if .Values.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "novaedge-agent.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "novaedge-agent.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: metrics
+      port: {{ .Values.ports.metrics }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "novaedge-agent.selectorLabels" . | nindent 4 }}
+{{- end }}
