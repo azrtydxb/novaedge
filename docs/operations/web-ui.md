@@ -54,9 +54,7 @@ The mode is auto-detected based on available configuration, but can be explicitl
 
 ## Dashboard Overview
 
-The dashboard provides an at-a-glance view of your NovaEdge deployment:
-
-![Dashboard](images/webui/dashboard.png)
+The dashboard provides an at-a-glance view of your NovaEdge deployment with real-time metrics and resource status.
 
 ### Key Metrics
 
@@ -84,9 +82,7 @@ The sidebar provides navigation to all resource management pages:
 
 ## Gateways
 
-The Gateways page displays all configured gateway resources:
-
-![Gateways](images/webui/gateways.png)
+The Gateways page displays all configured gateway resources with their status, listeners, and TLS configuration.
 
 ### Gateway Features
 
@@ -98,11 +94,7 @@ The Gateways page displays all configured gateway resources:
 
 ### Creating a Gateway
 
-Click "Create Gateway" to open the creation dialog:
-
-![Create Gateway Dialog](images/webui/create-gateway-dialog.png)
-
-The dialog provides a YAML editor with a template for the gateway configuration. You can define:
+Click "Create Gateway" to open the creation dialog. The dialog provides a YAML editor with a template for the gateway configuration. You can define:
 
 - Gateway name and namespace
 - Listeners (HTTP, HTTPS, TCP)
@@ -111,9 +103,7 @@ The dialog provides a YAML editor with a template for the gateway configuration.
 
 ## Routes
 
-The Routes page manages traffic routing rules:
-
-![Routes](images/webui/routes.png)
+The Routes page manages traffic routing rules with path matching, header-based routing, and backend assignments.
 
 ### Route Configuration
 
@@ -127,9 +117,7 @@ Each route defines:
 
 ## Backends
 
-The Backends page configures upstream services:
-
-![Backends](images/webui/backends.png)
+The Backends page configures upstream services with load balancing, health checks, and connection pooling.
 
 ### Backend Features
 
@@ -141,9 +129,7 @@ The Backends page configures upstream services:
 
 ## VIPs
 
-The VIPs page manages Virtual IP addresses:
-
-![VIPs](images/webui/vips.png)
+The VIPs page manages Virtual IP addresses for high availability and load distribution.
 
 ### VIP Modes
 
@@ -153,9 +139,7 @@ The VIPs page manages Virtual IP addresses:
 
 ## Policies
 
-The Policies page configures traffic policies:
-
-![Policies](images/webui/policies.png)
+The Policies page configures traffic policies for security and traffic management.
 
 ### Policy Types
 
@@ -169,11 +153,7 @@ The Policies page configures traffic policies:
 
 ## Agents
 
-The Agents page displays NovaEdge agent status:
-
-![Agents](images/webui/agents.png)
-
-In Kubernetes mode, this shows all agent pods running as a DaemonSet. In standalone mode, it displays the local agent status.
+The Agents page displays NovaEdge agent status. In Kubernetes mode, this shows all agent pods running as a DaemonSet. In standalone mode, it displays the local agent status.
 
 ## Import/Export Configuration
 
@@ -187,11 +167,7 @@ Click "Export Config" in the sidebar to download the current configuration as a 
 
 ### Importing Configuration
 
-Click "Import Config" to open the import dialog:
-
-![Import Dialog](images/webui/import-dialog.png)
-
-You can either:
+Click "Import Config" to open the import dialog. You can either:
 
 - **Paste YAML**: Directly paste YAML content into the text area
 - **Upload File**: Select a YAML file from your computer
@@ -537,6 +513,6 @@ For maximum security, deploy the web UI in a separate network segment:
 
 ## See Also
 
-- [Deployment Guide](deployment-guide.md)
-- [novactl Reference](../reference/novactl-reference.md)
-- [Standalone Mode](standalone-mode.md)
+- [Installation Guide](../installation/operator.md)
+- [CLI Reference](../reference/cli-reference.md)
+- [Standalone Mode](../installation/standalone.md)

@@ -535,6 +535,6 @@ spec:
 
 ## See Also
 
-- [Deployment Guide](deployment-guide.md)
+- [Installation Guide](../installation/operator.md)
 - [QUIC Specification](https://www.rfc-editor.org/rfc/rfc9000.html)
 - [HTTP/3 Specification](https://www.rfc-editor.org/rfc/rfc9114.html)
