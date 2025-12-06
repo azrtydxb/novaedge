@@ -650,5 +650,5 @@ To rollback to hub-spoke:
 ## Next Steps
 
 - [Installation Guide](../installation/operator.md) - Deploy NovaEdge
-- [Multi-Cluster Guide](multi-cluster.md) - Hub-spoke architecture
+- [Multi-Cluster Guide](../advanced/multi-cluster.md) - Hub-spoke architecture
 - [CRD Reference](../reference/crd-reference.md) - Federation CRD details
