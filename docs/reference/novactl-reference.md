@@ -652,7 +652,7 @@ You can use both tools interchangeably. `novactl` provides convenience shortcuts
 
 ## See Also
 
-- [Deployment Guide](deployment-guide.md)
-- [Gateway API Documentation](gateway-api.md)
+- [Deployment Guide](../user-guide/deployment-guide.md)
+- [Gateway API Documentation](../user-guide/gateway-api.md)
 - [NovaEdge Architecture](../NovaEdge_FullSpec.md)
 - [kubectl Reference](https://kubernetes.io/docs/reference/kubectl/)

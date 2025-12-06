@@ -417,6 +417,5 @@ Before submitting code:
 
 ## Related Documentation
 
-- [CLAUDE.md](../CLAUDE.md) - Development guidelines for Claude Code
-- [Deployment Guide](deployment-guide.md) - Production deployment
+- [Deployment Guide](../user-guide/deployment-guide.md) - Production deployment
 - [NovaEdge Architecture](../NovaEdge_FullSpec.md) - System design
