@@ -395,5 +395,5 @@ Both APIs can coexist and are translated to the same NovaEdge internal resources
 ## Further Reading
 
 - [Gateway API Documentation](https://gateway-api.sigs.k8s.io/)
-- [NovaEdge Architecture](../NovaEdge_FullSpec.md)
+- [Architecture Overview](../architecture/overview.md)
 - [CRD Reference](../reference/crd-reference.md)
