@@ -44,6 +44,11 @@ type PeerInfo struct {
 	TLSEnabled         bool
 	TLSServerName      string
 	InsecureSkipVerify bool
+
+	// TLS certificate data (loaded from secrets)
+	CACert     []byte
+	ClientCert []byte
+	ClientKey  []byte
 }
 
 // PeerState represents the current state of a federation peer
