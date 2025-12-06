@@ -102,9 +102,9 @@ func (s *HTTP3Server) Shutdown(ctx context.Context) error {
 	done := make(chan error, 1)
 
 	go func() {
-		// CloseGracefully sends GOAWAY frames to all connections
-		// and waits for them to close naturally
-		err := s.server.CloseGracefully(5 * time.Second)
+		// Close the server (http3.Server doesn't have CloseGracefully)
+		// The underlying QUIC implementation handles connection drainage
+		err := s.server.Close()
 		done <- err
 	}()
 

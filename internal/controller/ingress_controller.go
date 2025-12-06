@@ -19,10 +19,13 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -89,8 +92,8 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// Translate Ingress to CRDs
-	translator := NewIngressTranslator(ingress.Namespace)
+	// Translate Ingress to CRDs with service port resolver
+	translator := NewIngressTranslatorWithResolver(ingress.Namespace, r.resolveServicePort)
 	result, err := translator.Translate(ingress)
 	if err != nil {
 		logger.Error(err, "Failed to translate Ingress to CRDs")
@@ -117,6 +120,12 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			logger.Error(err, "Failed to reconcile ProxyBackend", "backend", backend.Name)
 			return ctrl.Result{}, err
 		}
+	}
+
+	// Update Ingress status with LoadBalancer IP
+	if err := r.updateIngressStatus(ctx, ingress, result.Gateway.Spec.VIPRef); err != nil {
+		logger.Error(err, "Failed to update Ingress status")
+		// Don't return error, status update is not critical
 	}
 
 	// Trigger config update for all nodes
@@ -281,4 +290,77 @@ func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
 		Owns(&novaedgev1alpha1.ProxyBackend{}).
 		Complete(r)
+}
+
+// resolveServicePort resolves a service port name to its port number
+func (r *IngressReconciler) resolveServicePort(namespace, serviceName, portName string) (int32, error) {
+	ctx := context.Background()
+	svc := &corev1.Service{}
+	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: serviceName}, svc); err != nil {
+		return 0, fmt.Errorf("failed to get service %s/%s: %w", namespace, serviceName, err)
+	}
+
+	// Find the port by name
+	for _, port := range svc.Spec.Ports {
+		if port.Name == portName {
+			return port.Port, nil
+		}
+	}
+
+	return 0, fmt.Errorf("port %s not found in service %s/%s", portName, namespace, serviceName)
+}
+
+// updateIngressStatus updates the Ingress status with the LoadBalancer IP from the VIP
+func (r *IngressReconciler) updateIngressStatus(ctx context.Context, ingress *networkingv1.Ingress, vipRef string) error {
+	logger := log.FromContext(ctx)
+
+	// Get the VIP to retrieve the address
+	vip := &novaedgev1alpha1.ProxyVIP{}
+	if err := r.Get(ctx, types.NamespacedName{Name: vipRef}, vip); err != nil {
+		if errors.IsNotFound(err) {
+			logger.Info("VIP not found, skipping status update", "vipRef", vipRef)
+			return nil
+		}
+		return fmt.Errorf("failed to get VIP %s: %w", vipRef, err)
+	}
+
+	// Extract IP from CIDR notation (e.g., "192.168.1.100/32" -> "192.168.1.100")
+	vipAddress := vip.Spec.Address
+	if idx := strings.Index(vipAddress, "/"); idx > 0 {
+		vipAddress = vipAddress[:idx]
+	}
+
+	// Build the LoadBalancer ingress status
+	lbIngress := []networkingv1.IngressLoadBalancerIngress{
+		{
+			IP: vipAddress,
+		},
+	}
+
+	// Check if status needs update
+	if ingressStatusEqual(ingress.Status.LoadBalancer.Ingress, lbIngress) {
+		return nil
+	}
+
+	// Update the status
+	ingress.Status.LoadBalancer.Ingress = lbIngress
+	if err := r.Status().Update(ctx, ingress); err != nil {
+		return fmt.Errorf("failed to update Ingress status: %w", err)
+	}
+
+	logger.Info("Updated Ingress status with LoadBalancer IP", "ip", vipAddress)
+	return nil
+}
+
+// ingressStatusEqual checks if two ingress status slices are equal
+func ingressStatusEqual(a, b []networkingv1.IngressLoadBalancerIngress) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].IP != b[i].IP || a[i].Hostname != b[i].Hostname {
+			return false
+		}
+	}
+	return true
 }

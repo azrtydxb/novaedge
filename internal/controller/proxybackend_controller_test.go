@@ -137,8 +137,8 @@ func TestProxyBackendReconcile(t *testing.T) {
 					},
 					LBPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
 					HealthCheck: &novaedgev1alpha1.HealthCheck{
-						HTTPPath:        strPtr("/health"),
-						HealthyThreshold: int32Ptr(2),
+						HTTPPath:           strPtr("/health"),
+						HealthyThreshold:   int32Ptr(2),
 						UnhealthyThreshold: int32Ptr(3),
 					},
 				},
@@ -203,22 +203,27 @@ func TestProxyBackendReconcile(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			k8sClient := setupTestEnvironment(t)
+			env := setupTestEnv(t)
 
 			if test.service != nil {
-				if err := k8sClient.Create(ctx, test.service); err != nil {
+				if err := env.client.Create(ctx, test.service); err != nil {
 					t.Fatalf("failed to create Service: %v", err)
 				}
 			}
 
-			if err := k8sClient.Create(ctx, test.backend); err != nil {
+			if err := env.client.Create(ctx, test.backend); err != nil {
 				t.Fatalf("failed to create backend: %v", err)
 			}
 
-			time.Sleep(500 * time.Millisecond)
+			// Manually trigger reconciliation
+			err := env.reconcileProxyBackend(ctx, test.backend.Name, test.backend.Namespace)
+			// Note: reconciler returns error for validation failures, which is expected
+			if test.expectError && err == nil {
+				// This is fine - the error is recorded in status conditions
+			}
 
 			updatedBackend := &novaedgev1alpha1.ProxyBackend{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
+			if err := env.client.Get(ctx, types.NamespacedName{
 				Name:      test.backend.Name,
 				Namespace: test.backend.Namespace,
 			}, updatedBackend); err != nil {
@@ -227,7 +232,7 @@ func TestProxyBackendReconcile(t *testing.T) {
 
 			readyCondition := meta.FindStatusCondition(updatedBackend.Status.Conditions, "Ready")
 			if readyCondition == nil {
-				t.Error("expected Ready condition, got nil")
+				t.Fatal("expected Ready condition, got nil")
 			}
 
 			if test.expectReady && readyCondition.Status != metav1.ConditionTrue {
@@ -251,7 +256,7 @@ func TestProxyBackendCircuitBreaker(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -288,18 +293,21 @@ func TestProxyBackendCircuitBreaker(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, service); err != nil {
+	if err := env.client.Create(ctx, service); err != nil {
 		t.Fatalf("failed to create Service: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, backend); err != nil {
+	if err := env.client.Create(ctx, backend); err != nil {
 		t.Fatalf("failed to create backend: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyBackend(ctx, backend.Name, backend.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedBackend := &novaedgev1alpha1.ProxyBackend{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      backend.Name,
 		Namespace: backend.Namespace,
 	}, updatedBackend); err != nil {
@@ -346,7 +354,7 @@ func TestProxyBackendCircuitBreakerValidation(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			k8sClient := setupTestEnvironment(t)
+			env := setupTestEnv(t)
 
 			service := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -382,18 +390,19 @@ func TestProxyBackendCircuitBreakerValidation(t *testing.T) {
 				},
 			}
 
-			if err := k8sClient.Create(ctx, service); err != nil {
+			if err := env.client.Create(ctx, service); err != nil {
 				t.Fatalf("failed to create Service: %v", err)
 			}
 
-			if err := k8sClient.Create(ctx, backend); err != nil {
+			if err := env.client.Create(ctx, backend); err != nil {
 				t.Fatalf("failed to create backend: %v", err)
 			}
 
-			time.Sleep(500 * time.Millisecond)
+			// Manually trigger reconciliation
+			_ = env.reconcileProxyBackend(ctx, backend.Name, backend.Namespace)
 
 			updatedBackend := &novaedgev1alpha1.ProxyBackend{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
+			if err := env.client.Get(ctx, types.NamespacedName{
 				Name:      backend.Name,
 				Namespace: backend.Namespace,
 			}, updatedBackend); err != nil {
@@ -401,6 +410,10 @@ func TestProxyBackendCircuitBreakerValidation(t *testing.T) {
 			}
 
 			readyCondition := meta.FindStatusCondition(updatedBackend.Status.Conditions, "Ready")
+			if readyCondition == nil {
+				t.Fatal("expected Ready condition, got nil")
+			}
+
 			if test.expectError && readyCondition.Status == metav1.ConditionTrue {
 				t.Error("expected backend validation to fail")
 			}
@@ -416,7 +429,7 @@ func TestProxyBackendTLS(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -455,28 +468,31 @@ func TestProxyBackendTLS(t *testing.T) {
 			},
 			LBPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
 			TLS: &novaedgev1alpha1.BackendTLSConfig{
-				Enabled:       true,
+				Enabled:         true,
 				CACertSecretRef: strPtr("ca-cert"),
 			},
 		},
 	}
 
-	if err := k8sClient.Create(ctx, service); err != nil {
+	if err := env.client.Create(ctx, service); err != nil {
 		t.Fatalf("failed to create Service: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, caCertSecret); err != nil {
+	if err := env.client.Create(ctx, caCertSecret); err != nil {
 		t.Fatalf("failed to create CA cert secret: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, backend); err != nil {
+	if err := env.client.Create(ctx, backend); err != nil {
 		t.Fatalf("failed to create backend: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyBackend(ctx, backend.Name, backend.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedBackend := &novaedgev1alpha1.ProxyBackend{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      backend.Name,
 		Namespace: backend.Namespace,
 	}, updatedBackend); err != nil {
@@ -493,7 +509,7 @@ func TestProxyBackendTLSMissingCert(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	service := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -522,24 +538,25 @@ func TestProxyBackendTLSMissingCert(t *testing.T) {
 			},
 			LBPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
 			TLS: &novaedgev1alpha1.BackendTLSConfig{
-				Enabled:       true,
+				Enabled:         true,
 				CACertSecretRef: strPtr("missing-ca-cert"),
 			},
 		},
 	}
 
-	if err := k8sClient.Create(ctx, service); err != nil {
+	if err := env.client.Create(ctx, service); err != nil {
 		t.Fatalf("failed to create Service: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, backend); err != nil {
+	if err := env.client.Create(ctx, backend); err != nil {
 		t.Fatalf("failed to create backend: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation - expect error
+	_ = env.reconcileProxyBackend(ctx, backend.Name, backend.Namespace)
 
 	updatedBackend := &novaedgev1alpha1.ProxyBackend{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      backend.Name,
 		Namespace: backend.Namespace,
 	}, updatedBackend); err != nil {
@@ -566,7 +583,7 @@ func TestProxyBackendLBPolicies(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			k8sClient := setupTestEnvironment(t)
+			env := setupTestEnv(t)
 
 			service := &corev1.Service{
 				ObjectMeta: metav1.ObjectMeta{
@@ -597,18 +614,21 @@ func TestProxyBackendLBPolicies(t *testing.T) {
 				},
 			}
 
-			if err := k8sClient.Create(ctx, service); err != nil {
+			if err := env.client.Create(ctx, service); err != nil {
 				t.Fatalf("failed to create Service: %v", err)
 			}
 
-			if err := k8sClient.Create(ctx, backend); err != nil {
+			if err := env.client.Create(ctx, backend); err != nil {
 				t.Fatalf("failed to create backend: %v", err)
 			}
 
-			time.Sleep(500 * time.Millisecond)
+			// Manually trigger reconciliation
+			if err := env.reconcileProxyBackend(ctx, backend.Name, backend.Namespace); err != nil {
+				t.Fatalf("reconciliation failed: %v", err)
+			}
 
 			updatedBackend := &novaedgev1alpha1.ProxyBackend{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
+			if err := env.client.Get(ctx, types.NamespacedName{
 				Name:      backend.Name,
 				Namespace: backend.Namespace,
 			}, updatedBackend); err != nil {
@@ -622,4 +642,3 @@ func TestProxyBackendLBPolicies(t *testing.T) {
 		})
 	}
 }
-

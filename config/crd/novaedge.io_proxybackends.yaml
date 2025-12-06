@@ -59,22 +59,26 @@ spec:
                     description: MaxConnections is the maximum number of connections
                       to the backend
                     format: int32
+                    maximum: 100000
                     minimum: 1
                     type: integer
                   maxPendingRequests:
                     description: MaxPendingRequests is the maximum number of pending
                       requests
                     format: int32
+                    maximum: 100000
                     minimum: 1
                     type: integer
                   maxRequests:
                     description: MaxRequests is the maximum number of parallel requests
                     format: int32
+                    maximum: 100000
                     minimum: 1
                     type: integer
                   maxRetries:
                     description: MaxRetries is the maximum number of parallel retries
                     format: int32
+                    maximum: 10
                     minimum: 0
                     type: integer
                 type: object
@@ -82,6 +86,38 @@ spec:
                 default: 2s
                 description: ConnectTimeout is the timeout for establishing connections
                 type: string
+              connectionPool:
+                description: ConnectionPool defines connection pool configuration
+                properties:
+                  idleConnTimeout:
+                    default: 90s
+                    description: IdleConnTimeout is the maximum time an idle connection
+                      is kept
+                    type: string
+                  maxConnsPerHost:
+                    description: MaxConnsPerHost is the maximum number of connections
+                      per host (0 = unlimited)
+                    format: int32
+                    maximum: 10000
+                    minimum: 0
+                    type: integer
+                  maxIdleConns:
+                    default: 100
+                    description: MaxIdleConns is the maximum number of idle connections
+                      across all hosts
+                    format: int32
+                    maximum: 10000
+                    minimum: 1
+                    type: integer
+                  maxIdleConnsPerHost:
+                    default: 10
+                    description: MaxIdleConnsPerHost is the maximum number of idle
+                      connections per host
+                    format: int32
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                type: object
               healthCheck:
                 description: HealthCheck defines active health check configuration
                 properties:
@@ -131,10 +167,16 @@ spec:
                 properties:
                   name:
                     description: Name is the name of the Service
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                   namespace:
                     description: Namespace is the namespace of the Service (defaults
                       to backend namespace)
+                    maxLength: 63
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                     type: string
                   port:
                     description: Port is the port number on the Service
@@ -152,6 +194,8 @@ spec:
                   caCertSecretRef:
                     description: CACertSecretRef references a Secret containing CA
                       certificates
+                    maxLength: 253
+                    minLength: 1
                     type: string
                   enabled:
                     default: false

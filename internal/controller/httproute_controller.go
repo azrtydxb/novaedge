@@ -71,7 +71,12 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Check if any parent refs point to our Gateway
 	hasNovaEdgeGateway := false
 	for _, parentRef := range httpRoute.Spec.ParentRefs {
-		if parentRef.Kind != nil && *parentRef.Kind == "Gateway" {
+		// Per Gateway API spec, Kind defaults to "Gateway" when nil
+		kind := "Gateway"
+		if parentRef.Kind != nil {
+			kind = string(*parentRef.Kind)
+		}
+		if kind == "Gateway" {
 			// Get the Gateway to check its class
 			gatewayNamespace := httpRoute.Namespace
 			if parentRef.Namespace != nil {

@@ -51,11 +51,11 @@ spec:
         - /novaedge-agent
 
         args:
-        - --controller-address=$(CONTROLLER_ADDRESS)
-        - --node-name=$(NODE_NAME)
-        - --metrics-bind-address=:9090
-        - --health-probe-bind-address=:9091
-        - --log-level=info
+        - -controller-address=$(CONTROLLER_ADDRESS)
+        - -node-name=$(NODE_NAME)
+        - -metrics-port=9090
+        - -health-probe-address=:9091
+        - -log-level=info
 
         env:
         # Controller gRPC service address

@@ -113,6 +113,19 @@ type Listener struct {
 	// Hostnames is a list of hostnames this listener accepts (for HTTP/HTTPS/HTTP3)
 	// +optional
 	Hostnames []string `json:"hostnames,omitempty"`
+
+	// SSLRedirect enables automatic redirect from HTTP to HTTPS
+	// +optional
+	SSLRedirect bool `json:"sslRedirect,omitempty"`
+
+	// MaxRequestBodySize is the maximum allowed request body size in bytes (0 = unlimited)
+	// +optional
+	MaxRequestBodySize int64 `json:"maxRequestBodySize,omitempty"`
+
+	// AllowedSourceRanges is a list of CIDR ranges that are allowed to access this listener
+	// If empty, all sources are allowed
+	// +optional
+	AllowedSourceRanges []string `json:"allowedSourceRanges,omitempty"`
 }
 
 // ProxyGatewaySpec defines the desired state of ProxyGateway
