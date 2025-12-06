@@ -417,5 +417,5 @@ Before submitting code:
 
 ## Related Documentation
 
-- [Deployment Guide](../user-guide/deployment-guide.md) - Production deployment
-- [NovaEdge Architecture](../NovaEdge_FullSpec.md) - System design
+- [Installation Guide](../installation/operator.md) - Production deployment
+- [Architecture Overview](../architecture/overview.md) - System design

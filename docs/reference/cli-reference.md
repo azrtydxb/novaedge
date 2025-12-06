@@ -815,9 +815,9 @@ You can use both tools interchangeably. `novactl` provides convenience shortcuts
 
 ## See Also
 
-- [Operator Guide](../user-guide/operator.md)
-- [Deployment Guide](../user-guide/deployment-guide.md)
-- [Gateway API Documentation](../user-guide/gateway-api.md)
+- [Operator Guide](../installation/operator.md)
+- [Installation Guide](../installation/kubernetes.md)
+- [Gateway API Documentation](../advanced/gateway-api.md)
 - [CRD Reference](crd-reference.md)
 - [Helm Values Reference](helm-values.md)
 - [kubectl Reference](https://kubernetes.io/docs/reference/kubectl/)
