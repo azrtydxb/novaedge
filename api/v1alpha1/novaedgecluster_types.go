@@ -223,6 +223,11 @@ type AgentSpec struct {
 	// UpdateStrategy defines the update strategy for the DaemonSet
 	// +optional
 	UpdateStrategy *AgentUpdateStrategy `json:"updateStrategy,omitempty"`
+
+	// Controllers defines the controller connection configuration for federated deployments
+	// If not specified, agents connect to the local controller in the same cluster
+	// +optional
+	Controllers *AgentControllerConfig `json:"controllers,omitempty"`
 }
 
 // VIPConfig defines the VIP management configuration for agents
@@ -284,6 +289,121 @@ type ClusterBGPPeer struct {
 	// Password is the BGP session password (optional)
 	// +optional
 	PasswordSecretRef *corev1.SecretKeySelector `json:"passwordSecretRef,omitempty"`
+}
+
+// AgentControllerConfig defines the controller connection configuration for agents
+type AgentControllerConfig struct {
+	// Primary is the primary controller endpoint (highest priority)
+	// If not specified, agents use the local controller in the same cluster
+	// +optional
+	Primary *ControllerEndpoint `json:"primary,omitempty"`
+
+	// Secondary is an ordered list of secondary/failover controllers
+	// +optional
+	Secondary []ControllerEndpoint `json:"secondary,omitempty"`
+
+	// Failover defines the failover behavior
+	// +optional
+	Failover *AgentFailoverConfig `json:"failover,omitempty"`
+
+	// AutonomousMode defines behavior when all controllers are unavailable
+	// +optional
+	AutonomousMode *AutonomousModeConfig `json:"autonomousMode,omitempty"`
+}
+
+// ControllerEndpoint defines a controller endpoint for agent connection
+type ControllerEndpoint struct {
+	// Endpoint is the gRPC endpoint of the controller
+	// Format: "host:port"
+	// +kubebuilder:validation:Required
+	Endpoint string `json:"endpoint"`
+
+	// Priority determines failover order (lower = higher priority)
+	// +kubebuilder:default=100
+	// +optional
+	Priority int32 `json:"priority,omitempty"`
+
+	// TLS defines the TLS configuration for this controller
+	// +optional
+	TLS *ControllerTLS `json:"tls,omitempty"`
+
+	// Region is the region of this controller (for latency-aware routing)
+	// +optional
+	Region string `json:"region,omitempty"`
+}
+
+// ControllerTLS defines TLS configuration for controller connection
+type ControllerTLS struct {
+	// Enabled enables TLS for controller communication
+	// +kubebuilder:default=true
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// SecretRef references a secret containing TLS credentials
+	// The secret should contain: ca.crt, tls.crt, tls.key
+	// +optional
+	SecretRef *corev1.SecretReference `json:"secretRef,omitempty"`
+
+	// ServerName is the expected server name for TLS verification
+	// +optional
+	ServerName string `json:"serverName,omitempty"`
+
+	// InsecureSkipVerify skips TLS certificate verification (NOT recommended)
+	// +kubebuilder:default=false
+	// +optional
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
+}
+
+// AgentFailoverConfig defines the failover behavior for agents
+type AgentFailoverConfig struct {
+	// Timeout is how long to wait before failing over to secondary
+	// +kubebuilder:default="30s"
+	// +optional
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+
+	// HealthCheckInterval is how often to check controller health
+	// +kubebuilder:default="10s"
+	// +optional
+	HealthCheckInterval *metav1.Duration `json:"healthCheckInterval,omitempty"`
+
+	// FailureThreshold is the number of failures before failover
+	// +kubebuilder:default=3
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	FailureThreshold int32 `json:"failureThreshold,omitempty"`
+
+	// RecoveryDelay is how long to wait before returning to primary
+	// +kubebuilder:default="60s"
+	// +optional
+	RecoveryDelay *metav1.Duration `json:"recoveryDelay,omitempty"`
+
+	// LatencyAware prefers controllers with lower latency during failover
+	// +kubebuilder:default=false
+	// +optional
+	LatencyAware bool `json:"latencyAware,omitempty"`
+}
+
+// AutonomousModeConfig defines behavior when all controllers are unavailable
+type AutonomousModeConfig struct {
+	// Enabled enables autonomous mode when disconnected from all controllers
+	// +kubebuilder:default=true
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// ConfigPersistPath is the path to persist configuration for restart resilience
+	// +kubebuilder:default="/var/lib/novaedge/config.json"
+	// +optional
+	ConfigPersistPath string `json:"configPersistPath,omitempty"`
+
+	// LocalVIPCoordination enables agent-to-agent VIP coordination when disconnected
+	// +kubebuilder:default=true
+	// +optional
+	LocalVIPCoordination *bool `json:"localVIPCoordination,omitempty"`
+
+	// QueueRetention is how long to keep queued updates for later sync
+	// +kubebuilder:default="24h"
+	// +optional
+	QueueRetention *metav1.Duration `json:"queueRetention,omitempty"`
 }
 
 // AgentUpdateStrategy defines the update strategy for the agent DaemonSet
