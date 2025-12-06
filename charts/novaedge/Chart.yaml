@@ -1,0 +1,23 @@
+apiVersion: v2
+name: novaedge
+description: A Helm chart for NovaEdge - Kubernetes-native distributed load balancer, reverse proxy, and VIP controller
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+- load-balancer
+- ingress
+- proxy
+- kubernetes
+- gateway
+- vip
+home: https://github.com/piwi3910/novaedge
+sources:
+- https://github.com/piwi3910/novaedge
+maintainers:
+- name: piwi3910
+  email: pascal@novaedge.io
+icon: https://raw.githubusercontent.com/piwi3910/novaedge/main/docs/logo.png
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: networking

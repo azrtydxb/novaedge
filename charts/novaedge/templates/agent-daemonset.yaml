@@ -1,0 +1,120 @@
+{{- if .Values.agent.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "novaedge.fullname" . }}-agent
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.agent.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "novaedge.agent.selectorLabels" . | nindent 6 }}
+  updateStrategy:
+    {{- toYaml .Values.agent.updateStrategy | nindent 4 }}
+  template:
+    metadata:
+      labels:
+        {{- include "novaedge.agent.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- if .Values.agent.metrics.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.agent.metrics.port }}"
+        prometheus.io/path: "/metrics"
+        {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      serviceAccountName: {{ include "novaedge.agent.serviceAccountName" . }}
+      {{- with .Values.agent.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.agent.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+      - name: agent
+        image: {{ include "novaedge.agent.image" . }}
+        imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+        command:
+        - /novaedge-agent
+        args:
+        - -controller-address={{ include "novaedge.fullname" . }}-controller.{{ include "novaedge.namespace" . }}.svc.cluster.local:{{ .Values.controller.grpc.port }}
+        - -node-name=$(NODE_NAME)
+        - -metrics-port={{ .Values.agent.metrics.port }}
+        - -health-probe-address=:{{ .Values.agent.healthProbe.port }}
+        - -log-level=info
+        env:
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        ports:
+        - name: http
+          containerPort: {{ .Values.agent.ports.http }}
+          hostPort: {{ .Values.agent.ports.http }}
+          protocol: TCP
+        - name: https
+          containerPort: {{ .Values.agent.ports.https }}
+          hostPort: {{ .Values.agent.ports.https }}
+          protocol: TCP
+        - name: metrics
+          containerPort: {{ .Values.agent.metrics.port }}
+          protocol: TCP
+        - name: health
+          containerPort: {{ .Values.agent.healthProbe.port }}
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.agent.resources | nindent 10 }}
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+            - NET_BIND_SERVICE
+        volumeMounts:
+        - name: certs
+          mountPath: /etc/novaedge/certs
+          readOnly: true
+        - name: config
+          mountPath: /etc/novaedge/config
+          readOnly: true
+      volumes:
+      - name: certs
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: {{ include "novaedge.fullname" . }}-agent-config
+          optional: true
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+{{- end }}

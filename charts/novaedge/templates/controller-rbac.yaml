@@ -1,0 +1,153 @@
+{{- if and .Values.controller.enabled .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "novaedge.fullname" . }}-controller
+  labels:
+    {{- include "novaedge.controller.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - secrets
+  - services
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - discovery.k8s.io
+  resources:
+  - endpointslices
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gatewayclasses
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gateways
+  - httproutes
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - gateway.networking.k8s.io
+  resources:
+  - gateways/status
+  - httproutes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses
+  - ingressclasses
+  verbs:
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - networking.k8s.io
+  resources:
+  - ingresses/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - novaedge.io
+  resources:
+  - proxybackends
+  - proxygateways
+  - proxypolicies
+  - proxyroutes
+  - proxyvips
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - novaedge.io
+  resources:
+  - proxybackends/finalizers
+  - proxygateways/finalizers
+  - proxypolicies/finalizers
+  - proxyroutes/finalizers
+  - proxyvips/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - novaedge.io
+  resources:
+  - proxybackends/status
+  - proxygateways/status
+  - proxypolicies/status
+  - proxyroutes/status
+  - proxyvips/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "novaedge.fullname" . }}-controller
+  labels:
+    {{- include "novaedge.controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "novaedge.fullname" . }}-controller
+subjects:
+- kind: ServiceAccount
+  name: {{ include "novaedge.controller.serviceAccountName" . }}
+  namespace: {{ include "novaedge.namespace" . }}
+{{- end }}

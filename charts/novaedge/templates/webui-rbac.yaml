@@ -1,0 +1,65 @@
+{{- if and .Values.webui.enabled .Values.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "novaedge.fullname" . }}-webui
+  labels:
+    {{- include "novaedge.webui.labels" . | nindent 4 }}
+rules:
+# Read access to NovaEdge CRDs
+- apiGroups:
+  - novaedge.io
+  resources:
+  - proxybackends
+  - proxygateways
+  - proxypolicies
+  - proxyroutes
+  - proxyvips
+  verbs:
+  - get
+  - list
+  - watch
+# Read access to namespaces
+- apiGroups:
+  - ""
+  resources:
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+# Read access to pods (for agent status)
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+# Read access to nodes (for cluster overview)
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "novaedge.fullname" . }}-webui
+  labels:
+    {{- include "novaedge.webui.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "novaedge.fullname" . }}-webui
+subjects:
+- kind: ServiceAccount
+  name: {{ include "novaedge.webui.serviceAccountName" . }}
+  namespace: {{ include "novaedge.namespace" . }}
+{{- end }}

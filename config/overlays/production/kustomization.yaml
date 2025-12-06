@@ -1,0 +1,84 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: novaedge-system
+
+# Base configuration
+resources:
+- ../../default
+# Add HPA for controller in production
+- controller-hpa.yaml
+# Add ServiceMonitor for Prometheus monitoring
+- servicemonitor.yaml
+
+# Production patches
+patches:
+# Increase controller replicas for production HA
+- patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 3
+  target:
+    kind: Deployment
+    name: novaedge-controller
+
+# Production resource limits for controller
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "1"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: 1Gi
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: 250m
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: 256Mi
+  target:
+    kind: Deployment
+    name: novaedge-controller
+
+# Production resource limits for agent
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "4"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: 2Gi
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "1"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: 512Mi
+  target:
+    kind: DaemonSet
+    name: novaedge-agent
+
+# Web UI production settings
+- patch: |-
+    - op: replace
+      path: /spec/replicas
+      value: 2
+  target:
+    kind: Deployment
+    name: novaedge-webui
+
+# Image configuration for production (use specific version tags)
+images:
+- name: ghcr.io/piwi3910/novaedge-controller
+  newTag: v1.0.0
+- name: ghcr.io/piwi3910/novaedge-agent
+  newTag: v1.0.0
+- name: ghcr.io/piwi3910/novaedge-novactl
+  newTag: v1.0.0
+
+# ConfigMap for production settings
+configMapGenerator:
+- name: novaedge-config
+  literals:
+  - LOG_LEVEL=info
+  - METRICS_ENABLED=true

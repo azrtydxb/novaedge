@@ -1,0 +1,197 @@
+# Default values for NovaEdge
+# This is a YAML-formatted file.
+
+# Global settings
+global:
+  # Image pull secrets for private registries
+  imagePullSecrets: []
+  # Override the namespace
+  namespace: ""
+
+# Controller settings
+controller:
+  enabled: true
+  replicaCount: 3
+
+  image:
+    repository: ghcr.io/piwi3910/novaedge-controller
+    tag: ""  # Defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+  # Leader election for HA
+  leaderElection:
+    enabled: true
+
+  # Metrics configuration
+  metrics:
+    enabled: true
+    port: 8080
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      scrapeTimeout: 10s
+
+  # Health probes
+  healthProbe:
+    port: 8081
+
+  # gRPC server for agent communication
+  grpc:
+    port: 8082
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  # Horizontal pod autoscaler
+  autoscaling:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+
+# Agent settings (DaemonSet)
+agent:
+  enabled: true
+
+  image:
+    repository: ghcr.io/piwi3910/novaedge-agent
+    tag: ""  # Defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+  # Node selector for edge nodes
+  nodeSelector: {}
+    # novaedge.io/role: edge
+
+  # Tolerations for running on control plane nodes
+  tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    operator: Exists
+    effect: NoSchedule
+
+  # Proxy ports
+  ports:
+    http: 80
+    https: 443
+
+  # Metrics configuration
+  metrics:
+    enabled: true
+    port: 9090
+    serviceMonitor:
+      enabled: false
+      interval: 30s
+      scrapeTimeout: 10s
+
+  # Health probes
+  healthProbe:
+    port: 9091
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+
+  # Update strategy
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+
+  # Pod disruption budget
+  podDisruptionBudget:
+    enabled: true
+    maxUnavailable: 1
+
+# Web UI settings
+webui:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/piwi3910/novaedge-novactl
+    tag: ""  # Defaults to Chart.appVersion
+    pullPolicy: IfNotPresent
+
+  serviceAccount:
+    create: true
+    name: ""
+    annotations: {}
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 9080
+
+  # Ingress configuration
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # kubernetes.io/tls-acme: "true"
+    hosts:
+    - host: novaedge.local
+      paths:
+      - path: /
+        pathType: Prefix
+    tls: []
+    # - secretName: novaedge-tls
+    #   hosts:
+    #   - novaedge.local
+
+  # Prometheus endpoint for metrics
+  prometheus:
+    endpoint: ""  # e.g., http://prometheus.monitoring.svc.cluster.local:9090
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# CRD installation
+crds:
+  # Install CRDs with the chart
+  install: true
+  # Keep CRDs on chart uninstall
+  keep: true
+
+# RBAC settings
+rbac:
+  create: true

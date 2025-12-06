@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: novaedge-controller
+  namespace: novaedge-system
+  labels:
+    app.kubernetes.io/name: novaedge-controller
+    app.kubernetes.io/component: controller
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: novaedge-controller
+  endpoints:
+  - port: metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: novaedge-agent
+  namespace: novaedge-system
+  labels:
+    app.kubernetes.io/name: novaedge-agent
+    app.kubernetes.io/component: agent
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: novaedge-agent
+  podMetricsEndpoints:
+  - port: metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    path: /metrics

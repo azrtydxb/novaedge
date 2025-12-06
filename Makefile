@@ -3,6 +3,7 @@
 # Image URL to use all building/pushing image targets
 IMG_CONTROLLER ?= novaedge-controller:latest
 IMG_AGENT ?= novaedge-agent:latest
+IMG_NOVACTL ?= novaedge-novactl:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -94,7 +95,7 @@ run-controller: fmt vet ## Run controller from your host.
 	go run ./cmd/novaedge-controller/main.go
 
 .PHONY: docker-build
-docker-build: docker-build-controller docker-build-agent ## Build all docker images.
+docker-build: docker-build-controller docker-build-agent docker-build-novactl ## Build all docker images.
 
 .PHONY: test-agent
 test-agent: ## Run agent tests.
@@ -108,8 +109,12 @@ docker-build-controller: ## Build controller docker image.
 docker-build-agent: ## Build agent docker image.
 	docker build -t ${IMG_AGENT} -f Dockerfile.agent .
 
+.PHONY: docker-build-novactl
+docker-build-novactl: ## Build novactl docker image (includes web UI).
+	docker build -t ${IMG_NOVACTL} -f Dockerfile.novactl .
+
 .PHONY: docker-push
-docker-push: docker-push-controller docker-push-agent ## Push all docker images.
+docker-push: docker-push-controller docker-push-agent docker-push-novactl ## Push all docker images.
 
 .PHONY: docker-push-controller
 docker-push-controller: ## Push controller docker image.
@@ -118,6 +123,10 @@ docker-push-controller: ## Push controller docker image.
 .PHONY: docker-push-agent
 docker-push-agent: ## Push agent docker image.
 	docker push ${IMG_AGENT}
+
+.PHONY: docker-push-novactl
+docker-push-novactl: ## Push novactl docker image.
+	docker push ${IMG_NOVACTL}
 
 ##@ Deployment
 
@@ -138,6 +147,48 @@ deploy: manifests ## Deploy controller to the K8s cluster.
 undeploy: ## Undeploy controller from the K8s cluster.
 	kubectl delete -f config/controller/ || true
 	kubectl delete -f config/rbac/ || true
+
+.PHONY: deploy-all
+deploy-all: manifests ## Deploy all NovaEdge components using kustomize.
+	kubectl apply -k config/default/
+
+.PHONY: deploy-dev
+deploy-dev: manifests ## Deploy NovaEdge in development mode.
+	kubectl apply -k config/overlays/dev/
+
+.PHONY: deploy-prod
+deploy-prod: manifests ## Deploy NovaEdge in production mode.
+	kubectl apply -k config/overlays/production/
+
+.PHONY: undeploy-all
+undeploy-all: ## Undeploy all NovaEdge components.
+	kubectl delete -k config/default/ || true
+
+.PHONY: deploy-webui
+deploy-webui: ## Deploy only the web UI component.
+	kubectl apply -k config/webui/
+
+.PHONY: undeploy-webui
+undeploy-webui: ## Undeploy the web UI component.
+	kubectl delete -k config/webui/ || true
+
+##@ Helm
+
+.PHONY: helm-install
+helm-install: ## Install NovaEdge using Helm.
+	helm install novaedge charts/novaedge -n novaedge-system --create-namespace
+
+.PHONY: helm-upgrade
+helm-upgrade: ## Upgrade NovaEdge using Helm.
+	helm upgrade novaedge charts/novaedge -n novaedge-system
+
+.PHONY: helm-uninstall
+helm-uninstall: ## Uninstall NovaEdge using Helm.
+	helm uninstall novaedge -n novaedge-system
+
+.PHONY: helm-template
+helm-template: ## Generate Helm templates for debugging.
+	helm template novaedge charts/novaedge -n novaedge-system
 
 ##@ Build Dependencies
 
