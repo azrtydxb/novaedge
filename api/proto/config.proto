@@ -515,6 +515,25 @@ message ControllerConnectionInfo {
 
   // Latency to current controller (milliseconds)
   int64 controller_latency_ms = 9;
+
+  // Reachability information for agent-assisted quorum
+  ControllerReachability reachability = 10;
+}
+
+// ControllerReachability reports which controllers the agent can reach
+// Used for agent-assisted quorum in 2-datacenter deployments
+message ControllerReachability {
+  // List of controller names this agent can currently reach
+  repeated string reachable_controllers = 1;
+
+  // Latency to each reachable controller (controller name -> milliseconds)
+  map<string, int64> controller_latencies = 2;
+
+  // Last time each controller was successfully contacted
+  map<string, int64> last_contact_times = 3;
+
+  // Total configured controllers (for quorum calculation)
+  int32 total_controllers = 4;
 }
 
 // StatusResponse acknowledges status reports

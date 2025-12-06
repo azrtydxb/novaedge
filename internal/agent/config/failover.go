@@ -163,6 +163,19 @@ type FailoverWatcher struct {
 	connectionErrors     int64
 	autonomousStartTime  time.Time
 	autonomousDuration   time.Duration
+
+	// Controller reachability tracking (for agent-assisted quorum)
+	controllerReachability map[string]*controllerReachabilityInfo
+	reachabilityMu         sync.RWMutex
+}
+
+// controllerReachabilityInfo tracks reachability to a specific controller
+type controllerReachabilityInfo struct {
+	Name        string
+	Endpoint    string
+	Reachable   bool
+	LastContact time.Time
+	Latency     time.Duration
 }
 
 // NewFailoverWatcher creates a new failover-aware config watcher
@@ -188,17 +201,28 @@ func NewFailoverWatcher(
 
 	ctx, cancel := context.WithCancel(ctx)
 
+	// Initialize controller reachability tracking
+	reachability := make(map[string]*controllerReachabilityInfo)
+	for _, ctrl := range sortedControllers {
+		reachability[ctrl.Name] = &controllerReachabilityInfo{
+			Name:      ctrl.Name,
+			Endpoint:  ctrl.Endpoint,
+			Reachable: false,
+		}
+	}
+
 	fw := &FailoverWatcher{
-		nodeName:      nodeName,
-		agentVersion:  agentVersion,
-		controllers:   sortedControllers,
-		tlsConfig:     tlsConfig,
-		clusterConfig: clusterConfig,
-		config:        config,
-		logger:        logger.Named("failover"),
-		state:         StateConnectedPrimary,
-		ctx:           ctx,
-		cancel:        cancel,
+		nodeName:               nodeName,
+		agentVersion:           agentVersion,
+		controllers:            sortedControllers,
+		tlsConfig:              tlsConfig,
+		clusterConfig:          clusterConfig,
+		config:                 config,
+		logger:                 logger.Named("failover"),
+		state:                  StateConnectedPrimary,
+		ctx:                    ctx,
+		cancel:                 cancel,
+		controllerReachability: reachability,
 	}
 
 	// Initialize config persistence if path is configured
@@ -885,7 +909,62 @@ func (w *FailoverWatcher) GetControllerConnectionInfo() *pb.ControllerConnection
 		}
 	}
 
+	// Add controller reachability for agent-assisted quorum
+	info.Reachability = w.getControllerReachability()
+
 	return info
+}
+
+// getControllerReachability returns the current controller reachability info
+func (w *FailoverWatcher) getControllerReachability() *pb.ControllerReachability {
+	w.reachabilityMu.RLock()
+	defer w.reachabilityMu.RUnlock()
+
+	reachability := &pb.ControllerReachability{
+		TotalControllers:    int32(len(w.controllerReachability)),
+		ControllerLatencies: make(map[string]int64),
+		LastContactTimes:    make(map[string]int64),
+	}
+
+	for name, info := range w.controllerReachability {
+		if info.Reachable {
+			reachability.ReachableControllers = append(reachability.ReachableControllers, name)
+			reachability.ControllerLatencies[name] = info.Latency.Milliseconds()
+			reachability.LastContactTimes[name] = info.LastContact.Unix()
+		}
+	}
+
+	return reachability
+}
+
+// updateControllerReachability updates the reachability status for a controller
+func (w *FailoverWatcher) updateControllerReachability(name string, reachable bool, latency time.Duration) {
+	w.reachabilityMu.Lock()
+	defer w.reachabilityMu.Unlock()
+
+	if info, ok := w.controllerReachability[name]; ok {
+		info.Reachable = reachable
+		if reachable {
+			info.LastContact = time.Now()
+			info.Latency = latency
+		}
+	}
+}
+
+// probeAllControllers probes all controllers and updates reachability
+// This should be called periodically to maintain accurate reachability info
+func (w *FailoverWatcher) probeAllControllers() {
+	w.controllersMu.RLock()
+	controllers := w.controllers
+	w.controllersMu.RUnlock()
+
+	for _, ctrl := range controllers {
+		start := time.Now()
+		err := w.pingController(ctrl)
+		latency := time.Since(start)
+
+		w.updateControllerReachability(ctrl.Name, err == nil, latency)
+	}
 }
 
 // GetVectorClock returns the last known vector clock
