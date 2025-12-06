@@ -213,13 +213,7 @@ Click "History" in the sidebar to view recent configuration changes. This provid
 
 ### Authentication
 
-By default, the web UI does not require authentication. For production deployments, consider:
-
-1. **Running behind NovaEdge itself** with JWT authentication
-2. **Using TLS** with client certificates
-3. **Network-level restrictions** (firewall, VPN)
-
-See the [Management Plane Protection](deployment-guide.md#management-plane-protection) section for details on securing the web UI.
+By default, the web UI does not require authentication. For production deployments, you should protect it using one of the following methods.
 
 ### Read-Only Mode
 
@@ -230,6 +224,296 @@ novactl web --read-only
 ```
 
 This is recommended for monitoring dashboards in production environments.
+
+## Running Behind NovaEdge (Recommended)
+
+The recommended way to secure the web UI in production is to run it behind NovaEdge itself. This provides:
+
+- TLS termination with automatic certificate management
+- JWT authentication for access control
+- Rate limiting to prevent abuse
+- IP filtering for network-level restrictions
+- Centralized access logging and monitoring
+
+### Architecture
+
+```
+┌─────────────┐     ┌─────────────────┐     ┌─────────────┐
+│   Browser   │────▶│  NovaEdge Proxy │────▶│   Web UI    │
+│             │     │  (with policies)│     │  (internal) │
+└─────────────┘     └─────────────────┘     └─────────────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │  JWT/Auth   │
+                    │  Provider   │
+                    └─────────────┘
+```
+
+### Standalone Mode Configuration
+
+Create a configuration file for protecting the web UI:
+
+```yaml
+# /etc/novaedge/management-config.yaml
+version: "1.0"
+
+global:
+  logLevel: info
+  metricsPort: 9091
+  healthPort: 8081
+
+listeners:
+  - name: https-management
+    port: 443
+    protocol: HTTPS
+    hostnames:
+      - "dashboard.example.com"
+    tls:
+      mode: TERMINATE
+      certFile: /etc/novaedge/certs/dashboard.crt
+      keyFile: /etc/novaedge/certs/dashboard.key
+
+routes:
+  - name: webui-route
+    match:
+      hostnames:
+        - dashboard.example.com
+      path:
+        type: PathPrefix
+        value: /
+    backends:
+      - name: webui-backend
+        weight: 100
+    policies:
+      - jwt-auth
+      - rate-limit-ui
+      - ip-whitelist
+
+backends:
+  - name: webui-backend
+    endpoints:
+      - address: 127.0.0.1:9080
+        weight: 1
+    lbPolicy: RoundRobin
+    healthCheck:
+      protocol: HTTP
+      path: /
+      interval: 10s
+      timeout: 2s
+
+policies:
+  # JWT Authentication - require valid token for access
+  - name: jwt-auth
+    type: JWT
+    jwt:
+      issuer: "https://auth.example.com"
+      audience: "novaedge-dashboard"
+      jwksUri: "https://auth.example.com/.well-known/jwks.json"
+      # Optional: require specific claims
+      requiredClaims:
+        role: admin
+
+  # Rate limiting - prevent brute force attacks
+  - name: rate-limit-ui
+    type: RateLimit
+    rateLimit:
+      requestsPerSecond: 30
+      burstSize: 50
+      key: client_ip
+
+  # IP whitelist - restrict to internal networks
+  - name: ip-whitelist
+    type: IPFilter
+    ipFilter:
+      allowList:
+        - 10.0.0.0/8
+        - 192.168.0.0/16
+        - 172.16.0.0/12
+```
+
+### Starting the Protected Setup
+
+1. **Start the web UI on localhost only:**
+
+```bash
+# Web UI listens only on localhost, not externally accessible
+novactl web --address 127.0.0.1:9080 --mode standalone \
+  --standalone-config /etc/novaedge/app-config.yaml
+```
+
+2. **Start NovaEdge agent with the management configuration:**
+
+```bash
+# NovaEdge proxy handles external traffic with authentication
+novaedge-standalone --config /etc/novaedge/management-config.yaml
+```
+
+### Kubernetes Mode Configuration
+
+For Kubernetes deployments, create CRD resources to protect the web UI:
+
+```yaml
+# management-gateway.yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: management-gateway
+  namespace: novaedge-system
+spec:
+  vipRef: management-vip
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostnames:
+        - "dashboard.example.com"
+      tls:
+        mode: TERMINATE
+        certificateRefs:
+          - name: dashboard-tls-secret
+            namespace: novaedge-system
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: webui-route
+  namespace: novaedge-system
+spec:
+  gatewayRef:
+    name: management-gateway
+  hostnames:
+    - dashboard.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRef:
+        name: webui-backend
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: webui-backend
+  namespace: novaedge-system
+spec:
+  serviceRef:
+    name: novaedge-webui
+    port: 9080
+  lbPolicy: RoundRobin
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: webui-jwt-auth
+  namespace: novaedge-system
+spec:
+  targetRef:
+    kind: ProxyRoute
+    name: webui-route
+  jwt:
+    issuer: "https://auth.example.com"
+    audience: "novaedge-dashboard"
+    jwksUri: "https://auth.example.com/.well-known/jwks.json"
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: webui-rate-limit
+  namespace: novaedge-system
+spec:
+  targetRef:
+    kind: ProxyRoute
+    name: webui-route
+  rateLimit:
+    requestsPerSecond: 30
+    burstSize: 50
+    key: client_ip
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: webui-ip-filter
+  namespace: novaedge-system
+spec:
+  targetRef:
+    kind: ProxyRoute
+    name: webui-route
+  ipFilter:
+    allowList:
+      - 10.0.0.0/8
+      - 192.168.0.0/16
+```
+
+Apply the configuration:
+
+```bash
+kubectl apply -f management-gateway.yaml
+```
+
+### Security Best Practices
+
+| Practice | Description |
+|----------|-------------|
+| **Bind to localhost** | Run web UI on `127.0.0.1` only, never expose directly |
+| **Use TLS** | Always terminate TLS at the proxy layer |
+| **Require authentication** | Use JWT or other authentication mechanisms |
+| **Restrict IP ranges** | Allow only trusted networks (VPN, internal) |
+| **Rate limit** | Prevent brute force and DoS attacks |
+| **Use read-only mode** | For monitoring-only dashboards |
+| **Separate credentials** | Use different auth for web UI vs API access |
+| **Audit logging** | Enable access logs for security monitoring |
+| **Regular rotation** | Rotate TLS certificates and JWT signing keys |
+
+### Example: OAuth2/OIDC Integration
+
+For enterprise deployments, integrate with your identity provider:
+
+```yaml
+policies:
+  - name: oidc-auth
+    type: JWT
+    jwt:
+      # Okta example
+      issuer: "https://your-org.okta.com/oauth2/default"
+      audience: "novaedge-dashboard"
+      jwksUri: "https://your-org.okta.com/oauth2/default/v1/keys"
+      requiredClaims:
+        groups: novaedge-admins
+
+      # Google example
+      # issuer: "https://accounts.google.com"
+      # audience: "your-client-id.apps.googleusercontent.com"
+      # jwksUri: "https://www.googleapis.com/oauth2/v3/certs"
+
+      # Azure AD example
+      # issuer: "https://login.microsoftonline.com/{tenant-id}/v2.0"
+      # audience: "your-application-id"
+      # jwksUri: "https://login.microsoftonline.com/{tenant-id}/discovery/v2.0/keys"
+```
+
+### Network Segmentation
+
+For maximum security, deploy the web UI in a separate network segment:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    DMZ / Public                          │
+│  ┌─────────────────┐                                    │
+│  │  NovaEdge Proxy │◄──── Internet Traffic              │
+│  │  (TLS + Auth)   │                                    │
+│  └────────┬────────┘                                    │
+└───────────┼─────────────────────────────────────────────┘
+            │ Internal Only
+┌───────────┼─────────────────────────────────────────────┐
+│           ▼         Management Network                   │
+│  ┌─────────────────┐    ┌─────────────────┐             │
+│  │    Web UI       │    │   Prometheus    │             │
+│  │  (localhost)    │    │    (metrics)    │             │
+│  └─────────────────┘    └─────────────────┘             │
+└─────────────────────────────────────────────────────────┘
+```
 
 ## Troubleshooting
 
