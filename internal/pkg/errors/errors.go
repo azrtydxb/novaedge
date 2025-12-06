@@ -64,10 +64,10 @@ import (
 // Standard error variables for common error conditions
 var (
 	// Configuration errors
-	ErrInvalidConfig      = errors.New("invalid configuration")
-	ErrMissingConfig      = errors.New("missing required configuration")
-	ErrConfigParse        = errors.New("failed to parse configuration")
-	ErrConfigValidation   = errors.New("configuration validation failed")
+	ErrInvalidConfig    = errors.New("invalid configuration")
+	ErrMissingConfig    = errors.New("missing required configuration")
+	ErrConfigParse      = errors.New("failed to parse configuration")
+	ErrConfigValidation = errors.New("configuration validation failed")
 
 	// Network errors
 	ErrConnectionFailed   = errors.New("connection failed")
@@ -83,25 +83,25 @@ var (
 	ErrInvalidCipherSuite = errors.New("invalid cipher suite")
 
 	// Validation errors
-	ErrValidationFailed   = errors.New("validation failed")
-	ErrInvalidInput       = errors.New("invalid input")
-	ErrInvalidFormat      = errors.New("invalid format")
-	ErrMissingField       = errors.New("missing required field")
+	ErrValidationFailed = errors.New("validation failed")
+	ErrInvalidInput     = errors.New("invalid input")
+	ErrInvalidFormat    = errors.New("invalid format")
+	ErrMissingField     = errors.New("missing required field")
 
 	// Runtime errors
-	ErrNotFound           = errors.New("resource not found")
-	ErrAlreadyExists      = errors.New("resource already exists")
-	ErrTimeout            = errors.New("operation timeout")
-	ErrCancelled          = errors.New("operation cancelled")
+	ErrNotFound      = errors.New("resource not found")
+	ErrAlreadyExists = errors.New("resource already exists")
+	ErrTimeout       = errors.New("operation timeout")
+	ErrCancelled     = errors.New("operation cancelled")
 )
 
 // NetworkError represents network-related errors
 type NetworkError struct {
-	Op      string            // Operation that failed (e.g., "dial", "connect", "read")
-	Host    string            // Host or address
-	Port    int32             // Port number
-	Message string            // Error message
-	Err     error             // Underlying error
+	Op      string                 // Operation that failed (e.g., "dial", "connect", "read")
+	Host    string                 // Host or address
+	Port    int32                  // Port number
+	Message string                 // Error message
+	Err     error                  // Underlying error
 	Fields  map[string]interface{} // Additional structured context
 }
 
@@ -162,10 +162,10 @@ func NewNetworkError(message string) *NetworkError {
 
 // ConfigError represents configuration-related errors
 type ConfigError struct {
-	Field   string            // Configuration field that caused error
-	Value   interface{}       // Invalid value
-	Message string            // Error message
-	Err     error             // Underlying error
+	Field   string                 // Configuration field that caused error
+	Value   interface{}            // Invalid value
+	Message string                 // Error message
+	Err     error                  // Underlying error
 	Fields  map[string]interface{} // Additional structured context
 }
 
@@ -222,11 +222,11 @@ func NewConfigError(message string) *ConfigError {
 
 // ValidationError represents validation-related errors
 type ValidationError struct {
-	Field    string            // Field that failed validation
-	Value    interface{}       // Invalid value
-	Rule     string            // Validation rule that failed
-	Message  string            // Error message
-	Err      error             // Underlying error
+	Field    string                 // Field that failed validation
+	Value    interface{}            // Invalid value
+	Rule     string                 // Validation rule that failed
+	Message  string                 // Error message
+	Err      error                  // Underlying error
 	Fields   map[string]interface{} // Additional structured context
 	Children []*ValidationError     // Nested validation errors
 }
@@ -304,11 +304,11 @@ func NewValidationError(message string) *ValidationError {
 
 // TLSError represents TLS-related errors
 type TLSError struct {
-	Op       string            // Operation that failed (e.g., "handshake", "verify")
-	Host     string            // Host or SNI name
-	Message  string            // Error message
-	Err      error             // Underlying error
-	Fields   map[string]interface{} // Additional structured context
+	Op      string                 // Operation that failed (e.g., "handshake", "verify")
+	Host    string                 // Host or SNI name
+	Message string                 // Error message
+	Err     error                  // Underlying error
+	Fields  map[string]interface{} // Additional structured context
 }
 
 func (e *TLSError) Error() string {

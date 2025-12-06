@@ -32,9 +32,9 @@ func TestProxyVIPL2ARPMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
-	// Create nodes
+	// Create nodes with matching labels
 	nodes := []*corev1.Node{
 		createNode("node-1"),
 		createNode("node-2"),
@@ -42,7 +42,8 @@ func TestProxyVIPL2ARPMode(t *testing.T) {
 	}
 
 	for _, node := range nodes {
-		if err := k8sClient.Create(ctx, node); err != nil {
+		node.Labels = map[string]string{"node-type": "load-balancer"}
+		if err := env.client.Create(ctx, node); err != nil {
 			t.Fatalf("failed to create Node: %v", err)
 		}
 	}
@@ -65,22 +66,17 @@ func TestProxyVIPL2ARPMode(t *testing.T) {
 		},
 	}
 
-	// Create nodes with matching labels
-	for i, node := range nodes {
-		node.Labels = map[string]string{"node-type": "load-balancer"}
-		if err := k8sClient.Update(ctx, node); err != nil {
-			t.Fatalf("failed to update Node %d: %v", i, err)
-		}
-	}
-
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedVIP := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP); err != nil {
@@ -104,15 +100,20 @@ func TestProxyVIPL2ARPMode(t *testing.T) {
 	if !activeNodeValid {
 		t.Errorf("active node %s is not one of the candidate nodes", updatedVIP.Status.ActiveNode)
 	}
+
+	// In L2ARP mode, the controller selects alphabetically first node
+	if updatedVIP.Status.ActiveNode != "node-1" {
+		t.Errorf("expected node-1 (alphabetically first), got %s", updatedVIP.Status.ActiveNode)
+	}
 }
 
 func TestProxyVIPBGPMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
-	// Create nodes
+	// Create nodes with matching labels
 	nodes := []*corev1.Node{
 		createNode("node-1"),
 		createNode("node-2"),
@@ -121,7 +122,7 @@ func TestProxyVIPBGPMode(t *testing.T) {
 
 	for _, node := range nodes {
 		node.Labels = map[string]string{"node-type": "load-balancer"}
-		if err := k8sClient.Create(ctx, node); err != nil {
+		if err := env.client.Create(ctx, node); err != nil {
 			t.Fatalf("failed to create Node: %v", err)
 		}
 	}
@@ -143,14 +144,17 @@ func TestProxyVIPBGPMode(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedVIP := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP); err != nil {
@@ -182,9 +186,9 @@ func TestProxyVIPOSPFMode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
-	// Create nodes
+	// Create nodes with matching labels
 	nodes := []*corev1.Node{
 		createNode("node-1"),
 		createNode("node-2"),
@@ -192,7 +196,7 @@ func TestProxyVIPOSPFMode(t *testing.T) {
 
 	for _, node := range nodes {
 		node.Labels = map[string]string{"node-type": "load-balancer"}
-		if err := k8sClient.Create(ctx, node); err != nil {
+		if err := env.client.Create(ctx, node); err != nil {
 			t.Fatalf("failed to create Node: %v", err)
 		}
 	}
@@ -214,14 +218,17 @@ func TestProxyVIPOSPFMode(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedVIP := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP); err != nil {
@@ -238,7 +245,7 @@ func TestProxyVIPNodeSelection(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	// Create nodes with different labels
 	node1 := createNode("lb-node-1")
@@ -259,15 +266,15 @@ func TestProxyVIPNodeSelection(t *testing.T) {
 		"region":    "us-east",
 	}
 
-	if err := k8sClient.Create(ctx, node1); err != nil {
+	if err := env.client.Create(ctx, node1); err != nil {
 		t.Fatalf("failed to create Node 1: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, node2); err != nil {
+	if err := env.client.Create(ctx, node2); err != nil {
 		t.Fatalf("failed to create Node 2: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, node3); err != nil {
+	if err := env.client.Create(ctx, node3); err != nil {
 		t.Fatalf("failed to create Node 3: %v", err)
 	}
 
@@ -288,14 +295,17 @@ func TestProxyVIPNodeSelection(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedVIP := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP); err != nil {
@@ -303,6 +313,7 @@ func TestProxyVIPNodeSelection(t *testing.T) {
 	}
 
 	// Only load-balancer nodes should be selected (node1 and node3)
+	// lb-node-1 is alphabetically first
 	if updatedVIP.Status.ActiveNode != "lb-node-1" && updatedVIP.Status.ActiveNode != "lb-node-2" {
 		t.Errorf("active node should be one of the load-balancer nodes, got %s", updatedVIP.Status.ActiveNode)
 	}
@@ -312,13 +323,13 @@ func TestProxyVIPNoMatchingNodes(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	// Create nodes without matching labels
 	node := createNode("compute-node")
 	node.Labels = map[string]string{"node-type": "compute"}
 
-	if err := k8sClient.Create(ctx, node); err != nil {
+	if err := env.client.Create(ctx, node); err != nil {
 		t.Fatalf("failed to create Node: %v", err)
 	}
 
@@ -339,14 +350,17 @@ func TestProxyVIPNoMatchingNodes(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedVIP := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP); err != nil {
@@ -363,12 +377,12 @@ func TestProxyVIPMultiplePorts(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	node := createNode("lb-node")
 	node.Labels = map[string]string{"node-type": "load-balancer"}
 
-	if err := k8sClient.Create(ctx, node); err != nil {
+	if err := env.client.Create(ctx, node); err != nil {
 		t.Fatalf("failed to create Node: %v", err)
 	}
 
@@ -389,14 +403,17 @@ func TestProxyVIPMultiplePorts(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedVIP := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP); err != nil {
@@ -416,20 +433,20 @@ func TestProxyVIPFailover(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
-	// Create initial active node
+	// Create initial nodes
 	activeNode := createNode("lb-node-1")
 	activeNode.Labels = map[string]string{"node-type": "load-balancer"}
 
 	backupNode := createNode("lb-node-2")
 	backupNode.Labels = map[string]string{"node-type": "load-balancer"}
 
-	if err := k8sClient.Create(ctx, activeNode); err != nil {
+	if err := env.client.Create(ctx, activeNode); err != nil {
 		t.Fatalf("failed to create active node: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, backupNode); err != nil {
+	if err := env.client.Create(ctx, backupNode); err != nil {
 		t.Fatalf("failed to create backup node: %v", err)
 	}
 
@@ -449,15 +466,18 @@ func TestProxyVIPFailover(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	// Verify active node is assigned
 	updatedVIP1 := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP1); err != nil {
@@ -469,27 +489,38 @@ func TestProxyVIPFailover(t *testing.T) {
 		t.Fatal("expected active node to be assigned")
 	}
 
-	// Mark active node as unschedulable (simulating failure)
-	activeNode.Spec.Unschedulable = true
-	if err := k8sClient.Update(ctx, activeNode); err != nil {
-		t.Fatalf("failed to update active node: %v", err)
+	// lb-node-1 should be elected (alphabetically first)
+	if originalActiveNode != "lb-node-1" {
+		t.Errorf("expected lb-node-1 as initial active node, got %s", originalActiveNode)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Simulate failover by marking active node as not ready
+	activeNode.Status.Conditions = []corev1.NodeCondition{
+		{
+			Type:   corev1.NodeReady,
+			Status: corev1.ConditionFalse,
+		},
+	}
+	if err := env.client.Status().Update(ctx, activeNode); err != nil {
+		t.Fatalf("failed to update active node status: %v", err)
+	}
 
-	// After update, a different node should be elected
+	// Trigger re-reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed after node failure: %v", err)
+	}
+
+	// After failover, lb-node-2 should be active
 	updatedVIP2 := &novaedgev1alpha1.ProxyVIP{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, updatedVIP2); err != nil {
 		t.Fatalf("failed to get VIP after failover: %v", err)
 	}
 
-	// In a real scenario, failover would be handled by the controller
-	// This test just verifies the VIP object can be updated
-	if updatedVIP2.Status.ActiveNode == "" {
-		t.Error("expected active node to be assigned after failover")
+	if updatedVIP2.Status.ActiveNode != "lb-node-2" {
+		t.Errorf("expected lb-node-2 after failover, got %s", updatedVIP2.Status.ActiveNode)
 	}
 }
 
@@ -497,12 +528,12 @@ func TestProxyVIPDeletion(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	node := createNode("lb-node")
 	node.Labels = map[string]string{"node-type": "load-balancer"}
 
-	if err := k8sClient.Create(ctx, node); err != nil {
+	if err := env.client.Create(ctx, node); err != nil {
 		t.Fatalf("failed to create Node: %v", err)
 	}
 
@@ -522,24 +553,28 @@ func TestProxyVIPDeletion(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, vip); err != nil {
+	if err := env.client.Create(ctx, vip); err != nil {
 		t.Fatalf("failed to create VIP: %v", err)
 	}
 
-	if err := k8sClient.Delete(ctx, vip); err != nil {
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	if err := env.client.Delete(ctx, vip); err != nil {
 		t.Fatalf("failed to delete VIP: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-
+	// Verify VIP is deleted (or marked for deletion)
 	deletedVIP := &novaedgev1alpha1.ProxyVIP{}
-	err := k8sClient.Get(ctx, types.NamespacedName{
+	err := env.client.Get(ctx, types.NamespacedName{
 		Name:      vip.Name,
 		Namespace: vip.Namespace,
 	}, deletedVIP)
 
 	if err == nil && deletedVIP.DeletionTimestamp == nil {
-		t.Error("expected VIP to be deleted")
+		t.Error("expected VIP to be deleted or marked for deletion")
 	}
 }
 

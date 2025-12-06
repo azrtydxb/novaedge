@@ -17,8 +17,11 @@ limitations under the License.
 package controller
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -39,19 +42,78 @@ const (
 	// AnnotationVIPRef specifies which VIP to use
 	AnnotationVIPRef = "novaedge.io/vip-ref"
 
+	// AnnotationSSLRedirect forces HTTPS redirect (default: true when TLS is configured)
+	AnnotationSSLRedirect = "novaedge.io/ssl-redirect"
+	// AnnotationForceSSLRedirect forces HTTPS redirect even without TLS configured
+	AnnotationForceSSLRedirect = "novaedge.io/force-ssl-redirect"
+
+	// AnnotationProxyConnectTimeout sets the backend connection timeout
+	AnnotationProxyConnectTimeout = "novaedge.io/proxy-connect-timeout"
+	// AnnotationProxyReadTimeout sets the backend read timeout
+	AnnotationProxyReadTimeout = "novaedge.io/proxy-read-timeout"
+	// AnnotationProxySendTimeout sets the backend send timeout
+	AnnotationProxySendTimeout = "novaedge.io/proxy-send-timeout"
+
+	// AnnotationProxyBodySize sets the maximum allowed request body size
+	AnnotationProxyBodySize = "novaedge.io/proxy-body-size"
+
+	// AnnotationWhitelistSourceRange restricts access to specified IP ranges
+	AnnotationWhitelistSourceRange = "novaedge.io/whitelist-source-range"
+
+	// AnnotationBackendProtocol specifies backend protocol (HTTP, HTTPS, gRPC, gRPCS)
+	AnnotationBackendProtocol = "novaedge.io/backend-protocol"
+
+	// AnnotationSessionAffinity enables session affinity (cookie-based)
+	AnnotationSessionAffinity = "novaedge.io/session-affinity"
+	// AnnotationSessionAffinityCookieName sets the session affinity cookie name
+	AnnotationSessionAffinityCookieName = "novaedge.io/session-affinity-cookie-name"
+	// AnnotationSessionAffinityCookieTTL sets the session affinity cookie TTL
+	AnnotationSessionAffinityCookieTTL = "novaedge.io/session-affinity-cookie-ttl"
+
+	// AnnotationUpstreamHashBy specifies the key for consistent hashing
+	AnnotationUpstreamHashBy = "novaedge.io/upstream-hash-by"
+
+	// AnnotationRequestHeaders adds request headers (JSON map)
+	AnnotationRequestHeaders = "novaedge.io/request-headers"
+	// AnnotationResponseHeaders adds response headers (JSON map)
+	AnnotationResponseHeaders = "novaedge.io/response-headers"
+	// AnnotationRemoveRequestHeaders removes request headers (comma-separated)
+	AnnotationRemoveRequestHeaders = "novaedge.io/remove-request-headers"
+	// AnnotationRemoveResponseHeaders removes response headers (comma-separated)
+	AnnotationRemoveResponseHeaders = "novaedge.io/remove-response-headers"
+
+	// AnnotationCanaryWeight specifies traffic weight for canary deployments (0-100)
+	AnnotationCanaryWeight = "novaedge.io/canary-weight"
+	// AnnotationCanaryHeader specifies header-based canary routing
+	AnnotationCanaryHeader = "novaedge.io/canary-header"
+	// AnnotationCanaryHeaderValue specifies the header value for canary routing
+	AnnotationCanaryHeaderValue = "novaedge.io/canary-header-value"
+
 	// Default VIP reference if not specified
 	DefaultVIPRef = "default-vip"
 )
 
+// ServicePortResolver resolves service port names to port numbers
+type ServicePortResolver func(namespace, serviceName, portName string) (int32, error)
+
 // IngressTranslator translates Kubernetes Ingress resources to NovaEdge CRDs
 type IngressTranslator struct {
-	namespace string
+	namespace           string
+	servicePortResolver ServicePortResolver
 }
 
 // NewIngressTranslator creates a new IngressTranslator
 func NewIngressTranslator(namespace string) *IngressTranslator {
 	return &IngressTranslator{
 		namespace: namespace,
+	}
+}
+
+// NewIngressTranslatorWithResolver creates a new IngressTranslator with a service port resolver
+func NewIngressTranslatorWithResolver(namespace string, resolver ServicePortResolver) *IngressTranslator {
+	return &IngressTranslator{
+		namespace:           namespace,
+		servicePortResolver: resolver,
 	}
 }
 
@@ -147,18 +209,28 @@ func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) (*no
 		hostnames = append(hostnames, host)
 	}
 
+	// Get common listener settings from annotations
+	bodySize := t.getProxyBodySize(ingress)
+	allowedRanges := t.getWhitelistSourceRanges(ingress)
+	sslRedirect := t.shouldSSLRedirect(ingress)
+
 	// Create HTTP listener (port 80)
 	httpListener := novaedgev1alpha1.Listener{
-		Name:      "http",
-		Port:      80,
-		Protocol:  novaedgev1alpha1.ProtocolTypeHTTP,
-		Hostnames: hostnames,
+		Name:                "http",
+		Port:                80,
+		Protocol:            novaedgev1alpha1.ProtocolTypeHTTP,
+		Hostnames:           hostnames,
+		SSLRedirect:         sslRedirect,
+		MaxRequestBodySize:  bodySize,
+		AllowedSourceRanges: allowedRanges,
 	}
 	gateway.Spec.Listeners = append(gateway.Spec.Listeners, httpListener)
 
 	// Create HTTPS listener (port 443) if TLS is configured
 	if len(ingress.Spec.TLS) > 0 {
 		httpsListener := t.createHTTPSListener(ingress)
+		httpsListener.MaxRequestBodySize = bodySize
+		httpsListener.AllowedSourceRanges = allowedRanges
 		gateway.Spec.Listeners = append(gateway.Spec.Listeners, httpsListener)
 	}
 
@@ -271,12 +343,20 @@ func (t *IngressTranslator) translateRoute(ingress *networkingv1.Ingress, rule n
 
 // translateRouteRule creates an HTTPRouteRule from an Ingress path
 func (t *IngressTranslator) translateRouteRule(ingress *networkingv1.Ingress, path networkingv1.HTTPIngressPath, ruleIdx, pathIdx int) novaedgev1alpha1.HTTPRouteRule {
+	// Set canary weight if specified
+	weight := t.getCanaryWeight(ingress)
+	var weightPtr *int32
+	if weight > 0 {
+		weightPtr = &weight
+	}
+
 	rule := novaedgev1alpha1.HTTPRouteRule{
 		Matches: []novaedgev1alpha1.HTTPRouteMatch{},
 		Filters: []novaedgev1alpha1.HTTPRouteFilter{},
 		BackendRefs: []novaedgev1alpha1.BackendRef{
 			{
-				Name: t.generateBackendName(ingress, ruleIdx, pathIdx),
+				Name:   t.generateBackendName(ingress, ruleIdx, pathIdx),
+				Weight: weightPtr,
 			},
 		},
 	}
@@ -284,9 +364,22 @@ func (t *IngressTranslator) translateRouteRule(ingress *networkingv1.Ingress, pa
 	// Convert path match type
 	pathMatch := t.convertPathMatch(path)
 	if pathMatch != nil {
-		rule.Matches = append(rule.Matches, novaedgev1alpha1.HTTPRouteMatch{
+		match := novaedgev1alpha1.HTTPRouteMatch{
 			Path: pathMatch,
-		})
+		}
+
+		// Add canary header match if specified
+		canaryHeader, canaryValue := t.getCanaryHeader(ingress)
+		if canaryHeader != "" {
+			match.Headers = []novaedgev1alpha1.HTTPHeaderMatch{
+				{
+					Name:  canaryHeader,
+					Value: canaryValue,
+				},
+			}
+		}
+
+		rule.Matches = append(rule.Matches, match)
 	}
 
 	// Add rewrite filter if annotation present
@@ -294,6 +387,31 @@ func (t *IngressTranslator) translateRouteRule(ingress *networkingv1.Ingress, pa
 		rule.Filters = append(rule.Filters, novaedgev1alpha1.HTTPRouteFilter{
 			Type:        novaedgev1alpha1.HTTPRouteFilterURLRewrite,
 			RewritePath: &rewriteTarget,
+		})
+	}
+
+	// Add request header filters
+	requestHeaders := t.getRequestHeaders(ingress)
+	if len(requestHeaders) > 0 {
+		addHeaders := make([]novaedgev1alpha1.HTTPHeader, 0, len(requestHeaders))
+		for name, value := range requestHeaders {
+			addHeaders = append(addHeaders, novaedgev1alpha1.HTTPHeader{
+				Name:  name,
+				Value: value,
+			})
+		}
+		rule.Filters = append(rule.Filters, novaedgev1alpha1.HTTPRouteFilter{
+			Type: novaedgev1alpha1.HTTPRouteFilterAddHeader,
+			Add:  addHeaders,
+		})
+	}
+
+	// Add remove request header filters
+	removeHeaders := t.getRemoveRequestHeaders(ingress)
+	if len(removeHeaders) > 0 {
+		rule.Filters = append(rule.Filters, novaedgev1alpha1.HTTPRouteFilter{
+			Type:   novaedgev1alpha1.HTTPRouteFilterRemoveHeader,
+			Remove: removeHeaders,
 		})
 	}
 
@@ -351,20 +469,39 @@ func (t *IngressTranslator) translateBackend(ingress *networkingv1.Ingress, back
 		proxyBackend.Spec.ServiceRef = &novaedgev1alpha1.ServiceReference{
 			Name:      backend.Service.Name,
 			Namespace: &namespace,
-			Port:      t.getServicePort(backend.Service),
+			Port:      t.getServicePort(ingress, backend.Service),
 		}
 	}
+
+	// Apply timeout annotations
+	t.applyTimeoutAnnotations(ingress, proxyBackend)
+
+	// Apply backend protocol annotation
+	t.applyBackendProtocol(ingress, proxyBackend)
+
+	// Apply session affinity annotation
+	t.applySessionAffinity(ingress, proxyBackend)
+
+	// Apply upstream hash annotation (for consistent hashing)
+	t.applyUpstreamHash(ingress, proxyBackend)
 
 	return proxyBackend
 }
 
 // getServicePort extracts the port number from IngressServiceBackend
-func (t *IngressTranslator) getServicePort(service *networkingv1.IngressServiceBackend) int32 {
+func (t *IngressTranslator) getServicePort(ingress *networkingv1.Ingress, service *networkingv1.IngressServiceBackend) int32 {
 	if service.Port.Number != 0 {
 		return service.Port.Number
 	}
-	// If port is specified by name, we default to 80
-	// The controller will need to resolve the actual port from the Service
+	// If port is specified by name, try to resolve it
+	if service.Port.Name != "" && t.servicePortResolver != nil {
+		port, err := t.servicePortResolver(ingress.Namespace, service.Name, service.Port.Name)
+		if err == nil {
+			return port
+		}
+		// Fall through to default if resolution fails
+	}
+	// Default to 80 if we can't resolve
 	return 80
 }
 
@@ -434,4 +571,239 @@ func (t *IngressTranslator) copyLabels(ingress *networkingv1.Ingress) map[string
 	labels["novaedge.io/ingress-name"] = ingress.Name
 	labels["novaedge.io/managed-by"] = "ingress-controller"
 	return labels
+}
+
+// applyTimeoutAnnotations applies timeout annotations to the backend
+func (t *IngressTranslator) applyTimeoutAnnotations(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	// Connect timeout
+	if timeout, exists := ingress.Annotations[AnnotationProxyConnectTimeout]; exists {
+		if duration, err := time.ParseDuration(timeout); err == nil {
+			backend.Spec.ConnectTimeout = metav1.Duration{Duration: duration}
+		}
+	}
+
+	// Read timeout (maps to IdleTimeout in our model)
+	if timeout, exists := ingress.Annotations[AnnotationProxyReadTimeout]; exists {
+		if duration, err := time.ParseDuration(timeout); err == nil {
+			backend.Spec.IdleTimeout = metav1.Duration{Duration: duration}
+		}
+	}
+
+	// Send timeout - we don't have a separate field, but can use IdleTimeout
+	// if read timeout wasn't specified
+	if _, hasRead := ingress.Annotations[AnnotationProxyReadTimeout]; !hasRead {
+		if timeout, exists := ingress.Annotations[AnnotationProxySendTimeout]; exists {
+			if duration, err := time.ParseDuration(timeout); err == nil {
+				backend.Spec.IdleTimeout = metav1.Duration{Duration: duration}
+			}
+		}
+	}
+}
+
+// applyBackendProtocol applies backend protocol annotation
+func (t *IngressTranslator) applyBackendProtocol(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	protocol, exists := ingress.Annotations[AnnotationBackendProtocol]
+	if !exists {
+		return
+	}
+
+	switch strings.ToUpper(protocol) {
+	case "HTTPS", "GRPCS":
+		// Enable TLS for backend connections
+		backend.Spec.TLS = &novaedgev1alpha1.BackendTLSConfig{
+			Enabled: true,
+		}
+	case "HTTP", "GRPC":
+		// No TLS needed
+	}
+}
+
+// applySessionAffinity applies session affinity annotations
+func (t *IngressTranslator) applySessionAffinity(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	affinity, exists := ingress.Annotations[AnnotationSessionAffinity]
+	if !exists || strings.ToLower(affinity) != "cookie" {
+		return
+	}
+
+	// When session affinity is enabled, switch to RingHash for consistent hashing
+	// The actual cookie handling is done at the route level
+	backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
+}
+
+// applyUpstreamHash applies upstream hash annotation for consistent hashing
+func (t *IngressTranslator) applyUpstreamHash(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
+	hashBy, exists := ingress.Annotations[AnnotationUpstreamHashBy]
+	if !exists {
+		return
+	}
+
+	// When upstream hash is specified, use appropriate hashing algorithm
+	switch strings.ToLower(hashBy) {
+	case "$request_uri", "$uri", "uri":
+		backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
+	case "$remote_addr", "$binary_remote_addr", "ip":
+		backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
+	case "header", "cookie":
+		backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
+	default:
+		// Use Maglev for other consistent hashing needs
+		backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyMaglev
+	}
+}
+
+// shouldSSLRedirect checks if SSL redirect should be enabled
+func (t *IngressTranslator) shouldSSLRedirect(ingress *networkingv1.Ingress) bool {
+	// Check force-ssl-redirect annotation (always redirects)
+	if forceRedirect, exists := ingress.Annotations[AnnotationForceSSLRedirect]; exists {
+		return strings.ToLower(forceRedirect) == "true"
+	}
+
+	// Check ssl-redirect annotation
+	if sslRedirect, exists := ingress.Annotations[AnnotationSSLRedirect]; exists {
+		return strings.ToLower(sslRedirect) == "true"
+	}
+
+	// Default: redirect if TLS is configured
+	return len(ingress.Spec.TLS) > 0
+}
+
+// getWhitelistSourceRanges parses the whitelist source range annotation
+func (t *IngressTranslator) getWhitelistSourceRanges(ingress *networkingv1.Ingress) []string {
+	ranges, exists := ingress.Annotations[AnnotationWhitelistSourceRange]
+	if !exists || ranges == "" {
+		return nil
+	}
+
+	// Split by comma and trim whitespace
+	parts := strings.Split(ranges, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// getProxyBodySize parses the proxy body size annotation
+func (t *IngressTranslator) getProxyBodySize(ingress *networkingv1.Ingress) int64 {
+	sizeStr, exists := ingress.Annotations[AnnotationProxyBodySize]
+	if !exists || sizeStr == "" {
+		return 0 // 0 means unlimited
+	}
+
+	// Parse size with unit suffix (e.g., "10m", "1g", "500k")
+	sizeStr = strings.ToLower(strings.TrimSpace(sizeStr))
+	multiplier := int64(1)
+
+	if strings.HasSuffix(sizeStr, "k") {
+		multiplier = 1024
+		sizeStr = strings.TrimSuffix(sizeStr, "k")
+	} else if strings.HasSuffix(sizeStr, "m") {
+		multiplier = 1024 * 1024
+		sizeStr = strings.TrimSuffix(sizeStr, "m")
+	} else if strings.HasSuffix(sizeStr, "g") {
+		multiplier = 1024 * 1024 * 1024
+		sizeStr = strings.TrimSuffix(sizeStr, "g")
+	}
+
+	size, err := strconv.ParseInt(sizeStr, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return size * multiplier
+}
+
+// getRequestHeaders parses request headers annotation (JSON map)
+func (t *IngressTranslator) getRequestHeaders(ingress *networkingv1.Ingress) map[string]string {
+	headersJSON, exists := ingress.Annotations[AnnotationRequestHeaders]
+	if !exists || headersJSON == "" {
+		return nil
+	}
+
+	var headers map[string]string
+	if err := json.Unmarshal([]byte(headersJSON), &headers); err != nil {
+		return nil
+	}
+	return headers
+}
+
+// getResponseHeaders parses response headers annotation (JSON map)
+func (t *IngressTranslator) getResponseHeaders(ingress *networkingv1.Ingress) map[string]string {
+	headersJSON, exists := ingress.Annotations[AnnotationResponseHeaders]
+	if !exists || headersJSON == "" {
+		return nil
+	}
+
+	var headers map[string]string
+	if err := json.Unmarshal([]byte(headersJSON), &headers); err != nil {
+		return nil
+	}
+	return headers
+}
+
+// getRemoveRequestHeaders parses remove request headers annotation (comma-separated)
+func (t *IngressTranslator) getRemoveRequestHeaders(ingress *networkingv1.Ingress) []string {
+	headers, exists := ingress.Annotations[AnnotationRemoveRequestHeaders]
+	if !exists || headers == "" {
+		return nil
+	}
+
+	parts := strings.Split(headers, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// getRemoveResponseHeaders parses remove response headers annotation (comma-separated)
+func (t *IngressTranslator) getRemoveResponseHeaders(ingress *networkingv1.Ingress) []string {
+	headers, exists := ingress.Annotations[AnnotationRemoveResponseHeaders]
+	if !exists || headers == "" {
+		return nil
+	}
+
+	parts := strings.Split(headers, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
+}
+
+// getCanaryWeight parses the canary weight annotation
+func (t *IngressTranslator) getCanaryWeight(ingress *networkingv1.Ingress) int32 {
+	weightStr, exists := ingress.Annotations[AnnotationCanaryWeight]
+	if !exists || weightStr == "" {
+		return 0
+	}
+
+	weight, err := strconv.ParseInt(weightStr, 10, 32)
+	if err != nil || weight < 0 || weight > 100 {
+		return 0
+	}
+	return int32(weight)
+}
+
+// getCanaryHeader returns the canary header configuration
+func (t *IngressTranslator) getCanaryHeader(ingress *networkingv1.Ingress) (string, string) {
+	header, exists := ingress.Annotations[AnnotationCanaryHeader]
+	if !exists || header == "" {
+		return "", ""
+	}
+
+	value := ingress.Annotations[AnnotationCanaryHeaderValue]
+	if value == "" {
+		value = "true" // Default value if not specified
+	}
+
+	return header, value
 }

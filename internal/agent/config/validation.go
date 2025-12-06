@@ -15,10 +15,10 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 	if snapshot == nil || snapshot.ConfigSnapshot == nil {
 		return pkgerrors.NewValidationError("snapshot cannot be nil")
 	}
-	
+
 	if snapshot.Version == "" {
 		return pkgerrors.NewValidationError("version is required").WithField("field", "version")
 	}
-	
+
 	return nil
 }

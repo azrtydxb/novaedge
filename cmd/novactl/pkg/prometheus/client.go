@@ -30,9 +30,9 @@ func NewClient(endpoint string) *Client {
 
 // QueryResult represents a Prometheus query result
 type QueryResult struct {
-	Status string       `json:"status"`
-	Data   QueryData    `json:"data"`
-	Error  string       `json:"error,omitempty"`
+	Status    string    `json:"status"`
+	Data      QueryData `json:"data"`
+	Error     string    `json:"error,omitempty"`
 	ErrorType string    `json:"errorType,omitempty"`
 }
 

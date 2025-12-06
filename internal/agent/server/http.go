@@ -28,7 +28,6 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/router"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 // HTTPServer manages HTTP/HTTPS/HTTP3 listeners and routing

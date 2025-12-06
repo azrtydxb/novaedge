@@ -178,22 +178,26 @@ func TestProxyPolicyReconcile(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			k8sClient := setupTestEnvironment(t)
+			env := setupTestEnv(t)
 
 			if test.targetGateway != nil {
-				if err := k8sClient.Create(ctx, test.targetGateway); err != nil {
+				if err := env.client.Create(ctx, test.targetGateway); err != nil {
 					t.Fatalf("failed to create target gateway: %v", err)
 				}
 			}
 
-			if err := k8sClient.Create(ctx, test.policy); err != nil {
+			if err := env.client.Create(ctx, test.policy); err != nil {
 				t.Fatalf("failed to create policy: %v", err)
 			}
 
-			time.Sleep(500 * time.Millisecond)
+			// Manually trigger reconciliation
+			err := env.reconcileProxyPolicy(ctx, test.policy.Name, test.policy.Namespace)
+			if test.expectError && err == nil {
+				// Error might be recorded in status conditions instead of returned
+			}
 
 			updatedPolicy := &novaedgev1alpha1.ProxyPolicy{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
+			if err := env.client.Get(ctx, types.NamespacedName{
 				Name:      test.policy.Name,
 				Namespace: test.policy.Namespace,
 			}, updatedPolicy); err != nil {
@@ -202,7 +206,7 @@ func TestProxyPolicyReconcile(t *testing.T) {
 
 			readyCondition := meta.FindStatusCondition(updatedPolicy.Status.Conditions, "Ready")
 			if readyCondition == nil {
-				t.Error("expected Ready condition, got nil")
+				t.Fatal("expected Ready condition, got nil")
 			}
 
 			if test.expectReady && readyCondition.Status != metav1.ConditionTrue {
@@ -216,11 +220,11 @@ func TestProxyPolicyReconcile(t *testing.T) {
 	}
 }
 
-func TestProxyPolicyIPList(t *testing.T) {
+func TestProxyPolicyIPAllowList(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
@@ -245,7 +249,7 @@ func TestProxyPolicyIPList(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.ProxyPolicySpec{
-			Type: "IPList",
+			Type: novaedgev1alpha1.PolicyTypeIPAllowList,
 			TargetRef: novaedgev1alpha1.TargetRef{
 				Kind: "ProxyGateway",
 				Name: "test-gateway",
@@ -259,18 +263,21 @@ func TestProxyPolicyIPList(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, gateway); err != nil {
+	if err := env.client.Create(ctx, gateway); err != nil {
 		t.Fatalf("failed to create gateway: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, policy); err != nil {
+	if err := env.client.Create(ctx, policy); err != nil {
 		t.Fatalf("failed to create policy: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyPolicy(ctx, policy.Name, policy.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedPolicy := &novaedgev1alpha1.ProxyPolicy{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      policy.Name,
 		Namespace: policy.Namespace,
 	}, updatedPolicy); err != nil {
@@ -284,14 +291,14 @@ func TestProxyPolicyIPList(t *testing.T) {
 }
 
 func TestProxyPolicyMultipleTypes(t *testing.T) {
-	policyTypes := []string{"JWT", "CORS", "RateLimit", "IPList"}
+	policyTypes := []string{"JWT", "CORS", "RateLimit", "IPAllowList"}
 
 	for _, policyType := range policyTypes {
 		t.Run(policyType, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			k8sClient := setupTestEnvironment(t)
+			env := setupTestEnv(t)
 
 			gateway := &novaedgev1alpha1.ProxyGateway{
 				ObjectMeta: metav1.ObjectMeta{
@@ -338,24 +345,27 @@ func TestProxyPolicyMultipleTypes(t *testing.T) {
 				policy.Spec.RateLimit = &novaedgev1alpha1.RateLimitConfig{
 					RequestsPerSecond: 100,
 				}
-			case "IPList":
+			case "IPAllowList":
 				policy.Spec.IPList = &novaedgev1alpha1.IPListConfig{
 					CIDRs: []string{"10.0.0.0/8"},
 				}
 			}
 
-			if err := k8sClient.Create(ctx, gateway); err != nil {
+			if err := env.client.Create(ctx, gateway); err != nil {
 				t.Fatalf("failed to create gateway: %v", err)
 			}
 
-			if err := k8sClient.Create(ctx, policy); err != nil {
+			if err := env.client.Create(ctx, policy); err != nil {
 				t.Fatalf("failed to create policy: %v", err)
 			}
 
-			time.Sleep(500 * time.Millisecond)
+			// Manually trigger reconciliation
+			if err := env.reconcileProxyPolicy(ctx, policy.Name, policy.Namespace); err != nil {
+				t.Fatalf("reconciliation failed: %v", err)
+			}
 
 			updatedPolicy := &novaedgev1alpha1.ProxyPolicy{}
-			if err := k8sClient.Get(ctx, types.NamespacedName{
+			if err := env.client.Get(ctx, types.NamespacedName{
 				Name:      policy.Name,
 				Namespace: policy.Namespace,
 			}, updatedPolicy); err != nil {
@@ -374,7 +384,7 @@ func TestProxyPolicyTargetingRoute(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	route := &novaedgev1alpha1.ProxyRoute{
 		ObjectMeta: metav1.ObjectMeta{
@@ -401,18 +411,21 @@ func TestProxyPolicyTargetingRoute(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, route); err != nil {
+	if err := env.client.Create(ctx, route); err != nil {
 		t.Fatalf("failed to create route: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, policy); err != nil {
+	if err := env.client.Create(ctx, policy); err != nil {
 		t.Fatalf("failed to create policy: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyPolicy(ctx, policy.Name, policy.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedPolicy := &novaedgev1alpha1.ProxyPolicy{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      policy.Name,
 		Namespace: policy.Namespace,
 	}, updatedPolicy); err != nil {
@@ -429,7 +442,7 @@ func TestProxyPolicyTargetingBackend(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	backend := &novaedgev1alpha1.ProxyBackend{
 		ObjectMeta: metav1.ObjectMeta{
@@ -458,18 +471,21 @@ func TestProxyPolicyTargetingBackend(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, backend); err != nil {
+	if err := env.client.Create(ctx, backend); err != nil {
 		t.Fatalf("failed to create backend: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, policy); err != nil {
+	if err := env.client.Create(ctx, policy); err != nil {
 		t.Fatalf("failed to create policy: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyPolicy(ctx, policy.Name, policy.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
 
 	updatedPolicy := &novaedgev1alpha1.ProxyPolicy{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{
+	if err := env.client.Get(ctx, types.NamespacedName{
 		Name:      policy.Name,
 		Namespace: policy.Namespace,
 	}, updatedPolicy); err != nil {
@@ -486,7 +502,7 @@ func TestProxyPolicyDeletion(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	k8sClient := setupTestEnvironment(t)
+	env := setupTestEnv(t)
 
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
@@ -522,22 +538,25 @@ func TestProxyPolicyDeletion(t *testing.T) {
 		},
 	}
 
-	if err := k8sClient.Create(ctx, gateway); err != nil {
+	if err := env.client.Create(ctx, gateway); err != nil {
 		t.Fatalf("failed to create gateway: %v", err)
 	}
 
-	if err := k8sClient.Create(ctx, policy); err != nil {
+	if err := env.client.Create(ctx, policy); err != nil {
 		t.Fatalf("failed to create policy: %v", err)
 	}
 
-	if err := k8sClient.Delete(ctx, policy); err != nil {
+	// Manually trigger reconciliation
+	if err := env.reconcileProxyPolicy(ctx, policy.Name, policy.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	if err := env.client.Delete(ctx, policy); err != nil {
 		t.Fatalf("failed to delete policy: %v", err)
 	}
 
-	time.Sleep(500 * time.Millisecond)
-
 	deletedPolicy := &novaedgev1alpha1.ProxyPolicy{}
-	err := k8sClient.Get(ctx, types.NamespacedName{
+	err := env.client.Get(ctx, types.NamespacedName{
 		Name:      policy.Name,
 		Namespace: policy.Namespace,
 	}, deletedPolicy)

@@ -109,11 +109,11 @@ type ListenerInfo struct {
 
 // VIPInfo contains VIP information
 type VIPInfo struct {
-	Name      string
-	Address   string
-	Mode      string
-	IsActive  bool
-	Ports     []int32
+	Name     string
+	Address  string
+	Mode     string
+	IsActive bool
+	Ports    []int32
 }
 
 // BackendHealth represents backend health information
