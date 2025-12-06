@@ -24,6 +24,7 @@ theme:
     - navigation.sections
     - navigation.expand
     - navigation.top
+    - navigation.indexes
     - search.suggest
     - search.highlight
     - content.code.copy
@@ -36,7 +37,11 @@ markdown_extensions:
       anchor_linenums: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - admonition
@@ -44,25 +49,41 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+  - attr_list
+  - md_in_html
 
 nav:
   - Home: index.md
   - Getting Started:
     - Quick Start: getting-started/quickstart.md
-    - Installation: getting-started/installation.md
-    - Helm Chart: getting-started/helm.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Components: architecture/components.md
+  - Installation:
+    - Operator (Recommended): installation/operator.md
+    - Kubernetes: installation/kubernetes.md
+    - Helm: installation/helm.md
+    - Standalone: installation/standalone.md
   - User Guide:
-    - Deployment Guide: user-guide/deployment-guide.md
-    - Operator: user-guide/operator.md
-    - Multi-Cluster: user-guide/multi-cluster.md
-    - Web UI: user-guide/web-ui.md
-    - Standalone Mode: user-guide/standalone-mode.md
-    - Gateway API: user-guide/gateway-api.md
-    - HTTP/3 and QUIC: user-guide/http3-guide.md
+    - Routing: user-guide/routing.md
+    - Load Balancing: user-guide/load-balancing.md
+    - VIP Management: user-guide/vip-management.md
+    - Policies: user-guide/policies.md
+    - TLS: user-guide/tls.md
+    - Health Checks: user-guide/health-checks.md
+  - Advanced:
+    - Multi-Cluster: advanced/multi-cluster.md
+    - HTTP/3 & QUIC: advanced/http3-quic.md
+    - Gateway API: advanced/gateway-api.md
+  - Operations:
+    - Observability: operations/observability.md
+    - Web UI: operations/web-ui.md
+    - Troubleshooting: operations/troubleshooting.md
   - Reference:
-    - novactl CLI: reference/novactl-reference.md
     - CRD Reference: reference/crd-reference.md
+    - CLI Reference: reference/cli-reference.md
     - Helm Values: reference/helm-values.md
+  - Examples: examples/index.md
   - Development:
     - Development Guide: development/development-guide.md
     - Contributing: development/contributing.md
