@@ -133,3 +133,91 @@ crds:
 rbac:
   # -- Create RBAC resources
   create: true
+
+# -- Federation configuration for multi-controller deployments
+# This creates a NovaEdgeFederation resource when the operator is deployed
+federation:
+  # -- Enable federation mode
+  enabled: false
+  # -- Federation ID (must be the same across all federated controllers)
+  federationID: ""
+  # -- Local member configuration
+  localMember:
+    # -- Unique name for this controller in the federation
+    name: ""
+    # -- Geographic region
+    region: ""
+    # -- Availability zone
+    zone: ""
+    # -- gRPC endpoint for federation communication
+    endpoint: ""
+  # -- Peer controllers in the federation
+  members: []
+  # Example:
+  # - name: controller-dc2
+  #   endpoint: controller-dc2.novaedge.example.com:9090
+  #   region: us-east
+  #   tls:
+  #     enabled: true
+  #     caSecretRef:
+  #       name: novaedge-federation-ca
+  #     clientCertSecretRef:
+  #       name: novaedge-federation-client-cert
+
+  # -- Synchronization settings
+  sync:
+    # -- How often to sync with peers
+    interval: 5s
+    # -- Timeout for sync operations
+    timeout: 30s
+    # -- Maximum resources per sync batch
+    batchSize: 100
+    # -- Enable compression for sync traffic
+    compression: true
+
+  # -- Conflict resolution settings
+  conflictResolution:
+    # -- Strategy: LastWriterWins, Merge, or Manual
+    strategy: LastWriterWins
+    # -- Enable vector clocks for change ordering
+    vectorClocks: true
+    # -- How long to keep deletion records
+    tombstoneTTL: 24h
+
+  # -- Health check settings for federation members
+  healthCheck:
+    # -- How often to check peer health
+    interval: 10s
+    # -- Timeout for health checks
+    timeout: 5s
+    # -- Number of failures before marking unhealthy
+    failureThreshold: 3
+    # -- Number of successes before marking healthy
+    successThreshold: 1
+
+  # -- Split-brain detection and protection
+  splitBrain:
+    # -- Enable split-brain detection
+    enabled: true
+    # -- How long without peer contact before declaring partition
+    partitionTimeout: 30s
+    # -- Quorum mode: Controllers or AgentAssisted
+    # Controllers: Traditional quorum requiring 3+ controllers
+    # AgentAssisted: Uses agent reachability for quorum (works with 2 controllers)
+    quorumMode: Controllers
+    # -- Require quorum for write operations
+    quorumRequired: false
+    # -- Enable write fencing during confirmed partition
+    fencingEnabled: false
+    # -- Grace period after partition heals
+    healingGracePeriod: 5s
+    # -- Automatically resolve conflicts when partition heals
+    autoResolveOnHeal: true
+    # -- Agent-assisted quorum settings (only for quorumMode: AgentAssisted)
+    agentQuorum:
+      # -- Voting weight of each controller
+      controllerWeight: 10
+      # -- Voting weight of each agent
+      agentWeight: 1
+      # -- Minimum agents required for quorum
+      minAgentsForQuorum: 1

@@ -55,6 +55,21 @@ spec:
               circuitBreaker:
                 description: CircuitBreaker defines circuit breaker settings
                 properties:
+                  baseEjectionTime:
+                    default: 30s
+                    description: BaseEjectionTime is how long a host is ejected for
+                    type: string
+                  consecutiveFailures:
+                    default: 5
+                    description: ConsecutiveFailures is the number of consecutive
+                      failures before opening the circuit
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  interval:
+                    default: 10s
+                    description: Interval is the time window for counting failures
+                    type: string
                   maxConnections:
                     description: MaxConnections is the maximum number of connections
                       to the backend
@@ -162,6 +177,50 @@ spec:
                 - RingHash
                 - Maglev
                 type: string
+              protocol:
+                default: HTTP
+                description: Protocol specifies the backend protocol (HTTP, HTTPS,
+                  gRPC, gRPCS, HTTP2)
+                enum:
+                - HTTP
+                - HTTPS
+                - gRPC
+                - gRPCS
+                - HTTP2
+                type: string
+              retryPolicy:
+                description: RetryPolicy defines retry behavior for failed requests
+                properties:
+                  numRetries:
+                    default: 1
+                    description: NumRetries is the number of retry attempts
+                    format: int32
+                    maximum: 10
+                    minimum: 0
+                    type: integer
+                  perTryTimeout:
+                    default: 2s
+                    description: PerTryTimeout is the timeout for each retry attempt
+                    type: string
+                  retryBackoff:
+                    description: RetryBackoff configures exponential backoff for retries
+                    properties:
+                      baseInterval:
+                        default: 25ms
+                        description: BaseInterval is the initial backoff interval
+                        type: string
+                      maxInterval:
+                        default: 250ms
+                        description: MaxInterval is the maximum backoff interval
+                        type: string
+                    type: object
+                  retryOn:
+                    default: 5xx,gateway-error,connect-failure
+                    description: |-
+                      RetryOn specifies conditions that trigger a retry (comma-separated)
+                      Valid values: 5xx, gateway-error, connect-failure, retriable-4xx, refused-stream, reset
+                    type: string
+                type: object
               serviceRef:
                 description: ServiceRef references a Kubernetes Service
                 properties:
@@ -188,23 +247,72 @@ spec:
                 - name
                 - port
                 type: object
+              sessionAffinity:
+                description: SessionAffinity defines sticky session configuration
+                properties:
+                  cookieName:
+                    default: NOVAEDGE_AFFINITY
+                    description: CookieName is the name of the cookie for cookie-based
+                      affinity
+                    type: string
+                  cookiePath:
+                    default: /
+                    description: CookiePath is the path for the affinity cookie
+                    type: string
+                  cookieTTL:
+                    default: 0s
+                    description: CookieTTL is the TTL for the affinity cookie
+                    type: string
+                  headerName:
+                    description: HeaderName is the header name for header-based affinity
+                    type: string
+                  type:
+                    default: Cookie
+                    description: Type specifies the session affinity type
+                    enum:
+                    - Cookie
+                    - Header
+                    - SourceIP
+                    type: string
+                type: object
               tls:
                 description: TLS enables TLS for connections to this backend
                 properties:
                   caCertSecretRef:
                     description: CACertSecretRef references a Secret containing CA
-                      certificates
+                      certificates for verification
                     maxLength: 253
                     minLength: 1
+                    type: string
+                  clientCertSecretRef:
+                    description: |-
+                      ClientCertSecretRef references a Secret containing client certificate for mTLS
+                      The Secret should contain tls.crt and tls.key
                     type: string
                   enabled:
                     default: false
                     description: Enabled indicates whether to use TLS
                     type: boolean
                   insecureSkipVerify:
-                    description: InsecureSkipVerify skips certificate validation (not
-                      recommended for production)
+                    description: 'InsecureSkipVerify is deprecated, use Mode: skip-verify
+                      instead'
                     type: boolean
+                  mode:
+                    default: verify
+                    description: Mode specifies the TLS verification mode
+                    enum:
+                    - verify
+                    - skip-verify
+                    - mtls
+                    type: string
+                  selfSigned:
+                    description: SelfSigned generates a self-signed client certificate
+                      for mTLS
+                    type: boolean
+                  serverName:
+                    description: ServerName overrides the server name for SNI and
+                      certificate verification
+                    type: string
                 required:
                 - enabled
                 type: object

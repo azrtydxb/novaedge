@@ -50,6 +50,62 @@ spec:
           spec:
             description: ProxyGatewaySpec defines the desired state of ProxyGateway
             properties:
+              accessLog:
+                description: AccessLog defines access logging configuration
+                properties:
+                  enabled:
+                    default: true
+                    description: Enabled enables access logging
+                    type: boolean
+                  excludePaths:
+                    description: ExcludePaths excludes specified paths from logging
+                      (e.g., health checks)
+                    items:
+                      type: string
+                    type: array
+                  format:
+                    default: json
+                    description: Format specifies the log format (json, common, combined)
+                    enum:
+                    - json
+                    - common
+                    - combined
+                    type: string
+                  includeHeaders:
+                    description: IncludeHeaders includes specified request/response
+                      headers in logs
+                    items:
+                      type: string
+                    type: array
+                type: object
+              customErrorPages:
+                description: CustomErrorPages defines custom error pages
+                items:
+                  description: CustomErrorPage defines a custom error page configuration
+                  properties:
+                    body:
+                      description: Body is the response body to return for these error
+                        codes
+                      type: string
+                    codes:
+                      description: Codes is a list of HTTP status codes this page
+                        applies to
+                      items:
+                        format: int32
+                        type: integer
+                      minItems: 1
+                      type: array
+                    contentType:
+                      default: text/html
+                      description: ContentType is the content type of the error response
+                      type: string
+                    path:
+                      description: Path is the path to serve for these error codes
+                      type: string
+                  required:
+                  - codes
+                  type: object
+                type: array
               ingressClassName:
                 description: IngressClassName is the ingress class name for Ingress
                   resource compatibility
@@ -60,12 +116,24 @@ spec:
                 items:
                   description: Listener defines a port and protocol to listen on
                   properties:
+                    allowedSourceRanges:
+                      description: |-
+                        AllowedSourceRanges is a list of CIDR ranges that are allowed to access this listener
+                        If empty, all sources are allowed
+                      items:
+                        type: string
+                      type: array
                     hostnames:
                       description: Hostnames is a list of hostnames this listener
                         accepts (for HTTP/HTTPS/HTTP3)
                       items:
                         type: string
                       type: array
+                    maxRequestBodySize:
+                      description: MaxRequestBodySize is the maximum allowed request
+                        body size in bytes (0 = unlimited)
+                      format: int64
+                      type: integer
                     name:
                       description: Name is a unique name for this listener
                       maxLength: 253
@@ -112,11 +180,65 @@ spec:
                           format: int64
                           type: integer
                       type: object
+                    sslRedirect:
+                      description: SSLRedirect enables automatic redirect from HTTP
+                        to HTTPS
+                      type: boolean
                     tls:
                       description: |-
                         TLS contains TLS configuration (required for HTTPS/TLS/HTTP3 protocols)
                         Use TLSCertificates for SNI support with multiple certificates
                       properties:
+                        acme:
+                          description: |-
+                            ACME configures automatic certificate provisioning via ACME
+                            This creates a ProxyCertificate automatically
+                          properties:
+                            challengeType:
+                              default: http-01
+                              description: ChallengeType specifies the ACME challenge
+                                type
+                              enum:
+                              - http-01
+                              - dns-01
+                              - tls-alpn-01
+                              type: string
+                            dnsProvider:
+                              description: DNSProvider for DNS-01 challenges (e.g.,
+                                cloudflare, route53)
+                              type: string
+                            email:
+                              description: Email is the email address for ACME registration
+                              type: string
+                            server:
+                              description: 'Server is the ACME server URL (default:
+                                Let''s Encrypt production)'
+                              type: string
+                          required:
+                          - email
+                          type: object
+                        certificateRef:
+                          description: CertificateRef references a ProxyCertificate
+                            resource
+                          properties:
+                            group:
+                              description: Group is the API group of the referenced
+                                object
+                              type: string
+                            kind:
+                              description: Kind is the kind of the referenced object
+                              type: string
+                            name:
+                              description: Name is the name of the referenced object
+                              type: string
+                            namespace:
+                              description: |-
+                                Namespace is the namespace of the referenced object
+                                If not specified, the namespace of the referencing object is used
+                              type: string
+                          required:
+                          - name
+                          type: object
                         cipherSuites:
                           description: CipherSuites is a list of allowed cipher suites
                           items:
@@ -130,8 +252,9 @@ spec:
                           - TLS1.3
                           type: string
                         secretRef:
-                          description: SecretRef references a Kubernetes Secret containing
-                            TLS certificate and key
+                          description: |-
+                            SecretRef references a Kubernetes Secret containing TLS certificate and key
+                            One of SecretRef, CertificateRef, ACME, or SelfSigned must be specified
                           properties:
                             name:
                               description: name is unique within a namespace to reference
@@ -143,13 +266,74 @@ spec:
                               type: string
                           type: object
                           x-kubernetes-map-type: atomic
-                      required:
-                      - secretRef
+                        selfSigned:
+                          description: SelfSigned generates a self-signed certificate
+                          properties:
+                            organization:
+                              description: Organization is the organization name in
+                                the certificate
+                              type: string
+                            validity:
+                              default: 8760h
+                              description: 'Validity is the certificate validity duration
+                                (default: 8760h = 1 year)'
+                              type: string
+                          type: object
                       type: object
                     tlsCertificates:
                       additionalProperties:
                         description: TLSConfig defines TLS configuration for a listener
                         properties:
+                          acme:
+                            description: |-
+                              ACME configures automatic certificate provisioning via ACME
+                              This creates a ProxyCertificate automatically
+                            properties:
+                              challengeType:
+                                default: http-01
+                                description: ChallengeType specifies the ACME challenge
+                                  type
+                                enum:
+                                - http-01
+                                - dns-01
+                                - tls-alpn-01
+                                type: string
+                              dnsProvider:
+                                description: DNSProvider for DNS-01 challenges (e.g.,
+                                  cloudflare, route53)
+                                type: string
+                              email:
+                                description: Email is the email address for ACME registration
+                                type: string
+                              server:
+                                description: 'Server is the ACME server URL (default:
+                                  Let''s Encrypt production)'
+                                type: string
+                            required:
+                            - email
+                            type: object
+                          certificateRef:
+                            description: CertificateRef references a ProxyCertificate
+                              resource
+                            properties:
+                              group:
+                                description: Group is the API group of the referenced
+                                  object
+                                type: string
+                              kind:
+                                description: Kind is the kind of the referenced object
+                                type: string
+                              name:
+                                description: Name is the name of the referenced object
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace is the namespace of the referenced object
+                                  If not specified, the namespace of the referencing object is used
+                                type: string
+                            required:
+                            - name
+                            type: object
                           cipherSuites:
                             description: CipherSuites is a list of allowed cipher
                               suites
@@ -164,8 +348,9 @@ spec:
                             - TLS1.3
                             type: string
                           secretRef:
-                            description: SecretRef references a Kubernetes Secret
-                              containing TLS certificate and key
+                            description: |-
+                              SecretRef references a Kubernetes Secret containing TLS certificate and key
+                              One of SecretRef, CertificateRef, ACME, or SelfSigned must be specified
                             properties:
                               name:
                                 description: name is unique within a namespace to
@@ -177,8 +362,19 @@ spec:
                                 type: string
                             type: object
                             x-kubernetes-map-type: atomic
-                        required:
-                        - secretRef
+                          selfSigned:
+                            description: SelfSigned generates a self-signed certificate
+                            properties:
+                              organization:
+                                description: Organization is the organization name
+                                  in the certificate
+                                type: string
+                              validity:
+                                default: 8760h
+                                description: 'Validity is the certificate validity
+                                  duration (default: 8760h = 1 year)'
+                                type: string
+                            type: object
                         type: object
                       description: |-
                         TLSCertificates provides SNI support with multiple TLS certificates per listener
@@ -192,6 +388,36 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              tracing:
+                description: Tracing defines request tracing configuration
+                properties:
+                  enabled:
+                    default: true
+                    description: Enabled enables request tracing
+                    type: boolean
+                  generateRequestId:
+                    default: true
+                    description: GenerateRequestID generates a request ID if not present
+                    type: boolean
+                  propagateRequestId:
+                    default: true
+                    description: PropagateRequestID propagates the request ID to upstream
+                      backends
+                    type: boolean
+                  requestIdHeader:
+                    default: X-Request-ID
+                    description: RequestIDHeader is the header name for the request
+                      ID
+                    type: string
+                  samplingRate:
+                    default: 100
+                    description: SamplingRate is the percentage of requests to trace
+                      (0-100)
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                type: object
               vipRef:
                 description: VIPRef references the ProxyVIP to use for this gateway
                 type: string

@@ -85,7 +85,7 @@ func TestProxyGatewayReconcile(t *testing.T) {
 							Port:     443,
 							Protocol: novaedgev1alpha1.ProtocolTypeHTTPS,
 							TLS: &novaedgev1alpha1.TLSConfig{
-								SecretRef: corev1.SecretReference{
+								SecretRef: &corev1.SecretReference{
 									Name:      "tls-secret",
 									Namespace: "default",
 								},
@@ -134,7 +134,7 @@ func TestProxyGatewayReconcile(t *testing.T) {
 							Port:     443,
 							Protocol: novaedgev1alpha1.ProtocolTypeHTTPS,
 							TLS: &novaedgev1alpha1.TLSConfig{
-								SecretRef: corev1.SecretReference{
+								SecretRef: &corev1.SecretReference{
 									Name:      "missing-secret",
 									Namespace: "default",
 								},
@@ -226,7 +226,7 @@ func TestProxyGatewayReconcile(t *testing.T) {
 							Port:     443,
 							Protocol: novaedgev1alpha1.ProtocolTypeHTTPS,
 							TLS: &novaedgev1alpha1.TLSConfig{
-								SecretRef: corev1.SecretReference{
+								SecretRef: &corev1.SecretReference{
 									Name:      "bad-cert-secret",
 									Namespace: "default",
 								},
@@ -361,7 +361,7 @@ func TestProxyGatewayMultipleListeners(t *testing.T) {
 					Port:     443,
 					Protocol: novaedgev1alpha1.ProtocolTypeHTTPS,
 					TLS: &novaedgev1alpha1.TLSConfig{
-						SecretRef: corev1.SecretReference{
+						SecretRef: &corev1.SecretReference{
 							Name:      "tls-secret",
 							Namespace: "default",
 						},

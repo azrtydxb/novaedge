@@ -110,6 +110,35 @@ spec:
                               - value
                               type: object
                             type: array
+                          mirrorBackend:
+                            description: MirrorBackend specifies the backend to mirror
+                              requests to (for RequestMirror type)
+                            properties:
+                              name:
+                                description: Name is the name of the ProxyBackend
+                                type: string
+                              namespace:
+                                description: Namespace is the namespace of the ProxyBackend
+                                  (defaults to route namespace)
+                                type: string
+                              weight:
+                                default: 1
+                                description: Weight defines the proportion of requests
+                                  sent to this backend
+                                format: int32
+                                minimum: 0
+                                type: integer
+                            required:
+                            - name
+                            type: object
+                          mirrorPercent:
+                            default: 100
+                            description: MirrorPercent specifies the percentage of
+                              requests to mirror (0-100)
+                            format: int32
+                            maximum: 100
+                            minimum: 0
+                            type: integer
                           redirectURL:
                             description: RedirectURL is the URL to redirect to (for
                               RequestRedirect type)
@@ -119,6 +148,51 @@ spec:
                               RemoveHeader type)
                             items:
                               type: string
+                            type: array
+                          responseAdd:
+                            description: ResponseAdd contains headers to add to the
+                              response (for ResponseAddHeader type)
+                            items:
+                              description: HTTPHeader represents an HTTP header name
+                                and value
+                              properties:
+                                name:
+                                  description: Name is the name of the header
+                                  minLength: 1
+                                  type: string
+                                value:
+                                  description: Value is the value of the header
+                                  type: string
+                              required:
+                              - name
+                              - value
+                              type: object
+                            type: array
+                          responseRemove:
+                            description: ResponseRemove contains header names to remove
+                              from the response (for ResponseRemoveHeader type)
+                            items:
+                              type: string
+                            type: array
+                          responseSet:
+                            description: |-
+                              ResponseSet contains headers to set on the response (for ResponseSetHeader type)
+                              These headers will replace any existing values
+                            items:
+                              description: HTTPHeader represents an HTTP header name
+                                and value
+                              properties:
+                                name:
+                                  description: Name is the name of the header
+                                  minLength: 1
+                                  type: string
+                                value:
+                                  description: Value is the value of the header
+                                  type: string
+                              required:
+                              - name
+                              - value
+                              type: object
                             type: array
                           rewritePath:
                             description: RewritePath is the path to rewrite to (for
@@ -131,6 +205,10 @@ spec:
                             - RemoveHeader
                             - RequestRedirect
                             - URLRewrite
+                            - RequestMirror
+                            - ResponseAddHeader
+                            - ResponseRemoveHeader
+                            - ResponseSetHeader
                             type: string
                         required:
                         - type
@@ -202,9 +280,46 @@ spec:
                             - type
                             - value
                             type: object
+                          queryParams:
+                            description: QueryParams specifies HTTP query parameter
+                              matchers
+                            items:
+                              description: HTTPQueryParamMatch describes how to match
+                                a query parameter
+                              properties:
+                                name:
+                                  description: Name is the name of the query parameter
+                                  minLength: 1
+                                  type: string
+                                type:
+                                  default: Exact
+                                  description: Type specifies how to match against
+                                    the query parameter value
+                                  enum:
+                                  - Exact
+                                  - RegularExpression
+                                  type: string
+                                value:
+                                  description: Value is the value of the query parameter
+                                  type: string
+                              required:
+                              - name
+                              - value
+                              type: object
+                            maxItems: 16
+                            type: array
                         type: object
                       maxItems: 8
                       type: array
+                    maxRequestBodySize:
+                      description: |-
+                        MaxRequestBodySize is the maximum request body size for this rule (0 = unlimited)
+                        Overrides the listener-level setting for this specific route
+                      format: int64
+                      type: integer
+                    timeout:
+                      description: Timeout is the request timeout for this rule
+                      type: string
                   required:
                   - backendRefs
                   type: object
