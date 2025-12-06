@@ -151,6 +151,92 @@ spec:
                 required:
                 - requestsPerSecond
                 type: object
+              securityHeaders:
+                description: SecurityHeaders configuration (for SecurityHeaders type)
+                properties:
+                  contentSecurityPolicy:
+                    description: ContentSecurityPolicy sets the Content-Security-Policy
+                      header
+                    type: string
+                  crossOriginEmbedderPolicy:
+                    description: CrossOriginEmbedderPolicy sets the Cross-Origin-Embedder-Policy
+                      header
+                    enum:
+                    - unsafe-none
+                    - require-corp
+                    - credentialless
+                    type: string
+                  crossOriginOpenerPolicy:
+                    description: CrossOriginOpenerPolicy sets the Cross-Origin-Opener-Policy
+                      header
+                    enum:
+                    - unsafe-none
+                    - same-origin-allow-popups
+                    - same-origin
+                    type: string
+                  crossOriginResourcePolicy:
+                    description: CrossOriginResourcePolicy sets the Cross-Origin-Resource-Policy
+                      header
+                    enum:
+                    - same-site
+                    - same-origin
+                    - cross-origin
+                    type: string
+                  hsts:
+                    description: HSTS configures HTTP Strict Transport Security
+                    properties:
+                      enabled:
+                        default: true
+                        description: Enabled enables HSTS
+                        type: boolean
+                      includeSubDomains:
+                        description: IncludeSubDomains applies HSTS to all subdomains
+                        type: boolean
+                      maxAge:
+                        default: 31536000
+                        description: MaxAge is the time in seconds that the browser
+                          should remember this site is HTTPS only
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      preload:
+                        description: Preload adds the site to the browser HSTS preload
+                          list
+                        type: boolean
+                    type: object
+                  permissionsPolicy:
+                    description: PermissionsPolicy sets the Permissions-Policy header
+                      (replaces Feature-Policy)
+                    type: string
+                  referrerPolicy:
+                    description: ReferrerPolicy sets the Referrer-Policy header
+                    enum:
+                    - no-referrer
+                    - no-referrer-when-downgrade
+                    - origin
+                    - origin-when-cross-origin
+                    - same-origin
+                    - strict-origin
+                    - strict-origin-when-cross-origin
+                    - unsafe-url
+                    type: string
+                  xContentTypeOptions:
+                    default: true
+                    description: 'XContentTypeOptions enables X-Content-Type-Options:
+                      nosniff'
+                    type: boolean
+                  xFrameOptions:
+                    description: XFrameOptions sets the X-Frame-Options header (DENY,
+                      SAMEORIGIN, ALLOW-FROM uri)
+                    enum:
+                    - DENY
+                    - SAMEORIGIN
+                    type: string
+                  xXssProtection:
+                    description: XXSSProtection sets the X-XSS-Protection header (e.g.,
+                      "1; mode=block")
+                    type: string
+                type: object
               targetRef:
                 description: TargetRef identifies the resource this policy applies
                   to
@@ -182,6 +268,7 @@ spec:
                 - IPAllowList
                 - IPDenyList
                 - CORS
+                - SecurityHeaders
                 type: string
             required:
             - targetRef

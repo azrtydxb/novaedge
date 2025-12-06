@@ -195,3 +195,68 @@ crds:
 # RBAC settings
 rbac:
   create: true
+
+# Federation settings for multi-controller deployments
+federation:
+  # Enable federation mode
+  enabled: false
+  # Federation ID (must be the same across all federated controllers)
+  federationID: ""
+  # Local member configuration
+  localMember:
+    # Unique name for this controller in the federation
+    name: ""
+    # Geographic region
+    region: ""
+    # Availability zone
+    zone: ""
+    # gRPC endpoint for federation communication
+    endpoint: ""
+  # Peer controllers in the federation
+  members: []
+  # Example:
+  # - name: controller-dc2
+  #   endpoint: controller-dc2.novaedge.example.com:9090
+  #   region: us-east
+  #   tls:
+  #     enabled: true
+  #     caSecretRef:
+  #       name: novaedge-federation-ca
+  #     clientCertSecretRef:
+  #       name: novaedge-federation-client-cert
+
+  # Synchronization settings
+  sync:
+    interval: 5s
+    timeout: 30s
+    batchSize: 100
+    compression: true
+
+  # Conflict resolution settings
+  conflictResolution:
+    strategy: LastWriterWins
+    vectorClocks: true
+    tombstoneTTL: 24h
+
+  # Health check settings
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    failureThreshold: 3
+    successThreshold: 1
+
+  # Split-brain detection and protection
+  splitBrain:
+    enabled: true
+    partitionTimeout: 30s
+    # Quorum mode: Controllers or AgentAssisted
+    quorumMode: Controllers
+    quorumRequired: false
+    fencingEnabled: false
+    healingGracePeriod: 5s
+    autoResolveOnHeal: true
+    # Agent-assisted quorum settings (only for quorumMode: AgentAssisted)
+    agentQuorum:
+      controllerWeight: 10
+      agentWeight: 1
+      minAgentsForQuorum: 1

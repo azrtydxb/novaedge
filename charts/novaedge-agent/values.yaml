@@ -215,6 +215,43 @@ tracing:
   endpoint: ""
   samplingRate: 10
 
+# -- Controller reachability configuration for agent-assisted quorum
+# When enabled, agents report which controllers they can reach
+# This enables split-brain prevention with only 2 controllers
+controllerReachability:
+  # -- Enable controller reachability probing
+  enabled: false
+  # -- How often to probe all known controllers
+  probeInterval: 10s
+  # -- Timeout for each controller probe
+  probeTimeout: 5s
+  # -- List of all controller endpoints to probe
+  # If empty, only the primary controller is probed
+  controllerEndpoints: []
+  # Example:
+  # - name: controller-dc1
+  #   endpoint: controller-dc1.novaedge.example.com:9090
+  # - name: controller-dc2
+  #   endpoint: controller-dc2.novaedge.example.com:9090
+
+# -- Failover configuration for controller connectivity
+failover:
+  # -- Enable failover to backup controllers
+  enabled: true
+  # -- List of backup controller endpoints
+  backupControllers: []
+  # Example:
+  # - endpoint: controller-backup.novaedge.example.com:9090
+  #   priority: 100
+  # -- How long to wait before failing over
+  failoverTimeout: 30s
+  # -- How often to check primary controller health
+  healthCheckInterval: 10s
+  # -- Persist configuration locally for offline operation
+  persistConfig: true
+  # -- Path for persisted configuration
+  persistPath: /var/lib/novaedge/config
+
 # -- RBAC configuration
 rbac:
   create: true

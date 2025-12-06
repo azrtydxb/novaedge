@@ -52,6 +52,10 @@ type NovaEdgeFederationSpec struct {
 	// +optional
 	HealthCheck *FederationHealthCheck `json:"healthCheck,omitempty"`
 
+	// SplitBrain defines split-brain detection and protection settings
+	// +optional
+	SplitBrain *SplitBrainCRDConfig `json:"splitBrain,omitempty"`
+
 	// Paused suspends federation sync
 	// +kubebuilder:default=false
 	// +optional
@@ -237,6 +241,91 @@ type FederationHealthCheck struct {
 	SuccessThreshold int32 `json:"successThreshold,omitempty"`
 }
 
+// QuorumMode defines how quorum is calculated for split-brain prevention
+// +kubebuilder:validation:Enum=Controllers;AgentAssisted
+type QuorumMode string
+
+const (
+	// QuorumModeControllers uses only controller-to-controller connectivity
+	// Requires 3+ controllers for effective split-brain prevention
+	QuorumModeControllers QuorumMode = "Controllers"
+
+	// QuorumModeAgentAssisted uses agent reachability as additional quorum participants
+	// Allows split-brain prevention with only 2 controllers by using agents as witnesses
+	QuorumModeAgentAssisted QuorumMode = "AgentAssisted"
+)
+
+// SplitBrainCRDConfig defines split-brain detection and protection settings
+type SplitBrainCRDConfig struct {
+	// Enabled enables split-brain detection
+	// +kubebuilder:default=true
+	// +optional
+	Enabled *bool `json:"enabled,omitempty"`
+
+	// PartitionTimeout is how long without peer contact before declaring partition
+	// +kubebuilder:default="30s"
+	// +optional
+	PartitionTimeout *metav1.Duration `json:"partitionTimeout,omitempty"`
+
+	// QuorumMode determines how quorum is calculated
+	// - Controllers: Traditional controller-only quorum (requires 3+ controllers)
+	// - AgentAssisted: Uses agent reachability for quorum (works with 2 controllers)
+	// +kubebuilder:default="Controllers"
+	// +optional
+	QuorumMode QuorumMode `json:"quorumMode,omitempty"`
+
+	// QuorumRequired requires a quorum of peers for write operations
+	// If true, writes are rejected when we don't have quorum
+	// +kubebuilder:default=false
+	// +optional
+	QuorumRequired *bool `json:"quorumRequired,omitempty"`
+
+	// FencingEnabled enables write fencing during detected partition
+	// When true, writes are blocked during confirmed partition
+	// +kubebuilder:default=false
+	// +optional
+	FencingEnabled *bool `json:"fencingEnabled,omitempty"`
+
+	// HealingGracePeriod is how long to wait after partition heals
+	// before fully accepting writes (to allow state reconciliation)
+	// +kubebuilder:default="5s"
+	// +optional
+	HealingGracePeriod *metav1.Duration `json:"healingGracePeriod,omitempty"`
+
+	// AutoResolveOnHeal automatically resolves conflicts when partition heals
+	// +kubebuilder:default=true
+	// +optional
+	AutoResolveOnHeal *bool `json:"autoResolveOnHeal,omitempty"`
+
+	// AgentQuorum configures agent-assisted quorum settings
+	// Only used when QuorumMode is AgentAssisted
+	// +optional
+	AgentQuorum *AgentQuorumConfig `json:"agentQuorum,omitempty"`
+}
+
+// AgentQuorumConfig configures agent-assisted quorum for split-brain prevention
+type AgentQuorumConfig struct {
+	// ControllerWeight is the voting weight of each controller
+	// Controllers typically have higher weight than individual agents
+	// +kubebuilder:default=10
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	ControllerWeight int32 `json:"controllerWeight,omitempty"`
+
+	// AgentWeight is the voting weight of each agent
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=1
+	// +optional
+	AgentWeight int32 `json:"agentWeight,omitempty"`
+
+	// MinAgentsForQuorum is the minimum number of agents required for quorum
+	// Prevents a controller with zero agents from claiming quorum
+	// +kubebuilder:default=1
+	// +kubebuilder:validation:Minimum=0
+	// +optional
+	MinAgentsForQuorum int32 `json:"minAgentsForQuorum,omitempty"`
+}
+
 // NovaEdgeFederationStatus defines the observed state of NovaEdgeFederation
 type NovaEdgeFederationStatus struct {
 	// Phase is the current phase of the federation
@@ -267,10 +356,83 @@ type NovaEdgeFederationStatus struct {
 	// +optional
 	ConflictsPending int32 `json:"conflictsPending,omitempty"`
 
+	// SplitBrain contains the current split-brain detection status
+	// +optional
+	SplitBrain *SplitBrainStatus `json:"splitBrain,omitempty"`
+
 	// ObservedGeneration is the generation observed by the controller
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
+
+// SplitBrainStatus contains the current split-brain detection status
+type SplitBrainStatus struct {
+	// PartitionState is the current partition state
+	// +optional
+	PartitionState PartitionState `json:"partitionState,omitempty"`
+
+	// HaveQuorum indicates if we currently have quorum
+	// +optional
+	HaveQuorum bool `json:"haveQuorum,omitempty"`
+
+	// WritesFenced indicates if writes are currently blocked
+	// +optional
+	WritesFenced bool `json:"writesFenced,omitempty"`
+
+	// PartitionDetectedAt is when the partition was detected (if any)
+	// +optional
+	PartitionDetectedAt *metav1.Time `json:"partitionDetectedAt,omitempty"`
+
+	// ReachablePeers lists peers we can currently reach
+	// +optional
+	ReachablePeers []string `json:"reachablePeers,omitempty"`
+
+	// UnreachablePeers lists peers we cannot currently reach
+	// +optional
+	UnreachablePeers []string `json:"unreachablePeers,omitempty"`
+
+	// AgentQuorumStatus contains agent-assisted quorum information
+	// +optional
+	AgentQuorumStatus *AgentQuorumStatus `json:"agentQuorumStatus,omitempty"`
+}
+
+// AgentQuorumStatus contains agent-assisted quorum status information
+type AgentQuorumStatus struct {
+	// TotalAgents is the total number of agents across all controllers
+	// +optional
+	TotalAgents int32 `json:"totalAgents,omitempty"`
+
+	// ReachableAgents is the number of agents this controller can reach
+	// +optional
+	ReachableAgents int32 `json:"reachableAgents,omitempty"`
+
+	// OurVotes is our calculated vote count
+	// +optional
+	OurVotes int32 `json:"ourVotes,omitempty"`
+
+	// TotalVotes is the total possible votes
+	// +optional
+	TotalVotes int32 `json:"totalVotes,omitempty"`
+
+	// QuorumThreshold is the minimum votes needed for quorum
+	// +optional
+	QuorumThreshold int32 `json:"quorumThreshold,omitempty"`
+}
+
+// PartitionState represents the current network partition state
+// +kubebuilder:validation:Enum=Healthy;Suspected;Confirmed;Healing
+type PartitionState string
+
+const (
+	// PartitionStateHealthy means all peers are reachable
+	PartitionStateHealthy PartitionState = "Healthy"
+	// PartitionStateSuspected means some peers are not responding
+	PartitionStateSuspected PartitionState = "Suspected"
+	// PartitionStateConfirmed means we've confirmed a network partition
+	PartitionStateConfirmed PartitionState = "Confirmed"
+	// PartitionStateHealing means partition is healing, reconciliation in progress
+	PartitionStateHealing PartitionState = "Healing"
+)
 
 // FederationPhase represents the phase of the federation
 type FederationPhase string
