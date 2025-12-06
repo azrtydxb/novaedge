@@ -53,6 +53,7 @@ nav:
     - Helm Chart: getting-started/helm.md
   - User Guide:
     - Deployment Guide: user-guide/deployment-guide.md
+    - Web UI: user-guide/web-ui.md
     - Standalone Mode: user-guide/standalone-mode.md
     - Gateway API: user-guide/gateway-api.md
     - HTTP/3 and QUIC: user-guide/http3-guide.md
