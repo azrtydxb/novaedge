@@ -485,3 +485,58 @@ func (s *Server) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, result)
 }
+
+// HistoryEntry represents a configuration change history entry
+type HistoryEntry struct {
+	ID           string `json:"id"`
+	Timestamp    string `json:"timestamp"`
+	Type         string `json:"type"`         // create, update, delete
+	ResourceType string `json:"resourceType"` // gateway, route, backend, vip, policy
+	ResourceName string `json:"resourceName"`
+	Namespace    string `json:"namespace"`
+	Snapshot     string `json:"snapshot,omitempty"`
+}
+
+// handleConfigHistory handles GET /api/v1/config/history
+func (s *Server) handleConfigHistory(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	// For now, return an empty history list
+	// In a full implementation, this would retrieve the history from a persistent store
+	history := []HistoryEntry{}
+
+	writeJSON(w, http.StatusOK, history)
+}
+
+// handleConfigHistoryRestore handles POST /api/v1/config/history/{id}/restore
+func (s *Server) handleConfigHistoryRestore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	// Extract ID from path: /api/v1/config/history/{id}/restore
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/config/history/")
+	parts := strings.Split(path, "/")
+	if len(parts) != 2 || parts[1] != "restore" {
+		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/config/history/{id}/restore")
+		return
+	}
+
+	// For now, return not implemented
+	// In a full implementation, this would restore configuration from the history snapshot
+	writeError(w, http.StatusNotImplemented, "configuration history restore not yet implemented")
+}

@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # NovaEdge Standalone (doesn't require Kubernetes)
+  novaedge:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.standalone
+    container_name: novaedge
+    ports:
+      - "8085:80"     # HTTP proxy
+      - "9090:9090"   # Metrics
+      - "8086:8080"   # Health probes (standalone uses 8080 for health)
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    volumes:
+      - ../standalone/config.yaml:/etc/novaedge/config.yaml:ro
+    command:
+      - --config=/etc/novaedge/config.yaml
+      - --node-name=dev-standalone
+    networks:
+      - novaedge-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Prometheus for metrics
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9092:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - novaedge-net
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+
+networks:
+  novaedge-net:
+    driver: bridge

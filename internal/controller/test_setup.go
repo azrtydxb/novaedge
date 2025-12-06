@@ -35,16 +35,16 @@ import (
 
 // testEnv holds the test environment
 type testEnv struct {
-	client                   client.Client
-	scheme                   *runtime.Scheme
-	gatewayReconciler        *GatewayReconciler
-	httpRouteReconciler      *HTTPRouteReconciler
-	ingressReconciler        *IngressReconciler
-	proxyBackendReconciler   *ProxyBackendReconciler
-	proxyGatewayReconciler   *ProxyGatewayReconciler
-	proxyRouteReconciler     *ProxyRouteReconciler
-	proxyVIPReconciler       *ProxyVIPReconciler
-	proxyPolicyReconciler    *ProxyPolicyReconciler
+	client                 client.Client
+	scheme                 *runtime.Scheme
+	gatewayReconciler      *GatewayReconciler
+	httpRouteReconciler    *HTTPRouteReconciler
+	ingressReconciler      *IngressReconciler
+	proxyBackendReconciler *ProxyBackendReconciler
+	proxyGatewayReconciler *ProxyGatewayReconciler
+	proxyRouteReconciler   *ProxyRouteReconciler
+	proxyVIPReconciler     *ProxyVIPReconciler
+	proxyPolicyReconciler  *ProxyPolicyReconciler
 }
 
 // setupTestEnvironment creates a fake Kubernetes client with all required schemes

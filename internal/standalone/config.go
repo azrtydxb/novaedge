@@ -142,7 +142,7 @@ type RouteMatch struct {
 
 // PathMatch defines path matching
 type PathMatch struct {
-	Type  string `yaml:"type"`  // Exact, PathPrefix, RegularExpression
+	Type  string `yaml:"type"` // Exact, PathPrefix, RegularExpression
 	Value string `yaml:"value"`
 }
 
@@ -257,12 +257,12 @@ type VIPConfig struct {
 
 // BGPConfig defines BGP settings
 type BGPConfig struct {
-	LocalAS    uint32 `yaml:"localAS"`
-	RouterID   string `yaml:"routerID"`
-	PeerAS     uint32 `yaml:"peerAS"`
-	PeerIP     string `yaml:"peerIP"`
-	HoldTime   int    `yaml:"holdTime,omitempty"`
-	KeepaliveTime int `yaml:"keepaliveTime,omitempty"`
+	LocalAS       uint32 `yaml:"localAS"`
+	RouterID      string `yaml:"routerID"`
+	PeerAS        uint32 `yaml:"peerAS"`
+	PeerIP        string `yaml:"peerIP"`
+	HoldTime      int    `yaml:"holdTime,omitempty"`
+	KeepaliveTime int    `yaml:"keepaliveTime,omitempty"`
 }
 
 // OSPFConfig defines OSPF settings

@@ -37,10 +37,10 @@ type Gateway struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// Spec
-	Listeners []Listener    `json:"listeners"`
-	VIPRef    *VIPRef       `json:"vipRef,omitempty"`
-	Tracing   *Tracing      `json:"tracing,omitempty"`
-	AccessLog *AccessLog    `json:"accessLog,omitempty"`
+	Listeners []Listener     `json:"listeners"`
+	VIPRef    *VIPRef        `json:"vipRef,omitempty"`
+	Tracing   *Tracing       `json:"tracing,omitempty"`
+	AccessLog *AccessLog     `json:"accessLog,omitempty"`
 	Status    *GatewayStatus `json:"status,omitempty"`
 
 	// Resource version for optimistic locking (Kubernetes)
@@ -49,7 +49,7 @@ type Gateway struct {
 
 // GatewayStatus represents gateway status
 type GatewayStatus struct {
-	Ready      bool       `json:"ready"`
+	Ready      bool        `json:"ready"`
 	Conditions []Condition `json:"conditions,omitempty"`
 }
 
@@ -64,22 +64,22 @@ type Condition struct {
 
 // Listener represents a listener configuration
 type Listener struct {
-	Name               string    `json:"name"`
-	Port               int       `json:"port"`
-	Protocol           string    `json:"protocol"` // HTTP, HTTPS, TCP, TLS
-	TLS                *TLS      `json:"tls,omitempty"`
-	Hostnames          []string  `json:"hostnames,omitempty"`
-	MaxRequestBodySize int64     `json:"maxRequestBodySize,omitempty"`
+	Name               string   `json:"name"`
+	Port               int      `json:"port"`
+	Protocol           string   `json:"protocol"` // HTTP, HTTPS, TCP, TLS
+	TLS                *TLS     `json:"tls,omitempty"`
+	Hostnames          []string `json:"hostnames,omitempty"`
+	MaxRequestBodySize int64    `json:"maxRequestBodySize,omitempty"`
 }
 
 // TLS represents TLS configuration
 type TLS struct {
-	Mode             string           `json:"mode,omitempty"` // Terminate, Passthrough
-	CertificateRef   *SecretRef       `json:"certificateRef,omitempty"`
-	CertFile         string           `json:"certFile,omitempty"`
-	KeyFile          string           `json:"keyFile,omitempty"`
-	MinVersion       string           `json:"minVersion,omitempty"`
-	CipherSuites     []string         `json:"cipherSuites,omitempty"`
+	Mode           string     `json:"mode,omitempty"` // Terminate, Passthrough
+	CertificateRef *SecretRef `json:"certificateRef,omitempty"`
+	CertFile       string     `json:"certFile,omitempty"`
+	KeyFile        string     `json:"keyFile,omitempty"`
+	MinVersion     string     `json:"minVersion,omitempty"`
+	CipherSuites   []string   `json:"cipherSuites,omitempty"`
 }
 
 // SecretRef references a Kubernetes secret
@@ -115,14 +115,14 @@ type Route struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// Spec
-	GatewayRef   *GatewayRef       `json:"gatewayRef,omitempty"`
-	Hostnames    []string          `json:"hostnames,omitempty"`
-	Matches      []RouteMatch      `json:"matches,omitempty"`
-	BackendRefs  []BackendRef      `json:"backendRefs"`
-	Filters      []Filter          `json:"filters,omitempty"`
-	Timeout      string            `json:"timeout,omitempty"`
-	Policies     []string          `json:"policies,omitempty"`
-	Status       *RouteStatus      `json:"status,omitempty"`
+	GatewayRef  *GatewayRef  `json:"gatewayRef,omitempty"`
+	Hostnames   []string     `json:"hostnames,omitempty"`
+	Matches     []RouteMatch `json:"matches,omitempty"`
+	BackendRefs []BackendRef `json:"backendRefs"`
+	Filters     []Filter     `json:"filters,omitempty"`
+	Timeout     string       `json:"timeout,omitempty"`
+	Policies    []string     `json:"policies,omitempty"`
+	Status      *RouteStatus `json:"status,omitempty"`
 
 	// Resource version for optimistic locking
 	ResourceVersion string `json:"resourceVersion,omitempty"`
@@ -169,11 +169,11 @@ type BackendRef struct {
 
 // Filter defines request/response filters
 type Filter struct {
-	Type           string            `json:"type"` // RequestHeaderModifier, ResponseHeaderModifier, URLRewrite, RequestRedirect
-	RequestHeader  *HeaderModifier   `json:"requestHeader,omitempty"`
-	ResponseHeader *HeaderModifier   `json:"responseHeader,omitempty"`
-	URLRewrite     *URLRewrite       `json:"urlRewrite,omitempty"`
-	Redirect       *Redirect         `json:"redirect,omitempty"`
+	Type           string          `json:"type"` // RequestHeaderModifier, ResponseHeaderModifier, URLRewrite, RequestRedirect
+	RequestHeader  *HeaderModifier `json:"requestHeader,omitempty"`
+	ResponseHeader *HeaderModifier `json:"responseHeader,omitempty"`
+	URLRewrite     *URLRewrite     `json:"urlRewrite,omitempty"`
+	Redirect       *Redirect       `json:"redirect,omitempty"`
 }
 
 // HeaderModifier modifies headers
@@ -191,24 +191,24 @@ type HeaderValue struct {
 
 // URLRewrite defines URL rewrite rules
 type URLRewrite struct {
-	Hostname        string         `json:"hostname,omitempty"`
-	Path            *PathModifier  `json:"path,omitempty"`
+	Hostname string        `json:"hostname,omitempty"`
+	Path     *PathModifier `json:"path,omitempty"`
 }
 
 // PathModifier modifies the path
 type PathModifier struct {
-	Type            string `json:"type"` // ReplaceFullPath, ReplacePrefixMatch
-	ReplaceFullPath string `json:"replaceFullPath,omitempty"`
+	Type               string `json:"type"` // ReplaceFullPath, ReplacePrefixMatch
+	ReplaceFullPath    string `json:"replaceFullPath,omitempty"`
 	ReplacePrefixMatch string `json:"replacePrefixMatch,omitempty"`
 }
 
 // Redirect defines redirect behavior
 type Redirect struct {
-	Scheme     string `json:"scheme,omitempty"`
-	Hostname   string `json:"hostname,omitempty"`
-	Port       int    `json:"port,omitempty"`
+	Scheme     string        `json:"scheme,omitempty"`
+	Hostname   string        `json:"hostname,omitempty"`
+	Port       int           `json:"port,omitempty"`
 	Path       *PathModifier `json:"path,omitempty"`
-	StatusCode int    `json:"statusCode,omitempty"`
+	StatusCode int           `json:"statusCode,omitempty"`
 }
 
 // Backend represents an upstream backend configuration
@@ -218,13 +218,13 @@ type Backend struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// Spec
-	Endpoints      []Endpoint       `json:"endpoints"`
-	LBPolicy       string           `json:"lbPolicy"` // RoundRobin, P2C, EWMA, RingHash, Maglev
-	HealthCheck    *HealthCheck     `json:"healthCheck,omitempty"`
-	CircuitBreaker *CircuitBreaker  `json:"circuitBreaker,omitempty"`
-	ConnectionPool *ConnectionPool  `json:"connectionPool,omitempty"`
-	TLS            *BackendTLS      `json:"tls,omitempty"`
-	Status         *BackendStatus   `json:"status,omitempty"`
+	Endpoints      []Endpoint      `json:"endpoints"`
+	LBPolicy       string          `json:"lbPolicy"` // RoundRobin, P2C, EWMA, RingHash, Maglev
+	HealthCheck    *HealthCheck    `json:"healthCheck,omitempty"`
+	CircuitBreaker *CircuitBreaker `json:"circuitBreaker,omitempty"`
+	ConnectionPool *ConnectionPool `json:"connectionPool,omitempty"`
+	TLS            *BackendTLS     `json:"tls,omitempty"`
+	Status         *BackendStatus  `json:"status,omitempty"`
 
 	// Resource version for optimistic locking
 	ResourceVersion string `json:"resourceVersion,omitempty"`
@@ -291,12 +291,12 @@ type VIP struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// Spec
-	Address   string     `json:"address"` // IP/CIDR
-	Mode      string     `json:"mode"`    // L2, BGP, OSPF
-	Interface string     `json:"interface,omitempty"`
-	BGP       *BGPConfig `json:"bgp,omitempty"`
+	Address   string      `json:"address"` // IP/CIDR
+	Mode      string      `json:"mode"`    // L2, BGP, OSPF
+	Interface string      `json:"interface,omitempty"`
+	BGP       *BGPConfig  `json:"bgp,omitempty"`
 	OSPF      *OSPFConfig `json:"ospf,omitempty"`
-	Status    *VIPStatus `json:"status,omitempty"`
+	Status    *VIPStatus  `json:"status,omitempty"`
 
 	// Resource version for optimistic locking
 	ResourceVersion string `json:"resourceVersion,omitempty"`
@@ -333,13 +333,13 @@ type Policy struct {
 	Namespace string `json:"namespace,omitempty"`
 
 	// Spec
-	Type      string          `json:"type"` // RateLimit, CORS, IPFilter, JWT
-	TargetRef *TargetRef      `json:"targetRef,omitempty"`
+	Type      string           `json:"type"` // RateLimit, CORS, IPFilter, JWT
+	TargetRef *TargetRef       `json:"targetRef,omitempty"`
 	RateLimit *RateLimitConfig `json:"rateLimit,omitempty"`
-	CORS      *CORSConfig     `json:"cors,omitempty"`
-	IPFilter  *IPFilterConfig `json:"ipFilter,omitempty"`
-	JWT       *JWTConfig      `json:"jwt,omitempty"`
-	Status    *PolicyStatus   `json:"status,omitempty"`
+	CORS      *CORSConfig      `json:"cors,omitempty"`
+	IPFilter  *IPFilterConfig  `json:"ipFilter,omitempty"`
+	JWT       *JWTConfig       `json:"jwt,omitempty"`
+	Status    *PolicyStatus    `json:"status,omitempty"`
 
 	// Resource version for optimistic locking
 	ResourceVersion string `json:"resourceVersion,omitempty"`
@@ -391,11 +391,11 @@ type JWTConfig struct {
 
 // ImportResult represents the result of an import operation
 type ImportResult struct {
-	Created  []ResourceRef `json:"created"`
-	Updated  []ResourceRef `json:"updated"`
-	Skipped  []ResourceRef `json:"skipped"`
-	Errors   []ImportError `json:"errors,omitempty"`
-	DryRun   bool          `json:"dryRun"`
+	Created []ResourceRef `json:"created"`
+	Updated []ResourceRef `json:"updated"`
+	Skipped []ResourceRef `json:"skipped"`
+	Errors  []ImportError `json:"errors,omitempty"`
+	DryRun  bool          `json:"dryRun"`
 }
 
 // ResourceRef references a resource
