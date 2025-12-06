@@ -12,6 +12,7 @@
             <div class="sidebar-header">
                 <h1>NovaEdge</h1>
                 <span class="version">v1.0.0</span>
+                <div id="mode-indicator" class="mode-indicator"></div>
             </div>
             <ul class="nav-menu">
                 <li class="nav-item active" data-page="dashboard">
@@ -43,6 +44,10 @@
                     Agents
                 </li>
             </ul>
+            <div class="sidebar-footer">
+                <button class="btn btn-sm btn-secondary" onclick="exportConfig()">Export Config</button>
+                <button class="btn btn-sm btn-secondary" onclick="showImportDialog()">Import Config</button>
+            </div>
         </nav>
 
         <main class="content">
@@ -57,6 +62,7 @@
                             <option value="all">All Namespaces</option>
                         </select>
                     </div>
+                    <button id="create-btn" class="btn btn-primary" style="display:none;" onclick="handleCreate()">+ Create</button>
                     <button class="refresh-btn" onclick="refreshCurrentPage()">Refresh</button>
                 </div>
             </header>
@@ -67,6 +73,8 @@
         </main>
     </div>
 
+    <script src="/js/validation.js"></script>
+    <script src="/js/forms.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>
