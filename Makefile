@@ -4,6 +4,7 @@
 IMG_CONTROLLER ?= novaedge-controller:latest
 IMG_AGENT ?= novaedge-agent:latest
 IMG_NOVACTL ?= novaedge-novactl:latest
+IMG_STANDALONE ?= novaedge-standalone:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -83,8 +84,12 @@ build-agent: fmt vet ## Build agent binary.
 build-novactl: fmt vet ## Build novactl CLI tool.
 	go build -o bin/novactl cmd/novactl/main.go
 
+.PHONY: build-standalone
+build-standalone: fmt vet ## Build standalone agent binary.
+	go build -o bin/novaedge-standalone cmd/novaedge-standalone/main.go
+
 .PHONY: build-all
-build-all: build-controller build-agent build-novactl ## Build all binaries.
+build-all: build-controller build-agent build-novactl build-standalone ## Build all binaries.
 
 .PHONY: run-agent
 run-agent: fmt vet ## Run agent from your host.
@@ -94,8 +99,12 @@ run-agent: fmt vet ## Run agent from your host.
 run-controller: fmt vet ## Run controller from your host.
 	go run ./cmd/novaedge-controller/main.go
 
+.PHONY: run-standalone
+run-standalone: fmt vet ## Run standalone agent from your host.
+	go run ./cmd/novaedge-standalone/main.go --config=$(CONFIG_FILE)
+
 .PHONY: docker-build
-docker-build: docker-build-controller docker-build-agent docker-build-novactl ## Build all docker images.
+docker-build: docker-build-controller docker-build-agent docker-build-novactl docker-build-standalone ## Build all docker images.
 
 .PHONY: test-agent
 test-agent: ## Run agent tests.
@@ -112,6 +121,10 @@ docker-build-agent: ## Build agent docker image.
 .PHONY: docker-build-novactl
 docker-build-novactl: ## Build novactl docker image (includes web UI).
 	docker build -t ${IMG_NOVACTL} -f Dockerfile.novactl .
+
+.PHONY: docker-build-standalone
+docker-build-standalone: ## Build standalone agent docker image.
+	docker build -t ${IMG_STANDALONE} -f Dockerfile.standalone .
 
 .PHONY: docker-push
 docker-push: docker-push-controller docker-push-agent docker-push-novactl ## Push all docker images.
@@ -171,6 +184,24 @@ deploy-webui: ## Deploy only the web UI component.
 .PHONY: undeploy-webui
 undeploy-webui: ## Undeploy the web UI component.
 	kubectl delete -k config/webui/ || true
+
+##@ Standalone Mode
+
+.PHONY: standalone-up
+standalone-up: docker-build-standalone ## Start standalone mode with Docker Compose.
+	cd deploy/standalone && docker-compose up -d
+
+.PHONY: standalone-down
+standalone-down: ## Stop standalone mode.
+	cd deploy/standalone && docker-compose down
+
+.PHONY: standalone-logs
+standalone-logs: ## View standalone mode logs.
+	cd deploy/standalone && docker-compose logs -f novaedge
+
+.PHONY: standalone-monitoring
+standalone-monitoring: docker-build-standalone ## Start standalone mode with monitoring (Prometheus + Grafana).
+	cd deploy/standalone && docker-compose --profile monitoring up -d
 
 ##@ Helm
 

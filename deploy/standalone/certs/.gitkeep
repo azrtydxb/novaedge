@@ -1,0 +1,6 @@
+# Place your TLS certificates here:
+# - server.crt: Server certificate (PEM format)
+# - server.key: Server private key (PEM format)
+#
+# For development, you can generate self-signed certificates:
+# openssl req -x509 -newkey rsa:4096 -keyout server.key -out server.crt -days 365 -nodes
