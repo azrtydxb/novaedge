@@ -1,0 +1,24 @@
+{{- if .Values.controller.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "novaedge.fullname" . }}-controller
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.controller.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+  - name: grpc
+    port: {{ .Values.controller.grpc.port }}
+    targetPort: grpc
+    protocol: TCP
+  {{- if .Values.controller.metrics.enabled }}
+  - name: metrics
+    port: {{ .Values.controller.metrics.port }}
+    targetPort: metrics
+    protocol: TCP
+  {{- end }}
+  selector:
+    {{- include "novaedge.controller.selectorLabels" . | nindent 4 }}
+{{- end }}

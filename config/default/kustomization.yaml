@@ -1,0 +1,62 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: novaedge-system
+
+# Include all base resources
+resources:
+# Namespace
+- ../controller/namespace.yaml
+
+# CRDs
+- ../crd/novaedge.io_proxybackends.yaml
+- ../crd/novaedge.io_proxygateways.yaml
+- ../crd/novaedge.io_proxypolicies.yaml
+- ../crd/novaedge.io_proxyroutes.yaml
+- ../crd/novaedge.io_proxyvips.yaml
+
+# Controller RBAC
+- ../rbac/service_account.yaml
+- ../rbac/role.yaml
+- ../rbac/role_binding.yaml
+- ../rbac/leader_election_role.yaml
+- ../rbac/leader_election_role_binding.yaml
+
+# Controller deployment
+- ../controller/deployment.yaml
+- ../controller/poddisruptionbudget.yaml
+
+# Agent RBAC
+- ../agent/serviceaccount.yaml
+- ../agent/clusterrole.yaml
+- ../agent/clusterrolebinding.yaml
+
+# Agent DaemonSet
+- ../agent/daemonset.yaml
+- ../agent/poddisruptionbudget.yaml
+
+# Web UI
+- ../webui/serviceaccount.yaml
+- ../webui/clusterrole.yaml
+- ../webui/clusterrolebinding.yaml
+- ../webui/deployment.yaml
+- ../webui/service.yaml
+
+# Common labels
+labels:
+- includeSelectors: false
+  pairs:
+    app.kubernetes.io/part-of: novaedge
+    app.kubernetes.io/managed-by: kustomize
+
+# Image configuration
+images:
+- name: novaedge-controller
+  newName: ghcr.io/piwi3910/novaedge-controller
+  newTag: latest
+- name: novaedge-agent
+  newName: ghcr.io/piwi3910/novaedge-agent
+  newTag: latest
+- name: novaedge-novactl
+  newName: ghcr.io/piwi3910/novaedge-novactl
+  newTag: latest
