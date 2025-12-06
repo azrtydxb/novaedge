@@ -8,15 +8,61 @@
     // State
     let currentPage = 'dashboard';
     let currentNamespace = 'all';
+    let appMode = 'kubernetes';
+    let isReadOnly = false;
+
+    // Expose currentNamespace for forms
+    Object.defineProperty(window, 'currentNamespace', {
+        get: () => currentNamespace
+    });
+
+    // Resource type mapping
+    const resourceTypes = {
+        gateways: 'gateway',
+        routes: 'route',
+        backends: 'backend',
+        vips: 'vip',
+        policies: 'policy'
+    };
 
     // Initialize the application
     function init() {
         setupNavigation();
+        loadMode();
         loadNamespaces();
         showPage('dashboard');
 
         // Auto-refresh every 30 seconds
         setInterval(refreshCurrentPage, 30000);
+    }
+
+    // Load operating mode
+    async function loadMode() {
+        try {
+            const response = await fetchAPI('/mode');
+            appMode = response.mode || 'kubernetes';
+            isReadOnly = response.readOnly || false;
+
+            const indicator = document.getElementById('mode-indicator');
+            if (indicator) {
+                const modeLabel = appMode === 'kubernetes' ? 'Kubernetes' : 'Standalone';
+                const readOnlyLabel = isReadOnly ? ' (Read-Only)' : '';
+                indicator.innerHTML = `<span class="badge ${appMode === 'kubernetes' ? 'badge-info' : 'badge-warning'}">${modeLabel}${readOnlyLabel}</span>`;
+            }
+
+            // Hide write buttons if read-only
+            updateWriteButtons();
+        } catch (error) {
+            console.error('Failed to load mode:', error);
+        }
+    }
+
+    // Update write button visibility
+    function updateWriteButtons() {
+        const createBtn = document.getElementById('create-btn');
+        if (createBtn) {
+            createBtn.style.display = isReadOnly ? 'none' : 'inline-block';
+        }
     }
 
     // Setup navigation
@@ -72,9 +118,25 @@
         };
         document.getElementById('page-title').textContent = titles[page] || page;
 
+        // Show/hide create button based on page
+        const createBtn = document.getElementById('create-btn');
+        if (createBtn) {
+            const canCreate = ['gateways', 'routes', 'backends', 'vips', 'policies'].includes(page);
+            createBtn.style.display = (canCreate && !isReadOnly) ? 'inline-block' : 'none';
+        }
+
         // Load page content
         loadPageContent(page);
     }
+    window.showPage = showPage;
+
+    // Handle create button click
+    window.handleCreate = function() {
+        const resourceType = resourceTypes[currentPage];
+        if (resourceType && window.openCreateForm) {
+            window.openCreateForm(resourceType);
+        }
+    };
 
     // Refresh current page
     window.refreshCurrentPage = function() {
@@ -92,19 +154,19 @@
                     await loadDashboard(container);
                     break;
                 case 'gateways':
-                    await loadResources(container, 'gateways', 'ProxyGateway');
+                    await loadResources(container, 'gateways', 'Gateway');
                     break;
                 case 'routes':
-                    await loadResources(container, 'routes', 'ProxyRoute');
+                    await loadResources(container, 'routes', 'Route');
                     break;
                 case 'backends':
-                    await loadResources(container, 'backends', 'ProxyBackend');
+                    await loadResources(container, 'backends', 'Backend');
                     break;
                 case 'vips':
-                    await loadResources(container, 'vips', 'ProxyVIP');
+                    await loadResources(container, 'vips', 'VIP');
                     break;
                 case 'policies':
-                    await loadResources(container, 'policies', 'ProxyPolicy');
+                    await loadResources(container, 'policies', 'Policy');
                     break;
                 case 'agents':
                     await loadAgents(container);
@@ -178,7 +240,7 @@
 
         html += '</div>';
 
-        // Recent resources summary
+        // Mode information
         html += `
             <div class="card">
                 <div class="card-header">
@@ -186,6 +248,8 @@
                 </div>
                 <div class="card-body">
                     <p>Select a resource type from the sidebar to view and manage NovaEdge configurations.</p>
+                    <p style="margin-top: 8px;"><strong>Mode:</strong> <span class="badge ${appMode === 'kubernetes' ? 'badge-info' : 'badge-warning'}">${appMode === 'kubernetes' ? 'Kubernetes (CRD)' : 'Standalone (YAML)'}</span></p>
+                    ${isReadOnly ? '<p style="margin-top: 8px;"><span class="badge badge-warning">Read-Only Mode</span> - Configuration changes are disabled.</p>' : ''}
                     <br>
                     <div class="detail-grid">
                         <div class="detail-item">
@@ -226,6 +290,7 @@
     // Load resources (generic)
     async function loadResources(container, endpoint, resourceType) {
         const resources = await fetchAPI(`/${endpoint}?namespace=${currentNamespace}`);
+        const singularType = resourceTypes[endpoint];
 
         if (resources.length === 0) {
             container.innerHTML = `
@@ -233,6 +298,7 @@
                     <div class="empty-state-icon">&#128196;</div>
                     <h3>No ${resourceType} resources found</h3>
                     <p>Create a ${resourceType} resource to get started.</p>
+                    ${!isReadOnly ? `<button class="btn btn-primary" style="margin-top: 16px;" onclick="openCreateForm('${singularType}')">+ Create ${resourceType}</button>` : ''}
                 </div>
             `;
             return;
@@ -252,24 +318,37 @@
                                     <th>Namespace</th>
                                     <th>Age</th>
                                     <th>Status</th>
+                                    ${!isReadOnly ? '<th>Actions</th>' : ''}
                                 </tr>
                             </thead>
                             <tbody>
         `;
 
         resources.forEach(resource => {
+            // Handle both Kubernetes CRD format and unified model format
             const metadata = resource.metadata || {};
+            const name = metadata.name || resource.name || 'N/A';
+            const namespace = metadata.namespace || resource.namespace || 'N/A';
+            const creationTimestamp = metadata.creationTimestamp;
             const status = resource.status || {};
             const conditions = status.conditions || [];
             const readyCondition = conditions.find(c => c.type === 'Ready' || c.type === 'Accepted');
-            const isReady = readyCondition && readyCondition.status === 'True';
+            const isReady = readyCondition ? readyCondition.status === 'True' : (status.ready !== false);
 
             html += `
-                <tr class="clickable" onclick="showResourceDetail('${endpoint}', '${metadata.namespace}', '${metadata.name}')">
-                    <td><strong>${escapeHtml(metadata.name || 'N/A')}</strong></td>
-                    <td>${escapeHtml(metadata.namespace || 'N/A')}</td>
-                    <td>${formatAge(metadata.creationTimestamp)}</td>
+                <tr>
+                    <td class="clickable" onclick="showResourceDetail('${endpoint}', '${namespace}', '${name}')">
+                        <strong>${escapeHtml(name)}</strong>
+                    </td>
+                    <td>${escapeHtml(namespace)}</td>
+                    <td>${formatAge(creationTimestamp)}</td>
                     <td><span class="badge ${isReady ? 'badge-success' : 'badge-warning'}">${isReady ? 'Ready' : 'Pending'}</span></td>
+                    ${!isReadOnly ? `
+                    <td class="action-buttons">
+                        <button class="btn btn-sm btn-secondary" onclick="editResource('${singularType}', '${endpoint}', '${namespace}', '${name}')">Edit</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteResource('${singularType}', '${namespace}', '${name}')">Delete</button>
+                    </td>
+                    ` : ''}
                 </tr>
             `;
         });
@@ -285,6 +364,37 @@
         container.innerHTML = html;
     }
 
+    // Edit resource
+    window.editResource = async function(resourceType, endpoint, namespace, name) {
+        try {
+            const resource = await fetchAPI(`/${endpoint}/${namespace}/${name}`);
+            // Convert to unified format if needed
+            const data = convertToUnifiedFormat(resource, resourceType);
+            if (window.openEditForm) {
+                window.openEditForm(resourceType, data);
+            }
+        } catch (error) {
+            if (window.showToast) {
+                window.showToast('error', 'Failed to load resource: ' + error.message);
+            }
+        }
+    };
+
+    // Convert CRD format to unified format
+    function convertToUnifiedFormat(resource, resourceType) {
+        if (resource.metadata) {
+            // Kubernetes CRD format
+            return {
+                name: resource.metadata.name,
+                namespace: resource.metadata.namespace,
+                resourceVersion: resource.metadata.resourceVersion,
+                ...resource.spec
+            };
+        }
+        // Already in unified format
+        return resource;
+    }
+
     // Show resource detail
     window.showResourceDetail = async function(endpoint, namespace, name) {
         const container = document.getElementById('page-content');
@@ -292,12 +402,19 @@
 
         try {
             const resource = await fetchAPI(`/${endpoint}/${namespace}/${name}`);
+            const singularType = resourceTypes[endpoint];
 
             let html = `
                 <div class="card">
                     <div class="card-header">
                         <h3>${escapeHtml(name)}</h3>
-                        <button class="refresh-btn" onclick="showPage('${endpoint.replace(/s$/, '')}s')">Back to List</button>
+                        <div class="header-actions">
+                            ${!isReadOnly ? `
+                            <button class="btn btn-secondary" onclick="editResource('${singularType}', '${endpoint}', '${namespace}', '${name}')">Edit</button>
+                            <button class="btn btn-danger" onclick="deleteResource('${singularType}', '${namespace}', '${name}'); showPage('${endpoint}');">Delete</button>
+                            ` : ''}
+                            <button class="refresh-btn" onclick="showPage('${endpoint}')">Back to List</button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="tabs">
@@ -312,7 +429,7 @@
                         </div>
 
                         <div id="tab-spec" class="tab-content" style="display: none;">
-                            <div class="code-block">${escapeHtml(JSON.stringify(resource.spec || {}, null, 2))}</div>
+                            <div class="code-block">${escapeHtml(JSON.stringify(resource.spec || resource, null, 2))}</div>
                         </div>
 
                         <div id="tab-status" class="tab-content" style="display: none;">
@@ -346,40 +463,42 @@
     // Render resource overview
     function renderResourceOverview(resource) {
         const metadata = resource.metadata || {};
-        const spec = resource.spec || {};
+        const spec = resource.spec || resource;
         const status = resource.status || {};
 
         let html = '<div class="detail-grid">';
 
+        // Basic metadata
         html += `
             <div class="detail-item">
                 <div class="detail-label">Name</div>
-                <div class="detail-value">${escapeHtml(metadata.name || 'N/A')}</div>
+                <div class="detail-value">${escapeHtml(metadata.name || resource.name || 'N/A')}</div>
             </div>
             <div class="detail-item">
                 <div class="detail-label">Namespace</div>
-                <div class="detail-value">${escapeHtml(metadata.namespace || 'N/A')}</div>
-            </div>
-            <div class="detail-item">
-                <div class="detail-label">UID</div>
-                <div class="detail-value">${escapeHtml(metadata.uid || 'N/A')}</div>
-            </div>
-            <div class="detail-item">
-                <div class="detail-label">Created</div>
-                <div class="detail-value">${escapeHtml(metadata.creationTimestamp || 'N/A')}</div>
+                <div class="detail-value">${escapeHtml(metadata.namespace || resource.namespace || 'N/A')}</div>
             </div>
         `;
 
-        // Add spec-specific fields
-        if (spec.vipRef) {
+        if (metadata.uid) {
             html += `
                 <div class="detail-item">
-                    <div class="detail-label">VIP Reference</div>
-                    <div class="detail-value">${escapeHtml(spec.vipRef)}</div>
+                    <div class="detail-label">UID</div>
+                    <div class="detail-value">${escapeHtml(metadata.uid)}</div>
                 </div>
             `;
         }
 
+        if (metadata.creationTimestamp) {
+            html += `
+                <div class="detail-item">
+                    <div class="detail-label">Created</div>
+                    <div class="detail-value">${escapeHtml(metadata.creationTimestamp)}</div>
+                </div>
+            `;
+        }
+
+        // Spec-specific fields
         if (spec.listeners) {
             html += `
                 <div class="detail-item">
@@ -390,28 +509,29 @@
         }
 
         if (spec.hostnames) {
+            const hostnames = Array.isArray(spec.hostnames) ? spec.hostnames.join(', ') : spec.hostnames;
             html += `
                 <div class="detail-item">
                     <div class="detail-label">Hostnames</div>
-                    <div class="detail-value">${escapeHtml(spec.hostnames.join(', ') || 'N/A')}</div>
+                    <div class="detail-value">${escapeHtml(hostnames || 'N/A')}</div>
                 </div>
             `;
         }
 
-        if (spec.rules) {
+        if (spec.backendRefs) {
             html += `
                 <div class="detail-item">
-                    <div class="detail-label">Rules</div>
-                    <div class="detail-value">${spec.rules.length} configured</div>
+                    <div class="detail-label">Backends</div>
+                    <div class="detail-value">${spec.backendRefs.length} configured</div>
                 </div>
             `;
         }
 
-        if (spec.serviceRef) {
+        if (spec.endpoints) {
             html += `
                 <div class="detail-item">
-                    <div class="detail-label">Service</div>
-                    <div class="detail-value">${escapeHtml(spec.serviceRef.name || 'N/A')}</div>
+                    <div class="detail-label">Endpoints</div>
+                    <div class="detail-value">${spec.endpoints.length} configured</div>
                 </div>
             `;
         }
@@ -439,6 +559,15 @@
                 <div class="detail-item">
                     <div class="detail-label">Mode</div>
                     <div class="detail-value">${escapeHtml(spec.mode)}</div>
+                </div>
+            `;
+        }
+
+        if (spec.type) {
+            html += `
+                <div class="detail-item">
+                    <div class="detail-label">Policy Type</div>
+                    <div class="detail-value">${escapeHtml(spec.type)}</div>
                 </div>
             `;
         }
@@ -491,67 +620,195 @@
 
     // Load agents
     async function loadAgents(container) {
-        const agents = await fetchAPI('/agents');
+        try {
+            const agents = await fetchAPI('/agents');
 
-        if (agents.length === 0) {
+            if (!agents || agents.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">&#9679;</div>
+                        <h3>No agents found</h3>
+                        <p>${appMode === 'kubernetes' ? 'NovaEdge agents run as a DaemonSet on cluster nodes.' : 'Agent information is not available in standalone mode.'}</p>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = `
+                <div class="card">
+                    <div class="card-header">
+                        <h3>NovaEdge Agents (${agents.length})</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Node</th>
+                                        <th>Pod IP</th>
+                                        <th>Phase</th>
+                                        <th>Ready</th>
+                                        <th>Age</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+            `;
+
+            agents.forEach(agent => {
+                const readyClass = agent.ready ? 'badge-success' : 'badge-error';
+                const phaseClass = agent.phase === 'Running' ? 'badge-success' :
+                                  agent.phase === 'Pending' ? 'badge-warning' : 'badge-error';
+
+                html += `
+                    <tr>
+                        <td><strong>${escapeHtml(agent.name)}</strong></td>
+                        <td>${escapeHtml(agent.nodeName || 'N/A')}</td>
+                        <td><code>${escapeHtml(agent.podIP || 'N/A')}</code></td>
+                        <td><span class="badge ${phaseClass}">${escapeHtml(agent.phase)}</span></td>
+                        <td><span class="badge ${readyClass}">${agent.ready ? 'Ready' : 'Not Ready'}</span></td>
+                        <td>${formatAge(agent.startTime)}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        } catch (error) {
             container.innerHTML = `
                 <div class="empty-state">
                     <div class="empty-state-icon">&#9679;</div>
-                    <h3>No agents found</h3>
-                    <p>NovaEdge agents run as a DaemonSet on cluster nodes.</p>
+                    <h3>Unable to load agents</h3>
+                    <p>${error.message}</p>
                 </div>
             `;
+        }
+    }
+
+    // Export config
+    window.exportConfig = async function() {
+        try {
+            const response = await fetch(`${API_BASE}/config/export?namespace=${currentNamespace}`, {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                throw new Error('Export failed');
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'novaedge-config.yaml';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+
+            if (window.showToast) {
+                window.showToast('success', 'Configuration exported successfully');
+            }
+        } catch (error) {
+            if (window.showToast) {
+                window.showToast('error', 'Export failed: ' + error.message);
+            }
+        }
+    };
+
+    // Show import dialog
+    window.showImportDialog = function() {
+        if (isReadOnly) {
+            if (window.showToast) {
+                window.showToast('error', 'Import is disabled in read-only mode');
+            }
             return;
         }
 
-        let html = `
-            <div class="card">
-                <div class="card-header">
-                    <h3>NovaEdge Agents (${agents.length})</h3>
-                </div>
-                <div class="card-body">
-                    <div class="table-container">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Name</th>
-                                    <th>Node</th>
-                                    <th>Pod IP</th>
-                                    <th>Phase</th>
-                                    <th>Ready</th>
-                                    <th>Age</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-        `;
-
-        agents.forEach(agent => {
-            const readyClass = agent.ready ? 'badge-success' : 'badge-error';
-            const phaseClass = agent.phase === 'Running' ? 'badge-success' :
-                              agent.phase === 'Pending' ? 'badge-warning' : 'badge-error';
-
-            html += `
-                <tr>
-                    <td><strong>${escapeHtml(agent.name)}</strong></td>
-                    <td>${escapeHtml(agent.nodeName || 'N/A')}</td>
-                    <td><code>${escapeHtml(agent.podIP || 'N/A')}</code></td>
-                    <td><span class="badge ${phaseClass}">${escapeHtml(agent.phase)}</span></td>
-                    <td><span class="badge ${readyClass}">${agent.ready ? 'Ready' : 'Not Ready'}</span></td>
-                    <td>${formatAge(agent.startTime)}</td>
-                </tr>
-            `;
-        });
-
-        html += `
-                            </tbody>
-                        </table>
+        const html = `
+            <div class="modal-overlay" onclick="closeModal()">
+                <div class="modal" onclick="event.stopPropagation()">
+                    <div class="modal-header">
+                        <h3>Import Configuration</h3>
+                        <button class="modal-close" onclick="closeModal()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Upload a YAML configuration file to import.</p>
+                        <div class="form-group">
+                            <input type="file" id="import-file" accept=".yaml,.yml" class="form-input">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" id="dry-run-checkbox"> Dry Run (preview changes without applying)
+                            </label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                        <button class="btn btn-primary" onclick="importConfig()">Import</button>
                     </div>
                 </div>
             </div>
         `;
 
-        container.innerHTML = html;
-    }
+        document.body.insertAdjacentHTML('beforeend', html);
+    };
+
+    // Import config
+    window.importConfig = async function() {
+        const fileInput = document.getElementById('import-file');
+        const dryRunCheckbox = document.getElementById('dry-run-checkbox');
+
+        if (!fileInput.files || fileInput.files.length === 0) {
+            if (window.showToast) {
+                window.showToast('error', 'Please select a file');
+            }
+            return;
+        }
+
+        const file = fileInput.files[0];
+        const dryRun = dryRunCheckbox.checked;
+
+        try {
+            const content = await file.text();
+            const response = await fetch(`${API_BASE}/config/import?dryRun=${dryRun}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-yaml' },
+                body: content
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Import failed');
+            }
+
+            const result = await response.json();
+
+            if (dryRun) {
+                let message = `Dry run results:\n`;
+                message += `- ${result.created?.length || 0} resources would be created\n`;
+                message += `- ${result.updated?.length || 0} resources would be updated`;
+                alert(message);
+            } else {
+                if (window.showToast) {
+                    window.showToast('success', `Import successful: ${result.created?.length || 0} created, ${result.updated?.length || 0} updated`);
+                }
+                window.closeModal();
+                window.refreshCurrentPage();
+            }
+        } catch (error) {
+            if (window.showToast) {
+                window.showToast('error', 'Import failed: ' + error.message);
+            }
+        }
+    };
 
     // Fetch from API
     async function fetchAPI(path) {
@@ -593,7 +850,6 @@
     }
 
     function jsonToYaml(obj, indent = 0) {
-        // Simple JSON to YAML-like conversion
         const spaces = '  '.repeat(indent);
         let yaml = '';
 

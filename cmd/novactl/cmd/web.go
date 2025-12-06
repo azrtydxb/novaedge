@@ -19,6 +19,9 @@ var (
 	webAddress            string
 	webPrometheusEndpoint string
 	webOpenBrowser        bool
+	webMode               string
+	webStandaloneConfig   string
+	webReadOnly           bool
 )
 
 func newWebCommand() *cobra.Command {
@@ -33,8 +36,12 @@ The dashboard provides:
   - Agent status monitoring
   - Configuration viewer
 
-The dashboard uses your current kubeconfig context to connect to the cluster.`,
-		Example: `  # Start the web dashboard on default port
+The dashboard supports two modes:
+  - Kubernetes mode: Uses CRDs to manage configuration (default)
+  - Standalone mode: Uses a YAML config file for non-Kubernetes deployments
+
+The mode is auto-detected but can be explicitly set with --mode.`,
+		Example: `  # Start the web dashboard on default port (Kubernetes mode)
   novactl web
 
   # Start on a custom port
@@ -42,6 +49,12 @@ The dashboard uses your current kubeconfig context to connect to the cluster.`,
 
   # Start with Prometheus metrics
   novactl web --prometheus-endpoint http://prometheus:9090
+
+  # Start in standalone mode with a config file
+  novactl web --mode standalone --standalone-config /etc/novaedge/config.yaml
+
+  # Start in read-only mode (no write operations allowed)
+  novactl web --read-only
 
   # Start and open browser automatically
   novactl web --open`,
@@ -54,27 +67,46 @@ The dashboard uses your current kubeconfig context to connect to the cluster.`,
 		"Prometheus endpoint URL for metrics (optional)")
 	cmd.Flags().BoolVar(&webOpenBrowser, "open", false,
 		"Open the dashboard in the default browser")
+	cmd.Flags().StringVar(&webMode, "mode", "auto",
+		"Operating mode: auto, kubernetes, or standalone")
+	cmd.Flags().StringVar(&webStandaloneConfig, "standalone-config", "",
+		"Path to standalone config file (required for standalone mode)")
+	cmd.Flags().BoolVar(&webReadOnly, "read-only", false,
+		"Disable write operations (view-only mode)")
 
 	return cmd
 }
 
 func runWeb(cmd *cobra.Command, args []string) error {
-	// Get kubeconfig
-	kubeconfigPath := os.Getenv("KUBECONFIG")
-	if kubeconfigPath == "" {
-		kubeconfigPath = clientcmd.RecommendedHomeFile
-	}
-
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to load kubeconfig: %w", err)
-	}
-
 	// Create server config
 	serverConfig := webui.Config{
-		Address:            webAddress,
-		KubeConfig:         config,
-		PrometheusEndpoint: webPrometheusEndpoint,
+		Address:              webAddress,
+		PrometheusEndpoint:   webPrometheusEndpoint,
+		Mode:                 webMode,
+		StandaloneConfigPath: webStandaloneConfig,
+		ReadOnly:             webReadOnly,
+	}
+
+	// For Kubernetes mode (or auto mode), try to load kubeconfig
+	if webMode != "standalone" {
+		kubeconfigPath := os.Getenv("KUBECONFIG")
+		if kubeconfigPath == "" {
+			kubeconfigPath = clientcmd.RecommendedHomeFile
+		}
+
+		config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		if err != nil {
+			// If standalone config is provided, allow falling back to standalone mode
+			if webStandaloneConfig != "" {
+				fmt.Printf("Warning: kubeconfig not available, using standalone mode\n")
+				serverConfig.Mode = "standalone"
+			} else if webMode == "kubernetes" {
+				return fmt.Errorf("failed to load kubeconfig: %w", err)
+			}
+			// For auto mode without kubeconfig, mode detection will handle it
+		} else {
+			serverConfig.KubeConfig = config
+		}
 	}
 
 	// Create and start server

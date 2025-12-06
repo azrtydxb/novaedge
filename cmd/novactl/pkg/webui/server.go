@@ -9,11 +9,11 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/prometheus"
+	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/mode"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -30,62 +30,96 @@ type Server struct {
 	k8sClient        *client.Client
 	clientset        kubernetes.Interface
 	prometheusClient *prometheus.Client
+	backend          mode.Backend
 	server           *http.Server
-	mu               sync.RWMutex
 }
 
 // Config holds server configuration
 type Config struct {
-	Address            string
-	KubeConfig         *rest.Config
-	PrometheusEndpoint string
+	Address              string
+	KubeConfig           *rest.Config
+	PrometheusEndpoint   string
+	Mode                 string // auto, kubernetes, standalone
+	StandaloneConfigPath string
+	ReadOnly             bool
 }
 
 // NewServer creates a new web UI server
 func NewServer(cfg Config) (*Server, error) {
-	k8sClient, err := client.NewClient(cfg.KubeConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
+	s := &Server{
+		addr: cfg.Address,
 	}
 
-	clientset, err := kubernetes.NewForConfig(cfg.KubeConfig)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create clientset: %w", err)
+	// Determine operating mode
+	var opMode mode.Mode
+	switch cfg.Mode {
+	case "kubernetes":
+		opMode = mode.ModeKubernetes
+	case "standalone":
+		opMode = mode.ModeStandalone
+	default:
+		// Auto-detect mode
+		opMode = mode.DetectMode(cfg.KubeConfig, cfg.StandaloneConfigPath)
 	}
 
-	var promClient *prometheus.Client
+	// Create the backend
+	backend, err := mode.NewBackend(opMode, cfg.KubeConfig, cfg.StandaloneConfigPath, cfg.ReadOnly)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create backend: %w", err)
+	}
+	s.backend = backend
+
+	// For Kubernetes mode, also create the legacy clients for agent listing etc.
+	if opMode == mode.ModeKubernetes && cfg.KubeConfig != nil {
+		k8sClient, err := client.NewClient(cfg.KubeConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create kubernetes client: %w", err)
+		}
+		s.k8sClient = k8sClient
+
+		clientset, err := kubernetes.NewForConfig(cfg.KubeConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create clientset: %w", err)
+		}
+		s.clientset = clientset
+	}
+
+	// Create Prometheus client if configured
 	if cfg.PrometheusEndpoint != "" {
-		promClient = prometheus.NewClient(cfg.PrometheusEndpoint)
+		s.prometheusClient = prometheus.NewClient(cfg.PrometheusEndpoint)
 	}
 
-	return &Server{
-		addr:             cfg.Address,
-		k8sClient:        k8sClient,
-		clientset:        clientset,
-		prometheusClient: promClient,
-	}, nil
+	return s, nil
 }
 
 // Start starts the web UI server
 func (s *Server) Start() error {
 	mux := http.NewServeMux()
 
-	// API routes
-	mux.HandleFunc("/api/v1/gateways", s.handleGateways)
-	mux.HandleFunc("/api/v1/gateways/", s.handleGateway)
-	mux.HandleFunc("/api/v1/routes", s.handleRoutes)
-	mux.HandleFunc("/api/v1/routes/", s.handleRoute)
-	mux.HandleFunc("/api/v1/backends", s.handleBackends)
-	mux.HandleFunc("/api/v1/backends/", s.handleBackend)
-	mux.HandleFunc("/api/v1/vips", s.handleVIPs)
-	mux.HandleFunc("/api/v1/vips/", s.handleVIP)
-	mux.HandleFunc("/api/v1/policies", s.handlePolicies)
-	mux.HandleFunc("/api/v1/policies/", s.handlePolicy)
+	// Mode endpoint
+	mux.HandleFunc("/api/v1/mode", s.handleMode)
+
+	// API routes - use method-aware handlers
+	mux.HandleFunc("/api/v1/gateways", s.handleGatewaysWithWrite)
+	mux.HandleFunc("/api/v1/gateways/", s.handleGatewayWithWrite)
+	mux.HandleFunc("/api/v1/routes", s.handleRoutesWithWrite)
+	mux.HandleFunc("/api/v1/routes/", s.handleRouteWithWrite)
+	mux.HandleFunc("/api/v1/backends", s.handleBackendsWithWrite)
+	mux.HandleFunc("/api/v1/backends/", s.handleBackendWithWrite)
+	mux.HandleFunc("/api/v1/vips", s.handleVIPsWithWrite)
+	mux.HandleFunc("/api/v1/vips/", s.handleVIPWithWrite)
+	mux.HandleFunc("/api/v1/policies", s.handlePoliciesWithWrite)
+	mux.HandleFunc("/api/v1/policies/", s.handlePolicyWithWrite)
 	mux.HandleFunc("/api/v1/agents", s.handleAgents)
 	mux.HandleFunc("/api/v1/metrics/dashboard", s.handleMetricsDashboard)
 	mux.HandleFunc("/api/v1/metrics/query", s.handleMetricsQuery)
 	mux.HandleFunc("/api/v1/namespaces", s.handleNamespaces)
 	mux.HandleFunc("/api/v1/health", s.handleHealth)
+
+	// Config management endpoints
+	mux.HandleFunc("/api/v1/config/validate", s.handleConfigValidate)
+	mux.HandleFunc("/api/v1/config/export", s.handleConfigExport)
+	mux.HandleFunc("/api/v1/config/import", s.handleConfigImport)
 
 	// Static files
 	staticFS, err := fs.Sub(staticFiles, "static")
@@ -149,6 +183,128 @@ func parseNamespaceFromQuery(r *http.Request) string {
 		return "default"
 	}
 	return ns
+}
+
+// Method-aware handlers that dispatch to GET or write handlers
+
+// handleGatewaysWithWrite dispatches to GET or POST handler
+func (s *Server) handleGatewaysWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGateways(w, r)
+	case http.MethodPost:
+		s.handleGatewayWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleGatewayWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleGatewayWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleGateway(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleGatewayWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleRoutesWithWrite dispatches to GET or POST handler
+func (s *Server) handleRoutesWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleRoutes(w, r)
+	case http.MethodPost:
+		s.handleRouteWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleRouteWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleRouteWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleRoute(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleRouteWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleBackendsWithWrite dispatches to GET or POST handler
+func (s *Server) handleBackendsWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleBackends(w, r)
+	case http.MethodPost:
+		s.handleBackendWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleBackendWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleBackendWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleBackend(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleBackendWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleVIPsWithWrite dispatches to GET or POST handler
+func (s *Server) handleVIPsWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleVIPs(w, r)
+	case http.MethodPost:
+		s.handleVIPWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleVIPWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleVIPWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleVIP(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleVIPWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handlePoliciesWithWrite dispatches to GET or POST handler
+func (s *Server) handlePoliciesWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handlePolicies(w, r)
+	case http.MethodPost:
+		s.handlePolicyWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handlePolicyWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handlePolicyWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handlePolicy(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handlePolicyWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
 }
 
 // handleGateways handles GET /api/v1/gateways
