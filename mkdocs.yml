@@ -1,0 +1,71 @@
+site_name: NovaEdge
+site_description: Distributed Kubernetes-native load balancer, reverse proxy, and VIP controller
+site_url: https://piwi3910.github.io/novaedge
+repo_url: https://github.com/piwi3910/novaedge
+repo_name: piwi3910/novaedge
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - admonition
+  - pymdownx.details
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Quick Start: getting-started/quickstart.md
+    - Installation: getting-started/installation.md
+  - User Guide:
+    - Deployment Guide: user-guide/deployment-guide.md
+    - Standalone Mode: user-guide/standalone-mode.md
+    - Gateway API: user-guide/gateway-api.md
+    - HTTP/3 and QUIC: user-guide/http3-guide.md
+  - Reference:
+    - novactl CLI: reference/novactl-reference.md
+    - CRD Reference: reference/crd-reference.md
+  - Development:
+    - Development Guide: development/development-guide.md
+    - Contributing: development/contributing.md
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/piwi3910/novaedge
