@@ -765,34 +765,133 @@ novactl federation conflicts resolve ProxyRoute/default/api --keep remote
 
 ## Split-Brain Protection
 
-NovaEdge includes automatic split-brain detection and protection:
+NovaEdge includes automatic split-brain detection and protection with two modes:
 
-### How It Works
+### Quorum Modes
 
-1. **Detection**: Controllers monitor peer connectivity and detect partitions
-2. **Quorum Check**: Determine if we have majority of peers
-3. **Write Fencing**: Non-majority partitions fence writes to prevent divergence
-4. **Healing**: When partition heals, state is reconciled automatically
+#### Controller-Only Quorum (Default)
+
+Traditional quorum requiring 3+ controllers:
+
+```mermaid
+flowchart LR
+    C1["Controller 1"] <--> C2["Controller 2"]
+    C1 <--> C3["Controller 3"]
+    C2 <--> C3
+
+    style C1 fill:#90EE90
+    style C2 fill:#90EE90
+    style C3 fill:#FFB6C1
+```
+
+- Requires minimum 3 controllers for effective split-brain prevention
+- Quorum = majority of controllers (n/2 + 1)
+- Simple but requires more infrastructure
+
+#### Agent-Assisted Quorum (2-Datacenter Deployments)
+
+Uses agents as quorum participants, enabling split-brain prevention with only 2 controllers:
+
+```mermaid
+flowchart TB
+    subgraph DC_A["Datacenter A"]
+        C1["Controller 1<br/>Weight: 10"]
+        A1["Agent 1<br/>Weight: 1"]
+        A2["Agent 2<br/>Weight: 1"]
+        A3["Agent 3<br/>Weight: 1"]
+    end
+
+    subgraph DC_B["Datacenter B"]
+        C2["Controller 2<br/>Weight: 10"]
+        A4["Agent 4<br/>Weight: 1"]
+        A5["Agent 5<br/>Weight: 1"]
+    end
+
+    C1 <-->|"❌ Partition"| C2
+
+    A1 --> C1
+    A2 --> C1
+    A3 --> C1
+    A4 -.->|"Still reachable"| C1
+    A5 -.->|"Still reachable"| C1
+
+    A4 --> C2
+    A5 --> C2
+
+    style DC_A fill:#90EE90
+    style DC_B fill:#FFB6C1
+```
+
+**How it works:**
+- Each controller gets a weight (default: 10)
+- Each agent gets a weight (default: 1)
+- Agents report ALL controllers they can reach
+- Controller with majority of weighted votes wins quorum
+- Losing controller fences writes
+
+**Example calculation:**
+- DC-A: Controller (10) + 3 local agents (3) + 2 DC-B agents reachable (2) = 15 votes
+- DC-B: Controller (10) + 2 local agents (2) = 12 votes
+- Quorum threshold: (15+12)/2 + 1 = 14 votes
+- DC-A has quorum (15 ≥ 14), DC-B fences writes (12 < 14)
 
 ### Configuration
+
+#### Controller-Only Mode (3+ Controllers)
 
 ```yaml
 spec:
   splitBrain:
-    # Enable split-brain detection
     enabled: true
+    mode: Controllers
+    quorumSize: 2  # n/2 + 1
+    detectionDelay: "30s"
+    fenceWrites: true
+```
 
-    # Minimum peers for quorum (default: n/2 + 1)
-    quorumSize: 2
+#### Agent-Assisted Mode (2 Controllers)
+
+```yaml
+spec:
+  splitBrain:
+    enabled: true
+    mode: AgentAssisted
+
+    # Weight assigned to each controller in quorum calculation
+    controllerWeight: 10
+
+    # Weight assigned to each agent in quorum calculation
+    agentWeight: 1
+
+    # Minimum agents required for quorum (prevents zero-agent scenarios)
+    minAgentsForQuorum: 1
 
     # How long to wait before confirming partition
     detectionDelay: "30s"
 
     # Fence writes during partition (recommended)
     fenceWrites: true
+```
 
-    # Allow reads during partition
-    allowReads: true
+### Agent Reachability Reporting
+
+Agents automatically probe and report reachability to all configured controllers:
+
+```yaml
+# Agent configuration
+agent:
+  controllers:
+    primary:
+      endpoint: "controller-dc-a.example.com:9090"
+    secondary:
+      - endpoint: "controller-dc-b.example.com:9090"
+        priority: 100
+
+  # Enable reachability probing for all controllers
+  reachabilityProbe:
+    enabled: true
+    interval: "10s"
+    timeout: "5s"
 ```
 
 ### Monitoring Split-Brain State
@@ -801,13 +900,30 @@ spec:
 # Check partition status
 novactl federation status --verbose
 
-# Output during partition:
+# Output during partition (Controller mode):
 # Phase: Partitioned
 # Partition State: Confirmed
 # Reachable Peers: 0/2
 # Writes Fenced: Yes
 # Reads Allowed: Yes
+
+# Output during partition (Agent-Assisted mode):
+# Phase: Partitioned
+# Quorum Mode: AgentAssisted
+# Our Votes: 15 / 27 total
+# Quorum Threshold: 14
+# Have Quorum: Yes
+# Reachable Agents: 5
+# Writes Fenced: No
 ```
+
+### Best Practices for Agent-Assisted Quorum
+
+1. **Deploy agents across both datacenters** - Agents in both DCs provide visibility
+2. **Ensure network paths** - Agents should be able to reach both controllers
+3. **Use appropriate weights** - Controller weight should be high enough to prevent agent-only majority
+4. **Monitor agent connectivity** - Alert on agents that can't reach expected controllers
+5. **Test failover scenarios** - Verify quorum behavior during planned network tests
 
 ## Anti-Entropy Synchronization
 
