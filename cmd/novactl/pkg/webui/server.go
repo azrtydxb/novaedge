@@ -3,6 +3,7 @@ package webui
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -14,6 +15,7 @@ import (
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/prometheus"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/mode"
+	"github.com/piwi3910/novaedge/internal/acme"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -31,6 +33,10 @@ type Server struct {
 	prometheusClient *prometheus.Client
 	backend          mode.Backend
 	server           *http.Server
+	tlsConfig        *tls.Config
+	tlsCert          string
+	tlsKey           string
+	tlsAuto          bool
 }
 
 // Config holds server configuration
@@ -41,12 +47,27 @@ type Config struct {
 	Mode                 string // auto, kubernetes, standalone
 	StandaloneConfigPath string
 	ReadOnly             bool
+
+	// TLS configuration
+	TLSCert    string // Path to TLS certificate file
+	TLSKey     string // Path to TLS key file
+	TLSAuto    bool   // Auto-generate self-signed certificate
+	ACMEEmail  string // Email for ACME/Let's Encrypt
+	ACMEDomain string // Domain for ACME certificate
 }
 
 // NewServer creates a new web UI server
 func NewServer(cfg Config) (*Server, error) {
 	s := &Server{
-		addr: cfg.Address,
+		addr:    cfg.Address,
+		tlsCert: cfg.TLSCert,
+		tlsKey:  cfg.TLSKey,
+		tlsAuto: cfg.TLSAuto,
+	}
+
+	// Set up TLS if configured
+	if err := s.setupTLS(cfg); err != nil {
+		return nil, fmt.Errorf("failed to setup TLS: %w", err)
 	}
 
 	// Determine operating mode
@@ -135,6 +156,15 @@ func (s *Server) Start() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
+	// Use TLS if configured
+	if s.tlsConfig != nil {
+		s.server.TLSConfig = s.tlsConfig
+		fmt.Printf("Starting NovaEdge Web UI at https://%s\n", s.addr)
+		// When TLS config has certificates, we pass empty strings to ListenAndServeTLS
+		// because the certificates are already configured in tlsConfig
+		return s.server.ListenAndServeTLS("", "")
+	}
+
 	fmt.Printf("Starting NovaEdge Web UI at http://%s\n", s.addr)
 	return s.server.ListenAndServe()
 }
@@ -145,6 +175,62 @@ func (s *Server) Stop(ctx context.Context) error {
 		return s.server.Shutdown(ctx)
 	}
 	return nil
+}
+
+// setupTLS configures TLS for the server
+func (s *Server) setupTLS(cfg Config) error {
+	// No TLS if no configuration provided
+	if cfg.TLSCert == "" && cfg.TLSKey == "" && !cfg.TLSAuto {
+		return nil
+	}
+
+	// Manual certificate
+	if cfg.TLSCert != "" && cfg.TLSKey != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCert, cfg.TLSKey)
+		if err != nil {
+			return fmt.Errorf("failed to load certificate: %w", err)
+		}
+		s.tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
+		return nil
+	}
+
+	// Auto-generate self-signed certificate
+	if cfg.TLSAuto {
+		domains := []string{"localhost"}
+		if cfg.ACMEDomain != "" {
+			domains = append(domains, cfg.ACMEDomain)
+		}
+
+		cert, err := acme.GenerateSelfSigned(&acme.SelfSignedConfig{
+			Domains:      domains,
+			Organization: "NovaEdge Web UI",
+			Validity:     365 * 24 * time.Hour,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to generate self-signed certificate: %w", err)
+		}
+
+		tlsCert, err := cert.TLSCertificate()
+		if err != nil {
+			return fmt.Errorf("failed to load self-signed certificate: %w", err)
+		}
+
+		s.tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{*tlsCert},
+			MinVersion:   tls.VersionTLS12,
+		}
+		return nil
+	}
+
+	return nil
+}
+
+// IsTLSEnabled returns true if TLS is configured
+func (s *Server) IsTLSEnabled() bool {
+	return s.tlsConfig != nil
 }
 
 // corsMiddleware adds CORS headers for development

@@ -457,6 +457,22 @@ var (
 		},
 		[]string{"result"}, // success, failure
 	)
+
+	// SecurityHeadersAppliedTotal tracks security headers applied
+	SecurityHeadersAppliedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_security_headers_applied_total",
+			Help: "Total number of responses with security headers applied",
+		},
+	)
+
+	// ResponseHeadersModifiedTotal tracks response header modifications
+	ResponseHeadersModifiedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_response_headers_modified_total",
+			Help: "Total number of responses with modified headers",
+		},
+	)
 )
 
 // RecordHTTPRequest records an HTTP request

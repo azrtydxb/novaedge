@@ -40,6 +40,20 @@ Thumbs.db
 # Node.js
 node_modules/
 *.tsbuildinfo
+dist/
 
 # Claude Code
 .claude/
+
+# ACME/Certificate storage
+.acme/
+*.pem
+*.key
+*.crt
+!config/samples/**/*.pem
+!config/samples/**/*.key
+!config/samples/**/*.crt
+
+# Frontend build output
+cmd/novactl/pkg/webui/frontend/dist/
+cmd/novactl/pkg/webui/frontend/node_modules/

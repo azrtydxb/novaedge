@@ -5,7 +5,7 @@ NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VI
 ## Features
 
 - **Distributed L7 load balancing** (HTTP/1.1, HTTP/2, HTTP/3, WebSockets, gRPC)
-- **Reverse proxy with filters** (auth, rate-limit, rewrites, CORS)
+- **Reverse proxy with filters** (auth, rate-limit, rewrites, CORS, response headers)
 - **Ingress Controller** compatible with Kubernetes Ingress and Gateway API
 - **Distributed VIP management**:
   - L2 ARP mode (active-passive VIP ownership)
@@ -42,8 +42,8 @@ NovaEdge is now **production-ready** and enterprise-grade, capable of replacing 
 - ✅ gRPC support with metadata forwarding
 - ✅ All 3 VIP modes: L2 ARP (with actual GARP), BGP, and OSPF
 - ✅ 5 load balancing algorithms: RoundRobin, P2C, EWMA, RingHash, Maglev
-- ✅ Advanced filters: header modification, URL rewrite, redirects
-- ✅ Policy enforcement: rate limiting, CORS, IP filtering, JWT validation
+- ✅ Advanced filters: header modification, URL rewrite, redirects, response headers
+- ✅ Policy enforcement: rate limiting, CORS, IP filtering, JWT validation, security headers
 - ✅ Health checking (active & passive) and circuit breaking
 - ✅ TLS/SSL termination with SNI multi-certificate support
 - ✅ Ingress API v1 support with automatic translation
@@ -140,6 +140,7 @@ kubectl apply -f config/samples/proxyroute_sample.yaml
 kubectl apply -f config/samples/proxypolicy_ratelimit_sample.yaml
 kubectl apply -f config/samples/proxypolicy_cors_sample.yaml
 kubectl apply -f config/samples/proxypolicy_jwt_sample.yaml
+kubectl apply -f config/samples/proxypolicy_securityheaders_sample.yaml
 
 # Or use standard Kubernetes Ingress
 kubectl apply -f config/samples/ingress_sample.yaml
@@ -245,6 +246,9 @@ novactl metrics dashboard
 - **JWT validation** with JWKS support
 - **IP filtering** with CIDR and trusted proxy support
 - **Circuit breakers** prevent cascading failures
+- **Security headers policy** (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
+- **Response header modification** (add, set, remove headers on responses)
+- **Management plane protection** (run Web UI behind NovaEdge proxy)
 
 ### Performance Optimizations
 - **Connection pooling** with configurable limits per cluster

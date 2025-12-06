@@ -28,11 +28,12 @@ import (
 
 // RouteEntry represents a single route rule
 type RouteEntry struct {
-	Route         *pb.Route
-	Rule          *pb.RouteRule
-	PathMatcher   PathMatcher
-	Policies      []policyMiddleware
-	HeaderRegexes map[int]*regexp.Regexp // Cached compiled header regex patterns (index -> regex)
+	Route          *pb.Route
+	Rule           *pb.RouteRule
+	PathMatcher    PathMatcher
+	Policies       []policyMiddleware
+	HeaderRegexes  map[int]*regexp.Regexp // Cached compiled header regex patterns (index -> regex)
+	ResponseFilter *ResponseFilter        // Response header modifications
 }
 
 // compileHeaderRegexes pre-compiles all header regex patterns for a route rule

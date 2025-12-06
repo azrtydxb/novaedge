@@ -393,6 +393,28 @@ spec:
     issuer: "https://auth.example.com"
     audience: ["api.example.com"]
     jwksUri: "https://auth.example.com/.well-known/jwks.json"
+---
+# Security Headers
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: security-headers-policy
+spec:
+  targetRef:
+    kind: ProxyGateway
+    name: main-gateway
+  type: SecurityHeaders
+  securityHeaders:
+    hsts:
+      enabled: true
+      maxAgeSeconds: 31536000
+      includeSubdomains: true
+      preload: false
+    xFrameOptions: DENY
+    xContentTypeOptions: true
+    xXssProtection: "1; mode=block"
+    referrerPolicy: strict-origin-when-cross-origin
+    contentSecurityPolicy: "default-src 'self'"
 ```
 
 ### TLS/HTTPS Configuration
@@ -675,6 +697,63 @@ spec:
   - port: metrics
     interval: 30s
 ```
+
+## Management Plane Protection
+
+NovaEdge can protect its own management interfaces (Web UI, Prometheus metrics) by running them behind its own reverse proxy.
+
+### Kubernetes Mode
+
+Use the management gateway sample configuration:
+
+```bash
+kubectl apply -f config/samples/management-plane/management-gateway.yaml
+```
+
+This creates:
+- ProxyCertificate for ACME/Let's Encrypt TLS
+- ProxyGateway with HTTPS listener
+- ProxyRoutes for Web UI and Prometheus
+- Security policies (rate limiting, IP filtering, security headers)
+
+### Standalone Mode
+
+For standalone deployments, use:
+
+```bash
+# Apply the standalone management configuration
+./bin/novaedge-standalone --config=config/samples/management-plane/standalone-management.yaml
+```
+
+See [Standalone README](../deploy/standalone/README.md) for details.
+
+### Security Headers Policy
+
+Apply HSTS, CSP, and other security headers to all responses:
+
+```yaml
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: security-headers
+spec:
+  targetRef:
+    kind: ProxyGateway
+    name: my-gateway
+  type: SecurityHeaders
+  securityHeaders:
+    hsts:
+      enabled: true
+      maxAgeSeconds: 31536000  # 1 year
+      includeSubdomains: true
+    contentSecurityPolicy: "default-src 'self'"
+    xFrameOptions: DENY
+    xContentTypeOptions: true
+    xXssProtection: "1; mode=block"
+    referrerPolicy: strict-origin-when-cross-origin
+```
+
+See `config/samples/proxypolicy_securityheaders_sample.yaml` for more examples.
 
 ## Next Steps
 

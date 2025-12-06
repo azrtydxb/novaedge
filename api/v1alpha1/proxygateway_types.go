@@ -41,8 +41,22 @@ const (
 // TLSConfig defines TLS configuration for a listener
 type TLSConfig struct {
 	// SecretRef references a Kubernetes Secret containing TLS certificate and key
-	// +kubebuilder:validation:Required
-	SecretRef corev1.SecretReference `json:"secretRef"`
+	// One of SecretRef, CertificateRef, ACME, or SelfSigned must be specified
+	// +optional
+	SecretRef *corev1.SecretReference `json:"secretRef,omitempty"`
+
+	// CertificateRef references a ProxyCertificate resource
+	// +optional
+	CertificateRef *ObjectReference `json:"certificateRef,omitempty"`
+
+	// ACME configures automatic certificate provisioning via ACME
+	// This creates a ProxyCertificate automatically
+	// +optional
+	ACME *InlineACMEConfig `json:"acme,omitempty"`
+
+	// SelfSigned generates a self-signed certificate
+	// +optional
+	SelfSigned *InlineSelfSignedConfig `json:"selfSigned,omitempty"`
 
 	// MinVersion is the minimum TLS version (default: TLS 1.2)
 	// +optional
@@ -52,6 +66,39 @@ type TLSConfig struct {
 	// CipherSuites is a list of allowed cipher suites
 	// +optional
 	CipherSuites []string `json:"cipherSuites,omitempty"`
+}
+
+// InlineACMEConfig configures inline ACME certificate provisioning
+type InlineACMEConfig struct {
+	// Email is the email address for ACME registration
+	// +kubebuilder:validation:Required
+	Email string `json:"email"`
+
+	// ChallengeType specifies the ACME challenge type
+	// +optional
+	// +kubebuilder:default="http-01"
+	// +kubebuilder:validation:Enum=http-01;dns-01;tls-alpn-01
+	ChallengeType string `json:"challengeType,omitempty"`
+
+	// DNSProvider for DNS-01 challenges (e.g., cloudflare, route53)
+	// +optional
+	DNSProvider string `json:"dnsProvider,omitempty"`
+
+	// Server is the ACME server URL (default: Let's Encrypt production)
+	// +optional
+	Server string `json:"server,omitempty"`
+}
+
+// InlineSelfSignedConfig configures inline self-signed certificate generation
+type InlineSelfSignedConfig struct {
+	// Validity is the certificate validity duration (default: 8760h = 1 year)
+	// +optional
+	// +kubebuilder:default="8760h"
+	Validity string `json:"validity,omitempty"`
+
+	// Organization is the organization name in the certificate
+	// +optional
+	Organization string `json:"organization,omitempty"`
 }
 
 // QUICConfig defines QUIC-specific configuration for HTTP/3

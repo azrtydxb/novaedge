@@ -103,11 +103,12 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 		for _, hostname := range route.Hostnames {
 			for _, rule := range route.Rules {
 				entry := &RouteEntry{
-					Route:         route,
-					Rule:          rule,
-					PathMatcher:   createPathMatcher(rule),
-					Policies:      r.createPolicyMiddleware(route, snapshot),
-					HeaderRegexes: compileHeaderRegexes(rule),
+					Route:          route,
+					Rule:           rule,
+					PathMatcher:    createPathMatcher(rule),
+					Policies:       r.createPolicyMiddleware(route, snapshot),
+					HeaderRegexes:  compileHeaderRegexes(rule),
+					ResponseFilter: collectResponseFilters(rule.Filters),
 				}
 				r.routes[hostname] = append(r.routes[hostname], entry)
 			}
@@ -342,6 +343,12 @@ func (r *Router) matchHeader(match *pb.HeaderMatch, headerIdx, matchIdx int, val
 
 // handleRoute handles a matched route
 func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
+	// Wrap response writer with response filter if needed
+	responseWriter := w
+	if entry.ResponseFilter != nil && entry.ResponseFilter.HasModifications() {
+		responseWriter = NewResponseHeaderWriter(w, entry.ResponseFilter)
+	}
+
 	// Create the final handler that forwards to backend
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.forwardToBackend(entry, w, req)
@@ -353,7 +360,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 	}
 
 	// Execute the handler chain (policies + backend forwarding)
-	handler.ServeHTTP(w, req)
+	handler.ServeHTTP(responseWriter, req)
 }
 
 // forwardToBackend forwards the request to the backend

@@ -120,7 +120,7 @@ func translateListener(gwListener gatewayv1.Listener, namespace string) (novaedg
 		}
 
 		listener.TLS = &novaedgev1alpha1.TLSConfig{
-			SecretRef: corev1.SecretReference{
+			SecretRef: &corev1.SecretReference{
 				Name:      string(certRef.Name),
 				Namespace: secretNamespace,
 			},

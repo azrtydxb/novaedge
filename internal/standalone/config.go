@@ -33,6 +33,9 @@ type Config struct {
 	// Global settings
 	Global GlobalConfig `yaml:"global"`
 
+	// Certificates define managed TLS certificates
+	Certificates []CertificateConfig `yaml:"certificates,omitempty"`
+
 	// Listeners define ports and protocols
 	Listeners []ListenerConfig `yaml:"listeners"`
 
@@ -47,6 +50,9 @@ type Config struct {
 
 	// Policies define rate limiting, CORS, etc. (optional)
 	Policies []PolicyConfig `yaml:"policies,omitempty"`
+
+	// Management defines management plane configuration
+	Management *ManagementConfig `yaml:"management,omitempty"`
 }
 
 // GlobalConfig contains global settings
@@ -99,10 +105,21 @@ type ListenerConfig struct {
 
 // TLSConfig defines TLS settings
 type TLSConfig struct {
-	CertFile     string   `yaml:"certFile"`
-	KeyFile      string   `yaml:"keyFile"`
-	MinVersion   string   `yaml:"minVersion,omitempty"`   // TLS1.2, TLS1.3
-	CipherSuites []string `yaml:"cipherSuites,omitempty"` // Optional cipher suite list
+	// CertFile path to PEM-encoded certificate (for inline TLS config)
+	CertFile string `yaml:"certFile,omitempty"`
+
+	// KeyFile path to PEM-encoded private key (for inline TLS config)
+	KeyFile string `yaml:"keyFile,omitempty"`
+
+	// Certificate references a certificate by name (from certificates section)
+	// This is an alternative to CertFile/KeyFile
+	Certificate string `yaml:"certificate,omitempty"`
+
+	// MinVersion: TLS1.2, TLS1.3 (default: TLS1.2)
+	MinVersion string `yaml:"minVersion,omitempty"`
+
+	// CipherSuites is an optional list of allowed cipher suites
+	CipherSuites []string `yaml:"cipherSuites,omitempty"`
 }
 
 // RouteConfig defines a routing rule
@@ -231,12 +248,29 @@ type ConnectionPoolConfig struct {
 
 // BackendTLSConfig defines TLS for backend connections
 type BackendTLSConfig struct {
-	Enabled            bool   `yaml:"enabled"`
-	InsecureSkipVerify bool   `yaml:"insecureSkipVerify,omitempty"`
-	CAFile             string `yaml:"caFile,omitempty"`
-	CertFile           string `yaml:"certFile,omitempty"`
-	KeyFile            string `yaml:"keyFile,omitempty"`
-	ServerName         string `yaml:"serverName,omitempty"`
+	// Enabled enables TLS for backend connections
+	Enabled bool `yaml:"enabled"`
+
+	// Mode: verify (default), skip-verify, mtls
+	Mode string `yaml:"mode,omitempty"`
+
+	// CAFile path to CA certificate for verification
+	CAFile string `yaml:"caFile,omitempty"`
+
+	// CertFile path to client certificate (for mTLS)
+	CertFile string `yaml:"certFile,omitempty"`
+
+	// KeyFile path to client private key (for mTLS)
+	KeyFile string `yaml:"keyFile,omitempty"`
+
+	// ServerName for SNI
+	ServerName string `yaml:"serverName,omitempty"`
+
+	// SelfSigned auto-generates a self-signed client certificate
+	SelfSigned bool `yaml:"selfSigned,omitempty"`
+
+	// InsecureSkipVerify skips certificate verification (deprecated: use mode: skip-verify)
+	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
 }
 
 // VIPConfig defines a virtual IP address
@@ -321,6 +355,156 @@ type JWTPolicy struct {
 	SecretKey string   `yaml:"secretKey,omitempty"`
 }
 
+// CertificateConfig defines a managed TLS certificate
+type CertificateConfig struct {
+	// Name is the unique identifier for this certificate
+	Name string `yaml:"name"`
+
+	// Domains to include in the certificate (first is primary/CN)
+	Domains []string `yaml:"domains"`
+
+	// Issuer configuration
+	Issuer CertificateIssuerConfig `yaml:"issuer"`
+
+	// RenewBefore specifies how long before expiry to renew
+	RenewBefore string `yaml:"renewBefore,omitempty"` // Default: 720h (30 days)
+}
+
+// CertificateIssuerConfig defines certificate issuer settings
+type CertificateIssuerConfig struct {
+	// Type: acme, manual, self-signed
+	Type string `yaml:"type"`
+
+	// ACME configuration (for type: acme)
+	ACME *ACMEIssuerConfig `yaml:"acme,omitempty"`
+
+	// Manual certificate files (for type: manual)
+	Manual *ManualIssuerConfig `yaml:"manual,omitempty"`
+
+	// Self-signed configuration (for type: self-signed)
+	SelfSigned *SelfSignedIssuerConfig `yaml:"selfSigned,omitempty"`
+}
+
+// ACMEIssuerConfig defines ACME certificate provisioning
+type ACMEIssuerConfig struct {
+	// Email for ACME registration
+	Email string `yaml:"email"`
+
+	// Server is the ACME server URL (default: Let's Encrypt production)
+	Server string `yaml:"server,omitempty"`
+
+	// ChallengeType: http-01, dns-01, tls-alpn-01 (default: http-01)
+	ChallengeType string `yaml:"challengeType,omitempty"`
+
+	// DNSProvider for dns-01 challenges (e.g., cloudflare, route53)
+	DNSProvider string `yaml:"dnsProvider,omitempty"`
+
+	// DNSCredentials for dns-01 challenges
+	DNSCredentials map[string]string `yaml:"dnsCredentials,omitempty"`
+
+	// AcceptTOS indicates acceptance of ACME Terms of Service
+	AcceptTOS bool `yaml:"acceptTOS,omitempty"`
+
+	// KeyType: RSA2048, RSA4096, EC256, EC384 (default: EC256)
+	KeyType string `yaml:"keyType,omitempty"`
+}
+
+// ManualIssuerConfig defines manual certificate files
+type ManualIssuerConfig struct {
+	// CertFile path to PEM-encoded certificate
+	CertFile string `yaml:"certFile"`
+
+	// KeyFile path to PEM-encoded private key
+	KeyFile string `yaml:"keyFile"`
+
+	// CAFile optional path to CA certificate for chain
+	CAFile string `yaml:"caFile,omitempty"`
+}
+
+// SelfSignedIssuerConfig defines self-signed certificate generation
+type SelfSignedIssuerConfig struct {
+	// Validity duration for the certificate (default: 8760h = 1 year)
+	Validity string `yaml:"validity,omitempty"`
+
+	// Organization name in the certificate
+	Organization string `yaml:"organization,omitempty"`
+
+	// KeyType: RSA2048, RSA4096, EC256, EC384 (default: EC256)
+	KeyType string `yaml:"keyType,omitempty"`
+}
+
+// ManagementConfig defines management plane configuration
+type ManagementConfig struct {
+	// Enabled enables management plane protection
+	Enabled bool `yaml:"enabled"`
+
+	// Listener configuration for management endpoint
+	Listener ManagementListenerConfig `yaml:"listener"`
+
+	// Security policies for management endpoints
+	Security ManagementSecurityConfig `yaml:"security,omitempty"`
+
+	// Routes for internal management services
+	Routes []ManagementRouteConfig `yaml:"routes,omitempty"`
+}
+
+// ManagementListenerConfig defines the management listener
+type ManagementListenerConfig struct {
+	// Port for management HTTPS endpoint
+	Port int `yaml:"port"`
+
+	// Protocol: HTTP, HTTPS (default: HTTPS)
+	Protocol string `yaml:"protocol,omitempty"`
+
+	// Certificate name to use (from certificates section)
+	Certificate string `yaml:"certificate,omitempty"`
+
+	// Hostnames to accept
+	Hostnames []string `yaml:"hostnames,omitempty"`
+}
+
+// ManagementSecurityConfig defines security for management endpoints
+type ManagementSecurityConfig struct {
+	// RateLimit configuration
+	RateLimit *RateLimitPolicy `yaml:"rateLimit,omitempty"`
+
+	// JWT authentication
+	JWT *JWTPolicy `yaml:"jwt,omitempty"`
+
+	// IP filtering
+	IPFilter *IPFilterPolicy `yaml:"ipFilter,omitempty"`
+
+	// BasicAuth configuration
+	BasicAuth *BasicAuthConfig `yaml:"basicAuth,omitempty"`
+}
+
+// BasicAuthConfig defines basic authentication
+type BasicAuthConfig struct {
+	// Enabled enables basic authentication
+	Enabled bool `yaml:"enabled"`
+
+	// Users is a map of username to bcrypt password hash
+	Users map[string]string `yaml:"users,omitempty"`
+
+	// Realm for WWW-Authenticate header
+	Realm string `yaml:"realm,omitempty"`
+}
+
+// ManagementRouteConfig defines a management route
+type ManagementRouteConfig struct {
+	// Path prefix to match
+	Path string `yaml:"path"`
+
+	// Backend address (e.g., localhost:9080)
+	Backend string `yaml:"backend"`
+
+	// StripPrefix removes the path prefix before forwarding
+	StripPrefix bool `yaml:"stripPrefix,omitempty"`
+
+	// Description of this route
+	Description string `yaml:"description,omitempty"`
+}
+
 // LoadConfig loads configuration from a YAML file
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
@@ -350,6 +534,46 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("at least one listener is required")
 	}
 
+	// Build certificate name map for validation
+	certNames := make(map[string]bool)
+	for i, cert := range c.Certificates {
+		if cert.Name == "" {
+			return fmt.Errorf("certificate[%d]: name is required", i)
+		}
+		if certNames[cert.Name] {
+			return fmt.Errorf("certificate[%d]: duplicate name %s", i, cert.Name)
+		}
+		certNames[cert.Name] = true
+
+		if len(cert.Domains) == 0 {
+			return fmt.Errorf("certificate[%d]: at least one domain is required", i)
+		}
+		if cert.Issuer.Type == "" {
+			return fmt.Errorf("certificate[%d]: issuer type is required", i)
+		}
+
+		switch cert.Issuer.Type {
+		case "acme":
+			if cert.Issuer.ACME == nil {
+				return fmt.Errorf("certificate[%d]: ACME configuration required for type acme", i)
+			}
+			if cert.Issuer.ACME.Email == "" {
+				return fmt.Errorf("certificate[%d]: ACME email is required", i)
+			}
+		case "manual":
+			if cert.Issuer.Manual == nil {
+				return fmt.Errorf("certificate[%d]: manual configuration required for type manual", i)
+			}
+			if cert.Issuer.Manual.CertFile == "" || cert.Issuer.Manual.KeyFile == "" {
+				return fmt.Errorf("certificate[%d]: certFile and keyFile are required for manual issuer", i)
+			}
+		case "self-signed":
+			// Self-signed config is optional
+		default:
+			return fmt.Errorf("certificate[%d]: invalid issuer type %s", i, cert.Issuer.Type)
+		}
+	}
+
 	// Validate listeners
 	for i, l := range c.Listeners {
 		if l.Name == "" {
@@ -361,8 +585,18 @@ func (c *Config) Validate() error {
 		if l.Protocol == "" {
 			return fmt.Errorf("listener[%d]: protocol is required", i)
 		}
-		if (l.Protocol == "HTTPS" || l.Protocol == "TLS") && l.TLS == nil {
-			return fmt.Errorf("listener[%d]: TLS configuration required for %s", i, l.Protocol)
+		if l.Protocol == "HTTPS" || l.Protocol == "TLS" {
+			if l.TLS == nil {
+				return fmt.Errorf("listener[%d]: TLS configuration required for %s", i, l.Protocol)
+			}
+			// Validate TLS config - either cert/key files or certificate reference
+			if l.TLS.Certificate != "" {
+				if !certNames[l.TLS.Certificate] {
+					return fmt.Errorf("listener[%d]: unknown certificate %s", i, l.TLS.Certificate)
+				}
+			} else if l.TLS.CertFile == "" || l.TLS.KeyFile == "" {
+				return fmt.Errorf("listener[%d]: either certificate reference or certFile/keyFile required", i)
+			}
 		}
 	}
 
