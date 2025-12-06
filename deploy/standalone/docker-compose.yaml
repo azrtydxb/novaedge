@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # NovaEdge Standalone Load Balancer
+  novaedge:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.standalone
+    image: novaedge-standalone:latest
+    container_name: novaedge
+    ports:
+      - "80:80"       # HTTP
+      - "443:443"     # HTTPS
+      - "9090:9090"   # Metrics
+      - "8080:8080"   # Health probes
+    volumes:
+      - ./config.yaml:/etc/novaedge/config.yaml:ro
+      - ./certs:/etc/novaedge/certs:ro
+    environment:
+      - NODE_NAME=novaedge-standalone
+    command:
+      - --config=/etc/novaedge/config.yaml
+      - --node-name=novaedge-standalone
+      - --metrics-port=9090
+      - --health-probe-port=8080
+      - --log-level=info
+    restart: unless-stopped
+    networks:
+      - novaedge-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Example backend service 1
+  backend1:
+    image: nginx:alpine
+    container_name: backend1
+    networks:
+      - novaedge-net
+
+  # Example backend service 2
+  backend2:
+    image: nginx:alpine
+    container_name: backend2
+    networks:
+      - novaedge-net
+
+  # Example backend service 3
+  backend3:
+    image: nginx:alpine
+    container_name: backend3
+    networks:
+      - novaedge-net
+
+  # Prometheus for metrics (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - novaedge-net
+    profiles:
+      - monitoring
+
+  # Grafana for dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - novaedge-net
+    profiles:
+      - monitoring
+
+networks:
+  novaedge-net:
+    driver: bridge
+
+volumes:
+  grafana-data:

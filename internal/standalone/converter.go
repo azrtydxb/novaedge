@@ -1,0 +1,506 @@
+/*
+Copyright 2024 NovaEdge Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package standalone
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"strings"
+	"time"
+
+	"google.golang.org/protobuf/proto"
+
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+// Converter converts standalone config to protobuf ConfigSnapshot
+type Converter struct{}
+
+// NewConverter creates a new converter
+func NewConverter() *Converter {
+	return &Converter{}
+}
+
+// ToSnapshot converts a standalone Config to a ConfigSnapshot
+func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot, error) {
+	snapshot := &pb.ConfigSnapshot{
+		GenerationTime: time.Now().Unix(),
+		Endpoints:      make(map[string]*pb.EndpointList),
+	}
+
+	// Convert gateways (from listeners)
+	gateways, err := c.convertListeners(cfg.Listeners)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert listeners: %w", err)
+	}
+	snapshot.Gateways = gateways
+
+	// Convert routes
+	routes, err := c.convertRoutes(cfg.Routes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert routes: %w", err)
+	}
+	snapshot.Routes = routes
+
+	// Convert backends to clusters and endpoints
+	clusters, endpoints, err := c.convertBackends(cfg.Backends)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert backends: %w", err)
+	}
+	snapshot.Clusters = clusters
+	snapshot.Endpoints = endpoints
+
+	// Convert VIPs
+	vips, err := c.convertVIPs(cfg.VIPs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert VIPs: %w", err)
+	}
+	snapshot.VipAssignments = vips
+
+	// Convert policies
+	policies, err := c.convertPolicies(cfg.Policies)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert policies: %w", err)
+	}
+	snapshot.Policies = policies
+
+	// Generate version hash
+	snapshot.Version = c.generateVersion(snapshot)
+
+	return snapshot, nil
+}
+
+func (c *Converter) convertListeners(listeners []ListenerConfig) ([]*pb.Gateway, error) {
+	// Create a single gateway with all listeners
+	gateway := &pb.Gateway{
+		Name:      "standalone",
+		Namespace: "default",
+		Listeners: make([]*pb.Listener, 0, len(listeners)),
+	}
+
+	for _, l := range listeners {
+		listener := &pb.Listener{
+			Name:     l.Name,
+			Port:     int32(l.Port),
+			Protocol: c.parseProtocol(l.Protocol),
+		}
+
+		if l.TLS != nil {
+			// For standalone mode, TLS cert/key paths are loaded at runtime
+			// Store them in the TLSCertificates map with a default hostname
+			listener.TlsCertificates = make(map[string]*pb.TLSConfig)
+			// Create a placeholder that the server will need to load
+			// The actual loading happens at server startup time
+			listener.Tls = &pb.TLSConfig{
+				MinVersion: l.TLS.MinVersion,
+			}
+		}
+
+		if len(l.Hostnames) > 0 {
+			listener.Hostnames = l.Hostnames
+		}
+
+		if l.MaxRequestBodySize > 0 {
+			listener.MaxRequestBodyBytes = l.MaxRequestBodySize
+		}
+
+		gateway.Listeners = append(gateway.Listeners, listener)
+	}
+
+	return []*pb.Gateway{gateway}, nil
+}
+
+func (c *Converter) parseProtocol(protocol string) pb.Protocol {
+	switch strings.ToUpper(protocol) {
+	case "HTTP":
+		return pb.Protocol_HTTP
+	case "HTTPS":
+		return pb.Protocol_HTTPS
+	case "HTTP3":
+		return pb.Protocol_HTTP3
+	case "TCP":
+		return pb.Protocol_TCP
+	case "TLS":
+		return pb.Protocol_TLS
+	default:
+		return pb.Protocol_PROTOCOL_UNSPECIFIED
+	}
+}
+
+func (c *Converter) convertRoutes(routes []RouteConfig) ([]*pb.Route, error) {
+	result := make([]*pb.Route, 0, len(routes))
+
+	for _, r := range routes {
+		route := &pb.Route{
+			Name:      r.Name,
+			Namespace: "default",
+		}
+
+		// Set hostnames
+		if len(r.Match.Hostnames) > 0 {
+			route.Hostnames = r.Match.Hostnames
+		}
+
+		// Convert to RouteRule with matches
+		rule := &pb.RouteRule{}
+
+		// Build match conditions
+		match := &pb.RouteMatch{}
+
+		// Path match
+		if r.Match.Path != nil {
+			match.Path = &pb.PathMatch{
+				Type:  c.parsePathMatchType(r.Match.Path.Type),
+				Value: r.Match.Path.Value,
+			}
+		}
+
+		// Header matches
+		for _, h := range r.Match.Headers {
+			match.Headers = append(match.Headers, &pb.HeaderMatch{
+				Name:  h.Name,
+				Value: h.Value,
+				Type:  c.parseHeaderMatchType(h.Type),
+			})
+		}
+
+		// Method match
+		if r.Match.Method != "" {
+			match.Method = r.Match.Method
+		}
+
+		// Add match to rule if it has any conditions
+		if match.Path != nil || len(match.Headers) > 0 || match.Method != "" {
+			rule.Matches = append(rule.Matches, match)
+		}
+
+		// Backend refs
+		for _, br := range r.Backends {
+			weight := int32(br.Weight)
+			if weight == 0 {
+				weight = 1
+			}
+			rule.BackendRefs = append(rule.BackendRefs, &pb.BackendRef{
+				Name:      br.Name,
+				Namespace: "default",
+				Weight:    weight,
+			})
+		}
+
+		// Filters
+		for _, f := range r.Filters {
+			filter := &pb.RouteFilter{
+				Type: c.parseFilterType(f.Type),
+			}
+
+			switch f.Type {
+			case "AddHeader":
+				for name, value := range f.Add {
+					filter.AddHeaders = append(filter.AddHeaders, &pb.HTTPHeader{
+						Name:  name,
+						Value: value,
+					})
+				}
+			case "RemoveHeader":
+				filter.RemoveHeaders = f.Remove
+			case "URLRewrite":
+				filter.RewritePath = f.RewritePath
+			case "RequestRedirect":
+				filter.RedirectUrl = f.RedirectURL
+			}
+
+			rule.Filters = append(rule.Filters, filter)
+		}
+
+		route.Rules = append(route.Rules, rule)
+		result = append(result, route)
+	}
+
+	return result, nil
+}
+
+func (c *Converter) parsePathMatchType(matchType string) pb.PathMatchType {
+	switch matchType {
+	case "Exact":
+		return pb.PathMatchType_EXACT
+	case "PathPrefix":
+		return pb.PathMatchType_PATH_PREFIX
+	case "RegularExpression":
+		return pb.PathMatchType_REGULAR_EXPRESSION
+	default:
+		return pb.PathMatchType_PATH_PREFIX // Default to prefix match
+	}
+}
+
+func (c *Converter) parseHeaderMatchType(matchType string) pb.HeaderMatchType {
+	switch matchType {
+	case "Exact", "":
+		return pb.HeaderMatchType_HEADER_EXACT
+	case "RegularExpression":
+		return pb.HeaderMatchType_HEADER_REGULAR_EXPRESSION
+	default:
+		return pb.HeaderMatchType_HEADER_EXACT
+	}
+}
+
+func (c *Converter) parseFilterType(filterType string) pb.RouteFilterType {
+	switch filterType {
+	case "AddHeader":
+		return pb.RouteFilterType_ADD_HEADER
+	case "RemoveHeader":
+		return pb.RouteFilterType_REMOVE_HEADER
+	case "URLRewrite":
+		return pb.RouteFilterType_URL_REWRITE
+	case "RequestRedirect":
+		return pb.RouteFilterType_REQUEST_REDIRECT
+	default:
+		return pb.RouteFilterType_ROUTE_FILTER_TYPE_UNSPECIFIED
+	}
+}
+
+func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
+	clusters := make([]*pb.Cluster, 0, len(backends))
+	endpoints := make(map[string]*pb.EndpointList)
+
+	for _, b := range backends {
+		cluster := &pb.Cluster{
+			Name:      b.Name,
+			Namespace: "default",
+			LbPolicy:  c.parseLBPolicy(b.LBPolicy),
+		}
+
+		// Health check
+		if b.HealthCheck != nil {
+			cluster.HealthCheck = &pb.HealthCheck{
+				HttpPath: b.HealthCheck.Path,
+			}
+			if d, err := time.ParseDuration(b.HealthCheck.Interval); err == nil {
+				cluster.HealthCheck.IntervalMs = int64(d.Milliseconds())
+			}
+			if d, err := time.ParseDuration(b.HealthCheck.Timeout); err == nil {
+				cluster.HealthCheck.TimeoutMs = int64(d.Milliseconds())
+			}
+			cluster.HealthCheck.HealthyThreshold = int32(b.HealthCheck.HealthyThreshold)
+			cluster.HealthCheck.UnhealthyThreshold = int32(b.HealthCheck.UnhealthyThreshold)
+		}
+
+		// Circuit breaker
+		if b.CircuitBreaker != nil {
+			cluster.CircuitBreaker = &pb.CircuitBreaker{
+				MaxConnections:     int32(b.CircuitBreaker.MaxConnections),
+				MaxPendingRequests: int32(b.CircuitBreaker.MaxPendingRequests),
+				MaxRequests:        int32(b.CircuitBreaker.MaxRequests),
+				MaxRetries:         int32(b.CircuitBreaker.MaxRetries),
+			}
+		}
+
+		// Connection pool
+		if b.ConnectionPool != nil {
+			cluster.ConnectionPool = &pb.ConnectionPool{
+				MaxIdleConns:        int32(b.ConnectionPool.MaxIdleConnections),
+				MaxIdleConnsPerHost: int32(b.ConnectionPool.MaxConnections),
+			}
+			if d, err := time.ParseDuration(b.ConnectionPool.IdleTimeout); err == nil {
+				cluster.ConnectionPool.IdleConnTimeoutMs = int64(d.Milliseconds())
+			}
+		}
+
+		// TLS
+		if b.TLS != nil && b.TLS.Enabled {
+			cluster.Tls = &pb.BackendTLS{
+				Enabled:            true,
+				InsecureSkipVerify: b.TLS.InsecureSkipVerify,
+			}
+		}
+
+		clusters = append(clusters, cluster)
+
+		// Endpoints - key is "namespace/name"
+		clusterKey := fmt.Sprintf("default/%s", b.Name)
+		endpointList := &pb.EndpointList{
+			Endpoints: make([]*pb.Endpoint, 0, len(b.Endpoints)),
+		}
+
+		for _, e := range b.Endpoints {
+			// Parse address:port
+			address, port := parseAddressPort(e.Address)
+			endpoint := &pb.Endpoint{
+				Address: address,
+				Port:    port,
+				Ready:   true,
+			}
+			// Weight is stored in Labels for pb.Endpoint (no direct Weight field)
+			if e.Weight > 0 {
+				endpoint.Labels = map[string]string{
+					"weight": fmt.Sprintf("%d", e.Weight),
+				}
+			}
+			endpointList.Endpoints = append(endpointList.Endpoints, endpoint)
+		}
+
+		endpoints[clusterKey] = endpointList
+	}
+
+	return clusters, endpoints, nil
+}
+
+// parseAddressPort parses "host:port" format
+func parseAddressPort(addr string) (string, int32) {
+	parts := strings.Split(addr, ":")
+	if len(parts) == 2 {
+		var port int
+		fmt.Sscanf(parts[1], "%d", &port)
+		return parts[0], int32(port)
+	}
+	return addr, 80 // Default to port 80
+}
+
+func (c *Converter) parseLBPolicy(policy string) pb.LoadBalancingPolicy {
+	switch policy {
+	case "RoundRobin":
+		return pb.LoadBalancingPolicy_ROUND_ROBIN
+	case "P2C":
+		return pb.LoadBalancingPolicy_P2C
+	case "EWMA":
+		return pb.LoadBalancingPolicy_EWMA
+	case "RingHash":
+		return pb.LoadBalancingPolicy_RING_HASH
+	case "Maglev":
+		return pb.LoadBalancingPolicy_MAGLEV
+	default:
+		return pb.LoadBalancingPolicy_ROUND_ROBIN
+	}
+}
+
+func (c *Converter) convertVIPs(vips []VIPConfig) ([]*pb.VIPAssignment, error) {
+	result := make([]*pb.VIPAssignment, 0, len(vips))
+
+	for _, v := range vips {
+		assignment := &pb.VIPAssignment{
+			VipName:  v.Name,
+			Address:  v.Address,
+			Mode:     c.parseVIPMode(v.Mode),
+			IsActive: true,
+		}
+
+		// BGP config
+		if v.BGP != nil {
+			assignment.BgpConfig = &pb.BGPConfig{
+				LocalAs:  v.BGP.LocalAS,
+				RouterId: v.BGP.RouterID,
+				Peers: []*pb.BGPPeer{
+					{
+						Address: v.BGP.PeerIP,
+						As:      v.BGP.PeerAS,
+					},
+				},
+			}
+		}
+
+		// OSPF config
+		if v.OSPF != nil {
+			// Parse area as uint32 if possible
+			var areaID uint32
+			fmt.Sscanf(v.OSPF.Area, "%d", &areaID)
+			assignment.OspfConfig = &pb.OSPFConfig{
+				RouterId: v.OSPF.RouterID,
+				AreaId:   areaID,
+			}
+		}
+
+		result = append(result, assignment)
+	}
+
+	return result, nil
+}
+
+func (c *Converter) parseVIPMode(mode string) pb.VIPMode {
+	switch mode {
+	case "L2":
+		return pb.VIPMode_L2_ARP
+	case "BGP":
+		return pb.VIPMode_BGP
+	case "OSPF":
+		return pb.VIPMode_OSPF
+	default:
+		return pb.VIPMode_L2_ARP
+	}
+}
+
+func (c *Converter) convertPolicies(policies []PolicyConfig) ([]*pb.Policy, error) {
+	result := make([]*pb.Policy, 0, len(policies))
+
+	for _, p := range policies {
+		policy := &pb.Policy{
+			Name:      p.Name,
+			Namespace: "default",
+		}
+
+		switch p.Type {
+		case "RateLimit":
+			if p.RateLimit != nil {
+				policy.RateLimit = &pb.RateLimitConfig{
+					RequestsPerSecond: int32(p.RateLimit.RequestsPerSecond),
+					Burst:             int32(p.RateLimit.BurstSize),
+					Key:               p.RateLimit.Key,
+				}
+			}
+		case "CORS":
+			if p.CORS != nil {
+				policy.Cors = &pb.CORSConfig{
+					AllowOrigins:     p.CORS.AllowOrigins,
+					AllowMethods:     p.CORS.AllowMethods,
+					AllowHeaders:     p.CORS.AllowHeaders,
+					ExposeHeaders:    p.CORS.ExposeHeaders,
+					MaxAgeSeconds:    int64(p.CORS.MaxAge),
+					AllowCredentials: p.CORS.AllowCredentials,
+				}
+			}
+		case "IPFilter":
+			if p.IPFilter != nil {
+				// Combine allow and deny lists into CIDRs
+				// For an IP allow list, use those CIDRs
+				cidrs := p.IPFilter.AllowList
+				if len(cidrs) == 0 {
+					cidrs = p.IPFilter.DenyList
+				}
+				policy.IpList = &pb.IPListConfig{
+					Cidrs: cidrs,
+				}
+			}
+		case "JWT":
+			if p.JWT != nil {
+				policy.Jwt = &pb.JWTConfig{
+					Issuer:   p.JWT.Issuer,
+					Audience: p.JWT.Audience,
+					JwksUri:  p.JWT.JWKSURI,
+				}
+			}
+		}
+
+		result = append(result, policy)
+	}
+
+	return result, nil
+}
+
+func (c *Converter) generateVersion(snapshot *pb.ConfigSnapshot) string {
+	data, _ := proto.Marshal(snapshot)
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:8])
+}

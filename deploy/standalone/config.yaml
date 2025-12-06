@@ -1,0 +1,157 @@
+# NovaEdge Standalone Configuration
+# This is an example configuration for running NovaEdge without Kubernetes
+
+version: "1.0"
+
+global:
+  logLevel: info
+  metricsPort: 9090
+  healthPort: 8080
+  accessLog:
+    enabled: true
+    format: json
+    path: stdout
+  tracing:
+    enabled: true
+    samplingRate: 100
+    requestIdHeader: X-Request-ID
+
+# Listeners define the ports and protocols the load balancer accepts
+listeners:
+  - name: http
+    port: 80
+    protocol: HTTP
+    hostnames:
+      - "*"
+    maxRequestBodySize: 10485760  # 10MB
+
+  # Uncomment to enable HTTPS
+  # - name: https
+  #   port: 443
+  #   protocol: HTTPS
+  #   hostnames:
+  #     - "*"
+  #   tls:
+  #     certFile: /etc/novaedge/certs/server.crt
+  #     keyFile: /etc/novaedge/certs/server.key
+  #     minVersion: TLS1.2
+
+# Routes define how traffic is directed to backends
+routes:
+  - name: api-route
+    match:
+      hostnames:
+        - "api.example.com"
+      path:
+        type: PathPrefix
+        value: /api
+    backends:
+      - name: api-backend
+        weight: 100
+    filters:
+      - type: AddHeader
+        add:
+          X-Forwarded-Proto: http
+    timeout: 30s
+    policies:
+      - rate-limit-api
+
+  - name: default-route
+    match:
+      path:
+        type: PathPrefix
+        value: /
+    backends:
+      - name: web-backend
+        weight: 100
+
+# Backends define upstream service pools
+backends:
+  - name: api-backend
+    endpoints:
+      - address: backend1:80
+        weight: 1
+      - address: backend2:80
+        weight: 1
+    lbPolicy: RoundRobin
+    healthCheck:
+      protocol: HTTP
+      path: /health
+      interval: 10s
+      timeout: 2s
+      healthyThreshold: 2
+      unhealthyThreshold: 3
+    circuitBreaker:
+      maxConnections: 100
+      maxPendingRequests: 100
+      maxRequests: 1000
+      maxRetries: 3
+      consecutiveErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+    connectionPool:
+      maxConnections: 100
+      maxIdleConnections: 10
+      idleTimeout: 60s
+      maxConnectionLifetime: 300s
+
+  - name: web-backend
+    endpoints:
+      - address: backend2:80
+        weight: 1
+      - address: backend3:80
+        weight: 1
+    lbPolicy: P2C
+    healthCheck:
+      protocol: HTTP
+      path: /
+      interval: 10s
+      timeout: 2s
+      healthyThreshold: 2
+      unhealthyThreshold: 3
+
+# Policies define rate limiting, CORS, and other traffic controls
+policies:
+  - name: rate-limit-api
+    type: RateLimit
+    rateLimit:
+      requestsPerSecond: 100
+      burstSize: 150
+      key: client_ip
+
+  - name: cors-policy
+    type: CORS
+    cors:
+      allowOrigins:
+        - "https://example.com"
+        - "https://*.example.com"
+      allowMethods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      allowHeaders:
+        - Authorization
+        - Content-Type
+        - X-Request-ID
+      exposeHeaders:
+        - X-Request-ID
+      maxAge: 86400
+      allowCredentials: true
+
+  - name: ip-filter-admin
+    type: IPFilter
+    ipFilter:
+      allowList:
+        - 10.0.0.0/8
+        - 192.168.0.0/16
+        - 172.16.0.0/12
+
+# VIPs (optional) - for bare-metal deployments with ARP/BGP/OSPF
+# vips:
+#   - name: main-vip
+#     address: 192.168.1.100/32
+#     mode: L2
+#     interface: eth0
