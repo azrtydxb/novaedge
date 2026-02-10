@@ -22,8 +22,9 @@ resources:
 - ../rbac/leader_election_role.yaml
 - ../rbac/leader_election_role_binding.yaml
 
-# Controller deployment
+# Controller deployment + service
 - ../controller/deployment.yaml
+- ../controller/service.yaml
 - ../controller/poddisruptionbudget.yaml
 
 # Agent RBAC

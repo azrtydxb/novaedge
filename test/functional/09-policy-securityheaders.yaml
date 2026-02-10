@@ -1,0 +1,19 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: api-security-headers
+  namespace: default
+spec:
+  type: SecurityHeaders
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+    namespace: default
+  securityHeaders:
+    xFrameOptions: DENY
+    xContentTypeOptions: true
+    hsts:
+      enabled: true
+      maxAge: 31536000
+      includeSubDomains: true
+      preload: true

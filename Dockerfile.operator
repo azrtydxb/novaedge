@@ -1,5 +1,7 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
+
+ARG TARGETARCH
 
 WORKDIR /workspace
 
@@ -10,13 +12,15 @@ RUN apk add --no-cache git
 COPY go.mod go.sum ./
 
 # Download dependencies
+# Set GOTOOLCHAIN=auto to allow downloading newer Go versions if required by go.mod
+ENV GOTOOLCHAIN=auto
 RUN go mod download
 
 # Copy source code
 COPY . .
 
 # Build the operator
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o novaedge-operator cmd/novaedge-operator/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -a -o novaedge-operator cmd/novaedge-operator/main.go
 
 # Runtime stage
 FROM gcr.io/distroless/static:nonroot

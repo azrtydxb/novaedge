@@ -1,0 +1,14 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: api-ip-deny
+  namespace: default
+spec:
+  type: IPDenyList
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+    namespace: default
+  ipList:
+    cidrs:
+      - "127.0.0.1/32"

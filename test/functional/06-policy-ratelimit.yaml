@@ -1,0 +1,15 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: api-rate-limit
+  namespace: default
+spec:
+  type: RateLimit
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+    namespace: default
+  rateLimit:
+    requestsPerSecond: 5
+    burst: 10
+    key: source-ip

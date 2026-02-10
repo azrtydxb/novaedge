@@ -1,5 +1,7 @@
 # Build the standalone agent binary
-FROM golang:1.24 as builder
+FROM --platform=$BUILDPLATFORM golang:1.24 AS builder
+
+ARG TARGETARCH
 
 WORKDIR /workspace
 
@@ -17,10 +19,9 @@ RUN go mod download
 COPY cmd/ cmd/
 COPY api/ api/
 COPY internal/ internal/
-COPY pkg/ pkg/
 
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -o novaedge-standalone cmd/novaedge-standalone/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -a -o novaedge-standalone cmd/novaedge-standalone/main.go
 
 # Use distroless as minimal base image to package the standalone binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details

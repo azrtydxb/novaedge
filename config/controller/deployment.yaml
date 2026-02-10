@@ -27,12 +27,16 @@ spec:
         - --leader-elect
         - --metrics-bind-address=:8080
         - --health-probe-bind-address=:8081
+        - --grpc-bind-address=:9090
         ports:
         - name: metrics
           containerPort: 8080
           protocol: TCP
         - name: health
           containerPort: 8081
+          protocol: TCP
+        - name: grpc
+          containerPort: 9090
           protocol: TCP
         livenessProbe:
           httpGet:

@@ -1,0 +1,80 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-route
+  namespace: default
+spec:
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+          method: GET
+      filters:
+        - type: AddHeader
+          add:
+            - name: X-Version
+              value: "v1"
+      backendRefs:
+        - name: api-backend
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /v1
+          method: POST
+      filters:
+        - type: AddHeader
+          add:
+            - name: X-Version
+              value: "v1"
+      backendRefs:
+        - name: api-backend
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: api-backend
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /header-test
+          headers:
+            - name: X-Test-Header
+              type: Exact
+              value: "test-value"
+      backendRefs:
+        - name: api-backend
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /old-path
+      filters:
+        - type: URLRewrite
+          rewritePath: /v1/rewritten
+      backendRefs:
+        - name: api-backend
+          weight: 1
+    - matches:
+        - path:
+            type: Exact
+            value: /redirect-me
+      filters:
+        - type: RequestRedirect
+          redirectURL: "https://api.example.com/v1/redirected"
+      backendRefs:
+        - name: api-backend
+          weight: 1
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: api-backend
+          weight: 1
