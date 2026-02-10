@@ -144,7 +144,7 @@ func (w *Watcher) Start(applyFunc ApplyFunc) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to controller: %w", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Create config service client
 	client := pb.NewConfigServiceClient(conn)

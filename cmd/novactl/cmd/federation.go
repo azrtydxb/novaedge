@@ -217,9 +217,9 @@ func listFederations(ctx context.Context, k8sClient client.Client, ns string) er
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if ns == "" {
-		fmt.Fprintln(w, "NAMESPACE\tNAME\tFEDERATION ID\tLOCAL MEMBER\tPHASE\tAGE")
+		_, _ = fmt.Fprintln(w, "NAMESPACE\tNAME\tFEDERATION ID\tLOCAL MEMBER\tPHASE\tAGE")
 	} else {
-		fmt.Fprintln(w, "NAME\tFEDERATION ID\tLOCAL MEMBER\tPHASE\tAGE")
+		_, _ = fmt.Fprintln(w, "NAME\tFEDERATION ID\tLOCAL MEMBER\tPHASE\tAGE")
 	}
 
 	for _, fed := range fedList.Items {
@@ -230,7 +230,7 @@ func listFederations(ctx context.Context, k8sClient client.Client, ns string) er
 		}
 
 		if ns == "" {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 				fed.Namespace,
 				fed.Name,
 				fed.Spec.FederationID,
@@ -239,7 +239,7 @@ func listFederations(ctx context.Context, k8sClient client.Client, ns string) er
 				age,
 			)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 				fed.Name,
 				fed.Spec.FederationID,
 				fed.Spec.LocalMember.Name,
@@ -337,7 +337,7 @@ func showFederationDetails(ctx context.Context, k8sClient client.Client, name, n
 	if len(fed.Status.Members) > 0 {
 		fmt.Println("Member Status:")
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "  NAME\tHEALTHY\tLAST SEEN\tSYNC LAG\tAGENTS\tERROR")
+		_, _ = fmt.Fprintln(w, "  NAME\tHEALTHY\tLAST SEEN\tSYNC LAG\tAGENTS\tERROR")
 		for _, member := range fed.Status.Members {
 			lastSeen := "Never"
 			if member.LastSeen != nil {
@@ -351,7 +351,7 @@ func showFederationDetails(ctx context.Context, k8sClient client.Client, name, n
 			if len(errStr) > 40 {
 				errStr = errStr[:37] + "..."
 			}
-			fmt.Fprintf(w, "  %s\t%v\t%s\t%s\t%d\t%s\n",
+			_, _ = fmt.Fprintf(w, "  %s\t%v\t%s\t%s\t%d\t%s\n",
 				member.Name,
 				member.Healthy,
 				lastSeen,
@@ -360,7 +360,7 @@ func showFederationDetails(ctx context.Context, k8sClient client.Client, name, n
 				errStr,
 			)
 		}
-		w.Flush()
+		_ = w.Flush()
 		fmt.Println()
 	}
 

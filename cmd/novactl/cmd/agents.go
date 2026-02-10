@@ -63,7 +63,7 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 
 	// Print table
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "NODE\tSTATUS\tRESTARTS\tAGE")
+	_, _ = fmt.Fprintln(w, "NODE\tSTATUS\tRESTARTS\tAGE")
 
 	for _, pod := range pods.Items {
 		node := pod.Spec.NodeName
@@ -74,10 +74,10 @@ func runAgentsList(cmd *cobra.Command, args []string) error {
 		}
 		age := formatAgentAge(pod.CreationTimestamp)
 
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", node, status, restarts, age)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", node, status, restarts, age)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }
 

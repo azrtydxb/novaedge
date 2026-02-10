@@ -158,7 +158,7 @@ func streamPodLogs(ctx context.Context, c *client.Client, namespace, podName, co
 	if err != nil {
 		return fmt.Errorf("failed to stream logs: %w", err)
 	}
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	// Copy stream to stdout
 	reader := bufio.NewReader(stream)

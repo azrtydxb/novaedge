@@ -90,7 +90,7 @@ func main() {
 
 	// Initialize logger
 	logger := initLogger(logLevel)
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	logger.Info("Starting NovaEdge agent",
 		zap.String("node", nodeName),

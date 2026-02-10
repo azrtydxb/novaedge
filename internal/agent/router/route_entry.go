@@ -120,7 +120,7 @@ func hashEndpointList(endpoints []*pb.Endpoint) uint64 {
 	h := fnv.New64a()
 	for _, ep := range sortedEndpoints {
 		// Hash address, port, and ready state
-		fmt.Fprintf(h, "%s:%d:%t;", ep.Address, ep.Port, ep.Ready)
+		_, _ = fmt.Fprintf(h, "%s:%d:%t;", ep.Address, ep.Port, ep.Ready)
 	}
 	return h.Sum64()
 }

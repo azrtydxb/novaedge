@@ -364,7 +364,9 @@ func parseAddressPort(addr string) (string, int32) {
 	parts := strings.Split(addr, ":")
 	if len(parts) == 2 {
 		var port int
-		fmt.Sscanf(parts[1], "%d", &port)
+		if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+			return parts[0], 0 // Return host with zero port on parse error
+		}
 		return parts[0], int32(port)
 	}
 	return addr, 80 // Default to port 80
@@ -416,7 +418,9 @@ func (c *Converter) convertVIPs(vips []VIPConfig) ([]*pb.VIPAssignment, error) {
 		if v.OSPF != nil {
 			// Parse area as uint32 if possible
 			var areaID uint32
-			fmt.Sscanf(v.OSPF.Area, "%d", &areaID)
+			if _, err := fmt.Sscanf(v.OSPF.Area, "%d", &areaID); err != nil {
+				return nil, fmt.Errorf("failed to parse OSPF area %q: %w", v.OSPF.Area, err)
+			}
 			assignment.OspfConfig = &pb.OSPFConfig{
 				RouterId: v.OSPF.RouterID,
 				AreaId:   areaID,

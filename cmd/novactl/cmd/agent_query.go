@@ -78,7 +78,7 @@ func runAgentConfig(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create agent client: %w", err)
 	}
-	defer agentClient.Close()
+	defer func() { _ = agentClient.Close() }()
 
 	// Get configuration
 	agentConfig, err := agentClient.GetConfig(ctx)
@@ -114,27 +114,27 @@ func runAgentConfig(cmd *cobra.Command, args []string) error {
 	if len(agentConfig.Gateways) > 0 {
 		fmt.Printf("\nGateways:\n")
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tNAMESPACE\tVIP\tLISTENERS")
+		_, _ = fmt.Fprintln(w, "NAME\tNAMESPACE\tVIP\tLISTENERS")
 		for _, gw := range agentConfig.Gateways {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%d\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\n",
 				gw.Name, gw.Namespace, gw.VIPRef, len(gw.Listeners))
 		}
-		w.Flush()
+		_ = w.Flush()
 	}
 
 	if len(agentConfig.VIPs) > 0 {
 		fmt.Printf("\nVIP Assignments:\n")
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
+		_, _ = fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
 		for _, vip := range agentConfig.VIPs {
 			active := "No"
 			if vip.IsActive {
 				active = "Yes"
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
 				vip.Name, vip.Address, vip.Mode, active, vip.Ports)
 		}
-		w.Flush()
+		_ = w.Flush()
 	}
 
 	return nil
@@ -178,7 +178,7 @@ func runAgentBackends(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create agent client: %w", err)
 	}
-	defer agentClient.Close()
+	defer func() { _ = agentClient.Close() }()
 
 	// Get backend health
 	backends, err := agentClient.GetBackendHealth(ctx)
@@ -204,15 +204,15 @@ func runAgentBackends(cmd *cobra.Command, args []string) error {
 
 		if len(backend.Endpoints) > 0 {
 			w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-			fmt.Fprintln(w, "  ADDRESS\tPORT\tSTATUS")
+			_, _ = fmt.Fprintln(w, "  ADDRESS\tPORT\tSTATUS")
 			for _, ep := range backend.Endpoints {
 				status := "Not Ready"
 				if ep.Ready {
 					status = "Ready"
 				}
-				fmt.Fprintf(w, "  %s\t%d\t%s\n", ep.Address, ep.Port, status)
+				_, _ = fmt.Fprintf(w, "  %s\t%d\t%s\n", ep.Address, ep.Port, status)
 			}
-			w.Flush()
+			_ = w.Flush()
 		}
 		fmt.Println()
 	}
@@ -258,7 +258,7 @@ func runAgentVIPs(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create agent client: %w", err)
 	}
-	defer agentClient.Close()
+	defer func() { _ = agentClient.Close() }()
 
 	// Get VIPs
 	vips, err := agentClient.GetVIPs(ctx)
@@ -278,18 +278,18 @@ func runAgentVIPs(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Active VIPs:\n\n")
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
+	_, _ = fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
 
 	for _, vip := range vips {
 		active := "No"
 		if vip.IsActive {
 			active = "Yes"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
 			vip.Name, vip.Address, vip.Mode, active, vip.Ports)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	return nil
 }

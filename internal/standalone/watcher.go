@@ -81,7 +81,7 @@ func (w *ConfigWatcher) Start(ctx context.Context, applyFunc ApplyFunc) error {
 	if err != nil {
 		return fmt.Errorf("failed to create file watcher: %w", err)
 	}
-	defer watcher.Close()
+	defer func() { _ = watcher.Close() }()
 
 	// Watch the directory containing the config file
 	// (watching the file directly doesn't work well with editors that replace files)

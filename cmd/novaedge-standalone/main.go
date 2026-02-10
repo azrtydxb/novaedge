@@ -55,7 +55,7 @@ func main() {
 
 	// Setup logger
 	logger := setupLogger(logLevel)
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	logger.Info("Starting NovaEdge Standalone Load Balancer",
 		zap.String("version", version),

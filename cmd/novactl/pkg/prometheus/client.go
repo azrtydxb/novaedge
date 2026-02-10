@@ -87,7 +87,7 @@ func (c *Client) QueryAt(ctx context.Context, query string, t time.Time) (*Query
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -133,7 +133,7 @@ func (c *Client) QueryRange(ctx context.Context, params RangeQueryParams) (*Quer
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -165,7 +165,7 @@ func (c *Client) GetLabels(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get labels: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Status string   `json:"status"`
@@ -192,7 +192,7 @@ func (c *Client) GetLabelValues(ctx context.Context, label string) ([]string, er
 	if err != nil {
 		return nil, fmt.Errorf("failed to get label values: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Status string   `json:"status"`
@@ -228,7 +228,7 @@ func (c *Client) GetSeries(ctx context.Context, matchers []string, start, end ti
 	if err != nil {
 		return nil, fmt.Errorf("failed to get series: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		Status string              `json:"status"`
