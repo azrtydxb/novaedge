@@ -69,7 +69,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("failed to add NovaEdge scheme: %v", err)
 	}
 
-	if err := gatewayv1.AddToScheme(scheme); err != nil {
+	if err := gatewayv1.Install(scheme); err != nil {
 		t.Fatalf("failed to add Gateway API scheme: %v", err)
 	}
 

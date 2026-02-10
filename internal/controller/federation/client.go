@@ -103,7 +103,7 @@ func (c *PeerClient) Connect(ctx context.Context) error {
 
 	c.logger.Info("Connecting to peer", zap.String("endpoint", c.peer.Endpoint))
 
-	conn, err := grpc.DialContext(ctx, c.peer.Endpoint, opts...)
+	conn, err := grpc.NewClient(c.peer.Endpoint, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to dial peer: %w", err)
 	}
