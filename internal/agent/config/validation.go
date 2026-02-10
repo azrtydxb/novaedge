@@ -35,9 +35,9 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 		if err := v.ValidateGateway(gw, i); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
-				parentErr.AddChild(validationErr)
+				_ = parentErr.AddChild(validationErr)
 			} else {
-				parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
+				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
 			}
 			hasErrors = true
 		}
@@ -48,9 +48,9 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 		if err := v.ValidateRoute(route, i); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
-				parentErr.AddChild(validationErr)
+				_ = parentErr.AddChild(validationErr)
 			} else {
-				parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
+				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
 			}
 			hasErrors = true
 		}
@@ -61,9 +61,9 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 		if err := v.ValidateCluster(cluster, i); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
-				parentErr.AddChild(validationErr)
+				_ = parentErr.AddChild(validationErr)
 			} else {
-				parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
+				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
 			}
 			hasErrors = true
 		}
@@ -74,9 +74,9 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 		if err := v.ValidateEndpointList(clusterName, endpointList); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
-				parentErr.AddChild(validationErr)
+				_ = parentErr.AddChild(validationErr)
 			} else {
-				parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
+				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
 			}
 			hasErrors = true
 		}
@@ -87,9 +87,9 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 		if err := v.ValidateVIPAssignment(vip, i); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
-				parentErr.AddChild(validationErr)
+				_ = parentErr.AddChild(validationErr)
 			} else {
-				parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
+				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
 			}
 			hasErrors = true
 		}
@@ -133,9 +133,9 @@ func (v *Validator) ValidateGateway(gw *pb.Gateway, index int) error {
 		if err := v.ValidateListener(listener, prefix, i); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
-				parentErr.AddChild(validationErr)
+				_ = parentErr.AddChild(validationErr)
 			} else {
-				parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
+				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
 			}
 			hasErrors = true
 		}
@@ -254,9 +254,9 @@ func (v *Validator) ValidateRoute(route *pb.Route, index int) error {
 		if err := v.ValidateRouteRule(rule, prefix, i); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
-				parentErr.AddChild(validationErr)
+				_ = parentErr.AddChild(validationErr)
 			} else {
-				parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
+				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
 			}
 			hasErrors = true
 		}
@@ -526,7 +526,7 @@ func isValidHostname(hostname string) bool {
 			return false
 		}
 		for _, c := range part {
-			if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-') {
+			if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') && c != '-' {
 				return false
 			}
 		}
