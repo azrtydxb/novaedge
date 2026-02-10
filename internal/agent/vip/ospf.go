@@ -120,20 +120,20 @@ func (h *OSPFHandler) Start(ctx context.Context) error {
 }
 
 // AddVIP adds a VIP with OSPF announcement
-func (h *OSPFHandler) AddVIP(assignment *pb.VIPAssignment) error {
+func (h *OSPFHandler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	// Check if already active
 	if _, exists := h.activeVIPs[assignment.VipName]; exists {
-		h.logger.Debug("VIP already active", zap.String("vip", assignment.VipName))
+		h.logger.Debug(msgVIPAlreadyActive, zap.String("vip", assignment.VipName))
 		return nil
 	}
 
 	// Parse IP address
 	ip, _, err := net.ParseCIDR(assignment.Address)
 	if err != nil {
-		return fmt.Errorf("invalid VIP address %s: %w", assignment.Address, err)
+		return fmt.Errorf(errInvalidVIPAddressFmt, assignment.Address, err)
 	}
 
 	// Validate OSPF config
@@ -184,13 +184,13 @@ func (h *OSPFHandler) AddVIP(assignment *pb.VIPAssignment) error {
 }
 
 // RemoveVIP removes a VIP and withdraws OSPF announcement
-func (h *OSPFHandler) RemoveVIP(assignment *pb.VIPAssignment) error {
+func (h *OSPFHandler) RemoveVIP(_ context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	state, exists := h.activeVIPs[assignment.VipName]
 	if !exists {
-		h.logger.Debug("VIP not active", zap.String("vip", assignment.VipName))
+		h.logger.Debug(msgVIPNotActive, zap.String("vip", assignment.VipName))
 		return nil
 	}
 
@@ -256,7 +256,7 @@ func (h *OSPFHandler) startOSPFServer(config *pb.OSPFConfig) error {
 		h.ospfServer.neighbors[neighbor.Address] = &OSPFNeighbor{
 			Address:   neighbor.Address,
 			Priority:  neighbor.Priority,
-			State:     "Down",
+			State:     neighborStateDown,
 			LastHello: time.Time{},
 		}
 
@@ -319,7 +319,7 @@ func (h *OSPFHandler) sendHelloPackets() {
 		// Simulate neighbor state progression
 		// In production, this would be based on actual packet exchange
 		switch neighbor.State {
-		case "Down":
+		case neighborStateDown:
 			neighbor.State = "Init"
 			h.logger.Debug("OSPF neighbor state: Down -> Init",
 				zap.String("neighbor", address),
@@ -364,7 +364,7 @@ func (h *OSPFHandler) maintainNeighbors() {
 					zap.String("neighbor", address),
 					zap.String("state", neighbor.State),
 				)
-				neighbor.State = "Down"
+				neighbor.State = neighborStateDown
 
 				// Update metrics
 				metrics.SetOSPFNeighborStatus(address, fmt.Sprintf("%d", h.ospfServer.areaID), false)
@@ -374,7 +374,7 @@ func (h *OSPFHandler) maintainNeighbors() {
 }
 
 // announceLSA announces an LSA for a VIP
-func (h *OSPFHandler) announceLSA(ip net.IP, config *pb.OSPFConfig) error {
+func (h *OSPFHandler) announceLSA(ip net.IP, _ *pb.OSPFConfig) error {
 	if h.ospfServer == nil {
 		return fmt.Errorf("OSPF server not initialized")
 	}
@@ -408,7 +408,7 @@ func (h *OSPFHandler) announceLSA(ip net.IP, config *pb.OSPFConfig) error {
 }
 
 // withdrawLSA withdraws an LSA for a VIP
-func (h *OSPFHandler) withdrawLSA(ip net.IP, config *pb.OSPFConfig) error {
+func (h *OSPFHandler) withdrawLSA(ip net.IP, _ *pb.OSPFConfig) error {
 	if h.ospfServer == nil {
 		return fmt.Errorf("OSPF server not initialized")
 	}

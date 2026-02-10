@@ -17,6 +17,7 @@ limitations under the License.
 package health
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -29,10 +30,10 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-func newTestCluster(name, namespace string) *pb.Cluster {
+func newTestCluster() *pb.Cluster {
 	return &pb.Cluster{
-		Name:      name,
-		Namespace: namespace,
+		Name:      "backend",
+		Namespace: "default",
 	}
 }
 
@@ -45,7 +46,7 @@ func newTestEndpoint(address string, port int32) *pb.Endpoint {
 
 func TestNewHealthChecker(t *testing.T) {
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	endpoints := []*pb.Endpoint{
 		newTestEndpoint("10.0.0.1", 8080),
 		newTestEndpoint("10.0.0.2", 8080),
@@ -72,7 +73,7 @@ func TestNewHealthChecker(t *testing.T) {
 
 func TestHealthChecker_IsHealthy_UnknownEndpoint(t *testing.T) {
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	endpoints := []*pb.Endpoint{}
 
 	hc := NewHealthChecker(cluster, endpoints, logger)
@@ -85,7 +86,7 @@ func TestHealthChecker_IsHealthy_UnknownEndpoint(t *testing.T) {
 
 func TestHealthChecker_RecordFailure_ThresholdBehavior(t *testing.T) {
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	ep := newTestEndpoint("10.0.0.1", 8080)
 	endpoints := []*pb.Endpoint{ep}
 
@@ -127,7 +128,7 @@ func TestHealthChecker_RecordFailure_ThresholdBehavior(t *testing.T) {
 
 func TestHealthChecker_RecordSuccess_ResetsFailures(t *testing.T) {
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	ep := newTestEndpoint("10.0.0.1", 8080)
 	endpoints := []*pb.Endpoint{ep}
 
@@ -157,7 +158,7 @@ func TestHealthChecker_RecordSuccess_ResetsFailures(t *testing.T) {
 
 func TestHealthChecker_UpdateEndpoints_AddsNew(t *testing.T) {
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	ep1 := newTestEndpoint("10.0.0.1", 8080)
 	endpoints := []*pb.Endpoint{ep1}
 
@@ -193,7 +194,7 @@ func TestHealthChecker_UpdateEndpoints_AddsNew(t *testing.T) {
 
 func TestHealthChecker_UpdateEndpoints_RemovesOld(t *testing.T) {
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	ep1 := newTestEndpoint("10.0.0.1", 8080)
 	ep2 := newTestEndpoint("10.0.0.2", 8080)
 	endpoints := []*pb.Endpoint{ep1, ep2}
@@ -239,12 +240,12 @@ func TestHealthChecker_PerformHTTPCheck_Success(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	ep := newTestEndpoint(host, port)
 
 	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
 
-	healthy, err := hc.performHTTPCheck(ep)
+	healthy, err := hc.performHTTPCheck(context.Background(), ep)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -269,12 +270,12 @@ func TestHealthChecker_PerformHTTPCheck_ServerError(t *testing.T) {
 	}
 
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	ep := newTestEndpoint(host, port)
 
 	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
 
-	healthy, err := hc.performHTTPCheck(ep)
+	healthy, err := hc.performHTTPCheck(context.Background(), ep)
 	if err == nil {
 		t.Fatal("expected error for 500 response")
 	}
@@ -285,14 +286,14 @@ func TestHealthChecker_PerformHTTPCheck_ServerError(t *testing.T) {
 
 func TestHealthChecker_PerformHTTPCheck_ConnectionRefused(t *testing.T) {
 	logger := zap.NewNop()
-	cluster := newTestCluster("backend", "default")
+	cluster := newTestCluster()
 	// Use a port that is very unlikely to be in use
 	ep := newTestEndpoint("127.0.0.1", 19999)
 
 	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
 	hc.httpClient.Timeout = 1 * time.Second
 
-	healthy, err := hc.performHTTPCheck(ep)
+	healthy, err := hc.performHTTPCheck(context.Background(), ep)
 	if err == nil {
 		t.Fatal("expected error for connection refused")
 	}

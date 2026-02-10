@@ -18,6 +18,7 @@ package vip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/netip"
@@ -80,20 +81,20 @@ func (h *L2Handler) Start(ctx context.Context) error {
 }
 
 // AddVIP adds a VIP to the network interface
-func (h *L2Handler) AddVIP(assignment *pb.VIPAssignment) error {
+func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	// Check if already active
 	if _, exists := h.activeVIPs[assignment.VipName]; exists {
-		h.logger.Debug("VIP already active", zap.String("vip", assignment.VipName))
+		h.logger.Debug(msgVIPAlreadyActive, zap.String("vip", assignment.VipName))
 		return nil
 	}
 
 	// Parse IP address
 	ip, _, err := net.ParseCIDR(assignment.Address)
 	if err != nil {
-		return fmt.Errorf("invalid VIP address %s: %w", assignment.Address, err)
+		return fmt.Errorf(errInvalidVIPAddressFmt, assignment.Address, err)
 	}
 
 	h.logger.Info("Adding VIP to interface",
@@ -132,13 +133,13 @@ func (h *L2Handler) AddVIP(assignment *pb.VIPAssignment) error {
 }
 
 // RemoveVIP removes a VIP from the network interface
-func (h *L2Handler) RemoveVIP(assignment *pb.VIPAssignment) error {
+func (h *L2Handler) RemoveVIP(_ context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	state, exists := h.activeVIPs[assignment.VipName]
 	if !exists {
-		h.logger.Debug("VIP not active", zap.String("vip", assignment.VipName))
+		h.logger.Debug(msgVIPNotActive, zap.String("vip", assignment.VipName))
 		return nil
 	}
 
@@ -180,7 +181,7 @@ func (h *L2Handler) addIPAddress(cidr string) error {
 	// Add the address to the interface
 	if err := netlink.AddrAdd(link, addr); err != nil {
 		// Check if address already exists (EEXIST error)
-		if err == syscall.EEXIST {
+		if errors.Is(err, syscall.EEXIST) {
 			h.logger.Debug("IP address already exists", zap.String("address", cidr))
 			return nil
 		}
@@ -207,7 +208,7 @@ func (h *L2Handler) removeIPAddress(cidr string) error {
 	// Remove the address from the interface
 	if err := netlink.AddrDel(link, addr); err != nil {
 		// Check if address doesn't exist (EADDRNOTAVAIL error)
-		if err == syscall.EADDRNOTAVAIL {
+		if errors.Is(err, syscall.EADDRNOTAVAIL) {
 			h.logger.Debug("IP address doesn't exist", zap.String("address", cidr))
 			return nil
 		}

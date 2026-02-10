@@ -17,6 +17,7 @@ limitations under the License.
 package router
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 
@@ -34,7 +35,7 @@ type policyMiddleware struct {
 }
 
 // createPolicyMiddleware creates policy middleware for a route
-func (r *Router) createPolicyMiddleware(route *pb.Route, snapshot *config.Snapshot) []policyMiddleware {
+func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, snapshot *config.Snapshot) []policyMiddleware {
 	var middlewares []policyMiddleware
 
 	// Find policies attached to this route
@@ -95,7 +96,7 @@ func (r *Router) createPolicyMiddleware(route *pb.Route, snapshot *config.Snapsh
 
 		case pb.PolicyType_JWT:
 			if policyProto.Jwt != nil {
-				validator, err := policy.NewJWTValidator(policyProto.Jwt)
+				validator, err := policy.NewJWTValidator(ctx, policyProto.Jwt)
 				if err == nil {
 					middlewares = append(middlewares, policyMiddleware{
 						name:    fmt.Sprintf("jwt-%s", policyProto.Name),

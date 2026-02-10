@@ -122,7 +122,7 @@ func convertPolicyType(policyType novaedgev1alpha1.PolicyType) pb.PolicyType {
 
 // convertMatches converts NovaEdge HTTPRouteMatches to protobuf RouteMatches
 func convertMatches(matches []novaedgev1alpha1.HTTPRouteMatch) []*pb.RouteMatch {
-	var result []*pb.RouteMatch
+	result := make([]*pb.RouteMatch, 0, len(matches))
 	for _, m := range matches {
 		pbMatch := &pb.RouteMatch{
 			Method: getString(m.Method),
@@ -150,7 +150,7 @@ func convertMatches(matches []novaedgev1alpha1.HTTPRouteMatch) []*pb.RouteMatch 
 
 // convertFilters converts NovaEdge HTTPRouteFilters to protobuf RouteFilters
 func convertFilters(filters []novaedgev1alpha1.HTTPRouteFilter) []*pb.RouteFilter {
-	var result []*pb.RouteFilter
+	result := make([]*pb.RouteFilter, 0, len(filters))
 	for _, f := range filters {
 		pbFilter := &pb.RouteFilter{
 			Type:        convertFilterType(f.Type),

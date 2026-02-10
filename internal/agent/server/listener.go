@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -37,10 +38,10 @@ type ListenerInfo struct {
 }
 
 // startListener starts an HTTP, HTTPS, or HTTP/3 listener on the specified port
-func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error {
+func (s *HTTPServer) startListener(ctx context.Context, port int32, listenerInfo *ListenerInfo) error {
 	// Check if this is an HTTP/3 listener
 	if listenerInfo.Listener.Protocol == pb.Protocol_HTTP3 {
-		return s.startHTTP3Listener(port, listenerInfo)
+		return s.startHTTP3Listener(ctx, port, listenerInfo)
 	}
 
 	protocol := "HTTP"
@@ -97,7 +98,7 @@ func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error
 			err = server.ListenAndServe()
 		}
 
-		if err != nil && err != http.ErrServerClosed {
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.Error("Server error",
 				zap.Int32("port", port),
 				zap.String("protocol", protocol),
@@ -110,7 +111,7 @@ func (s *HTTPServer) startListener(port int32, listenerInfo *ListenerInfo) error
 }
 
 // startHTTP3Listener starts an HTTP/3 listener on the specified port
-func (s *HTTPServer) startHTTP3Listener(port int32, listenerInfo *ListenerInfo) error {
+func (s *HTTPServer) startHTTP3Listener(ctx context.Context, port int32, listenerInfo *ListenerInfo) error {
 	// HTTP/3 requires TLS
 	if listenerInfo.TLSConfig == nil {
 		return fmt.Errorf("HTTP/3 requires TLS configuration")
@@ -146,8 +147,7 @@ func (s *HTTPServer) startHTTP3Listener(port int32, listenerInfo *ListenerInfo) 
 
 	// Start server in goroutine
 	go func() {
-		ctx := context.Background()
-		if err := http3Server.Start(ctx); err != nil && err != http.ErrServerClosed {
+		if err := http3Server.Start(ctx); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.Error("HTTP/3 server error",
 				zap.Int32("port", port),
 				zap.Error(err),
@@ -163,13 +163,13 @@ func (s *HTTPServer) startHTTP3Listener(port int32, listenerInfo *ListenerInfo) 
 }
 
 // enableAltSvcAdvertising enables Alt-Svc header advertising for HTTP/3 on the corresponding HTTP/2 port
-func (s *HTTPServer) enableAltSvcAdvertising(http3Port int32) {
+func (s *HTTPServer) enableAltSvcAdvertising(_ int32) {
 	// The Alt-Svc header is added in the ServeHTTP method
 	// This function is here for clarity and future enhancements
 }
 
 // addAltSvcHeader adds the Alt-Svc header to advertise HTTP/3 availability
-func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, r *http.Request) {
+func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, _ *http.Request) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

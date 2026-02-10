@@ -86,7 +86,7 @@ func (c *TraceClient) ListTraces(ctx context.Context, limit int, lookback time.D
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -120,7 +120,7 @@ func (c *TraceClient) GetTrace(ctx context.Context, traceID string) (*Trace, err
 
 	endpoint := fmt.Sprintf("%s/api/traces/%s", c.endpoint, traceID)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -204,7 +204,7 @@ func (c *TraceClient) SearchTraces(ctx context.Context, params TraceSearchParams
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, queryParams.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -238,7 +238,7 @@ func (c *TraceClient) GetServices(ctx context.Context) ([]string, error) {
 
 	endpoint := fmt.Sprintf("%s/api/services", c.endpoint)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -272,7 +272,7 @@ func (c *TraceClient) GetOperations(ctx context.Context, serviceName string) ([]
 
 	endpoint := fmt.Sprintf("%s/api/services/%s/operations", c.endpoint, url.PathEscape(serviceName))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

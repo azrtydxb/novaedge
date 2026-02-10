@@ -110,7 +110,7 @@ type VIPManager interface {
 	Stop() error
 
 	// ApplyVIPs applies VIP assignments to the node
-	ApplyVIPs(vips []*pb.VIPAssignment) error
+	ApplyVIPs(ctx context.Context, vips []*pb.VIPAssignment) error
 
 	// GetActiveVIPs returns the list of currently active VIPs on this node
 	GetActiveVIPs() []string

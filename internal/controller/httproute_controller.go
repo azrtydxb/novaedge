@@ -169,7 +169,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Update HTTPRoute status
-	var parentStatuses []gatewayv1.RouteParentStatus
+	parentStatuses := make([]gatewayv1.RouteParentStatus, 0, len(httpRoute.Spec.ParentRefs))
 	for _, parentRef := range httpRoute.Spec.ParentRefs {
 		parentStatus := gatewayv1.RouteParentStatus{
 			ParentRef:      parentRef,
@@ -227,7 +227,7 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 
 				port := int32(80)
 				if backendRef.Port != nil {
-					port = int32(*backendRef.Port)
+					port = *backendRef.Port
 				}
 
 				key := GenerateProxyBackendName(string(backendRef.Name), namespace, port)
@@ -245,7 +245,7 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 
 		port := int32(80)
 		if backendRef.Port != nil {
-			port = int32(*backendRef.Port)
+			port = *backendRef.Port
 		}
 
 		// Verify Service exists

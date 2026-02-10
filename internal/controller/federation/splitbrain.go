@@ -678,7 +678,10 @@ func (d *SplitBrainDetector) getUnreachablePeerNames() []string {
 	var unreachable []string
 	if d.server != nil {
 		d.server.peerStates.Range(func(key, _ interface{}) bool {
-			peerName := key.(string)
+			peerName, ok := key.(string)
+			if !ok {
+				return true
+			}
 			if !reachable[peerName] {
 				unreachable = append(unreachable, peerName)
 			}

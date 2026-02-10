@@ -62,7 +62,10 @@ var responseWriterPool = sync.Pool{
 
 // getResponseWriter gets a responseWriter from the pool
 func getResponseWriter(w http.ResponseWriter) *responseWriterWithStatus {
-	rw := responseWriterPool.Get().(*responseWriterWithStatus)
+	rw, ok := responseWriterPool.Get().(*responseWriterWithStatus)
+	if !ok {
+		rw = &responseWriterWithStatus{statusCode: http.StatusOK}
+	}
 	rw.reset(w)
 	return rw
 }

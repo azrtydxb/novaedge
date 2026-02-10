@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -86,7 +87,7 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 
 	// Start server in goroutine
 	go func() {
-		if err := m.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := m.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			m.logger.Error("Metrics server error", zap.Error(err))
 		}
 	}()
@@ -102,7 +103,7 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 	defer cancel()
 
 	m.logger.Info("Shutting down metrics server")
-	if err := m.server.Shutdown(shutdownCtx); err != nil {
+	if err := m.server.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown context intentionally derived from context.Background() after parent cancellation
 		return fmt.Errorf("failed to shutdown metrics server: %w", err)
 	}
 

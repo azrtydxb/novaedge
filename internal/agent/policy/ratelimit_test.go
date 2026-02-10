@@ -28,6 +28,8 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testRateLimitAddr = "1.2.3.4:12345"
+
 func TestNewRateLimiter(t *testing.T) {
 	config := &pb.RateLimitConfig{
 		RequestsPerSecond: 10,
@@ -68,7 +70,7 @@ func TestExtractKey(t *testing.T) {
 		{
 			name:       "source-ip key",
 			key:        "source-ip",
-			remoteAddr: "1.2.3.4:12345",
+			remoteAddr: testRateLimitAddr,
 			expected:   "1.2.3.4",
 		},
 		{
@@ -80,7 +82,7 @@ func TestExtractKey(t *testing.T) {
 		{
 			name:        "custom header key",
 			key:         "X-API-Key",
-			remoteAddr:  "1.2.3.4:12345",
+			remoteAddr:  testRateLimitAddr,
 			headerName:  "X-API-Key",
 			headerValue: "test-api-key-123",
 			expected:    "test-api-key-123",
@@ -88,7 +90,7 @@ func TestExtractKey(t *testing.T) {
 		{
 			name:       "custom header missing falls back to default",
 			key:        "X-API-Key",
-			remoteAddr: "1.2.3.4:12345",
+			remoteAddr: testRateLimitAddr,
 			expected:   "default",
 		},
 	}
@@ -108,10 +110,7 @@ func TestExtractKey(t *testing.T) {
 				req.Header.Set(tt.headerName, tt.headerValue)
 			}
 
-			key, err := limiter.extractKey(req)
-			if err != nil {
-				t.Errorf("Expected no error, got: %v", err)
-			}
+			key := limiter.extractKey(req)
 
 			if key != tt.expected {
 				t.Errorf("Expected key %s, got %s", tt.expected, key)
@@ -217,12 +216,9 @@ func TestAllow(t *testing.T) {
 		limiter := NewRateLimiter(config)
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "1.2.3.4:12345"
+		req.RemoteAddr = testRateLimitAddr
 
-		allowed, err := limiter.Allow(req)
-		if err != nil {
-			t.Errorf("Expected no error, got: %v", err)
-		}
+		allowed := limiter.Allow(req)
 
 		if !allowed {
 			t.Error("Expected request to be allowed")
@@ -241,13 +237,13 @@ func TestAllow(t *testing.T) {
 		req.RemoteAddr = "2.3.4.5:12345"
 
 		// First request should be allowed (uses burst token)
-		allowed, _ := limiter.Allow(req)
+		allowed := limiter.Allow(req)
 		if !allowed {
 			t.Error("Expected first request to be allowed")
 		}
 
 		// Second immediate request should be denied
-		allowed, _ = limiter.Allow(req)
+		allowed = limiter.Allow(req)
 		if allowed {
 			t.Error("Expected second immediate request to be denied")
 		}
@@ -268,19 +264,19 @@ func TestAllow(t *testing.T) {
 		req2.RemoteAddr = "4.5.6.7:12345"
 
 		// First request from IP1 uses its burst token
-		allowed1, _ := limiter.Allow(req1)
+		allowed1 := limiter.Allow(req1)
 		if !allowed1 {
 			t.Error("Expected request from IP1 to be allowed")
 		}
 
 		// Second request from IP1 should be denied
-		allowed1, _ = limiter.Allow(req1)
+		allowed1 = limiter.Allow(req1)
 		if allowed1 {
 			t.Error("Expected second request from IP1 to be denied")
 		}
 
 		// But first request from IP2 should be allowed (different limiter)
-		allowed2, _ := limiter.Allow(req2)
+		allowed2 := limiter.Allow(req2)
 		if !allowed2 {
 			t.Error("Expected request from IP2 to be allowed")
 		}
@@ -300,7 +296,7 @@ func TestAllow(t *testing.T) {
 		// Should allow burst number of requests immediately
 		allowedCount := 0
 		for i := 0; i < 5; i++ {
-			allowed, _ := limiter.Allow(req)
+			allowed := limiter.Allow(req)
 			if allowed {
 				allowedCount++
 			}
@@ -335,7 +331,7 @@ func TestHandleRateLimit(t *testing.T) {
 		handler := middleware(nextHandler)
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "1.2.3.4:12345"
+		req.RemoteAddr = testRateLimitAddr
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -443,11 +439,11 @@ func TestHandleRateLimit(t *testing.T) {
 
 		// Two requests with different API keys should each get their own limit
 		req1 := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req1.RemoteAddr = "1.2.3.4:12345"
+		req1.RemoteAddr = testRateLimitAddr
 		req1.Header.Set("X-API-Key", "key-1")
 
 		req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req2.RemoteAddr = "1.2.3.4:12345" // Same IP
+		req2.RemoteAddr = testRateLimitAddr // Same IP
 		req2.Header.Set("X-API-Key", "key-2")
 
 		// First request with key-1 should succeed

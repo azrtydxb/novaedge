@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -36,6 +37,17 @@ func NewConverter() *Converter {
 	return &Converter{}
 }
 
+// safeInt32 converts an int to int32, clamping to math.MaxInt32 on overflow.
+func safeInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
+}
+
 // ToSnapshot converts a standalone Config to a ConfigSnapshot
 func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot, error) {
 	snapshot := &pb.ConfigSnapshot{
@@ -44,24 +56,15 @@ func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot
 	}
 
 	// Convert gateways (from listeners)
-	gateways, err := c.convertListeners(cfg.Listeners)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert listeners: %w", err)
-	}
+	gateways := c.convertListeners(cfg.Listeners)
 	snapshot.Gateways = gateways
 
 	// Convert routes
-	routes, err := c.convertRoutes(cfg.Routes)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert routes: %w", err)
-	}
+	routes := c.convertRoutes(cfg.Routes)
 	snapshot.Routes = routes
 
 	// Convert backends to clusters and endpoints
-	clusters, endpoints, err := c.convertBackends(cfg.Backends)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert backends: %w", err)
-	}
+	clusters, endpoints := c.convertBackends(cfg.Backends)
 	snapshot.Clusters = clusters
 	snapshot.Endpoints = endpoints
 
@@ -73,10 +76,7 @@ func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot
 	snapshot.VipAssignments = vips
 
 	// Convert policies
-	policies, err := c.convertPolicies(cfg.Policies)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert policies: %w", err)
-	}
+	policies := c.convertPolicies(cfg.Policies)
 	snapshot.Policies = policies
 
 	// Generate version hash
@@ -85,7 +85,7 @@ func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot
 	return snapshot, nil
 }
 
-func (c *Converter) convertListeners(listeners []ListenerConfig) ([]*pb.Gateway, error) {
+func (c *Converter) convertListeners(listeners []ListenerConfig) []*pb.Gateway {
 	// Create a single gateway with all listeners
 	gateway := &pb.Gateway{
 		Name:      "standalone",
@@ -96,7 +96,7 @@ func (c *Converter) convertListeners(listeners []ListenerConfig) ([]*pb.Gateway,
 	for _, l := range listeners {
 		listener := &pb.Listener{
 			Name:     l.Name,
-			Port:     int32(l.Port),
+			Port:     safeInt32(l.Port),
 			Protocol: c.parseProtocol(l.Protocol),
 		}
 
@@ -122,7 +122,7 @@ func (c *Converter) convertListeners(listeners []ListenerConfig) ([]*pb.Gateway,
 		gateway.Listeners = append(gateway.Listeners, listener)
 	}
 
-	return []*pb.Gateway{gateway}, nil
+	return []*pb.Gateway{gateway}
 }
 
 func (c *Converter) parseProtocol(protocol string) pb.Protocol {
@@ -142,7 +142,7 @@ func (c *Converter) parseProtocol(protocol string) pb.Protocol {
 	}
 }
 
-func (c *Converter) convertRoutes(routes []RouteConfig) ([]*pb.Route, error) {
+func (c *Converter) convertRoutes(routes []RouteConfig) []*pb.Route {
 	result := make([]*pb.Route, 0, len(routes))
 
 	for _, r := range routes {
@@ -191,7 +191,7 @@ func (c *Converter) convertRoutes(routes []RouteConfig) ([]*pb.Route, error) {
 
 		// Backend refs
 		for _, br := range r.Backends {
-			weight := int32(br.Weight)
+			weight := safeInt32(br.Weight)
 			if weight == 0 {
 				weight = 1
 			}
@@ -231,7 +231,7 @@ func (c *Converter) convertRoutes(routes []RouteConfig) ([]*pb.Route, error) {
 		result = append(result, route)
 	}
 
-	return result, nil
+	return result
 }
 
 func (c *Converter) parsePathMatchType(matchType string) pb.PathMatchType {
@@ -273,7 +273,7 @@ func (c *Converter) parseFilterType(filterType string) pb.RouteFilterType {
 	}
 }
 
-func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
+func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, map[string]*pb.EndpointList) {
 	clusters := make([]*pb.Cluster, 0, len(backends))
 	endpoints := make(map[string]*pb.EndpointList)
 
@@ -290,33 +290,33 @@ func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, ma
 				HttpPath: b.HealthCheck.Path,
 			}
 			if d, err := time.ParseDuration(b.HealthCheck.Interval); err == nil {
-				cluster.HealthCheck.IntervalMs = int64(d.Milliseconds())
+				cluster.HealthCheck.IntervalMs = d.Milliseconds()
 			}
 			if d, err := time.ParseDuration(b.HealthCheck.Timeout); err == nil {
-				cluster.HealthCheck.TimeoutMs = int64(d.Milliseconds())
+				cluster.HealthCheck.TimeoutMs = d.Milliseconds()
 			}
-			cluster.HealthCheck.HealthyThreshold = int32(b.HealthCheck.HealthyThreshold)
-			cluster.HealthCheck.UnhealthyThreshold = int32(b.HealthCheck.UnhealthyThreshold)
+			cluster.HealthCheck.HealthyThreshold = safeInt32(b.HealthCheck.HealthyThreshold)
+			cluster.HealthCheck.UnhealthyThreshold = safeInt32(b.HealthCheck.UnhealthyThreshold)
 		}
 
 		// Circuit breaker
 		if b.CircuitBreaker != nil {
 			cluster.CircuitBreaker = &pb.CircuitBreaker{
-				MaxConnections:     int32(b.CircuitBreaker.MaxConnections),
-				MaxPendingRequests: int32(b.CircuitBreaker.MaxPendingRequests),
-				MaxRequests:        int32(b.CircuitBreaker.MaxRequests),
-				MaxRetries:         int32(b.CircuitBreaker.MaxRetries),
+				MaxConnections:     safeInt32(b.CircuitBreaker.MaxConnections),
+				MaxPendingRequests: safeInt32(b.CircuitBreaker.MaxPendingRequests),
+				MaxRequests:        safeInt32(b.CircuitBreaker.MaxRequests),
+				MaxRetries:         safeInt32(b.CircuitBreaker.MaxRetries),
 			}
 		}
 
 		// Connection pool
 		if b.ConnectionPool != nil {
 			cluster.ConnectionPool = &pb.ConnectionPool{
-				MaxIdleConns:        int32(b.ConnectionPool.MaxIdleConnections),
-				MaxIdleConnsPerHost: int32(b.ConnectionPool.MaxConnections),
+				MaxIdleConns:        safeInt32(b.ConnectionPool.MaxIdleConnections),
+				MaxIdleConnsPerHost: safeInt32(b.ConnectionPool.MaxConnections),
 			}
 			if d, err := time.ParseDuration(b.ConnectionPool.IdleTimeout); err == nil {
-				cluster.ConnectionPool.IdleConnTimeoutMs = int64(d.Milliseconds())
+				cluster.ConnectionPool.IdleConnTimeoutMs = d.Milliseconds()
 			}
 		}
 
@@ -356,7 +356,7 @@ func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, ma
 		endpoints[clusterKey] = endpointList
 	}
 
-	return clusters, endpoints, nil
+	return clusters, endpoints
 }
 
 // parseAddressPort parses "host:port" format
@@ -367,7 +367,7 @@ func parseAddressPort(addr string) (string, int32) {
 		if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
 			return parts[0], 0 // Return host with zero port on parse error
 		}
-		return parts[0], int32(port)
+		return parts[0], safeInt32(port)
 	}
 	return addr, 80 // Default to port 80
 }
@@ -446,7 +446,7 @@ func (c *Converter) parseVIPMode(mode string) pb.VIPMode {
 	}
 }
 
-func (c *Converter) convertPolicies(policies []PolicyConfig) ([]*pb.Policy, error) {
+func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 	result := make([]*pb.Policy, 0, len(policies))
 
 	for _, p := range policies {
@@ -459,8 +459,8 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) ([]*pb.Policy, erro
 		case "RateLimit":
 			if p.RateLimit != nil {
 				policy.RateLimit = &pb.RateLimitConfig{
-					RequestsPerSecond: int32(p.RateLimit.RequestsPerSecond),
-					Burst:             int32(p.RateLimit.BurstSize),
+					RequestsPerSecond: safeInt32(p.RateLimit.RequestsPerSecond),
+					Burst:             safeInt32(p.RateLimit.BurstSize),
 					Key:               p.RateLimit.Key,
 				}
 			}
@@ -500,7 +500,7 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) ([]*pb.Policy, erro
 		result = append(result, policy)
 	}
 
-	return result, nil
+	return result
 }
 
 func (c *Converter) generateVersion(snapshot *pb.ConfigSnapshot) string {

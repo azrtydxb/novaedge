@@ -237,13 +237,13 @@ func (hc *HealthChecker) healthCheckLoop(ctx context.Context) {
 		case <-hc.stopCh:
 			return
 		case <-ticker.C:
-			hc.performHealthChecks()
+			hc.performHealthChecks(ctx)
 		}
 	}
 }
 
 // performHealthChecks performs health checks on all endpoints
-func (hc *HealthChecker) performHealthChecks() {
+func (hc *HealthChecker) performHealthChecks(ctx context.Context) {
 	hc.mu.RLock()
 	endpoints := make([]*pb.Endpoint, len(hc.endpoints))
 	copy(endpoints, hc.endpoints)
@@ -256,7 +256,7 @@ func (hc *HealthChecker) performHealthChecks() {
 		// Perform check in goroutine for concurrency
 		go func(endpoint *pb.Endpoint) {
 			defer wg.Done()
-			hc.checkEndpoint(endpoint)
+			hc.checkEndpoint(ctx, endpoint)
 		}(ep)
 	}
 
@@ -265,7 +265,7 @@ func (hc *HealthChecker) performHealthChecks() {
 }
 
 // checkEndpoint performs a health check on a single endpoint
-func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
+func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
 	key := endpointKey(ep)
 	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
 
@@ -296,7 +296,7 @@ func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 	checkStart := time.Now()
 
 	// Perform HTTP health check with circuit breaker protection
-	healthy, err := hc.performHTTPCheck(ep)
+	healthy, err := hc.performHTTPCheck(ctx, ep)
 
 	// Record health check metrics
 	checkDuration := time.Since(checkStart).Seconds()
@@ -362,11 +362,16 @@ func (hc *HealthChecker) checkEndpoint(ep *pb.Endpoint) {
 }
 
 // performHTTPCheck performs an HTTP health check
-func (hc *HealthChecker) performHTTPCheck(ep *pb.Endpoint) (bool, error) {
+func (hc *HealthChecker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
 	// Build health check URL
-	url := fmt.Sprintf("http://%s:%d/health", ep.Address, ep.Port)
+	checkURL := "http://" + net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port)) + "/health"
 
-	resp, err := hc.httpClient.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checkURL, nil)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := hc.httpClient.Do(req)
 	if err != nil {
 		return false, err
 	}
@@ -385,7 +390,7 @@ func (hc *HealthChecker) GetHealthyEndpoints() []*pb.Endpoint {
 	hc.mu.RLock()
 	defer hc.mu.RUnlock()
 
-	var healthy []*pb.Endpoint
+	healthy := make([]*pb.Endpoint, 0, len(hc.endpoints))
 	for _, ep := range hc.endpoints {
 		if hc.IsHealthy(ep) {
 			healthy = append(healthy, ep)
@@ -396,5 +401,5 @@ func (hc *HealthChecker) GetHealthyEndpoints() []*pb.Endpoint {
 }
 
 func endpointKey(ep *pb.Endpoint) string {
-	return fmt.Sprintf("%s:%d", ep.Address, ep.Port)
+	return net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
 }

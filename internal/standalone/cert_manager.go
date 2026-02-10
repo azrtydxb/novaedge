@@ -30,6 +30,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	issuerTypeACME       = "acme"
+	issuerTypeManual     = "manual"
+	issuerTypeSelfSigned = "self-signed"
+)
+
 // CertificateManager manages TLS certificates for standalone mode.
 // It handles ACME provisioning, self-signed generation, and certificate hot-reload.
 type CertificateManager struct {
@@ -120,15 +126,15 @@ func (m *CertificateManager) initializeCertificate(ctx context.Context, certConf
 	}
 
 	switch certConfig.Issuer.Type {
-	case "acme":
+	case issuerTypeACME:
 		if err := m.initializeACMECertificate(ctx, certConfig, mc); err != nil {
 			return err
 		}
-	case "manual":
+	case issuerTypeManual:
 		if err := m.initializeManualCertificate(certConfig, mc); err != nil {
 			return err
 		}
-	case "self-signed":
+	case issuerTypeSelfSigned:
 		if err := m.initializeSelfSignedCertificate(certConfig, mc); err != nil {
 			return err
 		}
@@ -294,7 +300,7 @@ func (m *CertificateManager) initializeSelfSignedCertificate(certConfig *Certifi
 	certPath := filepath.Join(m.storagePath, certConfig.Name+".crt")
 	keyPath := filepath.Join(m.storagePath, certConfig.Name+".key")
 
-	if err := os.WriteFile(certPath, cert.CertificatePEM, 0644); err != nil {
+	if err := os.WriteFile(certPath, cert.CertificatePEM, 0600); err != nil {
 		m.logger.Warn("Failed to save self-signed certificate", zap.Error(err))
 	}
 	if err := os.WriteFile(keyPath, cert.PrivateKeyPEM, 0600); err != nil {
@@ -324,7 +330,11 @@ func (m *CertificateManager) GetCertificate(name string) (*tls.Certificate, erro
 		return nil, fmt.Errorf("certificate not loaded: %s", name)
 	}
 
-	return cert.(*tls.Certificate), nil
+	tlsCert, ok := cert.(*tls.Certificate)
+	if !ok {
+		return nil, fmt.Errorf("certificate has invalid type for: %s", name)
+	}
+	return tlsCert, nil
 }
 
 // GetCertificateFunc returns a function suitable for tls.Config.GetCertificate.
@@ -342,7 +352,9 @@ func (m *CertificateManager) GetCertificateFunc() func(*tls.ClientHelloInfo) (*t
 				if matchDomain(domain, serverName) {
 					cert := mc.certificate.Load()
 					if cert != nil {
-						return cert.(*tls.Certificate), nil
+						if tlsCert, ok := cert.(*tls.Certificate); ok {
+							return tlsCert, nil
+						}
 					}
 				}
 			}
@@ -352,7 +364,9 @@ func (m *CertificateManager) GetCertificateFunc() func(*tls.ClientHelloInfo) (*t
 		for _, mc := range m.certificates {
 			cert := mc.certificate.Load()
 			if cert != nil {
-				return cert.(*tls.Certificate), nil
+				if tlsCert, ok := cert.(*tls.Certificate); ok {
+					return tlsCert, nil
+				}
 			}
 		}
 
@@ -398,7 +412,7 @@ func (m *CertificateManager) checkRenewals(ctx context.Context) {
 	renewThreshold := 30 * 24 * time.Hour // 30 days
 
 	for name, mc := range m.certificates {
-		if mc.IssuerType != "acme" {
+		if mc.IssuerType != issuerTypeACME {
 			continue
 		}
 
@@ -468,7 +482,7 @@ func (m *CertificateManager) checkHotReload() {
 	defer m.mu.Unlock()
 
 	for name, mc := range m.certificates {
-		if mc.IssuerType != "manual" || mc.certFile == "" {
+		if mc.IssuerType != issuerTypeManual || mc.certFile == "" {
 			continue
 		}
 
@@ -507,7 +521,7 @@ func (m *CertificateManager) GetCertificateInfo() []CertificateInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var infos []CertificateInfo
+	infos := make([]CertificateInfo, 0, len(m.certificates))
 	for name, mc := range m.certificates {
 		infos = append(infos, CertificateInfo{
 			Name:       name,

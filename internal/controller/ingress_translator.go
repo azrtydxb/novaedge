@@ -116,7 +116,7 @@ const (
 	// AnnotationCORSMaxAge sets CORS max age
 	AnnotationCORSMaxAge = "novaedge.io/cors-max-age"
 	// AnnotationCORSAllowCredentials enables CORS credentials
-	AnnotationCORSAllowCredentials = "novaedge.io/cors-allow-credentials"
+	AnnotationCORSAllowCredentials = "novaedge.io/cors-allow-credentials" //nolint:gosec // G101: not a credential, CORS annotation key
 
 	// AnnotationGRPCBackend marks backend as gRPC
 	AnnotationGRPCBackend = "novaedge.io/grpc-backend"
@@ -158,6 +158,11 @@ const (
 
 	// Default VIP reference if not specified
 	DefaultVIPRef = "default-vip"
+
+	// affinityCookie is the session affinity cookie type value
+	affinityCookie = "cookie"
+	// annotationValueTrue is the string "true" used in annotation comparisons
+	annotationValueTrue = "true"
 )
 
 // ServicePortResolver resolves service port names to port numbers
@@ -199,11 +204,7 @@ func (t *IngressTranslator) Translate(ingress *networkingv1.Ingress) (*Translati
 	}
 
 	// Create ProxyGateway from Ingress
-	gateway, err := t.translateGateway(ingress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to translate gateway: %w", err)
-	}
-	result.Gateway = gateway
+	result.Gateway = t.translateGateway(ingress)
 
 	// Track unique backends to avoid duplicates
 	backendMap := make(map[string]*novaedgev1alpha1.ProxyBackend)
@@ -246,7 +247,7 @@ func (t *IngressTranslator) Translate(ingress *networkingv1.Ingress) (*Translati
 }
 
 // translateGateway creates a ProxyGateway from an Ingress
-func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) (*novaedgev1alpha1.ProxyGateway, error) {
+func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) *novaedgev1alpha1.ProxyGateway {
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      t.generateGatewayName(ingress),
@@ -316,7 +317,7 @@ func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) (*no
 		gateway.Spec.CustomErrorPages = errorPages
 	}
 
-	return gateway, nil
+	return gateway
 }
 
 // createHTTPSListener creates an HTTPS listener from Ingress TLS configuration
@@ -736,7 +737,7 @@ func (t *IngressTranslator) applyBackendProtocol(ingress *networkingv1.Ingress, 
 // applySessionAffinity applies session affinity annotations
 func (t *IngressTranslator) applySessionAffinity(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
 	affinity, exists := ingress.Annotations[AnnotationSessionAffinity]
-	if !exists || strings.ToLower(affinity) != "cookie" {
+	if !exists || strings.ToLower(affinity) != affinityCookie {
 		return
 	}
 
@@ -758,7 +759,7 @@ func (t *IngressTranslator) applyUpstreamHash(ingress *networkingv1.Ingress, bac
 		backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
 	case "$remote_addr", "$binary_remote_addr", "ip":
 		backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
-	case "header", "cookie":
+	case "header", affinityCookie:
 		backend.Spec.LBPolicy = novaedgev1alpha1.LBPolicyRingHash
 	default:
 		// Use Maglev for other consistent hashing needs
@@ -770,12 +771,12 @@ func (t *IngressTranslator) applyUpstreamHash(ingress *networkingv1.Ingress, bac
 func (t *IngressTranslator) shouldSSLRedirect(ingress *networkingv1.Ingress) bool {
 	// Check force-ssl-redirect annotation (always redirects)
 	if forceRedirect, exists := ingress.Annotations[AnnotationForceSSLRedirect]; exists {
-		return strings.ToLower(forceRedirect) == "true"
+		return strings.ToLower(forceRedirect) == annotationValueTrue
 	}
 
 	// Check ssl-redirect annotation
 	if sslRedirect, exists := ingress.Annotations[AnnotationSSLRedirect]; exists {
-		return strings.ToLower(sslRedirect) == "true"
+		return strings.ToLower(sslRedirect) == annotationValueTrue
 	}
 
 	// Default: redirect if TLS is configured
@@ -812,13 +813,14 @@ func (t *IngressTranslator) getProxyBodySize(ingress *networkingv1.Ingress) int6
 	sizeStr = strings.ToLower(strings.TrimSpace(sizeStr))
 	multiplier := int64(1)
 
-	if strings.HasSuffix(sizeStr, "k") {
+	switch {
+	case strings.HasSuffix(sizeStr, "k"):
 		multiplier = 1024
 		sizeStr = strings.TrimSuffix(sizeStr, "k")
-	} else if strings.HasSuffix(sizeStr, "m") {
+	case strings.HasSuffix(sizeStr, "m"):
 		multiplier = 1024 * 1024
 		sizeStr = strings.TrimSuffix(sizeStr, "m")
-	} else if strings.HasSuffix(sizeStr, "g") {
+	case strings.HasSuffix(sizeStr, "g"):
 		multiplier = 1024 * 1024 * 1024
 		sizeStr = strings.TrimSuffix(sizeStr, "g")
 	}
@@ -885,7 +887,7 @@ func (t *IngressTranslator) getCanaryHeader(ingress *networkingv1.Ingress) (stri
 
 	value := ingress.Annotations[AnnotationCanaryHeaderValue]
 	if value == "" {
-		value = "true" // Default value if not specified
+		value = annotationValueTrue // Default value if not specified
 	}
 
 	return header, value
@@ -970,7 +972,7 @@ func (t *IngressTranslator) applyCircuitBreaker(ingress *networkingv1.Ingress, b
 // applySessionAffinityConfig applies session affinity cookie configuration
 func (t *IngressTranslator) applySessionAffinityConfig(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
 	affinity, exists := ingress.Annotations[AnnotationSessionAffinity]
-	if !exists || strings.ToLower(affinity) != "cookie" {
+	if !exists || strings.ToLower(affinity) != affinityCookie {
 		return
 	}
 
@@ -997,7 +999,7 @@ func (t *IngressTranslator) applySessionAffinityConfig(ingress *networkingv1.Ing
 func (t *IngressTranslator) applyHealthCheck(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
 	healthPath := ingress.Annotations[AnnotationHealthCheckPath]
 	intervalStr := ingress.Annotations[AnnotationHealthCheckInterval]
-	isGRPC := strings.ToLower(ingress.Annotations[AnnotationGRPCHealthCheck]) == "true"
+	isGRPC := strings.ToLower(ingress.Annotations[AnnotationGRPCHealthCheck]) == annotationValueTrue
 
 	if healthPath == "" && intervalStr == "" && !isGRPC {
 		return
@@ -1020,17 +1022,18 @@ func (t *IngressTranslator) applyHealthCheck(ingress *networkingv1.Ingress, back
 
 // applyGRPCBackend applies gRPC-specific configuration
 func (t *IngressTranslator) applyGRPCBackend(ingress *networkingv1.Ingress, backend *novaedgev1alpha1.ProxyBackend) {
-	isGRPC := strings.ToLower(ingress.Annotations[AnnotationGRPCBackend]) == "true"
+	isGRPC := strings.ToLower(ingress.Annotations[AnnotationGRPCBackend]) == annotationValueTrue
 	protocol := strings.ToUpper(ingress.Annotations[AnnotationBackendProtocol])
 
-	if isGRPC || protocol == "GRPC" {
+	switch {
+	case isGRPC || protocol == "GRPC":
 		backend.Spec.Protocol = "gRPC"
-	} else if protocol == "GRPCS" {
+	case protocol == "GRPCS":
 		backend.Spec.Protocol = "gRPCS"
 		if backend.Spec.TLS == nil {
 			backend.Spec.TLS = &novaedgev1alpha1.BackendTLSConfig{Enabled: true}
 		}
-	} else if protocol == "HTTP2" {
+	case protocol == "HTTP2":
 		backend.Spec.Protocol = "HTTP2"
 	}
 }
@@ -1053,7 +1056,7 @@ func (t *IngressTranslator) getTracingConfig(ingress *networkingv1.Ingress) *nov
 	}
 
 	if enabledStr != "" {
-		config.Enabled = strings.ToLower(enabledStr) == "true"
+		config.Enabled = strings.ToLower(enabledStr) == annotationValueTrue
 	}
 
 	if samplingRateStr != "" {
@@ -1081,7 +1084,7 @@ func (t *IngressTranslator) getAccessLogConfig(ingress *networkingv1.Ingress) *n
 	}
 
 	if enabledStr != "" {
-		config.Enabled = strings.ToLower(enabledStr) == "true"
+		config.Enabled = strings.ToLower(enabledStr) == annotationValueTrue
 	}
 
 	if format != "" {
@@ -1129,5 +1132,5 @@ func (t *IngressTranslator) getMirrorConfig(ingress *networkingv1.Ingress) (*nov
 
 // useRegexPathMatching checks if regex path matching should be used
 func (t *IngressTranslator) useRegexPathMatching(ingress *networkingv1.Ingress) bool {
-	return strings.ToLower(ingress.Annotations[AnnotationUseRegex]) == "true"
+	return strings.ToLower(ingress.Annotations[AnnotationUseRegex]) == annotationValueTrue
 }

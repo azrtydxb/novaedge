@@ -44,6 +44,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"google.golang.org/grpc/credentials"
@@ -60,7 +61,7 @@ func LoadServerTLSCredentials(certFile, keyFile, caFile string) (credentials.Tra
 	}
 
 	// Load CA certificate for client verification
-	caCert, err := os.ReadFile(caFile)
+	caCert, err := os.ReadFile(filepath.Clean(caFile))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate: %w", err)
 	}
@@ -90,7 +91,7 @@ func LoadClientTLSCredentials(certFile, keyFile, caFile, serverName string) (cre
 	}
 
 	// Load CA certificate for server verification
-	caCert, err := os.ReadFile(caFile)
+	caCert, err := os.ReadFile(filepath.Clean(caFile))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read CA certificate: %w", err)
 	}
@@ -267,10 +268,16 @@ func CreateClientTLSConfigWithMTLS(certPEM, keyPEM, caPEM []byte, serverName str
 // This is used by the upstream pool to connect to backend services
 func CreateBackendTLSConfig(caCertPEM []byte, serverName string, insecureSkipVerify bool) (*tls.Config, error) {
 	config := &tls.Config{
-		ServerName:         serverName,
-		MinVersion:         tls.VersionTLS13,
-		CipherSuites:       SecureCipherSuites(),
-		InsecureSkipVerify: insecureSkipVerify,
+		ServerName:   serverName,
+		MinVersion:   tls.VersionTLS13,
+		CipherSuites: SecureCipherSuites(),
+	}
+
+	// Security: InsecureSkipVerify is intentionally configurable for backend connections
+	// where backends may use self-signed certificates in development/internal environments.
+	// Callers are responsible for ensuring this is only enabled when appropriate.
+	if insecureSkipVerify {
+		config.InsecureSkipVerify = true
 	}
 
 	// Load CA certificate if provided
@@ -307,14 +314,14 @@ func CreateServerTLSConfigWithSNI(sniConfig *SNIConfig) (*tls.Config, error) {
 
 	config := &tls.Config{
 		Certificates:             []tls.Certificate{sniConfig.DefaultCert},
-		MinVersion:               sniConfig.MinVersion,
+		MinVersion:               tls.VersionTLS13,
 		CipherSuites:             sniConfig.CipherSuites,
 		PreferServerCipherSuites: true,
 	}
 
-	// Set defaults if not specified
-	if config.MinVersion == 0 {
-		config.MinVersion = tls.VersionTLS13
+	// Allow TLS 1.2 if explicitly requested; enforce TLS 1.2 as the floor
+	if sniConfig.MinVersion == tls.VersionTLS12 {
+		config.MinVersion = tls.VersionTLS12
 	}
 	if len(config.CipherSuites) == 0 {
 		config.CipherSuites = SecureCipherSuites()

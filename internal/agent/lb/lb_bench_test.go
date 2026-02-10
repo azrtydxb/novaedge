@@ -29,7 +29,7 @@ func makeEndpoints(n int) []*pb.Endpoint {
 	for i := range endpoints {
 		endpoints[i] = &pb.Endpoint{
 			Address: fmt.Sprintf("10.0.%d.%d", i/256, i%256),
-			Port:    int32(8080 + i%100),
+			Port:    int32(8080) + int32(i%100), //nolint:gosec // i%100 is bounded [0,100)
 			Ready:   true,
 		}
 	}

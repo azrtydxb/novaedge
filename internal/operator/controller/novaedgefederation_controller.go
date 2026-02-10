@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -405,7 +406,7 @@ func (r *NovaEdgeFederationReconciler) syncStatus(ctx context.Context, fed *nova
 	// Update status
 	fed.Status.Phase = crdPhase
 	fed.Status.Members = memberStatuses
-	fed.Status.ConflictsPending = int32(len(conflicts))
+	fed.Status.ConflictsPending = safeIntToInt32(len(conflicts))
 	fed.Status.LocalVectorClock = vectorClock
 	fed.Status.ObservedGeneration = fed.Generation
 
@@ -432,7 +433,7 @@ func (r *NovaEdgeFederationReconciler) syncStatus(ctx context.Context, fed *nova
 }
 
 // updateStatus updates the status with a simple phase and message
-func (r *NovaEdgeFederationReconciler) updateStatus(ctx context.Context, fed *novaedgev1alpha1.NovaEdgeFederation, phase novaedgev1alpha1.FederationPhase, message string, log *zap.Logger) (ctrl.Result, error) {
+func (r *NovaEdgeFederationReconciler) updateStatus(ctx context.Context, fed *novaedgev1alpha1.NovaEdgeFederation, phase novaedgev1alpha1.FederationPhase, _ string, log *zap.Logger) (ctrl.Result, error) {
 	fed.Status.Phase = phase
 	fed.Status.ObservedGeneration = fed.Generation
 	fed.Status.Conditions = r.buildConditions(phase, fed.Status.Conditions)
@@ -516,4 +517,15 @@ func (r *NovaEdgeFederationReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.NovaEdgeFederation{}).
 		Complete(r)
+}
+
+// safeIntToInt32 safely converts an int to int32, clamping to max int32 value if needed
+func safeIntToInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v) //nolint:gosec // bounds checked above
 }

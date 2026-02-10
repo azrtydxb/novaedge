@@ -18,6 +18,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -139,6 +140,9 @@ func (p *WebSocketProxy) ProxyWebSocket(w http.ResponseWriter, r *http.Request, 
 	copyWebSocketHeaders(r.Header, backendHeaders)
 
 	backendConn, resp, err := websocket.DefaultDialer.Dial(backendWSURL, backendHeaders)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err != nil {
 		p.logger.Error("Failed to connect to backend WebSocket",
 			zap.String("backend", backendWSURL),
@@ -222,7 +226,7 @@ func (p *WebSocketProxy) copyWebSocketMessages(ctx context.Context, src, dst *we
 					websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				return nil
 			}
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				p.logger.Debug("WebSocket connection EOF",
 					zap.String("direction", direction),
 				)

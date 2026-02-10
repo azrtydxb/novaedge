@@ -44,12 +44,9 @@ func NewRateLimiter(config *pb.RateLimitConfig) *RateLimiter {
 }
 
 // Allow checks if a request should be allowed
-func (rl *RateLimiter) Allow(r *http.Request) (bool, error) {
+func (rl *RateLimiter) Allow(r *http.Request) bool {
 	// Extract key for rate limiting
-	key, err := rl.extractKey(r)
-	if err != nil {
-		return false, err
-	}
+	key := rl.extractKey(r)
 
 	// Get or create limiter for this key
 	limiter := rl.getLimiter(key)
@@ -64,7 +61,7 @@ func (rl *RateLimiter) Allow(r *http.Request) (bool, error) {
 		metrics.RateLimitDenied.Inc()
 	}
 
-	return allowed, nil
+	return allowed
 }
 
 // getLimiter gets or creates a rate limiter for a specific key
@@ -100,20 +97,19 @@ func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 }
 
 // extractKey extracts the rate limiting key from the request
-func (rl *RateLimiter) extractKey(r *http.Request) (string, error) {
+func (rl *RateLimiter) extractKey(r *http.Request) string {
 	switch rl.config.Key {
 	case "source-ip", "":
 		// Extract source IP
-		ip := extractClientIP(r)
-		return ip, nil
+		return extractClientIP(r)
 
 	default:
 		// Try to extract from header
 		value := r.Header.Get(rl.config.Key)
 		if value == "" {
-			return "default", nil
+			return "default"
 		}
-		return value, nil
+		return value
 	}
 }
 
@@ -121,13 +117,7 @@ func (rl *RateLimiter) extractKey(r *http.Request) (string, error) {
 func HandleRateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			allowed, err := limiter.Allow(r)
-			if err != nil {
-				http.Error(w, "Rate limit error", http.StatusInternalServerError)
-				return
-			}
-
-			if !allowed {
+			if !limiter.Allow(r) {
 				// Set rate limit headers
 				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%d", limiter.config.RequestsPerSecond))
 				w.Header().Set("X-RateLimit-Remaining", "0")
@@ -144,7 +134,7 @@ func HandleRateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 }
 
 // Cleanup removes inactive limiters (called periodically)
-func (rl *RateLimiter) Cleanup(maxAge time.Duration) {
+func (rl *RateLimiter) Cleanup(_ time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 

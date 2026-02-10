@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -63,11 +64,11 @@ func generateTestCertificate(privateKey *rsa.PrivateKey) (string, error) {
 }
 
 // createTestJWKS creates a test JWKS with the given key
-func createTestJWKS(kid string, cert string) *JWKS {
+func createTestJWKS(cert string) *JWKS {
 	return &JWKS{
 		Keys: []JWK{
 			{
-				Kid: kid,
+				Kid: "test-key",
 				Kty: "RSA",
 				Alg: "RS256",
 				Use: "sig",
@@ -168,7 +169,7 @@ func TestNewJWTValidator(t *testing.T) {
 			Audience: []string{"test-audience"},
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Errorf("Expected no error, got: %v", err)
 		}
@@ -194,7 +195,7 @@ func TestNewJWTValidator(t *testing.T) {
 			t.Fatalf("Failed to generate certificate: %v", err)
 		}
 
-		jwks := createTestJWKS("test-key", cert)
+		jwks := createTestJWKS(cert)
 
 		// Create mock JWKS server
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -209,7 +210,7 @@ func TestNewJWTValidator(t *testing.T) {
 			JwksUri:  server.URL,
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Errorf("Expected no error, got: %v", err)
 		}
@@ -235,7 +236,7 @@ func TestNewJWTValidator(t *testing.T) {
 			JwksUri:  "http://invalid-host-that-does-not-exist.local/jwks",
 		}
 
-		_, err := NewJWTValidator(config)
+		_, err := NewJWTValidator(context.Background(), config)
 		if err == nil {
 			t.Error("Expected error for invalid JWKS URI")
 		}
@@ -254,7 +255,7 @@ func TestValidate(t *testing.T) {
 		t.Fatalf("Failed to generate certificate: %v", err)
 	}
 
-	jwks := createTestJWKS("test-key", cert)
+	jwks := createTestJWKS(cert)
 
 	// Create mock JWKS server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -270,7 +271,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:  server.URL,
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -297,7 +298,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:  server.URL,
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -320,7 +321,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:  server.URL,
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -343,7 +344,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:  server.URL,
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -366,7 +367,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:  server.URL,
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -389,7 +390,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:  server.URL,
 		}
 
-		validator, err := NewJWTValidator(config)
+		validator, err := NewJWTValidator(context.Background(), config)
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -413,7 +414,7 @@ func TestHandleJWT(t *testing.T) {
 		t.Fatalf("Failed to generate certificate: %v", err)
 	}
 
-	jwks := createTestJWKS("test-key", cert)
+	jwks := createTestJWKS(cert)
 
 	// Create mock JWKS server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -428,7 +429,7 @@ func TestHandleJWT(t *testing.T) {
 		JwksUri:  server.URL,
 	}
 
-	validator, err := NewJWTValidator(config)
+	validator, err := NewJWTValidator(context.Background(), config)
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
@@ -551,7 +552,7 @@ func TestFetchJWKS(t *testing.T) {
 			t.Fatalf("Failed to generate certificate: %v", err)
 		}
 
-		jwks := createTestJWKS("test-key", cert)
+		jwks := createTestJWKS(cert)
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
@@ -568,7 +569,7 @@ func TestFetchJWKS(t *testing.T) {
 			keys:   make(map[string]interface{}),
 		}
 
-		err = validator.fetchJWKS()
+		err = validator.fetchJWKS(context.Background())
 		if err != nil {
 			t.Errorf("Expected no error, got: %v", err)
 		}
@@ -597,7 +598,7 @@ func TestFetchJWKS(t *testing.T) {
 			keys:   make(map[string]interface{}),
 		}
 
-		err := validator.fetchJWKS()
+		err := validator.fetchJWKS(context.Background())
 		if err == nil {
 			t.Error("Expected error for server error status")
 		}
@@ -619,7 +620,7 @@ func TestFetchJWKS(t *testing.T) {
 			keys:   make(map[string]interface{}),
 		}
 
-		err := validator.fetchJWKS()
+		err := validator.fetchJWKS(context.Background())
 		if err == nil {
 			t.Error("Expected error for invalid JSON")
 		}

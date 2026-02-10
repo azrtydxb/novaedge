@@ -162,7 +162,7 @@ func (e *EWMA) RecordLatency(endpoint *pb.Endpoint, latency time.Duration) {
 	}
 
 	// Convert latency to scaled int64
-	newSample := int64(latency.Nanoseconds() * scorePrecision)
+	newSample := latency.Nanoseconds() * scorePrecision
 
 	// Calculate new EWMA: score = decay * old_score + (1 - decay) * new_sample
 	for {
@@ -220,7 +220,7 @@ func (e *EWMA) GetScore(endpoint *pb.Endpoint) float64 {
 }
 
 func (e *EWMA) getHealthyEndpoints() []*pb.Endpoint {
-	var healthy []*pb.Endpoint
+	healthy := make([]*pb.Endpoint, 0, len(e.endpoints))
 	for _, ep := range e.endpoints {
 		if ep.Ready {
 			healthy = append(healthy, ep)

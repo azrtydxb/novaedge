@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+const (
+	testPEMTypeRSAPrivateKey = "RSA PRIVATE KEY"
+	testPEMTypeECPrivateKey  = "EC PRIVATE KEY"
+)
+
 func TestGenerateSelfSigned_WithDomains(t *testing.T) {
 	config := &SelfSignedConfig{
 		Domains:      []string{"example.com", "www.example.com"},
@@ -99,7 +104,7 @@ func TestGenerateSelfSigned_RSA2048(t *testing.T) {
 	if block == nil {
 		t.Fatal("failed to decode private key PEM")
 	}
-	if block.Type != "RSA PRIVATE KEY" {
+	if block.Type != testPEMTypeRSAPrivateKey {
 		t.Errorf("expected RSA PRIVATE KEY, got %q", block.Type)
 	}
 }
@@ -119,7 +124,7 @@ func TestGenerateSelfSigned_RSA4096(t *testing.T) {
 	if block == nil {
 		t.Fatal("failed to decode private key PEM")
 	}
-	if block.Type != "RSA PRIVATE KEY" {
+	if block.Type != testPEMTypeRSAPrivateKey {
 		t.Errorf("expected RSA PRIVATE KEY, got %q", block.Type)
 	}
 }
@@ -139,7 +144,7 @@ func TestGenerateSelfSigned_EC384(t *testing.T) {
 	if block == nil {
 		t.Fatal("failed to decode private key PEM")
 	}
-	if block.Type != "EC PRIVATE KEY" {
+	if block.Type != testPEMTypeECPrivateKey {
 		t.Errorf("expected EC PRIVATE KEY, got %q", block.Type)
 	}
 }
@@ -174,7 +179,7 @@ func TestGenerateSelfSigned_DefaultValues(t *testing.T) {
 	}
 
 	block, _ := pem.Decode(cert.PrivateKeyPEM)
-	if block.Type != "EC PRIVATE KEY" {
+	if block.Type != testPEMTypeECPrivateKey {
 		t.Errorf("expected default EC key, got %q", block.Type)
 	}
 }

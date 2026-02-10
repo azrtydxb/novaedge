@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -70,7 +71,7 @@ type Pool struct {
 }
 
 // NewPool creates a new connection pool
-func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) *Pool {
+func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) *Pool {
 	// Apply default values for connection pool configuration
 	poolConfig := cluster.ConnectionPool
 	if poolConfig == nil {
@@ -126,8 +127,8 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 		transport.TLSClientConfig = createBackendTLSConfig(cluster.Tls, logger)
 	}
 
-	// Create context for health checker
-	ctx, cancel := context.WithCancel(context.Background())
+	// Create context for health checker derived from parent
+	poolCtx, cancel := context.WithCancel(ctx)
 
 	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
 
@@ -137,14 +138,14 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 		endpoints:  endpoints,
 		transport:  transport,
 		proxies:    make(map[string]*httputil.ReverseProxy),
-		ctx:        ctx,
+		ctx:        poolCtx,
 		cancel:     cancel,
 		clusterKey: clusterKey,
 	}
 
 	// Create and start health checker
 	pool.healthChecker = health.NewHealthChecker(cluster, endpoints, logger)
-	pool.healthChecker.Start(ctx)
+	pool.healthChecker.Start(poolCtx)
 
 	// Create reverse proxies for each endpoint
 	pool.createProxies()
@@ -333,9 +334,9 @@ func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.Response
 	return nil
 }
 
-// endpointKey builds a key for an endpoint using string concatenation (avoids fmt.Sprintf allocation)
+// endpointKey builds a key for an endpoint using net.JoinHostPort
 func endpointKey(ep *pb.Endpoint) string {
-	return ep.Address + ":" + fmt.Sprint(ep.Port)
+	return net.JoinHostPort(ep.Address, strconv.FormatInt(int64(ep.Port), 10))
 }
 
 // Close closes the pool and all connections
@@ -413,8 +414,14 @@ func (p *Pool) GetClusterKey() string {
 // createBackendTLSConfig creates a TLS config for backend connections
 func createBackendTLSConfig(backendTLS *pb.BackendTLS, logger *zap.Logger) *tls.Config {
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: backendTLS.InsecureSkipVerify,
-		MinVersion:         tls.VersionTLS12,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	// InsecureSkipVerify is an explicit user configuration for backend connections
+	// where the backend may use self-signed certificates
+	if backendTLS.InsecureSkipVerify {
+		tlsConfig.InsecureSkipVerify = true
+		logger.Warn("Backend TLS configured with InsecureSkipVerify=true, certificate verification disabled")
 	}
 
 	// Load CA certificate if provided

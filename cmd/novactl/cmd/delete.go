@@ -35,15 +35,15 @@ func runDelete(cmd *cobra.Command, args []string) error {
 	// Map user-friendly names to resource types
 	var rt client.ResourceType
 	switch resourceType {
-	case "gateways", "gateway", "gw":
+	case resourceAliasGateways, resourceAliasGateway, "gw":
 		rt = client.ResourceGateway
-	case "routes", "route", "rt":
+	case resourceAliasRoutes, resourceAliasRoute, "rt":
 		rt = client.ResourceRoute
-	case "backends", "backend", "be":
+	case resourceAliasBackends, resourceAliasBackend, "be":
 		rt = client.ResourceBackend
-	case "policies", "policy", "pol":
+	case resourceAliasPolicies, resourceAliasPolicy, resourceAliasPol:
 		rt = client.ResourcePolicy
-	case "vips", "vip":
+	case resourceAliasVIPs, resourceAliasVIP:
 		rt = client.ResourceVIP
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)

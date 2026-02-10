@@ -18,11 +18,12 @@ package protocol
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
 func TestIsGRPCRequest_HTTP2WithGRPCContentType(t *testing.T) {
-	req, _ := http.NewRequest("POST", "/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
 	req.ProtoMajor = 2
 	req.Header.Set("Content-Type", "application/grpc")
 
@@ -32,7 +33,7 @@ func TestIsGRPCRequest_HTTP2WithGRPCContentType(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP2WithGRPCProto(t *testing.T) {
-	req, _ := http.NewRequest("POST", "/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
 	req.ProtoMajor = 2
 	req.Header.Set("Content-Type", "application/grpc+proto")
 
@@ -42,7 +43,7 @@ func TestIsGRPCRequest_HTTP2WithGRPCProto(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP1_NotGRPC(t *testing.T) {
-	req, _ := http.NewRequest("POST", "/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
 	req.ProtoMajor = 1
 	req.Header.Set("Content-Type", "application/grpc")
 
@@ -52,7 +53,7 @@ func TestIsGRPCRequest_HTTP1_NotGRPC(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP2WithJSONContentType(t *testing.T) {
-	req, _ := http.NewRequest("POST", "/api/endpoint", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/endpoint", nil)
 	req.ProtoMajor = 2
 	req.Header.Set("Content-Type", "application/json")
 
@@ -62,7 +63,7 @@ func TestIsGRPCRequest_HTTP2WithJSONContentType(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP2NoContentType(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	req.ProtoMajor = 2
 
 	if IsGRPCRequest(req) {
@@ -71,7 +72,7 @@ func TestIsGRPCRequest_HTTP2NoContentType(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_Valid(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "upgrade")
 
@@ -81,7 +82,7 @@ func TestIsWebSocketUpgrade_Valid(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_CaseInsensitiveConnection(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 
@@ -91,7 +92,7 @@ func TestIsWebSocketUpgrade_CaseInsensitiveConnection(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_NoUpgradeHeader(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("Connection", "upgrade")
 
 	if IsWebSocketUpgrade(req) {
@@ -100,7 +101,7 @@ func TestIsWebSocketUpgrade_NoUpgradeHeader(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_NoConnectionHeader(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "websocket")
 
 	if IsWebSocketUpgrade(req) {
@@ -109,7 +110,7 @@ func TestIsWebSocketUpgrade_NoConnectionHeader(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_WrongUpgradeValue(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/ws", nil)
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "h2c")
 	req.Header.Set("Connection", "upgrade")
 
@@ -119,7 +120,7 @@ func TestIsWebSocketUpgrade_WrongUpgradeValue(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_NormalHTTPRequest(t *testing.T) {
-	req, _ := http.NewRequest("GET", "/api/data", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
 
 	if IsWebSocketUpgrade(req) {
 		t.Error("normal HTTP request should not be detected as WebSocket upgrade")

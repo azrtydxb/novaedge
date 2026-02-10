@@ -997,11 +997,12 @@ func (r *NovaEdgeClusterReconciler) updateStatus(ctx context.Context, cluster *n
 	})
 
 	// Update phase
-	if allReady {
+	switch {
+	case allReady:
 		cluster.Status.Phase = novaedgev1alpha1.ClusterPhaseRunning
-	} else if controllerReady || agentReady {
+	case controllerReady || agentReady:
 		cluster.Status.Phase = novaedgev1alpha1.ClusterPhaseDegraded
-	} else {
+	default:
 		cluster.Status.Phase = novaedgev1alpha1.ClusterPhaseInitializing
 	}
 
@@ -1062,7 +1063,11 @@ func (r *NovaEdgeClusterReconciler) createOrUpdate(ctx context.Context, obj clie
 	logger := log.FromContext(ctx)
 
 	key := client.ObjectKeyFromObject(obj)
-	existing := obj.DeepCopyObject().(client.Object)
+	existingObj := obj.DeepCopyObject()
+	existing, ok := existingObj.(client.Object)
+	if !ok {
+		return fmt.Errorf("object does not implement client.Object")
+	}
 
 	if err := r.Get(ctx, key, existing); err != nil {
 		if errors.IsNotFound(err) {

@@ -123,25 +123,25 @@ func (s *FileStorage) LoadCertificate(ctx context.Context, domain string) (*Cert
 
 	// Read certificate
 	certPath := filepath.Join(dir, "cert.pem")
-	certPEM, err := os.ReadFile(certPath)
+	certPEM, err := os.ReadFile(filepath.Clean(certPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read certificate: %w", err)
 	}
 
 	// Read private key
 	keyPath := filepath.Join(dir, "key.pem")
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := os.ReadFile(filepath.Clean(keyPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read private key: %w", err)
 	}
 
 	// Read issuer certificate (optional)
 	issuerPath := filepath.Join(dir, "issuer.pem")
-	issuerPEM, _ := os.ReadFile(issuerPath) // Ignore error, issuer is optional
+	issuerPEM, _ := os.ReadFile(filepath.Clean(issuerPath)) // Ignore error, issuer is optional
 
 	// Read metadata
 	metaPath := filepath.Join(dir, "meta.json")
-	metaBytes, err := os.ReadFile(metaPath)
+	metaBytes, err := os.ReadFile(filepath.Clean(metaPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read metadata: %w", err)
 	}
@@ -206,7 +206,7 @@ func (s *FileStorage) ListCertificates(ctx context.Context) ([]*Certificate, err
 		return nil, fmt.Errorf("failed to list certificates: %w", err)
 	}
 
-	var certs []*Certificate
+	certs := make([]*Certificate, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -290,14 +290,14 @@ func (s *FileStorage) LoadAccount(ctx context.Context) (*AccountInfo, error) {
 
 	// Read private key
 	keyPath := filepath.Join(dir, "key.pem")
-	keyPEM, err := os.ReadFile(keyPath)
+	keyPEM, err := os.ReadFile(filepath.Clean(keyPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read account key: %w", err)
 	}
 
 	// Read account metadata
 	metaPath := filepath.Join(dir, "account.json")
-	metaBytes, err := os.ReadFile(metaPath)
+	metaBytes, err := os.ReadFile(filepath.Clean(metaPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read account metadata: %w", err)
 	}

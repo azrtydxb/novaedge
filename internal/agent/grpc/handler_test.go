@@ -39,7 +39,7 @@ func TestPrepareGRPCRequest_PreservesHeaders(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("POST", "http://backend/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodPost, "http://backend/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 	req.Header.Set("grpc-encoding", "gzip")
 	req.Header.Set("grpc-accept-encoding", "gzip,identity")
@@ -67,7 +67,7 @@ func TestPrepareGRPCRequest_ClonesRequest(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("POST", "http://backend/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodPost, "http://backend/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 
 	prepared := h.PrepareGRPCRequest(req)
@@ -136,7 +136,7 @@ func TestValidateGRPCRequest_ValidPOST(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("POST", "/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 
 	err := h.ValidateGRPCRequest(req)
@@ -149,7 +149,7 @@ func TestValidateGRPCRequest_NonPOST_NoError(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("GET", "/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodGet, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 
 	// ValidateGRPCRequest does not return an error for invalid methods; it logs a warning
@@ -163,7 +163,7 @@ func TestGetGRPCMetadata(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("POST", "/test.Service/Method", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 	req.Header.Set("Authorization", "Bearer token123")
 	req.Header.Set("X-Custom-Header", "custom-value")
@@ -185,7 +185,7 @@ func TestIsGRPCStreaming_Chunked(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("POST", "/test.Service/StreamMethod", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/StreamMethod", nil)
 	req.Header.Set("Transfer-Encoding", "chunked")
 
 	if !h.IsGRPCStreaming(req) {
@@ -197,7 +197,7 @@ func TestIsGRPCStreaming_NoContentLength(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("POST", "/test.Service/StreamMethod", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/StreamMethod", nil)
 	// No Content-Length and no Transfer-Encoding
 
 	if !h.IsGRPCStreaming(req) {
@@ -209,7 +209,7 @@ func TestIsGRPCStreaming_WithContentLength(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewGRPCHandler(logger)
 
-	req, _ := http.NewRequest("POST", "/test.Service/UnaryMethod", nil)
+	req := httptest.NewRequest(http.MethodPost, "/test.Service/UnaryMethod", nil)
 	req.Header.Set("Content-Length", "100")
 
 	if h.IsGRPCStreaming(req) {

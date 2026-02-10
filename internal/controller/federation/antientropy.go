@@ -144,7 +144,7 @@ func (t *MerkleTree) GetNodeAt(prefix string) *MerkleNode {
 }
 
 // findNode recursively finds a node by prefix
-func (t *MerkleTree) findNode(node *MerkleNode, prefix string, level int) *MerkleNode {
+func (t *MerkleTree) findNode(node *MerkleNode, prefix string, _ int) *MerkleNode {
 	if node == nil {
 		return nil
 	}
@@ -418,8 +418,14 @@ func (m *AntiEntropyManager) rebuildLocalTree() {
 
 	// Iterate through tracked resources
 	m.server.resources.Range(func(key, value interface{}) bool {
-		keyStr := key.(string)
-		resource := value.(*TrackedResource)
+		keyStr, ok := key.(string)
+		if !ok {
+			return true
+		}
+		resource, ok := value.(*TrackedResource)
+		if !ok {
+			return true
+		}
 
 		m.localTree.Update(keyStr, resource.Hash)
 		return true
@@ -450,7 +456,10 @@ func (m *AntiEntropyManager) compareWithPeer(peerName string) {
 		return
 	}
 
-	state := peerState.(*PeerState)
+	state, ok := peerState.(*PeerState)
+	if !ok {
+		return
+	}
 	peerVC := state.VectorClock
 
 	// Compare vector clocks
