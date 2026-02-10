@@ -267,7 +267,7 @@ func spaHandler(fsys http.FileSystem) http.Handler {
 
 		// Check if it's a directory
 		stat, err := f.Stat()
-		f.Close()
+		_ = f.Close()
 		if err == nil && stat.IsDir() {
 			// Try to serve index.html from the directory
 			indexPath := strings.TrimSuffix(path, "/") + "/index.html"
@@ -278,7 +278,7 @@ func spaHandler(fsys http.FileSystem) http.Handler {
 				fileServer.ServeHTTP(w, r)
 				return
 			}
-			indexFile.Close()
+			_ = indexFile.Close()
 		}
 
 		// Serve the file

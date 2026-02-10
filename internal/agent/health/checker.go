@@ -370,7 +370,7 @@ func (hc *HealthChecker) performHTTPCheck(ep *pb.Endpoint) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	// Consider 200-299 as healthy
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {

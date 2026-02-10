@@ -196,7 +196,7 @@ func TestHandleCORS(t *testing.T) {
 	// Create test handler
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	t.Run("no Origin header", func(t *testing.T) {

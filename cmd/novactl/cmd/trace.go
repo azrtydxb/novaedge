@@ -98,10 +98,10 @@ func runTraceList(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Recent Traces (last %s):\n\n", traceLookback)
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "TRACE ID\tOPERATION\tSERVICE\tDURATION\tSPANS\tSTART TIME")
+	_, _ = fmt.Fprintln(w, "TRACE ID\tOPERATION\tSERVICE\tDURATION\tSPANS\tSTART TIME")
 
 	for _, t := range traces {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
 			truncateID(t.TraceID),
 			truncateString(t.OperationName, 30),
 			truncateString(t.ServiceName, 20),
@@ -111,7 +111,7 @@ func runTraceList(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	fmt.Printf("\nUse 'novactl trace get <trace-id>' to view details\n")
 
@@ -272,10 +272,10 @@ func runTraceSearch(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Found %d trace(s):\n\n", len(traces))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "TRACE ID\tOPERATION\tSERVICE\tDURATION\tSPANS\tSTART TIME")
+	_, _ = fmt.Fprintln(w, "TRACE ID\tOPERATION\tSERVICE\tDURATION\tSPANS\tSTART TIME")
 
 	for _, t := range traces {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\t%s\n",
 			truncateID(t.TraceID),
 			truncateString(t.OperationName, 30),
 			truncateString(t.ServiceName, 20),
@@ -285,7 +285,7 @@ func runTraceSearch(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	fmt.Printf("\nUse 'novactl trace get <trace-id>' to view details\n")
 

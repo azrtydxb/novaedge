@@ -141,7 +141,7 @@ func (p *WebSocketProxy) ProxyWebSocket(w http.ResponseWriter, r *http.Request, 
 		)
 		return fmt.Errorf("failed to upgrade client connection: %w", err)
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// Build backend WebSocket URL
 	backendWSURL := buildBackendWebSocketURL(backendURL, r)
@@ -166,7 +166,7 @@ func (p *WebSocketProxy) ProxyWebSocket(w http.ResponseWriter, r *http.Request, 
 			websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "Backend connection failed"))
 		return fmt.Errorf("failed to connect to backend: %w", err)
 	}
-	defer backendConn.Close()
+	defer func() { _ = backendConn.Close() }()
 
 	p.logger.Info("WebSocket connection established",
 		zap.String("client", r.RemoteAddr),

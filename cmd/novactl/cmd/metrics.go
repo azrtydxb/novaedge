@@ -96,7 +96,7 @@ func runMetricsBackends(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Backend Health Metrics:\n\n")
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tTOTAL\tHEALTHY\tUNHEALTHY\tHEALTH %")
+	_, _ = fmt.Fprintln(w, "NAME\tTOTAL\tHEALTHY\tUNHEALTHY\tHEALTH %")
 
 	for _, backend := range backends.Items {
 		name := backend.GetName()
@@ -123,10 +123,10 @@ func runMetricsBackends(cmd *cobra.Command, args []string) error {
 			healthPct = (healthy * 100) / total
 		}
 
-		fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d%%\n", name, total, healthy, unhealthy, healthPct)
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d%%\n", name, total, healthy, unhealthy, healthPct)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }
 
@@ -166,7 +166,7 @@ func runMetricsVIPs(cmd *cobra.Command, args []string) error {
 	fmt.Printf("VIP Status:\n\n")
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tIP\tMODE\tASSIGNED NODE\tSTATUS\tLAST TRANSITION")
+	_, _ = fmt.Fprintln(w, "NAME\tIP\tMODE\tASSIGNED NODE\tSTATUS\tLAST TRANSITION")
 
 	for _, vip := range vips.Items {
 		name := vip.GetName()
@@ -187,10 +187,10 @@ func runMetricsVIPs(cmd *cobra.Command, args []string) error {
 			vipStatus = "Unknown"
 		}
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			name, ip, mode, assignedNode, vipStatus, lastTransition)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 	return nil
 }

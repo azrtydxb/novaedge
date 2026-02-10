@@ -65,13 +65,13 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 	// Health check endpoint with rate limiting
 	mux.Handle("/health", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})))
 
 	// Root endpoint with info (no rate limiting needed for this informational endpoint)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("NovaEdge Metrics Server\n\nAvailable endpoints:\n- /metrics (Prometheus metrics)\n- /health (Health check)\n"))
+		_, _ = w.Write([]byte("NovaEdge Metrics Server\n\nAvailable endpoints:\n- /metrics (Prometheus metrics)\n- /health (Health check)\n"))
 	})
 
 	m.server = &http.Server{

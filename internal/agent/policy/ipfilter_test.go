@@ -71,7 +71,9 @@ func TestSetGlobalTrustedProxies(t *testing.T) {
 
 func TestIsGlobalTrustedProxy(t *testing.T) {
 	// Setup
-	SetGlobalTrustedProxies([]string{"10.0.0.0/8", "192.168.1.1"})
+	if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8", "192.168.1.1"}); err != nil {
+		t.Fatal(err)
+	}
 	defer func() {
 		trustedProxyCIDRs = nil
 	}()
@@ -115,7 +117,9 @@ func TestIsGlobalTrustedProxy(t *testing.T) {
 
 func TestExtractClientIPPackageLevel(t *testing.T) {
 	// Setup
-	SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
+	if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
 	defer func() {
 		trustedProxyCIDRs = nil
 	}()
@@ -135,7 +139,9 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 	})
 
 	t.Run("through trusted proxy with X-Forwarded-For", func(t *testing.T) {
-		SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
+		if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "10.0.0.1:12345"
@@ -148,7 +154,9 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 	})
 
 	t.Run("through untrusted proxy ignores X-Forwarded-For", func(t *testing.T) {
-		SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
+		if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "8.8.8.8:12345"
@@ -161,7 +169,9 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 	})
 
 	t.Run("X-Real-IP fallback", func(t *testing.T) {
-		SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
+		if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "10.0.0.1:12345"
@@ -312,7 +322,7 @@ func TestIPFilterAllow(t *testing.T) {
 func TestHandleIPFilter(t *testing.T) {
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	t.Run("allow list: allowed IP", func(t *testing.T) {
@@ -396,7 +406,9 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 
 	t.Run("through trusted proxy with X-Forwarded-For", func(t *testing.T) {
 		filter, _ := NewIPAllowListFilter([]string{"10.0.0.0/8"})
-		filter.SetTrustedProxies([]string{"10.0.0.0/8"})
+		if err := filter.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "10.0.0.1:12345"
@@ -410,7 +422,9 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 
 	t.Run("through untrusted proxy ignores X-Forwarded-For", func(t *testing.T) {
 		filter, _ := NewIPAllowListFilter([]string{"10.0.0.0/8"})
-		filter.SetTrustedProxies([]string{"10.0.0.0/8"})
+		if err := filter.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "8.8.8.8:12345"
@@ -424,7 +438,9 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 
 	t.Run("X-Real-IP fallback", func(t *testing.T) {
 		filter, _ := NewIPAllowListFilter([]string{"10.0.0.0/8"})
-		filter.SetTrustedProxies([]string{"10.0.0.0/8"})
+		if err := filter.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "10.0.0.1:12345"
@@ -438,7 +454,9 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 
 	t.Run("X-Forwarded-For with all trusted proxies", func(t *testing.T) {
 		filter, _ := NewIPAllowListFilter([]string{"10.0.0.0/8"})
-		filter.SetTrustedProxies([]string{"10.0.0.0/8"})
+		if err := filter.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "10.0.0.1:12345"

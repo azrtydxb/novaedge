@@ -450,7 +450,7 @@ func (w *FailoverWatcher) handleRecoveryCheck() error {
 
 	// Close secondary connection
 	if w.activeConn != nil {
-		w.activeConn.Close()
+		_ = w.activeConn.Close()
 		w.activeConn = nil
 	}
 
@@ -555,7 +555,7 @@ func (w *FailoverWatcher) connectAndStream(ctrl *ControllerEndpoint) error {
 	// Store connection
 	w.stateMu.Lock()
 	if w.activeConn != nil {
-		w.activeConn.Close()
+		_ = w.activeConn.Close()
 	}
 	w.activeConn = conn
 	w.activeCtrl = ctrl
@@ -676,7 +676,7 @@ func (w *FailoverWatcher) pingController(ctrl *ControllerEndpoint) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := pb.NewConfigServiceClient(conn)
 
@@ -848,7 +848,7 @@ func (w *FailoverWatcher) cleanup() {
 		w.healthCancel()
 	}
 	if w.activeConn != nil {
-		w.activeConn.Close()
+		_ = w.activeConn.Close()
 	}
 }
 
