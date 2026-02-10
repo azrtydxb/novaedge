@@ -43,7 +43,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		responseWriter = NewResponseHeaderWriter(w, entry.ResponseFilter)
 	}
 
-	// Create the final handler that forwards to backend
+	// Create the final handler that forwards to backend (with optional retry)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.forwardToBackend(entry, w, req)
 	})
@@ -248,51 +248,69 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		w.Header().Set("X-Cache", "MISS")
 	}
 
-	// Forward request to backend
-	if err := pool.Forward(endpoint, req, w); err != nil {
-		// Record failure for passive health checking
-		pool.RecordFailure(endpoint)
+	// Check for retry configuration on this route rule
+	retryPolicy := NewRetryPolicy(entry.Rule.Retry)
 
-		// Record backend failure metrics
-		backendDuration := time.Since(backendStart).Seconds()
-		metrics.RecordBackendRequest(clusterKey, endpointKey, "failure", backendDuration)
+	if retryPolicy != nil && !isGRPC {
+		// Use retry-aware forwarding
+		var loadBalancer lb.LoadBalancer
+		if stdLB, ok := r.loadBalancers[clusterKey]; ok {
+			loadBalancer = stdLB
+		}
+		var hashLB interface{}
+		if hLB, ok := r.hashBasedLBs[clusterKey]; ok {
+			hashLB = hLB
+		}
 
-		// Record error on span
-		backendSpan.RecordError(err)
-		backendSpan.SetStatus(codes.Error, "Backend request failed")
-		backendSpan.SetAttributes(
-			attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
-			attribute.String("novaedge.backend.status", "failure"),
-		)
-
-		r.logger.Error("Failed to forward request",
-			zap.String("cluster", clusterKey),
-			zap.String("endpoint", endpointKey),
-			zap.Bool("grpc", isGRPC),
-			zap.Error(err),
-		)
-		http.Error(w, "Backend error", http.StatusBadGateway)
+		r.forwardWithRetry(entry, w, req, retryPolicy, pool, clusterKey, loadBalancer, hashLB, backendSpan, r.logger)
 	} else {
-		// Record success for passive health checking
-		pool.RecordSuccess(endpoint)
+		// Standard forwarding without retry
+		// Forward request to backend
+		if err := pool.Forward(endpoint, req, w); err != nil {
+			// Record failure for passive health checking
+			pool.RecordFailure(endpoint)
 
-		// Record backend success metrics
-		backendDuration := time.Since(backendStart).Seconds()
-		metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
+			// Record backend failure metrics
+			backendDuration := time.Since(backendStart).Seconds()
+			metrics.RecordBackendRequest(clusterKey, endpointKey, "failure", backendDuration)
 
-		// Record success on span
-		backendSpan.SetStatus(codes.Ok, "")
-		backendSpan.SetAttributes(
-			attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
-			attribute.String("novaedge.backend.status", "success"),
-		)
+			// Record error on span
+			backendSpan.RecordError(err)
+			backendSpan.SetStatus(codes.Error, "Backend request failed")
+			backendSpan.SetAttributes(
+				attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
+				attribute.String("novaedge.backend.status", "failure"),
+			)
 
-		if isGRPC {
-			r.logger.Debug("Successfully forwarded gRPC request",
+			r.logger.Error("Failed to forward request",
 				zap.String("cluster", clusterKey),
 				zap.String("endpoint", endpointKey),
-				zap.Duration("duration", time.Since(backendStart)),
+				zap.Bool("grpc", isGRPC),
+				zap.Error(err),
 			)
+			http.Error(w, "Backend error", http.StatusBadGateway)
+		} else {
+			// Record success for passive health checking
+			pool.RecordSuccess(endpoint)
+
+			// Record backend success metrics
+			backendDuration := time.Since(backendStart).Seconds()
+			metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
+
+			// Record success on span
+			backendSpan.SetStatus(codes.Ok, "")
+			backendSpan.SetAttributes(
+				attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
+				attribute.String("novaedge.backend.status", "success"),
+			)
+
+			if isGRPC {
+				r.logger.Debug("Successfully forwarded gRPC request",
+					zap.String("cluster", clusterKey),
+					zap.String("endpoint", endpointKey),
+					zap.Duration("duration", time.Since(backendStart)),
+				)
+			}
 		}
 	}
 

@@ -174,6 +174,17 @@ message RouteRule {
   BufferingConfig buffering = 5;        // Request/response buffering settings
   BackendRef mirror_backend = 6;        // Mirror backend reference (optional)
   int32 mirror_percent = 7;             // Percentage of requests to mirror (0-100)
+  RetryConfig retry = 8; // Retry configuration for failed requests
+}
+
+// RetryConfig defines automatic request retry behavior
+message RetryConfig {
+  int32 max_retries = 1; // Maximum number of retry attempts (default: 3)
+  int64 per_try_timeout_ms = 2; // Timeout per retry attempt in milliseconds
+  repeated string retry_on = 3; // Conditions to retry on: "5xx", "connection-failure", "reset", "refused-stream"
+  double retry_budget = 4; // Percentage of requests that can be retried (0.0-1.0)
+  int64 backoff_base_ms = 5; // Base interval for exponential backoff in milliseconds (default: 25)
+  repeated string retry_methods = 6; // HTTP methods to retry (default: GET, HEAD, OPTIONS)
 }
 
 // RouteMatch defines conditions for matching requests
@@ -392,6 +403,8 @@ message Policy {
   IPListConfig ip_list = 7;
   CORSConfig cors = 8;
   SecurityHeadersConfig security_headers = 9;
+  DistributedRateLimitConfig distributed_rate_limit = 10;
+  WAFConfig waf = 11;
 }
 
 enum PolicyType {
@@ -402,6 +415,8 @@ enum PolicyType {
   IP_DENY_LIST = 4;
   CORS = 5;
   SECURITY_HEADERS = 6;
+  DISTRIBUTED_RATE_LIMIT = 7;
+  WAF = 8;
 }
 
 // TargetRef identifies the resource a policy applies to
@@ -570,6 +585,35 @@ message AccessLogConfig {
   int32 max_backups = 7;
   repeated int32 filter_status_codes = 8; // only log these status codes
   double sample_rate = 9; // 0.0 - 1.0
+}
+
+// DistributedRateLimitConfig defines distributed rate limiting with Redis backend
+message DistributedRateLimitConfig {
+  int32 requests_per_second = 1;
+  int32 burst = 2;
+  string algorithm = 3; // "fixed-window", "sliding-window", "token-bucket"
+  string key = 4; // "source-ip", "header:X-API-Key", "jwt:sub"
+  RedisConfig redis = 5;
+}
+
+// RedisConfig defines Redis connection settings
+message RedisConfig {
+  string address = 1;
+  string password_secret_ref = 2; // Reference to secret containing password
+  bool tls = 3;
+  int32 database = 4;
+  bool cluster_mode = 5; // Enable Redis cluster support
+}
+
+// WAFConfig defines Web Application Firewall configuration
+message WAFConfig {
+  bool enabled = 1;
+  string mode = 2; // "detection" or "prevention"
+  int32 paranoia_level = 3; // 1-4
+  int32 anomaly_threshold = 4;
+  string rules_config_map_ref = 5; // Reference to ConfigMap containing rules
+  repeated string rule_exclusions = 6; // Rule IDs to exclude
+  repeated string custom_rules = 7; // Inline custom rules
 }
 
 // ConfigService is the gRPC service for distributing config snapshots

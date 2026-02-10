@@ -415,3 +415,77 @@ spec:
 - [TLS](tls.md) - TLS termination and mTLS
 - [Health Checks](health-checks.md) - Backend health checking
 - [Observability](../operations/observability.md) - Monitoring policies
+
+## Distributed Rate Limiting
+
+For multi-node deployments, NovaEdge supports distributed rate limiting with shared state
+via Redis, ensuring consistent rate limits across all agent nodes.
+
+### Configuration
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: distributed-rate-limit
+spec:
+  type: DistributedRateLimit
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+  distributedRateLimit:
+    requestsPerSecond: 100
+    burst: 200
+    algorithm: sliding-window  # fixed-window, sliding-window, token-bucket
+    key: "source-ip"           # source-ip, header:X-API-Key, jwt:sub
+    redisRef:
+      address: "redis:6379"
+      password:
+        name: redis-secret
+        key: password
+      tls: false
+      database: 0
+      clusterMode: false
+```
+
+### Algorithms
+
+| Algorithm | Description |
+|-----------|-------------|
+| `fixed-window` | Counts requests in fixed 1-second windows |
+| `sliding-window` | Weighted combination of current and previous window |
+| `token-bucket` | Token bucket with configurable refill rate |
+
+### Graceful Degradation
+
+If Redis becomes unavailable, the distributed rate limiter automatically falls back to
+local (per-node) rate limiting and logs a warning. When Redis recovers, distributed
+limiting resumes automatically.
+
+### Response Headers
+
+All rate limit responses include standard headers:
+- `X-RateLimit-Limit`: Maximum requests per second
+- `X-RateLimit-Remaining`: Remaining requests in current window
+- `X-RateLimit-Reset`: Unix timestamp when the limit resets
+
+## Web Application Firewall (WAF)
+
+See the dedicated [WAF guide](waf.md) for full WAF configuration details.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: waf-policy
+spec:
+  type: WAF
+  targetRef:
+    kind: ProxyRoute
+    name: web-route
+  waf:
+    enabled: true
+    mode: prevention
+    paranoiaLevel: 1
+    anomalyThreshold: 5
+```

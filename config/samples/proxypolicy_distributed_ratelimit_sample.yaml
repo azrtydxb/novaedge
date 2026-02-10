@@ -1,0 +1,34 @@
+# Example: Distributed rate limiting with Redis backend
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: distributed-rate-limit
+  namespace: default
+spec:
+  type: DistributedRateLimit
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+  distributedRateLimit:
+    requestsPerSecond: 100
+    burst: 200
+    algorithm: sliding-window
+    key: "source-ip"
+    redisRef:
+      address: "redis.default.svc.cluster.local:6379"
+      password:
+        name: redis-credentials
+        key: password
+      tls: false
+      database: 0
+---
+# Redis credentials secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-credentials
+  namespace: default
+type: Opaque
+data:
+  # Replace with your base64-encoded Redis password: echo -n 'YOUR_PASSWORD' | base64
+  password: Q0hBTkdFTUU=  # CHANGEME

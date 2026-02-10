@@ -281,6 +281,11 @@ func (c *Converter) convertRoutes(routes []RouteConfig) []*pb.Route {
 			rule.MirrorPercent = percentage
 		}
 
+		// Convert retry configuration
+		if r.Retry != nil {
+			rule.Retry = c.convertRetryConfig(r.Retry)
+		}
+
 		route.Rules = append(route.Rules, rule)
 		result = append(result, route)
 	}
@@ -555,6 +560,34 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 					Issuer:   p.JWT.Issuer,
 					Audience: p.JWT.Audience,
 					JwksUri:  p.JWT.JWKSURI,
+				}
+			}
+		case "DistributedRateLimit":
+			if p.DistributedRateLimit != nil {
+				policy.Type = pb.PolicyType_DISTRIBUTED_RATE_LIMIT
+				policy.DistributedRateLimit = &pb.DistributedRateLimitConfig{
+					RequestsPerSecond: safeInt32(p.DistributedRateLimit.RequestsPerSecond),
+					Burst:             safeInt32(p.DistributedRateLimit.BurstSize),
+					Algorithm:         p.DistributedRateLimit.Algorithm,
+					Key:               p.DistributedRateLimit.Key,
+					Redis: &pb.RedisConfig{
+						Address:     p.DistributedRateLimit.Redis.Address,
+						Tls:         p.DistributedRateLimit.Redis.TLS,
+						Database:    safeInt32(p.DistributedRateLimit.Redis.Database),
+						ClusterMode: p.DistributedRateLimit.Redis.ClusterMode,
+					},
+				}
+			}
+		case "WAF":
+			if p.WAF != nil {
+				policy.Type = pb.PolicyType_WAF
+				policy.Waf = &pb.WAFConfig{
+					Enabled:          p.WAF.Enabled,
+					Mode:             p.WAF.Mode,
+					ParanoiaLevel:    safeInt32(p.WAF.ParanoiaLevel),
+					AnomalyThreshold: safeInt32(p.WAF.AnomalyThreshold),
+					RuleExclusions:   p.WAF.RuleExclusions,
+					CustomRules:      p.WAF.CustomRules,
 				}
 			}
 		}
@@ -864,4 +897,31 @@ func (c *Converter) convertAccessLogConfig(al *AccessLogConfig) *pb.AccessLogCon
 	}
 
 	return config
+}
+
+func (c *Converter) convertRetryConfig(retry *RetryPolicyConfig) *pb.RetryConfig {
+	if retry == nil {
+		return nil
+	}
+
+	cfg := &pb.RetryConfig{
+		MaxRetries:   safeInt32(retry.MaxRetries),
+		RetryOn:      retry.RetryOn,
+		RetryBudget:  retry.RetryBudget,
+		RetryMethods: retry.RetryMethods,
+	}
+
+	if retry.PerTryTimeout != "" {
+		if d, err := time.ParseDuration(retry.PerTryTimeout); err == nil {
+			cfg.PerTryTimeoutMs = d.Milliseconds()
+		}
+	}
+
+	if retry.BackoffBase != "" {
+		if d, err := time.ParseDuration(retry.BackoffBase); err == nil {
+			cfg.BackoffBaseMs = d.Milliseconds()
+		}
+	}
+
+	return cfg
 }

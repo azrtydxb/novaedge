@@ -261,6 +261,40 @@ type RouteMirrorConfig struct {
 	Percentage int32 `json:"percentage,omitempty"`
 }
 
+// RetryConfig defines automatic request retry behavior for failed backend requests
+type RetryConfig struct {
+	// MaxRetries is the maximum number of retry attempts
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=10
+	// +kubebuilder:default=3
+	MaxRetries int32 `json:"maxRetries,omitempty"`
+
+	// PerTryTimeout is the timeout for each retry attempt
+	// +optional
+	PerTryTimeout *metav1.Duration `json:"perTryTimeout,omitempty"`
+
+	// RetryOn specifies conditions that trigger a retry
+	// Valid values: "5xx", "connection-failure", "reset", "refused-stream"
+	// +optional
+	RetryOn []string `json:"retryOn,omitempty"`
+
+	// RetryBudget is the percentage of requests that can be retried (0.0-1.0)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	RetryBudget *float64 `json:"retryBudget,omitempty"`
+
+	// BackoffBase is the base interval for exponential backoff between retries
+	// +optional
+	BackoffBase *metav1.Duration `json:"backoffBase,omitempty"`
+
+	// RetryMethods specifies which HTTP methods are eligible for retry
+	// Default: GET, HEAD, OPTIONS
+	// +optional
+	RetryMethods []string `json:"retryMethods,omitempty"`
+}
+
 // HTTPRouteRule defines semantics for matching an HTTP request and routing it
 type HTTPRouteRule struct {
 	// Matches define conditions used for matching the rule against incoming requests
@@ -299,6 +333,10 @@ type HTTPRouteRule struct {
 	// Buffering defines request and response buffering settings
 	// +optional
 	Buffering *RouteBufferingConfig `json:"buffering,omitempty"`
+
+	// Retry defines automatic retry behavior for failed requests to backends
+	// +optional
+	Retry *RetryConfig `json:"retry,omitempty"`
 }
 
 // ProxyRouteSpec defines the desired state of ProxyRoute

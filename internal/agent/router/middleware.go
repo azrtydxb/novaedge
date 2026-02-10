@@ -124,8 +124,69 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 					handler: policy.HandleSecurityHeaders(sh),
 				})
 			}
+
+		case pb.PolicyType_DISTRIBUTED_RATE_LIMIT:
+			if policyProto.DistributedRateLimit != nil {
+				redisClient, err := policy.NewRedisClient(policyProto.DistributedRateLimit.Redis, "", r.logger)
+				if err != nil {
+					r.logger.Error("Failed to create Redis client for distributed rate limit",
+						zap.String("policy", policyProto.Name),
+						zap.Error(err),
+					)
+					// Fail closed: reject requests when rate limiter cannot be initialized
+					policyName := policyProto.Name
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("distributed-ratelimit-%s", policyName),
+						handler: failClosedMiddleware("distributed rate limit", policyName, r.logger),
+					})
+				} else {
+					limiter := policy.NewDistributedRateLimiter(policyProto.DistributedRateLimit, redisClient, r.logger)
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("distributed-ratelimit-%s", policyProto.Name),
+						handler: policy.HandleDistributedRateLimit(limiter),
+					})
+				}
+			}
+
+		case pb.PolicyType_WAF:
+			if policyProto.Waf != nil {
+				engine, err := policy.NewWAFEngine(policyProto.Waf, r.logger)
+				if err != nil {
+					r.logger.Error("Failed to create WAF engine",
+						zap.String("policy", policyProto.Name),
+						zap.Error(err),
+					)
+					// Fail closed: reject requests when WAF cannot be initialized
+					policyName := policyProto.Name
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("waf-%s", policyName),
+						handler: failClosedMiddleware("WAF", policyName, r.logger),
+					})
+				} else {
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("waf-%s", policyProto.Name),
+						handler: policy.HandleWAF(engine),
+					})
+				}
+			}
 		}
 	}
 
 	return middlewares
+}
+
+// failClosedMiddleware returns a middleware that rejects all requests with 503 Service Unavailable.
+// This is used when a security policy (WAF, rate limiter) fails to initialize, ensuring
+// requests are not silently allowed through without protection.
+func failClosedMiddleware(policyType, policyName string, logger *zap.Logger) func(http.Handler) http.Handler {
+	return func(_ http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			logger.Warn("Request rejected: security policy unavailable",
+				zap.String("policy_type", policyType),
+				zap.String("policy", policyName),
+				zap.String("path", r.URL.Path),
+			)
+			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		})
+	}
 }
