@@ -1,0 +1,10 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: test-vip
+spec:
+  address: "10.200.0.1/32"
+  mode: L2ARP
+  ports:
+    - 80
+    - 443

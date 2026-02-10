@@ -432,6 +432,17 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 		return nil, fmt.Errorf("failed to get service: %w", err)
 	}
 
+	// Resolve the target port name from the Service spec for the requested port.
+	// EndpointSlices contain targetPort values (not Service ports), so we need
+	// to find which port name corresponds to the serviceRef.Port.
+	var targetPortName string
+	for _, sp := range svc.Spec.Ports {
+		if sp.Port == serviceRef.Port {
+			targetPortName = sp.Name
+			break
+		}
+	}
+
 	// Get EndpointSlices for the Service
 	endpointSliceList := &discoveryv1.EndpointSliceList{}
 	if err := b.client.List(ctx, endpointSliceList, client.InNamespace(namespace),
@@ -448,10 +459,19 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 				continue
 			}
 
-			// Find the matching port
+			// Find the matching port in the EndpointSlice.
+			// Match by port name (which links Service port to targetPort),
+			// or fall back to direct port number match for unnamed ports.
 			var port int32
 			for _, p := range es.Ports {
-				if p.Port != nil && *p.Port == serviceRef.Port {
+				if p.Port == nil {
+					continue
+				}
+				if targetPortName != "" && p.Name != nil && *p.Name == targetPortName {
+					port = *p.Port
+					break
+				}
+				if *p.Port == serviceRef.Port {
 					port = *p.Port
 					break
 				}
