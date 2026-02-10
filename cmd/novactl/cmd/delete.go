@@ -45,6 +45,8 @@ func runDelete(cmd *cobra.Command, args []string) error {
 		rt = client.ResourcePolicy
 	case resourceAliasVIPs, resourceAliasVIP:
 		rt = client.ResourceVIP
+	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
+		rt = client.ResourceGRPCRoute
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}

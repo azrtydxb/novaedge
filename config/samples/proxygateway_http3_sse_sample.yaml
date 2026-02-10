@@ -1,0 +1,45 @@
+# ProxyGateway with HTTP/3 (QUIC) and SSE support
+apiVersion: novaedge.piwi3910.com/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: advanced-gateway
+  namespace: default
+spec:
+  vipRef: external-vip
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: tls-wildcard
+      hostnames:
+        - "*.example.com"
+    - name: http3
+      port: 443
+      protocol: HTTP3
+      tls:
+        secretRef:
+          name: tls-wildcard
+      quic:
+        maxIdleTimeout: "60s"
+        maxBiStreams: 200
+        maxUniStreams: 50
+        enable0RTT: true
+      hostnames:
+        - "*.example.com"
+  # HTTP/3 QUIC configuration
+  http3:
+    enabled: true
+    port: 443
+    zeroRTT: true
+    maxIdleTimeout: "60s"
+    altSvcMaxAge: 2592000  # 30 days
+  # Server-Sent Events configuration
+  sse:
+    idleTimeout: "10m"
+    heartbeatInterval: "30s"
+    maxConnections: 5000
+  # gRPC routing support
+  grpcRoute:
+    enabled: true

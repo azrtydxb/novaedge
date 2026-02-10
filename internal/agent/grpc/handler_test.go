@@ -259,3 +259,194 @@ func TestExtractGRPCServiceMethod_Invalid(t *testing.T) {
 		}
 	}
 }
+
+func TestHTTPStatusToGRPCCode(t *testing.T) {
+	tests := []struct {
+		httpStatus   int
+		expectedCode GRPCCode
+	}{
+		{http.StatusOK, GRPCCodeOK},
+		{http.StatusBadRequest, GRPCCodeInvalidArgument},
+		{http.StatusUnauthorized, GRPCCodeUnauthenticated},
+		{http.StatusForbidden, GRPCCodePermissionDenied},
+		{http.StatusNotFound, GRPCCodeNotFound},
+		{http.StatusConflict, GRPCCodeAlreadyExists},
+		{http.StatusTooManyRequests, GRPCCodeResourceExhausted},
+		{http.StatusInternalServerError, GRPCCodeInternal},
+		{http.StatusNotImplemented, GRPCCodeUnimplemented},
+		{http.StatusServiceUnavailable, GRPCCodeUnavailable},
+		{http.StatusGatewayTimeout, GRPCCodeDeadlineExceeded},
+		{http.StatusTeapot, GRPCCodeUnknown}, // Unknown mapping
+	}
+
+	for _, tt := range tests {
+		code := HTTPStatusToGRPCCode(tt.httpStatus)
+		if code != tt.expectedCode {
+			t.Errorf("HTTP %d: expected gRPC code %d, got %d", tt.httpStatus, tt.expectedCode, code)
+		}
+	}
+}
+
+func TestGRPCCodeToHTTPStatus(t *testing.T) {
+	tests := []struct {
+		grpcCode       GRPCCode
+		expectedStatus int
+	}{
+		{GRPCCodeOK, http.StatusOK},
+		{GRPCCodeInvalidArgument, http.StatusBadRequest},
+		{GRPCCodeUnauthenticated, http.StatusUnauthorized},
+		{GRPCCodePermissionDenied, http.StatusForbidden},
+		{GRPCCodeNotFound, http.StatusNotFound},
+		{GRPCCodeAlreadyExists, http.StatusConflict},
+		{GRPCCodeResourceExhausted, http.StatusTooManyRequests},
+		{GRPCCodeInternal, http.StatusInternalServerError},
+		{GRPCCodeUnimplemented, http.StatusNotImplemented},
+		{GRPCCodeUnavailable, http.StatusServiceUnavailable},
+		{GRPCCodeDeadlineExceeded, http.StatusGatewayTimeout},
+		{GRPCCodeCancelled, 499},
+	}
+
+	for _, tt := range tests {
+		status := GRPCCodeToHTTPStatus(tt.grpcCode)
+		if status != tt.expectedStatus {
+			t.Errorf("gRPC code %d: expected HTTP %d, got %d", tt.grpcCode, tt.expectedStatus, status)
+		}
+	}
+}
+
+func TestMatchesGRPCService(t *testing.T) {
+	tests := []struct {
+		path        string
+		serviceName string
+		expected    bool
+	}{
+		{"/grpc.health.v1.Health/Check", "grpc.health.v1.Health", true},
+		{"/my.package.Service/Method", "my.package.Service", true},
+		{"/my.package.Service/Method", "other.Service", false},
+		{"invalid", "Service", false},
+		{"/Service/Method", "Service", true},
+	}
+
+	for _, tt := range tests {
+		result := MatchesGRPCService(tt.path, tt.serviceName)
+		if result != tt.expected {
+			t.Errorf("MatchesGRPCService(%q, %q) = %v, expected %v", tt.path, tt.serviceName, result, tt.expected)
+		}
+	}
+}
+
+func TestMatchesGRPCMethod(t *testing.T) {
+	tests := []struct {
+		path        string
+		serviceName string
+		methodName  string
+		expected    bool
+	}{
+		{"/grpc.health.v1.Health/Check", "grpc.health.v1.Health", "Check", true},
+		{"/grpc.health.v1.Health/Watch", "grpc.health.v1.Health", "Watch", true},
+		{"/grpc.health.v1.Health/Check", "grpc.health.v1.Health", "Watch", false},
+		{"/Service/Method", "Service", "Method", true},
+		{"/Service/Method", "Service", "OtherMethod", false},
+	}
+
+	for _, tt := range tests {
+		result := MatchesGRPCMethod(tt.path, tt.serviceName, tt.methodName)
+		if result != tt.expected {
+			t.Errorf("MatchesGRPCMethod(%q, %q, %q) = %v, expected %v",
+				tt.path, tt.serviceName, tt.methodName, result, tt.expected)
+		}
+	}
+}
+
+func TestIsGRPCHealthCheck(t *testing.T) {
+	tests := []struct {
+		path     string
+		expected bool
+	}{
+		{"/grpc.health.v1.Health/Check", true},
+		{"/grpc.health.v1.Health/Watch", true},
+		{"/my.Service/Method", false},
+		{"/grpc.health.v1.Health/Other", false},
+		{"", false},
+	}
+
+	for _, tt := range tests {
+		result := IsGRPCHealthCheck(tt.path)
+		if result != tt.expected {
+			t.Errorf("IsGRPCHealthCheck(%q) = %v, expected %v", tt.path, result, tt.expected)
+		}
+	}
+}
+
+func TestForwardGRPCMetadata(t *testing.T) {
+	src := http.Header{}
+	src.Set("grpc-encoding", "gzip")
+	src.Set("grpc-timeout", "5S")
+	src.Set("Authorization", "Bearer token")
+	src.Set("X-Custom-Header", "value")
+	src.Set("User-Agent", "test-agent")
+	src.Set("Content-Length", "100") // Should not be forwarded
+
+	dst := http.Header{}
+	ForwardGRPCMetadata(src, dst)
+
+	if dst.Get("grpc-encoding") != "gzip" {
+		t.Error("expected grpc-encoding to be forwarded")
+	}
+	if dst.Get("grpc-timeout") != "5S" {
+		t.Error("expected grpc-timeout to be forwarded")
+	}
+	if dst.Get("Authorization") != "Bearer token" {
+		t.Error("expected Authorization to be forwarded")
+	}
+	if dst.Get("X-Custom-Header") != "value" {
+		t.Error("expected X-Custom-Header to be forwarded")
+	}
+	if dst.Get("User-Agent") != "test-agent" {
+		t.Error("expected User-Agent to be forwarded")
+	}
+	if dst.Get("Content-Length") != "" {
+		t.Error("Content-Length should not be forwarded")
+	}
+}
+
+func TestGRPCCodeName(t *testing.T) {
+	tests := []struct {
+		code     GRPCCode
+		expected string
+	}{
+		{GRPCCodeOK, "OK"},
+		{GRPCCodeCancelled, "CANCELLED"},
+		{GRPCCodeInternal, "INTERNAL"},
+		{GRPCCodeUnavailable, "UNAVAILABLE"},
+		{GRPCCode(99), "CODE_99"},
+	}
+
+	for _, tt := range tests {
+		result := GRPCCodeName(tt.code)
+		if result != tt.expected {
+			t.Errorf("GRPCCodeName(%d) = %q, expected %q", tt.code, result, tt.expected)
+		}
+	}
+}
+
+func TestWriteGRPCError(t *testing.T) {
+	logger := zap.NewNop()
+	h := NewGRPCHandler(logger)
+
+	recorder := httptest.NewRecorder()
+	h.WriteGRPCError(recorder, GRPCCodeNotFound, "Resource not found")
+
+	result := recorder.Result()
+	defer func() { _ = result.Body.Close() }()
+
+	if result.StatusCode != http.StatusOK {
+		t.Errorf("expected HTTP 200 (gRPC uses trailers for status), got %d", result.StatusCode)
+	}
+	if recorder.Header().Get("grpc-status") != "5" {
+		t.Errorf("expected grpc-status 5 (NOT_FOUND), got %q", recorder.Header().Get("grpc-status"))
+	}
+	if recorder.Header().Get("grpc-message") != "Resource not found" {
+		t.Errorf("expected grpc-message 'Resource not found', got %q", recorder.Header().Get("grpc-message"))
+	}
+}
