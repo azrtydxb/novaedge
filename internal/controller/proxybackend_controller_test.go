@@ -219,7 +219,9 @@ func TestProxyBackendReconcile(t *testing.T) {
 			err := env.reconcileProxyBackend(ctx, test.backend.Name, test.backend.Namespace)
 			// Note: reconciler returns error for validation failures, which is expected
 			if test.expectError && err == nil {
-				// This is fine - the error is recorded in status conditions
+				// This is fine - the error is recorded in status conditions.
+				// Not a test failure; continue to verify status below.
+				_ = err
 			}
 
 			updatedBackend := &novaedgev1alpha1.ProxyBackend{}

@@ -268,12 +268,8 @@ func (p *Pool) createProxies() {
 				if ct := req.Header.Get("Content-Type"); ct != "" {
 					req.Header.Set("Content-Type", ct)
 				}
-				// Preserve all grpc-* headers
-				for key := range req.Header {
-					if len(key) >= 5 && key[:5] == "Grpc-" || key[:5] == "grpc-" {
-						// Already preserved by default director
-					}
-				}
+				// Note: grpc-* headers are already preserved by the default director,
+				// so no additional action is needed for them.
 			}
 		}
 

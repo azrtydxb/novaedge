@@ -174,7 +174,7 @@ func TestNewJWTValidator(t *testing.T) {
 		}
 
 		if validator == nil {
-			t.Error("Expected validator, got nil")
+			t.Fatal("Expected validator, got nil")
 		}
 
 		if validator.config != config {
@@ -215,7 +215,7 @@ func TestNewJWTValidator(t *testing.T) {
 		}
 
 		if validator == nil {
-			t.Error("Expected validator, got nil")
+			t.Fatal("Expected validator, got nil")
 		}
 
 		// Verify key was loaded

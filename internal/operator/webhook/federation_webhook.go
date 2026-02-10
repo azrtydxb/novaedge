@@ -267,8 +267,10 @@ func (v *FederationValidator) validateTLS(tls *novaedgev1alpha1.FederationTLS, p
 		}
 
 		if tls.InsecureSkipVerify {
-			// This is a warning but we'll treat it as non-blocking
-			// Warnings are returned separately
+			// InsecureSkipVerify disables TLS certificate verification.
+			// This is allowed but discouraged; the warning is surfaced
+			// through the admission warnings returned by validateFederation.
+			_ = peerName // acknowledged: insecure TLS config for this peer
 		}
 	}
 

@@ -35,6 +35,9 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// jwtClaimsKey is a typed context key for storing JWT claims, avoiding SA1029.
+type jwtClaimsKey struct{}
+
 // JWTValidator implements JWT validation
 type JWTValidator struct {
 	config *pb.JWTConfig
@@ -246,7 +249,7 @@ func HandleJWT(validator *JWTValidator) func(http.Handler) http.Handler {
 			metrics.JWTValidationTotal.WithLabelValues("success").Inc()
 
 			// Store claims in request context for downstream use
-			ctx := context.WithValue(r.Context(), "jwt_claims", token.Claims)
+			ctx := context.WithValue(r.Context(), jwtClaimsKey{}, token.Claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}

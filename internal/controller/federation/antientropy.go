@@ -160,9 +160,10 @@ func (t *MerkleTree) findNode(node *MerkleNode, prefix string, level int) *Merkl
 	// Find the child that matches the prefix
 	for childPrefix := range node.Children {
 		if len(prefix) >= len(childPrefix) && prefix[:len(childPrefix)] == childPrefix {
-			// This child's prefix is a prefix of what we're looking for
-			// We need to traverse deeper, but for simplicity return the node
-			// if it's a direct match or the closest parent
+			// This child's prefix is a prefix of what we're looking for.
+			// Traversal to deeper levels is not yet implemented; return the
+			// closest parent node found so far.
+			continue
 		}
 	}
 

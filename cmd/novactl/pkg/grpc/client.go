@@ -34,13 +34,9 @@ func NewAgentClient(ctx context.Context, clientset kubernetes.Interface, namespa
 	// Agent gRPC port (typically 9090)
 	agentAddress := fmt.Sprintf("%s:9090", pod.Status.PodIP)
 
-	// Create gRPC connection with timeout
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, agentAddress,
+	// Create gRPC connection using lazy connect (grpc.NewClient)
+	conn, err := grpc.NewClient(agentAddress,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to agent at %s: %w", agentAddress, err)
