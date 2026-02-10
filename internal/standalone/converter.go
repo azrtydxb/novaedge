@@ -21,6 +21,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +30,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
+	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -111,6 +114,80 @@ func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot
 	snapshot.Version = c.generateVersion(snapshot)
 
 	return snapshot, nil
+}
+
+// ToSnapshotWithExtensions converts a standalone Config to a ConfigSnapshot with TLS extensions
+func (c *Converter) ToSnapshotWithExtensions(cfg *Config, nodeName string) (*pb.ConfigSnapshot, *agentconfig.SnapshotExtensions, error) {
+	snapshot, err := c.ToSnapshot(cfg, nodeName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	extensions := c.buildExtensions(cfg)
+	return snapshot, extensions, nil
+}
+
+// buildExtensions builds TLS extensions from standalone configuration
+func (c *Converter) buildExtensions(cfg *Config) *agentconfig.SnapshotExtensions {
+	ext := &agentconfig.SnapshotExtensions{
+		ListenerExtensions: make(map[string]*pb.ListenerExtensions),
+		ClusterExtensions:  make(map[string]*pb.ClusterExtensions),
+	}
+
+	// Build listener extensions
+	for _, l := range cfg.Listeners {
+		listenerExt := &pb.ListenerExtensions{
+			OCSPStapling: l.OCSPStapling,
+		}
+
+		if l.ClientAuth != nil && l.ClientAuth.Mode != "" && l.ClientAuth.Mode != "none" {
+			clientAuth := &pb.ClientAuthConfig{
+				Mode:               l.ClientAuth.Mode,
+				RequiredCNPatterns: l.ClientAuth.RequiredCNPatterns,
+				RequiredSANs:       l.ClientAuth.RequiredSANs,
+			}
+
+			// Load CA certificate from file
+			if l.ClientAuth.CAFile != "" {
+				caCert, err := os.ReadFile(filepath.Clean(l.ClientAuth.CAFile))
+				if err == nil {
+					clientAuth.CACert = caCert
+				}
+			}
+
+			listenerExt.ClientAuth = clientAuth
+		}
+
+		if l.ProxyProtocol != nil && l.ProxyProtocol.Enabled {
+			listenerExt.ProxyProtocol = &pb.ProxyProtocolConfig{
+				Enabled:      true,
+				Version:      safeInt32(l.ProxyProtocol.Version),
+				TrustedCIDRs: l.ProxyProtocol.TrustedCIDRs,
+			}
+		}
+
+		key := "default/standalone/" + l.Name
+		ext.ListenerExtensions[key] = listenerExt
+	}
+
+	// Build cluster extensions
+	for _, b := range cfg.Backends {
+		if b.UpstreamProxyProtocol != nil && b.UpstreamProxyProtocol.Enabled {
+			version := safeInt32(b.UpstreamProxyProtocol.Version)
+			if version == 0 {
+				version = 1
+			}
+			clusterKey := "default/" + b.Name
+			ext.ClusterExtensions[clusterKey] = &pb.ClusterExtensions{
+				UpstreamProxyProtocol: &pb.UpstreamProxyProtocol{
+					Enabled: true,
+					Version: version,
+				},
+			}
+		}
+	}
+
+	return ext
 }
 
 func (c *Converter) convertListeners(listeners []ListenerConfig) []*pb.Gateway {

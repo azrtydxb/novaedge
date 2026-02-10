@@ -1,0 +1,51 @@
+# Example ProxyGateway with mTLS client certificate authentication
+# This configuration requires clients to present valid TLS certificates
+# signed by the specified CA.
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: mtls-gateway
+  namespace: default
+spec:
+  vipRef: internal-vip
+  listeners:
+    - name: https-mtls
+      port: 443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: server-tls-cert
+          namespace: default
+      clientAuth:
+        mode: require
+        caCertRef:
+          name: client-ca-cert
+          namespace: default
+        requiredCNPatterns:
+          - "^service\\.internal\\..*$"
+        requiredSANs:
+          - "service.internal.example.com"
+      ocspStapling: true
+    - name: https-optional-mtls
+      port: 8443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: server-tls-cert
+          namespace: default
+      clientAuth:
+        mode: optional
+        caCertRef:
+          name: client-ca-cert
+          namespace: default
+---
+# CA certificate Secret for client certificate verification
+# Create with: kubectl create secret generic client-ca-cert --from-file=ca.crt=client-ca.pem
+apiVersion: v1
+kind: Secret
+metadata:
+  name: client-ca-cert
+  namespace: default
+type: Opaque
+data:
+  ca.crt: <base64-encoded-CA-certificate>

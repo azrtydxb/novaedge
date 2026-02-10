@@ -121,6 +121,9 @@ message Listener {
   int64 max_request_body_bytes = 8; // Maximum request body size in bytes (default: 10MB)
   int64 max_upload_body_bytes = 9; // Maximum upload body size in bytes (default: 100MB)
   int64 graceful_shutdown_timeout_ms = 10; // Graceful shutdown timeout in milliseconds (default: 30000)
+  ClientAuthConfig client_auth = 11; // mTLS client authentication configuration
+  bool ocsp_stapling = 12; // Enable OCSP stapling for TLS certificates
+  ProxyProtocolConfig proxy_protocol = 13; // PROXY protocol configuration
 }
 
 // Protocol defines the application protocol
@@ -140,6 +143,7 @@ message TLSConfig {
   bytes key = 2;
   string min_version = 3;
   repeated string cipher_suites = 4;
+  bytes ca_cert = 5; // CA certificate bundle for client certificate verification (mTLS)
 }
 
 // QUICConfig contains QUIC-specific configuration for HTTP/3
@@ -269,6 +273,7 @@ message Cluster {
   BackendTLS tls = 8;
   ConnectionPool connection_pool = 9;
   SessionAffinityConfig session_affinity = 10; // Session affinity (sticky sessions) configuration
+  UpstreamProxyProtocol upstream_proxy_protocol = 11; // PROXY protocol config for backend connections
 }
 
 // ConnectionPool defines connection pool configuration
@@ -740,6 +745,36 @@ message BufferingConfig {
   bool response_buffering = 2;    // Buffer entire response body
   int64 max_buffer_size = 3;      // Max buffer size in bytes
   int64 memory_threshold = 4;     // Threshold for file-based buffering (default: 1MB)
+}
+
+// ClientAuthConfig defines mTLS client authentication configuration
+message ClientAuthConfig {
+  // Mode: "none", "optional", "require"
+  string mode = 1;
+  // CA certificate bundle for client certificate verification
+  bytes ca_cert = 2;
+  // Required CN patterns for client certificates (regex)
+  repeated string required_cn_patterns = 3;
+  // Required SANs for client certificates
+  repeated string required_sans = 4;
+}
+
+// ProxyProtocolConfig defines PROXY protocol listener configuration
+message ProxyProtocolConfig {
+  // Whether PROXY protocol parsing is enabled
+  bool enabled = 1;
+  // PROXY protocol version to accept (1, 2, or 0 for both)
+  int32 version = 2;
+  // Trusted source CIDRs (only accept PROXY protocol from these)
+  repeated string trusted_cidrs = 3;
+}
+
+// UpstreamProxyProtocol defines PROXY protocol config for backend connections
+message UpstreamProxyProtocol {
+  // Whether to send PROXY protocol header to backends
+  bool enabled = 1;
+  // PROXY protocol version to send (1 or 2)
+  int32 version = 2;
 }
 
 // StatusResponse acknowledges status reports

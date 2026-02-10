@@ -1,0 +1,47 @@
+# Example ProxyGateway with PROXY protocol support
+# Use this when NovaEdge sits behind a layer 4 load balancer (AWS NLB, HAProxy)
+# that sends PROXY protocol headers.
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: proxy-protocol-gateway
+  namespace: default
+spec:
+  vipRef: external-vip
+  listeners:
+    - name: https-with-proxy
+      port: 443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: server-tls-cert
+          namespace: default
+      proxyProtocol:
+        enabled: true
+        version: 0            # Accept both v1 and v2
+        trustedCIDRs:
+          - "10.0.0.0/8"     # Internal network (upstream LB)
+          - "172.16.0.0/12"
+    - name: http-with-proxy
+      port: 80
+      protocol: HTTP
+      proxyProtocol:
+        enabled: true
+        version: 1            # v1 only
+        trustedCIDRs:
+          - "10.0.0.0/8"
+---
+# Example ProxyBackend that sends PROXY protocol to upstream backends
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: backend-with-proxy-protocol
+  namespace: default
+spec:
+  serviceRef:
+    name: my-backend-service
+    port: 8080
+  lbPolicy: RoundRobin
+  upstreamProxyProtocol:
+    enabled: true
+    version: 1              # Send v1 to backends

@@ -32,6 +32,8 @@ import (
 
 // Snapshot is a wrapper around the protobuf ConfigSnapshot
 type Snapshot struct {
+	// Extensions carries mTLS, PROXY protocol, and OCSP configuration
+	Extensions *SnapshotExtensions
 	*pb.ConfigSnapshot
 }
 

@@ -173,3 +173,28 @@ func (s *HTTPServer) parseCipherSuites(suites []string) []uint16 {
 
 	return result
 }
+
+// createTLSConfigWithMTLS creates a TLS config with SNI and optional mTLS support
+func (s *HTTPServer) createTLSConfigWithMTLS(listener *pb.Listener, clientAuth *pb.ClientAuthConfig, enableOCSP bool) (*tls.Config, error) {
+	tlsConfig, err := s.createTLSConfigWithSNI(listener)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply mTLS client authentication if configured
+	if clientAuth != nil {
+		if err := s.applyClientAuthConfig(tlsConfig, clientAuth); err != nil {
+			return nil, fmt.Errorf("failed to apply mTLS config: %w", err)
+		}
+	}
+
+	// Set up OCSP stapling if enabled
+	if enableOCSP && s.ocspStapler != nil {
+		s.ocspStapler.StapleToConfig(tlsConfig)
+		s.logger.Info("OCSP stapling enabled for listener",
+			zap.String("listener", listener.Name),
+		)
+	}
+
+	return tlsConfig, nil
+}

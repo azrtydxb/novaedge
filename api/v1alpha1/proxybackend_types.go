@@ -236,6 +236,22 @@ type HealthCheck struct {
 	HTTPPath *string `json:"httpPath,omitempty"`
 }
 
+// UpstreamProxyProtocolConfig defines PROXY protocol settings for backend connections.
+// When enabled, the proxy sends a PROXY protocol header to backends containing
+// the real client IP and port.
+type UpstreamProxyProtocolConfig struct {
+	// Enabled enables sending PROXY protocol headers to this backend
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Version is the PROXY protocol version to send (1 or 2, default: 1)
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=2
+	// +kubebuilder:default=1
+	Version int32 `json:"version,omitempty"`
+}
+
 // ProxyBackendSpec defines the desired state of ProxyBackend
 type ProxyBackendSpec struct {
 	// ServiceRef references a Kubernetes Service
@@ -280,6 +296,11 @@ type ProxyBackendSpec struct {
 	// SessionAffinity defines sticky session configuration
 	// +optional
 	SessionAffinity *SessionAffinityConfig `json:"sessionAffinity,omitempty"`
+
+	// UpstreamProxyProtocol configures sending PROXY protocol headers to this backend.
+	// This allows backends to see the real client IP when behind the proxy.
+	// +optional
+	UpstreamProxyProtocol *UpstreamProxyProtocolConfig `json:"upstreamProxyProtocol,omitempty"`
 
 	// Protocol specifies the backend protocol (HTTP, HTTPS, gRPC, gRPCS, HTTP2)
 	// +optional

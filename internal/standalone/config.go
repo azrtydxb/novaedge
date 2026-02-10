@@ -154,6 +154,42 @@ type ListenerConfig struct {
 
 	// MaxRequestBodySize in bytes (0 = unlimited)
 	MaxRequestBodySize int64 `yaml:"maxRequestBodySize,omitempty"`
+
+	// ClientAuth configures mTLS client certificate authentication
+	ClientAuth *ClientAuthListenerConfig `yaml:"clientAuth,omitempty"`
+
+	// OCSPStapling enables OCSP stapling for this listener
+	OCSPStapling bool `yaml:"ocspStapling,omitempty"`
+
+	// ProxyProtocol configures PROXY protocol parsing for this listener
+	ProxyProtocol *ProxyProtocolListenerConfig `yaml:"proxyProtocol,omitempty"`
+}
+
+// ClientAuthListenerConfig defines mTLS client auth for standalone mode
+type ClientAuthListenerConfig struct {
+	// Mode: none, optional, require
+	Mode string `yaml:"mode"`
+
+	// CAFile is the path to the CA certificate file for client cert verification
+	CAFile string `yaml:"caFile,omitempty"`
+
+	// RequiredCNPatterns are regex patterns the client cert CN must match
+	RequiredCNPatterns []string `yaml:"requiredCNPatterns,omitempty"`
+
+	// RequiredSANs are SANs the client cert must contain
+	RequiredSANs []string `yaml:"requiredSANs,omitempty"`
+}
+
+// ProxyProtocolListenerConfig defines PROXY protocol for standalone mode
+type ProxyProtocolListenerConfig struct {
+	// Enabled enables PROXY protocol parsing
+	Enabled bool `yaml:"enabled"`
+
+	// Version: 0 (both), 1 (v1 only), 2 (v2 only)
+	Version int `yaml:"version,omitempty"`
+
+	// TrustedCIDRs are source CIDRs from which PROXY headers are trusted
+	TrustedCIDRs []string `yaml:"trustedCIDRs,omitempty"`
 }
 
 // TLSConfig defines TLS settings
@@ -320,6 +356,18 @@ type BackendConfig struct {
 
 	// Session affinity configuration
 	SessionAffinity *SessionAffinityStandaloneConfig `yaml:"sessionAffinity,omitempty"`
+
+	// UpstreamProxyProtocol enables sending PROXY protocol to this backend
+	UpstreamProxyProtocol *UpstreamProxyProtocolBackendConfig `yaml:"upstreamProxyProtocol,omitempty"`
+}
+
+// UpstreamProxyProtocolBackendConfig defines upstream PROXY protocol for standalone mode
+type UpstreamProxyProtocolBackendConfig struct {
+	// Enabled enables sending PROXY protocol headers to backends
+	Enabled bool `yaml:"enabled"`
+
+	// Version: 1 or 2 (default: 1)
+	Version int `yaml:"version,omitempty"`
 }
 
 // EndpointConfig defines a backend endpoint

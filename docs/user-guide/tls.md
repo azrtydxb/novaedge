@@ -470,3 +470,144 @@ openssl s_client -connect example.com:443 \
 - [Health Checks](health-checks.md) - Backend health checking
 - [Policies](policies.md) - Security policies
 - [Observability](../operations/observability.md) - TLS metrics
+
+## Mutual TLS (mTLS) Client Authentication
+
+NovaEdge supports frontend mTLS, where clients present TLS certificates that are validated by the proxy before allowing access.
+
+### Configuration
+
+#### Kubernetes CRD
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: mtls-gateway
+spec:
+  vipRef: internal-vip
+  listeners:
+    - name: https-mtls
+      port: 443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: server-tls-cert
+      clientAuth:
+        mode: require         # "none", "optional", or "require"
+        caCertRef:
+          name: client-ca-cert  # Secret with ca.crt key
+        requiredCNPatterns:
+          - "^service\\.internal\\..*$"
+        requiredSANs:
+          - "service.internal.example.com"
+```
+
+#### Standalone Mode
+
+```yaml
+listeners:
+  - name: https-mtls
+    port: 443
+    protocol: HTTPS
+    tls:
+      certFile: /etc/tls/server.crt
+      keyFile: /etc/tls/server.key
+    clientAuth:
+      mode: require
+      caFile: /etc/tls/client-ca.crt
+      requiredCNPatterns:
+        - "^service\\.internal\\..*$"
+      requiredSANs:
+        - "service.internal.example.com"
+```
+
+### Client Authentication Modes
+
+| Mode | Behavior |
+|------|----------|
+| `none` | No client certificate requested (default) |
+| `optional` | Client certificate requested but not required; if provided, it must be valid |
+| `require` | Client must present a valid certificate signed by the configured CA |
+
+### Client Certificate Headers
+
+When a client certificate is presented, NovaEdge injects the following headers before forwarding to backends:
+
+| Header | Value |
+|--------|-------|
+| `X-Client-Cert-CN` | Subject Common Name |
+| `X-Client-Cert-SAN-DNS` | Comma-separated DNS SANs |
+| `X-Client-Cert-SAN-Email` | Comma-separated email SANs |
+| `X-Client-Cert-SAN-URI` | Comma-separated URI SANs |
+| `X-Client-Cert-Fingerprint` | SHA-256 fingerprint (hex) |
+| `X-Client-Cert-Serial` | Certificate serial number |
+| `X-Client-Cert-Issuer` | Certificate issuer |
+| `X-Client-Cert-Subject` | Certificate subject |
+
+### Policy Validation
+
+The `requiredCNPatterns` and `requiredSANs` fields provide policy-based access control:
+
+- **requiredCNPatterns**: Regex patterns that the client certificate Common Name must match (at least one must match)
+- **requiredSANs**: Subject Alternative Names that must be present on the client certificate (all must match)
+
+Requests that fail policy validation receive a `403 Forbidden` response.
+
+## OCSP Stapling
+
+OCSP (Online Certificate Status Protocol) stapling improves TLS handshake performance and privacy by having the server fetch and cache the certificate's revocation status, rather than requiring clients to check it themselves.
+
+### Configuration
+
+#### Kubernetes CRD
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: ocsp-gateway
+spec:
+  vipRef: public-vip
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: server-tls-cert
+      ocspStapling: true
+```
+
+#### Standalone Mode
+
+```yaml
+listeners:
+  - name: https
+    port: 443
+    protocol: HTTPS
+    tls:
+      certFile: /etc/tls/server.crt
+      keyFile: /etc/tls/server.key
+    ocspStapling: true
+```
+
+### How It Works
+
+1. NovaEdge fetches the OCSP response from the certificate's OCSP responder URL
+2. The response is cached and attached to TLS handshakes (stapled)
+3. A background goroutine refreshes the OCSP response before expiry (24 hours before)
+4. If the OCSP fetch fails, the server continues serving without a staple (graceful degradation)
+
+### Requirements
+
+- The server certificate must include OCSP responder URLs (most CA-issued certificates do)
+- The issuer certificate must be available (either in the certificate chain or in the CA bundle)
+- Network access to the OCSP responder from the proxy nodes
+
+### Monitoring
+
+OCSP status is available through the health/status endpoint and includes:
+- Whether stapling is active per certificate
+- Next OCSP response update time
+- Last refresh time and any errors
