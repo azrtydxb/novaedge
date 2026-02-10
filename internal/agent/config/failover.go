@@ -657,11 +657,8 @@ func (w *FailoverWatcher) connect(ctrl *ControllerEndpoint) (*grpc.ClientConn, e
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
-	ctx, cancel := context.WithTimeout(w.ctx, w.config.Timeout)
-	defer cancel()
-
 	start := time.Now()
-	conn, err := grpc.DialContext(ctx, ctrl.Endpoint, opts...)
+	conn, err := grpc.NewClient(ctrl.Endpoint, opts...)
 	if err != nil {
 		return nil, err
 	}

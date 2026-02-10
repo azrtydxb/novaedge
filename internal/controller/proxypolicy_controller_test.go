@@ -193,7 +193,9 @@ func TestProxyPolicyReconcile(t *testing.T) {
 			// Manually trigger reconciliation
 			err := env.reconcileProxyPolicy(ctx, test.policy.Name, test.policy.Namespace)
 			if test.expectError && err == nil {
-				// Error might be recorded in status conditions instead of returned
+				// Error might be recorded in status conditions instead of returned.
+				// Not a test failure; continue to verify status below.
+				_ = err
 			}
 
 			updatedPolicy := &novaedgev1alpha1.ProxyPolicy{}
