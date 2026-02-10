@@ -37,6 +37,12 @@ type KubernetesBackend struct {
 	readOnly  bool
 }
 
+// namespaceAll is the special namespace value meaning all namespaces.
+const (
+	namespaceAll     = "all"
+	defaultNamespace = "default"
+)
+
 // GVRs for NovaEdge CRDs
 var (
 	gvrGateway = schema.GroupVersionResource{
@@ -104,7 +110,7 @@ func (k *KubernetesBackend) ListGateways(ctx context.Context, namespace string) 
 	var list *unstructured.UnstructuredList
 	var err error
 
-	if namespace == "" || namespace == "all" {
+	if namespace == "" || namespace == namespaceAll {
 		list, err = k.dynamic.Resource(gvrGateway).List(ctx, metav1.ListOptions{})
 	} else {
 		list, err = k.dynamic.Resource(gvrGateway).Namespace(namespace).List(ctx, metav1.ListOptions{})
@@ -143,7 +149,7 @@ func (k *KubernetesBackend) CreateGateway(ctx context.Context, gateway *models.G
 	obj := k.gatewayToUnstructured(gateway)
 	namespace := gateway.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrGateway).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -163,7 +169,7 @@ func (k *KubernetesBackend) UpdateGateway(ctx context.Context, gateway *models.G
 	obj := k.gatewayToUnstructured(gateway)
 	namespace := gateway.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrGateway).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -188,7 +194,7 @@ func (k *KubernetesBackend) ListRoutes(ctx context.Context, namespace string) ([
 	var list *unstructured.UnstructuredList
 	var err error
 
-	if namespace == "" || namespace == "all" {
+	if namespace == "" || namespace == namespaceAll {
 		list, err = k.dynamic.Resource(gvrRoute).List(ctx, metav1.ListOptions{})
 	} else {
 		list, err = k.dynamic.Resource(gvrRoute).Namespace(namespace).List(ctx, metav1.ListOptions{})
@@ -227,7 +233,7 @@ func (k *KubernetesBackend) CreateRoute(ctx context.Context, route *models.Route
 	obj := k.routeToUnstructured(route)
 	namespace := route.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrRoute).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -247,7 +253,7 @@ func (k *KubernetesBackend) UpdateRoute(ctx context.Context, route *models.Route
 	obj := k.routeToUnstructured(route)
 	namespace := route.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrRoute).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -272,7 +278,7 @@ func (k *KubernetesBackend) ListBackends(ctx context.Context, namespace string) 
 	var list *unstructured.UnstructuredList
 	var err error
 
-	if namespace == "" || namespace == "all" {
+	if namespace == "" || namespace == namespaceAll {
 		list, err = k.dynamic.Resource(gvrBackend).List(ctx, metav1.ListOptions{})
 	} else {
 		list, err = k.dynamic.Resource(gvrBackend).Namespace(namespace).List(ctx, metav1.ListOptions{})
@@ -311,7 +317,7 @@ func (k *KubernetesBackend) CreateBackend(ctx context.Context, backend *models.B
 	obj := k.backendToUnstructured(backend)
 	namespace := backend.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrBackend).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -331,7 +337,7 @@ func (k *KubernetesBackend) UpdateBackend(ctx context.Context, backend *models.B
 	obj := k.backendToUnstructured(backend)
 	namespace := backend.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrBackend).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -356,7 +362,7 @@ func (k *KubernetesBackend) ListVIPs(ctx context.Context, namespace string) ([]m
 	var list *unstructured.UnstructuredList
 	var err error
 
-	if namespace == "" || namespace == "all" {
+	if namespace == "" || namespace == namespaceAll {
 		list, err = k.dynamic.Resource(gvrVIP).List(ctx, metav1.ListOptions{})
 	} else {
 		list, err = k.dynamic.Resource(gvrVIP).Namespace(namespace).List(ctx, metav1.ListOptions{})
@@ -395,7 +401,7 @@ func (k *KubernetesBackend) CreateVIP(ctx context.Context, vip *models.VIP) (*mo
 	obj := k.vipToUnstructured(vip)
 	namespace := vip.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrVIP).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -415,7 +421,7 @@ func (k *KubernetesBackend) UpdateVIP(ctx context.Context, vip *models.VIP) (*mo
 	obj := k.vipToUnstructured(vip)
 	namespace := vip.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrVIP).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -440,7 +446,7 @@ func (k *KubernetesBackend) ListPolicies(ctx context.Context, namespace string) 
 	var list *unstructured.UnstructuredList
 	var err error
 
-	if namespace == "" || namespace == "all" {
+	if namespace == "" || namespace == namespaceAll {
 		list, err = k.dynamic.Resource(gvrPolicy).List(ctx, metav1.ListOptions{})
 	} else {
 		list, err = k.dynamic.Resource(gvrPolicy).Namespace(namespace).List(ctx, metav1.ListOptions{})
@@ -479,7 +485,7 @@ func (k *KubernetesBackend) CreatePolicy(ctx context.Context, policy *models.Pol
 	obj := k.policyToUnstructured(policy)
 	namespace := policy.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrPolicy).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -499,7 +505,7 @@ func (k *KubernetesBackend) UpdatePolicy(ctx context.Context, policy *models.Pol
 	obj := k.policyToUnstructured(policy)
 	namespace := policy.Namespace
 	if namespace == "" {
-		namespace = "default"
+		namespace = defaultNamespace
 	}
 
 	result, err := k.dynamic.Resource(gvrPolicy).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -724,7 +730,10 @@ func (k *KubernetesBackend) unstructuredToGateway(obj *unstructured.Unstructured
 	}
 
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
-	if err != nil || !found {
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec: %w", err)
+	}
+	if !found {
 		return gw, nil
 	}
 
@@ -765,7 +774,10 @@ func (k *KubernetesBackend) gatewayToUnstructured(gw *models.Gateway) *unstructu
 		obj.SetResourceVersion(gw.ResourceVersion)
 	}
 
-	spec := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return obj
+	}
 
 	// Convert listeners
 	if len(gw.Listeners) > 0 {
@@ -795,7 +807,10 @@ func (k *KubernetesBackend) unstructuredToRoute(obj *unstructured.Unstructured) 
 	}
 
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
-	if err != nil || !found {
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec: %w", err)
+	}
+	if !found {
 		return rt, nil
 	}
 
@@ -837,7 +852,10 @@ func (k *KubernetesBackend) routeToUnstructured(rt *models.Route) *unstructured.
 		obj.SetResourceVersion(rt.ResourceVersion)
 	}
 
-	spec := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return obj
+	}
 
 	if len(rt.Hostnames) > 0 {
 		spec["hostnames"] = rt.Hostnames
@@ -868,7 +886,10 @@ func (k *KubernetesBackend) unstructuredToBackend(obj *unstructured.Unstructured
 	}
 
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
-	if err != nil || !found {
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec: %w", err)
+	}
+	if !found {
 		return be, nil
 	}
 
@@ -909,7 +930,10 @@ func (k *KubernetesBackend) backendToUnstructured(be *models.Backend) *unstructu
 		obj.SetResourceVersion(be.ResourceVersion)
 	}
 
-	spec := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return obj
+	}
 
 	if len(be.Endpoints) > 0 {
 		endpoints := make([]interface{}, 0, len(be.Endpoints))
@@ -936,7 +960,10 @@ func (k *KubernetesBackend) unstructuredToVIP(obj *unstructured.Unstructured) (*
 	}
 
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
-	if err != nil || !found {
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec: %w", err)
+	}
+	if !found {
 		return vip, nil
 	}
 
@@ -967,7 +994,10 @@ func (k *KubernetesBackend) vipToUnstructured(vip *models.VIP) *unstructured.Uns
 		obj.SetResourceVersion(vip.ResourceVersion)
 	}
 
-	spec := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return obj
+	}
 
 	if vip.Interface != "" {
 		spec["interface"] = vip.Interface
@@ -984,7 +1014,10 @@ func (k *KubernetesBackend) unstructuredToPolicy(obj *unstructured.Unstructured)
 	}
 
 	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
-	if err != nil || !found {
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec: %w", err)
+	}
+	if !found {
 		return pol, nil
 	}
 

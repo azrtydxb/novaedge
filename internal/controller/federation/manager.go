@@ -191,7 +191,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.started = true
 	m.mu.Unlock()
 
-	m.ctx, m.cancel = context.WithCancel(ctx)
+	derivedCtx, cancel := context.WithCancel(ctx)
+	m.ctx = derivedCtx
+	m.cancel = cancel
 
 	m.logger.Info("Starting federation manager",
 		zap.String("federation_id", m.config.FederationID),
@@ -208,7 +210,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 
 	// Start the server
-	if err := m.server.Start(m.ctx); err != nil {
+	if err := m.server.Start(derivedCtx); err != nil {
 		return fmt.Errorf("failed to start federation server: %w", err)
 	}
 
@@ -224,7 +226,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	}
 
 	// Start health checker
-	go m.runHealthChecker()
+	go m.runHealthChecker(derivedCtx)
 
 	return nil
 }
@@ -423,7 +425,7 @@ func (m *Manager) handlePeerMessage(peerName string, msg *pb.SyncMessage) {
 }
 
 // runHealthChecker periodically checks peer health
-func (m *Manager) runHealthChecker() {
+func (m *Manager) runHealthChecker(ctx context.Context) {
 	ticker := time.NewTicker(m.config.HealthCheckInterval)
 	defer ticker.Stop()
 
@@ -432,13 +434,13 @@ func (m *Manager) runHealthChecker() {
 		case <-m.ctx.Done():
 			return
 		case <-ticker.C:
-			m.checkPeerHealth()
+			m.checkPeerHealth(ctx)
 		}
 	}
 }
 
 // checkPeerHealth checks the health of all peers
-func (m *Manager) checkPeerHealth() {
+func (m *Manager) checkPeerHealth(ctx context.Context) {
 	m.clientsMu.RLock()
 	clients := make([]*PeerClient, 0, len(m.clients))
 	for _, client := range m.clients {
@@ -452,7 +454,7 @@ func (m *Manager) checkPeerHealth() {
 		go func(c *PeerClient) {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(m.ctx, m.config.HealthCheckTimeout)
+			ctx, cancel := context.WithTimeout(ctx, m.config.HealthCheckTimeout)
 			defer cancel()
 
 			latency, err := c.Ping(ctx)

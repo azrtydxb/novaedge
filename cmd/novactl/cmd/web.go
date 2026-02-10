@@ -189,18 +189,18 @@ func runWeb(cmd *cobra.Command, args []string) error {
 
 // openBrowser opens the default browser with the given URL
 func openBrowser(url string) {
-	var cmd string
+	var browserCmd string
 	var args []string
 
 	switch runtime.GOOS {
 	case "darwin":
-		cmd = "open"
+		browserCmd = "open"
 		args = []string{url}
 	case "linux":
-		cmd = "xdg-open"
+		browserCmd = "xdg-open"
 		args = []string{url}
 	case "windows":
-		cmd = "cmd"
+		browserCmd = "cmd"
 		args = []string{"/c", "start", url}
 	default:
 		fmt.Printf("Please open %s in your browser\n", url)
@@ -209,6 +209,6 @@ func openBrowser(url string) {
 
 	// Execute in background - don't wait for result
 	go func() {
-		_ = exec.Command(cmd, args...).Start()
+		_ = exec.CommandContext(context.Background(), browserCmd, args...).Start() //#nosec G204 -- browserCmd is a hardcoded OS-specific binary, not user input
 	}()
 }

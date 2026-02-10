@@ -17,6 +17,7 @@ limitations under the License.
 package upstream
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -40,7 +41,7 @@ func TestNewPool(t *testing.T) {
 		{Address: "192.168.1.11", Port: 8080, Ready: true},
 	}
 
-	pool := NewPool(cluster, endpoints, logger)
+	pool := NewPool(context.Background(), cluster, endpoints, logger)
 	defer pool.Close()
 
 	if pool == nil {
@@ -70,7 +71,7 @@ func TestUpdateEndpoints(t *testing.T) {
 		{Address: "192.168.1.10", Port: 8080, Ready: true},
 	}
 
-	pool := NewPool(cluster, initialEndpoints, logger)
+	pool := NewPool(context.Background(), cluster, initialEndpoints, logger)
 	defer pool.Close()
 
 	newEndpoints := []*pb.Endpoint{
@@ -102,7 +103,7 @@ func TestCreateProxies(t *testing.T) {
 			{Address: "192.168.1.11", Port: 8080, Ready: true},
 		}
 
-		pool := NewPool(cluster, endpoints, logger)
+		pool := NewPool(context.Background(), cluster, endpoints, logger)
 		defer pool.Close()
 		pool.mu.RLock()
 		proxyCount := len(pool.proxies)
@@ -119,7 +120,7 @@ func TestCreateProxies(t *testing.T) {
 			{Address: "192.168.1.11", Port: 8080, Ready: false},
 		}
 
-		pool := NewPool(cluster, endpoints, logger)
+		pool := NewPool(context.Background(), cluster, endpoints, logger)
 		defer pool.Close()
 		pool.mu.RLock()
 		proxyCount := len(pool.proxies)
@@ -154,7 +155,7 @@ func TestForward(t *testing.T) {
 		{Address: "192.168.1.10", Port: 8080, Ready: true},
 	}
 
-	pool := NewPool(cluster, endpoints, logger)
+	pool := NewPool(context.Background(), cluster, endpoints, logger)
 	defer pool.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -182,7 +183,7 @@ func TestClose(t *testing.T) {
 		{Address: "192.168.1.10", Port: 8080, Ready: true},
 	}
 
-	pool := NewPool(cluster, endpoints, logger)
+	pool := NewPool(context.Background(), cluster, endpoints, logger)
 
 	// Close should not panic
 	pool.Close()

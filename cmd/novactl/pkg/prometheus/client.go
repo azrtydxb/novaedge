@@ -78,7 +78,7 @@ func (c *Client) QueryAt(ctx context.Context, query string, t time.Time) (*Query
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -124,7 +124,7 @@ func (c *Client) QueryRange(ctx context.Context, params RangeQueryParams) (*Quer
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, queryParams.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -156,7 +156,7 @@ func (c *Client) QueryRange(ctx context.Context, params RangeQueryParams) (*Quer
 func (c *Client) GetLabels(ctx context.Context) ([]string, error) {
 	endpoint := fmt.Sprintf("%s/api/v1/labels", c.endpoint)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -183,7 +183,7 @@ func (c *Client) GetLabels(ctx context.Context) ([]string, error) {
 func (c *Client) GetLabelValues(ctx context.Context, label string) ([]string, error) {
 	endpoint := fmt.Sprintf("%s/api/v1/label/%s/values", c.endpoint, url.PathEscape(label))
 
-	req, err := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -219,7 +219,7 @@ func (c *Client) GetSeries(ctx context.Context, matchers []string, start, end ti
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
 
-	req, err := http.NewRequestWithContext(ctx, "GET", fullURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

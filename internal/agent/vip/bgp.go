@@ -83,20 +83,20 @@ func (h *BGPHandler) Start(ctx context.Context) error {
 }
 
 // AddVIP adds a VIP with BGP announcement
-func (h *BGPHandler) AddVIP(assignment *pb.VIPAssignment) error {
+func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	// Check if already active
 	if _, exists := h.activeVIPs[assignment.VipName]; exists {
-		h.logger.Debug("VIP already active", zap.String("vip", assignment.VipName))
+		h.logger.Debug(msgVIPAlreadyActive, zap.String("vip", assignment.VipName))
 		return nil
 	}
 
 	// Parse IP address
 	ip, _, err := net.ParseCIDR(assignment.Address)
 	if err != nil {
-		return fmt.Errorf("invalid VIP address %s: %w", assignment.Address, err)
+		return fmt.Errorf(errInvalidVIPAddressFmt, assignment.Address, err)
 	}
 
 	// Validate BGP config
@@ -112,13 +112,13 @@ func (h *BGPHandler) AddVIP(assignment *pb.VIPAssignment) error {
 
 	// Start BGP server if not already started
 	if h.bgpServer == nil {
-		if err := h.startBGPServer(assignment.BgpConfig); err != nil {
+		if err := h.startBGPServer(ctx, assignment.BgpConfig); err != nil {
 			return fmt.Errorf("failed to start BGP server: %w", err)
 		}
 	}
 
 	// Announce route
-	if err := h.announceRoute(ip, assignment.BgpConfig); err != nil {
+	if err := h.announceRoute(ctx, ip, assignment.BgpConfig); err != nil {
 		h.logger.Warn("Failed to announce BGP route",
 			zap.String("vip", assignment.VipName),
 			zap.Error(err),
@@ -146,13 +146,13 @@ func (h *BGPHandler) AddVIP(assignment *pb.VIPAssignment) error {
 }
 
 // RemoveVIP removes a VIP and withdraws BGP announcement
-func (h *BGPHandler) RemoveVIP(assignment *pb.VIPAssignment) error {
+func (h *BGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	state, exists := h.activeVIPs[assignment.VipName]
 	if !exists {
-		h.logger.Debug("VIP not active", zap.String("vip", assignment.VipName))
+		h.logger.Debug(msgVIPNotActive, zap.String("vip", assignment.VipName))
 		return nil
 	}
 
@@ -163,7 +163,7 @@ func (h *BGPHandler) RemoveVIP(assignment *pb.VIPAssignment) error {
 
 	// Withdraw route
 	if state.Announced && h.bgpServer != nil {
-		if err := h.withdrawRoute(state.IP, assignment.BgpConfig); err != nil {
+		if err := h.withdrawRoute(ctx, state.IP, assignment.BgpConfig); err != nil {
 			h.logger.Warn("Failed to withdraw BGP route",
 				zap.String("vip", assignment.VipName),
 				zap.Error(err),
@@ -185,7 +185,7 @@ func (h *BGPHandler) RemoveVIP(assignment *pb.VIPAssignment) error {
 }
 
 // startBGPServer initializes and starts the BGP server
-func (h *BGPHandler) startBGPServer(config *pb.BGPConfig) error {
+func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) error {
 	h.logger.Info("Starting BGP server",
 		zap.Uint32("local_as", config.LocalAs),
 		zap.String("router_id", config.RouterId),
@@ -206,7 +206,7 @@ func (h *BGPHandler) startBGPServer(config *pb.BGPConfig) error {
 		},
 	}
 
-	if err := h.bgpServer.StartBgp(context.Background(), globalConfig); err != nil {
+	if err := h.bgpServer.StartBgp(ctx, globalConfig); err != nil {
 		return fmt.Errorf("failed to start BGP server: %w", err)
 	}
 
@@ -235,7 +235,7 @@ func (h *BGPHandler) startBGPServer(config *pb.BGPConfig) error {
 			},
 		}
 
-		if err := h.bgpServer.AddPeer(context.Background(), peerConfig); err != nil {
+		if err := h.bgpServer.AddPeer(ctx, peerConfig); err != nil {
 			h.logger.Error("Failed to add BGP peer",
 				zap.String("address", peer.Address),
 				zap.Error(err),
@@ -249,7 +249,7 @@ func (h *BGPHandler) startBGPServer(config *pb.BGPConfig) error {
 }
 
 // announceRoute announces a route for a VIP
-func (h *BGPHandler) announceRoute(ip net.IP, config *pb.BGPConfig) error {
+func (h *BGPHandler) announceRoute(ctx context.Context, ip net.IP, config *pb.BGPConfig) error {
 	// Create /32 prefix for the VIP
 	prefix := fmt.Sprintf("%s/32", ip.String())
 
@@ -285,7 +285,7 @@ func (h *BGPHandler) announceRoute(ip net.IP, config *pb.BGPConfig) error {
 	})
 
 	// Add path to global RIB
-	_, err := h.bgpServer.AddPath(context.Background(), &api.AddPathRequest{
+	_, err := h.bgpServer.AddPath(ctx, &api.AddPathRequest{
 		TableType: api.TableType_GLOBAL,
 		Path: &api.Path{
 			Nlri:   nlri,
@@ -306,7 +306,7 @@ func (h *BGPHandler) announceRoute(ip net.IP, config *pb.BGPConfig) error {
 }
 
 // withdrawRoute withdraws a route for a VIP
-func (h *BGPHandler) withdrawRoute(ip net.IP, config *pb.BGPConfig) error {
+func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, _ *pb.BGPConfig) error {
 	prefix := fmt.Sprintf("%s/32", ip.String())
 
 	h.logger.Info("Withdrawing BGP route", zap.String("prefix", prefix))
@@ -318,7 +318,7 @@ func (h *BGPHandler) withdrawRoute(ip net.IP, config *pb.BGPConfig) error {
 	})
 
 	// Delete path from global RIB
-	err := h.bgpServer.DeletePath(context.Background(), &api.DeletePathRequest{
+	err := h.bgpServer.DeletePath(ctx, &api.DeletePathRequest{
 		TableType: api.TableType_GLOBAL,
 		Path: &api.Path{
 			Nlri: nlri,

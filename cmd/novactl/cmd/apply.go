@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
 	"github.com/spf13/cobra"
@@ -41,10 +42,13 @@ func runApply(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 
+	// Clean the file path to prevent path traversal
+	cleanPath := filepath.Clean(filename)
+
 	// Read file
-	data, err := os.ReadFile(filename)
+	data, err := os.ReadFile(cleanPath) //#nosec G304 -- filename is provided by CLI user via --filename flag
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", filename, err)
+		return fmt.Errorf("failed to read file %s: %w", cleanPath, err)
 	}
 
 	// Parse YAML (could contain multiple documents)

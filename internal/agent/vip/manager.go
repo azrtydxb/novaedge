@@ -30,7 +30,7 @@ import (
 // Manager manages VIP ownership and announces
 type Manager interface {
 	// ApplyVIPs applies VIP assignments from config snapshot
-	ApplyVIPs(assignments []*pb.VIPAssignment) error
+	ApplyVIPs(ctx context.Context, assignments []*pb.VIPAssignment) error
 
 	// Release releases all VIPs
 	Release() error
@@ -105,7 +105,7 @@ func (m *VIPManager) Start(ctx context.Context) error {
 }
 
 // ApplyVIPs applies new VIP assignments
-func (m *VIPManager) ApplyVIPs(assignments []*pb.VIPAssignment) error {
+func (m *VIPManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAssignment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -121,7 +121,7 @@ func (m *VIPManager) ApplyVIPs(assignments []*pb.VIPAssignment) error {
 	for vipName, oldAssignment := range m.assignments {
 		if _, exists := newAssignments[vipName]; !exists {
 			m.logger.Info("Releasing VIP", zap.String("vip", vipName))
-			if err := m.releaseVIP(oldAssignment); err != nil {
+			if err := m.releaseVIP(ctx, oldAssignment); err != nil {
 				m.logger.Error("Failed to release VIP",
 					zap.String("vip", vipName),
 					zap.Error(err),
@@ -146,7 +146,7 @@ func (m *VIPManager) ApplyVIPs(assignments []*pb.VIPAssignment) error {
 			zap.Bool("is_active", assignment.IsActive),
 		)
 
-		if err := m.applyVIP(assignment); err != nil {
+		if err := m.applyVIP(ctx, assignment); err != nil {
 			m.logger.Error("Failed to apply VIP",
 				zap.String("vip", vipName),
 				zap.Error(err),
@@ -160,7 +160,7 @@ func (m *VIPManager) ApplyVIPs(assignments []*pb.VIPAssignment) error {
 }
 
 // applyVIP applies a single VIP assignment
-func (m *VIPManager) applyVIP(assignment *pb.VIPAssignment) error {
+func (m *VIPManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	if !assignment.IsActive {
 		// Not active on this node, update metric and skip
 		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), false)
@@ -170,11 +170,11 @@ func (m *VIPManager) applyVIP(assignment *pb.VIPAssignment) error {
 	var err error
 	switch assignment.Mode {
 	case pb.VIPMode_L2_ARP:
-		err = m.l2Handler.AddVIP(assignment)
+		err = m.l2Handler.AddVIP(ctx, assignment)
 	case pb.VIPMode_BGP:
-		err = m.bgpHandler.AddVIP(assignment)
+		err = m.bgpHandler.AddVIP(ctx, assignment)
 	case pb.VIPMode_OSPF:
-		err = m.ospfHandler.AddVIP(assignment)
+		err = m.ospfHandler.AddVIP(ctx, assignment)
 	default:
 		err = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
 	}
@@ -188,15 +188,15 @@ func (m *VIPManager) applyVIP(assignment *pb.VIPAssignment) error {
 }
 
 // releaseVIP releases a single VIP
-func (m *VIPManager) releaseVIP(assignment *pb.VIPAssignment) error {
+func (m *VIPManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	var err error
 	switch assignment.Mode {
 	case pb.VIPMode_L2_ARP:
-		err = m.l2Handler.RemoveVIP(assignment)
+		err = m.l2Handler.RemoveVIP(ctx, assignment)
 	case pb.VIPMode_BGP:
-		err = m.bgpHandler.RemoveVIP(assignment)
+		err = m.bgpHandler.RemoveVIP(ctx, assignment)
 	case pb.VIPMode_OSPF:
-		err = m.ospfHandler.RemoveVIP(assignment)
+		err = m.ospfHandler.RemoveVIP(ctx, assignment)
 	default:
 		err = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
 	}
@@ -218,7 +218,7 @@ func (m *VIPManager) Release() error {
 
 	var errors []error
 	for _, assignment := range m.assignments {
-		if err := m.releaseVIP(assignment); err != nil {
+		if err := m.releaseVIP(context.Background(), assignment); err != nil {
 			errors = append(errors, err)
 		}
 	}
@@ -237,7 +237,7 @@ func (m *VIPManager) GetActiveVIPs() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	var active []string
+	active := make([]string, 0, len(m.assignments))
 	for vipName, assignment := range m.assignments {
 		if assignment.IsActive {
 			active = append(active, vipName)

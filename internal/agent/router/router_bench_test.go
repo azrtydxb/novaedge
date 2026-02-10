@@ -151,7 +151,7 @@ func BenchmarkHashEndpointList(b *testing.B) {
 	for i := range endpoints {
 		endpoints[i] = &pb.Endpoint{
 			Address: fmt.Sprintf("10.0.%d.%d", i/256, i%256),
-			Port:    int32(8080 + i),
+			Port:    int32(8080) + int32(i), //nolint:gosec // i is bounded by loop range [0,100)
 			Ready:   true,
 		}
 	}

@@ -19,7 +19,9 @@ package federation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -223,7 +225,7 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 
 	// Wait for either to error
 	err = <-errCh
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		s.logger.Error("Sync stream error",
 			zap.String("peer", peerName),
 			zap.Error(err),
@@ -292,7 +294,7 @@ func (s *Server) handleOutgoingMessages(ctx context.Context, stream pb.Federatio
 					Heartbeat: &pb.Heartbeat{
 						VectorClock:    s.vectorClock.ToMap(),
 						Timestamp:      time.Now().UnixNano(),
-						PendingChanges: int32(len(s.pendingChanges)),
+						PendingChanges: safeIntToInt32(len(s.pendingChanges)),
 						AgentCount:     agentCount,
 					},
 				},
@@ -326,7 +328,7 @@ func (s *Server) handleOutgoingMessages(ctx context.Context, stream pb.Federatio
 }
 
 // handleResourceChange processes an incoming resource change from a peer
-func (s *Server) handleResourceChange(ctx context.Context, peerName string, change *pb.ResourceChange) error {
+func (s *Server) handleResourceChange(_ context.Context, peerName string, change *pb.ResourceChange) error {
 	key := ResourceKey{
 		Kind:      change.ResourceType,
 		Namespace: change.Namespace,
@@ -339,7 +341,10 @@ func (s *Server) handleResourceChange(ctx context.Context, peerName string, chan
 
 	// Check for conflicts
 	if existing, ok := s.resources.Load(keyStr); ok {
-		existingRes := existing.(*TrackedResource)
+		existingRes, ok := existing.(*TrackedResource)
+		if !ok {
+			return fmt.Errorf("unexpected type in resources map for key %s", keyStr)
+		}
 		existingVC := NewVectorClockFromMap(existingRes.VectorClock)
 		incomingVC := NewVectorClockFromMap(change.VectorClock)
 
@@ -601,7 +606,10 @@ func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.Get
 	// Count resources by type
 	resourceCounts := make(map[string]int32)
 	s.resources.Range(func(key, value interface{}) bool {
-		res := value.(*TrackedResource)
+		res, ok := value.(*TrackedResource)
+		if !ok {
+			return true
+		}
 		resourceCounts[res.Key.Kind]++
 		return true
 	})
@@ -609,9 +617,16 @@ func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.Get
 	// Collect last sync times
 	lastSyncTimes := make(map[string]int64)
 	s.peerStates.Range(func(key, value interface{}) bool {
-		state := value.(*PeerState)
+		state, ok := value.(*PeerState)
+		if !ok {
+			return true
+		}
+		keyStr, ok := key.(string)
+		if !ok {
+			return true
+		}
 		if !state.LastSyncTime.IsZero() {
-			lastSyncTimes[key.(string)] = state.LastSyncTime.UnixNano()
+			lastSyncTimes[keyStr] = state.LastSyncTime.UnixNano()
 		}
 		return true
 	})
@@ -670,7 +685,10 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 	requesterVC := NewVectorClockFromMap(req.VectorClock)
 
 	s.resources.Range(func(key, value interface{}) bool {
-		res := value.(*TrackedResource)
+		res, ok := value.(*TrackedResource)
+		if !ok {
+			return true
+		}
 
 		// Filter by resource type if specified
 		if len(req.ResourceTypes) > 0 {
@@ -735,10 +753,10 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 		}
 
 		batch := &pb.ResourceBatch{
-			BatchNumber:    int32(batchNum),
+			BatchNumber:    safeIntToInt32(batchNum),
 			IsLast:         end == len(resources),
 			Resources:      resources[i:end],
-			TotalResources: int32(totalResources),
+			TotalResources: safeIntToInt32(totalResources),
 			VectorClock:    s.vectorClock.ToMap(),
 		}
 
@@ -853,7 +871,15 @@ func (s *Server) GetStats() SyncStats {
 func (s *Server) GetPeerStates() map[string]*PeerState {
 	result := make(map[string]*PeerState)
 	s.peerStates.Range(func(key, value interface{}) bool {
-		result[key.(string)] = value.(*PeerState)
+		keyStr, ok := key.(string)
+		if !ok {
+			return true
+		}
+		state, ok := value.(*PeerState)
+		if !ok {
+			return true
+		}
+		result[keyStr] = state
 		return true
 	})
 	return result
@@ -863,7 +889,11 @@ func (s *Server) GetPeerStates() map[string]*PeerState {
 func (s *Server) GetConflicts() []*ConflictInfo {
 	var conflicts []*ConflictInfo
 	s.conflicts.Range(func(key, value interface{}) bool {
-		conflicts = append(conflicts, value.(*ConflictInfo))
+		conflict, ok := value.(*ConflictInfo)
+		if !ok {
+			return true
+		}
+		conflicts = append(conflicts, conflict)
 		return true
 	})
 	return conflicts
@@ -876,7 +906,10 @@ func (s *Server) ResolveConflict(keyStr string, useLocal bool) error {
 		return fmt.Errorf("conflict not found: %s", keyStr)
 	}
 
-	conflict := val.(*ConflictInfo)
+	conflict, ok := val.(*ConflictInfo)
+	if !ok {
+		return fmt.Errorf("unexpected type for conflict: %s", keyStr)
+	}
 	key := conflict.Key
 
 	if useLocal {
@@ -901,7 +934,10 @@ func (s *Server) ResolveConflict(keyStr string, useLocal bool) error {
 // updatePeerState updates the state of a peer
 func (s *Server) updatePeerState(peerName string, updateFn func(*PeerState)) {
 	val, _ := s.peerStates.LoadOrStore(peerName, &PeerState{})
-	state := val.(*PeerState)
+	state, ok := val.(*PeerState)
+	if !ok {
+		return
+	}
 	updateFn(state)
 }
 
@@ -912,7 +948,10 @@ func (s *Server) getPhase() FederationPhase {
 	totalPeers := len(s.config.Peers)
 
 	s.peerStates.Range(func(key, value interface{}) bool {
-		state := value.(*PeerState)
+		state, ok := value.(*PeerState)
+		if !ok {
+			return true
+		}
 		if state.Connected {
 			connectedCount++
 		}
@@ -975,7 +1014,8 @@ func (s *Server) maintainPeerConnection(ctx context.Context, peer *PeerInfo) {
 }
 
 // connectToPeer establishes a connection to a federation peer
-func (s *Server) connectToPeer(ctx context.Context, peer *PeerInfo) error {
+//nolint:unparam // error return kept for future peer connection implementation (see TODOs)
+func (s *Server) connectToPeer(_ context.Context, peer *PeerInfo) error {
 	// This would establish a gRPC client connection to the peer
 	// and start the SyncStream
 	// For now, this is a placeholder - the actual implementation
@@ -1009,7 +1049,10 @@ func (s *Server) cleanupTombstones(ctx context.Context) {
 		case <-ticker.C:
 			now := time.Now()
 			s.tombstones.Range(func(key, value interface{}) bool {
-				tombstone := value.(*Tombstone)
+				tombstone, ok := value.(*Tombstone)
+				if !ok {
+					return true
+				}
 				if now.Sub(tombstone.DeletionTime) > s.config.TombstoneTTL {
 					s.tombstones.Delete(key)
 				}
@@ -1052,4 +1095,15 @@ func (s *Server) changeEntryToProto(entry *ChangeEntry) *pb.ResourceChange {
 	}
 
 	return change
+}
+
+// safeIntToInt32 safely converts an int to int32, clamping to max int32 value if needed
+func safeIntToInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v) //nolint:gosec // bounds checked above
 }

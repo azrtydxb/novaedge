@@ -152,7 +152,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Update listener status
-	var listenerStatuses []gatewayv1.ListenerStatus
+	listenerStatuses := make([]gatewayv1.ListenerStatus, 0, len(gateway.Spec.Listeners))
 	for _, listener := range gateway.Spec.Listeners {
 		listenerStatus := gatewayv1.ListenerStatus{
 			Name: listener.Name,

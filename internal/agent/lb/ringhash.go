@@ -154,7 +154,7 @@ func (rh *RingHash) buildRing() {
 // hashKey hashes a string key to a uint32
 func (rh *RingHash) hashKey(key string) uint32 {
 	h := fnv.New32a()
-	h.Write([]byte(key))
+	_, _ = h.Write([]byte(key))
 	return h.Sum32()
 }
 

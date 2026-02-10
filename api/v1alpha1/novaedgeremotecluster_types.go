@@ -21,8 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// NovaEdgeRemoteClusterSpec defines the desired state of NovaEdgeRemoteCluster
-// NovaEdgeRemoteCluster represents a remote/edge cluster that runs NovaEdge agents
+// NovaEdgeRemoteClusterSpec defines the desired state for remote cluster configuration.
+// It represents a remote/edge cluster that runs agents
 // connecting back to the hub cluster's controller
 type NovaEdgeRemoteClusterSpec struct {
 	// ClusterName is a unique identifier for this remote cluster

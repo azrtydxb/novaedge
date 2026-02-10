@@ -178,7 +178,7 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 		return nil, err
 	}
 
-	var gateways []*pb.Gateway
+	gateways := make([]*pb.Gateway, 0, len(gatewayList.Items))
 	for _, gw := range gatewayList.Items {
 		gateway := &pb.Gateway{
 			Name:             gw.Name,
@@ -247,7 +247,7 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 		return nil, err
 	}
 
-	var routes []*pb.Route
+	routes := make([]*pb.Route, 0, len(routeList.Items))
 	for _, r := range routeList.Items {
 		route := &pb.Route{
 			Name:      r.Name,
@@ -288,7 +288,7 @@ func (b *Builder) buildClusters(ctx context.Context) ([]*pb.Cluster, map[string]
 		return nil, nil, err
 	}
 
-	var clusters []*pb.Cluster
+	clusters := make([]*pb.Cluster, 0, len(backendList.Items))
 	endpoints := make(map[string]*pb.EndpointList)
 
 	for _, backend := range backendList.Items {
@@ -363,7 +363,7 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 		return nil, err
 	}
 
-	var policies []*pb.Policy
+	policies := make([]*pb.Policy, 0, len(policyList.Items))
 	for _, p := range policyList.Items {
 		policy := &pb.Policy{
 			Name:      p.Name,
@@ -512,7 +512,7 @@ func (b *Builder) loadTLSConfig(ctx context.Context, tls *novaedgev1alpha1.TLSCo
 // generateVersion generates a version string based on content hash
 func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	// Create a deterministic string representation
-	var parts []string
+	parts := make([]string, 0, len(snapshot.Gateways)+len(snapshot.Routes)+len(snapshot.Clusters)+len(snapshot.VipAssignments)+len(snapshot.Policies))
 
 	// Add all component counts and names
 	for _, gw := range snapshot.Gateways {

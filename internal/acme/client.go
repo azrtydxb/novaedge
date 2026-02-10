@@ -162,7 +162,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 }
 
 // registerAccount registers a new ACME account.
-func (c *Client) registerAccount(ctx context.Context, user *User, privateKey crypto.PrivateKey) error {
+func (c *Client) registerAccount(ctx context.Context, _ *User, privateKey crypto.PrivateKey) error {
 	reg, err := c.client.Registration.Register(registration.RegisterOptions{
 		TermsOfServiceAgreed: c.config.AcceptTOS,
 	})

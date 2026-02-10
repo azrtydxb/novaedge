@@ -127,9 +127,9 @@ func runAgentConfig(cmd *cobra.Command, args []string) error {
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 		_, _ = fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
 		for _, vip := range agentConfig.VIPs {
-			active := "No"
+			active := statusNo
 			if vip.IsActive {
-				active = "Yes"
+				active = statusYes
 			}
 			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
 				vip.Name, vip.Address, vip.Mode, active, vip.Ports)
@@ -281,9 +281,9 @@ func runAgentVIPs(cmd *cobra.Command, args []string) error {
 	_, _ = fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
 
 	for _, vip := range vips {
-		active := "No"
+		active := statusNo
 		if vip.IsActive {
-			active = "Yes"
+			active = statusYes
 		}
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
 			vip.Name, vip.Address, vip.Mode, active, vip.Ports)

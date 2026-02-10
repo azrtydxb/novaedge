@@ -138,11 +138,12 @@ func runAgentsDescribe(cmd *cobra.Command, args []string) error {
 		fmt.Printf("  Ready: %v\n", cs.Ready)
 		fmt.Printf("  Restart Count: %d\n", cs.RestartCount)
 		fmt.Printf("  Image: %s\n", cs.Image)
-		if cs.State.Running != nil {
+		switch {
+		case cs.State.Running != nil:
 			fmt.Printf("  State: Running (started %s)\n", cs.State.Running.StartedAt)
-		} else if cs.State.Waiting != nil {
+		case cs.State.Waiting != nil:
 			fmt.Printf("  State: Waiting (%s)\n", cs.State.Waiting.Reason)
-		} else if cs.State.Terminated != nil {
+		case cs.State.Terminated != nil:
 			fmt.Printf("  State: Terminated (%s)\n", cs.State.Terminated.Reason)
 		}
 	}

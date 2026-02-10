@@ -125,7 +125,11 @@ func (e *SnapshotEnhancer) EnhanceSnapshot(snapshot *pb.ConfigSnapshot, fromFede
 // calculateContentHash calculates a hash of the snapshot content
 func (e *SnapshotEnhancer) calculateContentHash(snapshot *pb.ConfigSnapshot) string {
 	// Create a copy without metadata for hashing
-	copy := proto.Clone(snapshot).(*pb.ConfigSnapshot)
+	cloned := proto.Clone(snapshot)
+	copy, ok := cloned.(*pb.ConfigSnapshot)
+	if !ok {
+		return ""
+	}
 	copy.FederationMetadata = nil
 	copy.AvailableControllers = nil
 	copy.Version = ""
@@ -199,7 +203,7 @@ func SnapshotNeedsSync(snapshot *pb.ConfigSnapshot, peerVectorClock map[string]i
 
 // ExtractResourceChanges extracts changed resources from a snapshot compared to a baseline
 func ExtractResourceChanges(current, baseline *pb.ConfigSnapshot) []*pb.ResourceChange {
-	var changes []*pb.ResourceChange
+	changes := make([]*pb.ResourceChange, 0, len(current.Gateways)+len(current.Routes)+len(current.Clusters)+len(current.Policies))
 
 	// Build maps of current resources
 	currentGateways := make(map[string]*pb.Gateway)

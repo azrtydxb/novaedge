@@ -143,17 +143,16 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 	case novaedgev1alpha1.PolicyTypeJWT:
 		if policy.Spec.JWT == nil {
 			validationErrors = append(validationErrors, "JWT configuration is required for JWT policy type")
-		} else {
-			if policy.Spec.JWT.Issuer == "" && policy.Spec.JWT.JWKSUri == "" {
-				validationErrors = append(validationErrors, "JWT policy must have either issuer or jwksUri set")
-			}
+		} else if policy.Spec.JWT.Issuer == "" && policy.Spec.JWT.JWKSUri == "" {
+			validationErrors = append(validationErrors, "JWT policy must have either issuer or jwksUri set")
 		}
 	case novaedgev1alpha1.PolicyTypeIPAllowList, novaedgev1alpha1.PolicyTypeIPDenyList:
-		if policy.Spec.IPList == nil {
+		switch {
+		case policy.Spec.IPList == nil:
 			validationErrors = append(validationErrors, "IPList configuration is required for IP allow/deny list policy type")
-		} else if len(policy.Spec.IPList.CIDRs) == 0 {
+		case len(policy.Spec.IPList.CIDRs) == 0:
 			validationErrors = append(validationErrors, "IPList CIDRs must not be empty")
-		} else {
+		default:
 			// Validate CIDRs are valid
 			for _, cidr := range policy.Spec.IPList.CIDRs {
 				if _, _, err := net.ParseCIDR(cidr); err != nil {
@@ -182,12 +181,12 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 
 	if len(validationErrors) > 0 {
 		condition.Status = metav1.ConditionFalse
-		condition.Reason = "ValidationFailed"
+		condition.Reason = ConditionReasonValidationFailed
 		condition.Message = fmt.Sprintf("Validation errors: %v", validationErrors)
 		logger.Info("Policy validation failed", "errors", validationErrors)
 	} else {
 		condition.Status = metav1.ConditionTrue
-		condition.Reason = "Valid"
+		condition.Reason = ConditionReasonValid
 		condition.Message = "Policy configuration is valid"
 	}
 

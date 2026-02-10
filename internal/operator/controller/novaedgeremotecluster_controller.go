@@ -262,7 +262,7 @@ func (r *NovaEdgeRemoteClusterReconciler) registerRemoteCluster(ctx context.Cont
 }
 
 // updateConnectionStatus updates the connection status from the registry
-func (r *NovaEdgeRemoteClusterReconciler) updateConnectionStatus(ctx context.Context, rc *novaedgev1alpha1.NovaEdgeRemoteCluster) error {
+func (r *NovaEdgeRemoteClusterReconciler) updateConnectionStatus(_ context.Context, rc *novaedgev1alpha1.NovaEdgeRemoteCluster) error {
 	info, ok := r.Registry.Get(rc.Spec.ClusterName)
 	if !ok {
 		return fmt.Errorf("remote cluster not found in registry")
@@ -307,22 +307,24 @@ func (r *NovaEdgeRemoteClusterReconciler) updateOverallStatus(ctx context.Contex
 
 	oldPhase := rc.Status.Phase
 
-	if !configured {
+	switch {
+	case !configured:
 		rc.Status.Phase = novaedgev1alpha1.RemoteClusterPhaseFailed
-	} else if connected {
+	case connected:
 		// Check if all agents are healthy
-		if rc.Status.Agents != nil && rc.Status.Agents.Ready == rc.Status.Agents.Total && rc.Status.Agents.Total > 0 {
+		switch {
+		case rc.Status.Agents != nil && rc.Status.Agents.Ready == rc.Status.Agents.Total && rc.Status.Agents.Total > 0:
 			rc.Status.Phase = novaedgev1alpha1.RemoteClusterPhaseConnected
 			r.setCondition(rc, ConditionTypeRemoteHealthy, metav1.ConditionTrue,
 				"AllAgentsHealthy", "All agents are ready")
-		} else if rc.Status.Agents != nil && rc.Status.Agents.Ready > 0 {
+		case rc.Status.Agents != nil && rc.Status.Agents.Ready > 0:
 			rc.Status.Phase = novaedgev1alpha1.RemoteClusterPhaseDegraded
 			r.setCondition(rc, ConditionTypeRemoteHealthy, metav1.ConditionFalse,
 				"SomeAgentsUnhealthy", fmt.Sprintf("%d/%d agents ready", rc.Status.Agents.Ready, rc.Status.Agents.Total))
-		} else {
+		default:
 			rc.Status.Phase = novaedgev1alpha1.RemoteClusterPhaseConnecting
 		}
-	} else {
+	default:
 		// Check if we've ever been connected
 		if rc.Status.Connection != nil && rc.Status.Connection.LastConnected != nil {
 			rc.Status.Phase = novaedgev1alpha1.RemoteClusterPhaseDisconnected
@@ -354,6 +356,7 @@ func (r *NovaEdgeRemoteClusterReconciler) updateOverallStatus(ctx context.Contex
 }
 
 // cleanupRemoteCluster handles cleanup when a remote cluster is deleted
+//nolint:unparam // error return kept for future cleanup operations (see TODOs)
 func (r *NovaEdgeRemoteClusterReconciler) cleanupRemoteCluster(ctx context.Context, rc *novaedgev1alpha1.NovaEdgeRemoteCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Cleaning up remote cluster", "clusterName", rc.Spec.ClusterName)

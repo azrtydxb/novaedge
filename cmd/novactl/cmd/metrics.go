@@ -184,7 +184,7 @@ func runMetricsVIPs(cmd *cobra.Command, args []string) error {
 			assignedNode = "-"
 		}
 		if vipStatus == "" {
-			vipStatus = "Unknown"
+			vipStatus = statusUnknown
 		}
 
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",

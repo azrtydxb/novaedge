@@ -71,7 +71,7 @@ func TestHTTPRouteReconcile(t *testing.T) {
 									BackendRef: gatewayv1.BackendRef{
 										BackendObjectReference: gatewayv1.BackendObjectReference{
 											Name: "backend-service",
-											Port: (*gatewayv1.PortNumber)(int32Ptr(8080)),
+											Port: int32Ptr(8080),
 										},
 									},
 								},
@@ -143,7 +143,7 @@ func TestHTTPRouteReconcile(t *testing.T) {
 									BackendRef: gatewayv1.BackendRef{
 										BackendObjectReference: gatewayv1.BackendObjectReference{
 											Name: "nonexistent-service",
-											Port: (*gatewayv1.PortNumber)(int32Ptr(8080)),
+											Port: int32Ptr(8080),
 										},
 									},
 								},
@@ -201,7 +201,7 @@ func TestHTTPRouteReconcile(t *testing.T) {
 									BackendRef: gatewayv1.BackendRef{
 										BackendObjectReference: gatewayv1.BackendObjectReference{
 											Name: "backend-service",
-											Port: (*gatewayv1.PortNumber)(int32Ptr(8080)),
+											Port: int32Ptr(8080),
 										},
 									},
 								},
@@ -381,7 +381,7 @@ func TestHTTPRouteProxyBackendCreation(t *testing.T) {
 							BackendRef: gatewayv1.BackendRef{
 								BackendObjectReference: gatewayv1.BackendObjectReference{
 									Name: "backend-service",
-									Port: (*gatewayv1.PortNumber)(int32Ptr(8080)),
+									Port: int32Ptr(8080),
 								},
 							},
 						},
@@ -526,7 +526,7 @@ func TestHTTPRouteMultipleRules(t *testing.T) {
 							BackendRef: gatewayv1.BackendRef{
 								BackendObjectReference: gatewayv1.BackendObjectReference{
 									Name: "api-service",
-									Port: (*gatewayv1.PortNumber)(int32Ptr(8080)),
+									Port: int32Ptr(8080),
 								},
 							},
 						},
@@ -546,7 +546,7 @@ func TestHTTPRouteMultipleRules(t *testing.T) {
 							BackendRef: gatewayv1.BackendRef{
 								BackendObjectReference: gatewayv1.BackendObjectReference{
 									Name: "web-service",
-									Port: (*gatewayv1.PortNumber)(int32Ptr(3000)),
+									Port: int32Ptr(3000),
 								},
 							},
 						},
@@ -669,7 +669,7 @@ func TestHTTPRouteDeletion(t *testing.T) {
 							BackendRef: gatewayv1.BackendRef{
 								BackendObjectReference: gatewayv1.BackendObjectReference{
 									Name: "backend-service",
-									Port: (*gatewayv1.PortNumber)(int32Ptr(8080)),
+									Port: int32Ptr(8080),
 								},
 							},
 						},

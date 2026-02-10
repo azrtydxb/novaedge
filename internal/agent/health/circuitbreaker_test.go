@@ -23,6 +23,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const testEndpointAddr = "10.0.0.1:8080"
+
 func TestCircuitBreakerState_String(t *testing.T) {
 	tests := []struct {
 		state    CircuitBreakerState
@@ -63,7 +65,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultCircuitBreakerConfig()
 
-	cb := NewCircuitBreaker("10.0.0.1:8080", config, logger)
+	cb := NewCircuitBreaker(testEndpointAddr, config, logger)
 
 	if cb == nil {
 		t.Fatal("expected non-nil circuit breaker")
@@ -71,7 +73,7 @@ func TestNewCircuitBreaker(t *testing.T) {
 	if cb.state != StateClosed {
 		t.Errorf("expected initial state Closed, got %v", cb.state)
 	}
-	if cb.endpoint != "10.0.0.1:8080" {
+	if cb.endpoint != testEndpointAddr {
 		t.Errorf("expected endpoint '10.0.0.1:8080', got %q", cb.endpoint)
 	}
 }
@@ -322,7 +324,7 @@ func TestCircuitBreaker_SuccessResetsFailureCount(t *testing.T) {
 
 func TestCircuitBreaker_GetStats(t *testing.T) {
 	logger := zap.NewNop()
-	cb := NewCircuitBreaker("10.0.0.1:8080", DefaultCircuitBreakerConfig(), logger)
+	cb := NewCircuitBreaker(testEndpointAddr, DefaultCircuitBreakerConfig(), logger)
 	cb.SetCluster("default/test")
 
 	stats := cb.GetStats()
@@ -330,14 +332,18 @@ func TestCircuitBreaker_GetStats(t *testing.T) {
 	if stats["state"] != "closed" {
 		t.Errorf("expected state 'closed', got %v", stats["state"])
 	}
-	if stats["endpoint"] != "10.0.0.1:8080" {
+	if stats["endpoint"] != testEndpointAddr {
 		t.Errorf("expected endpoint '10.0.0.1:8080', got %v", stats["endpoint"])
 	}
-	if stats["consecutive_failures"].(uint32) != 0 {
-		t.Errorf("expected 0 consecutive failures, got %v", stats["consecutive_failures"])
+	if cf, ok := stats["consecutive_failures"].(uint32); !ok {
+		t.Errorf("expected consecutive_failures to be uint32, got %T", stats["consecutive_failures"])
+	} else if cf != 0 {
+		t.Errorf("expected 0 consecutive failures, got %v", cf)
 	}
-	if stats["consecutive_successes"].(uint32) != 0 {
-		t.Errorf("expected 0 consecutive successes, got %v", stats["consecutive_successes"])
+	if cs, ok := stats["consecutive_successes"].(uint32); !ok {
+		t.Errorf("expected consecutive_successes to be uint32, got %T", stats["consecutive_successes"])
+	} else if cs != 0 {
+		t.Errorf("expected 0 consecutive successes, got %v", cs)
 	}
 }
 

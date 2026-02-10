@@ -936,7 +936,7 @@ func TestIngressCanaryAnnotations(t *testing.T) {
 			Annotations: map[string]string{
 				"novaedge.io/canary-weight":       "20",
 				"novaedge.io/canary-header":       "X-Canary",
-				"novaedge.io/canary-header-value": "true",
+				"novaedge.io/canary-header-value": annotationValueTrue,
 			},
 		},
 		Spec: networkingv1.IngressSpec{
@@ -1025,7 +1025,7 @@ func TestIngressCanaryAnnotations(t *testing.T) {
 	if headerMatch.Name != "X-Canary" {
 		t.Errorf("expected header name X-Canary, got %s", headerMatch.Name)
 	}
-	if headerMatch.Value != "true" {
+	if headerMatch.Value != annotationValueTrue {
 		t.Errorf("expected header value true, got %s", headerMatch.Value)
 	}
 }
@@ -1570,7 +1570,7 @@ func TestIngressRegexPathMatching(t *testing.T) {
 			Name:      "regex-ingress",
 			Namespace: "default",
 			Annotations: map[string]string{
-				"novaedge.io/use-regex": "true",
+				"novaedge.io/use-regex": annotationValueTrue,
 			},
 		},
 		Spec: networkingv1.IngressSpec{
@@ -1780,7 +1780,7 @@ func TestIngressGRPCBackend(t *testing.T) {
 			Namespace: "default",
 			Annotations: map[string]string{
 				"novaedge.io/backend-protocol":  "GRPCS",
-				"novaedge.io/grpc-health-check": "true",
+				"novaedge.io/grpc-health-check": annotationValueTrue,
 				"novaedge.io/health-check-path": "/grpc.health.v1.Health/Check",
 			},
 		},

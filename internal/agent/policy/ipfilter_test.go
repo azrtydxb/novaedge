@@ -22,6 +22,13 @@ import (
 	"testing"
 )
 
+const (
+	testClientIP          = "1.2.3.4"
+	testTrustedProxyAddr  = "10.0.0.1:12345"
+	testUntrustedAddr     = "8.8.8.8:12345"
+	testInternalAddr      = "10.1.2.3:12345"
+)
+
 func TestSetGlobalTrustedProxies(t *testing.T) {
 	// Clean up after tests
 	defer func() {
@@ -133,7 +140,7 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "5.6.7.8")
 
 		ip := extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4, got %s", ip)
 		}
 	})
@@ -144,11 +151,11 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.0.0.1:12345"
+		req.RemoteAddr = testTrustedProxyAddr
 		req.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.2")
 
 		ip := extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (client IP), got %s", ip)
 		}
 	})
@@ -159,8 +166,8 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "8.8.8.8:12345"
-		req.Header.Set("X-Forwarded-For", "1.2.3.4")
+		req.RemoteAddr = testUntrustedAddr
+		req.Header.Set("X-Forwarded-For", testClientIP)
 
 		ip := extractClientIP(req)
 		if ip != "8.8.8.8" {
@@ -174,11 +181,11 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.0.0.1:12345"
-		req.Header.Set("X-Real-IP", "1.2.3.4")
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Real-IP", testClientIP)
 
 		ip := extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (from X-Real-IP), got %s", ip)
 		}
 	})
@@ -267,7 +274,7 @@ func TestIPFilterAllow(t *testing.T) {
 		filter, _ := NewIPAllowListFilter([]string{"10.0.0.0/8", "192.168.1.1"})
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.1.2.3:12345"
+		req.RemoteAddr = testInternalAddr
 
 		if !filter.Allow(req) {
 			t.Error("Expected IP in allow list to be allowed")
@@ -278,7 +285,7 @@ func TestIPFilterAllow(t *testing.T) {
 		filter, _ := NewIPAllowListFilter([]string{"10.0.0.0/8"})
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "8.8.8.8:12345"
+		req.RemoteAddr = testUntrustedAddr
 
 		if filter.Allow(req) {
 			t.Error("Expected IP not in allow list to be denied")
@@ -289,7 +296,7 @@ func TestIPFilterAllow(t *testing.T) {
 		filter, _ := NewIPDenyListFilter([]string{"10.0.0.0/8"})
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.1.2.3:12345"
+		req.RemoteAddr = testInternalAddr
 
 		if filter.Allow(req) {
 			t.Error("Expected IP in deny list to be blocked")
@@ -300,7 +307,7 @@ func TestIPFilterAllow(t *testing.T) {
 		filter, _ := NewIPDenyListFilter([]string{"10.0.0.0/8"})
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "8.8.8.8:12345"
+		req.RemoteAddr = testUntrustedAddr
 
 		if !filter.Allow(req) {
 			t.Error("Expected IP not in deny list to be allowed")
@@ -331,7 +338,7 @@ func TestHandleIPFilter(t *testing.T) {
 		handler := middleware(nextHandler)
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.1.2.3:12345"
+		req.RemoteAddr = testInternalAddr
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -347,7 +354,7 @@ func TestHandleIPFilter(t *testing.T) {
 		handler := middleware(nextHandler)
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "8.8.8.8:12345"
+		req.RemoteAddr = testUntrustedAddr
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -363,7 +370,7 @@ func TestHandleIPFilter(t *testing.T) {
 		handler := middleware(nextHandler)
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "8.8.8.8:12345"
+		req.RemoteAddr = testUntrustedAddr
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -379,7 +386,7 @@ func TestHandleIPFilter(t *testing.T) {
 		handler := middleware(nextHandler)
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.1.2.3:12345"
+		req.RemoteAddr = testInternalAddr
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -399,7 +406,7 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "5.6.7.8")
 
 		ip := filter.extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4, got %s", ip)
 		}
 	})
@@ -411,11 +418,11 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.0.0.1:12345"
+		req.RemoteAddr = testTrustedProxyAddr
 		req.Header.Set("X-Forwarded-For", "1.2.3.4, 10.0.0.2")
 
 		ip := filter.extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (client IP), got %s", ip)
 		}
 	})
@@ -427,8 +434,8 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "8.8.8.8:12345"
-		req.Header.Set("X-Forwarded-For", "1.2.3.4")
+		req.RemoteAddr = testUntrustedAddr
+		req.Header.Set("X-Forwarded-For", testClientIP)
 
 		ip := filter.extractClientIP(req)
 		if ip != "8.8.8.8" {
@@ -443,11 +450,11 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.0.0.1:12345"
-		req.Header.Set("X-Real-IP", "1.2.3.4")
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Real-IP", testClientIP)
 
 		ip := filter.extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (from X-Real-IP), got %s", ip)
 		}
 	})
@@ -459,7 +466,7 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
-		req.RemoteAddr = "10.0.0.1:12345"
+		req.RemoteAddr = testTrustedProxyAddr
 		req.Header.Set("X-Forwarded-For", "10.0.0.2, 10.0.0.3, 10.0.0.4")
 
 		ip := filter.extractClientIP(req)

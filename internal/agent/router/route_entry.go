@@ -19,7 +19,8 @@ package router
 import (
 	"fmt"
 	"hash/fnv"
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"regexp"
 	"sort"
 
@@ -78,13 +79,18 @@ func selectWeightedBackend(backends []*pb.BackendRef) *pb.BackendRef {
 		totalWeight += weight
 	}
 
-	// Generate random number between 0 and totalWeight
-	randVal := rand.Int31n(totalWeight)
+	// Generate random number between 0 and totalWeight using crypto/rand
+	bigRand, err := rand.Int(rand.Reader, big.NewInt(int64(totalWeight)))
+	if err != nil {
+		// Fallback to first backend if crypto/rand fails
+		return backends[0]
+	}
+	randVal := bigRand.Int64()
 
-	// Select backend based on weight
-	currentWeight := int32(0)
+	// Select backend based on weight (use int64 arithmetic to avoid integer overflow)
+	var currentWeight int64
 	for _, backend := range backends {
-		weight := backend.Weight
+		weight := int64(backend.Weight)
 		if weight <= 0 {
 			weight = 1 // Default weight
 		}

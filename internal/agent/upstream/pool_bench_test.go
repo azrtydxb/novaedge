@@ -17,6 +17,7 @@ limitations under the License.
 package upstream
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -74,10 +75,10 @@ func BenchmarkPoolForward(b *testing.B) {
 	}
 
 	endpoints := []*pb.Endpoint{
-		{Address: ip, Port: int32(port), Ready: true},
+		{Address: ip, Port: int32(port), Ready: true}, //nolint:gosec // port is parsed from test server address, always valid
 	}
 
-	pool := NewPool(cluster, endpoints, logger)
+	pool := NewPool(context.Background(), cluster, endpoints, logger)
 
 	b.ResetTimer()
 	b.ReportAllocs()
@@ -107,7 +108,7 @@ func BenchmarkPoolUpdateEndpoints(b *testing.B) {
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
-	pool := NewPool(cluster, initialEndpoints, logger)
+	pool := NewPool(context.Background(), cluster, initialEndpoints, logger)
 
 	newEndpoints := []*pb.Endpoint{
 		{Address: "10.0.0.1", Port: 8080, Ready: true},
@@ -141,7 +142,7 @@ func BenchmarkPoolGetStats(b *testing.B) {
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
-	pool := NewPool(cluster, endpoints, logger)
+	pool := NewPool(context.Background(), cluster, endpoints, logger)
 
 	b.ResetTimer()
 	b.ReportAllocs()

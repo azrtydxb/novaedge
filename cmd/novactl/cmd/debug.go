@@ -210,9 +210,9 @@ func runDebugBackends(cmd *cobra.Command, args []string) error {
 			healthy, _, _ := unstructured.NestedBool(epMap, "healthy")
 			lastCheck, _, _ := unstructured.NestedString(epMap, "lastHealthCheck")
 
-			healthStatus := "No"
+			healthStatus := statusNo
 			if healthy {
-				healthStatus = "Yes"
+				healthStatus = statusYes
 			}
 
 			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", address, port, healthStatus, lastCheck)

@@ -18,6 +18,7 @@ package vip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -269,7 +270,8 @@ func (c *LocalCoordinator) receiveLoop() {
 		}
 		n, _, err := c.conn.ReadFromUDP(buf)
 		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
 				continue
 			}
 			c.logger.Error("Error reading from UDP", zap.Error(err))

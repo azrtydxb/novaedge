@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -489,12 +490,10 @@ func (v *Validator) ValidateVIPAssignment(vip *pb.VIPAssignment, index int) erro
 				WithField("field", prefix+".address").
 				WithField("value", addr)
 		}
-	} else {
-		if net.ParseIP(addr) == nil {
-			return pkgerrors.NewValidationError("VIP address must be a valid IP").
-				WithField("field", prefix+".address").
-				WithField("value", addr)
-		}
+	} else if net.ParseIP(addr) == nil {
+		return pkgerrors.NewValidationError("VIP address must be a valid IP").
+			WithField("field", prefix+".address").
+			WithField("value", addr)
 	}
 
 	if vip.Mode == pb.VIPMode_VIP_MODE_UNSPECIFIED {
@@ -541,9 +540,5 @@ func isValidHostname(hostname string) bool {
 
 // isValidationError checks if an error is a ValidationError and extracts it
 func isValidationError(err error, target **pkgerrors.ValidationError) bool {
-	if ve, ok := err.(*pkgerrors.ValidationError); ok {
-		*target = ve
-		return true
-	}
-	return false
+	return errors.As(err, target)
 }

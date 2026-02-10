@@ -50,9 +50,10 @@ func (rr *RoundRobin) Select() *pb.Endpoint {
 
 	// Atomically increment and get current value
 	current := atomic.AddUint64(&rr.counter, 1) - 1
-	index := int(current % uint64(len(rr.endpoints)))
+	n := uint64(len(rr.endpoints))
+	idx := current % n
 
-	return rr.endpoints[index]
+	return rr.endpoints[idx]
 }
 
 // UpdateEndpoints updates the list of endpoints
@@ -64,7 +65,7 @@ func (rr *RoundRobin) UpdateEndpoints(endpoints []*pb.Endpoint) {
 
 // filterHealthy filters endpoints to only include ready ones
 func filterHealthy(endpoints []*pb.Endpoint) []*pb.Endpoint {
-	var healthy []*pb.Endpoint
+	healthy := make([]*pb.Endpoint, 0, len(endpoints))
 	for _, ep := range endpoints {
 		if ep.Ready {
 			healthy = append(healthy, ep)

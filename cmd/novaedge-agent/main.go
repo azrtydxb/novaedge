@@ -125,7 +125,8 @@ func main() {
 	var watcher *config.Watcher
 	isRemoteAgent := clusterName != ""
 
-	if isRemoteAgent {
+	switch {
+	case isRemoteAgent:
 		// Remote agents require mTLS
 		if grpcTLSCert == "" || grpcTLSKey == "" || grpcTLSCA == "" {
 			logger.Fatal("Remote agents require mTLS configuration",
@@ -152,7 +153,7 @@ func main() {
 			zap.String("cluster_zone", clusterZone),
 			zap.String("cert", grpcTLSCert),
 			zap.String("ca", grpcTLSCA))
-	} else if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {
+	case grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "":
 		// Local agent with mTLS enabled
 		watcher, err = config.NewWatcherWithTLS(ctx, nodeName, agentVersion, controllerAddr,
 			&config.TLSConfig{
@@ -166,7 +167,7 @@ func main() {
 		logger.Info("Config watcher configured with mTLS",
 			zap.String("cert", grpcTLSCert),
 			zap.String("ca", grpcTLSCA))
-	} else {
+	default:
 		// Local agent without TLS (insecure, development only)
 		watcher, err = config.NewWatcher(ctx, nodeName, agentVersion, controllerAddr, logger)
 		if err != nil {
@@ -208,13 +209,13 @@ func main() {
 			)
 
 			// Apply VIP assignments
-			if err := vipManager.ApplyVIPs(snapshot.VipAssignments); err != nil {
+			if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
 				logger.Error("Failed to apply VIP assignments", zap.Error(err))
 				// Don't fail the whole config update
 			}
 
 			// Apply HTTP server config
-			if err := httpServer.ApplyConfig(snapshot); err != nil {
+			if err := httpServer.ApplyConfig(ctx, snapshot); err != nil {
 				healthServer.SetReady(false)
 				return err
 			}
