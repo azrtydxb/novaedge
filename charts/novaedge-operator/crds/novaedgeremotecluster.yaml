@@ -1,0 +1,392 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: novaedgeremoteclusters.novaedge.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+  labels:
+    app.kubernetes.io/name: novaedge
+    app.kubernetes.io/part-of: novaedge
+spec:
+  group: novaedge.io
+  names:
+    kind: NovaEdgeRemoteCluster
+    listKind: NovaEdgeRemoteClusterList
+    plural: novaedgeremoteclusters
+    singular: novaedgeremotecluster
+    shortNames:
+      - nerc
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Cluster
+          type: string
+          jsonPath: .spec.clusterName
+        - name: Region
+          type: string
+          jsonPath: .spec.region
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Connected
+          type: boolean
+          jsonPath: .status.connection.connected
+        - name: Agents
+          type: integer
+          jsonPath: .status.agents.ready
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: NovaEdgeRemoteCluster represents a remote/edge cluster in a hub-spoke multi-cluster deployment
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              description: NovaEdgeRemoteClusterSpec defines the desired state of NovaEdgeRemoteCluster
+              required:
+                - clusterName
+                - connection
+              properties:
+                clusterName:
+                  type: string
+                  description: Unique identifier for this remote cluster
+                  minLength: 1
+                  maxLength: 63
+                  pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                region:
+                  type: string
+                  description: Geographic region of the remote cluster
+                zone:
+                  type: string
+                  description: Availability zone of the remote cluster
+                labels:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Additional labels to apply to resources from this cluster
+                paused:
+                  type: boolean
+                  default: false
+                  description: Suspends reconciliation for this remote cluster
+                connection:
+                  type: object
+                  description: Defines how agents connect to the hub controller
+                  required:
+                    - controllerEndpoint
+                  properties:
+                    mode:
+                      type: string
+                      default: Direct
+                      enum:
+                        - Direct
+                        - Tunnel
+                      description: Connection mode (Direct or Tunnel)
+                    controllerEndpoint:
+                      type: string
+                      description: Address of the hub controller's gRPC endpoint
+                    reconnectInterval:
+                      type: string
+                      default: 30s
+                      description: How often to attempt reconnection if disconnected
+                    timeout:
+                      type: string
+                      default: 10s
+                      description: Connection timeout
+                    tls:
+                      type: object
+                      description: mTLS configuration for secure communication
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                        caSecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                        clientCertSecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            namespace:
+                              type: string
+                        serverName:
+                          type: string
+                          description: Expected server name for TLS verification
+                        insecureSkipVerify:
+                          type: boolean
+                          default: false
+                    tunnel:
+                      type: object
+                      description: Tunnel-specific configuration
+                      properties:
+                        type:
+                          type: string
+                          default: WireGuard
+                          enum:
+                            - WireGuard
+                            - SSH
+                            - WebSocket
+                        relayEndpoint:
+                          type: string
+                        wireGuard:
+                          type: object
+                          properties:
+                            publicKey:
+                              type: string
+                            endpoint:
+                              type: string
+                            allowedIPs:
+                              type: array
+                              items:
+                                type: string
+                            persistentKeepalive:
+                              type: integer
+                              default: 25
+                agent:
+                  type: object
+                  description: Configuration for agents in this remote cluster
+                  properties:
+                    version:
+                      type: string
+                      description: Agent version override
+                    nodeSelector:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    tolerations:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          key:
+                            type: string
+                          operator:
+                            type: string
+                          value:
+                            type: string
+                          effect:
+                            type: string
+                          tolerationSeconds:
+                            type: integer
+                    resources:
+                      type: object
+                      properties:
+                        limits:
+                          type: object
+                          additionalProperties:
+                            anyOf:
+                              - type: integer
+                              - type: string
+                            x-kubernetes-int-or-string: true
+                        requests:
+                          type: object
+                          additionalProperties:
+                            anyOf:
+                              - type: integer
+                              - type: string
+                            x-kubernetes-int-or-string: true
+                    vip:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                        mode:
+                          type: string
+                          default: L2
+                          enum:
+                            - L2
+                            - BGP
+                            - OSPF
+                        interface:
+                          type: string
+                    extraArgs:
+                      type: array
+                      items:
+                        type: string
+                    extraEnv:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          value:
+                            type: string
+                    extraLabels:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    extraAnnotations:
+                      type: object
+                      additionalProperties:
+                        type: string
+                routing:
+                  type: object
+                  description: Routing configuration for the remote cluster
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    priority:
+                      type: integer
+                      default: 100
+                      minimum: 1
+                      maximum: 1000
+                    weight:
+                      type: integer
+                      default: 100
+                      minimum: 0
+                      maximum: 100
+                    localPreference:
+                      type: boolean
+                      default: true
+                    allowCrossClusterTraffic:
+                      type: boolean
+                      default: true
+                    endpoints:
+                      type: object
+                      properties:
+                        matchLabels:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        namespaces:
+                          type: array
+                          items:
+                            type: string
+                        excludeNamespaces:
+                          type: array
+                          items:
+                            type: string
+                healthCheck:
+                  type: object
+                  description: Health check configuration
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    interval:
+                      type: string
+                      default: 30s
+                    timeout:
+                      type: string
+                      default: 10s
+                    healthyThreshold:
+                      type: integer
+                      default: 2
+                      minimum: 1
+                    unhealthyThreshold:
+                      type: integer
+                      default: 3
+                      minimum: 1
+                    failoverEnabled:
+                      type: boolean
+                      default: true
+            status:
+              type: object
+              description: NovaEdgeRemoteClusterStatus defines the observed state
+              properties:
+                phase:
+                  type: string
+                  enum:
+                    - Pending
+                    - Connecting
+                    - Connected
+                    - Degraded
+                    - Disconnected
+                    - Failed
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                connection:
+                  type: object
+                  properties:
+                    connected:
+                      type: boolean
+                    activeConnections:
+                      type: integer
+                    lastConnected:
+                      type: string
+                      format: date-time
+                    lastDisconnected:
+                      type: string
+                      format: date-time
+                    error:
+                      type: string
+                    latency:
+                      type: string
+                agents:
+                  type: object
+                  properties:
+                    total:
+                      type: integer
+                    ready:
+                      type: integer
+                    healthy:
+                      type: integer
+                    unhealthy:
+                      type: integer
+                    nodes:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          ready:
+                            type: boolean
+                          ip:
+                            type: string
+                          version:
+                            type: string
+                          vips:
+                            type: array
+                            items:
+                              type: string
+                          lastSeen:
+                            type: string
+                            format: date-time
+                          activeConnections:
+                            type: integer
+                lastHeartbeat:
+                  type: string
+                  format: date-time
+                lastConfigSync:
+                  type: string
+                  format: date-time
+                version:
+                  type: string
