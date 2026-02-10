@@ -197,7 +197,7 @@ func runDebugBackends(cmd *cobra.Command, args []string) error {
 	if len(endpoints) > 0 {
 		fmt.Printf("\nEndpoints (%d):\n", len(endpoints))
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		fmt.Fprintln(w, "ADDRESS\tPORT\tHEALTHY\tLAST CHECK")
+		_, _ = fmt.Fprintln(w, "ADDRESS\tPORT\tHEALTHY\tLAST CHECK")
 
 		for _, ep := range endpoints {
 			epMap, ok := ep.(map[string]interface{})
@@ -215,9 +215,9 @@ func runDebugBackends(cmd *cobra.Command, args []string) error {
 				healthStatus = "Yes"
 			}
 
-			fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", address, port, healthStatus, lastCheck)
+			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\t%s\n", address, port, healthStatus, lastCheck)
 		}
-		w.Flush()
+		_ = w.Flush()
 	} else {
 		fmt.Println("\nNo endpoints available")
 	}

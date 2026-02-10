@@ -95,7 +95,7 @@ func (c *TraceClient) ListTraces(ctx context.Context, limit int, lookback time.D
 	if err != nil {
 		return nil, fmt.Errorf("failed to query traces: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -129,7 +129,7 @@ func (c *TraceClient) GetTrace(ctx context.Context, traceID string) (*Trace, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trace: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("trace %s not found", traceID)
@@ -213,7 +213,7 @@ func (c *TraceClient) SearchTraces(ctx context.Context, params TraceSearchParams
 	if err != nil {
 		return nil, fmt.Errorf("failed to search traces: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -247,7 +247,7 @@ func (c *TraceClient) GetServices(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -281,7 +281,7 @@ func (c *TraceClient) GetOperations(ctx context.Context, serviceName string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("failed to get operations: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)

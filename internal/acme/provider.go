@@ -113,7 +113,7 @@ func (p *HTTP01Provider) Handler() http.Handler {
 		)
 
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprint(w, keyAuth)
+		_, _ = fmt.Fprint(w, keyAuth)
 	})
 }
 

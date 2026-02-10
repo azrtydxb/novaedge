@@ -191,7 +191,7 @@ func (c *LocalCoordinator) Stop() {
 		c.cancel()
 	}
 	if c.conn != nil {
-		c.conn.Close()
+		_ = c.conn.Close()
 	}
 
 	c.logger.Info("Stopped local VIP coordination")
@@ -263,7 +263,10 @@ func (c *LocalCoordinator) receiveLoop() {
 		default:
 		}
 
-		c.conn.SetReadDeadline(time.Now().Add(time.Second))
+		if err := c.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			c.logger.Error("Failed to set read deadline", zap.Error(err))
+			continue
+		}
 		n, _, err := c.conn.ReadFromUDP(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -412,7 +415,13 @@ func (c *LocalCoordinator) sendMessage(vip string, msgType MessageType) {
 		msgType, vip, c.nodeName, c.priority, time.Now().UnixNano())
 
 	if c.conn != nil && c.peerAddr != nil {
-		c.conn.WriteToUDP([]byte(msg), c.peerAddr)
+		if _, err := c.conn.WriteToUDP([]byte(msg), c.peerAddr); err != nil {
+			c.logger.Error("Failed to send coordination message",
+				zap.String("vip", vip),
+				zap.String("type", string(msgType)),
+				zap.Error(err),
+			)
+		}
 	}
 }
 

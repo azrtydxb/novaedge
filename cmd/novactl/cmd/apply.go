@@ -27,7 +27,7 @@ func newApplyCommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVarP(&filename, "filename", "f", "", "File or directory containing resource definitions")
-	cmd.MarkFlagRequired("filename")
+	cobra.CheckErr(cmd.MarkFlagRequired("filename"))
 
 	return cmd
 }

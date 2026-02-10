@@ -113,7 +113,12 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 				zap.Int32("port", port),
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			server.Shutdown(ctx)
+			if err := server.Shutdown(ctx); err != nil {
+				s.logger.Error("Error shutting down HTTP listener on unused port",
+					zap.Int32("port", port),
+					zap.Error(err),
+				)
+			}
 			cancel()
 			delete(s.servers, port)
 			delete(s.listeners, port)
@@ -127,7 +132,12 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 				zap.Int32("port", port),
 			)
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			server.Shutdown(ctx)
+			if err := server.Shutdown(ctx); err != nil {
+				s.logger.Error("Error shutting down HTTP/3 listener on unused port",
+					zap.Int32("port", port),
+					zap.Error(err),
+				)
+			}
 			cancel()
 			delete(s.http3servers, port)
 		}

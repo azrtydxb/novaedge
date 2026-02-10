@@ -256,7 +256,7 @@ func (h *L2Handler) sendGARP(ip net.IP) error {
 			zap.Error(err))
 		return nil
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Convert net.IP to netip.Addr
 	senderIP, ok := netip.AddrFromSlice(ipv4)

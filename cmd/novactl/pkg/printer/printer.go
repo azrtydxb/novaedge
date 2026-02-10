@@ -40,7 +40,7 @@ func NewPrinter(format OutputFormat, writer io.Writer) *Printer {
 // PrintResourceList prints a list of resources
 func (p *Printer) PrintResourceList(resourceType string, items []unstructured.Unstructured) error {
 	if len(items) == 0 {
-		fmt.Fprintf(p.Writer, "No %s found.\n", resourceType)
+		_, _ = fmt.Fprintf(p.Writer, "No %s found.\n", resourceType)
 		return nil
 	}
 
@@ -82,20 +82,20 @@ func (p *Printer) printJSON(items []unstructured.Unstructured) error {
 func (p *Printer) printYAML(items []unstructured.Unstructured) error {
 	for i, item := range items {
 		if i > 0 {
-			fmt.Fprintln(p.Writer, "---")
+			_, _ = fmt.Fprintln(p.Writer, "---")
 		}
 		data, err := yaml.Marshal(item.Object)
 		if err != nil {
 			return fmt.Errorf("failed to marshal YAML: %w", err)
 		}
-		fmt.Fprint(p.Writer, string(data))
+		_, _ = fmt.Fprint(p.Writer, string(data))
 	}
 	return nil
 }
 
 func (p *Printer) printTable(resourceType string, items []unstructured.Unstructured) error {
 	w := tabwriter.NewWriter(p.Writer, 0, 8, 2, ' ', 0)
-	defer w.Flush()
+	defer func() { _ = w.Flush() }()
 
 	// Print header based on resource type
 	switch strings.ToLower(resourceType) {
@@ -117,7 +117,7 @@ func (p *Printer) printTable(resourceType string, items []unstructured.Unstructu
 }
 
 func (p *Printer) printGatewayTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
-	fmt.Fprintln(w, "NAME\tLISTENERS\tAGE")
+	_, _ = fmt.Fprintln(w, "NAME\tLISTENERS\tAGE")
 	for _, item := range items {
 		name := item.GetName()
 		age := formatAge(item.GetCreationTimestamp().Time)
@@ -126,12 +126,12 @@ func (p *Printer) printGatewayTable(w *tabwriter.Writer, items []unstructured.Un
 		listeners, _, _ := unstructured.NestedSlice(spec, "listeners")
 		listenerCount := len(listeners)
 
-		fmt.Fprintf(w, "%s\t%d\t%s\n", name, listenerCount, age)
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%s\n", name, listenerCount, age)
 	}
 }
 
 func (p *Printer) printRouteTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
-	fmt.Fprintln(w, "NAME\tHOSTNAMES\tBACKENDS\tAGE")
+	_, _ = fmt.Fprintln(w, "NAME\tHOSTNAMES\tBACKENDS\tAGE")
 	for _, item := range items {
 		name := item.GetName()
 		age := formatAge(item.GetCreationTimestamp().Time)
@@ -146,12 +146,12 @@ func (p *Printer) printRouteTable(w *tabwriter.Writer, items []unstructured.Unst
 		backends, _, _ := unstructured.NestedSlice(spec, "backends")
 		backendCount := len(backends)
 
-		fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", name, hostnameStr, backendCount, age)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%d\t%s\n", name, hostnameStr, backendCount, age)
 	}
 }
 
 func (p *Printer) printBackendTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
-	fmt.Fprintln(w, "NAME\tENDPOINTS\tHEALTHY\tAGE")
+	_, _ = fmt.Fprintln(w, "NAME\tENDPOINTS\tHEALTHY\tAGE")
 	for _, item := range items {
 		name := item.GetName()
 		age := formatAge(item.GetCreationTimestamp().Time)
@@ -173,12 +173,12 @@ func (p *Printer) printBackendTable(w *tabwriter.Writer, items []unstructured.Un
 			}
 		}
 
-		fmt.Fprintf(w, "%s\t%d\t%d\t%s\n", name, endpointCount, healthyCount, age)
+		_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%s\n", name, endpointCount, healthyCount, age)
 	}
 }
 
 func (p *Printer) printPolicyTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
-	fmt.Fprintln(w, "NAME\tTYPE\tTARGET\tAGE")
+	_, _ = fmt.Fprintln(w, "NAME\tTYPE\tTARGET\tAGE")
 	for _, item := range items {
 		name := item.GetName()
 		age := formatAge(item.GetCreationTimestamp().Time)
@@ -200,12 +200,12 @@ func (p *Printer) printPolicyTable(w *tabwriter.Writer, items []unstructured.Uns
 		targetName, _, _ := unstructured.NestedString(targetRef, "name")
 		target := fmt.Sprintf("%s/%s", targetKind, targetName)
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, policyType, target, age)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, policyType, target, age)
 	}
 }
 
 func (p *Printer) printVIPTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
-	fmt.Fprintln(w, "NAME\tIP\tMODE\tNODE\tSTATUS\tAGE")
+	_, _ = fmt.Fprintln(w, "NAME\tIP\tMODE\tNODE\tSTATUS\tAGE")
 	for _, item := range items {
 		name := item.GetName()
 		age := formatAge(item.GetCreationTimestamp().Time)
@@ -218,17 +218,17 @@ func (p *Printer) printVIPTable(w *tabwriter.Writer, items []unstructured.Unstru
 		assignedNode, _, _ := unstructured.NestedString(status, "assignedNode")
 		vipStatus, _, _ := unstructured.NestedString(status, "status")
 
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, ip, mode, assignedNode, vipStatus, age)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, ip, mode, assignedNode, vipStatus, age)
 	}
 }
 
 func (p *Printer) printGenericTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
-	fmt.Fprintln(w, "NAME\tKIND\tAGE")
+	_, _ = fmt.Fprintln(w, "NAME\tKIND\tAGE")
 	for _, item := range items {
 		name := item.GetName()
 		kind := item.GetKind()
 		age := formatAge(item.GetCreationTimestamp().Time)
-		fmt.Fprintf(w, "%s\t%s\t%s\n", name, kind, age)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", name, kind, age)
 	}
 }
 

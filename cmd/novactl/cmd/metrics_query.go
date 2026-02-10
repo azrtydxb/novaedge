@@ -196,13 +196,13 @@ func runMetricsTopBackends(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Top %d Backends by Request Rate (5m avg):\n\n", len(metrics))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "BACKEND\tNAMESPACE\tREQUESTS/SEC")
+	_, _ = fmt.Fprintln(w, "BACKEND\tNAMESPACE\tREQUESTS/SEC")
 
 	for _, m := range metrics {
-		fmt.Fprintf(w, "%s\t%s\t%.2f\n", m.Backend, m.Namespace, m.RPS)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%.2f\n", m.Backend, m.Namespace, m.RPS)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	return nil
 }
@@ -281,17 +281,17 @@ func runMetricsTopRoutes(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Top %d Routes by Latency:\n\n", len(metrics))
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	fmt.Fprintln(w, "ROUTE\tNAMESPACE\tAVG LATENCY")
+	_, _ = fmt.Fprintln(w, "ROUTE\tNAMESPACE\tAVG LATENCY")
 
 	for _, m := range metrics {
-		fmt.Fprintf(w, "%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n",
 			m.Route,
 			m.Namespace,
 			prometheus.FormatDuration(m.Latency),
 		)
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	return nil
 }
@@ -406,7 +406,7 @@ func displayJSON(result *prometheus.QueryResult) error {
 
 func displayYAML(result *prometheus.QueryResult) error {
 	encoder := yaml.NewEncoder(os.Stdout)
-	defer encoder.Close()
+	defer func() { _ = encoder.Close() }()
 	return encoder.Encode(result)
 }
 
@@ -439,17 +439,17 @@ func displayTable(result *prometheus.QueryResult, query string) error {
 
 	// Print header
 	for _, label := range labels {
-		fmt.Fprintf(w, "%s\t", label)
+		_, _ = fmt.Fprintf(w, "%s\t", label)
 	}
-	fmt.Fprintln(w, "VALUE")
+	_, _ = fmt.Fprintln(w, "VALUE")
 
 	// Print rows
 	for _, r := range result.Data.Result {
 		for _, label := range labels {
 			if val, ok := r.Metric[label]; ok {
-				fmt.Fprintf(w, "%s\t", val)
+				_, _ = fmt.Fprintf(w, "%s\t", val)
 			} else {
-				fmt.Fprint(w, "-\t")
+				_, _ = fmt.Fprint(w, "-\t")
 			}
 		}
 
@@ -458,20 +458,20 @@ func displayTable(result *prometheus.QueryResult, query string) error {
 			value, err := prometheus.ValueAsFloat(r)
 			if err == nil {
 				// Try to format based on query
-				fmt.Fprintf(w, "%s\n", prometheus.FormatValue(query, value))
+				_, _ = fmt.Fprintf(w, "%s\n", prometheus.FormatValue(query, value))
 			} else {
-				fmt.Fprintf(w, "%v\n", r.Value[1])
+				_, _ = fmt.Fprintf(w, "%v\n", r.Value[1])
 			}
 		} else if len(r.Values) > 0 {
 			// For range queries, show the latest value
 			lastValue := r.Values[len(r.Values)-1]
 			if len(lastValue) > 1 {
-				fmt.Fprintf(w, "%v (latest)\n", lastValue[1])
+				_, _ = fmt.Fprintf(w, "%v (latest)\n", lastValue[1])
 			}
 		}
 	}
 
-	w.Flush()
+	_ = w.Flush()
 
 	return nil
 }

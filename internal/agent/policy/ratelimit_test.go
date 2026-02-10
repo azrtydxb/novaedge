@@ -52,7 +52,7 @@ func TestNewRateLimiter(t *testing.T) {
 
 func TestExtractKey(t *testing.T) {
 	// Setup global trusted proxies for IP extraction
-	SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
+	_ = SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
 	defer func() {
 		trustedProxyCIDRs = nil
 	}()
@@ -203,7 +203,7 @@ func TestGetLimiter(t *testing.T) {
 
 func TestAllow(t *testing.T) {
 	// Setup global trusted proxies for IP extraction
-	SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
+	_ = SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
 	defer func() {
 		trustedProxyCIDRs = nil
 	}()
@@ -314,14 +314,14 @@ func TestAllow(t *testing.T) {
 
 func TestHandleRateLimit(t *testing.T) {
 	// Setup global trusted proxies for IP extraction
-	SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
+	_ = SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
 	defer func() {
 		trustedProxyCIDRs = nil
 	}()
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	t.Run("request allowed", func(t *testing.T) {
