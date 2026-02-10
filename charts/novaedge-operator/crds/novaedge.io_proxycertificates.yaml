@@ -1,0 +1,338 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: proxycertificates.novaedge.io
+spec:
+  group: novaedge.io
+  names:
+    kind: ProxyCertificate
+    listKind: ProxyCertificateList
+    plural: proxycertificates
+    singular: proxycertificate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.domains[0]
+      name: Domains
+      type: string
+    - jsonPath: .spec.issuer.type
+      name: Issuer
+      type: string
+    - jsonPath: .status.state
+      name: State
+      type: string
+    - jsonPath: .status.notAfter
+      name: Expires
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ProxyCertificate manages TLS certificates for NovaEdge
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ProxyCertificateSpec defines the desired state of ProxyCertificate
+            properties:
+              domains:
+                description: |-
+                  Domains is the list of domains to include in the certificate
+                  The first domain will be used as the Common Name (CN)
+                items:
+                  type: string
+                minItems: 1
+                type: array
+              issuer:
+                description: Issuer configures how the certificate is obtained
+                properties:
+                  acme:
+                    description: ACME configures ACME-based issuance
+                    properties:
+                      acceptTOS:
+                        default: true
+                        description: AcceptTOS indicates acceptance of the ACME Terms
+                          of Service
+                        type: boolean
+                      accountKeyRef:
+                        description: |-
+                          AccountKeyRef references a Secret containing the ACME account private key
+                          If not specified, a new account key will be generated and stored
+                        properties:
+                          name:
+                            description: name is unique within a namespace to reference
+                              a secret resource.
+                            type: string
+                          namespace:
+                            description: namespace defines the space within which
+                              the secret name must be unique.
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      challengeType:
+                        default: http-01
+                        description: ChallengeType specifies the ACME challenge type
+                        enum:
+                        - http-01
+                        - dns-01
+                        - tls-alpn-01
+                        type: string
+                      dnsCredentialsRef:
+                        description: DNSCredentialsRef references a Secret containing
+                          DNS provider credentials
+                        properties:
+                          name:
+                            description: name is unique within a namespace to reference
+                              a secret resource.
+                            type: string
+                          namespace:
+                            description: namespace defines the space within which
+                              the secret name must be unique.
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      dnsProvider:
+                        description: DNSProvider for DNS-01 challenges (e.g., cloudflare,
+                          route53)
+                        type: string
+                      email:
+                        description: Email is the email address for ACME registration
+                        type: string
+                      preferredChain:
+                        description: PreferredChain specifies the preferred issuer
+                          CN (e.g., "ISRG Root X1")
+                        type: string
+                      server:
+                        default: https://acme-v02.api.letsencrypt.org/directory
+                        description: 'Server is the ACME server URL (default: Let''s
+                          Encrypt production)'
+                        type: string
+                    required:
+                    - email
+                    type: object
+                  certManager:
+                    description: CertManager configures cert-manager integration
+                    properties:
+                      issuerRef:
+                        description: IssuerRef references a cert-manager Issuer or
+                          ClusterIssuer
+                        properties:
+                          group:
+                            description: Group is the API group of the referenced
+                              object
+                            type: string
+                          kind:
+                            description: Kind is the kind of the referenced object
+                            type: string
+                          name:
+                            description: Name is the name of the referenced object
+                            type: string
+                          namespace:
+                            description: |-
+                              Namespace is the namespace of the referenced object
+                              If not specified, the namespace of the referencing object is used
+                            type: string
+                        required:
+                        - name
+                        type: object
+                    required:
+                    - issuerRef
+                    type: object
+                  manual:
+                    description: Manual configures manual certificate provision
+                    properties:
+                      secretRef:
+                        description: SecretRef references a Secret containing tls.crt
+                          and tls.key
+                        properties:
+                          name:
+                            description: name is unique within a namespace to reference
+                              a secret resource.
+                            type: string
+                          namespace:
+                            description: namespace defines the space within which
+                              the secret name must be unique.
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    required:
+                    - secretRef
+                    type: object
+                  selfSigned:
+                    description: SelfSigned configures self-signed certificate generation
+                    properties:
+                      organization:
+                        default: NovaEdge Self-Signed
+                        description: Organization is the organization name in the
+                          certificate
+                        type: string
+                      validity:
+                        default: 8760h
+                        description: 'Validity is the certificate validity duration
+                          (default: 8760h = 1 year)'
+                        type: string
+                    type: object
+                  type:
+                    description: Type specifies the issuer type
+                    enum:
+                    - acme
+                    - manual
+                    - self-signed
+                    - cert-manager
+                    type: string
+                required:
+                - type
+                type: object
+              keyType:
+                default: EC256
+                description: KeyType specifies the key type for certificate generation
+                enum:
+                - RSA2048
+                - RSA4096
+                - EC256
+                - EC384
+                type: string
+              mustStaple:
+                description: MustStaple enables OCSP Must-Staple extension
+                type: boolean
+              renewBefore:
+                default: 720h
+                description: RenewBefore specifies how long before expiry to renew
+                  the certificate
+                type: string
+              secretName:
+                description: |-
+                  SecretName is the name of the Secret to store the certificate
+                  If not specified, a name will be generated from the ProxyCertificate name
+                type: string
+            required:
+            - domains
+            - issuer
+            type: object
+          status:
+            description: ProxyCertificateStatus defines the observed state of ProxyCertificate
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              issuer:
+                description: Issuer is the certificate issuer's Common Name
+                type: string
+              lastRenewalTime:
+                description: LastRenewalTime is when the certificate was last renewed
+                format: date-time
+                type: string
+              message:
+                description: Message provides additional status information
+                type: string
+              nextRenewalTime:
+                description: NextRenewalTime is when the next renewal should occur
+                format: date-time
+                type: string
+              notAfter:
+                description: NotAfter is when the certificate expires
+                format: date-time
+                type: string
+              notBefore:
+                description: NotBefore is when the certificate becomes valid
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                format: int64
+                type: integer
+              secretName:
+                description: SecretName is the name of the Secret containing the certificate
+                type: string
+              serialNumber:
+                description: SerialNumber is the certificate serial number
+                type: string
+              state:
+                description: State is the current state of the certificate
+                enum:
+                - Pending
+                - Requesting
+                - Ready
+                - Renewing
+                - Failed
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
