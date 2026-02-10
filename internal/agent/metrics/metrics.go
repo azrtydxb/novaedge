@@ -87,19 +87,6 @@ func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint strin
 	return true
 }
 
-// removeEndpoint removes an endpoint from tracking
-func (t *endpointCardinalityTracker) removeEndpoint(cluster, endpoint string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if clusterEndpoints, exists := t.endpoints[cluster]; exists {
-		delete(clusterEndpoints, endpoint)
-		if len(clusterEndpoints) == 0 {
-			delete(t.endpoints, cluster)
-		}
-	}
-}
-
 // cleanupCluster removes all endpoints for a cluster
 func (t *endpointCardinalityTracker) cleanupCluster(cluster string) {
 	t.mu.Lock()

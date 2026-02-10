@@ -16,7 +16,6 @@ import (
 
 var (
 	prometheusEndpoint  string
-	prometheusQuery     string
 	prometheusStart     string
 	prometheusEnd       string
 	prometheusStep      string

@@ -477,34 +477,3 @@ func NewPeerClientWithCerts(peer *PeerInfo, config *FederationConfig, logger *za
 	}
 }
 
-// buildTLSConfig builds the TLS configuration with certificates
-func (c *PeerClientWithCerts) buildTLSConfig() (*tls.Config, error) {
-	config := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: c.peer.InsecureSkipVerify,
-	}
-
-	if c.peer.TLSServerName != "" {
-		config.ServerName = c.peer.TLSServerName
-	}
-
-	// Add CA certificate
-	if len(c.caCert) > 0 {
-		certPool := x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(c.caCert) {
-			return nil, fmt.Errorf("failed to parse CA certificate")
-		}
-		config.RootCAs = certPool
-	}
-
-	// Add client certificate for mTLS
-	if len(c.clientCert) > 0 && len(c.clientKey) > 0 {
-		cert, err := tls.X509KeyPair(c.clientCert, c.clientKey)
-		if err != nil {
-			return nil, fmt.Errorf("failed to load client certificate: %w", err)
-		}
-		config.Certificates = []tls.Certificate{cert}
-	}
-
-	return config, nil
-}
