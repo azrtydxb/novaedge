@@ -18,6 +18,7 @@ package lb
 
 import (
 	"math/rand"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -167,5 +168,5 @@ func (p *P2C) getHealthyEndpoints() []*pb.Endpoint {
 }
 
 func endpointKey(ep *pb.Endpoint) string {
-	return ep.Address + ":" + string(rune(ep.Port))
+	return ep.Address + ":" + strconv.FormatInt(int64(ep.Port), 10)
 }
