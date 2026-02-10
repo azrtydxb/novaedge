@@ -1,0 +1,556 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: novaedgefederations.novaedge.io
+spec:
+  group: novaedge.io
+  names:
+    kind: NovaEdgeFederation
+    listKind: NovaEdgeFederationList
+    plural: novaedgefederations
+    shortNames:
+    - fed
+    singular: novaedgefederation
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.federationID
+      name: Federation
+      type: string
+    - jsonPath: .spec.localMember.name
+      name: Local
+      type: string
+    - jsonPath: .status.members[?(@.healthy==true)]
+      name: Members
+      type: integer
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          NovaEdgeFederation is the Schema for the novaedgefederations API
+          It configures active/active federation between multiple NovaEdge controllers
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              NovaEdgeFederationSpec defines the desired state of NovaEdgeFederation
+              NovaEdgeFederation configures active/active federation between multiple NovaEdge controllers
+            properties:
+              conflictResolution:
+                description: ConflictResolution defines how to handle conflicting
+                  changes
+                properties:
+                  strategy:
+                    default: LastWriterWins
+                    description: |-
+                      Strategy is the conflict resolution strategy
+                      - LastWriterWins: The most recent change wins (based on vector clocks)
+                      - Merge: Attempt to merge changes (for lists/maps)
+                      - Manual: Flag conflicts for manual resolution
+                    enum:
+                    - LastWriterWins
+                    - Merge
+                    - Manual
+                    type: string
+                  tombstoneTTL:
+                    default: 24h
+                    description: TombstoneTTL is how long to keep deletion records
+                    type: string
+                  vectorClocks:
+                    default: true
+                    description: VectorClocks enables vector clocks for change ordering
+                    type: boolean
+                type: object
+              federationID:
+                description: |-
+                  FederationID is a unique identifier for this federation
+                  All members must use the same federation ID
+                maxLength: 63
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
+                type: string
+              healthCheck:
+                description: HealthCheck defines health checking for federation members
+                properties:
+                  failureThreshold:
+                    default: 3
+                    description: FailureThreshold is the number of failures before
+                      marking a peer unhealthy
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  interval:
+                    default: 10s
+                    description: Interval is how often to check peer health
+                    type: string
+                  successThreshold:
+                    default: 1
+                    description: SuccessThreshold is the number of successes before
+                      marking a peer healthy
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  timeout:
+                    default: 5s
+                    description: Timeout is the timeout for health checks
+                    type: string
+                type: object
+              localMember:
+                description: LocalMember defines this controller's identity in the
+                  federation
+                properties:
+                  endpoint:
+                    description: |-
+                      Endpoint is the gRPC endpoint for federation communication
+                      Format: "host:port"
+                    type: string
+                  labels:
+                    additionalProperties:
+                      type: string
+                    description: Labels are additional labels for this member
+                    type: object
+                  name:
+                    description: Name is a unique name for this member within the
+                      federation
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                  region:
+                    description: Region is the geographic region of this member
+                    type: string
+                  zone:
+                    description: Zone is the availability zone of this member
+                    type: string
+                required:
+                - endpoint
+                - name
+                type: object
+              members:
+                description: Members defines the other federation members (peer controllers)
+                items:
+                  description: FederationPeer defines a peer controller in the federation
+                  properties:
+                    endpoint:
+                      description: |-
+                        Endpoint is the gRPC endpoint for this peer
+                        Format: "host:port"
+                      type: string
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Labels are additional labels for this peer
+                      type: object
+                    name:
+                      description: Name is a unique name for this peer within the
+                        federation
+                      maxLength: 63
+                      minLength: 1
+                      type: string
+                    priority:
+                      default: 100
+                      description: Priority determines the order for sync operations
+                        (lower = higher priority)
+                      format: int32
+                      type: integer
+                    region:
+                      description: Region is the geographic region of this peer
+                      type: string
+                    tls:
+                      description: TLS defines mTLS configuration for communicating
+                        with this peer
+                      properties:
+                        caSecretRef:
+                          description: CASecretRef references a secret containing
+                            the CA certificate
+                          properties:
+                            name:
+                              description: name is unique within a namespace to reference
+                                a secret resource.
+                              type: string
+                            namespace:
+                              description: namespace defines the space within which
+                                the secret name must be unique.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        clientCertSecretRef:
+                          description: ClientCertSecretRef references a secret containing
+                            the client certificate and key
+                          properties:
+                            name:
+                              description: name is unique within a namespace to reference
+                                a secret resource.
+                              type: string
+                            namespace:
+                              description: namespace defines the space within which
+                                the secret name must be unique.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        enabled:
+                          default: true
+                          description: Enabled enables mTLS for peer communication
+                          type: boolean
+                        insecureSkipVerify:
+                          default: false
+                          description: InsecureSkipVerify skips TLS certificate verification
+                            (NOT recommended)
+                          type: boolean
+                        serverName:
+                          description: ServerName is the expected server name for
+                            TLS verification
+                          type: string
+                      type: object
+                    zone:
+                      description: Zone is the availability zone of this peer
+                      type: string
+                  required:
+                  - endpoint
+                  - name
+                  type: object
+                type: array
+              paused:
+                default: false
+                description: Paused suspends federation sync
+                type: boolean
+              splitBrain:
+                description: SplitBrain defines split-brain detection and protection
+                  settings
+                properties:
+                  agentQuorum:
+                    description: |-
+                      AgentQuorum configures agent-assisted quorum settings
+                      Only used when QuorumMode is AgentAssisted
+                    properties:
+                      agentWeight:
+                        default: 1
+                        description: AgentWeight is the voting weight of each agent
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      controllerWeight:
+                        default: 10
+                        description: |-
+                          ControllerWeight is the voting weight of each controller
+                          Controllers typically have higher weight than individual agents
+                        format: int32
+                        minimum: 1
+                        type: integer
+                      minAgentsForQuorum:
+                        default: 1
+                        description: |-
+                          MinAgentsForQuorum is the minimum number of agents required for quorum
+                          Prevents a controller with zero agents from claiming quorum
+                        format: int32
+                        minimum: 0
+                        type: integer
+                    type: object
+                  autoResolveOnHeal:
+                    default: true
+                    description: AutoResolveOnHeal automatically resolves conflicts
+                      when partition heals
+                    type: boolean
+                  enabled:
+                    default: true
+                    description: Enabled enables split-brain detection
+                    type: boolean
+                  fencingEnabled:
+                    default: false
+                    description: |-
+                      FencingEnabled enables write fencing during detected partition
+                      When true, writes are blocked during confirmed partition
+                    type: boolean
+                  healingGracePeriod:
+                    default: 5s
+                    description: |-
+                      HealingGracePeriod is how long to wait after partition heals
+                      before fully accepting writes (to allow state reconciliation)
+                    type: string
+                  partitionTimeout:
+                    default: 30s
+                    description: PartitionTimeout is how long without peer contact
+                      before declaring partition
+                    type: string
+                  quorumMode:
+                    default: Controllers
+                    description: |-
+                      QuorumMode determines how quorum is calculated
+                      - Controllers: Traditional controller-only quorum (requires 3+ controllers)
+                      - AgentAssisted: Uses agent reachability for quorum (works with 2 controllers)
+                    enum:
+                    - Controllers
+                    - AgentAssisted
+                    type: string
+                  quorumRequired:
+                    default: false
+                    description: |-
+                      QuorumRequired requires a quorum of peers for write operations
+                      If true, writes are rejected when we don't have quorum
+                    type: boolean
+                type: object
+              sync:
+                description: Sync defines configuration synchronization settings
+                properties:
+                  batchSize:
+                    default: 100
+                    description: BatchSize is the maximum number of resources per
+                      sync batch
+                    format: int32
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+                  compression:
+                    default: true
+                    description: Compression enables compression for sync traffic
+                    type: boolean
+                  excludeNamespaces:
+                    description: ExcludeNamespaces excludes specific namespaces from
+                      sync
+                    items:
+                      type: string
+                    type: array
+                  interval:
+                    default: 5s
+                    description: Interval is how often to sync with peers
+                    type: string
+                  resourceTypes:
+                    description: |-
+                      ResourceTypes specifies which resource types to sync
+                      If empty, all NovaEdge resources are synced
+                    items:
+                      type: string
+                    type: array
+                  timeout:
+                    default: 30s
+                    description: Timeout is the timeout for sync operations
+                    type: string
+                type: object
+            required:
+            - federationID
+            - localMember
+            type: object
+          status:
+            description: NovaEdgeFederationStatus defines the observed state of NovaEdgeFederation
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              conflictsPending:
+                description: ConflictsPending is the number of conflicts awaiting
+                  resolution
+                format: int32
+                type: integer
+              lastSyncTime:
+                description: LastSyncTime is when the last successful sync occurred
+                format: date-time
+                type: string
+              localVectorClock:
+                additionalProperties:
+                  format: int64
+                  type: integer
+                description: LocalVectorClock is this controller's vector clock
+                type: object
+              members:
+                description: Members contains the status of each federation member
+                items:
+                  description: FederationMemberStatus represents the status of a federation
+                    member
+                  properties:
+                    agentCount:
+                      description: AgentCount is the number of agents connected to
+                        this member
+                      format: int32
+                      type: integer
+                    error:
+                      description: Error contains the last error message if unhealthy
+                      type: string
+                    healthy:
+                      description: Healthy indicates if the member is reachable and
+                        responding
+                      type: boolean
+                    lastSeen:
+                      description: LastSeen is when this member was last successfully
+                        contacted
+                      format: date-time
+                      type: string
+                    lastSyncTime:
+                      description: LastSyncTime is when the last successful sync with
+                        this member occurred
+                      format: date-time
+                      type: string
+                    name:
+                      description: Name is the member name
+                      type: string
+                    syncLag:
+                      description: SyncLag is the sync lag with this member
+                      type: string
+                    vectorClock:
+                      additionalProperties:
+                        format: int64
+                        type: integer
+                      description: VectorClock is this member's last known vector
+                        clock
+                      type: object
+                  required:
+                  - name
+                  type: object
+                type: array
+              observedGeneration:
+                description: ObservedGeneration is the generation observed by the
+                  controller
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the current phase of the federation
+                type: string
+              splitBrain:
+                description: SplitBrain contains the current split-brain detection
+                  status
+                properties:
+                  agentQuorumStatus:
+                    description: AgentQuorumStatus contains agent-assisted quorum
+                      information
+                    properties:
+                      ourVotes:
+                        description: OurVotes is our calculated vote count
+                        format: int32
+                        type: integer
+                      quorumThreshold:
+                        description: QuorumThreshold is the minimum votes needed for
+                          quorum
+                        format: int32
+                        type: integer
+                      reachableAgents:
+                        description: ReachableAgents is the number of agents this
+                          controller can reach
+                        format: int32
+                        type: integer
+                      totalAgents:
+                        description: TotalAgents is the total number of agents across
+                          all controllers
+                        format: int32
+                        type: integer
+                      totalVotes:
+                        description: TotalVotes is the total possible votes
+                        format: int32
+                        type: integer
+                    type: object
+                  haveQuorum:
+                    description: HaveQuorum indicates if we currently have quorum
+                    type: boolean
+                  partitionDetectedAt:
+                    description: PartitionDetectedAt is when the partition was detected
+                      (if any)
+                    format: date-time
+                    type: string
+                  partitionState:
+                    description: PartitionState is the current partition state
+                    enum:
+                    - Healthy
+                    - Suspected
+                    - Confirmed
+                    - Healing
+                    type: string
+                  reachablePeers:
+                    description: ReachablePeers lists peers we can currently reach
+                    items:
+                      type: string
+                    type: array
+                  unreachablePeers:
+                    description: UnreachablePeers lists peers we cannot currently
+                      reach
+                    items:
+                      type: string
+                    type: array
+                  writesFenced:
+                    description: WritesFenced indicates if writes are currently blocked
+                    type: boolean
+                type: object
+              syncLag:
+                description: SyncLag is the average sync lag across all members
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
