@@ -43,6 +43,11 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		responseWriter = NewResponseHeaderWriter(w, entry.ResponseFilter)
 	}
 
+	// Inject pipeline state into context for inter-middleware communication
+	state := NewPipelineState()
+	ctx := WithPipelineState(req.Context(), state)
+	req = req.WithContext(ctx)
+
 	// Create the final handler that forwards to backend (with optional retry)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.forwardToBackend(entry, w, req)
@@ -77,6 +82,11 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		handler = limits.Wrap(handler)
 	}
 
+	// If a composable pipeline is configured, use it
+	if entry.Pipeline != nil && entry.Pipeline.Len() > 0 {
+		handler = entry.Pipeline.Wrap(handler)
+	}
+
 	// Apply policy middleware in reverse order (last policy wraps first)
 	for i := len(entry.Policies) - 1; i >= 0; i-- {
 		handler = entry.Policies[i].handler(handler)
@@ -86,7 +96,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 	if r.errorPages != nil && r.errorPages.IsEnabled() {
 		handler = r.errorPages.Wrap(handler)
 	}
-	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> error pages -> backend
+	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> error pages -> pipeline -> backend
 	handler.ServeHTTP(responseWriter, req)
 }
 

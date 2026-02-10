@@ -38,6 +38,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/lb"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	"github.com/piwi3910/novaedge/internal/agent/upstream"
+	"github.com/piwi3910/novaedge/internal/agent/wasm"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -99,6 +100,9 @@ type Router struct {
 	// LB state caching: track endpoint versions to avoid unnecessary LB recreation
 	endpointVersions map[string]uint64 // clusterKey -> hash of endpoint list
 
+	// WASM plugin runtime
+	wasmRuntime *wasm.Runtime
+
 	// Request size limits (in bytes)
 	maxRequestBodyBytes int64
 	maxUploadBodyBytes  int64
@@ -156,6 +160,13 @@ func (r *Router) StopCache() {
 	if r.cache != nil {
 		r.cache.Stop()
 	}
+}
+
+// SetWASMRuntime sets the WASM runtime for the router.
+func (r *Router) SetWASMRuntime(rt *wasm.Runtime) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.wasmRuntime = rt
 }
 
 // ApplyConfig applies a new configuration to the router
@@ -520,6 +531,13 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 // matchRoute checks if a request matches a route entry
 func (r *Router) matchRoute(entry *RouteEntry, req *http.Request) bool {
+	// Evaluate boolean expression first if present
+	if entry.Expression != nil {
+		if !entry.Expression.Evaluate(req) {
+			return false
+		}
+	}
+
 	// Check if there are any matches defined
 	if len(entry.Rule.Matches) == 0 {
 		// No matches means match all
@@ -584,6 +602,18 @@ func (r *Router) matchHeader(match *pb.HeaderMatch, headerIdx, matchIdx int, val
 	default:
 		return value == match.Value
 	}
+}
+
+// createWASMMiddleware creates a WASM middleware handler from a plugin name and config.
+func (r *Router) createWASMMiddleware(name string, _ map[string]string) (func(http.Handler) http.Handler, error) {
+	if r.wasmRuntime == nil {
+		return nil, fmt.Errorf("WASM runtime not initialized")
+	}
+	plugin, ok := r.wasmRuntime.GetPlugin(name)
+	if !ok {
+		return nil, fmt.Errorf("WASM plugin %s not loaded", name)
+	}
+	return plugin.Middleware(), nil
 }
 
 // updateRequestLimits updates request size limits from gateway configuration

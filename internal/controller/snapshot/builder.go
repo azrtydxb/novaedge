@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -487,6 +488,15 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 		if r.Spec.AccessLog != nil && r.Spec.AccessLog.Enabled {
 			route.AccessLog = convertRouteAccessLog(r.Spec.AccessLog)
 		}
+
+		// Convert middleware pipeline
+		if r.Spec.Pipeline != nil {
+			route.Pipeline = convertMiddlewarePipeline(r.Spec.Pipeline)
+		}
+
+		// Convert expression
+		route.Expression = r.Spec.Expression
+
 		routes = append(routes, route)
 	}
 
@@ -661,6 +671,29 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 			policy.Waf = convertWAFConfig(p.Spec.WAF)
 		}
 
+		// Add WASM plugin configuration
+		if p.Spec.WASMPlugin != nil {
+			wasmConfig := &pb.WASMPluginConfig{
+				Source:   p.Spec.WASMPlugin.Source,
+				Config:   p.Spec.WASMPlugin.Config,
+				Phase:    p.Spec.WASMPlugin.Phase,
+				Priority: int32(p.Spec.WASMPlugin.Priority),
+			}
+			if p.Spec.WASMPlugin.ConfigRef != nil {
+				wasmConfig.ConfigRef = p.Spec.WASMPlugin.ConfigRef.Name
+			}
+			// Load WASM binary from ConfigMap
+			wasmBytes, loadErr := b.loadWASMBinary(ctx, p.Spec.WASMPlugin.Source, p.Namespace)
+			if loadErr != nil {
+				log.FromContext(ctx).Error(loadErr, "Failed to load WASM binary",
+					"policy", p.Name,
+					"source", p.Spec.WASMPlugin.Source)
+			} else {
+				wasmConfig.WasmBytes = wasmBytes
+			}
+			policy.WasmPlugin = wasmConfig
+		}
+
 		policies = append(policies, policy)
 	}
 
@@ -794,6 +827,38 @@ func (b *Builder) loadTLSConfig(ctx context.Context, tls *novaedgev1alpha1.TLSCo
 		MinVersion:   tls.MinVersion,
 		CipherSuites: tls.CipherSuites,
 	}, nil
+}
+
+// loadWASMBinary loads a WASM binary from a ConfigMap
+func (b *Builder) loadWASMBinary(ctx context.Context, source, defaultNamespace string) ([]byte, error) {
+	// Source is expected to be a ConfigMap name (namespace/name or just name)
+	parts := strings.SplitN(source, "/", 2)
+	namespace := defaultNamespace
+	name := source
+	if len(parts) == 2 {
+		namespace = parts[0]
+		name = parts[1]
+	}
+
+	configMap := &corev1.ConfigMap{}
+	if err := b.client.Get(ctx, types.NamespacedName{
+		Namespace: namespace,
+		Name:      name,
+	}, configMap); err != nil {
+		return nil, fmt.Errorf("failed to get WASM ConfigMap %s/%s: %w", namespace, name, err)
+	}
+
+	// Look for the WASM binary in BinaryData
+	if wasmData, ok := configMap.BinaryData["plugin.wasm"]; ok {
+		return wasmData, nil
+	}
+
+	// Fallback: check Data for base64-encoded WASM
+	if wasmStr, ok := configMap.Data["plugin.wasm"]; ok {
+		return []byte(wasmStr), nil
+	}
+
+	return nil, fmt.Errorf("WASM binary not found in ConfigMap %s/%s (expected key: plugin.wasm)", namespace, name)
 }
 
 // generateVersion generates a version string based on content hash

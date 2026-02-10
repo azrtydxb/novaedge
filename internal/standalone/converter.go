@@ -375,6 +375,26 @@ func (c *Converter) convertRoutes(routes []RouteConfig) []*pb.Route {
 		}
 
 		route.Rules = append(route.Rules, rule)
+
+		// Convert middleware pipeline
+		if r.Pipeline != nil && len(r.Pipeline.Middleware) > 0 {
+			pipeline := &pb.MiddlewarePipeline{
+				Middleware: make([]*pb.MiddlewareRef, 0, len(r.Pipeline.Middleware)),
+			}
+			for _, mw := range r.Pipeline.Middleware {
+				pipeline.Middleware = append(pipeline.Middleware, &pb.MiddlewareRef{
+					Type:     mw.Type,
+					Name:     mw.Name,
+					Priority: safeInt32(mw.Priority),
+					Config:   mw.Config,
+				})
+			}
+			route.Pipeline = pipeline
+		}
+
+		// Convert expression
+		route.Expression = r.Expression
+
 		result = append(result, route)
 	}
 
@@ -700,6 +720,15 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 					AnomalyThreshold: safeInt32(p.WAF.AnomalyThreshold),
 					RuleExclusions:   p.WAF.RuleExclusions,
 					CustomRules:      p.WAF.CustomRules,
+				}
+			}
+		case "WASMPlugin":
+			if p.WASMPlugin != nil {
+				policy.WasmPlugin = &pb.WASMPluginConfig{
+					Source:   p.WASMPlugin.Source,
+					Config:   p.WASMPlugin.Config,
+					Phase:    p.WASMPlugin.Phase,
+					Priority: safeInt32(p.WASMPlugin.Priority),
 				}
 			}
 		}

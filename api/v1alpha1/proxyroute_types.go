@@ -339,6 +339,35 @@ type HTTPRouteRule struct {
 	Retry *RetryConfig `json:"retry,omitempty"`
 }
 
+// MiddlewarePipelineConfig defines a composable middleware pipeline for a route
+type MiddlewarePipelineConfig struct {
+	// Middleware is an ordered list of middleware references
+	// +optional
+	// +kubebuilder:validation:MaxItems=32
+	Middleware []MiddlewareRefConfig `json:"middleware,omitempty"`
+}
+
+// MiddlewareRefConfig references a middleware to include in the pipeline
+type MiddlewareRefConfig struct {
+	// Type is the middleware type: builtin or wasm
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=builtin;wasm
+	Type string `json:"type"`
+
+	// Name identifies the middleware (builtin name or WASM plugin name)
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Priority determines execution order (lower = earlier)
+	// +optional
+	// +kubebuilder:default=100
+	Priority int `json:"priority,omitempty"`
+
+	// Config holds optional key-value configuration for the middleware
+	// +optional
+	Config map[string]string `json:"config,omitempty"`
+}
+
 // ProxyRouteSpec defines the desired state of ProxyRoute
 type ProxyRouteSpec struct {
 	// Hostnames defines the hostnames for which this route applies
@@ -355,6 +384,15 @@ type ProxyRouteSpec struct {
 	// Overrides gateway-level access log settings for this route
 	// +optional
 	AccessLog *RouteAccessLogConfig `json:"accessLog,omitempty"`
+
+	// Pipeline defines a composable middleware pipeline for this route
+	// +optional
+	Pipeline *MiddlewarePipelineConfig `json:"pipeline,omitempty"`
+
+	// Expression is a boolean routing expression for advanced matching
+	// Syntax: (header:X-Env == "staging") AND (path prefix "/api" OR path prefix "/v2")
+	// +optional
+	Expression string `json:"expression,omitempty"`
 }
 
 // ProxyRouteStatus defines the observed state of ProxyRoute

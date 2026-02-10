@@ -1,0 +1,38 @@
+# Example: WASM plugin policy for custom authentication
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: custom-auth-wasm
+  namespace: default
+spec:
+  type: WASMPlugin
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+  wasmPlugin:
+    source: custom-auth-plugin  # ConfigMap containing plugin.wasm
+    phase: request
+    priority: 50
+    config:
+      auth_header: "X-API-Key"
+      allowed_keys: "key1,key2,key3"
+---
+# Example: WASM plugin for response transformation
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: response-transform-wasm
+  namespace: default
+spec:
+  type: WASMPlugin
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+  wasmPlugin:
+    source: response-transform-plugin
+    phase: response
+    priority: 100
+    config:
+      strip_headers: "X-Internal-Id,X-Debug"
+      add_header_name: "X-Processed-By"
+      add_header_value: "novaedge"
