@@ -47,13 +47,6 @@ type testEnv struct {
 	proxyPolicyReconciler  *ProxyPolicyReconciler
 }
 
-// setupTestEnvironment creates a fake Kubernetes client with all required schemes
-func setupTestEnvironment(t *testing.T) client.Client {
-	t.Helper()
-	env := setupTestEnv(t)
-	return env.client
-}
-
 // setupTestEnv creates a full test environment with all reconcilers
 func setupTestEnv(t *testing.T) *testEnv {
 	t.Helper()
@@ -176,14 +169,6 @@ func (e *testEnv) reconcileProxyBackend(ctx context.Context, name, namespace str
 // reconcileProxyGateway manually triggers reconciliation for a ProxyGateway
 func (e *testEnv) reconcileProxyGateway(ctx context.Context, name, namespace string) error {
 	_, err := e.proxyGatewayReconciler.Reconcile(ctx, ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
-	})
-	return err
-}
-
-// reconcileProxyRoute manually triggers reconciliation for a ProxyRoute
-func (e *testEnv) reconcileProxyRoute(ctx context.Context, name, namespace string) error {
-	_, err := e.proxyRouteReconciler.Reconcile(ctx, ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
 	})
 	return err

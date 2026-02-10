@@ -22,7 +22,6 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
@@ -230,12 +229,3 @@ func TestSnapshotCacheOperations(t *testing.T) {
 	}
 }
 
-func newTestClient(objs ...client.Object) client.Client {
-	scheme := runtime.NewScheme()
-	_ = novaedgev1alpha1.AddToScheme(scheme)
-
-	return fake.NewClientBuilder().
-		WithScheme(scheme).
-		WithObjects(objs...).
-		Build()
-}

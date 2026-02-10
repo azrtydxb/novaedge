@@ -27,23 +27,6 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// createTLSConfig creates a tls.Config from protobuf TLS configuration with SNI support
-func (s *HTTPServer) createTLSConfig(tlsConfig *pb.TLSConfig, hostnames []string) (*tls.Config, error) {
-	// Parse default certificate and key
-	cert, err := tls.X509KeyPair(tlsConfig.Cert, tlsConfig.Key)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse default certificate: %w", err)
-	}
-
-	config := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   s.parseTLSVersion(tlsConfig.MinVersion),
-		CipherSuites: s.parseCipherSuites(tlsConfig.CipherSuites),
-	}
-
-	return config, nil
-}
-
 // createTLSConfigWithSNI creates a tls.Config with SNI support for multiple certificates
 func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config, error) {
 	// Parse all certificates for SNI
