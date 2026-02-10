@@ -109,6 +109,15 @@ type Router struct {
 	// Response cache
 	cache       *ResponseCache
 	cacheConfig CacheConfig
+
+	// Error page interceptor for custom error responses
+	errorPages *ErrorPageInterceptor
+
+	// Redirect scheme middleware for HTTP->HTTPS redirection
+	redirectScheme *RedirectSchemeMiddleware
+
+	// Access log middleware for request/response logging
+	accessLog *AccessLogMiddleware
 }
 
 // NewRouter creates a new router
@@ -164,6 +173,9 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 
 	// Update compression configuration from gateway settings
 	r.updateCompressionConfig(snapshot)
+
+	// Configure error pages, redirect scheme, and access log from gateway config
+	r.configureMiddleware(snapshot)
 
 	// Clear route table (rebuilt below); preserve load balancers
 	// so they survive config snapshots with unchanged endpoints.
@@ -420,10 +432,42 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 		// We'll set cluster in handleRoute, for now use "unknown"
 		metrics.RecordHTTPRequest(req.Method, statusCode, "unknown", duration)
+
+		// Record access log entry if access logging is enabled
+		if r.accessLog != nil && r.accessLog.IsEnabled() {
+			if r.accessLog.shouldSample() && r.accessLog.shouldLog(wrappedWriter.statusCode) {
+				entry := AccessLogEntry{
+					ClientIP:      extractClientIP(req),
+					Timestamp:     startTime.UTC().Format(time.RFC3339Nano),
+					Method:        req.Method,
+					URI:           req.RequestURI,
+					Protocol:      req.Proto,
+					StatusCode:    wrappedWriter.statusCode,
+					BodyBytesSent: 0,
+					Duration:      duration,
+					UserAgent:     req.UserAgent(),
+					Referer:       req.Referer(),
+					RequestID:     req.Header.Get("X-Request-ID"),
+					Host:          req.Host,
+				}
+				r.accessLog.writeEntry(entry)
+			}
+		}
 	}()
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+
+	// Check if redirect scheme middleware should short-circuit the request
+	if r.redirectScheme != nil && r.redirectScheme.IsEnabled() {
+		// Check if request should be redirected (HTTP -> HTTPS)
+		if req.TLS == nil && req.Header.Get("X-Forwarded-Proto") != r.redirectScheme.scheme {
+			if !r.redirectScheme.isExcluded(req.URL.Path) {
+				r.redirectScheme.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})).ServeHTTP(wrappedWriter, req)
+				return
+			}
+		}
+	}
 
 	// Extract hostname (without port)
 	hostname := req.Host
@@ -589,4 +633,65 @@ func (r *Router) updateCompressionConfig(snapshot *config.Snapshot) {
 	}
 	// No gateway has compression enabled
 	r.compressionConfig = nil
+}
+
+// configureMiddleware configures error pages, redirect scheme, and access log from gateway config
+func (r *Router) configureMiddleware(snapshot *config.Snapshot) {
+	// Close previous access log middleware if any
+	if r.accessLog != nil {
+		r.accessLog.Close()
+	}
+
+	// Find first gateway with error page / redirect / access log config
+	// In a multi-gateway setup, each gateway could have its own config;
+	// for now, we use the first configured one as the default.
+	for _, gw := range snapshot.Gateways {
+		if gw.ErrorPages != nil && gw.ErrorPages.Enabled {
+			r.errorPages = NewErrorPageInterceptor(gw.ErrorPages, r.logger)
+			r.logger.Info("Error page interceptor configured",
+				zap.String("gateway", gw.Name),
+				zap.Int("custom_pages", len(gw.ErrorPages.Pages)),
+			)
+			break
+		}
+	}
+
+	for _, gw := range snapshot.Gateways {
+		if gw.RedirectScheme != nil && gw.RedirectScheme.Enabled {
+			r.redirectScheme = NewRedirectSchemeMiddleware(gw.RedirectScheme, r.logger)
+			r.logger.Info("Redirect scheme middleware configured",
+				zap.String("gateway", gw.Name),
+				zap.String("scheme", gw.RedirectScheme.Scheme),
+				zap.Int32("port", gw.RedirectScheme.Port),
+			)
+			break
+		}
+	}
+
+	// Access log can be configured per-route; check gateway-level routes
+	for _, route := range snapshot.Routes {
+		if route.AccessLog != nil && route.AccessLog.Enabled {
+			r.accessLog = NewAccessLogMiddleware(route.AccessLog, r.logger)
+			r.logger.Info("Access log middleware configured",
+				zap.String("route", route.Name),
+				zap.String("format", route.AccessLog.Format),
+				zap.String("output", route.AccessLog.Output),
+			)
+			break
+		}
+	}
+}
+
+// Close cleans up resources used by the router
+func (r *Router) Close() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.accessLog != nil {
+		r.accessLog.Close()
+	}
+
+	for _, pool := range r.pools {
+		pool.Close()
+	}
 }

@@ -1,0 +1,53 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-route-with-access-log
+  namespace: default
+spec:
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: api-backend
+  accessLog:
+    enabled: true
+    format: json
+    output: both
+    filePath: /var/log/novaedge/access.log
+    maxSize: "100Mi"
+    maxBackups: 5
+    sampleRate: 1.0
+---
+# Example with CLF format and error-only logging
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: web-route-error-logging
+  namespace: default
+spec:
+  hostnames:
+    - www.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: web-backend
+  accessLog:
+    enabled: true
+    format: clf
+    output: stdout
+    filterStatusCodes:
+      - 400
+      - 401
+      - 403
+      - 404
+      - 500
+      - 502
+      - 503
+    sampleRate: 1.0

@@ -27,6 +27,7 @@ func newLogsCommand() *cobra.Command {
 
 	cmd.AddCommand(newLogsAgentCommand())
 	cmd.AddCommand(newLogsControllerCommand())
+	cmd.AddCommand(newLogsAccessCommand())
 
 	return cmd
 }

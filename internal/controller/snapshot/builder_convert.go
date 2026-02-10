@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"strconv"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -474,4 +476,72 @@ func parseInt64(s string) (int64, error) {
 	var n int64
 	_, err := fmt.Sscanf(s, "%d", &n)
 	return n, err
+}
+
+// convertErrorPages converts CRD CustomErrorPages to protobuf ErrorPageConfig
+func convertErrorPages(pages []novaedgev1alpha1.CustomErrorPage) *pb.ErrorPageConfig {
+	config := &pb.ErrorPageConfig{
+		Enabled: true,
+		Pages:   make(map[int32]string),
+	}
+
+	for _, page := range pages {
+		body := page.Body
+		if body == "" {
+			// Use path reference as a placeholder; the agent resolves it
+			body = page.Path
+		}
+		for _, code := range page.Codes {
+			config.Pages[code] = body
+		}
+	}
+
+	return config
+}
+
+// convertRedirectScheme converts CRD RedirectSchemeConfig to protobuf RedirectSchemeConfig
+func convertRedirectScheme(rs *novaedgev1alpha1.RedirectSchemeConfig) *pb.RedirectSchemeConfig {
+	if rs == nil {
+		return nil
+	}
+
+	return &pb.RedirectSchemeConfig{
+		Enabled:    rs.Enabled,
+		Scheme:     rs.Scheme,
+		Port:       rs.Port,
+		StatusCode: rs.StatusCode,
+		Exclusions: rs.Exclusions,
+	}
+}
+
+// convertRouteAccessLog converts CRD RouteAccessLogConfig to protobuf AccessLogConfig
+func convertRouteAccessLog(al *novaedgev1alpha1.RouteAccessLogConfig) *pb.AccessLogConfig {
+	if al == nil {
+		return nil
+	}
+
+	config := &pb.AccessLogConfig{
+		Enabled:  al.Enabled,
+		Format:   al.Format,
+		Template: al.Template,
+		Output:   al.Output,
+		FilePath: al.FilePath,
+		MaxSize:  al.MaxSize,
+	}
+
+	if al.MaxBackups != nil {
+		config.MaxBackups = *al.MaxBackups
+	}
+
+	config.FilterStatusCodes = al.FilterStatusCodes
+
+	if al.SampleRate != nil && *al.SampleRate != "" {
+		if parsed, err := strconv.ParseFloat(*al.SampleRate, 64); err == nil {
+			config.SampleRate = parsed
+		}
+	} else {
+		config.SampleRate = 1.0
+	}
+
+	return config
 }

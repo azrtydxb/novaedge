@@ -82,7 +82,11 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		handler = entry.Policies[i].handler(handler)
 	}
 
-	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> backend
+	// Wrap with error page interceptor if configured
+	if r.errorPages != nil && r.errorPages.IsEnabled() {
+		handler = r.errorPages.Wrap(handler)
+	}
+	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> error pages -> backend
 	handler.ServeHTTP(responseWriter, req)
 }
 
