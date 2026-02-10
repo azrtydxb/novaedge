@@ -82,7 +82,7 @@ func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) 
 func translateListener(gwListener gatewayv1.Listener, namespace string) (novaedgev1alpha1.Listener, error) {
 	listener := novaedgev1alpha1.Listener{
 		Name: string(gwListener.Name),
-		Port: gwListener.Port,
+		Port: int32(gwListener.Port),
 	}
 
 	// Translate protocol
@@ -225,6 +225,15 @@ func translateHTTPRouteRule(gwRule gatewayv1.HTTPRouteRule, namespace string, _ 
 			backendRef.Weight = &defaultWeight
 		}
 
+		// Translate per-backend filters
+		for _, gwFilter := range gwBackendRef.Filters {
+			filter, err := translateHTTPRouteFilter(gwFilter)
+			if err != nil {
+				return rule, fmt.Errorf("failed to translate backend filter: %w", err)
+			}
+			rule.Filters = append(rule.Filters, filter)
+		}
+
 		rule.BackendRefs = append(rule.BackendRefs, backendRef)
 	}
 
@@ -241,7 +250,12 @@ func translateHTTPRouteMatch(gwMatch gatewayv1.HTTPRouteMatch) (novaedgev1alpha1
 			Value: *gwMatch.Path.Value,
 		}
 
-		switch *gwMatch.Path.Type {
+		pathType := gatewayv1.PathMatchPathPrefix
+		if gwMatch.Path.Type != nil {
+			pathType = *gwMatch.Path.Type
+		}
+
+		switch pathType {
 		case gatewayv1.PathMatchExact:
 			pathMatch.Type = novaedgev1alpha1.PathMatchExact
 		case gatewayv1.PathMatchPathPrefix:
@@ -278,6 +292,29 @@ func translateHTTPRouteMatch(gwMatch gatewayv1.HTTPRouteMatch) (novaedgev1alpha1
 		match.Headers = append(match.Headers, headerMatch)
 	}
 
+	// Translate query parameters
+	for _, gwQueryParam := range gwMatch.QueryParams {
+		queryParamMatch := novaedgev1alpha1.HTTPQueryParamMatch{
+			Name:  string(gwQueryParam.Name),
+			Value: gwQueryParam.Value,
+		}
+
+		if gwQueryParam.Type != nil {
+			switch *gwQueryParam.Type {
+			case gatewayv1.QueryParamMatchExact:
+				queryParamMatch.Type = novaedgev1alpha1.HeaderMatchExact
+			case gatewayv1.QueryParamMatchRegularExpression:
+				queryParamMatch.Type = novaedgev1alpha1.HeaderMatchRegularExpression
+			default:
+				return match, fmt.Errorf("unsupported query param match type: %v", gwQueryParam.Type)
+			}
+		} else {
+			queryParamMatch.Type = novaedgev1alpha1.HeaderMatchExact
+		}
+
+		match.QueryParams = append(match.QueryParams, queryParamMatch)
+	}
+
 	// Translate method
 	if gwMatch.Method != nil {
 		method := string(*gwMatch.Method)
@@ -308,11 +345,55 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 			}
 		}
 
+		// Handle header sets (overwrite existing)
+		if len(gwFilter.RequestHeaderModifier.Set) > 0 {
+			filter.Type = novaedgev1alpha1.HTTPRouteFilterAddHeader
+			for _, header := range gwFilter.RequestHeaderModifier.Set {
+				filter.Add = append(filter.Add, novaedgev1alpha1.HTTPHeader{
+					Name:  string(header.Name),
+					Value: header.Value,
+				})
+			}
+		}
+
 		// Handle header removals
 		if len(gwFilter.RequestHeaderModifier.Remove) > 0 {
-			filter.Type = novaedgev1alpha1.HTTPRouteFilterRemoveHeader
+			if filter.Type == "" {
+				filter.Type = novaedgev1alpha1.HTTPRouteFilterRemoveHeader
+			}
 			filter.Remove = gwFilter.RequestHeaderModifier.Remove
 		}
+
+		// If nothing was set, default to AddHeader type
+		if filter.Type == "" {
+			filter.Type = novaedgev1alpha1.HTTPRouteFilterAddHeader
+		}
+
+	case gatewayv1.HTTPRouteFilterResponseHeaderModifier:
+		if gwFilter.ResponseHeaderModifier == nil {
+			return filter, fmt.Errorf("ResponseHeaderModifier filter has no configuration")
+		}
+
+		filter.Type = novaedgev1alpha1.HTTPRouteFilterResponseAddHeader
+
+		// Handle response header additions
+		for _, header := range gwFilter.ResponseHeaderModifier.Add {
+			filter.ResponseAdd = append(filter.ResponseAdd, novaedgev1alpha1.HTTPHeader{
+				Name:  string(header.Name),
+				Value: header.Value,
+			})
+		}
+
+		// Handle response header sets
+		for _, header := range gwFilter.ResponseHeaderModifier.Set {
+			filter.ResponseSet = append(filter.ResponseSet, novaedgev1alpha1.HTTPHeader{
+				Name:  string(header.Name),
+				Value: header.Value,
+			})
+		}
+
+		// Handle response header removals
+		filter.ResponseRemove = gwFilter.ResponseHeaderModifier.Remove
 
 	case gatewayv1.HTTPRouteFilterRequestRedirect:
 		if gwFilter.RequestRedirect == nil {
@@ -342,6 +423,15 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 			filter.RedirectURL = &redirectURL
 		}
 
+		// Handle redirect path
+		if gwFilter.RequestRedirect.Path != nil {
+			if gwFilter.RequestRedirect.Path.Type == gatewayv1.FullPathHTTPPathModifier && gwFilter.RequestRedirect.Path.ReplaceFullPath != nil {
+				filter.RewritePath = gwFilter.RequestRedirect.Path.ReplaceFullPath
+			} else if gwFilter.RequestRedirect.Path.Type == gatewayv1.PrefixMatchHTTPPathModifier && gwFilter.RequestRedirect.Path.ReplacePrefixMatch != nil {
+				filter.RewritePath = gwFilter.RequestRedirect.Path.ReplacePrefixMatch
+			}
+		}
+
 	case gatewayv1.HTTPRouteFilterURLRewrite:
 		if gwFilter.URLRewrite == nil {
 			return filter, fmt.Errorf("URLRewrite filter has no configuration")
@@ -349,12 +439,43 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 
 		filter.Type = novaedgev1alpha1.HTTPRouteFilterURLRewrite
 
+		if gwFilter.URLRewrite.Hostname != nil {
+			// Hostname rewrite is stored as a header modification internally
+			hostname := string(*gwFilter.URLRewrite.Hostname)
+			filter.Add = append(filter.Add, novaedgev1alpha1.HTTPHeader{
+				Name:  "Host",
+				Value: hostname,
+			})
+		}
+
 		if gwFilter.URLRewrite.Path != nil {
 			if gwFilter.URLRewrite.Path.Type == gatewayv1.FullPathHTTPPathModifier && gwFilter.URLRewrite.Path.ReplaceFullPath != nil {
 				filter.RewritePath = gwFilter.URLRewrite.Path.ReplaceFullPath
 			} else if gwFilter.URLRewrite.Path.Type == gatewayv1.PrefixMatchHTTPPathModifier && gwFilter.URLRewrite.Path.ReplacePrefixMatch != nil {
 				filter.RewritePath = gwFilter.URLRewrite.Path.ReplacePrefixMatch
 			}
+		}
+
+	case gatewayv1.HTTPRouteFilterRequestMirror:
+		if gwFilter.RequestMirror == nil {
+			return filter, fmt.Errorf("RequestMirror filter has no configuration")
+		}
+
+		filter.Type = novaedgev1alpha1.HTTPRouteFilterRequestMirror
+
+		mirrorNamespace := ""
+		if gwFilter.RequestMirror.BackendRef.Namespace != nil {
+			mirrorNamespace = string(*gwFilter.RequestMirror.BackendRef.Namespace)
+		}
+
+		filter.MirrorBackend = &novaedgev1alpha1.BackendRef{
+			Name:      string(gwFilter.RequestMirror.BackendRef.Name),
+			Namespace: &mirrorNamespace,
+		}
+
+		if gwFilter.RequestMirror.Percent != nil {
+			percent := int32(*gwFilter.RequestMirror.Percent)
+			filter.MirrorPercent = &percent
 		}
 
 	default:

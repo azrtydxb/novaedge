@@ -11,6 +11,7 @@ spec:
   - "example.com"
   - "www.example.com"
   rules:
+  # Path prefix matching with header modification
   - matches:
     - path:
         type: PathPrefix
@@ -21,10 +22,32 @@ spec:
         add:
         - name: X-Custom-Header
           value: example-value
+        set:
+        - name: X-Forwarded-Proto
+          value: https
     backendRefs:
     - name: api-service
       port: 8080
       weight: 1
+  # Exact path matching
+  - matches:
+    - path:
+        type: Exact
+        value: /healthz
+    backendRefs:
+    - name: health-service
+      port: 8081
+      weight: 1
+  # Regular expression matching
+  - matches:
+    - path:
+        type: RegularExpression
+        value: "/users/[0-9]+"
+    backendRefs:
+    - name: user-service
+      port: 8082
+      weight: 1
+  # Default backend
   - matches:
     - path:
         type: PathPrefix
