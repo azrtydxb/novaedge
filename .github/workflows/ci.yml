@@ -1,0 +1,242 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  checks: write
+  security-events: write
+
+jobs:
+  # Detect which paths changed to skip irrelevant jobs
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      helm: ${{ steps.filter.outputs.helm }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'Makefile'
+              - '.golangci.yml'
+            helm:
+              - 'charts/**'
+              - 'config/crd/**'
+
+  # Go code quality checks
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run gofmt
+        run: |
+          if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+            echo "Code is not formatted. Run 'make fmt'"
+            gofmt -s -l .
+            exit 1
+          fi
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=10m
+
+      - name: Check go mod tidy
+        run: |
+          go mod tidy
+          if [ -n "$(git status --porcelain go.mod go.sum)" ]; then
+            echo "go.mod or go.sum is not tidy. Run 'go mod tidy'"
+            git diff go.mod go.sum
+            exit 1
+          fi
+
+  # Security scanning
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Check for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Unit tests
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Run unit tests
+        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+
+      - name: Display coverage
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${COVERAGE}%"
+          echo "## Test Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  # Build verification
+  build:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
+    strategy:
+      matrix:
+        binary:
+          - name: novaedge-controller
+            path: ./cmd/novaedge-controller
+          - name: novaedge-agent
+            path: ./cmd/novaedge-agent
+          - name: novactl
+            path: ./cmd/novactl
+          - name: novaedge-standalone
+            path: ./cmd/novaedge-standalone
+          - name: novaedge-operator
+            path: ./cmd/novaedge-operator
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Build ${{ matrix.binary.name }}
+        env:
+          CGO_ENABLED: 0
+        run: go build -v -ldflags="-s -w" -o bin/${{ matrix.binary.name }} ${{ matrix.binary.path }}
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary.name }}
+          path: bin/${{ matrix.binary.name }}
+          retention-days: 7
+
+  # Helm chart validation
+  helm-lint:
+    name: Helm Lint
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.helm == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint novaedge chart
+        run: helm lint charts/novaedge
+
+      - name: Lint novaedge-agent chart
+        run: helm lint charts/novaedge-agent
+
+      - name: Lint novaedge-operator chart
+        run: helm lint charts/novaedge-operator
+
+      - name: Verify CRD sync
+        run: |
+          echo "Checking charts/novaedge/crds/ matches config/crd/"
+          if ! diff -rq config/crd/ charts/novaedge/crds/ > /dev/null 2>&1; then
+            echo "CRDs are out of sync between config/crd/ and charts/novaedge/crds/"
+            diff -r config/crd/ charts/novaedge/crds/ || true
+            exit 1
+          fi
+          echo "CRDs are in sync"
+
+  # Status check (all jobs must pass or be skipped)
+  status-check:
+    name: Status Check
+    runs-on: ubuntu-latest
+    needs: [lint, security, test, build, helm-lint]
+    if: always()
+    steps:
+      - name: Check all jobs status
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          HELM_RESULT: ${{ needs.helm-lint.result }}
+        run: |
+          results=(
+            "$LINT_RESULT"
+            "$SECURITY_RESULT"
+            "$TEST_RESULT"
+            "$BUILD_RESULT"
+            "$HELM_RESULT"
+          )
+          for r in "${results[@]}"; do
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+              echo "One or more jobs failed (found status: $r)"
+              exit 1
+            fi
+          done
+          echo "All jobs passed or were skipped"
