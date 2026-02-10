@@ -75,6 +75,9 @@ type GlobalConfig struct {
 
 	// Compression settings for response compression
 	Compression *StandaloneCompressionConfig `yaml:"compression,omitempty"`
+
+	// Cache configures response caching
+	Cache *CacheConfigStandalone `yaml:"cache,omitempty"`
 }
 
 // StandaloneCompressionConfig defines response compression for standalone mode
@@ -135,6 +138,28 @@ type TLSConfig struct {
 	CipherSuites []string `yaml:"cipherSuites,omitempty"`
 }
 
+// RouteMirrorConfig configures traffic mirroring for a route
+type RouteMirrorConfig struct {
+	// Backend to mirror to
+	Backend string `yaml:"backend"`
+	// Percentage of requests to mirror (0-100)
+	Percentage int `yaml:"percentage,omitempty"`
+}
+
+// CacheConfigStandalone configures response caching in standalone mode
+type CacheConfigStandalone struct {
+	// Enabled enables response caching
+	Enabled bool `yaml:"enabled"`
+	// MaxSize is the maximum cache memory (e.g., "256Mi")
+	MaxSize string `yaml:"maxSize,omitempty"`
+	// DefaultTTL is the default time-to-live (e.g., "5m")
+	DefaultTTL string `yaml:"defaultTTL,omitempty"`
+	// MaxTTL is the maximum TTL (e.g., "1h")
+	MaxTTL string `yaml:"maxTTL,omitempty"`
+	// MaxEntrySize is the maximum entry size (e.g., "1Mi")
+	MaxEntrySize string `yaml:"maxEntrySize,omitempty"`
+}
+
 // RouteConfig defines a routing rule
 type RouteConfig struct {
 	Name string `yaml:"name"`
@@ -147,6 +172,9 @@ type RouteConfig struct {
 
 	// Filters to apply
 	Filters []RouteFilter `yaml:"filters,omitempty"`
+
+	// Mirror configures traffic mirroring for this route
+	Mirror *RouteMirrorConfig `yaml:"mirror,omitempty"`
 
 	// Timeout for requests
 	Timeout string `yaml:"timeout,omitempty"`

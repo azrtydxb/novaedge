@@ -289,6 +289,16 @@ type ProxyGatewaySpec struct {
 	// +optional
 	IngressClassName string `json:"ingressClassName,omitempty"`
 
+	// LoadBalancerClass specifies the load balancer class this gateway belongs to.
+	// Controllers only reconcile gateways matching their configured class.
+	// Default: "novaedge.io/proxy"
+	// +optional
+	LoadBalancerClass string `json:"loadBalancerClass,omitempty"`
+
+	// Cache configures response caching for this gateway
+	// +optional
+	Cache *GatewayCacheConfig `json:"cache,omitempty"`
+
 	// Listeners define the ports and protocols this gateway accepts
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinItems=1
@@ -309,6 +319,29 @@ type ProxyGatewaySpec struct {
 	// Compression defines response compression configuration
 	// +optional
 	Compression *CompressionConfig `json:"compression,omitempty"`
+}
+
+// GatewayCacheConfig configures HTTP response caching for the gateway
+type GatewayCacheConfig struct {
+	// Enabled enables response caching
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MaxSize is the maximum cache memory (e.g., "256Mi")
+	// +optional
+	MaxSize string `json:"maxSize,omitempty"`
+
+	// DefaultTTL is the default time-to-live for cached responses (e.g., "5m")
+	// +optional
+	DefaultTTL string `json:"defaultTTL,omitempty"`
+
+	// MaxTTL is the maximum allowed TTL for cached responses (e.g., "1h")
+	// +optional
+	MaxTTL string `json:"maxTTL,omitempty"`
+
+	// MaxEntrySize is the maximum size of a single cached response (e.g., "1Mi")
+	// +optional
+	MaxEntrySize string `json:"maxEntrySize,omitempty"`
 }
 
 // ProxyGatewayStatus defines the observed state of ProxyGateway

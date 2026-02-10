@@ -181,11 +181,12 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 	gateways := make([]*pb.Gateway, 0, len(gatewayList.Items))
 	for _, gw := range gatewayList.Items {
 		gateway := &pb.Gateway{
-			Name:             gw.Name,
-			Namespace:        gw.Namespace,
-			VipRef:           gw.Spec.VIPRef,
-			IngressClassName: gw.Spec.IngressClassName,
-			Listeners:        make([]*pb.Listener, 0, len(gw.Spec.Listeners)),
+			Name:              gw.Name,
+			Namespace:         gw.Namespace,
+			VipRef:            gw.Spec.VIPRef,
+			IngressClassName:  gw.Spec.IngressClassName,
+			LoadBalancerClass: gw.Spec.LoadBalancerClass,
+			Listeners:         make([]*pb.Listener, 0, len(gw.Spec.Listeners)),
 		}
 
 		for _, listener := range gw.Spec.Listeners {
@@ -286,6 +287,20 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 			// Add per-route buffering
 			if rule.Buffering != nil {
 				pbRule.Buffering = convertBufferingConfig(rule.Buffering)
+			}
+
+			// Convert mirror configuration if present
+			if rule.Mirror != nil {
+				mirrorNs := getNamespace(rule.Mirror.BackendRef.Namespace, r.Namespace)
+				pbRule.MirrorBackend = &pb.BackendRef{
+					Name:      rule.Mirror.BackendRef.Name,
+					Namespace: mirrorNs,
+					Weight:    getWeight(rule.Mirror.BackendRef.Weight),
+				}
+				pbRule.MirrorPercent = rule.Mirror.Percentage
+				if pbRule.MirrorPercent == 0 {
+					pbRule.MirrorPercent = 100 // Default: mirror all requests
+				}
 			}
 
 			route.Rules = append(route.Rules, pbRule)

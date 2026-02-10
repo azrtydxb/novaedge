@@ -698,3 +698,40 @@ The middleware execution order ensures:
 3. **Request buffering** captures the body for retry support
 4. **Compression** compresses the response after the backend responds
 5. **Response buffering** captures the complete response if needed
+
+## loadBalancerClass Support
+
+NovaEdge supports `loadBalancerClass` for multi-controller coexistence. This allows multiple NovaEdge controllers (or other load balancer controllers) to run side-by-side, each handling only their assigned gateways.
+
+### Configuration
+
+Set the `loadBalancerClass` on a ProxyGateway:
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: my-gateway
+spec:
+  loadBalancerClass: novaedge.io/proxy
+  vipRef: my-vip
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+```
+
+### Controller Configuration
+
+Start the controller with a specific class:
+
+```bash
+novaedge-controller --controller-class=novaedge.io/proxy
+```
+
+The controller will only reconcile gateways whose `loadBalancerClass` matches. Gateways without a `loadBalancerClass` are reconciled by the controller using the default class (`novaedge.io/proxy`).
+
+### Ingress and Gateway API
+
+- **Ingress**: The controller respects the `ingressClassName` field and only reconciles Ingress resources matching the configured class
+- **Gateway API**: The controller respects the `GatewayClass` resource and only handles Gateways referencing the NovaEdge GatewayClass

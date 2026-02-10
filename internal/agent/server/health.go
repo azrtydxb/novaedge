@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -25,6 +26,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/piwi3910/novaedge/internal/agent/router"
 )
 
 // HealthServer provides health and readiness endpoints for Kubernetes probes
@@ -34,6 +37,7 @@ type HealthServer struct {
 	server      *http.Server
 	ready       atomic.Bool
 	rateLimiter *IPRateLimiter
+	router      *router.Router
 }
 
 // NewHealthServer creates a new health probe server
@@ -82,6 +86,47 @@ func (h *HealthServer) Start(ctx context.Context) error {
 		}
 	})))
 
+	// Cache purge admin endpoint
+	mux.Handle("/_novaedge/cache", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			// Purge cache
+			if h.router == nil || h.router.Cache() == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"cache not configured"}`))
+				return
+			}
+			pattern := r.URL.Query().Get("pattern")
+			if pattern == "" {
+				pattern = "*"
+			}
+			count := h.router.Cache().Purge(pattern)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			resp, _ := json.Marshal(map[string]interface{}{
+				"purged":  count,
+				"pattern": pattern,
+			})
+			_, _ = w.Write(resp)
+			h.logger.Info("Cache purged", zap.String("pattern", pattern), zap.Int("count", count))
+			return
+		}
+		if r.Method == http.MethodGet {
+			// Cache stats
+			if h.router == nil || h.router.Cache() == nil {
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`{"error":"cache not configured"}`))
+				return
+			}
+			stats := h.router.Cache().Stats()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			resp, _ := json.Marshal(stats)
+			_, _ = w.Write(resp)
+			return
+		}
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	})))
+
 	h.server = &http.Server{
 		Addr:              fmt.Sprintf(":%d", h.port),
 		Handler:           mux,
@@ -109,6 +154,11 @@ func (h *HealthServer) Start(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// SetRouter sets the router reference for cache admin endpoints.
+func (h *HealthServer) SetRouter(r *router.Router) {
+	h.router = r
 }
 
 // SetReady marks the agent as ready (has received valid config)

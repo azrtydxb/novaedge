@@ -37,7 +37,8 @@ import (
 // GatewayReconciler reconciles a Gateway API Gateway object
 type GatewayReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme           *runtime.Scheme
+	GatewayClassName string // Configurable GatewayClass name (default: "novaedge")
 }
 
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch;update;patch
@@ -61,10 +62,14 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Check if this Gateway is for our GatewayClass
-	if string(gateway.Spec.GatewayClassName) != NovaEdgeGatewayClassName {
+	expectedClass := r.GatewayClassName
+	if expectedClass == "" {
+		expectedClass = NovaEdgeGatewayClassName
+	}
+	if string(gateway.Spec.GatewayClassName) != expectedClass {
 		logger.Info("Gateway is not for NovaEdge GatewayClass, ignoring",
 			"gatewayClass", gateway.Spec.GatewayClassName,
-			"expected", NovaEdgeGatewayClassName)
+			"expected", expectedClass)
 		return ctrl.Result{}, nil
 	}
 
