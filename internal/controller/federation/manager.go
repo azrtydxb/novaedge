@@ -90,8 +90,8 @@ func NewManagerFromCRDWithCreds(federation *novaedgev1alpha1.NovaEdgeFederation,
 			peer.ClientKey = creds.ClientKey
 			logger.Debug("Applied TLS credentials to peer",
 				zap.String("peer", peer.Name),
-				zap.Bool("hasCA", len(creds.CACert) > 0),
-				zap.Bool("hasClientCert", len(creds.ClientCert) > 0),
+				zap.Bool("has_ca", len(creds.CACert) > 0),
+				zap.Bool("has_client_cert", len(creds.ClientCert) > 0),
 			)
 		}
 	}
@@ -194,9 +194,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 
 	m.logger.Info("Starting federation manager",
-		zap.String("federationID", m.config.FederationID),
-		zap.String("localMember", m.config.LocalMember.Name),
-		zap.Int("peerCount", len(m.config.Peers)),
+		zap.String("federation_id", m.config.FederationID),
+		zap.String("local_member", m.config.LocalMember.Name),
+		zap.Int("peer_count", len(m.config.Peers)),
 	)
 
 	// Create the server

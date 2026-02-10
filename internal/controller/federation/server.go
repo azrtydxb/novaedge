@@ -116,8 +116,8 @@ func NewServer(config *FederationConfig, logger *zap.Logger) *Server {
 // Start begins background processing for the federation server
 func (s *Server) Start(ctx context.Context) error {
 	s.logger.Info("Starting federation server",
-		zap.String("federationID", s.config.FederationID),
-		zap.String("localMember", s.config.LocalMember.Name),
+		zap.String("federation_id", s.config.FederationID),
+		zap.String("local_member", s.config.LocalMember.Name),
 	)
 
 	// Start the tombstone cleanup goroutine
@@ -561,7 +561,7 @@ func (s *Server) handleSyncAck(peerName string, ack *pb.SyncAck) {
 	for _, err := range ack.Errors {
 		s.logger.Warn("Peer reported change error",
 			zap.String("peer", peerName),
-			zap.String("changeID", err.ChangeId),
+			zap.String("change_id", err.ChangeId),
 			zap.String("error", err.ErrorMessage),
 		)
 	}

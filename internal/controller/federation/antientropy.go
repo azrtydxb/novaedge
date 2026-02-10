@@ -348,7 +348,7 @@ func (m *AntiEntropyManager) Start(ctx context.Context) {
 
 	m.logger.Info("Starting anti-entropy manager",
 		zap.Duration("interval", m.config.Interval),
-		zap.String("repairMode", m.config.RepairMode),
+		zap.String("repair_mode", m.config.RepairMode),
 	)
 
 	go m.runLoop()

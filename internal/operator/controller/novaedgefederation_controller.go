@@ -184,7 +184,7 @@ func (r *NovaEdgeFederationReconciler) ensureManager(ctx context.Context, fed *n
 	manager.OnResourceChange(func(key federation.ResourceKey, changeType federation.ChangeType, data []byte) {
 		log.Debug("Resource changed from federation",
 			zap.String("resource", fmt.Sprintf("%s/%s/%s", key.Kind, key.Namespace, key.Name)),
-			zap.String("changeType", string(changeType)),
+			zap.String("change_type", string(changeType)),
 		)
 		// TODO: Apply changes to local Kubernetes resources
 	})
@@ -196,7 +196,7 @@ func (r *NovaEdgeFederationReconciler) ensureManager(ctx context.Context, fed *n
 
 	r.managers[key] = manager
 	log.Info("Started federation manager",
-		zap.String("federationID", fed.Spec.FederationID),
+		zap.String("federation_id", fed.Spec.FederationID),
 		zap.Int("peers", len(fed.Spec.Members)),
 	)
 

@@ -238,7 +238,7 @@ func (m *CertificateManager) initializeManualCertificate(certConfig *Certificate
 
 	m.logger.Info("Manual certificate loaded",
 		zap.String("name", certConfig.Name),
-		zap.String("certFile", manualConfig.CertFile),
+		zap.String("cert_file", manualConfig.CertFile),
 	)
 
 	return nil
