@@ -937,36 +937,6 @@ func (w *FailoverWatcher) getControllerReachability() *pb.ControllerReachability
 	return reachability
 }
 
-// updateControllerReachability updates the reachability status for a controller
-func (w *FailoverWatcher) updateControllerReachability(name string, reachable bool, latency time.Duration) {
-	w.reachabilityMu.Lock()
-	defer w.reachabilityMu.Unlock()
-
-	if info, ok := w.controllerReachability[name]; ok {
-		info.Reachable = reachable
-		if reachable {
-			info.LastContact = time.Now()
-			info.Latency = latency
-		}
-	}
-}
-
-// probeAllControllers probes all controllers and updates reachability
-// This should be called periodically to maintain accurate reachability info
-func (w *FailoverWatcher) probeAllControllers() {
-	w.controllersMu.RLock()
-	controllers := w.controllers
-	w.controllersMu.RUnlock()
-
-	for _, ctrl := range controllers {
-		start := time.Now()
-		err := w.pingController(ctrl)
-		latency := time.Since(start)
-
-		w.updateControllerReachability(ctrl.Name, err == nil, latency)
-	}
-}
-
 // GetVectorClock returns the last known vector clock
 func (w *FailoverWatcher) GetVectorClock() map[string]int64 {
 	w.snapshotMu.RLock()

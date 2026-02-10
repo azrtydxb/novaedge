@@ -509,35 +509,6 @@ func (t *IngressTranslator) translateRouteRule(ingress *networkingv1.Ingress, pa
 	return rule
 }
 
-// convertPathMatch converts Ingress path type to ProxyRoute path match
-func (t *IngressTranslator) convertPathMatch(path networkingv1.HTTPIngressPath) *novaedgev1alpha1.HTTPPathMatch {
-	if path.Path == "" {
-		return nil
-	}
-
-	pathMatch := &novaedgev1alpha1.HTTPPathMatch{
-		Value: path.Path,
-	}
-
-	// Convert path type
-	if path.PathType != nil {
-		switch *path.PathType {
-		case networkingv1.PathTypeExact:
-			pathMatch.Type = novaedgev1alpha1.PathMatchExact
-		case networkingv1.PathTypePrefix:
-			pathMatch.Type = novaedgev1alpha1.PathMatchPathPrefix
-		case networkingv1.PathTypeImplementationSpecific:
-			// Default to prefix for implementation-specific
-			pathMatch.Type = novaedgev1alpha1.PathMatchPathPrefix
-		}
-	} else {
-		// Default to prefix if not specified
-		pathMatch.Type = novaedgev1alpha1.PathMatchPathPrefix
-	}
-
-	return pathMatch
-}
-
 // convertPathMatchWithIngress converts path with regex support from annotation
 func (t *IngressTranslator) convertPathMatchWithIngress(ingress *networkingv1.Ingress, path networkingv1.HTTPIngressPath) *novaedgev1alpha1.HTTPPathMatch {
 	if path.Path == "" {
@@ -873,41 +844,9 @@ func (t *IngressTranslator) getRequestHeaders(ingress *networkingv1.Ingress) map
 	return headers
 }
 
-// getResponseHeaders parses response headers annotation (JSON map)
-func (t *IngressTranslator) getResponseHeaders(ingress *networkingv1.Ingress) map[string]string {
-	headersJSON, exists := ingress.Annotations[AnnotationResponseHeaders]
-	if !exists || headersJSON == "" {
-		return nil
-	}
-
-	var headers map[string]string
-	if err := json.Unmarshal([]byte(headersJSON), &headers); err != nil {
-		return nil
-	}
-	return headers
-}
-
 // getRemoveRequestHeaders parses remove request headers annotation (comma-separated)
 func (t *IngressTranslator) getRemoveRequestHeaders(ingress *networkingv1.Ingress) []string {
 	headers, exists := ingress.Annotations[AnnotationRemoveRequestHeaders]
-	if !exists || headers == "" {
-		return nil
-	}
-
-	parts := strings.Split(headers, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-	return result
-}
-
-// getRemoveResponseHeaders parses remove response headers annotation (comma-separated)
-func (t *IngressTranslator) getRemoveResponseHeaders(ingress *networkingv1.Ingress) []string {
-	headers, exists := ingress.Annotations[AnnotationRemoveResponseHeaders]
 	if !exists || headers == "" {
 		return nil
 	}
@@ -1193,18 +1132,3 @@ func (t *IngressTranslator) useRegexPathMatching(ingress *networkingv1.Ingress) 
 	return strings.ToLower(ingress.Annotations[AnnotationUseRegex]) == "true"
 }
 
-// splitCommaSeparated splits a comma-separated string and trims whitespace
-func splitCommaSeparated(s string) []string {
-	if s == "" {
-		return nil
-	}
-	parts := strings.Split(s, ",")
-	result := make([]string, 0, len(parts))
-	for _, part := range parts {
-		trimmed := strings.TrimSpace(part)
-		if trimmed != "" {
-			result = append(result, trimmed)
-		}
-	}
-	return result
-}
