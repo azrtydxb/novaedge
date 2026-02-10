@@ -106,7 +106,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	req = modifiedReq
 
 	// Select backend using weighted selection
-	backendRef := selectWeightedBackend(entry.Rule.BackendRefs)
+	backendRef := selectBackendForRequest(entry.Rule.BackendRefs, req)
 	if backendRef == nil {
 		backendSpan.SetStatus(codes.Error, "No backend configured")
 		http.Error(w, "No backend configured", http.StatusInternalServerError)
@@ -156,6 +156,10 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 			http.Error(w, "Backend configuration error", http.StatusInternalServerError)
 			return
 		}
+	} else if stickyWrapper, hasSW := r.stickyWrappers[clusterKey]; hasSW {
+		// Use sticky session wrapper (cookie-based affinity)
+		endpoint = stickyWrapper.SelectWithAffinity(req, w)
+		lbType = "sticky"
 	} else {
 		// Use standard load balancer
 		loadBalancer, ok := r.loadBalancers[clusterKey]

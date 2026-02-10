@@ -97,6 +97,8 @@ func convertLBPolicy(policy novaedgev1alpha1.LoadBalancingPolicy) pb.LoadBalanci
 		return pb.LoadBalancingPolicy_RING_HASH
 	case novaedgev1alpha1.LBPolicyMaglev:
 		return pb.LoadBalancingPolicy_MAGLEV
+	case novaedgev1alpha1.LBPolicyLeastConn:
+		return pb.LoadBalancingPolicy_LEAST_CONN
 	default:
 		return pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED
 	}
@@ -278,4 +280,40 @@ func getString(v *string) string {
 		return *v
 	}
 	return ""
+}
+
+// convertSessionAffinity converts NovaEdge SessionAffinityConfig to protobuf SessionAffinityConfig
+func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.SessionAffinityConfig {
+	if sa == nil {
+		return nil
+	}
+
+	affinityType := "cookie"
+	switch sa.Type {
+	case "Cookie":
+		affinityType = "cookie"
+	case "Header":
+		affinityType = "header"
+	case "SourceIP":
+		affinityType = "source_ip"
+	}
+
+	cookieName := sa.CookieName
+	if cookieName == "" {
+		cookieName = "NOVAEDGE_AFFINITY"
+	}
+
+	cookiePath := sa.CookiePath
+	if cookiePath == "" {
+		cookiePath = "/"
+	}
+
+	return &pb.SessionAffinityConfig{
+		Type:             affinityType,
+		CookieName:       cookieName,
+		CookieTtlSeconds: int64(sa.CookieTTL.Duration.Seconds()),
+		CookiePath:       cookiePath,
+		CookieSecure:     sa.Secure,
+		CookieSameSite:   sa.SameSite,
+	}
 }

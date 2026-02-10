@@ -253,6 +253,7 @@ const (
 	LoadBalancingPolicy_EWMA                  LoadBalancingPolicy = 3
 	LoadBalancingPolicy_RING_HASH             LoadBalancingPolicy = 4
 	LoadBalancingPolicy_MAGLEV                LoadBalancingPolicy = 5
+	LoadBalancingPolicy_LEAST_CONN            LoadBalancingPolicy = 6
 )
 
 // Enum value maps for LoadBalancingPolicy.
@@ -264,6 +265,7 @@ var (
 		3: "EWMA",
 		4: "RING_HASH",
 		5: "MAGLEV",
+		6: "LEAST_CONN",
 	}
 	LoadBalancingPolicy_value = map[string]int32{
 		"LB_POLICY_UNSPECIFIED": 0,
@@ -272,6 +274,7 @@ var (
 		"EWMA":                  3,
 		"RING_HASH":             4,
 		"MAGLEV":                5,
+		"LEAST_CONN":            6,
 	}
 )
 
@@ -1608,15 +1611,16 @@ type Cluster struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Name             string              `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Namespace        string              `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	LbPolicy         LoadBalancingPolicy `protobuf:"varint,3,opt,name=lb_policy,json=lbPolicy,proto3,enum=novaedge.proto.LoadBalancingPolicy" json:"lb_policy,omitempty"`
-	ConnectTimeoutMs int64               `protobuf:"varint,4,opt,name=connect_timeout_ms,json=connectTimeoutMs,proto3" json:"connect_timeout_ms,omitempty"`
-	IdleTimeoutMs    int64               `protobuf:"varint,5,opt,name=idle_timeout_ms,json=idleTimeoutMs,proto3" json:"idle_timeout_ms,omitempty"`
-	CircuitBreaker   *CircuitBreaker     `protobuf:"bytes,6,opt,name=circuit_breaker,json=circuitBreaker,proto3" json:"circuit_breaker,omitempty"`
-	HealthCheck      *HealthCheck        `protobuf:"bytes,7,opt,name=health_check,json=healthCheck,proto3" json:"health_check,omitempty"`
-	Tls              *BackendTLS         `protobuf:"bytes,8,opt,name=tls,proto3" json:"tls,omitempty"`
-	ConnectionPool   *ConnectionPool     `protobuf:"bytes,9,opt,name=connection_pool,json=connectionPool,proto3" json:"connection_pool,omitempty"`
+	Name             string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace        string                 `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	LbPolicy         LoadBalancingPolicy    `protobuf:"varint,3,opt,name=lb_policy,json=lbPolicy,proto3,enum=novaedge.proto.LoadBalancingPolicy" json:"lb_policy,omitempty"`
+	ConnectTimeoutMs int64                  `protobuf:"varint,4,opt,name=connect_timeout_ms,json=connectTimeoutMs,proto3" json:"connect_timeout_ms,omitempty"`
+	IdleTimeoutMs    int64                  `protobuf:"varint,5,opt,name=idle_timeout_ms,json=idleTimeoutMs,proto3" json:"idle_timeout_ms,omitempty"`
+	CircuitBreaker   *CircuitBreaker        `protobuf:"bytes,6,opt,name=circuit_breaker,json=circuitBreaker,proto3" json:"circuit_breaker,omitempty"`
+	HealthCheck      *HealthCheck           `protobuf:"bytes,7,opt,name=health_check,json=healthCheck,proto3" json:"health_check,omitempty"`
+	Tls              *BackendTLS            `protobuf:"bytes,8,opt,name=tls,proto3" json:"tls,omitempty"`
+	ConnectionPool   *ConnectionPool        `protobuf:"bytes,9,opt,name=connection_pool,json=connectionPool,proto3" json:"connection_pool,omitempty"`
+	SessionAffinity  *SessionAffinityConfig `protobuf:"bytes,10,opt,name=session_affinity,json=sessionAffinity,proto3" json:"session_affinity,omitempty"`
 }
 
 func (x *Cluster) Reset() {
@@ -1708,6 +1712,13 @@ func (x *Cluster) GetTls() *BackendTLS {
 func (x *Cluster) GetConnectionPool() *ConnectionPool {
 	if x != nil {
 		return x.ConnectionPool
+	}
+	return nil
+}
+
+func (x *Cluster) GetSessionAffinity() *SessionAffinityConfig {
+	if x != nil {
+		return x.SessionAffinity
 	}
 	return nil
 }

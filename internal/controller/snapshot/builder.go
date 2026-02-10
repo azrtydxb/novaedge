@@ -339,6 +339,11 @@ func (b *Builder) buildClusters(ctx context.Context) ([]*pb.Cluster, map[string]
 			}
 		}
 
+		// Session affinity configuration
+		if backend.Spec.SessionAffinity != nil {
+			cluster.SessionAffinity = convertSessionAffinity(backend.Spec.SessionAffinity)
+		}
+
 		clusters = append(clusters, cluster)
 
 		// Resolve endpoints for this backend
