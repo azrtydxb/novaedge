@@ -955,7 +955,6 @@ func (w *FailoverWatcher) GetPersistence() *ConfigPersistence {
 	return w.persistence
 }
 
-
 // safeInt64ToInt32 converts int64 to int32 with overflow protection
 func safeInt64ToInt32(v int64) int32 {
 	const maxInt32 = int64(1<<31 - 1)

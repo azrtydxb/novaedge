@@ -145,7 +145,6 @@ func (s *HTTPServer) parseTLSVersion(version string) uint16 {
 	}
 }
 
-
 // parseCipherSuites converts cipher suite names to constants
 func (s *HTTPServer) parseCipherSuites(suites []string) []uint16 {
 	if len(suites) == 0 {

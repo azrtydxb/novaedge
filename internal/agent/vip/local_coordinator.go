@@ -271,7 +271,7 @@ func (c *LocalCoordinator) receiveLoop() {
 		n, _, err := c.conn.ReadFromUDP(buf)
 		if err != nil {
 			var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
+			if errors.As(err, &netErr) && netErr.Timeout() {
 				continue
 			}
 			c.logger.Error("Error reading from UDP", zap.Error(err))

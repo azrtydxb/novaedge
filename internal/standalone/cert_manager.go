@@ -31,8 +31,8 @@ import (
 )
 
 const (
-	issuerTypeACME      = "acme"
-	issuerTypeManual    = "manual"
+	issuerTypeACME       = "acme"
+	issuerTypeManual     = "manual"
 	issuerTypeSelfSigned = "self-signed"
 )
 

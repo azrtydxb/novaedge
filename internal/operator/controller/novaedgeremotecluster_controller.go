@@ -356,6 +356,7 @@ func (r *NovaEdgeRemoteClusterReconciler) updateOverallStatus(ctx context.Contex
 }
 
 // cleanupRemoteCluster handles cleanup when a remote cluster is deleted
+//
 //nolint:unparam // error return kept for future cleanup operations (see TODOs)
 func (r *NovaEdgeRemoteClusterReconciler) cleanupRemoteCluster(ctx context.Context, rc *novaedgev1alpha1.NovaEdgeRemoteCluster) error {
 	logger := log.FromContext(ctx)

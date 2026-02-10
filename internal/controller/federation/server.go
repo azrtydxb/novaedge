@@ -1014,6 +1014,7 @@ func (s *Server) maintainPeerConnection(ctx context.Context, peer *PeerInfo) {
 }
 
 // connectToPeer establishes a connection to a federation peer
+//
 //nolint:unparam // error return kept for future peer connection implementation (see TODOs)
 func (s *Server) connectToPeer(_ context.Context, peer *PeerInfo) error {
 	// This would establish a gRPC client connection to the peer

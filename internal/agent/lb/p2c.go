@@ -32,7 +32,6 @@ type P2C struct {
 	endpoints []*pb.Endpoint
 	// Track active requests per endpoint
 	activeRequests map[string]*int64
-
 }
 
 // NewP2C creates a new P2C load balancer
@@ -49,7 +48,6 @@ func NewP2C(endpoints []*pb.Endpoint) *P2C {
 	return &P2C{
 		endpoints:      endpoints,
 		activeRequests: activeRequests,
-
 	}
 }
 

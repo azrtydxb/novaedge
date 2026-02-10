@@ -17,9 +17,9 @@ limitations under the License.
 package router
 
 import (
+	"crypto/rand"
 	"fmt"
 	"hash/fnv"
-	"crypto/rand"
 	"math/big"
 	"regexp"
 	"sort"

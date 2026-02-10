@@ -23,10 +23,10 @@ import (
 )
 
 const (
-	testClientIP          = "1.2.3.4"
-	testTrustedProxyAddr  = "10.0.0.1:12345"
-	testUntrustedAddr     = "8.8.8.8:12345"
-	testInternalAddr      = "10.1.2.3:12345"
+	testClientIP         = "1.2.3.4"
+	testTrustedProxyAddr = "10.0.0.1:12345"
+	testUntrustedAddr    = "8.8.8.8:12345"
+	testInternalAddr     = "10.1.2.3:12345"
 )
 
 func TestSetGlobalTrustedProxies(t *testing.T) {
