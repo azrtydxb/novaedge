@@ -45,6 +45,9 @@ dist/
 # Claude Code
 .claude/
 
+# Serena MCP plugin
+.serena/
+
 # ACME/Certificate storage
 .acme/
 *.pem
