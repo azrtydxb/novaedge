@@ -36,6 +36,9 @@ message ConfigSnapshot {
 
   // List of available controllers for agent failover
   repeated ControllerInfo available_controllers = 10;
+
+  // L4 (TCP/UDP/TLS passthrough) listener configurations
+  repeated L4Listener l4_listeners = 11;
 }
 
 // FederationMetadata contains federation-related metadata for the snapshot
@@ -482,6 +485,58 @@ message HSTSConfig {
 
   // Add site to browser HSTS preload list
   bool preload = 4;
+}
+
+// L4Listener defines a Layer 4 (TCP/UDP/TLS passthrough) listener configuration
+message L4Listener {
+  // Name of the listener
+  string name = 1;
+  // Port to listen on
+  int32 port = 2;
+  // Protocol type: TCP, UDP, or TLS (passthrough)
+  Protocol protocol = 3;
+  // Backend cluster name for TCP/UDP listeners
+  string backend_name = 4;
+  // Endpoints for the backend (used for TCP/UDP listeners)
+  repeated Endpoint backends = 5;
+  // TCP-specific configuration
+  L4TCPConfig tcp_config = 6;
+  // UDP-specific configuration
+  L4UDPConfig udp_config = 7;
+  // TLS passthrough routes (for TLS protocol)
+  repeated L4TLSRoute tls_routes = 8;
+  // Default TLS backend when no SNI match is found
+  L4TLSRoute default_tls_backend = 9;
+}
+
+// L4TCPConfig holds TCP-specific proxy configuration
+message L4TCPConfig {
+  // Connect timeout in milliseconds
+  int64 connect_timeout_ms = 1;
+  // Idle timeout in milliseconds
+  int64 idle_timeout_ms = 2;
+  // Buffer size in bytes for bidirectional copy
+  int32 buffer_size = 3;
+  // Drain timeout in milliseconds for graceful shutdown
+  int64 drain_timeout_ms = 4;
+}
+
+// L4UDPConfig holds UDP-specific proxy configuration
+message L4UDPConfig {
+  // Session timeout in milliseconds
+  int64 session_timeout_ms = 1;
+  // Maximum UDP packet buffer size
+  int32 buffer_size = 2;
+}
+
+// L4TLSRoute maps an SNI hostname to backend endpoints for TLS passthrough
+message L4TLSRoute {
+  // SNI hostname to match (supports wildcards like *.example.com)
+  string hostname = 1;
+  // Backend cluster name
+  string backend_name = 2;
+  // Backend endpoints
+  repeated Endpoint backends = 3;
 }
 
 // ConfigService is the gRPC service for distributing config snapshots

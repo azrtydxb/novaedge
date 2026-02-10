@@ -1,0 +1,68 @@
+# TLS Passthrough Example: Route encrypted traffic by SNI hostname
+# NovaEdge reads the SNI from the TLS ClientHello without decrypting,
+# then routes the connection to the appropriate backend.
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: tls-passthrough-gateway
+  namespace: default
+spec:
+  vipRef: frontend-vip
+  listeners:
+    - name: tls-passthrough
+      port: 443
+      protocol: TLS
+      hostnames:
+        - "api.example.com"
+        - "app.example.com"
+        - "*.internal.example.com"
+---
+# Backend for api.example.com
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: api-backend
+  namespace: default
+spec:
+  lbPolicy: RoundRobin
+  serviceRef:
+    name: api-service
+    port: 443
+---
+# Backend for app.example.com
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: app-backend
+  namespace: default
+spec:
+  lbPolicy: P2C
+  serviceRef:
+    name: app-service
+    port: 443
+---
+# Route for api.example.com
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-tls-route
+  namespace: default
+spec:
+  hostnames:
+    - "api.example.com"
+  rules:
+    - backendRefs:
+        - name: api-backend
+---
+# Route for app.example.com
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: app-tls-route
+  namespace: default
+spec:
+  hostnames:
+    - "app.example.com"
+  rules:
+    - backendRefs:
+        - name: app-backend

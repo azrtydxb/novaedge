@@ -29,6 +29,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	"github.com/piwi3910/novaedge/internal/agent/l4"
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	"github.com/piwi3910/novaedge/internal/observability"
@@ -185,6 +186,9 @@ func main() {
 	// Create HTTP server
 	httpServer := server.NewHTTPServer(logger)
 
+	// Create L4 manager
+	l4Manager := l4.NewManager(logger)
+
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
 
@@ -207,6 +211,12 @@ func main() {
 				zap.Int("routes", len(snapshot.Routes)),
 				zap.Int("vips", len(snapshot.VipAssignments)),
 			)
+
+			// Apply L4 config (TCP/UDP/TLS passthrough)
+			if applyErr := applyL4Config(ctx, l4Manager, snapshot, logger); applyErr != nil {
+				logger.Error("Failed to apply L4 config", zap.Error(applyErr))
+				// Don't fail the whole config update for L4 errors
+			}
 
 			// Apply VIP assignments
 			if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
@@ -275,6 +285,11 @@ func main() {
 		logger.Error("Error releasing VIPs", zap.Error(err))
 	}
 
+	// Shutdown L4 listeners
+	if err := l4Manager.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Error during L4 manager shutdown", zap.Error(err))
+	}
+
 	// Shutdown HTTP server
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during HTTP server shutdown", zap.Error(err))
@@ -286,6 +301,69 @@ func main() {
 	}
 
 	logger.Info("Agent stopped")
+}
+
+// applyL4Config converts snapshot L4 listeners to L4 manager config and applies it
+func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Snapshot, logger *zap.Logger) error {
+	if snapshot.L4Listeners == nil || len(snapshot.L4Listeners) == 0 {
+		// No L4 listeners, clear any existing ones
+		return manager.ApplyConfig(ctx, nil)
+	}
+
+	var configs []l4.L4ListenerConfig
+	for _, l4Listener := range snapshot.L4Listeners {
+		cfg := l4.L4ListenerConfig{
+			Name:        l4Listener.Name,
+			Port:        l4Listener.Port,
+			BackendName: l4Listener.BackendName,
+			Backends:    l4Listener.Backends,
+		}
+
+		switch l4Listener.Protocol {
+		case 4: // TCP
+			cfg.Type = l4.ListenerTypeTCP
+			if l4Listener.TcpConfig != nil {
+				cfg.TCPConfig = &l4.TCPProxyConfig{
+					ConnectTimeout: time.Duration(l4Listener.TcpConfig.ConnectTimeoutMs) * time.Millisecond,
+					IdleTimeout:    time.Duration(l4Listener.TcpConfig.IdleTimeoutMs) * time.Millisecond,
+					BufferSize:     int(l4Listener.TcpConfig.BufferSize),
+					DrainTimeout:   time.Duration(l4Listener.TcpConfig.DrainTimeoutMs) * time.Millisecond,
+				}
+			}
+		case 5: // TLS (passthrough)
+			cfg.Type = l4.ListenerTypeTLSPassthrough
+			routes := make(map[string]*l4.TLSRoute)
+			for _, tlsRoute := range l4Listener.TlsRoutes {
+				routes[tlsRoute.Hostname] = &l4.TLSRoute{
+					Hostname:    tlsRoute.Hostname,
+					Backends:    tlsRoute.Backends,
+					BackendName: tlsRoute.BackendName,
+				}
+			}
+			var defaultBackend *l4.TLSRoute
+			if l4Listener.DefaultTlsBackend != nil {
+				defaultBackend = &l4.TLSRoute{
+					Hostname:    l4Listener.DefaultTlsBackend.Hostname,
+					Backends:    l4Listener.DefaultTlsBackend.Backends,
+					BackendName: l4Listener.DefaultTlsBackend.BackendName,
+				}
+			}
+			cfg.TLSPassthroughConfig = &l4.TLSPassthroughConfig{
+				Routes:         routes,
+				DefaultBackend: defaultBackend,
+			}
+		default:
+			logger.Warn("Unknown L4 listener protocol",
+				zap.Int32("protocol", int32(l4Listener.Protocol)))
+			continue
+		}
+
+		configs = append(configs, cfg)
+	}
+
+	logger.Info("Applying L4 configuration",
+		zap.Int("listeners", len(configs)))
+	return manager.ApplyConfig(ctx, configs)
 }
 
 func initLogger(level string) *zap.Logger {

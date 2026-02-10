@@ -1,0 +1,48 @@
+# Gateway API TCPRoute Example
+# Uses standard Gateway API resources for L4 TCP routing through NovaEdge.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tcp-gateway
+  namespace: default
+spec:
+  gatewayClassName: novaedge
+  listeners:
+    - name: mysql
+      port: 3306
+      protocol: TCP
+    - name: postgres
+      port: 5432
+      protocol: TCP
+---
+# TCPRoute for MySQL (Gateway API v1alpha2)
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: mysql-tcproute
+  namespace: default
+spec:
+  parentRefs:
+    - name: tcp-gateway
+      sectionName: mysql
+  rules:
+    - backendRefs:
+        - name: mysql-service
+          port: 3306
+          weight: 1
+---
+# TCPRoute for PostgreSQL
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: postgres-tcproute
+  namespace: default
+spec:
+  parentRefs:
+    - name: tcp-gateway
+      sectionName: postgres
+  rules:
+    - backendRefs:
+        - name: postgres-service
+          port: 5432
+          weight: 1

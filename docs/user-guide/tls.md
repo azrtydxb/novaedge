@@ -115,7 +115,31 @@ spec:
 
 ## TLS Passthrough
 
-Pass encrypted traffic directly to backends without termination.
+Pass encrypted traffic directly to backends without termination. NovaEdge reads the SNI (Server Name Indication) from the TLS ClientHello message without decrypting the connection, then routes the connection to the appropriate backend based on the hostname.
+
+### How It Works
+
+1. Client initiates a TLS connection to the listener port
+2. NovaEdge reads the TLS ClientHello message and extracts the SNI hostname
+3. The SNI hostname is matched against configured routes (exact match, then wildcard)
+4. The entire TLS connection (including the ClientHello) is forwarded to the selected backend
+5. The TLS handshake completes directly between client and backend (end-to-end encryption)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as Gateway
+    participant B as Backend
+
+    C->>G: TLS ClientHello (SNI: api.example.com)
+    G->>G: Extract SNI (no decryption)
+    G->>G: Match route by hostname
+    G->>B: Forward full TLS connection
+    B->>C: TLS handshake continues
+    Note over C,B: End-to-end encryption preserved
+```
+
+### Kubernetes Configuration
 
 ```yaml
 apiVersion: novaedge.io/v1alpha1
@@ -130,22 +154,96 @@ spec:
       protocol: TLS
       hostnames:
         - "api.example.com"
-      tls:
-        mode: Passthrough
+        - "app.example.com"
+        - "*.internal.example.com"
 ```
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant G as Gateway
-    participant B as Backend
+### Route Configuration
 
-    C->>G: TLS ClientHello (SNI: api.example.com)
-    G->>G: Extract SNI
-    G->>B: Forward TLS connection
-    B->>C: TLS handshake continues
-    Note over C,B: End-to-end encryption
+TLS passthrough routes use the `ProxyRoute` resource with hostname-based matching:
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-tls-route
+spec:
+  hostnames:
+    - "api.example.com"
+  rules:
+    - backendRefs:
+        - name: api-backend
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: app-tls-route
+spec:
+  hostnames:
+    - "app.example.com"
+  rules:
+    - backendRefs:
+        - name: app-backend
 ```
+
+### Hostname Matching
+
+TLS passthrough supports two types of hostname matching:
+
+| Match Type | Example | Matches |
+|------------|---------|---------|
+| Exact | `api.example.com` | Only `api.example.com` |
+| Wildcard | `*.example.com` | `foo.example.com`, `bar.example.com` (not `example.com`) |
+
+Exact matches take priority over wildcard matches.
+
+### Gateway API TLSRoute
+
+NovaEdge also supports the Gateway API `TLSRoute` resource for TLS passthrough:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: api-tlsroute
+spec:
+  parentRefs:
+    - name: tls-gateway
+      sectionName: tls
+  hostnames:
+    - "api.example.com"
+  rules:
+    - backendRefs:
+        - name: api-service
+          port: 443
+```
+
+See [Gateway API - L4 Routes](../advanced/gateway-api.md#l4-routes) for details.
+
+### Standalone Configuration
+
+```yaml
+l4Listeners:
+  - name: tls-passthrough
+    port: 443
+    protocol: TLS
+    tlsRoutes:
+      - hostname: "api.example.com"
+        backend: api-backend
+      - hostname: "*.internal.example.com"
+        backend: internal-backend
+```
+
+### TLS Passthrough Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `novaedge_l4_tls_passthrough_total` | Counter | TLS passthrough connections by SNI |
+| `novaedge_l4_sni_routing_errors_total` | Counter | SNI routing errors |
+| `novaedge_l4_connections_total` | Counter | Total L4 connections |
+| `novaedge_l4_active_connections` | Gauge | Currently active connections |
+
+For comprehensive L4 proxying documentation including TCP and UDP, see [Layer 4 TCP/UDP Proxying](l4-proxying.md).
 
 ## Backend TLS (Upstream TLS)
 
