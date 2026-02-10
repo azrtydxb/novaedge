@@ -47,6 +47,12 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 			continue
 		}
 
+		// Match by Kind: only apply policies that target ProxyRoute resources.
+		// Policies targeting ProxyGateway or ProxyBackend should not match routes.
+		if policyProto.TargetRef.Kind != "ProxyRoute" {
+			continue
+		}
+
 		targetRef := fmt.Sprintf("%s/%s", policyProto.TargetRef.Namespace, policyProto.TargetRef.Name)
 		if targetRef != routeRef {
 			continue
@@ -108,6 +114,15 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 						zap.Error(err),
 					)
 				}
+			}
+
+		case pb.PolicyType_SECURITY_HEADERS:
+			if policyProto.SecurityHeaders != nil {
+				sh := policy.NewSecurityHeaders(policyProto.SecurityHeaders)
+				middlewares = append(middlewares, policyMiddleware{
+					name:    fmt.Sprintf("security-headers-%s", policyProto.Name),
+					handler: policy.HandleSecurityHeaders(sh),
+				})
 			}
 		}
 	}

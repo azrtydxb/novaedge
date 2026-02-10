@@ -104,11 +104,18 @@ func selectWeightedBackend(backends []*pb.BackendRef) *pb.BackendRef {
 	return backends[0]
 }
 
-// hashEndpointList computes a hash of the endpoint list for versioning
-// This allows us to detect when endpoints change without storing the full list
-func hashEndpointList(endpoints []*pb.Endpoint) uint64 {
+// hashEndpointList computes a hash of the endpoint list and LB policy for versioning.
+// This allows us to detect when endpoints or the load balancing policy change
+// without storing the full list. Including the LB policy ensures that changing
+// from e.g. ROUND_ROBIN to EWMA forces load balancer recreation even if
+// the endpoint set is identical.
+func hashEndpointList(endpoints []*pb.Endpoint, lbPolicy pb.LoadBalancingPolicy) uint64 {
+	// Start with the LB policy so that a policy change alone triggers recreation
+	h := fnv.New64a()
+	_, _ = fmt.Fprintf(h, "lb:%d;", int32(lbPolicy))
+
 	if len(endpoints) == 0 {
-		return 0
+		return h.Sum64()
 	}
 
 	// Sort endpoints by address:port for consistent hashing
@@ -123,7 +130,6 @@ func hashEndpointList(endpoints []*pb.Endpoint) uint64 {
 	})
 
 	// Compute hash
-	h := fnv.New64a()
 	for _, ep := range sortedEndpoints {
 		// Hash address, port, and ready state
 		_, _ = fmt.Fprintf(h, "%s:%d:%t;", ep.Address, ep.Port, ep.Ready)

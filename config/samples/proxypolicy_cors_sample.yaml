@@ -6,8 +6,8 @@ metadata:
 spec:
   type: CORS
   targetRef:
-    kind: ProxyGateway
-    name: external-gateway
+    kind: ProxyRoute
+    name: example-route
     namespace: default
   cors:
     allowOrigins:
