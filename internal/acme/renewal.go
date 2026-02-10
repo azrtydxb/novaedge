@@ -60,7 +60,7 @@ func (m *RenewalManager) Start(ctx context.Context) error {
 
 	m.logger.Info("Starting certificate renewal manager",
 		zap.Duration("interval", m.interval),
-		zap.Duration("renewBefore", m.renewBefore),
+		zap.Duration("renew_before", m.renewBefore),
 	)
 
 	// Run initial check

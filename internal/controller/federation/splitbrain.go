@@ -289,9 +289,9 @@ func (d *SplitBrainDetector) Start(ctx context.Context) {
 	d.ctx, d.cancel = context.WithCancel(ctx)
 
 	d.logger.Info("Starting split-brain detector",
-		zap.Duration("partitionTimeout", d.config.PartitionTimeout),
-		zap.Bool("quorumRequired", d.config.QuorumRequired),
-		zap.Int("quorumSize", d.config.QuorumSize),
+		zap.Duration("partition_timeout", d.config.PartitionTimeout),
+		zap.Bool("quorum_required", d.config.QuorumRequired),
+		zap.Int("quorum_size", d.config.QuorumSize),
 	)
 
 	go d.runDetectionLoop()
@@ -540,7 +540,7 @@ func (d *SplitBrainDetector) checkPartitionHealing() {
 // runHealingProcess handles partition healing
 func (d *SplitBrainDetector) runHealingProcess() {
 	d.logger.Info("Starting partition healing process",
-		zap.Duration("gracePeriod", d.config.HealingGracePeriod),
+		zap.Duration("grace_period", d.config.HealingGracePeriod),
 	)
 
 	// Wait for grace period to allow state reconciliation
@@ -823,11 +823,11 @@ func (d *SplitBrainDetector) HaveAgentQuorum() bool {
 	haveQuorum := info.OurVotes >= info.QuorumThreshold
 
 	d.logger.Debug("Agent quorum check",
-		zap.Int("ourVotes", info.OurVotes),
+		zap.Int("our_votes", info.OurVotes),
 		zap.Int("threshold", info.QuorumThreshold),
-		zap.Int("totalVotes", info.TotalVotes),
-		zap.Int("reachableAgents", info.ReachableAgents),
-		zap.Bool("haveQuorum", haveQuorum),
+		zap.Int("total_votes", info.TotalVotes),
+		zap.Int("reachable_agents", info.ReachableAgents),
+		zap.Bool("have_quorum", haveQuorum),
 	)
 
 	return haveQuorum
