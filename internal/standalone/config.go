@@ -412,8 +412,14 @@ type SessionAffinityStandaloneConfig struct {
 // VIPConfig defines a virtual IP address
 type VIPConfig struct {
 	Name    string `yaml:"name"`
-	Address string `yaml:"address"` // IP/CIDR format
+	Address string `yaml:"address"` // IP/CIDR format (IPv4 or IPv6)
 	Mode    string `yaml:"mode"`    // L2, BGP, OSPF
+
+	// IPv6Address is the IPv6 VIP address for dual-stack mode
+	IPv6Address string `yaml:"ipv6Address,omitempty"`
+
+	// AddressFamily: ipv4, ipv6, dual (default: ipv4)
+	AddressFamily string `yaml:"addressFamily,omitempty"`
 
 	// Interface to bind VIP (for L2 mode)
 	Interface string `yaml:"interface,omitempty"`
@@ -423,6 +429,12 @@ type VIPConfig struct {
 
 	// OSPF configuration
 	OSPF *OSPFConfig `yaml:"ospf,omitempty"`
+
+	// BFD configuration for fast failure detection
+	BFD *BFDStandaloneConfig `yaml:"bfd,omitempty"`
+
+	// PoolRef references an IP pool for automatic allocation
+	PoolRef string `yaml:"poolRef,omitempty"`
 }
 
 // BGPConfig defines BGP settings
@@ -437,9 +449,24 @@ type BGPConfig struct {
 
 // OSPFConfig defines OSPF settings
 type OSPFConfig struct {
-	RouterID  string `yaml:"routerID"`
-	Area      string `yaml:"area"`
-	Interface string `yaml:"interface"`
+	RouterID        string `yaml:"routerID"`
+	Area            string `yaml:"area"`
+	Interface       string `yaml:"interface"`
+	Cost            int    `yaml:"cost,omitempty"`
+	HelloInterval   int    `yaml:"helloInterval,omitempty"`
+	DeadInterval    int    `yaml:"deadInterval,omitempty"`
+	AuthType        string `yaml:"authType,omitempty"`
+	AuthKey         string `yaml:"authKey,omitempty"`
+	GracefulRestart bool   `yaml:"gracefulRestart,omitempty"`
+}
+
+// BFDStandaloneConfig defines BFD settings for standalone mode
+type BFDStandaloneConfig struct {
+	Enabled               bool   `yaml:"enabled"`
+	DetectMultiplier      int    `yaml:"detectMultiplier,omitempty"`
+	DesiredMinTxInterval  string `yaml:"desiredMinTxInterval,omitempty"`
+	RequiredMinRxInterval string `yaml:"requiredMinRxInterval,omitempty"`
+	EchoMode              bool   `yaml:"echoMode,omitempty"`
 }
 
 // PolicyConfig defines a policy (rate limit, CORS, etc.)

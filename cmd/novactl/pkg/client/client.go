@@ -51,6 +51,7 @@ const (
 	ResourceTCPRoute  ResourceType = "tcproutes"
 	ResourceTLSRoute  ResourceType = "tlsroutes"
 	ResourceGRPCRoute ResourceType = "grpcroutes"
+	ResourceIPPool    ResourceType = "ippools"
 )
 
 // GetGVR returns the GroupVersionResource for a given resource type
@@ -80,6 +81,8 @@ func GetGVR(resourceType ResourceType) schema.GroupVersionResource {
 			Version:  "v1",
 			Resource: "grpcroutes",
 		}
+	case ResourceIPPool:
+		resource = "proxyippools"
 	default:
 		resource = string(resourceType)
 	}

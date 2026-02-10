@@ -14,6 +14,7 @@ flowchart TB
 
     subgraph DataPlane["Data Plane Configuration"]
         VIP["ProxyVIP<br/>Virtual IP definition"]
+        IPPool["ProxyIPPool<br/>IP address pool management"]
         GW["ProxyGateway<br/>Listeners (ports/protocols)"]
         RT["ProxyRoute<br/>Routing rules"]
         BE["ProxyBackend<br/>Upstream services"]
@@ -25,6 +26,7 @@ flowchart TB
     NERC --> NEC
     FED --> NEC
 
+    IPPool --> VIP
     VIP --> GW
     GW --> RT
     RT --> BE
@@ -68,6 +70,7 @@ flowchart LR
     end
 
     Client --> VIP
+    IPPool --> VIP
     VIP --> GW
     GW --> RT1
     GW --> RT2
@@ -558,19 +561,19 @@ status:
 
 ## ProxyVIP
 
-Defines a Virtual IP address for the load balancer.
+Defines a Virtual IP address for the load balancer. Supports IPv4, IPv6, and dual-stack configurations with optional BFD and IP pool allocation.
 
 ```mermaid
 flowchart TB
     subgraph VIPModes["VIP Operating Modes"]
-        subgraph L2Mode["L2 ARP Mode"]
-            L2["Single active node<br/>GARP for failover"]
+        subgraph L2Mode["L2 ARP/NDP Mode"]
+            L2["Single active node<br/>GARP (IPv4) / NDP (IPv6)"]
         end
         subgraph BGPMode["BGP Mode"]
-            BGP["All nodes announce<br/>ECMP routing"]
+            BGP["All nodes announce<br/>ECMP routing<br/>Optional BFD"]
         end
-        subgraph OSPFMode["OSPF Mode"]
-            OSPF["LSA announcements<br/>L3 active-active"]
+        subgraph OSPFMode["OSPF/OSPFv3 Mode"]
+            OSPF["LSA announcements<br/>L3 active-active<br/>Graceful restart"]
         end
     end
 
@@ -585,39 +588,154 @@ kind: ProxyVIP
 metadata:
   name: my-vip
 spec:
-  # VIP address with CIDR notation
-  address: 192.168.1.100/32
-
-  # VIP mode: L2, BGP, or OSPF
-  mode: L2
-
-  # Network interface for L2 mode
-  interface: eth0
-
-  # BGP configuration (for BGP mode)
-  bgp:
-    asn: 65000
+  address: 10.200.0.100/32
+  ipv6Address: "2001:db8::100/128"
+  mode: BGP
+  addressFamily: dual
+  ports:
+    - 80
+    - 443
+  bgpConfig:
+    localAS: 65000
+    routerID: "10.0.0.1"
     peers:
-      - address: 192.168.1.1
-        asn: 65001
-        password: secret
-
-  # OSPF configuration (for OSPF mode)
-  ospf:
-    area: 0.0.0.0
-    helloInterval: 10s
-    deadInterval: 40s
+      - address: "10.0.0.254"
+        as: 65001
+  ospfConfig:
+    routerID: "10.0.0.1"
+    areaID: 0
+    cost: 10
+    helloInterval: 10
+    deadInterval: 40
+    authType: md5
+    authKey: "mySecretKey"
+    gracefulRestart: true
+  bfd:
+    enabled: true
+    detectMultiplier: 3
+    desiredMinTxInterval: "300ms"
+    requiredMinRxInterval: "300ms"
+    echoMode: false
+  poolRef:
+    name: main-vip-pool
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/loadbalancer: "true"
 ```
 
-### Fields
+### Spec Fields
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `spec.address` | string | Yes | VIP address with CIDR notation |
-| `spec.mode` | string | Yes | VIP mode: `L2`, `BGP`, or `OSPF` |
-| `spec.interface` | string | L2 only | Network interface for ARP |
-| `spec.bgp` | object | BGP only | BGP configuration |
-| `spec.ospf` | object | OSPF only | OSPF configuration |
+| `spec.address` | string | No* | IPv4 VIP address with CIDR (e.g., `10.200.0.100/32`) |
+| `spec.ipv6Address` | string | No* | IPv6 VIP address with CIDR (e.g., `2001:db8::100/128`) |
+| `spec.mode` | string | Yes | VIP mode: `L2ARP`, `BGP`, or `OSPF` |
+| `spec.addressFamily` | string | No | Address family: `ipv4` (default), `ipv6`, or `dual` |
+| `spec.ports` | []int32 | Yes | Ports to bind on hostNetwork |
+| `spec.bgpConfig` | object | BGP only | BGP configuration (see below) |
+| `spec.ospfConfig` | object | OSPF only | OSPF configuration (see below) |
+| `spec.bfd` | object | No | BFD configuration for sub-second failover |
+| `spec.poolRef` | object | No | Reference to a ProxyIPPool for auto-allocation |
+| `spec.nodeSelector` | LabelSelector | No | Node selector for VIP placement |
+| `spec.healthPolicy` | object | No | Node health requirements |
+
+*At least one of `address`, `ipv6Address`, or `poolRef` must be specified.
+
+### BGP Config Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `bgpConfig.localAS` | int32 | Yes | Local BGP AS number (1-4294967295) |
+| `bgpConfig.routerID` | string | Yes | BGP router ID |
+| `bgpConfig.peers` | []object | Yes | BGP peer list (min 1) |
+| `bgpConfig.peers[].address` | string | Yes | Peer IP address (IPv4 or IPv6) |
+| `bgpConfig.peers[].as` | int32 | Yes | Peer AS number |
+| `bgpConfig.peers[].port` | int | No | Peer BGP port (default: 179) |
+| `bgpConfig.communities` | []string | No | BGP communities to attach |
+| `bgpConfig.localPreference` | int32 | No | Local preference for iBGP |
+
+### OSPF Config Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `ospfConfig.routerID` | string | Yes | OSPF router ID |
+| `ospfConfig.areaID` | int32 | No | OSPF area ID (default: 0 = backbone) |
+| `ospfConfig.cost` | int32 | No | Route metric cost (default: 10) |
+| `ospfConfig.helloInterval` | int32 | No | Hello interval in seconds (default: 10) |
+| `ospfConfig.deadInterval` | int32 | No | Dead interval in seconds (default: 40) |
+| `ospfConfig.authType` | string | No | Authentication: `none`, `plaintext`, `md5` |
+| `ospfConfig.authKey` | string | No | Authentication key |
+| `ospfConfig.gracefulRestart` | bool | No | Enable graceful restart (default: false) |
+
+### BFD Config Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `bfd.enabled` | bool | No | Enable BFD (default: false) |
+| `bfd.detectMultiplier` | int32 | No | Missed packets threshold (default: 3, range: 1-255) |
+| `bfd.desiredMinTxInterval` | string | No | Min TX interval (default: "300ms") |
+| `bfd.requiredMinRxInterval` | string | No | Min RX interval (default: "300ms") |
+| `bfd.echoMode` | bool | No | Enable echo mode (default: false) |
+
+### Pool Ref Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `poolRef.name` | string | Yes | Name of the ProxyIPPool resource |
+
+### Status Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status.activeNode` | string | Node currently owning the VIP (L2ARP mode) |
+| `status.announcingNodes` | []string | Nodes announcing this VIP (BGP/OSPF) |
+| `status.allocatedAddress` | string | Address allocated from pool |
+| `status.allocatedIpv6Address` | string | IPv6 address allocated from pool |
+| `status.bfdSessionState` | string | Current BFD session state |
+| `status.observedGeneration` | int64 | Most recent generation observed |
+| `status.conditions` | []Condition | Standard Kubernetes conditions |
+
+---
+
+## ProxyIPPool
+
+Defines an IP address pool for automatic VIP address allocation.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyIPPool
+metadata:
+  name: main-vip-pool
+spec:
+  cidrs:
+    - "10.200.0.0/24"
+  addresses:
+    - "10.200.1.100/32"
+    - "10.200.1.200/32"
+  autoAssign: true
+```
+
+### Spec Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `spec.cidrs` | []string | No* | CIDR ranges for the pool |
+| `spec.addresses` | []string | No* | Explicit addresses (CIDR notation) |
+| `spec.autoAssign` | bool | No | Allow automatic allocation (default: false) |
+
+*At least one of `cidrs` or `addresses` must be specified.
+
+### Status Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status.allocated` | int32 | Number of allocated addresses |
+| `status.available` | int32 | Number of available addresses |
+| `status.allocations` | []IPAllocation | Current allocation details |
+| `status.allocations[].address` | string | Allocated IP address |
+| `status.allocations[].vipRef` | string | Name of the VIP using this address |
+| `status.allocations[].allocatedAt` | Time | When the address was allocated |
+| `status.conditions` | []Condition | Standard Kubernetes conditions |
 
 ---
 

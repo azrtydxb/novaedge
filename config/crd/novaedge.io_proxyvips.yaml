@@ -21,6 +21,12 @@ spec:
     - jsonPath: .spec.mode
       name: Mode
       type: string
+    - jsonPath: .spec.addressFamily
+      name: Family
+      type: string
+    - jsonPath: .status.bfdSessionState
+      name: BFD
+      type: string
     - jsonPath: .status.activeNode
       name: Active Node
       type: string
@@ -55,9 +61,50 @@ spec:
             properties:
               address:
                 description: Address is the VIP as CIDR notation, usually /32 for
-                  a single IP
+                  a single IP. Optional when using poolRef or IPv6-only.
                 pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$
                 type: string
+              addressFamily:
+                default: ipv4
+                description: AddressFamily specifies the IP address family (ipv4,
+                  ipv6, or dual for dual-stack)
+                enum:
+                - ipv4
+                - ipv6
+                - dual
+                type: string
+              bfd:
+                description: BFD configures Bidirectional Forwarding Detection for
+                  sub-second failure detection. Applicable to BGP mode VIPs.
+                properties:
+                  desiredMinTxInterval:
+                    default: 300ms
+                    description: DesiredMinTxInterval is the minimum interval between
+                      BFD control packets sent to the peer (e.g. "300ms", "1s")
+                    type: string
+                  detectMultiplier:
+                    default: 3
+                    description: DetectMultiplier is the number of missed packets before
+                      declaring session down
+                    format: int32
+                    maximum: 255
+                    minimum: 1
+                    type: integer
+                  echoMode:
+                    default: false
+                    description: EchoMode enables BFD echo mode for reduced detection
+                      time
+                    type: boolean
+                  enabled:
+                    description: Enabled activates BFD for this VIP
+                    type: boolean
+                  requiredMinRxInterval:
+                    default: 300ms
+                    description: RequiredMinRxInterval is the minimum interval between
+                      BFD control packets the local system can receive (e.g. "300ms",
+                      "1s")
+                    type: string
+                type: object
               bgpConfig:
                 description: |-
                   BGPConfig defines BGP configuration for BGP mode VIPs
@@ -87,8 +134,7 @@ spec:
                       description: BGPPeer defines a BGP peer configuration
                       properties:
                         address:
-                          description: Address is the peer IP address
-                          pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
+                          description: Address is the peer IP address (IPv4 or IPv6)
                           type: string
                         as:
                           description: AS is the peer AS number
@@ -125,6 +171,10 @@ spec:
                     minimum: 1
                     type: integer
                 type: object
+              ipv6Address:
+                description: IPv6Address is the VIP IPv6 address in CIDR notation
+                  (e.g. "2001:db8::1/128"). Used for ipv6 or dual address family.
+                type: string
               mode:
                 description: Mode determines how the VIP is exposed (L2ARP, BGP, or
                   OSPF)
@@ -179,6 +229,68 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
+              ospfConfig:
+                description: |-
+                  OSPFConfig defines OSPF configuration for OSPF mode VIPs.
+                  Required when Mode is OSPF.
+                properties:
+                  areaID:
+                    description: AreaID is the OSPF area identifier (0 for backbone)
+                    format: int32
+                    minimum: 0
+                    type: integer
+                  authKey:
+                    description: AuthKey is the authentication key (used with md5 or
+                      plaintext authType)
+                    type: string
+                  authType:
+                    description: AuthType is the OSPF authentication type (none, plaintext,
+                      md5)
+                    enum:
+                    - none
+                    - plaintext
+                    - md5
+                    type: string
+                  cost:
+                    default: 10
+                    description: Cost is the OSPF metric cost for the route
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  deadInterval:
+                    default: 40
+                    description: DeadInterval is the OSPF dead interval in seconds
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  gracefulRestart:
+                    default: false
+                    description: GracefulRestart enables OSPF graceful restart support
+                    type: boolean
+                  helloInterval:
+                    default: 10
+                    description: HelloInterval is the OSPF hello interval in seconds
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  routerID:
+                    description: RouterID is the OSPF router ID (usually an IP address)
+                    pattern: ^([0-9]{1,3}\.){3}[0-9]{1,3}$
+                    type: string
+                required:
+                - routerID
+                type: object
+              poolRef:
+                description: PoolRef references a ProxyIPPool for automatic IP address
+                  allocation. When set, the address field becomes optional as it will
+                  be allocated from the pool.
+                properties:
+                  name:
+                    description: Name is the name of the ProxyIPPool resource
+                    type: string
+                required:
+                - name
+                type: object
               ports:
                 description: Ports lists the ports to bind on hostNetwork
                 items:
@@ -187,7 +299,6 @@ spec:
                 minItems: 1
                 type: array
             required:
-            - address
             - mode
             - ports
             type: object
@@ -198,12 +309,24 @@ spec:
                 description: ActiveNode is the node currently owning the VIP (for
                   L2ARP mode)
                 type: string
+              allocatedAddress:
+                description: AllocatedAddress is the address allocated from a pool
+                  (when using poolRef)
+                type: string
+              allocatedIpv6Address:
+                description: AllocatedIpv6Address is the IPv6 address allocated from
+                  a pool (when using poolRef with dual-stack)
+                type: string
               announcingNodes:
                 description: AnnouncingNodes lists nodes currently announcing this
                   VIP (for BGP/OSPF mode)
                 items:
                   type: string
                 type: array
+              bfdSessionState:
+                description: BFDSessionState is the current BFD session state (Up,
+                  Down, Init, AdminDown)
+                type: string
               conditions:
                 description: Conditions represent the latest available observations
                   of the VIP's state
