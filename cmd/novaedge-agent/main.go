@@ -39,7 +39,7 @@ var (
 	controllerAddr  string
 	agentVersion    = "0.1.0"
 	logLevel        string
-	healthProbeAddr string
+	healthProbePort int
 	metricsPort     int
 
 	// TLS configuration for controller-agent mTLS
@@ -62,7 +62,7 @@ func main() {
 	flag.StringVar(&nodeName, "node-name", "", "Name of this node (required)")
 	flag.StringVar(&controllerAddr, "controller-address", "localhost:9090", "Address of the controller gRPC server")
 	flag.StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
-	flag.StringVar(&healthProbeAddr, "health-probe-address", ":8082", "Address for health probe endpoint")
+	flag.IntVar(&healthProbePort, "health-probe-port", 9091, "Port for health probe endpoint")
 	flag.IntVar(&metricsPort, "metrics-port", 9090, "Port for Prometheus metrics endpoint")
 
 	// TLS flags for mTLS with controller
@@ -189,7 +189,7 @@ func main() {
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
 
 	// Create health probe server
-	healthServer := server.NewHealthServer(logger, 8080)
+	healthServer := server.NewHealthServer(logger, healthProbePort)
 
 	// Start VIP manager
 	if err := vipManager.Start(ctx); err != nil {

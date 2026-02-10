@@ -12,6 +12,7 @@ import (
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui"
 	"github.com/spf13/cobra"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -122,23 +123,29 @@ func runWeb(cmd *cobra.Command, args []string) error {
 
 	// For Kubernetes mode (or auto mode), try to load kubeconfig
 	if webMode != "standalone" {
-		kubeconfigPath := os.Getenv("KUBECONFIG")
-		if kubeconfigPath == "" {
-			kubeconfigPath = clientcmd.RecommendedHomeFile
-		}
-
-		config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+		// Try in-cluster config first (for running inside a pod)
+		kubeConfig, err := rest.InClusterConfig()
 		if err != nil {
-			// If standalone config is provided, allow falling back to standalone mode
-			if webStandaloneConfig != "" {
-				fmt.Printf("Warning: kubeconfig not available, using standalone mode\n")
-				serverConfig.Mode = "standalone"
-			} else if webMode == "kubernetes" {
-				return fmt.Errorf("failed to load kubeconfig: %w", err)
+			// Fall back to kubeconfig file
+			kubeconfigPath := os.Getenv("KUBECONFIG")
+			if kubeconfigPath == "" {
+				kubeconfigPath = clientcmd.RecommendedHomeFile
 			}
-			// For auto mode without kubeconfig, mode detection will handle it
-		} else {
-			serverConfig.KubeConfig = config
+
+			kubeConfig, err = clientcmd.BuildConfigFromFlags("", kubeconfigPath)
+			if err != nil {
+				// If standalone config is provided, allow falling back to standalone mode
+				if webStandaloneConfig != "" {
+					fmt.Printf("Warning: kubeconfig not available, using standalone mode\n")
+					serverConfig.Mode = "standalone"
+				} else if webMode == "kubernetes" {
+					return fmt.Errorf("failed to load kubeconfig: %w", err)
+				}
+				// For auto mode without kubeconfig, mode detection will handle it
+			}
+		}
+		if kubeConfig != nil {
+			serverConfig.KubeConfig = kubeConfig
 		}
 	}
 

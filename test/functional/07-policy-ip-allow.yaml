@@ -1,0 +1,15 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: api-ip-allow
+  namespace: default
+spec:
+  type: IPAllowList
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+    namespace: default
+  ipList:
+    cidrs:
+      - "127.0.0.1/32"
+      - "10.0.0.0/8"

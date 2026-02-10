@@ -129,10 +129,11 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Update request size limits from gateway configuration
 	r.updateRequestLimits(snapshot)
 
-	// Clear existing configuration
+	// Clear route table (rebuilt below); preserve load balancers
+	// so they survive config snapshots with unchanged endpoints.
 	r.routes = make(map[string][]*RouteEntry)
-	r.loadBalancers = make(map[string]lb.LoadBalancer)
-	r.hashBasedLBs = make(map[string]interface{})
+	newLoadBalancers := make(map[string]lb.LoadBalancer)
+	newHashBasedLBs := make(map[string]interface{})
 
 	// Build routing table
 	for _, route := range snapshot.Routes {
@@ -188,30 +189,30 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 			// Create load balancer based on cluster policy
 			switch cluster.LbPolicy {
 			case pb.LoadBalancingPolicy_P2C:
-				r.loadBalancers[clusterKey] = lb.NewP2C(endpointList.Endpoints)
+				newLoadBalancers[clusterKey] = lb.NewP2C(endpointList.Endpoints)
 				r.logger.Debug("Created P2C load balancer", zap.String("cluster", clusterKey))
 
 			case pb.LoadBalancingPolicy_EWMA:
-				r.loadBalancers[clusterKey] = lb.NewEWMA(endpointList.Endpoints)
+				newLoadBalancers[clusterKey] = lb.NewEWMA(endpointList.Endpoints)
 				r.logger.Debug("Created EWMA load balancer", zap.String("cluster", clusterKey))
 
 			case pb.LoadBalancingPolicy_RING_HASH:
 				// RingHash uses consistent hashing - store separately
-				r.hashBasedLBs[clusterKey] = lb.NewRingHash(endpointList.Endpoints)
+				newHashBasedLBs[clusterKey] = lb.NewRingHash(endpointList.Endpoints)
 				r.logger.Debug("Created RingHash load balancer", zap.String("cluster", clusterKey))
 
 			case pb.LoadBalancingPolicy_MAGLEV:
 				// Maglev uses consistent hashing - store separately
-				r.hashBasedLBs[clusterKey] = lb.NewMaglev(endpointList.Endpoints)
+				newHashBasedLBs[clusterKey] = lb.NewMaglev(endpointList.Endpoints)
 				r.logger.Debug("Created Maglev load balancer", zap.String("cluster", clusterKey))
 
 			case pb.LoadBalancingPolicy_ROUND_ROBIN, pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
-				r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
+				newLoadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
 				r.logger.Debug("Created RoundRobin load balancer", zap.String("cluster", clusterKey))
 
 			default:
 				// Fallback to round robin for unknown policies
-				r.loadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
+				newLoadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
 				r.logger.Warn("Unknown LB policy, using RoundRobin",
 					zap.String("cluster", clusterKey),
 					zap.Int32("policy", int32(cluster.LbPolicy)),
@@ -221,6 +222,13 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 			// Update version tracking
 			r.endpointVersions[clusterKey] = endpointHash
 		} else {
+			// Carry over existing load balancers when endpoints unchanged
+			if existingLB, ok := r.loadBalancers[clusterKey]; ok {
+				newLoadBalancers[clusterKey] = existingLB
+			}
+			if existingHashLB, ok := r.hashBasedLBs[clusterKey]; ok {
+				newHashBasedLBs[clusterKey] = existingHashLB
+			}
 			r.logger.Debug("Endpoints unchanged, reusing load balancer",
 				zap.String("cluster", clusterKey),
 			)
@@ -240,6 +248,8 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	}
 
 	r.pools = newPools
+	r.loadBalancers = newLoadBalancers
+	r.hashBasedLBs = newHashBasedLBs
 
 	r.logger.Info("Router configuration applied",
 		zap.Int("hostnames", len(r.routes)),

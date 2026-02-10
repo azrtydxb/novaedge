@@ -44,7 +44,34 @@ patches:
     kind: DaemonSet
     name: novaedge-agent
 
-# Image configuration for dev
+# Set imagePullPolicy to Never for local images (controller)
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/imagePullPolicy
+      value: Never
+  target:
+    kind: Deployment
+    name: novaedge-controller
+
+# Set imagePullPolicy to Never for local images (webui)
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/imagePullPolicy
+      value: Never
+  target:
+    kind: Deployment
+    name: novaedge-webui
+
+# Set imagePullPolicy to Never for local images (agent)
+- patch: |-
+    - op: replace
+      path: /spec/template/spec/containers/0/imagePullPolicy
+      value: Never
+  target:
+    kind: DaemonSet
+    name: novaedge-agent
+
+# Image configuration for dev (use dev tag to avoid latest auto-pull behavior)
 images:
 - name: ghcr.io/piwi3910/novaedge-controller
   newName: novaedge-controller

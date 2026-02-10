@@ -28,10 +28,14 @@ ProxyBackend, ProxyPolicy, and ProxyVIP resources, as well as specialized
 commands for debugging routing, viewing metrics, and inspecting agents.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		var err error
-		// Load kubeconfig
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+		// Try in-cluster config first (for running inside a pod)
+		config, err = rest.InClusterConfig()
 		if err != nil {
-			return fmt.Errorf("failed to load kubeconfig: %w", err)
+			// Fall back to kubeconfig file
+			config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+			if err != nil {
+				return fmt.Errorf("failed to load kubeconfig: %w", err)
+			}
 		}
 		return nil
 	},
