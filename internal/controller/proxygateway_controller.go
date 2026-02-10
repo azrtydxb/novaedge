@@ -142,12 +142,12 @@ func (r *ProxyGatewayReconciler) validateAndUpdateStatus(ctx context.Context, ga
 
 	if len(validationErrors) > 0 {
 		condition.Status = metav1.ConditionFalse
-		condition.Reason = "ValidationFailed"
+		condition.Reason = ConditionReasonValidationFailed
 		condition.Message = fmt.Sprintf("Validation errors: %v", validationErrors)
 		logger.Info("Gateway validation failed", "errors", validationErrors)
 	} else {
 		condition.Status = metav1.ConditionTrue
-		condition.Reason = "Valid"
+		condition.Reason = ConditionReasonValid
 		condition.Message = "Gateway configuration is valid"
 	}
 

@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -78,7 +79,7 @@ func (s *HTTP3Server) Start(ctx context.Context) error {
 	// Start server in goroutine
 	errChan := make(chan error, 1)
 	go func() {
-		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := s.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			s.logger.Error("HTTP/3 server error", zap.Error(err))
 			errChan <- err
 		}
@@ -89,7 +90,9 @@ func (s *HTTP3Server) Start(ctx context.Context) error {
 	case err := <-errChan:
 		return err
 	case <-ctx.Done():
-		return s.Shutdown(context.Background())
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return s.Shutdown(shutdownCtx) //nolint:contextcheck // shutdown context intentionally derived from context.Background() after parent cancellation
 	}
 }
 

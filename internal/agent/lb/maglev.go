@@ -177,15 +177,15 @@ func (m *Maglev) generatePermutation(ep *pb.Endpoint) []uint64 {
 // hashKey hashes a string key to a uint64
 func (m *Maglev) hashKey(key string) uint64 {
 	h := fnv.New64a()
-	h.Write([]byte(key))
+	_, _ = h.Write([]byte(key))
 	return h.Sum64()
 }
 
 // GetTableSize returns the size of the lookup table
-func (m *Maglev) GetTableSize() int {
+func (m *Maglev) GetTableSize() uint64 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return int(m.tableSize)
+	return m.tableSize
 }
 
 // GetDistribution returns the distribution of endpoints in the lookup table

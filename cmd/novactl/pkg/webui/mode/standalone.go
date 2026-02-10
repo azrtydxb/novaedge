@@ -79,7 +79,7 @@ func (s *StandaloneBackend) save() error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(s.configPath, data, 0644); err != nil {
+	if err := os.WriteFile(s.configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -107,7 +107,7 @@ func (s *StandaloneBackend) ListGateways(ctx context.Context, namespace string) 
 	}
 
 	gw := models.Gateway{
-		Name:      "default",
+		Name:      defaultNamespace,
 		Namespace: "standalone",
 	}
 
@@ -273,7 +273,7 @@ func (s *StandaloneBackend) DeleteGateway(ctx context.Context, namespace, name s
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if name == "default" {
+	if name == defaultNamespace {
 		s.config.Listeners = []standalone.ListenerConfig{}
 		return s.save()
 	}

@@ -41,7 +41,7 @@ func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) 
 	}
 
 	// Translate listeners
-	var listeners []novaedgev1alpha1.Listener
+	listeners := make([]novaedgev1alpha1.Listener, 0, len(gateway.Spec.Listeners))
 	for _, gwListener := range gateway.Spec.Listeners {
 		listener, err := translateListener(gwListener, gateway.Namespace)
 		if err != nil {
@@ -82,7 +82,7 @@ func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) 
 func translateListener(gwListener gatewayv1.Listener, namespace string) (novaedgev1alpha1.Listener, error) {
 	listener := novaedgev1alpha1.Listener{
 		Name: string(gwListener.Name),
-		Port: int32(gwListener.Port),
+		Port: gwListener.Port,
 	}
 
 	// Translate protocol
@@ -133,13 +133,13 @@ func translateListener(gwListener gatewayv1.Listener, namespace string) (novaedg
 // TranslateHTTPRouteToProxyRoute translates a Gateway API HTTPRoute to a NovaEdge ProxyRoute
 func TranslateHTTPRouteToProxyRoute(httpRoute *gatewayv1.HTTPRoute) (*novaedgev1alpha1.ProxyRoute, error) {
 	// Translate hostnames
-	var hostnames []string
+	hostnames := make([]string, 0, len(httpRoute.Spec.Hostnames))
 	for _, hostname := range httpRoute.Spec.Hostnames {
 		hostnames = append(hostnames, string(hostname))
 	}
 
 	// Translate rules
-	var rules []novaedgev1alpha1.HTTPRouteRule
+	rules := make([]novaedgev1alpha1.HTTPRouteRule, 0, len(httpRoute.Spec.Rules))
 	for i, gwRule := range httpRoute.Spec.Rules {
 		rule, err := translateHTTPRouteRule(gwRule, httpRoute.Namespace, i)
 		if err != nil {
@@ -177,7 +177,7 @@ func TranslateHTTPRouteToProxyRoute(httpRoute *gatewayv1.HTTPRoute) (*novaedgev1
 }
 
 // translateHTTPRouteRule translates a Gateway API HTTPRouteRule to a NovaEdge HTTPRouteRule
-func translateHTTPRouteRule(gwRule gatewayv1.HTTPRouteRule, namespace string, ruleIndex int) (novaedgev1alpha1.HTTPRouteRule, error) {
+func translateHTTPRouteRule(gwRule gatewayv1.HTTPRouteRule, namespace string, _ int) (novaedgev1alpha1.HTTPRouteRule, error) {
 	rule := novaedgev1alpha1.HTTPRouteRule{}
 
 	// Translate matches

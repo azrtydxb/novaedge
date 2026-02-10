@@ -44,9 +44,6 @@ func TestNewP2C(t *testing.T) {
 		t.Errorf("Expected 2 active request counters, got %d", len(p2c.activeRequests))
 	}
 
-	if p2c.rng == nil {
-		t.Error("Expected random number generator to be initialized")
-	}
 }
 
 func TestP2CSelect(t *testing.T) {
@@ -257,6 +254,10 @@ func TestP2CUpdateEndpoints(t *testing.T) {
 			t.Errorf("Expected 3 endpoints, got %d", len(p2c.endpoints))
 		}
 
+		if len(newEndpoints) < 2 {
+			t.Fatal("Expected at least 2 new endpoints")
+		}
+
 		// Preserved endpoints should keep their active counts
 		count1 := p2c.GetActiveCount(newEndpoints[0])
 		if count1 != 2 {
@@ -354,13 +355,13 @@ func TestP2CConcurrentOperations(t *testing.T) {
 
 		for i := 0; i < 50; i++ {
 			wg.Add(1)
-			go func(idx int) {
+			go func() {
 				defer wg.Done()
 				ep := p2c.Select()
 				if ep != nil {
 					p2c.IncrementActive(ep)
 				}
-			}(i)
+			}()
 		}
 
 		wg.Wait()

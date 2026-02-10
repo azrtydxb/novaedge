@@ -82,8 +82,13 @@ func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config,
 
 	config := &tls.Config{
 		Certificates: []tls.Certificate{*defaultCert},
-		MinVersion:   s.parseTLSVersion(minVersion),
+		MinVersion:   tls.VersionTLS12,
 		CipherSuites: s.parseCipherSuites(cipherSuites),
+	}
+
+	// Upgrade TLS minimum version if configured higher
+	if parsed := s.parseTLSVersion(minVersion); parsed > tls.VersionTLS12 {
+		config.MinVersion = parsed
 	}
 
 	// Enable SNI certificate selection
@@ -159,7 +164,7 @@ func (s *HTTPServer) parseCipherSuites(suites []string) []uint16 {
 		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256": tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
 	}
 
-	var result []uint16
+	result := make([]uint16, 0, len(suites))
 	for _, name := range suites {
 		if id, ok := cipherMap[name]; ok {
 			result = append(result, id)

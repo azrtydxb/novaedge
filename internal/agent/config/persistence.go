@@ -111,7 +111,8 @@ type LocalChange struct {
 
 // NewConfigPersistence creates a new config persistence handler
 func NewConfigPersistence(basePath string, logger *zap.Logger) (*ConfigPersistence, error) {
-	if err := os.MkdirAll(basePath, 0755); err != nil {
+	basePath = filepath.Clean(basePath)
+	if err := os.MkdirAll(basePath, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create persistence directory: %w", err)
 	}
 
@@ -157,7 +158,7 @@ func (cp *ConfigPersistence) SaveSnapshot(snapshot *pb.ConfigSnapshot) error {
 
 	// Write snapshot file
 	snapshotPath := filepath.Join(cp.basePath, ConfigCacheFile)
-	if err := os.WriteFile(snapshotPath, data, 0644); err != nil {
+	if err := os.WriteFile(snapshotPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write snapshot: %w", err)
 	}
 
@@ -208,7 +209,7 @@ func (cp *ConfigPersistence) LoadSnapshot() (*pb.ConfigSnapshot, error) {
 	defer cp.mu.RUnlock()
 
 	snapshotPath := filepath.Join(cp.basePath, ConfigCacheFile)
-	data, err := os.ReadFile(snapshotPath)
+	data, err := os.ReadFile(filepath.Clean(snapshotPath))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read snapshot: %w", err)
 	}
@@ -325,13 +326,13 @@ func (cp *ConfigPersistence) saveMetadata() error {
 	}
 
 	metadataPath := filepath.Join(cp.basePath, MetadataFile)
-	return os.WriteFile(metadataPath, data, 0644)
+	return os.WriteFile(metadataPath, data, 0600)
 }
 
 // loadMetadata loads metadata from disk
 func (cp *ConfigPersistence) loadMetadata() error {
 	metadataPath := filepath.Join(cp.basePath, MetadataFile)
-	data, err := os.ReadFile(metadataPath)
+	data, err := os.ReadFile(filepath.Clean(metadataPath))
 	if err != nil {
 		return err
 	}
@@ -348,13 +349,13 @@ func (cp *ConfigPersistence) saveVectorClock() error {
 	}
 
 	vcPath := filepath.Join(cp.basePath, VectorClockFile)
-	return os.WriteFile(vcPath, data, 0644)
+	return os.WriteFile(vcPath, data, 0600)
 }
 
 // loadVectorClock loads vector clock from disk
 func (cp *ConfigPersistence) loadVectorClock() error {
 	vcPath := filepath.Join(cp.basePath, VectorClockFile)
-	data, err := os.ReadFile(vcPath)
+	data, err := os.ReadFile(filepath.Clean(vcPath))
 	if err != nil {
 		return err
 	}
@@ -371,13 +372,13 @@ func (cp *ConfigPersistence) saveChangeQueue() error {
 	}
 
 	queuePath := filepath.Join(cp.basePath, ChangeQueueFile)
-	return os.WriteFile(queuePath, data, 0644)
+	return os.WriteFile(queuePath, data, 0600)
 }
 
 // loadChangeQueue loads change queue from disk
 func (cp *ConfigPersistence) loadChangeQueue() error {
 	queuePath := filepath.Join(cp.basePath, ChangeQueueFile)
-	data, err := os.ReadFile(queuePath)
+	data, err := os.ReadFile(filepath.Clean(queuePath))
 	if err != nil {
 		return err
 	}

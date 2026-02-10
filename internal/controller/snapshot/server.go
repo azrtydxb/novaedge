@@ -305,7 +305,13 @@ func (s *Server) storeAgentStatus(req *pb.AgentStatus) {
 	// Get or create agent status info
 	var status *AgentStatusInfo
 	if val, ok := s.statusMap.Load(req.NodeName); ok {
-		status = val.(*AgentStatusInfo)
+		if s, ok := val.(*AgentStatusInfo); ok {
+			status = s
+		} else {
+			status = &AgentStatusInfo{
+				NodeName: req.NodeName,
+			}
+		}
 	} else {
 		status = &AgentStatusInfo{
 			NodeName: req.NodeName,
@@ -344,7 +350,13 @@ func (s *Server) updateAgentConnectionWithCluster(nodeName, agentVersion, cluste
 	// Get or create agent status info
 	var status *AgentStatusInfo
 	if val, ok := s.statusMap.Load(key); ok {
-		status = val.(*AgentStatusInfo)
+		if s, ok := val.(*AgentStatusInfo); ok {
+			status = s
+		} else {
+			status = &AgentStatusInfo{
+				NodeName: nodeName,
+			}
+		}
 	} else {
 		status = &AgentStatusInfo{
 			NodeName: nodeName,
@@ -370,7 +382,10 @@ func (s *Server) GetAgentStatus(nodeName string) (*AgentStatusInfo, bool) {
 		return nil, false
 	}
 
-	status := val.(*AgentStatusInfo)
+	status, ok := val.(*AgentStatusInfo)
+	if !ok {
+		return nil, false
+	}
 	// Create a copy to avoid concurrent modification issues
 	statusCopy := *status
 	if status.Errors != nil {
@@ -392,7 +407,10 @@ func (s *Server) GetAllAgentStatuses() []*AgentStatusInfo {
 	statuses := make([]*AgentStatusInfo, 0)
 
 	s.statusMap.Range(func(key, value interface{}) bool {
-		status := value.(*AgentStatusInfo)
+		status, ok := value.(*AgentStatusInfo)
+		if !ok {
+			return true
+		}
 		// Create a copy to avoid concurrent modification issues
 		statusCopy := *status
 		if status.Errors != nil {
@@ -422,7 +440,10 @@ func (s *Server) cleanupStaleAgents() {
 		case <-ticker.C:
 			now := time.Now()
 			s.statusMap.Range(func(key, value interface{}) bool {
-				status := value.(*AgentStatusInfo)
+				status, ok := value.(*AgentStatusInfo)
+				if !ok {
+					return true
+				}
 
 				// If agent hasn't been seen in AgentExpiryDuration, mark as disconnected
 				if now.Sub(status.LastSeen) > AgentExpiryDuration && status.Connected {

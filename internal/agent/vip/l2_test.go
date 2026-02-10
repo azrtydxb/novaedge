@@ -394,7 +394,7 @@ func TestL2Handler_Integration(t *testing.T) {
 		t.Fatalf("Failed to start L2 handler: %v", err)
 	}
 
-	// Create test VIP assignment
+	// Create test VIP config
 	assignment := &pb.VIPAssignment{
 		VipName: "test-vip",
 		Address: "192.0.2.1/32", // TEST-NET-1 (RFC 5737)

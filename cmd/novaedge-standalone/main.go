@@ -127,14 +127,14 @@ func main() {
 
 			// Apply VIP assignments if VIP manager is available
 			if vipManager != nil {
-				if err := vipManager.ApplyVIPs(snapshot.VipAssignments); err != nil {
+				if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
 					logger.Error("Failed to apply VIP assignments", zap.Error(err))
 					// Don't fail the whole config update
 				}
 			}
 
 			// Apply HTTP server config
-			if err := httpServer.ApplyConfig(snapshot); err != nil {
+			if err := httpServer.ApplyConfig(ctx, snapshot); err != nil {
 				healthServer.SetReady(false)
 				return err
 			}

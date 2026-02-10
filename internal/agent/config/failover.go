@@ -881,7 +881,7 @@ func (w *FailoverWatcher) GetControllerConnectionInfo() *pb.ControllerConnection
 
 	info := &pb.ControllerConnectionInfo{
 		FailoverState: string(state),
-		FailoverCount: int32(w.failoverCount),
+		FailoverCount: safeInt64ToInt32(w.failoverCount),
 	}
 
 	// Set controller info if connected
@@ -918,7 +918,7 @@ func (w *FailoverWatcher) getControllerReachability() *pb.ControllerReachability
 	defer w.reachabilityMu.RUnlock()
 
 	reachability := &pb.ControllerReachability{
-		TotalControllers:    int32(len(w.controllerReachability)),
+		TotalControllers:    safeIntToInt32(len(w.controllerReachability)),
 		ControllerLatencies: make(map[string]int64),
 		LastContactTimes:    make(map[string]int64),
 	}
@@ -953,4 +953,21 @@ func (w *FailoverWatcher) GetVectorClock() map[string]int64 {
 // GetPersistence returns the config persistence handler
 func (w *FailoverWatcher) GetPersistence() *ConfigPersistence {
 	return w.persistence
+}
+
+// safeInt64ToInt32 converts int64 to int32 with overflow protection
+func safeInt64ToInt32(v int64) int32 {
+	const maxInt32 = int64(1<<31 - 1)
+	if v > maxInt32 {
+		return int32(maxInt32)
+	}
+	if v < -maxInt32-1 {
+		return -int32(maxInt32) - 1
+	}
+	return int32(v)
+}
+
+// safeIntToInt32 converts int to int32 with overflow protection
+func safeIntToInt32(v int) int32 {
+	return safeInt64ToInt32(int64(v))
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"net"
 	"os"
@@ -189,7 +190,8 @@ func main() {
 
 	// Start gRPC server in a goroutine
 	go func() {
-		lis, err := net.Listen("tcp", grpcAddr)
+		var lc net.ListenConfig
+		lis, err := lc.Listen(context.Background(), "tcp", grpcAddr)
 		if err != nil {
 			setupLog.Error(err, "failed to listen for gRPC")
 			os.Exit(1)

@@ -25,9 +25,11 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testAddrEWMA = "10.0.0.1"
+
 func TestNewEWMA(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -52,7 +54,7 @@ func TestNewEWMA(t *testing.T) {
 
 func TestEWMASelect(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -82,7 +84,7 @@ func TestEWMASelect(t *testing.T) {
 
 	t.Run("select single endpoint", func(t *testing.T) {
 		singleEndpoint := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: true},
+			{Address: testAddrEWMA, Port: 8080, Ready: true},
 		}
 
 		ewma := NewEWMA(singleEndpoint)
@@ -92,14 +94,14 @@ func TestEWMASelect(t *testing.T) {
 			t.Fatal("Expected endpoint to be selected")
 		}
 
-		if ep.Address != "10.0.0.1" {
+		if ep.Address != testAddrEWMA {
 			t.Errorf("Expected 10.0.0.1, got %s", ep.Address)
 		}
 	})
 
 	t.Run("return nil when no healthy endpoints", func(t *testing.T) {
 		unhealthyEndpoints := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: false},
+			{Address: testAddrEWMA, Port: 8080, Ready: false},
 			{Address: "10.0.0.2", Port: 8080, Ready: false},
 		}
 
@@ -114,7 +116,7 @@ func TestEWMASelect(t *testing.T) {
 
 func TestEWMALatencyRecording(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -176,7 +178,7 @@ func TestEWMALatencyRecording(t *testing.T) {
 
 func TestEWMAActiveRequestCounting(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -218,7 +220,7 @@ func TestEWMAActiveRequestCounting(t *testing.T) {
 			}
 		}
 
-		if selections["10.0.0.2"] <= selections["10.0.0.1"] {
+		if selections["10.0.0.2"] <= selections[testAddrEWMA] {
 			t.Errorf("Expected endpoint 2 to be selected more (has no active requests), got selections: %v", selections)
 		}
 	})
@@ -226,7 +228,7 @@ func TestEWMAActiveRequestCounting(t *testing.T) {
 
 func TestEWMAUpdateEndpoints(t *testing.T) {
 	initialEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -241,7 +243,7 @@ func TestEWMAUpdateEndpoints(t *testing.T) {
 
 	t.Run("update with new endpoints", func(t *testing.T) {
 		newEndpoints := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: true},
+			{Address: testAddrEWMA, Port: 8080, Ready: true},
 			{Address: "10.0.0.3", Port: 8080, Ready: true},
 			{Address: "10.0.0.4", Port: 8080, Ready: true},
 		}
@@ -250,6 +252,10 @@ func TestEWMAUpdateEndpoints(t *testing.T) {
 
 		if len(ewma.endpoints) != 3 {
 			t.Errorf("Expected 3 endpoints, got %d", len(ewma.endpoints))
+		}
+
+		if len(newEndpoints) < 2 {
+			t.Fatal("Expected at least 2 new endpoints")
 		}
 
 		// Preserved endpoints should keep their scores
@@ -271,7 +277,7 @@ func TestEWMAUpdateEndpoints(t *testing.T) {
 		ewma.IncrementActive(initialEndpoints[0])
 
 		newEndpoints := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: true},
+			{Address: testAddrEWMA, Port: 8080, Ready: true},
 			{Address: "10.0.0.2", Port: 8080, Ready: true},
 		}
 
@@ -284,7 +290,7 @@ func TestEWMAUpdateEndpoints(t *testing.T) {
 
 func TestEWMAConcurrentOperations(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -394,7 +400,7 @@ func TestEWMAConcurrentOperations(t *testing.T) {
 
 func TestEWMAGetScore(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	ewma := NewEWMA(endpoints)
@@ -420,7 +426,7 @@ func TestEWMAGetScore(t *testing.T) {
 
 func TestEWMAUnhealthyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: false},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -438,7 +444,7 @@ func TestEWMAUnhealthyEndpoints(t *testing.T) {
 					t.Errorf("Selected unhealthy endpoint: %s", ep.Address)
 				}
 				// Verify it's one of the healthy endpoints
-				if ep.Address != "10.0.0.1" && ep.Address != "10.0.0.3" {
+				if ep.Address != testAddrEWMA && ep.Address != "10.0.0.3" {
 					t.Errorf("Selected unexpected endpoint: %s", ep.Address)
 				}
 			}
@@ -448,7 +454,7 @@ func TestEWMAUnhealthyEndpoints(t *testing.T) {
 
 func TestEWMANilEndpoint(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	ewma := NewEWMA(endpoints)
@@ -469,7 +475,7 @@ func TestEWMANilEndpoint(t *testing.T) {
 
 func TestEWMAAtomicOperations(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	ewma := NewEWMA(endpoints)

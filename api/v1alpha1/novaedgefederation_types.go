@@ -21,8 +21,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// NovaEdgeFederationSpec defines the desired state of NovaEdgeFederation
-// NovaEdgeFederation configures active/active federation between multiple NovaEdge controllers
+// NovaEdgeFederationSpec defines the desired state for federation configuration.
+// It configures active/active federation between multiple controllers.
 type NovaEdgeFederationSpec struct {
 	// FederationID is a unique identifier for this federation
 	// All members must use the same federation ID

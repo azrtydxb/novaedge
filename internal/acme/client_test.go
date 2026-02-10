@@ -40,7 +40,7 @@ func (s *memoryStorage) DeleteCertificate(_ context.Context, domain string) erro
 }
 
 func (s *memoryStorage) ListCertificates(_ context.Context) ([]*Certificate, error) {
-	var result []*Certificate
+	result := make([]*Certificate, 0, len(s.certs))
 	for _, cert := range s.certs {
 		result = append(result, cert)
 	}

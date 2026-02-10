@@ -17,7 +17,7 @@ limitations under the License.
 package lb
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -32,8 +32,6 @@ type P2C struct {
 	endpoints []*pb.Endpoint
 	// Track active requests per endpoint
 	activeRequests map[string]*int64
-	rngMu          sync.Mutex
-	rng            *rand.Rand
 }
 
 // NewP2C creates a new P2C load balancer
@@ -50,7 +48,6 @@ func NewP2C(endpoints []*pb.Endpoint) *P2C {
 	return &P2C{
 		endpoints:      endpoints,
 		activeRequests: activeRequests,
-		rng:            rand.New(rand.NewSource(rand.Int63())),
 	}
 }
 
@@ -68,14 +65,14 @@ func (p *P2C) Select() *pb.Endpoint {
 		return healthy[0]
 	}
 
-	// Pick two random endpoints (rng is not thread-safe, needs its own lock)
-	p.rngMu.Lock()
-	idx1 := p.rng.Intn(len(healthy))
-	idx2 := p.rng.Intn(len(healthy))
+	// Pick two random endpoints
+	// Global rand functions in Go 1.22+ are auto-seeded with crypto/rand and goroutine-safe.
+	// math/rand/v2 is intentional here: cryptographic randomness is not needed for load balancing.
+	idx1 := rand.IntN(len(healthy)) //nolint:gosec // G404: math/rand is acceptable for load balancer selection
+	idx2 := rand.IntN(len(healthy)) //nolint:gosec // G404: math/rand is acceptable for load balancer selection
 	for idx1 == idx2 && len(healthy) > 1 {
-		idx2 = p.rng.Intn(len(healthy))
+		idx2 = rand.IntN(len(healthy)) //nolint:gosec // G404: math/rand is acceptable for load balancer selection
 	}
-	p.rngMu.Unlock()
 
 	ep1 := healthy[idx1]
 	ep2 := healthy[idx2]
@@ -158,7 +155,7 @@ func (p *P2C) GetActiveCount(endpoint *pb.Endpoint) int64 {
 }
 
 func (p *P2C) getHealthyEndpoints() []*pb.Endpoint {
-	var healthy []*pb.Endpoint
+	healthy := make([]*pb.Endpoint, 0, len(p.endpoints))
 	for _, ep := range p.endpoints {
 		if ep.Ready {
 			healthy = append(healthy, ep)

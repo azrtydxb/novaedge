@@ -61,7 +61,7 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 }
 
 // ApplyConfig applies a new configuration snapshot
-func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
+func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -70,7 +70,7 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 	)
 
 	// Update router with new configuration
-	if err := s.router.ApplyConfig(snapshot); err != nil {
+	if err := s.router.ApplyConfig(ctx, snapshot); err != nil {
 		return fmt.Errorf("failed to update router: %w", err)
 	}
 
@@ -112,8 +112,8 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 			s.logger.Info("Stopping HTTP/1.1 or HTTP/2 listener on unused port",
 				zap.Int32("port", port),
 			)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := server.Shutdown(ctx); err != nil {
+			shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := server.Shutdown(shutdownCtx); err != nil {
 				s.logger.Error("Error shutting down HTTP listener on unused port",
 					zap.Int32("port", port),
 					zap.Error(err),
@@ -131,8 +131,8 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 			s.logger.Info("Stopping HTTP/3 listener on unused port",
 				zap.Int32("port", port),
 			)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			if err := server.Shutdown(ctx); err != nil {
+			shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			if err := server.Shutdown(shutdownCtx); err != nil {
 				s.logger.Error("Error shutting down HTTP/3 listener on unused port",
 					zap.Int32("port", port),
 					zap.Error(err),
@@ -149,7 +149,7 @@ func (s *HTTPServer) ApplyConfig(snapshot *config.Snapshot) error {
 		_, httpExists := s.servers[port]
 		_, http3Exists := s.http3servers[port]
 		if !httpExists && !http3Exists {
-			if err := s.startListener(port, listenerInfo); err != nil {
+			if err := s.startListener(ctx, port, listenerInfo); err != nil {
 				s.logger.Error("Failed to start listener",
 					zap.Int32("port", port),
 					zap.String("gateway", listenerInfo.Gateway),

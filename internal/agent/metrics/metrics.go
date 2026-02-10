@@ -157,8 +157,8 @@ func shouldSample(key string) bool {
 
 	// Use hash-based sampling for consistent decisions
 	h := fnv.New32a()
-	h.Write([]byte(key))
-	h.Write([]byte(time.Now().Format("2006-01-02-15-04"))) // Include minute for time-based sampling
+	_, _ = h.Write([]byte(key))
+	_, _ = h.Write([]byte(time.Now().Format("2006-01-02-15-04"))) // Include minute for time-based sampling
 	hash := h.Sum32()
 
 	return int(hash%100) < defaultConfig.SampleRate

@@ -131,12 +131,12 @@ func (r *ProxyRouteReconciler) validateAndUpdateStatus(ctx context.Context, rout
 
 	if len(validationErrors) > 0 {
 		condition.Status = metav1.ConditionFalse
-		condition.Reason = "ValidationFailed"
+		condition.Reason = ConditionReasonValidationFailed
 		condition.Message = fmt.Sprintf("Validation errors: %v", validationErrors)
 		logger.Info("Route validation failed", "errors", validationErrors)
 	} else {
 		condition.Status = metav1.ConditionTrue
-		condition.Reason = "Valid"
+		condition.Reason = ConditionReasonValid
 		condition.Message = "Route configuration is valid"
 	}
 

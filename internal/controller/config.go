@@ -22,6 +22,14 @@ import (
 	"github.com/piwi3910/novaedge/internal/controller/snapshot"
 )
 
+// Condition reason constants used across controllers
+const (
+	// ConditionReasonValid indicates the resource configuration is valid
+	ConditionReasonValid = "Valid"
+	// ConditionReasonValidationFailed indicates the resource configuration failed validation
+	ConditionReasonValidationFailed = "ValidationFailed"
+)
+
 var (
 	configServer   *snapshot.Server
 	configServerMu sync.RWMutex

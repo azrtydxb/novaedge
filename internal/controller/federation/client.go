@@ -425,7 +425,7 @@ func (c *PeerClient) setHealthy(healthy bool) {
 func (c *PeerClient) buildTLSConfig() (*tls.Config, error) {
 	config := &tls.Config{
 		MinVersion:         tls.VersionTLS12,
-		InsecureSkipVerify: c.peer.InsecureSkipVerify,
+		InsecureSkipVerify: c.peer.InsecureSkipVerify, //nolint:gosec // G402: user-configurable from federation CRD spec
 	}
 
 	if c.peer.TLSServerName != "" {

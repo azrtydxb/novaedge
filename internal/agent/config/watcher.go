@@ -262,7 +262,7 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 
 		case <-statusTicker.C:
 			// Report status to controller
-			go w.reportStatus(client)
+			go w.reportStatus(w.ctx, client)
 
 		default:
 			snapshot, err := stream.Recv()
@@ -283,7 +283,7 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 					zap.String("version", snapshot.Version),
 				)
 				// Report error to controller
-				go w.reportStatus(client)
+				go w.reportStatus(w.ctx, client)
 				continue
 			}
 
@@ -294,14 +294,14 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 			)
 
 			// Report successful application
-			go w.reportStatus(client)
+			go w.reportStatus(w.ctx, client)
 		}
 	}
 }
 
 // reportStatus reports agent status to the controller
-func (w *Watcher) reportStatus(client pb.ConfigServiceClient) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+func (w *Watcher) reportStatus(ctx context.Context, client pb.ConfigServiceClient) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
 	status := &pb.AgentStatus{

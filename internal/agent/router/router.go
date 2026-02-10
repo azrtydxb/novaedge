@@ -17,6 +17,7 @@ limitations under the License.
 package router
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -51,7 +52,13 @@ var endpointKeyPool = sync.Pool{
 
 // formatEndpointKey builds an endpoint key string with minimal allocations using a pooled buffer
 func formatEndpointKey(address string, port int32) string {
-	bp := endpointKeyPool.Get().(*[]byte)
+	poolVal := endpointKeyPool.Get()
+	bp, ok := poolVal.(*[]byte)
+	if !ok {
+		// Fallback: allocate a new buffer if pool returned unexpected type
+		b := make([]byte, 0, 64)
+		bp = &b
+	}
 	b := (*bp)[:0]
 	b = append(b, address...)
 	b = append(b, ':')
@@ -110,7 +117,7 @@ func NewRouter(logger *zap.Logger) *Router {
 }
 
 // ApplyConfig applies a new configuration to the router
-func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
+func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -135,7 +142,7 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 					Route:          route,
 					Rule:           rule,
 					PathMatcher:    createPathMatcher(rule),
-					Policies:       r.createPolicyMiddleware(route, snapshot),
+					Policies:       r.createPolicyMiddleware(ctx, route, snapshot),
 					HeaderRegexes:  compileHeaderRegexes(rule),
 					ResponseFilter: collectResponseFilters(rule.Filters),
 				}
@@ -163,7 +170,7 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 			newPools[clusterKey] = existingPool
 		} else {
 			// Create new pool
-			pool := upstream.NewPool(cluster, endpointList.Endpoints, r.logger)
+			pool := upstream.NewPool(ctx, cluster, endpointList.Endpoints, r.logger)
 			newPools[clusterKey] = pool
 		}
 

@@ -63,7 +63,7 @@ type JWK struct {
 }
 
 // NewJWTValidator creates a new JWT validator
-func NewJWTValidator(config *pb.JWTConfig) (*JWTValidator, error) {
+func NewJWTValidator(ctx context.Context, config *pb.JWTConfig) (*JWTValidator, error) {
 	v := &JWTValidator{
 		config: config,
 		keys:   make(map[string]interface{}),
@@ -71,20 +71,20 @@ func NewJWTValidator(config *pb.JWTConfig) (*JWTValidator, error) {
 
 	// If JWKS URI is provided, fetch keys
 	if config.JwksUri != "" {
-		if err := v.fetchJWKS(); err != nil {
+		if err := v.fetchJWKS(ctx); err != nil {
 			return nil, fmt.Errorf("failed to fetch JWKS: %w", err)
 		}
 
 		// Start periodic refresh
-		go v.refreshJWKS()
+		go v.refreshJWKS(ctx)
 	}
 
 	return v, nil
 }
 
 // fetchJWKS fetches and parses JWKS from the configured URL
-func (v *JWTValidator) fetchJWKS() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func (v *JWTValidator) fetchJWKS(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.config.JwksUri, nil)
@@ -132,12 +132,12 @@ func (v *JWTValidator) fetchJWKS() error {
 }
 
 // refreshJWKS periodically refreshes the JWKS
-func (v *JWTValidator) refreshJWKS() {
+func (v *JWTValidator) refreshJWKS(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		if err := v.fetchJWKS(); err != nil {
+		if err := v.fetchJWKS(ctx); err != nil {
 			// Log error but continue
 			continue
 		}
