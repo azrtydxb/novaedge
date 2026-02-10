@@ -67,7 +67,7 @@ NovaEdge is now **production-ready** and enterprise-grade, capable of replacing 
 
 ### Prerequisites
 
-- Go 1.25+
+- Go 1.24+
 - Kubernetes cluster (1.29+)
 - kubectl configured
 - make
