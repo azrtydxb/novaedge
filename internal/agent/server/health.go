@@ -59,7 +59,7 @@ func (h *HealthServer) Start(ctx context.Context) error {
 	})))
 
 	// Readiness probe - returns 200 if agent has received valid config
-	mux.Handle("/ready", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	readyHandler := rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if h.ready.Load() {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("Ready"))
@@ -67,7 +67,9 @@ func (h *HealthServer) Start(ctx context.Context) error {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("Not Ready"))
 		}
-	})))
+	}))
+	mux.Handle("/ready", readyHandler)
+	mux.Handle("/readyz", readyHandler)
 
 	// Detailed status endpoint
 	mux.Handle("/status", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

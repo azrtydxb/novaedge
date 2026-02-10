@@ -1,0 +1,15 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: test-gateway
+  namespace: default
+spec:
+  vipRef: test-vip
+  ingressClassName: novaedge
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostnames:
+        - api.example.com
+        - "*.example.com"

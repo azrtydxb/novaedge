@@ -54,13 +54,13 @@ spec:
         - -controller-address=$(CONTROLLER_ADDRESS)
         - -node-name=$(NODE_NAME)
         - -metrics-port=9090
-        - -health-probe-address=:9091
+        - -health-probe-port=9091
         - -log-level=info
 
         env:
         # Controller gRPC service address
         - name: CONTROLLER_ADDRESS
-          value: "novaedge-controller.novaedge-system.svc.cluster.local:8082"
+          value: "novaedge-controller.novaedge-system.svc.cluster.local:9090"
 
         # Node name for identification
         - name: NODE_NAME
