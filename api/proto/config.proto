@@ -434,6 +434,9 @@ message Policy {
 
   // WASM plugin configuration (for WASM_PLUGIN type)
   WASMPluginConfig wasm_plugin = 12;
+  BasicAuthConfig basic_auth = 13;
+  ForwardAuthConfig forward_auth = 14;
+  OIDCConfig oidc = 15;
 }
 
 enum PolicyType {
@@ -447,6 +450,9 @@ enum PolicyType {
   DISTRIBUTED_RATE_LIMIT = 7;
   WAF = 8;
   WASM_PLUGIN = 9;
+  BASIC_AUTH = 10;
+  FORWARD_AUTH = 11;
+  OIDC = 12;
 }
 
 // TargetRef identifies the resource a policy applies to
@@ -677,6 +683,97 @@ message MiddlewareRef {
   int32 priority = 3;
   // Config holds optional key-value configuration
   map<string, string> config = 4;
+}
+
+// BasicAuthConfig defines HTTP Basic Authentication settings
+message BasicAuthConfig {
+  // Realm name for WWW-Authenticate header
+  string realm = 1;
+
+  // htpasswd-formatted credentials (loaded from Secret by controller)
+  // Lines in format: username:password_hash
+  string htpasswd = 2;
+
+  // Strip Authorization header before forwarding to backend
+  bool strip_auth = 3;
+}
+
+// ForwardAuthConfig defines external auth delegation settings
+message ForwardAuthConfig {
+  // URL of the external auth service
+  string address = 1;
+
+  // Headers to forward from original request to auth service
+  repeated string auth_headers = 2;
+
+  // Headers to copy from auth response to upstream request
+  repeated string response_headers = 3;
+
+  // Timeout in milliseconds for the auth subrequest
+  int64 timeout_ms = 4;
+
+  // Cache TTL in seconds (0 = no caching)
+  int64 cache_ttl_seconds = 5;
+}
+
+// OIDCConfig defines OAuth2/OIDC authentication flow settings
+message OIDCConfig {
+  // Provider type: generic, keycloak
+  string provider = 1;
+
+  // OIDC issuer URL for discovery
+  string issuer_url = 2;
+
+  // OAuth2 client ID
+  string client_id = 3;
+
+  // OAuth2 client secret (loaded from Secret by controller)
+  string client_secret = 4;
+
+  // OAuth2 callback URL
+  string redirect_url = 5;
+
+  // OAuth2 scopes to request
+  repeated string scopes = 6;
+
+  // Session encryption key (loaded from Secret by controller, 32 bytes)
+  bytes session_secret = 7;
+
+  // User info claims to forward as headers
+  repeated string forward_headers = 8;
+
+  // Keycloak-specific configuration
+  KeycloakConfig keycloak = 9;
+
+  // Authorization (role-based access control)
+  AuthorizationConfig authorization = 10;
+}
+
+// KeycloakConfig defines Keycloak-specific settings
+message KeycloakConfig {
+  // Base Keycloak server URL
+  string server_url = 1;
+
+  // Keycloak realm name
+  string realm = 2;
+
+  // JWT claim path for realm roles
+  string role_claim = 3;
+
+  // JWT claim path for groups
+  string group_claim = 4;
+}
+
+// AuthorizationConfig defines role-based access control
+message AuthorizationConfig {
+  // Required roles
+  repeated string required_roles = 1;
+
+  // Required groups
+  repeated string required_groups = 2;
+
+  // Authorization mode: "any" (OR) or "all" (AND)
+  string mode = 3;
 }
 
 // ConfigService is the gRPC service for distributing config snapshots

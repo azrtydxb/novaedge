@@ -1,0 +1,28 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: forward-auth-policy
+  namespace: default
+spec:
+  type: ForwardAuth
+  targetRef:
+    kind: ProxyRoute
+    name: protected-route
+    namespace: default
+  forwardAuth:
+    # URL of the external auth service (e.g., oauth2-proxy, Authelia)
+    address: "http://authelia.auth.svc.cluster.local:9091/api/verify"
+    # Headers to forward from original request to auth service
+    authHeaders:
+      - Authorization
+      - Cookie
+      - X-Forwarded-For
+    # Headers to copy from auth response to upstream request
+    responseHeaders:
+      - X-Auth-User
+      - X-Auth-Groups
+      - X-Auth-Email
+    # Timeout for the auth subrequest
+    timeout: "5s"
+    # Cache auth decisions for 5 minutes
+    cacheTTL: "5m"

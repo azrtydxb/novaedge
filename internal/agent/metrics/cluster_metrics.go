@@ -232,6 +232,33 @@ var (
 			Help: "Total number of responses with modified headers",
 		},
 	)
+
+	// BasicAuthTotal tracks Basic Auth validation attempts
+	BasicAuthTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_basic_auth_total",
+			Help: "Total number of HTTP Basic Auth validation attempts",
+		},
+		[]string{"result"}, // success, failure
+	)
+
+	// ForwardAuthTotal tracks forward auth delegation attempts
+	ForwardAuthTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_forward_auth_total",
+			Help: "Total number of forward auth delegation attempts",
+		},
+		[]string{"result", "source"}, // success/failure/error, cached/live
+	)
+
+	// OIDCAuthTotal tracks OIDC authentication events
+	OIDCAuthTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_oidc_auth_total",
+			Help: "Total number of OIDC authentication events",
+		},
+		[]string{"result"}, // success, redirect, callback_success, exchange_error, forbidden, logout
+	)
 )
 
 // SetVIPStatus sets VIP status

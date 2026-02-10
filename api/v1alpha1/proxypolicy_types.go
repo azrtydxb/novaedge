@@ -21,7 +21,7 @@ import (
 )
 
 // PolicyType defines the type of policy
-// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders;DistributedRateLimit;WAF;WASMPlugin
+// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders;DistributedRateLimit;WAF;WASMPlugin;BasicAuth;ForwardAuth;OIDC
 type PolicyType string
 
 const (
@@ -43,6 +43,12 @@ const (
 	PolicyTypeWAF PolicyType = "WAF"
 	// PolicyTypeWASMPlugin applies a WASM plugin middleware
 	PolicyTypeWASMPlugin PolicyType = "WASMPlugin"
+	// PolicyTypeBasicAuth applies HTTP Basic Authentication
+	PolicyTypeBasicAuth PolicyType = "BasicAuth"
+	// PolicyTypeForwardAuth delegates authentication to an external service
+	PolicyTypeForwardAuth PolicyType = "ForwardAuth"
+	// PolicyTypeOIDC applies OAuth2/OIDC authentication flow
+	PolicyTypeOIDC PolicyType = "OIDC"
 )
 
 // RateLimitConfig defines rate limiting configuration
@@ -296,6 +302,138 @@ type WAFConfig struct {
 	RuleExclusions []string `json:"ruleExclusions,omitempty"`
 }
 
+// BasicAuthPolicyConfig defines HTTP Basic Authentication configuration
+type BasicAuthPolicyConfig struct {
+	// Realm is the authentication realm name shown in the browser dialog
+	// +optional
+	// +kubebuilder:default="Restricted"
+	Realm string `json:"realm,omitempty"`
+
+	// SecretRef references a Kubernetes Secret containing htpasswd-formatted credentials
+	// The Secret must have a key "htpasswd" with lines in the format: username:password_hash
+	// Supported hash formats: bcrypt, SHA-256 ({SHA256}), MD5 (apr1)
+	// +kubebuilder:validation:Required
+	SecretRef LocalObjectReference `json:"secretRef"`
+
+	// StripAuth removes the Authorization header before forwarding to the backend
+	// +optional
+	// +kubebuilder:default=true
+	StripAuth bool `json:"stripAuth,omitempty"`
+}
+
+// ForwardAuthPolicyConfig defines external auth delegation configuration
+type ForwardAuthPolicyConfig struct {
+	// Address is the URL of the external auth service
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^https?://`
+	Address string `json:"address"`
+
+	// AuthHeaders specifies which headers from the original request to forward to the auth service
+	// +optional
+	AuthHeaders []string `json:"authHeaders,omitempty"`
+
+	// ResponseHeaders specifies which headers from the auth response to copy to the upstream request
+	// +optional
+	ResponseHeaders []string `json:"responseHeaders,omitempty"`
+
+	// Timeout for the auth subrequest (e.g., "5s", "10s")
+	// +optional
+	// +kubebuilder:default="5s"
+	Timeout string `json:"timeout,omitempty"`
+
+	// CacheTTL specifies how long to cache auth decisions (e.g., "5m", "1h")
+	// Empty means no caching
+	// +optional
+	CacheTTL string `json:"cacheTTL,omitempty"`
+}
+
+// OIDCPolicyConfig defines OAuth2/OIDC authentication flow configuration
+type OIDCPolicyConfig struct {
+	// Provider is the OIDC provider type ("generic" or "keycloak")
+	// +optional
+	// +kubebuilder:default="generic"
+	// +kubebuilder:validation:Enum=generic;keycloak
+	Provider string `json:"provider,omitempty"`
+
+	// IssuerURL is the OIDC provider's issuer URL for discovery
+	// For Keycloak, this is auto-constructed from Keycloak config if not specified
+	// +optional
+	IssuerURL string `json:"issuerURL,omitempty"`
+
+	// ClientID is the OAuth2 client ID
+	// +kubebuilder:validation:Required
+	ClientID string `json:"clientID"`
+
+	// ClientSecretRef references a Secret containing the OAuth2 client secret
+	// The Secret must have a key "client-secret"
+	// +kubebuilder:validation:Required
+	ClientSecretRef LocalObjectReference `json:"clientSecretRef"`
+
+	// RedirectURL is the OAuth2 callback URL (e.g., https://myapp.example.com/oauth2/callback)
+	// +kubebuilder:validation:Required
+	RedirectURL string `json:"redirectURL"`
+
+	// Scopes is the list of OAuth2 scopes to request
+	// +optional
+	// +kubebuilder:default={"openid","profile","email"}
+	Scopes []string `json:"scopes,omitempty"`
+
+	// SessionSecretRef references a Secret containing the session encryption key
+	// The Secret must have a key "session-secret" (32 bytes, base64 encoded)
+	// +kubebuilder:validation:Required
+	SessionSecretRef LocalObjectReference `json:"sessionSecretRef"`
+
+	// ForwardHeaders specifies which user info claims to forward as headers to the upstream
+	// +optional
+	ForwardHeaders []string `json:"forwardHeaders,omitempty"`
+
+	// Keycloak contains Keycloak-specific configuration
+	// +optional
+	Keycloak *KeycloakPolicyConfig `json:"keycloak,omitempty"`
+
+	// Authorization contains role-based access control configuration
+	// +optional
+	Authorization *AuthorizationPolicyConfig `json:"authorization,omitempty"`
+}
+
+// KeycloakPolicyConfig defines Keycloak-specific configuration
+type KeycloakPolicyConfig struct {
+	// ServerURL is the base Keycloak server URL (e.g., https://keycloak.example.com)
+	// +kubebuilder:validation:Required
+	ServerURL string `json:"serverURL"`
+
+	// Realm is the Keycloak realm name
+	// +kubebuilder:validation:Required
+	Realm string `json:"realm"`
+
+	// RoleClaim is the JWT claim containing realm roles
+	// +optional
+	// +kubebuilder:default="realm_access.roles"
+	RoleClaim string `json:"roleClaim,omitempty"`
+
+	// GroupClaim is the JWT claim containing groups
+	// +optional
+	// +kubebuilder:default="groups"
+	GroupClaim string `json:"groupClaim,omitempty"`
+}
+
+// AuthorizationPolicyConfig defines role-based access control for authenticated users
+type AuthorizationPolicyConfig struct {
+	// RequiredRoles specifies roles the user must have
+	// +optional
+	RequiredRoles []string `json:"requiredRoles,omitempty"`
+
+	// RequiredGroups specifies groups the user must belong to
+	// +optional
+	RequiredGroups []string `json:"requiredGroups,omitempty"`
+
+	// Mode specifies whether all requirements must be met ("all") or any one ("any")
+	// +optional
+	// +kubebuilder:default="any"
+	// +kubebuilder:validation:Enum=any;all
+	Mode string `json:"mode,omitempty"`
+}
+
 // TargetRef identifies the resource(s) this policy applies to
 type TargetRef struct {
 	// Kind is the kind of resource (e.g., ProxyGateway, ProxyRoute)
@@ -379,6 +517,18 @@ type ProxyPolicySpec struct {
 	// WASMPlugin configuration (for WASMPlugin type)
 	// +optional
 	WASMPlugin *WASMPluginConfig `json:"wasmPlugin,omitempty"`
+
+	// BasicAuth configuration (for BasicAuth type)
+	// +optional
+	BasicAuth *BasicAuthPolicyConfig `json:"basicAuth,omitempty"`
+
+	// ForwardAuth configuration (for ForwardAuth type)
+	// +optional
+	ForwardAuth *ForwardAuthPolicyConfig `json:"forwardAuth,omitempty"`
+
+	// OIDC configuration (for OIDC type)
+	// +optional
+	OIDC *OIDCPolicyConfig `json:"oidc,omitempty"`
 }
 
 // ProxyPolicyStatus defines the observed state of ProxyPolicy

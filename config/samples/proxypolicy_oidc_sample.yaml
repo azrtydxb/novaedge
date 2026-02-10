@@ -1,0 +1,48 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: oidc-auth-policy
+  namespace: default
+spec:
+  type: OIDC
+  targetRef:
+    kind: ProxyRoute
+    name: webapp-route
+    namespace: default
+  oidc:
+    provider: generic
+    issuerURL: "https://accounts.google.com"
+    clientID: "your-client-id.apps.googleusercontent.com"
+    clientSecretRef:
+      name: oidc-client-secret
+    redirectURL: "https://myapp.example.com/oauth2/callback"
+    scopes:
+      - openid
+      - profile
+      - email
+    sessionSecretRef:
+      name: oidc-session-secret
+    forwardHeaders:
+      - X-Auth-Email
+      - X-Auth-Name
+---
+# Secret containing the OAuth2 client secret
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oidc-client-secret
+  namespace: default
+type: Opaque
+stringData:
+  client-secret: "your-oauth2-client-secret"
+---
+# Secret containing the session encryption key (32 bytes, base64 encoded)
+# Generate with: openssl rand -base64 32 | kubectl create secret generic oidc-session-secret --from-literal=session-secret=$(openssl rand -base64 32)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oidc-session-secret
+  namespace: default
+type: Opaque
+data:
+  session-secret: "REPLACE_WITH_BASE64_32_BYTE_KEY"

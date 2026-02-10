@@ -169,6 +169,55 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 					})
 				}
 			}
+
+		case pb.PolicyType_BASIC_AUTH:
+			if policyProto.BasicAuth != nil {
+				validator, err := policy.NewBasicAuthValidator(policyProto.BasicAuth)
+				if err == nil {
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("basic-auth-%s", policyProto.Name),
+						handler: policy.HandleBasicAuth(validator),
+					})
+				} else {
+					r.logger.Error("Failed to create Basic Auth validator, failing closed",
+						zap.String("policy", policyProto.Name),
+						zap.Error(err),
+					)
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("basic-auth-%s-fail-closed", policyProto.Name),
+						handler: failClosedMiddleware("Basic Auth", policyProto.Name, r.logger),
+					})
+				}
+			}
+
+		case pb.PolicyType_FORWARD_AUTH:
+			if policyProto.ForwardAuth != nil {
+				handler := policy.NewForwardAuthHandler(ctx, policyProto.ForwardAuth, r.logger)
+				middlewares = append(middlewares, policyMiddleware{
+					name:    fmt.Sprintf("forward-auth-%s", policyProto.Name),
+					handler: policy.HandleForwardAuth(handler),
+				})
+			}
+
+		case pb.PolicyType_OIDC:
+			if policyProto.Oidc != nil {
+				handler, err := policy.NewOIDCHandler(ctx, policyProto.Oidc, r.logger)
+				if err == nil {
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("oidc-%s", policyProto.Name),
+						handler: policy.HandleOIDC(handler),
+					})
+				} else {
+					r.logger.Error("Failed to create OIDC handler, failing closed",
+						zap.String("policy", policyProto.Name),
+						zap.Error(err),
+					)
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("oidc-%s-fail-closed", policyProto.Name),
+						handler: failClosedMiddleware("OIDC", policyProto.Name, r.logger),
+					})
+				}
+			}
 		}
 	}
 
@@ -176,7 +225,7 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 }
 
 // failClosedMiddleware returns a middleware that rejects all requests with 503 Service Unavailable.
-// This is used when a security policy (WAF, rate limiter) fails to initialize, ensuring
+// This is used when a security policy (WAF, rate limiter, auth) fails to initialize, ensuring
 // requests are not silently allowed through without protection.
 func failClosedMiddleware(policyType, policyName string, logger *zap.Logger) func(http.Handler) http.Handler {
 	return func(_ http.Handler) http.Handler {
