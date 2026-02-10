@@ -1,0 +1,141 @@
+name: Dependency Scanning
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/dependency-scan.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/dependency-scan.yml'
+  schedule:
+    # Run weekly on Monday at 6:00 UTC
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  # Dependency review (for PRs only)
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          allow-licenses: Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, MPL-2.0, CC0-1.0, Unlicense
+          comment-summary-in-pr: true
+
+  # Trivy vulnerability scanner for dependencies
+  trivy-scan:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy with JSON output
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'json'
+          output: 'trivy-report.json'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy report artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-report
+          path: trivy-report.json
+          retention-days: 30
+
+  # Check for outdated dependencies (scheduled/manual only)
+  outdated-check:
+    name: Check Outdated Dependencies
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache: true
+
+      - name: Check for outdated dependencies
+        run: |
+          echo "=== Checking for outdated dependencies ==="
+          go list -u -m -json all | jq -r 'select(.Update != null) | "\(.Path): \(.Version) -> \(.Update.Version)"' > outdated.txt
+
+          if [ -s outdated.txt ]; then
+            echo "Outdated dependencies found:"
+            cat outdated.txt
+          else
+            echo "All dependencies are up to date"
+          fi
+
+      - name: Upload outdated dependencies list
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-dependencies
+          path: outdated.txt
+          retention-days: 7
+
+  # Security summary
+  summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [trivy-scan]
+    if: always()
+    steps:
+      - name: Create security summary
+        env:
+          TRIVY_RESULT: ${{ needs.trivy-scan.result }}
+        run: |
+          echo "# Dependency Security Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Scanner | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+          if [ "$TRIVY_RESULT" = "success" ]; then
+            echo "| Trivy | Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Trivy | Issues Found |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Detailed reports are available in the workflow artifacts." >> $GITHUB_STEP_SUMMARY
