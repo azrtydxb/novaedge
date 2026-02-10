@@ -40,6 +40,28 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// endpointKeyPool reduces allocations for endpoint key formatting in the hot path.
+// Keys are short-lived strings like "10.0.0.1:8080" used for map lookups and metrics.
+var endpointKeyPool = sync.Pool{
+	New: func() interface{} {
+		b := make([]byte, 0, 64) // pre-allocate for typical "host:port" strings
+		return &b
+	},
+}
+
+// formatEndpointKey builds an endpoint key string with minimal allocations using a pooled buffer
+func formatEndpointKey(address string, port int32) string {
+	bp := endpointKeyPool.Get().(*[]byte)
+	b := (*bp)[:0]
+	b = append(b, address...)
+	b = append(b, ':')
+	b = strconv.AppendInt(b, int64(port), 10)
+	s := string(b)
+	*bp = b
+	endpointKeyPool.Put(bp)
+	return s
+}
+
 // tracerName is the instrumentation name for the router tracer
 const tracerName = "github.com/piwi3910/novaedge/internal/agent/router"
 
@@ -198,11 +220,15 @@ func (r *Router) ApplyConfig(snapshot *config.Snapshot) error {
 		}
 	}
 
-	// Close pools that are no longer needed
+	// Close pools that are no longer needed and clean up their metrics
 	for key, pool := range r.pools {
 		if _, needed := newPools[key]; !needed {
 			r.logger.Info("Closing unused pool", zap.String("cluster", key))
 			pool.Close()
+			// Clean up stale Prometheus metrics for the removed cluster
+			metrics.CleanupClusterMetrics(key)
+			// Remove endpoint version tracking
+			delete(r.endpointVersions, key)
 		}
 	}
 

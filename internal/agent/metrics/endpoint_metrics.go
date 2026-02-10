@@ -132,15 +132,38 @@ var (
 		},
 		[]string{"cluster"},
 	)
+
+	// PoolActiveConnections tracks active (in-flight) connections in pool
+	PoolActiveConnections = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "novaedge_pool_active_connections",
+			Help: "Number of active (in-flight) connections in pool",
+		},
+		[]string{"cluster"},
+	)
+
+	// PoolHitsTotal tracks proxy cache hits (reused existing reverse proxy)
+	PoolHitsTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "novaedge_pool_hits_total",
+			Help: "Total number of proxy cache hits (reused existing proxy on config update)",
+		},
+		[]string{"cluster"},
+	)
+
+	// PoolMissesTotal tracks proxy cache misses (had to create new reverse proxy)
+	PoolMissesTotal = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "novaedge_pool_misses_total",
+			Help: "Total number of proxy cache misses (created new proxy on config update)",
+		},
+		[]string{"cluster"},
+	)
 )
 
 // RecordBackendRequest records a backend request
 func RecordBackendRequest(cluster, endpoint, result string, duration float64) {
-	// Check cardinality limit for endpoint-specific metrics
-	if !endpointTracker.shouldTrackEndpoint(cluster, endpoint) {
-		// Use aggregated label for endpoints beyond cardinality limit
-		endpoint = "other"
-	}
+	endpoint = resolveEndpointLabel(cluster, endpoint)
 
 	// Sample high-frequency metrics
 	metricKey := cluster + ":" + endpoint
@@ -154,10 +177,7 @@ func RecordBackendRequest(cluster, endpoint, result string, duration float64) {
 
 // RecordHealthCheck records a health check
 func RecordHealthCheck(cluster, endpoint, result string, duration float64) {
-	// Check cardinality limit
-	if !endpointTracker.shouldTrackEndpoint(cluster, endpoint) {
-		endpoint = "other"
-	}
+	endpoint = resolveEndpointLabel(cluster, endpoint)
 
 	HealthChecksTotal.WithLabelValues(cluster, endpoint, result).Inc()
 	HealthCheckDuration.WithLabelValues(cluster, endpoint).Observe(duration)
@@ -184,10 +204,7 @@ func RecordCircuitBreakerTransition(cluster, endpoint, fromState, toState string
 
 // RecordLoadBalancerSelection records a load balancer selection
 func RecordLoadBalancerSelection(cluster, algorithm, endpoint string) {
-	// Check cardinality limit
-	if !endpointTracker.shouldTrackEndpoint(cluster, endpoint) {
-		endpoint = "other"
-	}
+	endpoint = resolveEndpointLabel(cluster, endpoint)
 
 	// Sample this high-frequency metric
 	if shouldSample(cluster + ":" + endpoint) {
@@ -195,7 +212,50 @@ func RecordLoadBalancerSelection(cluster, algorithm, endpoint string) {
 	}
 }
 
-// CleanupClusterMetrics removes tracking for a cluster that no longer exists
+// CleanupClusterMetrics removes tracking for a cluster that no longer exists.
+// This also deletes all associated Prometheus metric series to prevent stale data.
 func CleanupClusterMetrics(cluster string) {
 	endpointTracker.cleanupCluster(cluster)
+
+	// Also clean up pool-level metrics for the cluster
+	PoolConnectionsTotal.DeleteLabelValues(cluster)
+	PoolIdleConnections.DeleteLabelValues(cluster)
+	PoolActiveConnections.DeleteLabelValues(cluster)
+	PoolHitsTotal.DeleteLabelValues(cluster)
+	PoolMissesTotal.DeleteLabelValues(cluster)
+}
+
+// CleanupEndpointMetrics removes tracking for a single endpoint in a cluster.
+// Call this when an endpoint is removed from a cluster's endpoint list.
+func CleanupEndpointMetrics(cluster, endpoint string) {
+	endpointTracker.removeEndpoint(cluster, endpoint)
+}
+
+// SyncClusterEndpoints synchronizes the tracked endpoints for a cluster with the
+// given current set. Endpoints that are no longer in the current set are cleaned up.
+func SyncClusterEndpoints(cluster string, currentEndpoints []string) {
+	endpointTracker.mu.Lock()
+	tracked := endpointTracker.endpoints[cluster]
+	var stale []string
+	for ep := range tracked {
+		found := false
+		for _, current := range currentEndpoints {
+			if ep == current {
+				found = true
+				break
+			}
+		}
+		if !found {
+			stale = append(stale, ep)
+		}
+	}
+	for _, ep := range stale {
+		delete(tracked, ep)
+	}
+	endpointTracker.mu.Unlock()
+
+	// Delete Prometheus series for stale endpoints outside the lock
+	for _, ep := range stale {
+		deleteEndpointMetrics(cluster, ep)
+	}
 }

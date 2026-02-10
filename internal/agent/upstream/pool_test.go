@@ -41,6 +41,7 @@ func TestNewPool(t *testing.T) {
 	}
 
 	pool := NewPool(cluster, endpoints, logger)
+	defer pool.Close()
 
 	if pool == nil {
 		t.Fatal("Expected pool to be created")
@@ -70,6 +71,7 @@ func TestUpdateEndpoints(t *testing.T) {
 	}
 
 	pool := NewPool(cluster, initialEndpoints, logger)
+	defer pool.Close()
 
 	newEndpoints := []*pb.Endpoint{
 		{Address: "192.168.1.10", Port: 8080, Ready: true},
@@ -101,6 +103,7 @@ func TestCreateProxies(t *testing.T) {
 		}
 
 		pool := NewPool(cluster, endpoints, logger)
+		defer pool.Close()
 		pool.mu.RLock()
 		proxyCount := len(pool.proxies)
 		pool.mu.RUnlock()
@@ -117,6 +120,7 @@ func TestCreateProxies(t *testing.T) {
 		}
 
 		pool := NewPool(cluster, endpoints, logger)
+		defer pool.Close()
 		pool.mu.RLock()
 		proxyCount := len(pool.proxies)
 		pool.mu.RUnlock()
@@ -151,6 +155,7 @@ func TestForward(t *testing.T) {
 	}
 
 	pool := NewPool(cluster, endpoints, logger)
+	defer pool.Close()
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	w := httptest.NewRecorder()

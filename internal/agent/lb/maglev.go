@@ -122,6 +122,10 @@ func (m *Maglev) buildLookupTable() {
 		}
 		return
 	}
+	// Initialize lookup table to -1 (empty) before filling
+	for i := range m.lookupTable {
+		m.lookupTable[i] = -1
+	}
 
 	// Generate permutation for each endpoint
 	permutations := make([][]uint64, n)
@@ -131,9 +135,6 @@ func (m *Maglev) buildLookupTable() {
 
 	// Build lookup table using Maglev's algorithm
 	next := make([]uint64, n)
-	for i := range next {
-		next[i] = 0
-	}
 
 	filled := uint64(0)
 	for filled < m.tableSize {

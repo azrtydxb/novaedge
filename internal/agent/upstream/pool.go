@@ -27,6 +27,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -34,6 +35,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/health"
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -57,9 +59,14 @@ type Pool struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// Metrics tracking
-	activeConns int32 // Atomic counter for active connections
-	idleConns   int32 // Atomic counter for idle connections
+	// Metrics tracking (atomic counters for lock-free reads)
+	activeConns int64 // Atomic counter for active connections
+	totalConns  int64 // Atomic counter for total connections served
+	poolHits    int64 // Atomic counter for proxy cache hits
+	poolMisses  int64 // Atomic counter for proxy cache misses
+
+	// Cluster key cached to avoid repeated fmt.Sprintf in hot path
+	clusterKey string
 }
 
 // NewPool creates a new connection pool
@@ -122,16 +129,17 @@ func NewPool(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) 
 	// Create context for health checker
 	ctx, cancel := context.WithCancel(context.Background())
 
+	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
+
 	pool := &Pool{
-		logger:      logger,
-		cluster:     cluster,
-		endpoints:   endpoints,
-		transport:   transport,
-		proxies:     make(map[string]*httputil.ReverseProxy),
-		ctx:         ctx,
-		cancel:      cancel,
-		activeConns: 0,
-		idleConns:   0,
+		logger:     logger,
+		cluster:    cluster,
+		endpoints:  endpoints,
+		transport:  transport,
+		proxies:    make(map[string]*httputil.ReverseProxy),
+		ctx:        ctx,
+		cancel:     cancel,
+		clusterKey: clusterKey,
 	}
 
 	// Create and start health checker
@@ -178,32 +186,41 @@ func (p *Pool) drainIdleConnections() {
 	}
 }
 
-// updateMetrics periodically updates pool metrics
+// updateMetrics periodically updates pool metrics and reports them via Prometheus
 func (p *Pool) updateMetrics() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-
-	clusterKey := fmt.Sprintf("%s/%s", p.cluster.Namespace, p.cluster.Name)
 
 	for {
 		select {
 		case <-p.ctx.Done():
 			return
 		case <-ticker.C:
-			// Note: Go's http.Transport doesn't expose connection counts directly
-			// We track active connections through our metrics in the Forward method
-			// Here we just report what we've tracked
+			activeConns := atomic.LoadInt64(&p.activeConns)
+			totalConns := atomic.LoadInt64(&p.totalConns)
+			hits := atomic.LoadInt64(&p.poolHits)
+			misses := atomic.LoadInt64(&p.poolMisses)
+
 			p.mu.RLock()
 			endpointCount := len(p.endpoints)
+			proxyCount := len(p.proxies)
 			p.mu.RUnlock()
 
-			// Import metrics package at top if needed
-			// Update pool connection metrics
-			// metrics.PoolConnectionsTotal.WithLabelValues(clusterKey).Set(float64(endpointCount))
+			// Report pool connection metrics to Prometheus
+			metrics.PoolConnectionsTotal.WithLabelValues(p.clusterKey).Set(float64(proxyCount))
+			metrics.PoolIdleConnections.WithLabelValues(p.clusterKey).Set(float64(proxyCount - int(activeConns)))
+			metrics.PoolActiveConnections.WithLabelValues(p.clusterKey).Set(float64(activeConns))
+			metrics.PoolHitsTotal.WithLabelValues(p.clusterKey).Set(float64(hits))
+			metrics.PoolMissesTotal.WithLabelValues(p.clusterKey).Set(float64(misses))
 
 			p.logger.Debug("Pool metrics",
-				zap.String("cluster", clusterKey),
+				zap.String("cluster", p.clusterKey),
 				zap.Int("endpoints", endpointCount),
+				zap.Int("proxies", proxyCount),
+				zap.Int64("active_conns", activeConns),
+				zap.Int64("total_conns", totalConns),
+				zap.Int64("pool_hits", hits),
+				zap.Int64("pool_misses", misses),
 			)
 		}
 	}
@@ -218,13 +235,17 @@ func (p *Pool) createProxies() {
 			continue
 		}
 
-		key := fmt.Sprintf("%s:%d", ep.Address, ep.Port)
+		key := endpointKey(ep)
 
-		// Reuse existing proxy if available
+		// Reuse existing proxy if available (pool hit)
 		if proxy, ok := p.proxies[key]; ok {
 			newProxies[key] = proxy
+			atomic.AddInt64(&p.poolHits, 1)
 			continue
 		}
+
+		// Pool miss — creating new proxy
+		atomic.AddInt64(&p.poolMisses, 1)
 
 		// Create new reverse proxy
 		target := &url.URL{
@@ -284,11 +305,16 @@ func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.Response
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	key := fmt.Sprintf("%s:%d", endpoint.Address, endpoint.Port)
+	key := endpointKey(endpoint)
 	proxy, ok := p.proxies[key]
 	if !ok {
 		return fmt.Errorf("no proxy for endpoint %s", key)
 	}
+
+	// Track active connections for pool metrics
+	atomic.AddInt64(&p.activeConns, 1)
+	atomic.AddInt64(&p.totalConns, 1)
+	defer atomic.AddInt64(&p.activeConns, -1)
 
 	// Set up request context with timeout
 	ctx := req.Context()
@@ -305,6 +331,11 @@ func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.Response
 	proxy.ServeHTTP(w, reqWithContext)
 
 	return nil
+}
+
+// endpointKey builds a key for an endpoint using string concatenation (avoids fmt.Sprintf allocation)
+func endpointKey(ep *pb.Endpoint) string {
+	return ep.Address + ":" + fmt.Sprint(ep.Port)
 }
 
 // Close closes the pool and all connections
@@ -357,7 +388,11 @@ func (p *Pool) GetStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_endpoints":   len(p.endpoints),
 		"healthy_endpoints": len(p.proxies),
-		"cluster":           fmt.Sprintf("%s/%s", p.cluster.Namespace, p.cluster.Name),
+		"cluster":           p.clusterKey,
+		"active_conns":      atomic.LoadInt64(&p.activeConns),
+		"total_conns":       atomic.LoadInt64(&p.totalConns),
+		"pool_hits":         atomic.LoadInt64(&p.poolHits),
+		"pool_misses":       atomic.LoadInt64(&p.poolMisses),
 	}
 }
 
@@ -367,7 +402,12 @@ func (p *Pool) GetBackendURL(endpoint *pb.Endpoint) string {
 	if p.cluster.Tls != nil && p.cluster.Tls.Enabled {
 		scheme = "https"
 	}
-	return fmt.Sprintf("%s://%s:%d", scheme, endpoint.Address, endpoint.Port)
+	return scheme + "://" + endpointKey(endpoint)
+}
+
+// GetClusterKey returns the cached cluster key (namespace/name)
+func (p *Pool) GetClusterKey() string {
+	return p.clusterKey
 }
 
 // createBackendTLSConfig creates a TLS config for backend connections
