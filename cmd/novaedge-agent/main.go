@@ -129,7 +129,7 @@ func main() {
 		// Remote agents require mTLS
 		if grpcTLSCert == "" || grpcTLSKey == "" || grpcTLSCA == "" {
 			logger.Fatal("Remote agents require mTLS configuration",
-				zap.String("clusterName", clusterName))
+				zap.String("cluster", clusterName))
 		}
 		// Create remote watcher with mTLS and cluster identification
 		watcher, err = config.NewRemoteWatcher(ctx, nodeName, agentVersion, controllerAddr,
@@ -147,9 +147,9 @@ func main() {
 			logger.Fatal("Failed to create remote config watcher", zap.Error(err))
 		}
 		logger.Info("Remote agent configured with mTLS",
-			zap.String("clusterName", clusterName),
-			zap.String("clusterRegion", clusterRegion),
-			zap.String("clusterZone", clusterZone),
+			zap.String("cluster", clusterName),
+			zap.String("cluster_region", clusterRegion),
+			zap.String("cluster_zone", clusterZone),
 			zap.String("cert", grpcTLSCert),
 			zap.String("ca", grpcTLSCA))
 	} else if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {

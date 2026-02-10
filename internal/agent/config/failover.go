@@ -511,7 +511,7 @@ func (w *FailoverWatcher) handleAutonomous() error {
 				if err := w.pingController(ctrl); err == nil {
 					w.logger.Info("Controller available, exiting autonomous mode",
 						zap.String("controller", ctrl.Name),
-						zap.Duration("autonomousDuration", time.Since(w.autonomousStartTime)),
+						zap.Duration("autonomous_duration", time.Since(w.autonomousStartTime)),
 					)
 					ctrl.FailureCount = 0
 					w.transitionTo(StateFailingOver, nil)
