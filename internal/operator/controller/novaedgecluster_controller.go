@@ -79,7 +79,7 @@ func (r *NovaEdgeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Handle finalizer
-	if cluster.ObjectMeta.DeletionTimestamp.IsZero() {
+	if cluster.DeletionTimestamp.IsZero() {
 		// Add finalizer if not present
 		if !controllerutil.ContainsFinalizer(cluster, novaEdgeClusterFinalizer) {
 			controllerutil.AddFinalizer(cluster, novaEdgeClusterFinalizer)
@@ -119,12 +119,12 @@ func (r *NovaEdgeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 
 	// 2. Reconcile Controller
 	if err := r.reconcileController(ctx, cluster); err != nil {
-		reconcileErrors = append(reconcileErrors, fmt.Errorf("Controller: %w", err))
+		reconcileErrors = append(reconcileErrors, fmt.Errorf("controller: %w", err))
 	}
 
 	// 3. Reconcile Agent
 	if err := r.reconcileAgent(ctx, cluster); err != nil {
-		reconcileErrors = append(reconcileErrors, fmt.Errorf("Agent: %w", err))
+		reconcileErrors = append(reconcileErrors, fmt.Errorf("agent: %w", err))
 	}
 
 	// 4. Reconcile WebUI (if enabled)

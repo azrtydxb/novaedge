@@ -84,7 +84,7 @@ func (r *NovaEdgeFederationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if err := r.Get(ctx, req.NamespacedName, fed); err != nil {
 		if errors.IsNotFound(err) {
 			// Federation was deleted, stop the manager
-			r.stopManager(req.NamespacedName.String())
+			r.stopManager(req.String())
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
@@ -107,7 +107,7 @@ func (r *NovaEdgeFederationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Check if paused
 	if fed.Spec.Paused {
 		log.Info("Federation is paused")
-		r.stopManager(req.NamespacedName.String())
+		r.stopManager(req.String())
 		return r.updateStatus(ctx, fed, novaedgev1alpha1.FederationPhaseInitializing, "Federation is paused", log)
 	}
 

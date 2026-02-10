@@ -318,17 +318,18 @@ func (h *OSPFHandler) sendHelloPackets() {
 
 		// Simulate neighbor state progression
 		// In production, this would be based on actual packet exchange
-		if neighbor.State == "Down" {
+		switch neighbor.State {
+		case "Down":
 			neighbor.State = "Init"
 			h.logger.Debug("OSPF neighbor state: Down -> Init",
 				zap.String("neighbor", address),
 			)
-		} else if neighbor.State == "Init" {
+		case "Init":
 			neighbor.State = "2-Way"
 			h.logger.Debug("OSPF neighbor state: Init -> 2-Way",
 				zap.String("neighbor", address),
 			)
-		} else if neighbor.State == "2-Way" {
+		case "2-Way":
 			neighbor.State = "Full"
 			h.logger.Info("OSPF neighbor adjacency established",
 				zap.String("neighbor", address),

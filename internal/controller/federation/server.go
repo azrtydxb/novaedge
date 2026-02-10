@@ -69,7 +69,7 @@ type Server struct {
 	conflicts sync.Map // map[string]*ConflictInfo
 
 	// stats tracks sync statistics
-	stats *SyncStats
+	stats   *SyncStats
 	statsMu sync.RWMutex
 
 	// logger for federation operations
@@ -83,11 +83,11 @@ type Server struct {
 
 	// changeCallbacks are called when a resource changes
 	changeCallbacks []func(key ResourceKey, change ChangeType, data []byte)
-	callbackMu sync.RWMutex
+	callbackMu      sync.RWMutex
 
 	// agentCount tracks connected agents (for heartbeats)
 	agentCount int32
-	agentMu sync.RWMutex
+	agentMu    sync.RWMutex
 }
 
 // NewServer creates a new federation server

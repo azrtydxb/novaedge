@@ -45,11 +45,11 @@ const (
 // when the controller is unavailable (autonomous mode)
 type LocalCoordinator struct {
 	// Configuration
-	nodeName    string
-	priority    int32
-	vips        map[string]*CoordinatedVIPState // VIP address -> state
-	vipsMu      sync.RWMutex
-	logger      *zap.Logger
+	nodeName string
+	priority int32
+	vips     map[string]*CoordinatedVIPState // VIP address -> state
+	vipsMu   sync.RWMutex
+	logger   *zap.Logger
 
 	// Network
 	conn     *net.UDPConn

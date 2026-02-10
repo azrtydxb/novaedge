@@ -237,7 +237,7 @@ func convertHealthCheck(hc *novaedgev1alpha1.HealthCheck) *pb.HealthCheck {
 
 // durationToMillis converts metav1.Duration to milliseconds
 func durationToMillis(d metav1.Duration) int64 {
-	return d.Duration.Milliseconds()
+	return d.Milliseconds()
 }
 
 // durationToSeconds converts metav1.Duration pointer to seconds

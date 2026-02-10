@@ -45,13 +45,13 @@ type PeerClient struct {
 	connMu sync.RWMutex
 
 	// Stream for bidirectional sync
-	stream     pb.FederationService_SyncStreamClient
-	streamMu   sync.Mutex
-	streamCtx  context.Context
+	stream       pb.FederationService_SyncStreamClient
+	streamMu     sync.Mutex
+	streamCtx    context.Context
 	streamCancel context.CancelFunc
 
 	// Callbacks
-	onMessage func(*pb.SyncMessage)
+	onMessage    func(*pb.SyncMessage)
 	onDisconnect func()
 
 	// State
@@ -60,7 +60,7 @@ type PeerClient struct {
 	stateMu   sync.RWMutex
 
 	// Metrics
-	lastPing   time.Time
+	lastPing    time.Time
 	pingLatency time.Duration
 }
 
@@ -476,4 +476,3 @@ func NewPeerClientWithCerts(peer *PeerInfo, config *FederationConfig, logger *za
 		clientKey:  clientKey,
 	}
 }
-

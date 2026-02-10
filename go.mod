@@ -2,6 +2,8 @@ module github.com/piwi3910/novaedge
 
 go 1.24.0
 
+toolchain go1.24.13
+
 require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-acme/lego/v4 v4.29.0

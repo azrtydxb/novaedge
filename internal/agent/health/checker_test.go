@@ -234,7 +234,9 @@ func TestHealthChecker_PerformHTTPCheck_Success(t *testing.T) {
 	parts := strings.Split(addr, ":")
 	host := parts[0]
 	var port int32
-	fmt.Sscanf(parts[1], "%d", &port)
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
 
 	logger := zap.NewNop()
 	cluster := newTestCluster("backend", "default")
@@ -262,7 +264,9 @@ func TestHealthChecker_PerformHTTPCheck_ServerError(t *testing.T) {
 	parts := strings.Split(addr, ":")
 	host := parts[0]
 	var port int32
-	fmt.Sscanf(parts[1], "%d", &port)
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
 
 	logger := zap.NewNop()
 	cluster := newTestCluster("backend", "default")

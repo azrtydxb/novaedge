@@ -196,7 +196,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		parentStatuses = append(parentStatuses, parentStatus)
 	}
 
-	httpRoute.Status.RouteStatus.Parents = parentStatuses
+	httpRoute.Status.Parents = parentStatuses
 
 	if err := r.Status().Update(ctx, httpRoute); err != nil {
 		logger.Error(err, "Failed to update HTTPRoute status")
@@ -356,8 +356,8 @@ func (r *HTTPRouteReconciler) handleDeletion(ctx context.Context, httpRoute *gat
 // updateHTTPRouteStatus updates the HTTPRoute status with the given condition
 func (r *HTTPRouteReconciler) updateHTTPRouteStatus(ctx context.Context, httpRoute *gatewayv1.HTTPRoute, condition metav1.Condition) (ctrl.Result, error) {
 	// Update all parent statuses with the condition
-	for i := range httpRoute.Status.RouteStatus.Parents {
-		meta.SetStatusCondition(&httpRoute.Status.RouteStatus.Parents[i].Conditions, condition)
+	for i := range httpRoute.Status.Parents {
+		meta.SetStatusCondition(&httpRoute.Status.Parents[i].Conditions, condition)
 	}
 
 	if err := r.Status().Update(ctx, httpRoute); err != nil {

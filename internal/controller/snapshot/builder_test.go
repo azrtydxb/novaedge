@@ -228,4 +228,3 @@ func TestSnapshotCacheOperations(t *testing.T) {
 		t.Errorf("Expected cache size 0 after clear, got %d", cache.GetCacheSize())
 	}
 }
-
