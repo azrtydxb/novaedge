@@ -1068,3 +1068,35 @@ metadata:
     # Skip validation (use with caution)
     novaedge.io/skip-validation: "true"
 ```
+
+## CompressionConfig
+
+Response compression configuration, defined on `ProxyGateway.spec.compression`.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | No | `false` | Enable response compression |
+| `minSize` | string | No | `"1024"` | Minimum body size (bytes) before compression triggers |
+| `level` | int32 | No | `6` | Compression level (gzip: 1-9, brotli: 0-11) |
+| `algorithms` | []string | No | `["gzip", "br"]` | Supported compression algorithms in preference order |
+| `excludeTypes` | []string | No | `["image/*", ...]` | Content type patterns to skip compression |
+
+## RouteLimits
+
+Per-route request size limits and timeouts, defined on `ProxyRoute.spec.rules[].limits`.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `maxRequestBodySize` | string | No | Gateway default | Maximum request body size (e.g., "10Mi") |
+| `requestTimeout` | string | No | No timeout | Total request timeout (e.g., "30s") |
+| `idleTimeout` | string | No | No timeout | Connection idle timeout (e.g., "60s") |
+
+## RouteBufferingConfig
+
+Request/response buffering settings, defined on `ProxyRoute.spec.rules[].buffering`.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `request` | bool | No | `false` | Buffer entire request body before forwarding |
+| `response` | bool | No | `false` | Buffer entire response body before sending to client |
+| `maxSize` | string | No | No limit | Maximum buffer size (e.g., "50Mi") |

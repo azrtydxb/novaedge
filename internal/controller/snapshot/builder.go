@@ -234,6 +234,11 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 			gateway.Listeners = append(gateway.Listeners, pbListener)
 		}
 
+		// Add compression configuration
+		if gw.Spec.Compression != nil {
+			gateway.Compression = convertCompressionConfig(gw.Spec.Compression)
+		}
+
 		gateways = append(gateways, gateway)
 	}
 
@@ -272,6 +277,17 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 				Filters:     convertFilters(rule.Filters),
 				BackendRefs: backendRefs,
 			}
+
+			// Add per-route limits
+			if rule.Limits != nil {
+				pbRule.Limits = convertRouteLimits(rule.Limits)
+			}
+
+			// Add per-route buffering
+			if rule.Buffering != nil {
+				pbRule.Buffering = convertBufferingConfig(rule.Buffering)
+			}
+
 			route.Rules = append(route.Rules, pbRule)
 		}
 

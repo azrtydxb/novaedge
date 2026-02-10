@@ -746,11 +746,12 @@ type Gateway struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Name             string      `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Namespace        string      `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
-	VipRef           string      `protobuf:"bytes,3,opt,name=vip_ref,json=vipRef,proto3" json:"vip_ref,omitempty"`
-	IngressClassName string      `protobuf:"bytes,4,opt,name=ingress_class_name,json=ingressClassName,proto3" json:"ingress_class_name,omitempty"`
-	Listeners        []*Listener `protobuf:"bytes,5,rep,name=listeners,proto3" json:"listeners,omitempty"`
+	Name             string             `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Namespace        string             `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	VipRef           string             `protobuf:"bytes,3,opt,name=vip_ref,json=vipRef,proto3" json:"vip_ref,omitempty"`
+	IngressClassName string             `protobuf:"bytes,4,opt,name=ingress_class_name,json=ingressClassName,proto3" json:"ingress_class_name,omitempty"`
+	Listeners        []*Listener        `protobuf:"bytes,5,rep,name=listeners,proto3" json:"listeners,omitempty"`
+	Compression      *CompressionConfig `protobuf:"bytes,6,opt,name=compression,proto3" json:"compression,omitempty"`
 }
 
 func (x *Gateway) Reset() {
@@ -814,6 +815,13 @@ func (x *Gateway) GetIngressClassName() string {
 func (x *Gateway) GetListeners() []*Listener {
 	if x != nil {
 		return x.Listeners
+	}
+	return nil
+}
+
+func (x *Gateway) GetCompression() *CompressionConfig {
+	if x != nil {
+		return x.Compression
 	}
 	return nil
 }
@@ -1152,9 +1160,11 @@ type RouteRule struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	Matches     []*RouteMatch  `protobuf:"bytes,1,rep,name=matches,proto3" json:"matches,omitempty"`
-	Filters     []*RouteFilter `protobuf:"bytes,2,rep,name=filters,proto3" json:"filters,omitempty"`
-	BackendRefs []*BackendRef  `protobuf:"bytes,3,rep,name=backend_refs,json=backendRefs,proto3" json:"backend_refs,omitempty"` // Support multiple weighted backends
+	Matches     []*RouteMatch      `protobuf:"bytes,1,rep,name=matches,proto3" json:"matches,omitempty"`
+	Filters     []*RouteFilter     `protobuf:"bytes,2,rep,name=filters,proto3" json:"filters,omitempty"`
+	BackendRefs []*BackendRef      `protobuf:"bytes,3,rep,name=backend_refs,json=backendRefs,proto3" json:"backend_refs,omitempty"` // Support multiple weighted backends
+	Limits      *RouteLimitsConfig `protobuf:"bytes,4,opt,name=limits,proto3" json:"limits,omitempty"`
+	Buffering   *BufferingConfig   `protobuf:"bytes,5,opt,name=buffering,proto3" json:"buffering,omitempty"`
 }
 
 func (x *RouteRule) Reset() {
@@ -1204,6 +1214,20 @@ func (x *RouteRule) GetFilters() []*RouteFilter {
 func (x *RouteRule) GetBackendRefs() []*BackendRef {
 	if x != nil {
 		return x.BackendRefs
+	}
+	return nil
+}
+
+func (x *RouteRule) GetLimits() *RouteLimitsConfig {
+	if x != nil {
+		return x.Limits
+	}
+	return nil
+}
+
+func (x *RouteRule) GetBuffering() *BufferingConfig {
+	if x != nil {
+		return x.Buffering
 	}
 	return nil
 }

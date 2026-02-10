@@ -496,3 +496,205 @@ spec:
 - [Load Balancing](load-balancing.md) - Configure LB algorithms
 - [Policies](policies.md) - Add rate limiting and auth
 - [TLS](tls.md) - Configure TLS termination
+
+## Response Compression
+
+NovaEdge supports transparent response compression using gzip and Brotli algorithms. Compression is configured at the gateway level and applies to all routes served by that gateway.
+
+### Enabling Compression
+
+Add a `compression` block to your `ProxyGateway` spec:
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: main-gateway
+spec:
+  vipRef: my-vip
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+  compression:
+    enabled: true
+    minSize: "1024"       # Only compress responses >= 1KB
+    level: 6              # Compression level
+    algorithms:
+      - gzip
+      - br               # Brotli
+    excludeTypes:
+      - "image/*"
+      - "video/*"
+      - "audio/*"
+      - "application/zip"
+```
+
+### How Compression Works
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant NovaEdge
+    participant Backend
+
+    Client->>NovaEdge: GET / (Accept-Encoding: gzip, br)
+    NovaEdge->>Backend: GET / (forwarded)
+    Backend-->>NovaEdge: 200 OK (uncompressed body)
+    Note over NovaEdge: Check Content-Type against excludeTypes
+    Note over NovaEdge: Check body size >= minSize
+    Note over NovaEdge: Select best encoding from Accept-Encoding
+    NovaEdge-->>Client: 200 OK (Content-Encoding: gzip, Vary: Accept-Encoding)
+```
+
+### Configuration Options
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `enabled` | `false` | Enable response compression |
+| `minSize` | `"1024"` | Minimum body size (bytes) before compression triggers |
+| `level` | `6` | Compression level (gzip: 1-9, brotli: 0-11) |
+| `algorithms` | `["gzip", "br"]` | Supported algorithms in preference order |
+| `excludeTypes` | `["image/*", "video/*", ...]` | Content types to skip |
+
+### Algorithm Selection
+
+NovaEdge negotiates the compression algorithm based on the client's `Accept-Encoding` header and the configured algorithm preference order:
+
+1. The server checks each configured algorithm in order
+2. The first algorithm that appears in the client's `Accept-Encoding` is selected
+3. If no match is found, the response is sent uncompressed
+
+### Compression is Skipped When
+
+- The response already has a `Content-Encoding` header
+- The response body is smaller than `minSize`
+- The `Content-Type` matches any pattern in `excludeTypes`
+- The response status is 204 No Content or 304 Not Modified
+- The client doesn't send an `Accept-Encoding` header
+
+## Request and Response Buffering
+
+NovaEdge supports buffering request and response bodies at the per-route level. Buffering is useful for retry support, response transformations, and ensuring complete data before committing.
+
+### Per-Route Buffering Configuration
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-route
+spec:
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/
+      backendRefs:
+        - name: api-backend
+      buffering:
+        request: true       # Buffer request body (enables retries)
+        response: false      # Stream responses directly
+        maxSize: "50Mi"      # Maximum buffer size
+```
+
+### Request Buffering
+
+When enabled, the entire request body is buffered before forwarding to the backend. This enables:
+
+- **Retry support**: The request body can be re-read for retries
+- **Size validation**: The complete body size is known before forwarding
+
+For small payloads, buffering uses memory. For large payloads exceeding the memory threshold (default: 1MB), buffering spills to a temporary file that is automatically cleaned up.
+
+### Response Buffering
+
+When enabled, the entire response body is buffered before sending to the client. This enables:
+
+- **Response transformations**: Modify the complete response before committing
+- **Error handling**: Detect backend errors before sending any data to the client
+
+### Buffer Size Limits
+
+If the buffered body exceeds `maxSize`:
+- **Requests**: A `413 Payload Too Large` response is returned
+- **Responses**: Excess data is discarded
+
+## Per-Route Size Limits and Timeouts
+
+Configure request size limits and timeouts on individual route rules for fine-grained control.
+
+### Configuration
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: upload-route
+spec:
+  hostnames:
+    - upload.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /upload
+      backendRefs:
+        - name: upload-backend
+      limits:
+        maxRequestBodySize: "100Mi"   # Max 100 MiB uploads
+        requestTimeout: "5m"           # 5 minute timeout
+        idleTimeout: "60s"             # 60 second idle timeout
+```
+
+### Limit Options
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `maxRequestBodySize` | Gateway default | Maximum request body size |
+| `requestTimeout` | No timeout | Total request timeout |
+| `idleTimeout` | No timeout | Connection idle timeout |
+
+### Size Format
+
+Size values support human-readable suffixes:
+
+| Suffix | Meaning | Example |
+|--------|---------|---------|
+| (none) | Bytes | `1048576` |
+| `Ki` | Kibibytes (1024) | `10Ki` = 10,240 bytes |
+| `Mi` | Mebibytes (1024^2) | `10Mi` = 10,485,760 bytes |
+| `Gi` | Gibibytes (1024^3) | `1Gi` = 1,073,741,824 bytes |
+| `KB` | Kilobytes (1000) | `10KB` = 10,000 bytes |
+| `MB` | Megabytes (1000^2) | `10MB` = 10,000,000 bytes |
+
+### Timeout Behavior
+
+- **`requestTimeout`**: If the backend does not respond within this time, a `504 Gateway Timeout` is returned
+- **`idleTimeout`**: If no data is received on the connection within this time, the connection is closed
+
+### Request Processing Order
+
+```mermaid
+flowchart LR
+    A[Client Request] --> B[Policy Middleware]
+    B --> C[Size Limits Check]
+    C --> D[Request Buffering]
+    D --> E[Compression]
+    E --> F[Response Buffering]
+    F --> G[Backend Forward]
+
+    style C fill:#fff4e6
+    style D fill:#fff4e6
+    style E fill:#e1f5ff
+    style F fill:#e1f5ff
+```
+
+The middleware execution order ensures:
+1. **Policies** (rate limiting, auth) run first
+2. **Size limits** reject oversized requests early
+3. **Request buffering** captures the body for retry support
+4. **Compression** compresses the response after the backend responds
+5. **Response buffering** captures the complete response if needed

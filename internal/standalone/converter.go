@@ -21,6 +21,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -58,6 +59,10 @@ func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot
 
 	// Convert gateways (from listeners)
 	gateways := c.convertListeners(cfg.Listeners)
+	// Add compression configuration from global settings
+	if cfg.Global.Compression != nil && cfg.Global.Compression.Enabled && len(gateways) > 0 {
+		gateways[0].Compression = c.convertCompression(cfg.Global.Compression)
+	}
 	snapshot.Gateways = gateways
 
 	// Convert routes
@@ -201,6 +206,16 @@ func (c *Converter) convertRoutes(routes []RouteConfig) []*pb.Route {
 				Namespace: "default",
 				Weight:    weight,
 			})
+		}
+
+		// Limits
+		if r.Limits != nil {
+			rule.Limits = c.convertRouteLimits(r.Limits)
+		}
+
+		// Buffering
+		if r.Buffering != nil {
+			rule.Buffering = c.convertRouteBuffering(r.Buffering)
 		}
 
 		// Filters
@@ -512,6 +527,88 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 	return result
 }
 
+func (c *Converter) convertCompression(comp *StandaloneCompressionConfig) *pb.CompressionConfig {
+	if comp == nil {
+		return nil
+	}
+	var minSize int64
+	if comp.MinSize != "" {
+		if n, err := strconv.ParseInt(comp.MinSize, 10, 64); err == nil {
+			minSize = n
+		}
+	}
+	return &pb.CompressionConfig{
+		Enabled:      comp.Enabled,
+		MinSize:      minSize,
+		Level:        safeInt32(comp.Level),
+		Algorithms:   comp.Algorithms,
+		ExcludeTypes: comp.ExcludeTypes,
+	}
+}
+
+func (c *Converter) convertRouteLimits(limits *StandaloneRouteLimits) *pb.RouteLimitsConfig {
+	if limits == nil {
+		return nil
+	}
+	result := &pb.RouteLimitsConfig{}
+	if limits.MaxRequestBodySize != "" {
+		if n, err := standaloneParseByteSize(limits.MaxRequestBodySize); err == nil {
+			result.MaxRequestBodySize = n
+		}
+	}
+	if limits.RequestTimeout != "" {
+		if d, err := time.ParseDuration(limits.RequestTimeout); err == nil {
+			result.RequestTimeoutMs = d.Milliseconds()
+		}
+	}
+	if limits.IdleTimeout != "" {
+		if d, err := time.ParseDuration(limits.IdleTimeout); err == nil {
+			result.IdleTimeoutMs = d.Milliseconds()
+		}
+	}
+	return result
+}
+
+func (c *Converter) convertRouteBuffering(buf *StandaloneBufferingConfig) *pb.BufferingConfig {
+	if buf == nil {
+		return nil
+	}
+	result := &pb.BufferingConfig{
+		RequestBuffering:  buf.Request,
+		ResponseBuffering: buf.Response,
+	}
+	if buf.MaxSize != "" {
+		if n, err := standaloneParseByteSize(buf.MaxSize); err == nil {
+			result.MaxBufferSize = n
+		}
+	}
+	return result
+}
+
+// standaloneParseByteSize parses human-readable byte size (e.g., "10Mi", "1024").
+func standaloneParseByteSize(s string) (int64, error) {
+	if s == "" || s == "0" {
+		return 0, nil
+	}
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return n, nil
+	}
+	multipliers := map[string]int64{
+		"Ki": 1 << 10, "Mi": 1 << 20, "Gi": 1 << 30,
+		"KB": 1000, "MB": 1000 * 1000, "GB": 1000 * 1000 * 1000,
+	}
+	for suffix, mult := range multipliers {
+		if strings.HasSuffix(s, suffix) {
+			numStr := strings.TrimSuffix(s, suffix)
+			n, err := strconv.ParseInt(numStr, 10, 64)
+			if err != nil {
+				return 0, fmt.Errorf("invalid byte size: %s", s)
+			}
+			return n * mult, nil
+		}
+	}
+	return 0, fmt.Errorf("invalid byte size: %s", s)
+}
 func (c *Converter) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	data, _ := proto.Marshal(snapshot)
 	hash := sha256.Sum256(data)

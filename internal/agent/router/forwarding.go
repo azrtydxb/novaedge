@@ -48,12 +48,36 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		r.forwardToBackend(entry, w, req)
 	})
 
+	// Apply response buffering middleware (wraps backend, buffers before sending to client)
+	if entry.Buffering != nil && entry.Buffering.ResponseBuffering {
+		respBuf := NewResponseBufferingMiddleware(entry.Buffering)
+		handler = respBuf.Wrap(handler)
+	}
+
+	// Apply compression middleware (wraps backend response, compresses before client)
+	if r.compressionConfig != nil && r.compressionConfig.Enabled {
+		comp := NewCompressionMiddleware(r.compressionConfig)
+		handler = comp.Wrap(handler)
+	}
+
+	// Apply request buffering middleware (buffers request body before forwarding)
+	if entry.Buffering != nil && entry.Buffering.RequestBuffering {
+		reqBuf := NewRequestBufferingMiddleware(entry.Buffering)
+		handler = reqBuf.Wrap(handler)
+	}
+
+	// Apply per-route limits middleware (size limits and timeouts before forwarding)
+	if entry.Limits != nil {
+		limits := NewRequestLimitsMiddleware(entry.Limits)
+		handler = limits.Wrap(handler)
+	}
+
 	// Apply policy middleware in reverse order (last policy wraps first)
 	for i := len(entry.Policies) - 1; i >= 0; i-- {
 		handler = entry.Policies[i].handler(handler)
 	}
 
-	// Execute the handler chain (policies + backend forwarding)
+	// Execute the handler chain: policies -> limits -> req buffering -> compression -> resp buffering -> backend
 	handler.ServeHTTP(responseWriter, req)
 }
 

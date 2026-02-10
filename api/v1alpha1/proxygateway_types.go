@@ -248,6 +248,37 @@ type CustomErrorPage struct {
 	ContentType string `json:"contentType,omitempty"`
 }
 
+// CompressionConfig defines response compression settings
+type CompressionConfig struct {
+	// Enabled enables response compression
+	// +optional
+	// +kubebuilder:default=false
+	Enabled bool `json:"enabled,omitempty"`
+
+	// MinSize is the minimum response body size in bytes before compression triggers
+	// Responses smaller than this are sent uncompressed
+	// +optional
+	// +kubebuilder:default="1024"
+	MinSize string `json:"minSize,omitempty"`
+
+	// Level is the compression level (1-9 for gzip, 0-11 for brotli)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=11
+	// +kubebuilder:default=6
+	Level int32 `json:"level,omitempty"`
+
+	// Algorithms is the list of supported compression algorithms
+	// +optional
+	// +kubebuilder:default={"gzip","br"}
+	Algorithms []string `json:"algorithms,omitempty"`
+
+	// ExcludeTypes is a list of content type patterns to skip compression
+	// Supports glob-style wildcards (e.g., "image/*", "video/*")
+	// +optional
+	ExcludeTypes []string `json:"excludeTypes,omitempty"`
+}
+
 // ProxyGatewaySpec defines the desired state of ProxyGateway
 type ProxyGatewaySpec struct {
 	// VIPRef references the ProxyVIP to use for this gateway
@@ -274,6 +305,10 @@ type ProxyGatewaySpec struct {
 	// CustomErrorPages defines custom error pages
 	// +optional
 	CustomErrorPages []CustomErrorPage `json:"customErrorPages,omitempty"`
+
+	// Compression defines response compression configuration
+	// +optional
+	Compression *CompressionConfig `json:"compression,omitempty"`
 }
 
 // ProxyGatewayStatus defines the observed state of ProxyGateway

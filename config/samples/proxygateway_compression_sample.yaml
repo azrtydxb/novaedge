@@ -1,0 +1,35 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: compressed-gateway
+  namespace: default
+spec:
+  vipRef: main-vip
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostnames:
+        - "*.example.com"
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostnames:
+        - "*.example.com"
+      tls:
+        secretRef:
+          name: example-tls-secret
+  # Enable response compression
+  compression:
+    enabled: true
+    minSize: "1024"         # Compress responses >= 1KB
+    level: 6                # Compression level (gzip: 1-9, brotli: 0-11)
+    algorithms:
+      - gzip
+      - br
+    excludeTypes:
+      - "image/*"
+      - "video/*"
+      - "audio/*"
+      - "application/zip"
+      - "application/gzip"
