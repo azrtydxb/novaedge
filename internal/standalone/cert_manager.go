@@ -33,11 +33,11 @@ import (
 // CertificateManager manages TLS certificates for standalone mode.
 // It handles ACME provisioning, self-signed generation, and certificate hot-reload.
 type CertificateManager struct {
-	config     *Config
+	config      *Config
 	storagePath string
-	logger     *zap.Logger
+	logger      *zap.Logger
 
-	mu          sync.RWMutex
+	mu           sync.RWMutex
 	certificates map[string]*ManagedCertificate
 	acmeClients  map[string]*acme.Client
 
@@ -146,13 +146,13 @@ func (m *CertificateManager) initializeACMECertificate(ctx context.Context, cert
 
 	// Create ACME client configuration
 	config := &acme.Config{
-		Email:         acmeConfig.Email,
-		Server:        acmeConfig.Server,
-		KeyType:       acmeConfig.KeyType,
-		ChallengeType: acmeConfig.ChallengeType,
-		DNSProvider:   acmeConfig.DNSProvider,
+		Email:          acmeConfig.Email,
+		Server:         acmeConfig.Server,
+		KeyType:        acmeConfig.KeyType,
+		ChallengeType:  acmeConfig.ChallengeType,
+		DNSProvider:    acmeConfig.DNSProvider,
 		DNSCredentials: acmeConfig.DNSCredentials,
-		AcceptTOS:     acmeConfig.AcceptTOS,
+		AcceptTOS:      acmeConfig.AcceptTOS,
 		Storage: acme.StorageConfig{
 			Type: "file",
 			Path: filepath.Join(m.storagePath, "acme"),

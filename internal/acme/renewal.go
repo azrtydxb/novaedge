@@ -10,9 +10,9 @@ import (
 
 // RenewalManager handles automatic certificate renewal.
 type RenewalManager struct {
-	client     *Client
-	logger     *zap.Logger
-	interval   time.Duration
+	client      *Client
+	logger      *zap.Logger
+	interval    time.Duration
 	renewBefore time.Duration
 
 	mu       sync.Mutex

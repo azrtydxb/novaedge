@@ -49,9 +49,9 @@ func (rf *ResponseFilter) HasModifications() bool {
 // ResponseHeaderWriter wraps http.ResponseWriter to intercept and modify response headers
 type ResponseHeaderWriter struct {
 	http.ResponseWriter
-	filter       *ResponseFilter
-	wroteHeader  bool
-	statusCode   int
+	filter        *ResponseFilter
+	wroteHeader   bool
+	statusCode    int
 	headersCopied bool
 }
 

@@ -27,9 +27,9 @@ type Client struct {
 	provider ChallengeProvider
 	logger   *zap.Logger
 
-	mu       sync.RWMutex
-	account  *AccountInfo
-	client   *lego.Client
+	mu      sync.RWMutex
+	account *AccountInfo
+	client  *lego.Client
 }
 
 // User implements registration.User for lego.

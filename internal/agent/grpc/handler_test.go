@@ -100,7 +100,7 @@ func TestHandleGRPCResponse_CopiesHeaders(t *testing.T) {
 	}
 
 	result := recorder.Result()
-	defer result.Body.Close()
+	defer func() { _ = result.Body.Close() }()
 
 	if result.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", result.StatusCode)

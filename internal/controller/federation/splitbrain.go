@@ -114,7 +114,7 @@ func AgentAssistedSplitBrainConfig() *SplitBrainConfig {
 	return &SplitBrainConfig{
 		PartitionTimeout:       DefaultPartitionTimeout,
 		QuorumRequired:         true,
-		QuorumSize:             0,  // Will be calculated based on total agents
+		QuorumSize:             0, // Will be calculated based on total agents
 		HealingGracePeriod:     DefaultHealingGracePeriod,
 		AutoResolveOnHeal:      true,
 		FencingEnabled:         true,
@@ -226,9 +226,9 @@ type SplitBrainDetector struct {
 	server *Server
 
 	// Current state
-	state          PartitionState
-	partitionInfo  *PartitionInfo
-	stateMu        sync.RWMutex
+	state         PartitionState
+	partitionInfo *PartitionInfo
+	stateMu       sync.RWMutex
 
 	// Quorum tracking (Controllers mode)
 	totalPeers     int
@@ -432,7 +432,8 @@ func (d *SplitBrainDetector) checkForPartition() {
 
 	if len(unreachable) > 0 && len(reachable) > 0 {
 		// Some peers unreachable - suspected partition
-		if d.state == PartitionStateHealthy {
+		switch d.state {
+		case PartitionStateHealthy:
 			d.state = PartitionStateSuspected
 			d.partitionInfo = &PartitionInfo{
 				State:            PartitionStateSuspected,
@@ -445,7 +446,7 @@ func (d *SplitBrainDetector) checkForPartition() {
 				zap.Strings("unreachable", unreachable),
 				zap.Strings("reachable", reachable),
 			)
-		} else if d.state == PartitionStateSuspected {
+		case PartitionStateSuspected:
 			// Check if suspected long enough to confirm
 			if d.partitionInfo != nil && time.Since(d.partitionInfo.DetectedAt) > d.config.PartitionTimeout {
 				d.state = PartitionStateConfirmed

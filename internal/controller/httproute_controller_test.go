@@ -299,10 +299,10 @@ func TestHTTPRouteReconcile(t *testing.T) {
 			}
 
 			if test.expectReady {
-				if len(updatedRoute.Status.RouteStatus.Parents) == 0 {
+				if len(updatedRoute.Status.Parents) == 0 {
 					t.Error("expected parent status to be set")
 				} else {
-					for _, parentStatus := range updatedRoute.Status.RouteStatus.Parents {
+					for _, parentStatus := range updatedRoute.Status.Parents {
 						acceptedCond := meta.FindStatusCondition(parentStatus.Conditions, string(gatewayv1.RouteConditionAccepted))
 						if acceptedCond == nil || acceptedCond.Status != metav1.ConditionTrue {
 							t.Errorf("expected route to be accepted, got status: %v", acceptedCond)

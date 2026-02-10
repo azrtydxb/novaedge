@@ -137,10 +137,10 @@ type FailoverWatcher struct {
 	activeCtrl *ControllerEndpoint
 
 	// Current config
-	currentSnapshot   *Snapshot
-	currentVersion    string
-	lastVectorClock   map[string]int64
-	snapshotMu        sync.RWMutex
+	currentSnapshot *Snapshot
+	currentVersion  string
+	lastVectorClock map[string]int64
+	snapshotMu      sync.RWMutex
 
 	// Context management
 	ctx            context.Context
@@ -159,10 +159,10 @@ type FailoverWatcher struct {
 	onSnapshot    ApplyFunc
 
 	// Metrics
-	failoverCount        int64
-	connectionErrors     int64
-	autonomousStartTime  time.Time
-	autonomousDuration   time.Duration
+	failoverCount       int64
+	connectionErrors    int64
+	autonomousStartTime time.Time
+	autonomousDuration  time.Duration
 
 	// Controller reachability tracking (for agent-assisted quorum)
 	controllerReachability map[string]*controllerReachabilityInfo
@@ -860,11 +860,11 @@ func controllerName(ctrl *ControllerEndpoint) string {
 // GetMetrics returns failover metrics
 func (w *FailoverWatcher) GetMetrics() map[string]interface{} {
 	return map[string]interface{}{
-		"state":              string(w.GetState()),
-		"failover_count":     w.failoverCount,
-		"connection_errors":  w.connectionErrors,
+		"state":               string(w.GetState()),
+		"failover_count":      w.failoverCount,
+		"connection_errors":   w.connectionErrors,
 		"autonomous_duration": w.autonomousDuration.String(),
-		"current_controller": controllerName(w.GetActiveController()),
+		"current_controller":  controllerName(w.GetActiveController()),
 	}
 }
 

@@ -30,8 +30,8 @@ import (
 // SnapshotEnhancer adds federation metadata to config snapshots
 type SnapshotEnhancer struct {
 	// Configuration
-	federationID     string
-	controllerName   string
+	federationID   string
+	controllerName string
 
 	// Vector clock
 	vectorClock *VectorClock
@@ -46,12 +46,12 @@ type SnapshotEnhancer struct {
 
 // ControllerEndpoint represents a controller endpoint for failover
 type ControllerEndpoint struct {
-	Name     string
-	Endpoint string
-	Priority int32
-	Region   string
-	Zone     string
-	Healthy  bool
+	Name        string
+	Endpoint    string
+	Priority    int32
+	Region      string
+	Zone        string
+	Healthy     bool
 	VectorClock map[string]int64
 }
 
@@ -151,9 +151,10 @@ func (e *SnapshotEnhancer) GetVectorClock() map[string]int64 {
 
 // CompareSnapshots compares two snapshots using vector clocks
 // Returns:
-//   1 if a happened after b
-//  -1 if a happened before b
-//   0 if concurrent (conflict)
+//
+//	 1 if a happened after b
+//	-1 if a happened before b
+//	 0 if concurrent (conflict)
 func CompareSnapshots(a, b *pb.ConfigSnapshot) int {
 	if a == nil || a.FederationMetadata == nil {
 		if b == nil || b.FederationMetadata == nil {

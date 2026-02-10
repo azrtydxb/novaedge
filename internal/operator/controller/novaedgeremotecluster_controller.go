@@ -148,7 +148,7 @@ func (r *NovaEdgeRemoteClusterReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	// Handle finalizer
-	if remoteCluster.ObjectMeta.DeletionTimestamp.IsZero() {
+	if remoteCluster.DeletionTimestamp.IsZero() {
 		// Add finalizer if not present
 		if !controllerutil.ContainsFinalizer(remoteCluster, remoteClusterFinalizer) {
 			controllerutil.AddFinalizer(remoteCluster, remoteClusterFinalizer)
@@ -332,13 +332,14 @@ func (r *NovaEdgeRemoteClusterReconciler) updateOverallStatus(ctx context.Contex
 	}
 
 	// Set overall Ready condition
-	if rc.Status.Phase == novaedgev1alpha1.RemoteClusterPhaseConnected {
+	switch rc.Status.Phase {
+	case novaedgev1alpha1.RemoteClusterPhaseConnected:
 		r.setCondition(rc, ConditionTypeRemoteReady, metav1.ConditionTrue,
 			"Ready", "Remote cluster is fully connected and healthy")
-	} else if rc.Status.Phase == novaedgev1alpha1.RemoteClusterPhaseDegraded {
+	case novaedgev1alpha1.RemoteClusterPhaseDegraded:
 		r.setCondition(rc, ConditionTypeRemoteReady, metav1.ConditionFalse,
 			"Degraded", "Remote cluster is connected but some agents are unhealthy")
-	} else {
+	default:
 		r.setCondition(rc, ConditionTypeRemoteReady, metav1.ConditionFalse,
 			string(rc.Status.Phase), fmt.Sprintf("Remote cluster is in %s phase", rc.Status.Phase))
 	}
