@@ -25,6 +25,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// AggregationMode controls how endpoint-level metrics are aggregated
+type AggregationMode int
+
+const (
+	// AggregateByEndpoint records metrics per-endpoint (high cardinality)
+	AggregateByEndpoint AggregationMode = iota
+	// AggregateByCluster aggregates all endpoint metrics under the cluster label (low cardinality)
+	AggregateByCluster
+)
+
 // MetricsConfig holds configuration for metrics collection
 type MetricsConfig struct {
 	// EnableSampling enables sampling for high-frequency metrics
@@ -33,6 +43,8 @@ type MetricsConfig struct {
 	SampleRate int
 	// MaxEndpointCardinality limits the number of tracked endpoints per cluster
 	MaxEndpointCardinality int
+	// Aggregation controls how endpoint-level labels are recorded
+	Aggregation AggregationMode
 }
 
 var (
@@ -90,8 +102,51 @@ func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint strin
 // cleanupCluster removes all endpoints for a cluster
 func (t *endpointCardinalityTracker) cleanupCluster(cluster string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
+	endpoints := t.endpoints[cluster]
 	delete(t.endpoints, cluster)
+	t.mu.Unlock()
+
+	// Delete stale Prometheus metric series for all endpoints in this cluster
+	for endpoint := range endpoints {
+		deleteEndpointMetrics(cluster, endpoint)
+	}
+}
+
+// removeEndpoint removes a single endpoint from tracking and cleans up its metrics
+func (t *endpointCardinalityTracker) removeEndpoint(cluster, endpoint string) {
+	t.mu.Lock()
+	if clusterEndpoints, ok := t.endpoints[cluster]; ok {
+		delete(clusterEndpoints, endpoint)
+	}
+	t.mu.Unlock()
+
+	deleteEndpointMetrics(cluster, endpoint)
+}
+
+// deleteEndpointMetrics removes Prometheus metric series for a specific cluster/endpoint pair
+func deleteEndpointMetrics(cluster, endpoint string) {
+	BackendRequestsTotal.DeleteLabelValues(cluster, endpoint, "success")
+	BackendRequestsTotal.DeleteLabelValues(cluster, endpoint, "failure")
+	BackendResponseDuration.DeleteLabelValues(cluster, endpoint)
+	BackendHealthStatus.DeleteLabelValues(cluster, endpoint)
+	BackendActiveConnections.DeleteLabelValues(cluster, endpoint)
+	HealthChecksTotal.DeleteLabelValues(cluster, endpoint, "success")
+	HealthChecksTotal.DeleteLabelValues(cluster, endpoint, "failure")
+	HealthCheckDuration.DeleteLabelValues(cluster, endpoint)
+	CircuitBreakerState.DeleteLabelValues(cluster, endpoint)
+}
+
+// resolveEndpointLabel resolves the endpoint label based on aggregation mode and cardinality limits.
+// When AggregateByCluster mode is set, all endpoints use the "aggregated" label.
+// Otherwise, cardinality limits are checked and "other" is used when the limit is exceeded.
+func resolveEndpointLabel(cluster, endpoint string) string {
+	if defaultConfig.Aggregation == AggregateByCluster {
+		return "aggregated"
+	}
+	if !endpointTracker.shouldTrackEndpoint(cluster, endpoint) {
+		return "other"
+	}
+	return endpoint
 }
 
 // shouldSample determines if we should record this metric based on sampling rate

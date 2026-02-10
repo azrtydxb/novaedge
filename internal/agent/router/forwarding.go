@@ -180,7 +180,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 
 	// Track backend request timing
 	backendStart := time.Now()
-	endpointKey := fmt.Sprintf("%s:%d", endpoint.Address, endpoint.Port)
+	endpointKey := formatEndpointKey(endpoint.Address, endpoint.Port)
 
 	backendSpan.SetAttributes(
 		attribute.String("net.peer.name", endpoint.Address),
