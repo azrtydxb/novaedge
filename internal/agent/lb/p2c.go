@@ -31,6 +31,7 @@ type P2C struct {
 	endpoints []*pb.Endpoint
 	// Track active requests per endpoint
 	activeRequests map[string]*int64
+	rngMu          sync.Mutex
 	rng            *rand.Rand
 }
 
@@ -66,14 +67,14 @@ func (p *P2C) Select() *pb.Endpoint {
 		return healthy[0]
 	}
 
-	// Pick two random endpoints
+	// Pick two random endpoints (rng is not thread-safe, needs its own lock)
+	p.rngMu.Lock()
 	idx1 := p.rng.Intn(len(healthy))
 	idx2 := p.rng.Intn(len(healthy))
-
-	// Ensure we pick different endpoints
 	for idx1 == idx2 && len(healthy) > 1 {
 		idx2 = p.rng.Intn(len(healthy))
 	}
+	p.rngMu.Unlock()
 
 	ep1 := healthy[idx1]
 	ep2 := healthy[idx2]
