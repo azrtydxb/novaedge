@@ -180,12 +180,12 @@ const (
 
 // Default configuration values.
 const (
-	DefaultServer       = LetsEncryptProduction
-	DefaultKeyType      = KeyTypeEC256
-	DefaultChallenge    = ChallengeHTTP01
-	DefaultRenewalDays  = 30
-	DefaultStorageType  = "file"
-	DefaultStoragePath  = "/var/lib/novaedge/certs"
+	DefaultServer      = LetsEncryptProduction
+	DefaultKeyType     = KeyTypeEC256
+	DefaultChallenge   = ChallengeHTTP01
+	DefaultRenewalDays = 30
+	DefaultStorageType = "file"
+	DefaultStoragePath = "/var/lib/novaedge/certs"
 )
 
 // ApplyDefaults fills in default values for empty fields.

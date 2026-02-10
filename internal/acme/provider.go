@@ -186,10 +186,10 @@ type DNS01Provider struct {
 
 // DNSChallenge holds DNS-01 challenge data.
 type DNSChallenge struct {
-	Domain     string
-	Token      string
-	KeyAuth    string
-	RecordName string
+	Domain      string
+	Token       string
+	KeyAuth     string
+	RecordName  string
 	RecordValue string
 }
 

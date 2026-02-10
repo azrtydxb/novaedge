@@ -211,7 +211,7 @@ func TestValidationError_AddChild(t *testing.T) {
 	child1 := NewValidationError("child 1")
 	child2 := NewValidationError("child 2")
 
-	parent.AddChild(child1).AddChild(child2)
+	_ = parent.AddChild(child1).AddChild(child2)
 
 	if len(parent.Children) != 2 {
 		t.Errorf("expected 2 children, got %d", len(parent.Children))

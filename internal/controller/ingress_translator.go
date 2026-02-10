@@ -1131,4 +1131,3 @@ func (t *IngressTranslator) getMirrorConfig(ingress *networkingv1.Ingress) (*nov
 func (t *IngressTranslator) useRegexPathMatching(ingress *networkingv1.Ingress) bool {
 	return strings.ToLower(ingress.Annotations[AnnotationUseRegex]) == "true"
 }
-
