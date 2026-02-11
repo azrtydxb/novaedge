@@ -186,12 +186,12 @@ func (c *proxyProtocolConn) Read(b []byte) (int, error) {
 
 func (c *proxyProtocolConn) parseHeader() {
 	// Set a read deadline for the PROXY header
-	if err := c.Conn.SetReadDeadline(time.Now().Add(proxyProtoReadTimeout)); err != nil {
+	if err := c.SetReadDeadline(time.Now().Add(proxyProtoReadTimeout)); err != nil {
 		c.logger.Debug("Failed to set PROXY protocol read deadline", zap.Error(err))
 	}
 	defer func() {
 		// Reset the deadline
-		if err := c.Conn.SetReadDeadline(time.Time{}); err != nil {
+		if err := c.SetReadDeadline(time.Time{}); err != nil {
 			c.logger.Debug("Failed to reset read deadline", zap.Error(err))
 		}
 	}()

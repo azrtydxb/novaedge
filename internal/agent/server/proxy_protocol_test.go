@@ -182,15 +182,12 @@ func TestProxyProtocolListener_UntrustedSource(t *testing.T) {
 		t.Fatalf("Failed to create listener: %v", err)
 	}
 
-	conn, err := ppListener.Accept()
+	// Accept exercises the untrusted-source code path.
+	// net.Pipe addresses are not TCP addresses, so isTrusted returns false
+	// and the original (non-proxied) address is returned.
+	_, err = ppListener.Accept()
 	if err != nil {
 		t.Fatalf("Accept failed: %v", err)
-	}
-
-	// Connection from untrusted source should return original address
-	// (net.Pipe addresses are not TCP addresses, so isTrusted returns false)
-	if conn.RemoteAddr().String() != serverConn.RemoteAddr().String() {
-		// This is expected since pipe addresses are not in the trusted CIDR
 	}
 }
 
