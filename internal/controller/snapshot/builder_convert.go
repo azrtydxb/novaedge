@@ -85,6 +85,8 @@ func convertProtocol(protocol novaedgev1alpha1.ProtocolType) pb.Protocol {
 		return pb.Protocol_TCP
 	case novaedgev1alpha1.ProtocolTypeTLS:
 		return pb.Protocol_TLS
+	case novaedgev1alpha1.ProtocolTypeUDP:
+		return pb.Protocol_UDP
 	default:
 		return pb.Protocol_PROTOCOL_UNSPECIFIED
 	}
