@@ -324,9 +324,19 @@ func runDescribeGatewayAPIGateway(_ *cobra.Command, args []string) error {
 			fmt.Printf("\nListeners (%d):\n", len(listeners))
 			for _, l := range listeners {
 				if listener, ok := l.(map[string]interface{}); ok {
-					lName, _ := listener["name"].(string)
-					lPort, _ := listener["port"].(int64)
-					lProtocol, _ := listener["protocol"].(string)
+					var lName, lProtocol string
+					if n, ok := listener["name"].(string); ok {
+						lName = n
+					}
+					var lPort int64
+					if p, ok := listener["port"].(float64); ok {
+						lPort = int64(p)
+					} else if p, ok := listener["port"].(int64); ok {
+						lPort = p
+					}
+					if p, ok := listener["protocol"].(string); ok {
+						lProtocol = p
+					}
 					fmt.Printf("  - Name: %s, Port: %d, Protocol: %s\n", lName, lPort, lProtocol)
 				}
 			}
@@ -355,8 +365,16 @@ func runDescribeGatewayAPIGateway(_ *cobra.Command, args []string) error {
 			fmt.Printf("Listener Status:\n")
 			for _, l := range listeners {
 				if listener, ok := l.(map[string]interface{}); ok {
-					lName, _ := listener["name"].(string)
-					attachedRoutes, _ := listener["attachedRoutes"].(int64)
+					var lName string
+					if n, ok := listener["name"].(string); ok {
+						lName = n
+					}
+					var attachedRoutes int64
+					if ar, ok := listener["attachedRoutes"].(float64); ok {
+						attachedRoutes = int64(ar)
+					} else if ar, ok := listener["attachedRoutes"].(int64); ok {
+						attachedRoutes = ar
+					}
 					fmt.Printf("  - Name: %s, AttachedRoutes: %d\n", lName, attachedRoutes)
 
 					if conditions, ok := listener["conditions"].([]interface{}); ok {
