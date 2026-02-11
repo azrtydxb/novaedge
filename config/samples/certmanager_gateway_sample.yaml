@@ -1,0 +1,36 @@
+# Example: ProxyGateway with cert-manager automatic certificate provisioning
+#
+# Prerequisites:
+#   1. cert-manager installed in the cluster
+#   2. A ClusterIssuer named "letsencrypt-prod" configured
+#   3. NovaEdge controller started with --enable-cert-manager=auto (default)
+#
+# The controller will automatically create a cert-manager Certificate CR
+# with the hostnames from the listeners and the issuer from the annotation.
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: web-gateway
+  namespace: default
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  vipRef: "external-vip"
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostnames:
+        - "example.com"
+        - "www.example.com"
+      sslRedirect: true
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostnames:
+        - "example.com"
+        - "www.example.com"
+      tls:
+        secretRef:
+          name: web-gateway-tls
+        minVersion: "TLS1.2"

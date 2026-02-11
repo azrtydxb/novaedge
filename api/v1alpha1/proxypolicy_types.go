@@ -91,6 +91,32 @@ type JWTConfig struct {
 	// +optional
 	// +kubebuilder:default="Bearer "
 	HeaderPrefix string `json:"headerPrefix,omitempty"`
+
+	// VaultSecretRef optionally references credentials stored in HashiCorp Vault
+	// +optional
+	VaultSecretRef *VaultSecretReference `json:"vaultSecretRef,omitempty"`
+}
+
+// VaultSecretReference references a secret stored in HashiCorp Vault
+type VaultSecretReference struct {
+	// Path is the Vault secret path (e.g., "secret/data/myapp/oidc")
+	// +kubebuilder:validation:Required
+	Path string `json:"path"`
+
+	// Key is the specific key within the secret to use
+	// +kubebuilder:validation:Required
+	Key string `json:"key"`
+
+	// Engine specifies the Vault secrets engine type
+	// +optional
+	// +kubebuilder:default="kv-v2"
+	// +kubebuilder:validation:Enum=kv-v1;kv-v2
+	Engine string `json:"engine,omitempty"`
+
+	// RefreshInterval specifies how often to refresh the secret from Vault
+	// +optional
+	// +kubebuilder:default="5m"
+	RefreshInterval string `json:"refreshInterval,omitempty"`
 }
 
 // IPListConfig defines IP allow/deny list configuration

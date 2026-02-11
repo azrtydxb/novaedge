@@ -67,6 +67,8 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 	case resourceAliasWASMPlugins, resourceAliasWASMPlugin, resourceAliasWASM:
 		// WASM plugins are shown via policies
 		rt = client.ResourcePolicy
+	case resourceAliasCertificates, resourceAliasCertificate, resourceAliasCert, resourceAliasProxyCertificates:
+		rt = client.ResourceCertificate
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}

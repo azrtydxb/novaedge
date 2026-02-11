@@ -806,17 +806,44 @@ type ACMEIssuerConfig struct {
 	// ChallengeType: http-01, dns-01, tls-alpn-01 (default: http-01)
 	ChallengeType string `yaml:"challengeType,omitempty"`
 
-	// DNSProvider for dns-01 challenges (e.g., cloudflare, route53)
+	// DNSProvider for dns-01 challenges (e.g., cloudflare, route53, googledns)
 	DNSProvider string `yaml:"dnsProvider,omitempty"`
 
 	// DNSCredentials for dns-01 challenges
 	DNSCredentials map[string]string `yaml:"dnsCredentials,omitempty"`
+
+	// DNS01 configures DNS-01 specific options
+	DNS01 *DNS01ChallengeConfig `yaml:"dns01,omitempty"`
+
+	// TLSALPN01 configures TLS-ALPN-01 specific options
+	TLSALPN01 *TLSALPN01ChallengeConfig `yaml:"tlsAlpn01,omitempty"`
 
 	// AcceptTOS indicates acceptance of ACME Terms of Service
 	AcceptTOS bool `yaml:"acceptTOS,omitempty"`
 
 	// KeyType: RSA2048, RSA4096, EC256, EC384 (default: EC256)
 	KeyType string `yaml:"keyType,omitempty"`
+}
+
+// DNS01ChallengeConfig configures DNS-01 ACME challenges for standalone mode.
+type DNS01ChallengeConfig struct {
+	// Provider specifies the DNS provider (cloudflare, route53, googledns)
+	Provider string `yaml:"provider"`
+
+	// Credentials for the DNS provider
+	Credentials map[string]string `yaml:"credentials"`
+
+	// PropagationTimeout is the max time to wait for DNS propagation (default: 120s)
+	PropagationTimeout string `yaml:"propagationTimeout,omitempty"`
+
+	// PollingInterval is the time between DNS propagation checks (default: 5s)
+	PollingInterval string `yaml:"pollingInterval,omitempty"`
+}
+
+// TLSALPN01ChallengeConfig configures TLS-ALPN-01 ACME challenges for standalone mode.
+type TLSALPN01ChallengeConfig struct {
+	// Port to listen on for TLS-ALPN-01 challenges (default: 443)
+	Port int `yaml:"port,omitempty"`
 }
 
 // ManualIssuerConfig defines manual certificate files
