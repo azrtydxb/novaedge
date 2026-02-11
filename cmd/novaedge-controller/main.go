@@ -22,6 +22,7 @@ import (
 	"net"
 	"os"
 
+	uberzap "go.uber.org/zap"
 	"google.golang.org/grpc"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -33,9 +34,13 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
+	"k8s.io/client-go/dynamic"
+
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller"
+	"github.com/piwi3910/novaedge/internal/controller/certmanager"
 	"github.com/piwi3910/novaedge/internal/controller/snapshot"
+	vaultpkg "github.com/piwi3910/novaedge/internal/controller/vault"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 )
 
@@ -68,6 +73,18 @@ func main() {
 	flag.StringVar(&grpcTLSCA, "grpc-tls-ca", "", "Path to gRPC CA certificate file for client verification")
 	flag.StringVar(&controllerClass, "controller-class", "novaedge.io/proxy",
 		"The loadBalancerClass this controller handles. Only gateways matching this class will be reconciled.")
+
+	var enableCertManager string
+	var enableVault string
+	var vaultAddr string
+	var vaultAuthMethod string
+	var vaultRole string
+	flag.StringVar(&enableCertManager, "enable-cert-manager", "auto", "Enable cert-manager integration (auto|true|false)")
+	flag.StringVar(&enableVault, "enable-vault", "false", "Enable HashiCorp Vault integration (auto|true|false)")
+	flag.StringVar(&vaultAddr, "vault-addr", "", "HashiCorp Vault server address")
+	flag.StringVar(&vaultAuthMethod, "vault-auth-method", "kubernetes", "Vault auth method (kubernetes|approle|token)")
+	flag.StringVar(&vaultRole, "vault-role", "novaedge", "Vault auth role name")
+
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -102,11 +119,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.ProxyGatewayReconciler{
+	// Build ProxyGateway reconciler with optional cert-manager and Vault integrations.
+	// These will be populated below if the respective integrations are enabled.
+	proxyGatewayReconciler := &controller.ProxyGatewayReconciler{
 		Client:          mgr.GetClient(),
 		Scheme:          mgr.GetScheme(),
 		ControllerClass: controllerClass,
-	}).SetupWithManager(mgr); err != nil {
+	}
+	if err = proxyGatewayReconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ProxyGateway")
 		os.Exit(1)
 	}
@@ -182,6 +202,60 @@ func main() {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
+	}
+
+	// Initialize cert-manager integration
+	certMgrMode := certmanager.EnableMode(enableCertManager)
+	detector, detectErr := certmanager.NewDetector(mgr.GetConfig())
+	if detectErr != nil {
+		setupLog.Error(detectErr, "unable to create cert-manager detector")
+	} else {
+		certMgrEnabled, shouldEnableErr := detector.ShouldEnable(context.Background(), certMgrMode)
+		if shouldEnableErr != nil {
+			setupLog.Error(shouldEnableErr, "cert-manager detection failed")
+		} else if certMgrEnabled {
+			dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
+			if dynErr != nil {
+				setupLog.Error(dynErr, "failed to create dynamic client for cert-manager")
+			} else {
+				proxyGatewayReconciler.CertManager = certmanager.NewCertificateManager(dynClient)
+				setupLog.Info("cert-manager integration enabled and wired into ProxyGateway reconciler")
+			}
+		} else {
+			setupLog.Info("cert-manager integration disabled")
+		}
+	}
+
+	// Initialize Vault integration
+	vaultMode := vaultpkg.EnableMode(enableVault)
+	if vaultMode != vaultpkg.EnableModeFalse {
+		vaultConfig := &vaultpkg.Config{
+			Address:    vaultAddr,
+			AuthMethod: vaultpkg.AuthMethod(vaultAuthMethod),
+		}
+		if vaultAuthMethod == "kubernetes" {
+			vaultConfig.KubernetesAuth = &vaultpkg.KubernetesAuthConfig{
+				Role: vaultRole,
+			}
+		}
+		zapLogger, _ := uberzap.NewProduction()
+		vaultEnabled, vaultErr := vaultpkg.ShouldEnable(context.Background(), vaultConfig, vaultMode, zapLogger)
+		if vaultErr != nil {
+			setupLog.Error(vaultErr, "Vault initialization failed")
+			if vaultMode == vaultpkg.EnableModeTrue {
+				os.Exit(1)
+			}
+		} else if vaultEnabled {
+			vaultClient, clientErr := vaultpkg.NewClient(vaultConfig, zapLogger)
+			if clientErr != nil {
+				setupLog.Error(clientErr, "failed to create Vault client for PKI")
+			} else {
+				proxyGatewayReconciler.VaultPKI = vaultpkg.NewPKIManager(vaultClient, zapLogger)
+				setupLog.Info("Vault integration enabled and wired into ProxyGateway reconciler", "address", vaultAddr)
+			}
+		} else {
+			setupLog.Info("Vault integration disabled")
+		}
 	}
 
 	// Create and start gRPC server for config distribution

@@ -1407,6 +1407,72 @@ PROXY protocol configuration for backend connections.
 
 ---
 
+## ProxyCertificate DNS-01 and TLS-ALPN-01 Fields
+
+### DNS01Config
+
+Added to `ACMEIssuerConfig`:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `provider` | string | Yes | DNS provider: `cloudflare`, `route53`, `googledns` |
+| `credentialsRef` | LocalObjectReference | Yes | Reference to Secret with DNS provider credentials |
+| `propagationTimeout` | string | No | Max wait for DNS propagation (default: `120s`) |
+| `pollingInterval` | string | No | DNS check interval (default: `5s`) |
+
+### TLSALPN01Config
+
+Added to `ACMEIssuerConfig`:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `port` | int32 | No | Port to listen on (default: `443`) |
+
+### VaultPKIIssuerConfig
+
+Added to `CertificateIssuer`:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Vault PKI mount path (e.g., `pki-int`) |
+| `role` | string | Yes | Vault PKI role name |
+| `ttl` | string | No | Requested certificate TTL |
+
+## ProxyGateway New Fields
+
+### VaultCertReference
+
+Added to `TLSConfig`:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Vault PKI mount path |
+| `role` | string | Yes | Vault PKI role name |
+| `ttl` | string | No | Requested certificate TTL |
+| `cacheSecretName` | string | No | K8s Secret to cache the cert |
+
+### Cert-Manager Annotations
+
+| Annotation | Description |
+|------------|-------------|
+| `cert-manager.io/cluster-issuer` | Create Certificate CR using this ClusterIssuer |
+| `cert-manager.io/issuer` | Create Certificate CR using this namespaced Issuer |
+
+## ProxyPolicy New Fields
+
+### VaultSecretReference
+
+Added to `JWTConfig`:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `path` | string | Yes | Vault secret path |
+| `key` | string | Yes | Key within the secret |
+| `engine` | string | No | Vault engine type: `kv-v1`, `kv-v2` (default: `kv-v2`) |
+| `refreshInterval` | string | No | Secret refresh interval (default: `5m`) |
+
+---
+
 ## Gateway API Resources
 
 NovaEdge supports standard Kubernetes Gateway API resources in addition to its custom CRDs.

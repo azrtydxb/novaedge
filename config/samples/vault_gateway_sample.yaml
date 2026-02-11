@@ -1,0 +1,47 @@
+# Example: ProxyGateway with Vault PKI certificate provisioning
+#
+# Prerequisites:
+#   1. HashiCorp Vault server accessible
+#   2. PKI secrets engine enabled at "pki-int"
+#   3. Role "web-server" configured in Vault PKI
+#   4. NovaEdge controller started with --enable-vault=true
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: api-gateway
+  namespace: default
+spec:
+  vipRef: "external-vip"
+  listeners:
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostnames:
+        - "api.example.com"
+      tls:
+        vaultCertRef:
+          path: pki-int
+          role: web-server
+          ttl: "720h"
+          cacheSecretName: api-gateway-vault-tls
+        minVersion: "TLS1.2"
+---
+# Example: ProxyPolicy with Vault KV secret reference
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: jwt-auth-vault
+  namespace: default
+spec:
+  type: JWT
+  targetRef:
+    kind: ProxyRoute
+    name: api-route
+  jwt:
+    issuer: "https://auth.example.com"
+    jwksUri: "https://auth.example.com/.well-known/jwks.json"
+    vaultSecretRef:
+      path: "secret/data/novaedge/jwt"
+      key: "signing_key"
+      engine: "kv-v2"
+      refreshInterval: "5m"

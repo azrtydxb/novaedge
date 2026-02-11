@@ -1,0 +1,61 @@
+# Example: ProxyCertificate with DNS-01 ACME challenge for wildcard certificate
+#
+# DNS-01 is required for wildcard certificates.
+# This example uses Cloudflare as the DNS provider.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-token
+  namespace: default
+type: Opaque
+stringData:
+  api_token: "your-cloudflare-api-token-here"
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyCertificate
+metadata:
+  name: wildcard-cert
+  namespace: default
+spec:
+  domains:
+    - "*.example.com"
+    - "example.com"
+  issuer:
+    type: acme
+    acme:
+      email: admin@example.com
+      challengeType: dns-01
+      dnsProvider: cloudflare
+      dnsCredentialsRef:
+        name: cloudflare-api-token
+        namespace: default
+      dns01:
+        provider: cloudflare
+        credentialsRef:
+          name: cloudflare-api-token
+        propagationTimeout: "120s"
+        pollingInterval: "5s"
+      acceptTOS: true
+  secretName: wildcard-tls
+  keyType: EC256
+  renewBefore: "720h"
+---
+# Example: ProxyCertificate with TLS-ALPN-01 challenge
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyCertificate
+metadata:
+  name: api-cert-alpn
+  namespace: default
+spec:
+  domains:
+    - api.example.com
+  issuer:
+    type: acme
+    acme:
+      email: admin@example.com
+      challengeType: tls-alpn-01
+      tlsAlpn01:
+        port: 443
+      acceptTOS: true
+  secretName: api-tls-alpn
+  keyType: EC256

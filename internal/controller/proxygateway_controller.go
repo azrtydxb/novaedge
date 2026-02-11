@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +32,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	"github.com/piwi3910/novaedge/internal/controller/certmanager"
+	"github.com/piwi3910/novaedge/internal/controller/vault"
 )
 
 // ProxyGatewayReconciler reconciles a ProxyGateway object
@@ -38,12 +41,22 @@ type ProxyGatewayReconciler struct {
 	client.Client
 	Scheme          *runtime.Scheme
 	ControllerClass string
+
+	// CertManager handles cert-manager Certificate CR creation (optional).
+	// When non-nil, gateways with cert-manager.io annotations will have
+	// Certificate resources created automatically.
+	CertManager *certmanager.CertificateManager
+
+	// VaultPKI handles Vault PKI certificate issuance (optional).
+	// When non-nil, listeners with VaultCertRef will have certificates
+	// issued from Vault and cached in Kubernetes Secrets.
+	VaultPKI *vault.PKIManager
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxygateways,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxygateways/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxygateways/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -71,6 +84,22 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
+	// Ensure cert-manager Certificate CRs for gateways with cert-manager annotations
+	if r.CertManager != nil {
+		if err := r.CertManager.EnsureCertificate(ctx, gateway); err != nil {
+			logger.Error(err, "Failed to ensure cert-manager certificate", "gateway", gateway.Name)
+			// Continue reconciliation; certificate creation is best-effort
+		}
+	}
+
+	// Issue Vault PKI certificates for listeners with VaultCertRef
+	if r.VaultPKI != nil {
+		if err := r.ensureVaultCertificates(ctx, gateway); err != nil {
+			logger.Error(err, "Failed to ensure Vault PKI certificates", "gateway", gateway.Name)
+			// Continue reconciliation; Vault certificate issuance is best-effort
+		}
+	}
+
 	// Validate and update status
 	if err := r.validateAndUpdateStatus(ctx, gateway); err != nil {
 		logger.Error(err, "Failed to validate gateway")
@@ -81,6 +110,95 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	TriggerConfigUpdate()
 
 	return ctrl.Result{}, nil
+}
+
+// ensureVaultCertificates issues certificates from Vault PKI for listeners that reference VaultCertRef,
+// and stores the resulting cert/key in a Kubernetes Secret.
+func (r *ProxyGatewayReconciler) ensureVaultCertificates(ctx context.Context, gateway *novaedgev1alpha1.ProxyGateway) error {
+	logger := log.FromContext(ctx)
+	var errs []string
+
+	for _, listener := range gateway.Spec.Listeners {
+		if listener.TLS == nil || listener.TLS.VaultCertRef == nil {
+			continue
+		}
+
+		vaultRef := listener.TLS.VaultCertRef
+		commonName := ""
+		if len(listener.Hostnames) > 0 {
+			commonName = listener.Hostnames[0]
+		} else {
+			commonName = fmt.Sprintf("%s.%s.svc", gateway.Name, gateway.Namespace)
+		}
+
+		pkiReq := &vault.PKIRequest{
+			MountPath:  vaultRef.Path,
+			Role:       vaultRef.Role,
+			CommonName: commonName,
+			TTL:        vaultRef.TTL,
+		}
+
+		// Add additional hostnames as SANs
+		if len(listener.Hostnames) > 1 {
+			pkiReq.AltNames = listener.Hostnames[1:]
+		}
+
+		cert, err := r.VaultPKI.IssueCertificate(ctx, pkiReq)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("listener %s: %v", listener.Name, err))
+			continue
+		}
+
+		// Store the certificate in a Kubernetes Secret
+		secretName := vaultRef.CacheSecretName
+		if secretName == "" {
+			secretName = fmt.Sprintf("%s-%s-vault-tls", gateway.Name, listener.Name)
+		}
+
+		certPEM, keyPEM := cert.CertToPEM()
+		secret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: gateway.Namespace,
+				Labels: map[string]string{
+					"app.kubernetes.io/managed-by": "novaedge",
+					"novaedge.io/gateway":          gateway.Name,
+				},
+			},
+			Type: corev1.SecretTypeTLS,
+			Data: map[string][]byte{
+				"tls.crt": certPEM,
+				"tls.key": keyPEM,
+			},
+		}
+
+		existing := &corev1.Secret{}
+		err = r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: gateway.Namespace}, existing)
+		if errors.IsNotFound(err) {
+			if createErr := r.Create(ctx, secret); createErr != nil {
+				errs = append(errs, fmt.Sprintf("listener %s: failed to create secret: %v", listener.Name, createErr))
+				continue
+			}
+			logger.Info("Created Vault PKI certificate secret",
+				"secret", secretName, "listener", listener.Name, "commonName", commonName)
+		} else if err != nil {
+			errs = append(errs, fmt.Sprintf("listener %s: failed to get secret: %v", listener.Name, err))
+			continue
+		} else {
+			existing.Data = secret.Data
+			if updateErr := r.Update(ctx, existing); updateErr != nil {
+				errs = append(errs, fmt.Sprintf("listener %s: failed to update secret: %v", listener.Name, updateErr))
+				continue
+			}
+			logger.Info("Updated Vault PKI certificate secret",
+				"secret", secretName, "listener", listener.Name, "commonName", commonName)
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("vault certificate errors: %s", strings.Join(errs, "; "))
+	}
+	return nil
 }
 
 // validateAndUpdateStatus validates the gateway and updates its status

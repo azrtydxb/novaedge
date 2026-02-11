@@ -27,6 +27,11 @@ const (
 	resourceAliasWASMPlugin  = "wasmplugin"
 	resourceAliasWASM        = "wasm"
 
+	resourceAliasCertificates      = "certificates"
+	resourceAliasCertificate       = "certificate"
+	resourceAliasCert              = "cert"
+	resourceAliasProxyCertificates = "proxycertificates"
+
 	statusYes     = "Yes"
 	statusNo      = "No"
 	statusUnknown = "Unknown"
