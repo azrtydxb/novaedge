@@ -242,7 +242,7 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 
 	line, err := reader.ReadString('\n')
 	if err != nil {
-		c.logger.Debug("Failed to read PROXY v1 header line", zap.Error(err))
+		c.logger.Warn("Failed to read PROXY v1 header line", zap.Error(err))
 		c.extraData = initialBuf
 		return
 	}
@@ -253,7 +253,7 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 	// Parse: PROXY TCP4/TCP6/UNKNOWN srcIP dstIP srcPort dstPort
 	parts := strings.Split(line, " ")
 	if len(parts) < 2 {
-		c.logger.Debug("Invalid PROXY v1 header: insufficient fields")
+		c.logger.Warn("Invalid PROXY v1 header: insufficient fields")
 		c.extraData = initialBuf
 		return
 	}
@@ -267,7 +267,7 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 	}
 
 	if len(parts) != 6 {
-		c.logger.Debug("Invalid PROXY v1 header: expected 6 fields",
+		c.logger.Warn("Invalid PROXY v1 header: expected 6 fields",
 			zap.Int("got", len(parts)))
 		c.extraData = initialBuf
 		return
@@ -275,14 +275,14 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 
 	srcIP := net.ParseIP(parts[2])
 	if srcIP == nil {
-		c.logger.Debug("Invalid PROXY v1 source IP", zap.String("ip", parts[2]))
+		c.logger.Warn("Invalid PROXY v1 source IP", zap.String("ip", parts[2]))
 		c.extraData = initialBuf
 		return
 	}
 
 	var srcPort int
 	if _, err := fmt.Sscanf(parts[4], "%d", &srcPort); err != nil {
-		c.logger.Debug("Invalid PROXY v1 source port", zap.String("port", parts[4]))
+		c.logger.Warn("Invalid PROXY v1 source port", zap.String("port", parts[4]))
 		c.extraData = initialBuf
 		return
 	}
@@ -327,14 +327,14 @@ func (c *proxyProtocolConn) parseV2Header(headerBuf []byte) {
 		if addrLen > 0 {
 			discard := make([]byte, addrLen)
 			if _, err := io.ReadFull(c.Conn, discard); err != nil {
-				c.logger.Debug("Failed to discard PROXY v2 address data", zap.Error(err))
+				c.logger.Warn("Failed to discard PROXY v2 address data", zap.Error(err))
 			}
 		}
 		return
 	case proxyProtoV2CommandProxy:
 		// PROXY command - parse address
 	default:
-		c.logger.Debug("Unknown PROXY v2 command", zap.Uint8("command", verCmd))
+		c.logger.Warn("Unknown PROXY v2 command", zap.Uint8("command", verCmd))
 		c.extraData = headerBuf
 		return
 	}
@@ -345,7 +345,7 @@ func (c *proxyProtocolConn) parseV2Header(headerBuf []byte) {
 	}
 	addrData := make([]byte, addrLen)
 	if _, err := io.ReadFull(c.Conn, addrData); err != nil {
-		c.logger.Debug("Failed to read PROXY v2 address data", zap.Error(err))
+		c.logger.Warn("Failed to read PROXY v2 address data", zap.Error(err))
 		return
 	}
 
@@ -353,7 +353,7 @@ func (c *proxyProtocolConn) parseV2Header(headerBuf []byte) {
 	switch family {
 	case proxyProtoV2FamilyTCPv4:
 		if len(addrData) < 12 {
-			c.logger.Debug("PROXY v2 IPv4 address too short")
+			c.logger.Warn("PROXY v2 IPv4 address too short")
 			return
 		}
 		srcIP := net.IP(addrData[0:4])
@@ -364,7 +364,7 @@ func (c *proxyProtocolConn) parseV2Header(headerBuf []byte) {
 		}
 	case proxyProtoV2FamilyTCPv6:
 		if len(addrData) < 36 {
-			c.logger.Debug("PROXY v2 IPv6 address too short")
+			c.logger.Warn("PROXY v2 IPv6 address too short")
 			return
 		}
 		srcIP := net.IP(addrData[0:16])
@@ -374,7 +374,7 @@ func (c *proxyProtocolConn) parseV2Header(headerBuf []byte) {
 			Port: int(srcPort),
 		}
 	default:
-		c.logger.Debug("Unknown PROXY v2 address family", zap.Uint8("family", family))
+		c.logger.Warn("Unknown PROXY v2 address family", zap.Uint8("family", family))
 		return
 	}
 

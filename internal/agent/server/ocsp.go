@@ -66,6 +66,7 @@ type OCSPStapler struct {
 }
 
 type ocspCertEntry struct {
+	mu         sync.RWMutex
 	cert       *tls.Certificate
 	issuer     *x509.Certificate
 	response   []byte
@@ -189,12 +190,18 @@ func (s *OCSPStapler) StapleToConfig(tlsConfig *tls.Config) {
 		entry, ok := s.certificates[hello.ServerName]
 		s.mu.RUnlock()
 
-		if ok && len(entry.response) > 0 {
-			// Return a copy of the certificate with the OCSP staple
-			if cert != nil {
-				stapled := *cert
-				stapled.OCSPStaple = entry.response
-				return &stapled, nil
+		if ok {
+			entry.mu.RLock()
+			response := entry.response
+			entry.mu.RUnlock()
+
+			if len(response) > 0 {
+				// Return a copy of the certificate with the OCSP staple
+				if cert != nil {
+					stapled := *cert
+					stapled.OCSPStaple = response
+					return &stapled, nil
+				}
 			}
 		}
 
@@ -220,10 +227,12 @@ func (s *OCSPStapler) Status() OCSPStatus {
 	}
 
 	for hostname, entry := range s.certificates {
+		entry.mu.RLock()
 		certStatus := OCSPCertStatus{
 			HasStaple:  len(entry.response) > 0,
 			NextUpdate: entry.nextUpdate,
 		}
+		entry.mu.RUnlock()
 		status.Certificates[hostname] = certStatus
 	}
 
@@ -269,7 +278,12 @@ func (s *OCSPStapler) refreshAll() {
 
 	for hostname, entry := range entries {
 		// Check if refresh is needed
-		if len(entry.response) > 0 && time.Until(entry.nextUpdate) > ocspRefreshBeforeExpiry {
+		entry.mu.RLock()
+		hasResponse := len(entry.response) > 0
+		nextUpdate := entry.nextUpdate
+		entry.mu.RUnlock()
+
+		if hasResponse && time.Until(nextUpdate) > ocspRefreshBeforeExpiry {
 			continue
 		}
 
@@ -294,9 +308,15 @@ func (s *OCSPStapler) refreshAll() {
 			s.lastError.Store(err.Error())
 		} else {
 			s.lastRefresh.Store(time.Now().Unix())
+			s.lastError.Store("")
+
+			entry.mu.RLock()
+			logNextUpdate := entry.nextUpdate
+			entry.mu.RUnlock()
+
 			s.logger.Debug("OCSP response refreshed",
 				zap.String("hostname", hostname),
-				zap.Time("next_update", entry.nextUpdate),
+				zap.Time("next_update", logNextUpdate),
 			)
 		}
 	}
@@ -339,8 +359,10 @@ func (s *OCSPStapler) fetchOCSPResponse(entry *ocspCertEntry, leaf *x509.Certifi
 		return fmt.Errorf("OCSP response status is not good: %d", ocspResp.Status)
 	}
 
+	entry.mu.Lock()
 	entry.response = respBytes
 	entry.nextUpdate = ocspResp.NextUpdate
+	entry.mu.Unlock()
 
 	return nil
 }

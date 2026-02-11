@@ -76,6 +76,13 @@ func injectClientCertHeaders(r *http.Request) {
 		return
 	}
 
+	// Strip existing client cert headers to prevent spoofing
+	for key := range r.Header {
+		if strings.HasPrefix(key, "X-Client-Cert-") {
+			r.Header.Del(key)
+		}
+	}
+
 	clientCert := r.TLS.PeerCertificates[0]
 
 	// Inject Common Name
