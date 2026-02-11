@@ -46,6 +46,57 @@ spec:
           spec:
             description: ProxyRouteSpec defines the desired state of ProxyRoute
             properties:
+              accessLog:
+                description: |-
+                  AccessLog defines per-route access logging configuration
+                  Overrides gateway-level access log settings for this route
+                properties:
+                  enabled:
+                    description: Enabled enables access logging for this route
+                    type: boolean
+                  filePath:
+                    description: FilePath is the path to the log file
+                    type: string
+                  filterStatusCodes:
+                    description: FilterStatusCodes limits logging to specific HTTP
+                      status codes
+                    items:
+                      format: int32
+                      type: integer
+                    type: array
+                  format:
+                    description: Format specifies the log format (json, clf, custom)
+                    enum:
+                    - json
+                    - clf
+                    - custom
+                    type: string
+                  maxBackups:
+                    description: MaxBackups is the maximum number of rotated log files
+                      to retain
+                    format: int32
+                    type: integer
+                  maxSize:
+                    description: MaxSize is the maximum size of a log file before
+                      rotation (e.g., "100Mi")
+                    type: string
+                  output:
+                    description: Output defines where logs are written (stdout, file,
+                      both)
+                    enum:
+                    - stdout
+                    - file
+                    - both
+                    type: string
+                  sampleRate:
+                    description: SampleRate defines the fraction of requests to log
+                      (0.0-1.0)
+                    type: string
+                  template:
+                    description: Template defines a custom log format template (for
+                      format=custom)
+                    type: string
+                type: object
               hostnames:
                 description: Hostnames defines the hostnames for which this route
                   applies

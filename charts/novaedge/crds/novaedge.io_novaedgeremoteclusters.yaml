@@ -61,8 +61,8 @@ spec:
             type: object
           spec:
             description: |-
-              NovaEdgeRemoteClusterSpec defines the desired state of NovaEdgeRemoteCluster
-              NovaEdgeRemoteCluster represents a remote/edge cluster that runs NovaEdge agents
+              NovaEdgeRemoteClusterSpec defines the desired state for remote cluster configuration.
+              It represents a remote/edge cluster that runs agents
               connecting back to the hub cluster's controller
             properties:
               agent:

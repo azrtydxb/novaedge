@@ -367,7 +367,7 @@ func TestAccessLog_ExtractClientIP(t *testing.T) {
 	}
 }
 
-func TestParseByteSize(t *testing.T) {
+func TestParseByteSizeAccessLog(t *testing.T) {
 	tests := []struct {
 		input     string
 		expected  int64

@@ -58,8 +58,8 @@ spec:
             type: object
           spec:
             description: |-
-              NovaEdgeFederationSpec defines the desired state of NovaEdgeFederation
-              NovaEdgeFederation configures active/active federation between multiple NovaEdge controllers
+              NovaEdgeFederationSpec defines the desired state for federation configuration.
+              It configures active/active federation between multiple controllers.
             properties:
               conflictResolution:
                 description: ConflictResolution defines how to handle conflicting
