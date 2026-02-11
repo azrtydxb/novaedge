@@ -6,59 +6,93 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VIP controller written in Go. It serves as a unified replacement for Envoy + MetalLB + NGINX Ingress, providing:
 
-- Distributed L7 load balancing (HTTP/1.1, HTTP/2, WebSockets, gRPC, future HTTP/3)
-- Reverse proxy with filters (auth, rate-limit, rewrites)
+- Distributed L4/L7 load balancing (HTTP/1.1, HTTP/2, HTTP/3 QUIC, WebSockets, gRPC, SSE, TCP/UDP)
+- Reverse proxy with policies and middleware (auth, rate-limit, WAF, rewrites, compression, caching)
 - Ingress Controller (compatible with Kubernetes Ingress and Gateway API)
-- Distributed VIP management (L2 ARP, BGP, OSPF modes)
-- Kubernetes-native control plane using CRDs
+- Distributed VIP management (L2 ARP, BGP, OSPF modes with BFD and IPv6)
+- Certificate management (ACME, cert-manager, HashiCorp Vault)
+- WASM plugin system for extensibility
+- Multi-cluster federation with hub-spoke topology
+- Kubernetes-native control plane using 10 CRDs
 
 ## Architecture
 
-The system consists of three major components:
+The system consists of four major components:
 
-1. **Kubernetes Controller (Control-Plane)**: Runs as a Deployment, watches CRDs/Ingress/Gateway API, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
-2. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L7 load balancing, VIP management (ARP/BGP/OSPF), and executes routing/filtering logic
-3. **CRDs**: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
+1. **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
+2. **Kubernetes Controller (Control-Plane)**: Runs as a Deployment, watches CRDs/Ingress/Gateway API, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
+3. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L4/L7 load balancing, VIP management (ARP/BGP/OSPF), and executes routing/filtering/policy logic
+4. **CRDs** (10 types):
+   - Core: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
+   - Certificate & IP: `ProxyCertificate`, `ProxyIPPool`
+   - Cluster management: `NovaEdgeCluster`, `NovaEdgeFederation`, `NovaEdgeRemoteCluster`
 
 ## Repository Structure
 
 ```
 novaedge/
-├── cmd/                          # Main applications
-│   ├── novaedge-controller/      # Controller entrypoint
-│   └── novaedge-agent/          # Node agent entrypoint
-├── internal/                     # Private application code
-│   ├── controller/               # Controller logic (watchers, reconcilers)
-│   ├── agent/                    # Agent implementation
-│   │   ├── vip/                 # VIP management (L2/BGP/OSPF)
-│   │   ├── lb/                  # Load balancing algorithms
-│   │   ├── router/              # Request routing
-│   │   ├── filters/             # Filter chain (auth, rate-limit, etc.)
-│   │   ├── upstream/            # Connection pooling
-│   │   ├── health/              # Health checking
-│   │   └── config/              # Config snapshot handling
-│   └── proto/                   # Protobuf definitions
-├── api/                         # CRD API definitions
-│   └── v1alpha1/                # API version
-├── config/                      # Kubernetes manifests
-│   ├── crd/                     # CRD definitions
-│   ├── samples/                 # Example resources
-│   └── rbac/                    # RBAC manifests
-└── Makefile                     # Build automation
+├── cmd/                              # Main applications (5 binaries)
+│   ├── novaedge-controller/          # Controller entrypoint
+│   ├── novaedge-agent/               # Node agent entrypoint
+│   ├── novaedge-standalone/          # Standalone mode (no Kubernetes)
+│   ├── novaedge-operator/            # Operator entrypoint
+│   └── novactl/                      # CLI tool with Web UI
+├── internal/                         # Private application code
+│   ├── controller/                   # Controller logic
+│   │   ├── certmanager/              # cert-manager integration
+│   │   ├── vault/                    # HashiCorp Vault integration
+│   │   ├── federation/               # Multi-cluster federation
+│   │   ├── ipam/                     # IP address management
+│   │   └── snapshot/                 # Config snapshot builder
+│   ├── agent/                        # Agent implementation
+│   │   ├── vip/                      # VIP management (L2/BGP/OSPF/BFD)
+│   │   ├── lb/                       # Load balancing algorithms (6 + sticky)
+│   │   ├── router/                   # Request routing, middleware, caching, compression
+│   │   ├── policy/                   # Policy enforcement (rate-limit, auth, CORS, JWT, WAF, mTLS)
+│   │   ├── server/                   # HTTP/HTTPS/HTTP3 servers, mTLS, OCSP, PROXY protocol
+│   │   ├── l4/                       # L4 TCP/UDP proxying, TLS passthrough
+│   │   ├── wasm/                     # WASM plugin runtime (Wazero)
+│   │   ├── upstream/                 # Connection pooling
+│   │   ├── health/                   # Health checking and circuit breaking
+│   │   ├── config/                   # Config snapshot handling
+│   │   ├── metrics/                  # Prometheus metrics
+│   │   ├── grpc/                     # gRPC handler
+│   │   └── protocol/                 # Protocol detection
+│   ├── acme/                         # ACME client (Let's Encrypt)
+│   │   └── dns/                      # DNS-01 providers (Cloudflare, Route53, Google)
+│   ├── standalone/                   # Standalone mode config
+│   └── proto/                        # Protobuf definitions
+├── api/                              # CRD API definitions
+│   └── v1alpha1/                     # API version (10 CRD types)
+├── charts/                           # Helm charts
+│   ├── novaedge/                     # Main chart
+│   ├── novaedge-agent/               # Agent chart
+│   └── novaedge-operator/            # Operator chart
+├── config/                           # Kubernetes manifests
+│   ├── crd/                          # CRD definitions (10 CRDs)
+│   ├── samples/                      # Example resources (52 samples)
+│   ├── rbac/                         # RBAC manifests
+│   ├── controller/                   # Controller deployment
+│   ├── agent/                        # Agent DaemonSet
+│   └── kustomize/                    # Kustomize overlays (dev, production)
+├── docs/                             # Documentation site
+├── test/                             # Integration tests
+└── Makefile                          # Build automation
 ```
 
 ## Development Commands
 
 ### Build Commands
 ```bash
-# Build controller
-make build-controller
-
-# Build agent
-make build-agent
-
-# Build both
+# Build all 5 binaries
 make build-all
+
+# Build individually
+make build-controller
+make build-agent
+make build-standalone
+make build-operator
+make build-novactl
 
 # Build Docker images
 make docker-build
@@ -90,7 +124,7 @@ go test -v ./internal/agent/lb/
 
 ### Linting and Code Quality
 ```bash
-# Run linter
+# Run linter (16 strict linters via golangci-lint)
 make lint
 
 # Format code
@@ -174,9 +208,11 @@ make manifests
 
 When implementing LB algorithms in `internal/agent/lb/`:
 - **Round Robin**: Simple rotation through endpoints
+- **LeastConn**: Route to endpoint with fewest active connections
 - **P2C (Power of Two Choices)**: Pick best of two random endpoints
 - **EWMA**: Latency-aware using exponentially weighted moving average
 - **Ring Hash / Maglev**: Consistent hashing for session affinity
+- **Sticky**: Cookie-based session affinity
 - All algorithms must handle endpoint addition/removal without disruption
 
 ## VIP Management
@@ -195,6 +231,31 @@ When implementing LB algorithms in `internal/agent/lb/`:
 - Similar to BGP using OSPF LSA advertisements
 - Active-active with L3 routing
 
+### BFD
+- Bidirectional Forwarding Detection for sub-second failure detection
+- Works alongside L2/BGP/OSPF modes
+
+### IPv6 Dual-Stack
+- Full IPv6 support for VIP addresses
+- IP address pools via ProxyIPPool CRD with IPAM allocation
+
+## Policy & Middleware Architecture
+
+Policies and middleware are spread across two packages:
+
+- **`internal/agent/policy/`**: Security and access control policies
+  - Rate limiting (local token bucket + distributed Redis)
+  - Authentication: basic auth, forward auth, OAuth2/OIDC, Keycloak
+  - JWT validation, CORS, IP filtering, security headers
+  - mTLS enforcement, WAF (Coraza)
+
+- **`internal/agent/router/`**: Traffic processing middleware
+  - Composable middleware pipelines with boolean routing expressions
+  - Response caching, gzip/Brotli compression, buffering
+  - Traffic mirroring, traffic splitting/canary
+  - Custom error pages, access logging, request retry
+  - SSE support, HTTP-to-HTTPS redirect, URL rewrite
+
 ## Configuration Snapshot Model
 
 The controller pushes versioned `ConfigSnapshot` to agents containing:
@@ -204,6 +265,8 @@ The controller pushes versioned `ConfigSnapshot` to agents containing:
 - Filters and policies
 - VIP assignments for this node
 - TLS certificates
+- L4 route configurations
+- Authentication configurations
 
 Agents must atomically swap runtime config when receiving new snapshots.
 
@@ -212,6 +275,7 @@ Agents must atomically swap runtime config when receiving new snapshots.
 ### Metrics (Prometheus)
 - Controller: reconciliation_duration, watch_events, config_pushes
 - Agent: request_count, request_duration, upstream_rtt, active_connections, vip_failovers
+- Certificate: expiry_seconds, renewals_total, acme_challenges_total
 
 ### Logging
 - Use structured logging with zap
@@ -245,10 +309,15 @@ Agents must atomically swap runtime config when receiving new snapshots.
 ## Security Considerations
 
 - Node agents run with `hostNetwork: true` and `privileged: true` for network operations
-- TLS certificates loaded from Kubernetes Secrets
+- TLS 1.3 minimum with secure AEAD cipher suites
+- TLS certificates loaded from Kubernetes Secrets, ACME, cert-manager, or Vault
+- Frontend mTLS with client certificate verification
+- OCSP stapling for certificate revocation checking
 - Support mTLS between proxy and backends
-- Implement JWT verification filter for authentication
-- Rate limiting using token bucket algorithm
+- Authentication: basic auth, forward auth, OAuth2/OIDC, JWT with JWKS
+- Rate limiting using token bucket (local) and Redis (distributed)
+- WAF via Coraza engine
+- Request size limits and security headers policy
 
 ## Common Pitfalls
 
@@ -270,29 +339,24 @@ Agents must atomically swap runtime config when receiving new snapshots.
 - Services can have multiple ports - map correctly to backends
 - Gateway API and Ingress have different semantics - translate carefully
 
-## Implementation Phases
-
-Development follows this roadmap (see NovaEdge_FullSpec.md for details):
-
-1. Core CRDs + Controller skeleton
-2. Config snapshot builder
-3. Basic HTTP L7 proxy + routing
-4. L2 VIP mode
-5. BGP VIP mode
-6. Filters + LB algorithms
-7. Health checking + circuit breaking
-8. Ingress + Gateway API support
-9. Observability + CLI
-10. HTTP/2 + WebSockets + gRPC
-11. HTTP/3 QUIC
-
 ## Dependencies
 
 Key Go libraries used:
 - `k8s.io/client-go`: Kubernetes client
 - `sigs.k8s.io/controller-runtime`: Controller framework
-- `github.com/osrg/gobgp`: BGP implementation
+- `sigs.k8s.io/gateway-api`: Gateway API types
+- `github.com/osrg/gobgp/v3`: BGP implementation
 - `google.golang.org/grpc`: Config distribution
 - `go.uber.org/zap`: Structured logging
 - `github.com/prometheus/client_golang`: Metrics
 - `go.opentelemetry.io/otel`: Tracing
+- `github.com/quic-go/quic-go`: HTTP/3 QUIC support
+- `github.com/tetratelabs/wazero`: WASM plugin runtime
+- `github.com/corazawaf/coraza/v3`: WAF engine
+- `github.com/go-acme/lego/v4`: ACME protocol (Let's Encrypt)
+- `github.com/redis/go-redis/v9`: Distributed rate limiting
+- `github.com/coreos/go-oidc/v3`: OAuth2/OIDC authentication
+- `github.com/golang-jwt/jwt/v5`: JWT parsing and validation
+- `github.com/gorilla/websocket`: WebSocket support
+- `github.com/andybalholm/brotli`: Brotli compression
+- `github.com/spf13/cobra`: CLI framework
