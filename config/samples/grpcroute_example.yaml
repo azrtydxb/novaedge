@@ -1,0 +1,62 @@
+# GRPCRoute example for Gateway API
+apiVersion: gateway.networking.k8s.io/v1
+kind: GRPCRoute
+metadata:
+  name: grpc-api
+  namespace: default
+spec:
+  parentRefs:
+    - name: advanced-gateway
+      namespace: default
+  hostnames:
+    - "grpc.example.com"
+  rules:
+    # Route specific gRPC service
+    - matches:
+        - method:
+            service: "myapp.UserService"
+            method: "GetUser"
+      backendRefs:
+        - name: user-service
+          port: 50051
+          weight: 1
+    # Route all methods of a service
+    - matches:
+        - method:
+            service: "myapp.OrderService"
+      backendRefs:
+        - name: order-service
+          port: 50051
+          weight: 1
+    # Route gRPC health checks
+    - matches:
+        - method:
+            service: "grpc.health.v1.Health"
+      backendRefs:
+        - name: health-service
+          port: 50051
+---
+# Backend services for gRPC
+apiVersion: novaedge.piwi3910.com/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: user-service
+spec:
+  serviceRef:
+    name: user-service
+    port: 50051
+  lbPolicy: RoundRobin
+  healthCheck:
+    protocol: gRPC
+    interval: 10s
+    timeout: 5s
+---
+apiVersion: novaedge.piwi3910.com/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: order-service
+spec:
+  serviceRef:
+    name: order-service
+    port: 50051
+  lbPolicy: P2C

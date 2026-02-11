@@ -164,8 +164,7 @@ func (s *HTTPServer) startHTTP3Listener(ctx context.Context, port int32, listene
 
 // enableAltSvcAdvertising enables Alt-Svc header advertising for HTTP/3 on the corresponding HTTP/2 port
 func (s *HTTPServer) enableAltSvcAdvertising(_ int32) {
-	// The Alt-Svc header is added in the ServeHTTP method
-	// This function is here for clarity and future enhancements
+	// The Alt-Svc header is added in the ServeHTTP method via addAltSvcHeader
 }
 
 // addAltSvcHeader adds the Alt-Svc header to advertise HTTP/3 availability
@@ -174,12 +173,13 @@ func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, _ *http.Request) {
 	defer s.mu.RUnlock()
 
 	// Check if there's an HTTP/3 server on any port
-	for port := range s.http3servers {
-		// Advertise HTTP/3 on the same port
-		// Format: Alt-Svc: h3=":443"; ma=2592000
-		// ma = max age in seconds (30 days = 2592000 seconds)
-		altSvc := fmt.Sprintf("h3=\":%d\"; ma=%d", port, HTTP3AltSvcMaxAge)
-		w.Header().Set("Alt-Svc", altSvc)
+	for port, h3srv := range s.http3servers {
+		// Use SetQuicHeaders if available for standard-compliant Alt-Svc
+		if err := h3srv.SetQuicHeaders(w.Header()); err != nil {
+			// Fallback to manual header
+			altSvc := fmt.Sprintf("h3=\":%d\"; ma=%d", port, HTTP3AltSvcMaxAge)
+			w.Header().Set("Alt-Svc", altSvc)
+		}
 		break // Only advertise one HTTP/3 endpoint for now
 	}
 }

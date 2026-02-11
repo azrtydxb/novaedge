@@ -14,10 +14,12 @@ const (
 	resourceAliasVIPs     = "vips"
 	resourceAliasVIP      = "vip"
 
-	resourceAliasTCPRoutes = "tcproutes"
-	resourceAliasTCPRoute  = "tcproute"
-	resourceAliasTLSRoutes = "tlsroutes"
-	resourceAliasTLSRoute  = "tlsroute"
+	resourceAliasTCPRoutes  = "tcproutes"
+	resourceAliasTCPRoute   = "tcproute"
+	resourceAliasTLSRoutes  = "tlsroutes"
+	resourceAliasTLSRoute   = "tlsroute"
+	resourceAliasGRPCRoutes = "grpcroutes"
+	resourceAliasGRPCRoute  = "grpcroute"
 
 	statusYes     = "Yes"
 	statusNo      = "No"

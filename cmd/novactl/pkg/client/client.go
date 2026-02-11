@@ -43,13 +43,14 @@ func NewClient(config *rest.Config) (*Client, error) {
 type ResourceType string
 
 const (
-	ResourceGateway  ResourceType = "gateways"
-	ResourceRoute    ResourceType = "routes"
-	ResourceBackend  ResourceType = "backends"
-	ResourcePolicy   ResourceType = "policies"
-	ResourceVIP      ResourceType = "vips"
-	ResourceTCPRoute ResourceType = "tcproutes"
-	ResourceTLSRoute ResourceType = "tlsroutes"
+	ResourceGateway   ResourceType = "gateways"
+	ResourceRoute     ResourceType = "routes"
+	ResourceBackend   ResourceType = "backends"
+	ResourcePolicy    ResourceType = "policies"
+	ResourceVIP       ResourceType = "vips"
+	ResourceTCPRoute  ResourceType = "tcproutes"
+	ResourceTLSRoute  ResourceType = "tlsroutes"
+	ResourceGRPCRoute ResourceType = "grpcroutes"
 )
 
 // GetGVR returns the GroupVersionResource for a given resource type
@@ -73,6 +74,12 @@ func GetGVR(resourceType ResourceType) schema.GroupVersionResource {
 		resource = "tcproutes"
 	case ResourceTLSRoute:
 		resource = "tlsroutes"
+	case ResourceGRPCRoute:
+		return schema.GroupVersionResource{
+			Group:    "gateway.networking.k8s.io",
+			Version:  "v1",
+			Resource: "grpcroutes",
+		}
 	default:
 		resource = string(resourceType)
 	}

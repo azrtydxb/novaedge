@@ -143,6 +143,17 @@ func (c *Converter) convertListeners(listeners []ListenerConfig) []*pb.Gateway {
 			listener.Hostnames = l.Hostnames
 		}
 
+		// Set QUIC config for HTTP/3 listeners
+		if l.HTTP3 != nil && l.HTTP3.Enabled {
+			listener.Protocol = pb.Protocol_HTTP3
+			listener.Quic = &pb.QUICConfig{
+				MaxIdleTimeout: l.HTTP3.MaxIdleTimeout,
+				MaxBiStreams:   100,
+				MaxUniStreams:  100,
+				Enable_0Rtt:    l.HTTP3.ZeroRTT,
+			}
+		}
+
 		if l.MaxRequestBodySize > 0 {
 			listener.MaxRequestBodyBytes = l.MaxRequestBodySize
 		}
