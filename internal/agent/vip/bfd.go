@@ -134,6 +134,9 @@ type BFDManager struct {
 
 	// Callback when BFD detects a neighbor is down
 	onNeighborDown func(peerIP net.IP)
+
+	// One-time warning for unimplemented packet transmission
+	txWarningOnce sync.Once
 }
 
 // BFD Prometheus metrics
@@ -473,8 +476,13 @@ func (m *BFDManager) transmitLoop() {
 	}
 }
 
-// sendControlPackets sends BFD control packets for all active sessions
+// sendControlPackets sends BFD control packets for all active sessions.
+// TODO: Implement actual UDP packet transmission per RFC 5880 Section 4.1.
 func (m *BFDManager) sendControlPackets() {
+	m.txWarningOnce.Do(func() {
+		m.logger.Warn("BFD control packet transmission not yet implemented - using BGP hold timer for failover detection")
+	})
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

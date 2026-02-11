@@ -229,11 +229,21 @@ func (h *BGPHandler) setupBFDSessions(assignment *pb.VIPAssignment) {
 	if assignment.BfdConfig.DesiredMinTxInterval != "" {
 		if d, err := time.ParseDuration(assignment.BfdConfig.DesiredMinTxInterval); err == nil {
 			bfdCfg.DesiredMinTxInterval = d
+		} else {
+			h.logger.Warn("Invalid BFD DesiredMinTxInterval, using default",
+				zap.String("value", assignment.BfdConfig.DesiredMinTxInterval),
+				zap.Error(err),
+			)
 		}
 	}
 	if assignment.BfdConfig.RequiredMinRxInterval != "" {
 		if d, err := time.ParseDuration(assignment.BfdConfig.RequiredMinRxInterval); err == nil {
 			bfdCfg.RequiredMinRxInterval = d
+		} else {
+			h.logger.Warn("Invalid BFD RequiredMinRxInterval, using default",
+				zap.String("value", assignment.BfdConfig.RequiredMinRxInterval),
+				zap.Error(err),
+			)
 		}
 	}
 
@@ -253,16 +263,77 @@ func (h *BGPHandler) setupBFDSessions(assignment *pb.VIPAssignment) {
 	}
 }
 
-// onBFDNeighborDown is called when BFD detects a neighbor failure
+// onBFDNeighborDown is called when BFD detects a neighbor failure.
+// It withdraws all routes that were announced through the failed BGP peer
+// for sub-second failover. The BGP session will also eventually detect the
+// failure via holdtimer, but BFD gives much faster detection.
 func (h *BGPHandler) onBFDNeighborDown(peerIP net.IP) {
-	h.logger.Warn("BFD detected neighbor down, withdrawing all routes through this peer",
-		zap.String("peer", peerIP.String()),
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	peerStr := peerIP.String()
+	h.logger.Warn("BFD detected neighbor down, withdrawing routes through failed peer",
+		zap.String("peer", peerStr),
 	)
 
-	// In production, this would immediately withdraw routes announced
-	// through the failed BGP peer for sub-second failover.
-	// The BGP session will also eventually detect the failure via holdtimer,
-	// but BFD gives us much faster detection.
+	if h.bgpServer == nil {
+		h.logger.Warn("BGP server not running, cannot withdraw routes",
+			zap.String("peer", peerStr),
+		)
+		return
+	}
+
+	ctx := context.Background()
+	withdrawn := 0
+
+	for vipName, state := range h.activeVIPs {
+		if state.Assignment.BgpConfig == nil {
+			continue
+		}
+
+		// Check if this VIP has the failed peer in its BGP config
+		peerFound := false
+		for _, peer := range state.Assignment.BgpConfig.Peers {
+			if peer.Address == peerStr {
+				peerFound = true
+				break
+			}
+		}
+
+		if !peerFound {
+			continue
+		}
+
+		if !state.Announced {
+			continue
+		}
+
+		h.logger.Warn("Withdrawing route for VIP due to BFD neighbor failure",
+			zap.String("vip", vipName),
+			zap.String("address", state.Assignment.Address),
+			zap.String("failed_peer", peerStr),
+		)
+
+		if err := h.withdrawRoute(ctx, state.IP, state.Assignment.BgpConfig, state.IsIPv6); err != nil {
+			h.logger.Error("Failed to withdraw route on BFD neighbor down",
+				zap.String("vip", vipName),
+				zap.String("peer", peerStr),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		state.Announced = false
+		withdrawn++
+	}
+
+	if withdrawn > 0 {
+		metrics.BGPAnnouncedRoutes.Set(float64(len(h.activeVIPs) - withdrawn))
+		h.logger.Warn("Routes withdrawn due to BFD neighbor failure",
+			zap.String("peer", peerStr),
+			zap.Int("withdrawn_count", withdrawn),
+		)
+	}
 }
 
 // startBGPServer initializes and starts the BGP server
@@ -381,43 +452,58 @@ func (h *BGPHandler) announceRoute(ctx context.Context, ip net.IP, config *pb.BG
 	attrs := []*anypb.Any{}
 
 	// Origin attribute
-	originAttr, _ := anypb.New(&api.OriginAttribute{
+	originAttr, err := anypb.New(&api.OriginAttribute{
 		Origin: 0, // IGP
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal origin attribute: %w", err)
+	}
 	attrs = append(attrs, originAttr)
 
 	// Next hop attribute
 	if isIPv6 {
 		// For IPv6 BGP, use MP_REACH_NLRI with next-hop
-		mpReachAttr, _ := anypb.New(&api.MpReachNLRIAttribute{
+		mpReachAttr, err := anypb.New(&api.MpReachNLRIAttribute{
 			Family: family,
 			NextHops: []string{
 				config.RouterId,
 			},
 		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal MP_REACH_NLRI attribute: %w", err)
+		}
 		attrs = append(attrs, mpReachAttr)
 	} else {
-		nexthopAttr, _ := anypb.New(&api.NextHopAttribute{
+		nexthopAttr, err := anypb.New(&api.NextHopAttribute{
 			NextHop: config.RouterId,
 		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal next-hop attribute: %w", err)
+		}
 		attrs = append(attrs, nexthopAttr)
 	}
 
 	// Local preference for iBGP
 	if config.LocalPreference > 0 {
-		lpAttr, _ := anypb.New(&api.LocalPrefAttribute{
+		lpAttr, err := anypb.New(&api.LocalPrefAttribute{
 			LocalPref: config.LocalPreference,
 		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal local-pref attribute: %w", err)
+		}
 		attrs = append(attrs, lpAttr)
 	}
 
 	// Build NLRI
-	nlri, _ := anypb.New(&api.IPAddressPrefix{
+	nlri, err := anypb.New(&api.IPAddressPrefix{
 		PrefixLen: prefixLen,
 		Prefix:    ip.String(),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal NLRI: %w", err)
+	}
 
-	_, err := h.bgpServer.AddPath(ctx, &api.AddPathRequest{
+	_, err = h.bgpServer.AddPath(ctx, &api.AddPathRequest{
 		TableType: api.TableType_GLOBAL,
 		Path: &api.Path{
 			Nlri:   nlri,
@@ -456,12 +542,15 @@ func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, _ *pb.BGPConf
 	prefix := fmt.Sprintf("%s/%d", ip.String(), prefixLen)
 	h.logger.Info("Withdrawing BGP route", zap.String("prefix", prefix))
 
-	nlri, _ := anypb.New(&api.IPAddressPrefix{
+	nlri, err := anypb.New(&api.IPAddressPrefix{
 		PrefixLen: prefixLen,
 		Prefix:    ip.String(),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal NLRI: %w", err)
+	}
 
-	err := h.bgpServer.DeletePath(ctx, &api.DeletePathRequest{
+	err = h.bgpServer.DeletePath(ctx, &api.DeletePathRequest{
 		TableType: api.TableType_GLOBAL,
 		Path: &api.Path{
 			Nlri:   nlri,
