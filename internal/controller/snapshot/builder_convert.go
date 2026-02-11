@@ -127,6 +127,10 @@ func convertPolicyType(policyType novaedgev1alpha1.PolicyType) pb.PolicyType {
 		return pb.PolicyType_CORS
 	case novaedgev1alpha1.PolicyTypeSecurityHeaders:
 		return pb.PolicyType_SECURITY_HEADERS
+	case novaedgev1alpha1.PolicyTypeDistributedRateLimit:
+		return pb.PolicyType_DISTRIBUTED_RATE_LIMIT
+	case novaedgev1alpha1.PolicyTypeWAF:
+		return pb.PolicyType_WAF
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}
@@ -351,6 +355,33 @@ func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.Sess
 	}
 }
 
+// convertRetryConfig converts NovaEdge RetryConfig to protobuf RetryConfig
+func convertRetryConfig(retry *novaedgev1alpha1.RetryConfig) *pb.RetryConfig {
+	if retry == nil {
+		return nil
+	}
+
+	pbRetry := &pb.RetryConfig{
+		MaxRetries:   retry.MaxRetries,
+		RetryOn:      retry.RetryOn,
+		RetryMethods: retry.RetryMethods,
+	}
+
+	if retry.PerTryTimeout != nil {
+		pbRetry.PerTryTimeoutMs = retry.PerTryTimeout.Milliseconds()
+	}
+
+	if retry.RetryBudget != nil {
+		pbRetry.RetryBudget = *retry.RetryBudget
+	}
+
+	if retry.BackoffBase != nil {
+		pbRetry.BackoffBaseMs = retry.BackoffBase.Milliseconds()
+	}
+
+	return pbRetry
+}
+
 // convertCompressionConfig converts NovaEdge CompressionConfig to protobuf CompressionConfig
 func convertCompressionConfig(config *novaedgev1alpha1.CompressionConfig) *pb.CompressionConfig {
 	if config == nil {
@@ -418,6 +449,54 @@ func convertBufferingConfig(config *novaedgev1alpha1.RouteBufferingConfig) *pb.B
 		ResponseBuffering: config.Response,
 		MaxBufferSize:     maxSize,
 	}
+}
+
+// convertDistributedRateLimitConfig converts NovaEdge DistributedRateLimitConfig to protobuf
+func convertDistributedRateLimitConfig(config *novaedgev1alpha1.DistributedRateLimitConfig) *pb.DistributedRateLimitConfig {
+	if config == nil {
+		return nil
+	}
+
+	pbConfig := &pb.DistributedRateLimitConfig{
+		RequestsPerSecond: config.RequestsPerSecond,
+		Burst:             getInt32(config.Burst),
+		Algorithm:         config.Algorithm,
+		Key:               config.Key,
+	}
+
+	pbConfig.Redis = &pb.RedisConfig{
+		Address:     config.RedisRef.Address,
+		Tls:         config.RedisRef.TLS,
+		Database:    config.RedisRef.Database,
+		ClusterMode: config.RedisRef.ClusterMode,
+	}
+
+	if config.RedisRef.Password != nil {
+		pbConfig.Redis.PasswordSecretRef = config.RedisRef.Password.Name
+	}
+
+	return pbConfig
+}
+
+// convertWAFConfig converts NovaEdge WAFConfig to protobuf WAFConfig
+func convertWAFConfig(config *novaedgev1alpha1.WAFConfig) *pb.WAFConfig {
+	if config == nil {
+		return nil
+	}
+
+	pbConfig := &pb.WAFConfig{
+		Enabled:          config.Enabled,
+		Mode:             config.Mode,
+		ParanoiaLevel:    config.ParanoiaLevel,
+		AnomalyThreshold: config.AnomalyThreshold,
+		RuleExclusions:   config.RuleExclusions,
+	}
+
+	if config.RulesConfigMap != nil {
+		pbConfig.RulesConfigMapRef = config.RulesConfigMap.Name
+	}
+
+	return pbConfig
 }
 
 // parseByteSize parses a human-readable byte size string (e.g., "10Mi", "1024", "50MB").

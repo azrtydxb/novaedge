@@ -1,0 +1,35 @@
+# Example: Web Application Firewall policy
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: waf-protection
+  namespace: default
+spec:
+  type: WAF
+  targetRef:
+    kind: ProxyRoute
+    name: web-route
+  waf:
+    enabled: true
+    mode: prevention
+    paranoiaLevel: 1
+    anomalyThreshold: 5
+---
+# Example: WAF in detection mode (log only, don't block)
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: waf-detection
+  namespace: staging
+spec:
+  type: WAF
+  targetRef:
+    kind: ProxyRoute
+    name: web-route
+  waf:
+    enabled: true
+    mode: detection
+    paranoiaLevel: 2
+    anomalyThreshold: 10
+    ruleExclusions:
+      - "920350"

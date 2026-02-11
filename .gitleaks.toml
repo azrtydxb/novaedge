@@ -1,0 +1,10 @@
+[extend]
+# Use the default gitleaks config as the base
+useDefault = true
+
+[allowlist]
+description = "Allow sample/example Kubernetes manifests"
+paths = [
+  '''config/samples/.*\.yaml''',
+  '''config/samples/.*\.yml''',
+]

@@ -318,6 +318,11 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 				}
 			}
 
+			// Convert retry configuration
+			if rule.Retry != nil {
+				pbRule.Retry = convertRetryConfig(rule.Retry)
+			}
+
 			route.Rules = append(route.Rules, pbRule)
 		}
 
@@ -489,6 +494,14 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 				}
 			}
 			policy.SecurityHeaders = shConfig
+		}
+
+		if p.Spec.DistributedRateLimit != nil {
+			policy.DistributedRateLimit = convertDistributedRateLimitConfig(p.Spec.DistributedRateLimit)
+		}
+
+		if p.Spec.WAF != nil {
+			policy.Waf = convertWAFConfig(p.Spec.WAF)
 		}
 
 		policies = append(policies, policy)

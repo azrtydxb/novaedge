@@ -21,7 +21,7 @@ import (
 )
 
 // PolicyType defines the type of policy
-// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders
+// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders;DistributedRateLimit;WAF
 type PolicyType string
 
 const (
@@ -37,6 +37,10 @@ const (
 	PolicyTypeCORS PolicyType = "CORS"
 	// PolicyTypeSecurityHeaders applies security headers (HSTS, CSP, etc.)
 	PolicyTypeSecurityHeaders PolicyType = "SecurityHeaders"
+	// PolicyTypeDistributedRateLimit applies distributed rate limiting via Redis
+	PolicyTypeDistributedRateLimit PolicyType = "DistributedRateLimit"
+	// PolicyTypeWAF applies Web Application Firewall protection
+	PolicyTypeWAF PolicyType = "WAF"
 )
 
 // RateLimitConfig defines rate limiting configuration
@@ -191,6 +195,105 @@ type HSTSConfig struct {
 	Preload bool `json:"preload,omitempty"`
 }
 
+// DistributedRateLimitConfig defines distributed rate limiting via Redis
+type DistributedRateLimitConfig struct {
+	// RequestsPerSecond is the maximum number of requests per second
+	// +kubebuilder:validation:Minimum=1
+	RequestsPerSecond int32 `json:"requestsPerSecond"`
+
+	// Burst is the maximum burst size
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	Burst *int32 `json:"burst,omitempty"`
+
+	// Algorithm is the rate limiting algorithm
+	// +optional
+	// +kubebuilder:validation:Enum=fixed-window;sliding-window;token-bucket
+	// +kubebuilder:default="sliding-window"
+	Algorithm string `json:"algorithm,omitempty"`
+
+	// Key determines what to rate limit by
+	// +optional
+	// +kubebuilder:default="source-ip"
+	Key string `json:"key,omitempty"`
+
+	// RedisRef is the Redis connection configuration
+	// +kubebuilder:validation:Required
+	RedisRef RedisConfig `json:"redisRef"`
+}
+
+// RedisConfig defines Redis connection settings
+type RedisConfig struct {
+	// Address is the Redis server address (host:port)
+	// +kubebuilder:validation:Required
+	Address string `json:"address"`
+
+	// Password references a secret containing the Redis password
+	// +optional
+	Password *SecretKeyReference `json:"password,omitempty"`
+
+	// TLS enables TLS for the Redis connection
+	// +optional
+	TLS bool `json:"tls,omitempty"`
+
+	// Database is the Redis database number
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:default=0
+	Database int32 `json:"database,omitempty"`
+
+	// ClusterMode enables Redis cluster support
+	// +optional
+	ClusterMode bool `json:"clusterMode,omitempty"`
+}
+
+// SecretKeyReference references a key in a Secret
+type SecretKeyReference struct {
+	// Name is the name of the Secret
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Key is the key in the Secret
+	// +optional
+	// +kubebuilder:default="password"
+	Key string `json:"key,omitempty"`
+}
+
+// WAFConfig defines Web Application Firewall configuration
+type WAFConfig struct {
+	// Enabled enables WAF protection
+	// +optional
+	// +kubebuilder:default=true
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Mode is the WAF operating mode
+	// +optional
+	// +kubebuilder:validation:Enum=detection;prevention
+	// +kubebuilder:default="prevention"
+	Mode string `json:"mode,omitempty"`
+
+	// ParanoiaLevel sets the OWASP CRS paranoia level (1-4)
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4
+	// +kubebuilder:default=1
+	ParanoiaLevel int32 `json:"paranoiaLevel,omitempty"`
+
+	// AnomalyThreshold is the cumulative anomaly score threshold for blocking
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:default=5
+	AnomalyThreshold int32 `json:"anomalyThreshold,omitempty"`
+
+	// RulesConfigMap references a ConfigMap containing WAF rules
+	// +optional
+	RulesConfigMap *LocalObjectReference `json:"rulesConfigMap,omitempty"`
+
+	// RuleExclusions is a list of rule IDs to exclude
+	// +optional
+	RuleExclusions []string `json:"ruleExclusions,omitempty"`
+}
+
 // TargetRef identifies the resource(s) this policy applies to
 type TargetRef struct {
 	// Kind is the kind of resource (e.g., ProxyGateway, ProxyRoute)
@@ -236,6 +339,14 @@ type ProxyPolicySpec struct {
 	// SecurityHeaders configuration (for SecurityHeaders type)
 	// +optional
 	SecurityHeaders *SecurityHeadersConfig `json:"securityHeaders,omitempty"`
+
+	// DistributedRateLimit configuration (for DistributedRateLimit type)
+	// +optional
+	DistributedRateLimit *DistributedRateLimitConfig `json:"distributedRateLimit,omitempty"`
+
+	// WAF configuration (for WAF type)
+	// +optional
+	WAF *WAFConfig `json:"waf,omitempty"`
 }
 
 // ProxyPolicyStatus defines the observed state of ProxyPolicy

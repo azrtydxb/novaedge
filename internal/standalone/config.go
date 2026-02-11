@@ -218,6 +218,9 @@ type RouteConfig struct {
 
 	// Buffering defines request/response buffering settings
 	Buffering *StandaloneBufferingConfig `yaml:"buffering,omitempty"`
+
+	// Retry configuration
+	Retry *RetryPolicyConfig `yaml:"retry,omitempty"`
 }
 
 // StandaloneRouteLimits defines per-route request limits for standalone mode
@@ -232,6 +235,16 @@ type StandaloneBufferingConfig struct {
 	Request  bool   `yaml:"request,omitempty"`
 	Response bool   `yaml:"response,omitempty"`
 	MaxSize  string `yaml:"maxSize,omitempty"` // e.g., "50Mi"
+}
+
+// RetryPolicyConfig defines retry behavior for a route
+type RetryPolicyConfig struct {
+	MaxRetries    int      `yaml:"maxRetries"`
+	PerTryTimeout string   `yaml:"perTryTimeout,omitempty"`
+	RetryOn       []string `yaml:"retryOn,omitempty"`
+	RetryBudget   float64  `yaml:"retryBudget,omitempty"`
+	BackoffBase   string   `yaml:"backoffBase,omitempty"`
+	RetryMethods  []string `yaml:"retryMethods,omitempty"`
 }
 
 // RouteMatch defines matching conditions
@@ -438,6 +451,41 @@ type PolicyConfig struct {
 
 	// JWT validation
 	JWT *JWTPolicy `yaml:"jwt,omitempty"`
+
+	// Distributed rate limiting via Redis
+	DistributedRateLimit *DistributedRateLimitPolicy `yaml:"distributedRateLimit,omitempty"`
+
+	// WAF (Web Application Firewall)
+	WAF *WAFPolicy `yaml:"waf,omitempty"`
+}
+
+// DistributedRateLimitPolicy defines distributed rate limiting
+type DistributedRateLimitPolicy struct {
+	RequestsPerSecond int                   `yaml:"requestsPerSecond"`
+	BurstSize         int                   `yaml:"burstSize"`
+	Algorithm         string                `yaml:"algorithm,omitempty"` // fixed-window, sliding-window, token-bucket
+	Key               string                `yaml:"key,omitempty"`
+	Redis             RedisConnectionConfig `yaml:"redis"`
+}
+
+// RedisConnectionConfig defines Redis connection settings
+type RedisConnectionConfig struct {
+	Address     string `yaml:"address"`
+	Password    string `yaml:"password,omitempty"`
+	TLS         bool   `yaml:"tls,omitempty"`
+	Database    int    `yaml:"database,omitempty"`
+	ClusterMode bool   `yaml:"clusterMode,omitempty"`
+}
+
+// WAFPolicy defines WAF configuration
+type WAFPolicy struct {
+	Enabled          bool     `yaml:"enabled"`
+	Mode             string   `yaml:"mode,omitempty"` // detection, prevention
+	ParanoiaLevel    int      `yaml:"paranoiaLevel,omitempty"`
+	AnomalyThreshold int      `yaml:"anomalyThreshold,omitempty"`
+	RulesFile        string   `yaml:"rulesFile,omitempty"`
+	RuleExclusions   []string `yaml:"ruleExclusions,omitempty"`
+	CustomRules      []string `yaml:"customRules,omitempty"`
 }
 
 // RateLimitPolicy defines rate limiting
