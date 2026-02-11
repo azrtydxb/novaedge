@@ -35,6 +35,8 @@ type RouteEntry struct {
 	Policies       []policyMiddleware
 	HeaderRegexes  map[int]*regexp.Regexp // Cached compiled header regex patterns (index -> regex)
 	ResponseFilter *ResponseFilter        // Response header modifications
+	Limits         *pb.RouteLimitsConfig  // Per-route request limits and timeouts
+	Buffering      *pb.BufferingConfig    // Request/response buffering settings
 }
 
 // compileHeaderRegexes pre-compiles all header regex patterns for a route rule

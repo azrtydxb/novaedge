@@ -17,8 +17,13 @@ limitations under the License.
 package snapshot
 
 import (
+	"fmt"
+	"time"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"go.uber.org/zap"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -321,4 +326,129 @@ func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.Sess
 		CookieSecure:     sa.Secure,
 		CookieSameSite:   sa.SameSite,
 	}
+}
+
+// convertCompressionConfig converts NovaEdge CompressionConfig to protobuf CompressionConfig
+func convertCompressionConfig(config *novaedgev1alpha1.CompressionConfig) *pb.CompressionConfig {
+	if config == nil {
+		return nil
+	}
+
+	minSize, err := parseByteSize(config.MinSize)
+	if err != nil {
+		zap.L().Warn("failed to parse compression min size, using 0",
+			zap.String("value", config.MinSize), zap.Error(err))
+	}
+
+	return &pb.CompressionConfig{
+		Enabled:      config.Enabled,
+		MinSize:      minSize,
+		Level:        config.Level,
+		Algorithms:   config.Algorithms,
+		ExcludeTypes: config.ExcludeTypes,
+	}
+}
+
+// convertRouteLimits converts NovaEdge RouteLimits to protobuf RouteLimitsConfig
+func convertRouteLimits(limits *novaedgev1alpha1.RouteLimits) *pb.RouteLimitsConfig {
+	if limits == nil {
+		return nil
+	}
+
+	maxBody, err := parseByteSize(limits.MaxRequestBodySize)
+	if err != nil {
+		zap.L().Warn("failed to parse max request body size, using 0",
+			zap.String("value", limits.MaxRequestBodySize), zap.Error(err))
+	}
+	reqTimeout, err := parseDurationMs(limits.RequestTimeout)
+	if err != nil {
+		zap.L().Warn("failed to parse request timeout, using 0",
+			zap.String("value", limits.RequestTimeout), zap.Error(err))
+	}
+	idleTimeout, err := parseDurationMs(limits.IdleTimeout)
+	if err != nil {
+		zap.L().Warn("failed to parse idle timeout, using 0",
+			zap.String("value", limits.IdleTimeout), zap.Error(err))
+	}
+
+	return &pb.RouteLimitsConfig{
+		MaxRequestBodySize: maxBody,
+		RequestTimeoutMs:   reqTimeout,
+		IdleTimeoutMs:      idleTimeout,
+	}
+}
+
+// convertBufferingConfig converts NovaEdge RouteBufferingConfig to protobuf BufferingConfig
+func convertBufferingConfig(config *novaedgev1alpha1.RouteBufferingConfig) *pb.BufferingConfig {
+	if config == nil {
+		return nil
+	}
+
+	maxSize, err := parseByteSize(config.MaxSize)
+	if err != nil {
+		zap.L().Warn("failed to parse max buffer size, using 0",
+			zap.String("value", config.MaxSize), zap.Error(err))
+	}
+
+	return &pb.BufferingConfig{
+		RequestBuffering:  config.Request,
+		ResponseBuffering: config.Response,
+		MaxBufferSize:     maxSize,
+	}
+}
+
+// parseByteSize parses a human-readable byte size string (e.g., "10Mi", "1024", "50MB").
+func parseByteSize(s string) (int64, error) {
+	if s == "" || s == "0" {
+		return 0, nil
+	}
+
+	// Try plain integer first
+	n, err := parseInt64(s)
+	if err == nil {
+		return n, nil
+	}
+
+	// Binary units
+	multipliers := map[string]int64{
+		"Ki": 1 << 10,
+		"Mi": 1 << 20,
+		"Gi": 1 << 30,
+		"Ti": 1 << 40,
+		"KB": 1000,
+		"MB": 1000 * 1000,
+		"GB": 1000 * 1000 * 1000,
+	}
+
+	for suffix, mult := range multipliers {
+		if len(s) > len(suffix) && s[len(s)-len(suffix):] == suffix {
+			numStr := s[:len(s)-len(suffix)]
+			num, parseErr := parseInt64(numStr)
+			if parseErr != nil {
+				return 0, parseErr
+			}
+			return num * mult, nil
+		}
+	}
+
+	return 0, fmt.Errorf("invalid byte size: %s", s)
+}
+
+// parseDurationMs parses a duration string and returns milliseconds.
+func parseDurationMs(s string) (int64, error) {
+	if s == "" || s == "0" {
+		return 0, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0, err
+	}
+	return d.Milliseconds(), nil
+}
+
+// parseInt64 parses a string as int64.
+func parseInt64(s string) (int64, error) {
+	var n int64
+	_, err := fmt.Sscanf(s, "%d", &n)
+	return n, err
 }

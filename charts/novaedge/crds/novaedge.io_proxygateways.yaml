@@ -78,6 +78,41 @@ spec:
                       type: string
                     type: array
                 type: object
+              compression:
+                description: Compression defines response compression configuration
+                properties:
+                  enabled:
+                    default: false
+                    description: Enabled enables response compression
+                    type: boolean
+                  minSize:
+                    default: "1024"
+                    description: MinSize is the minimum response body size in bytes
+                      before compression triggers
+                    type: string
+                  level:
+                    default: 6
+                    description: Level is the compression level (1-9 for gzip, 0-11
+                      for brotli)
+                    maximum: 11
+                    minimum: 0
+                    type: integer
+                    format: int32
+                  algorithms:
+                    default:
+                    - gzip
+                    - br
+                    description: Algorithms is the list of supported compression algorithms
+                    items:
+                      type: string
+                    type: array
+                  excludeTypes:
+                    description: ExcludeTypes is a list of content type patterns to
+                      skip compression
+                    items:
+                      type: string
+                    type: array
+                type: object
               customErrorPages:
                 description: CustomErrorPages defines custom error pages
                 items:

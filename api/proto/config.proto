@@ -90,6 +90,7 @@ message Gateway {
   string vip_ref = 3;
   string ingress_class_name = 4;
   repeated Listener listeners = 5;
+  CompressionConfig compression = 6; // Response compression configuration
 }
 
 // Listener represents a port and protocol to listen on
@@ -145,6 +146,8 @@ message RouteRule {
   repeated RouteMatch matches = 1;
   repeated RouteFilter filters = 2;
   repeated BackendRef backend_refs = 3; // Support multiple weighted backends
+  RouteLimitsConfig limits = 4;         // Per-route size limits and timeouts
+  BufferingConfig buffering = 5;        // Request/response buffering settings
 }
 
 // RouteMatch defines conditions for matching requests
@@ -546,6 +549,31 @@ message ControllerReachability {
 
   // Total configured controllers (for quorum calculation)
   int32 total_controllers = 4;
+}
+
+
+// CompressionConfig defines response compression settings
+message CompressionConfig {
+  bool enabled = 1;
+  int64 min_size = 2;            // Minimum body size in bytes (default: 1024)
+  int32 level = 3;               // Compression level (gzip: 1-9, brotli: 0-11)
+  repeated string algorithms = 4; // Supported algorithms: "gzip", "br"
+  repeated string exclude_types = 5; // Content types to skip (e.g., "image/*")
+}
+
+// RouteLimitsConfig defines per-route size limits and timeouts
+message RouteLimitsConfig {
+  int64 max_request_body_size = 1; // Max body size in bytes (413 if exceeded)
+  int64 request_timeout_ms = 2;    // Request timeout in ms (504 if exceeded)
+  int64 idle_timeout_ms = 3;       // Idle timeout in ms
+}
+
+// BufferingConfig defines request/response buffering settings
+message BufferingConfig {
+  bool request_buffering = 1;     // Buffer entire request body
+  bool response_buffering = 2;    // Buffer entire response body
+  int64 max_buffer_size = 3;      // Max buffer size in bytes
+  int64 memory_threshold = 4;     // Threshold for file-based buffering (default: 1MB)
 }
 
 // StatusResponse acknowledges status reports
