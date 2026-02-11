@@ -60,6 +60,11 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		handler = comp.Wrap(handler)
 	}
 
+	// Apply cache middleware: cache executes BEFORE backend forwarding (cache hit skips backend)
+	if r.cache != nil && r.cache.config.Enabled {
+		handler = r.cache.Middleware(handler)
+	}
+
 	// Apply request buffering middleware (buffers request body before forwarding)
 	if entry.Buffering != nil && entry.Buffering.RequestBuffering {
 		reqBuf := NewRequestBufferingMiddleware(entry.Buffering)
@@ -77,7 +82,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		handler = entry.Policies[i].handler(handler)
 	}
 
-	// Execute the handler chain: policies -> limits -> req buffering -> compression -> resp buffering -> backend
+	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> backend
 	handler.ServeHTTP(responseWriter, req)
 }
 
@@ -135,6 +140,17 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		backendSpan.SetStatus(codes.Error, "No backend configured")
 		http.Error(w, "No backend configured", http.StatusInternalServerError)
 		return
+	}
+
+	// Fire-and-forget mirror: execute AFTER backend selection but the mirror copy runs in a goroutine.
+	// The original request flow is unaffected by the mirror.
+	if entry.MirrorConfig != nil {
+		// Build interface maps for mirror endpoint selection
+		standardLBs := make(map[string]interface{}, len(r.loadBalancers))
+		for k, v := range r.loadBalancers {
+			standardLBs[k] = v
+		}
+		r.mirrorRequest(ctx, req, entry.MirrorConfig, r.pools, r.hashBasedLBs, standardLBs)
 	}
 
 	clusterKey := fmt.Sprintf("%s/%s", backendRef.Namespace, backendRef.Name)
@@ -222,6 +238,11 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	// Propagate trace context to backend request headers
 	propagator := otel.GetTextMapPropagator()
 	propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
+
+	// Set X-Cache: MISS if caching is enabled and this is a cache miss (no cache header set yet)
+	if r.cache != nil && r.cache.config.Enabled && w.Header().Get("X-Cache") == "" {
+		w.Header().Set("X-Cache", "MISS")
+	}
 
 	// Forward request to backend
 	if err := pool.Forward(endpoint, req, w); err != nil {

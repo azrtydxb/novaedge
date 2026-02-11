@@ -177,6 +177,21 @@ func convertFilters(filters []novaedgev1alpha1.HTTPRouteFilter) []*pb.RouteFilte
 
 		pbFilter.RemoveHeaders = f.Remove
 
+		// Handle response header filters
+		for _, h := range f.ResponseAdd {
+			pbFilter.ResponseAddHeaders = append(pbFilter.ResponseAddHeaders, &pb.HTTPHeader{
+				Name:  h.Name,
+				Value: h.Value,
+			})
+		}
+		pbFilter.ResponseRemoveHeaders = f.ResponseRemove
+		for _, h := range f.ResponseSet {
+			pbFilter.ResponseSetHeaders = append(pbFilter.ResponseSetHeaders, &pb.HTTPHeader{
+				Name:  h.Name,
+				Value: h.Value,
+			})
+		}
+
 		result = append(result, pbFilter)
 	}
 	return result
@@ -219,6 +234,12 @@ func convertFilterType(filterType novaedgev1alpha1.HTTPRouteFilterType) pb.Route
 		return pb.RouteFilterType_REQUEST_REDIRECT
 	case novaedgev1alpha1.HTTPRouteFilterURLRewrite:
 		return pb.RouteFilterType_URL_REWRITE
+	case novaedgev1alpha1.HTTPRouteFilterResponseAddHeader:
+		return pb.RouteFilterType_RESPONSE_ADD_HEADER
+	case novaedgev1alpha1.HTTPRouteFilterResponseRemoveHeader:
+		return pb.RouteFilterType_RESPONSE_REMOVE_HEADER
+	case novaedgev1alpha1.HTTPRouteFilterResponseSetHeader:
+		return pb.RouteFilterType_RESPONSE_SET_HEADER
 	default:
 		return pb.RouteFilterType_ROUTE_FILTER_TYPE_UNSPECIFIED
 	}

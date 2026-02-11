@@ -36,7 +36,8 @@ import (
 // ProxyGatewayReconciler reconciles a ProxyGateway object
 type ProxyGatewayReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme          *runtime.Scheme
+	ControllerClass string
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxygateways,verbs=get;list;watch;create;update;patch;delete
@@ -61,6 +62,14 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	logger.Info("Reconciling ProxyGateway", "name", gateway.Name, "vipRef", gateway.Spec.VIPRef)
+
+	// Check loadBalancerClass: only reconcile gateways matching our class
+	if !r.shouldReconcileGateway(gateway) {
+		logger.Info("Skipping gateway with non-matching loadBalancerClass",
+			"class", gateway.Spec.LoadBalancerClass,
+			"controllerClass", r.ControllerClass)
+		return ctrl.Result{}, nil
+	}
 
 	// Validate and update status
 	if err := r.validateAndUpdateStatus(ctx, gateway); err != nil {
@@ -165,6 +174,25 @@ func (r *ProxyGatewayReconciler) validateAndUpdateStatus(ctx context.Context, ga
 	}
 
 	return nil
+}
+
+// DefaultControllerClass is the default loadBalancerClass handled by this controller.
+const DefaultControllerClass = "novaedge.io/proxy"
+
+// shouldReconcileGateway checks if this gateway matches the controller's loadBalancerClass.
+func (r *ProxyGatewayReconciler) shouldReconcileGateway(gateway *novaedgev1alpha1.ProxyGateway) bool {
+	controllerClass := r.ControllerClass
+	if controllerClass == "" {
+		controllerClass = DefaultControllerClass
+	}
+
+	gwClass := gateway.Spec.LoadBalancerClass
+	// If gateway has no class set, reconcile if controller uses the default class
+	if gwClass == "" {
+		return controllerClass == DefaultControllerClass
+	}
+
+	return gwClass == controllerClass
 }
 
 // SetupWithManager sets up the controller with the Manager

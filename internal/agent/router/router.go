@@ -105,11 +105,20 @@ type Router struct {
 
 	// Compression configuration (gateway-level)
 	compressionConfig *pb.CompressionConfig
+
+	// Response cache
+	cache       *ResponseCache
+	cacheConfig CacheConfig
 }
 
 // NewRouter creates a new router
 func NewRouter(logger *zap.Logger) *Router {
-	return &Router{
+	return NewRouterWithCache(logger, DefaultCacheConfig())
+}
+
+// NewRouterWithCache creates a new router with the given cache configuration.
+func NewRouterWithCache(logger *zap.Logger, cacheConfig CacheConfig) *Router {
+	r := &Router{
 		logger:              logger,
 		routes:              make(map[string][]*RouteEntry),
 		pools:               make(map[string]*upstream.Pool),
@@ -120,6 +129,23 @@ func NewRouter(logger *zap.Logger) *Router {
 		endpointVersions:    make(map[string]uint64),
 		maxRequestBodyBytes: 10 * 1024 * 1024,  // Default: 10MB
 		maxUploadBodyBytes:  100 * 1024 * 1024, // Default: 100MB
+		cacheConfig:         cacheConfig,
+	}
+	if cacheConfig.Enabled {
+		r.cache = NewResponseCache(cacheConfig, logger)
+	}
+	return r
+}
+
+// Cache returns the response cache, or nil if caching is disabled.
+func (r *Router) Cache() *ResponseCache {
+	return r.cache
+}
+
+// StopCache stops the cache background goroutines.
+func (r *Router) StopCache() {
+	if r.cache != nil {
+		r.cache.Stop()
 	}
 }
 
@@ -158,6 +184,17 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 					ResponseFilter: collectResponseFilters(rule.Filters),
 					Limits:         rule.Limits,
 					Buffering:      rule.Buffering,
+				}
+
+				// Build mirror config from rule if present
+				if rule.MirrorBackend != nil {
+					entry.MirrorConfig = &MirrorConfig{
+						BackendRef: rule.MirrorBackend,
+						Percentage: rule.MirrorPercent,
+					}
+					if entry.MirrorConfig.Percentage == 0 {
+						entry.MirrorConfig.Percentage = 100
+					}
 				}
 				r.routes[hostname] = append(r.routes[hostname], entry)
 			}

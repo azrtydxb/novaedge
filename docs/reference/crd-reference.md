@@ -1100,3 +1100,29 @@ Request/response buffering settings, defined on `ProxyRoute.spec.rules[].bufferi
 | `request` | bool | No | `false` | Buffer entire request body before forwarding |
 | `response` | bool | No | `false` | Buffer entire response body before sending to client |
 | `maxSize` | string | No | No limit | Maximum buffer size (e.g., "50Mi") |
+
+## New Fields (v1alpha1)
+
+### ProxyGateway
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `spec.loadBalancerClass` | string | Load balancer class for multi-controller coexistence. Default: `novaedge.io/proxy` |
+| `spec.cache.enabled` | bool | Enable HTTP response caching |
+| `spec.cache.maxSize` | string | Maximum cache memory (e.g., `256Mi`) |
+| `spec.cache.defaultTTL` | string | Default cache TTL (e.g., `5m`) |
+| `spec.cache.maxTTL` | string | Maximum cache TTL (e.g., `1h`) |
+| `spec.cache.maxEntrySize` | string | Maximum single entry size (e.g., `1Mi`) |
+
+### ProxyRoute
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `spec.rules[].mirror.backendRef` | BackendRef | Backend to mirror traffic to |
+| `spec.rules[].mirror.percentage` | int (0-100) | Percentage of requests to mirror (default: 100) |
+
+### Controller Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--controller-class` | `novaedge.io/proxy` | loadBalancerClass this controller handles |
