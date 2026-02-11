@@ -149,14 +149,6 @@ func (e *testEnv) reconcileGateway(ctx context.Context, name, namespace string) 
 	return err
 }
 
-// reconcileGatewayClass manually triggers reconciliation for a GatewayClass
-func (e *testEnv) reconcileGatewayClass(ctx context.Context, name string) error {
-	_, err := e.gatewayClassReconciler.Reconcile(ctx, ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: name},
-	})
-	return err
-}
-
 // reconcileHTTPRoute manually triggers reconciliation for an HTTPRoute
 func (e *testEnv) reconcileHTTPRoute(ctx context.Context, name, namespace string) error {
 	_, err := e.httpRouteReconciler.Reconcile(ctx, ctrl.Request{
