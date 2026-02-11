@@ -26,20 +26,28 @@ flowchart LR
 
 | Feature | Traditional | NovaEdge |
 |---------|-------------|----------|
-| L7 Load Balancing | NGINX/Envoy | Built-in |
-| VIP Management | MetalLB | Built-in (L2/BGP/OSPF) |
-| Rate Limiting | Envoy/Kong | Built-in |
-| TLS Termination | Multiple configs | Unified |
+| L7 Load Balancing | NGINX/Envoy | Built-in (6 algorithms) |
+| L4 TCP/UDP Proxying | HAProxy/Envoy | Built-in |
+| VIP Management | MetalLB | Built-in (L2/BGP/OSPF + BFD) |
+| Rate Limiting | Envoy/Kong | Built-in (local + Redis) |
+| Authentication | OAuth2 Proxy/Kong | Built-in (Basic/Forward/OIDC) |
+| WAF | ModSecurity/Kong | Built-in (Coraza) |
+| TLS/ACME | cert-manager/Traefik | Built-in + cert-manager support |
+| WASM Plugins | Envoy | Built-in (Wazero) |
 | Components to manage | 3+ | 1 |
 
 ## Key Features
 
-- **L7 Load Balancing** - HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, gRPC
-- **VIP Management** - L2 ARP, BGP, and OSPF modes for bare-metal
-- **Policy Enforcement** - Rate limiting, JWT auth, CORS, IP filtering
-- **Gateway API** - Native support for Kubernetes Gateway API
-- **Multi-Cluster** - Hub-spoke federation for distributed deployments
-- **Observability** - OpenTelemetry tracing, Prometheus metrics, structured logging
+- **L7 Load Balancing** - HTTP/1.1, HTTP/2, HTTP/3 (QUIC), WebSockets, gRPC, SSE
+- **L4 Proxying** - TCP/UDP proxying with TLS passthrough
+- **VIP Management** - L2 ARP, BGP, OSPF modes with BFD and IPv6 dual-stack
+- **Security** - mTLS, OCSP stapling, PROXY protocol, WAF, authentication stack
+- **Certificate Management** - ACME, cert-manager, HashiCorp Vault integration
+- **Policy Enforcement** - Rate limiting, JWT auth, CORS, IP filtering, security headers
+- **Extensibility** - WASM plugins, composable middleware pipelines
+- **Gateway API** - Native support for Kubernetes Gateway API (HTTP, gRPC, TCP, TLS routes)
+- **Multi-Cluster** - Hub-spoke federation with split-brain detection
+- **Observability** - OpenTelemetry tracing, Prometheus metrics, structured logging, Web UI
 
 ## Quick Start
 
@@ -113,27 +121,58 @@ flowchart TB
 ### Getting Started
 - [Quick Start](getting-started/quickstart.md) - Deploy in 5 minutes
 - [Installation](installation/kubernetes.md) - Detailed installation options
+- [Helm Installation](installation/helm.md) - Deploy with Helm charts
+- [Standalone Mode](installation/standalone.md) - Run without Kubernetes
+- [Operator Installation](installation/operator.md) - Lifecycle management via operator
 
 ### Architecture
 - [Architecture Overview](architecture/overview.md) - System design and components
 - [Component Details](architecture/components.md) - Deep dive into each component
+- [Federation Architecture](architecture/federation.md) - Multi-cluster federation design
 
 ### User Guide
+
+#### Routing & Traffic
 - [Routing](user-guide/routing.md) - Configure routes and traffic matching
-- [Load Balancing](user-guide/load-balancing.md) - Algorithms and session affinity
-- [VIP Management](user-guide/vip-management.md) - L2, BGP, and OSPF modes
-- [Policies](user-guide/policies.md) - Rate limiting, CORS, JWT, IP filtering
-- [TLS](user-guide/tls.md) - TLS termination and mTLS
+- [Load Balancing](user-guide/load-balancing.md) - 6 algorithms and session affinity
+- [L4 Proxying](user-guide/l4-proxying.md) - TCP/UDP proxying and TLS passthrough
+- [Middleware Pipelines](user-guide/middleware-pipelines.md) - Composable middleware chains
+- [Response Caching](user-guide/response-caching.md) - HTTP response caching
+- [Traffic Mirroring](user-guide/traffic-mirroring.md) - Shadow traffic for testing
+- [Retry](user-guide/retry.md) - Request retry configuration
+- [Error Pages](user-guide/error-pages.md) - Custom error page handling
+- [SSE](user-guide/sse.md) - Server-Sent Events support
+
+#### VIP & Networking
+- [VIP Management](user-guide/vip-management.md) - L2, BGP, OSPF modes with BFD and IPv6
+- [IP Pools](user-guide/ip-pools.md) - ProxyIPPool management and IPAM
+- [PROXY Protocol](user-guide/proxy-protocol.md) - PROXY protocol v1/v2 support
+
+#### Security & Authentication
+- [TLS](user-guide/tls.md) - TLS termination, mTLS, OCSP stapling, ACME challenges
+- [Authentication](user-guide/authentication.md) - Basic auth, forward auth, OIDC, JWT
+- [Keycloak Integration](user-guide/keycloak.md) - Keycloak OIDC provider setup
+- [Policies](user-guide/policies.md) - Rate limiting, CORS, JWT, IP filtering, security headers
+- [WAF](user-guide/waf.md) - Web Application Firewall (Coraza)
+
+#### Certificate Management
+- [cert-manager Integration](user-guide/cert-manager.md) - Kubernetes-native certificate lifecycle
+- [HashiCorp Vault](user-guide/vault.md) - Vault PKI and KV integration
+
+#### Health & Monitoring
 - [Health Checks](user-guide/health-checks.md) - Active and passive health checking
 
 ### Advanced Topics
-- [Multi-Cluster](advanced/multi-cluster.md) - Hub-spoke federation
+- [Multi-Cluster Federation](advanced/multi-cluster.md) - Hub-spoke federation
+- [Federation Setup](advanced/federation-setup.md) - Step-by-step federation configuration
 - [HTTP/3 & QUIC](advanced/http3-quic.md) - Next-gen protocol support
 - [Gateway API](advanced/gateway-api.md) - Kubernetes Gateway API integration
+- [WASM Plugins](advanced/wasm-plugins.md) - Extend NovaEdge with WebAssembly plugins
 
 ### Operations
 - [Observability](operations/observability.md) - Metrics, tracing, and logging
 - [Web UI](operations/web-ui.md) - Dashboard for monitoring and management
+- [Access Logging](operations/access-logging.md) - Per-route access log configuration
 - [Troubleshooting](operations/troubleshooting.md) - Common issues and solutions
 
 ### Reference
