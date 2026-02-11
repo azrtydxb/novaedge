@@ -22,7 +22,7 @@ import (
 )
 
 // ProtocolType defines the application protocol
-// +kubebuilder:validation:Enum=HTTP;HTTPS;TCP;TLS
+// +kubebuilder:validation:Enum=HTTP;HTTPS;TCP;TLS;UDP
 type ProtocolType string
 
 const (
@@ -36,6 +36,8 @@ const (
 	ProtocolTypeTCP ProtocolType = "TCP"
 	// ProtocolTypeTLS is TLS-encrypted TCP
 	ProtocolTypeTLS ProtocolType = "TLS"
+	// ProtocolTypeUDP is plain UDP
+	ProtocolTypeUDP ProtocolType = "UDP"
 )
 
 // TLSConfig defines TLS configuration for a listener

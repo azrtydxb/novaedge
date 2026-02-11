@@ -12,6 +12,8 @@ flowchart LR
         GC["GatewayClass<br/>(novaedge)"]
         GW["Gateway"]
         HR["HTTPRoute"]
+        TR["TCPRoute"]
+        TLR["TLSRoute"]
         SVC["Service"]
     end
 
@@ -24,6 +26,8 @@ flowchart LR
     GC --> GW
     GW -->|"translates"| PGW
     HR -->|"translates"| PRT
+    TR -->|"translates"| PRT
+    TLR -->|"translates"| PRT
     SVC -->|"translates"| PBE
 
     style GatewayAPI fill:#e6f3ff
@@ -32,6 +36,8 @@ flowchart LR
 
 - **Gateway** → **ProxyGateway**
 - **HTTPRoute** → **ProxyRoute**
+- **TCPRoute** → **ProxyRoute** (with `novaedge.io/l4-protocol: TCP` annotation)
+- **TLSRoute** → **ProxyRoute** (with `novaedge.io/l4-protocol: TLS` annotation)
 - **Service references** → **ProxyBackend**
 
 ## Supported Features
@@ -52,6 +58,17 @@ flowchart LR
   - URL rewrites
 - Backend references with weights
 - Multi-rule routing
+
+### TCPRoute Resources (v1alpha2)
+- Raw TCP connection forwarding
+- Backend references with weights
+- Round-robin load balancing across backends
+
+### TLSRoute Resources (v1alpha2)
+- SNI-based TLS passthrough routing
+- Hostname matching (exact and wildcard)
+- Backend references with weights
+- End-to-end encryption preservation
 
 ## Quick Start
 
@@ -174,6 +191,115 @@ NovaEdge supports Gateway API **v1** (stable) resources:
 - `gateway.networking.k8s.io/v1.HTTPRoute`
 - `gateway.networking.k8s.io/v1.GatewayClass`
 
+NovaEdge also supports Gateway API **v1alpha2** (experimental) resources:
+- `gateway.networking.k8s.io/v1alpha2.TCPRoute`
+- `gateway.networking.k8s.io/v1alpha2.TLSRoute`
+
+## L4 Routes
+
+NovaEdge supports Gateway API L4 route resources for TCP forwarding and TLS passthrough.
+
+### TCPRoute
+
+TCPRoute enables raw TCP connection forwarding through a Gateway listener.
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tcp-gateway
+spec:
+  gatewayClassName: novaedge
+  listeners:
+    - name: mysql
+      port: 3306
+      protocol: TCP
+    - name: postgres
+      port: 5432
+      protocol: TCP
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TCPRoute
+metadata:
+  name: mysql-tcproute
+spec:
+  parentRefs:
+    - name: tcp-gateway
+      sectionName: mysql
+  rules:
+    - backendRefs:
+        - name: mysql-service
+          port: 3306
+```
+
+### TLSRoute
+
+TLSRoute enables SNI-based TLS passthrough routing. The Gateway reads the SNI from the TLS ClientHello without decrypting, then routes the connection to the appropriate backend.
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tls-gateway
+spec:
+  gatewayClassName: novaedge
+  listeners:
+    - name: tls
+      port: 443
+      protocol: TLS
+      tls:
+        mode: Passthrough
+---
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: api-tlsroute
+spec:
+  parentRefs:
+    - name: tls-gateway
+      sectionName: tls
+  hostnames:
+    - "api.example.com"
+  rules:
+    - backendRefs:
+        - name: api-service
+          port: 443
+```
+
+### L4 Route Translation
+
+When NovaEdge processes TCPRoute and TLSRoute resources, it:
+
+1. Translates each route into a NovaEdge `ProxyRoute` with an L4 protocol annotation
+2. Creates corresponding `ProxyBackend` resources for service references
+3. Sets owner references for automatic cleanup
+4. Updates route status with acceptance conditions
+
+The translated ProxyRoute includes the annotation `novaedge.io/l4-protocol` set to either `TCP` or `TLS`, which signals the agent to use L4 proxying instead of HTTP proxying.
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant K as Kubernetes API
+    participant TC as TCPRoute Controller
+    participant TLC as TLSRoute Controller
+    participant CRD as NovaEdge CRDs
+
+    U->>K: Apply TCPRoute
+    K->>TC: TCPRoute event
+    TC->>CRD: Create ProxyRoute (l4-protocol: TCP)
+    TC->>CRD: Create ProxyBackend(s)
+    TC->>K: Update TCPRoute status
+
+    U->>K: Apply TLSRoute
+    K->>TLC: TLSRoute event
+    TLC->>CRD: Create ProxyRoute (l4-protocol: TLS)
+    TLC->>CRD: Create ProxyBackend(s)
+    TLC->>K: Update TLSRoute status
+```
+
+For more details on L4 proxying behavior (connection handling, session affinity, metrics), see [Layer 4 TCP/UDP Proxying](../user-guide/l4-proxying.md).
+
 ## Limitations
 
 ### Current Limitations
@@ -191,8 +317,7 @@ NovaEdge supports Gateway API **v1** (stable) resources:
 ### Planned Enhancements
 
 - Support for weighted load balancing across multiple backend refs
-- TCPRoute and UDPRoute support
-- TLSRoute support for TLS passthrough
+- UDPRoute support
 - GRPCRoute support
 - ReferenceGrant for cross-namespace references
 - Gateway address assignment

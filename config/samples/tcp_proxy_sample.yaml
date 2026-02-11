@@ -1,0 +1,65 @@
+# TCP Proxy Example: MySQL load balancing
+# This example configures NovaEdge to proxy TCP connections on port 3306
+# to a set of MySQL backend servers using round-robin load balancing.
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: tcp-gateway
+  namespace: default
+spec:
+  vipRef: database-vip
+  listeners:
+    - name: mysql
+      port: 3306
+      protocol: TCP
+    - name: redis
+      port: 6379
+      protocol: TCP
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: mysql-backend
+  namespace: default
+spec:
+  lbPolicy: RoundRobin
+  serviceRef:
+    name: mysql
+    port: 3306
+  connectTimeout: 5s
+  healthCheck:
+    interval: 10s
+    timeout: 3s
+    healthyThreshold: 2
+    unhealthyThreshold: 3
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: mysql-route
+  namespace: default
+spec:
+  rules:
+    - backendRefs:
+        - name: mysql-backend
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: redis-backend
+  namespace: default
+spec:
+  lbPolicy: RoundRobin
+  serviceRef:
+    name: redis
+    port: 6379
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: redis-route
+  namespace: default
+spec:
+  rules:
+    - backendRefs:
+        - name: redis-backend

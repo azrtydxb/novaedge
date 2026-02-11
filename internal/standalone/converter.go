@@ -85,6 +85,10 @@ func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot
 	policies := c.convertPolicies(cfg.Policies)
 	snapshot.Policies = policies
 
+	// Convert L4 listeners
+	l4Listeners := c.convertL4Listeners(cfg.L4Listeners, endpoints)
+	snapshot.L4Listeners = l4Listeners
+
 	// Generate version hash
 	snapshot.Version = c.generateVersion(snapshot)
 
@@ -143,6 +147,8 @@ func (c *Converter) parseProtocol(protocol string) pb.Protocol {
 		return pb.Protocol_TCP
 	case "TLS":
 		return pb.Protocol_TLS
+	case "UDP":
+		return pb.Protocol_UDP
 	default:
 		return pb.Protocol_PROTOCOL_UNSPECIFIED
 	}
@@ -642,6 +648,89 @@ func standaloneParseByteSize(s string) (int64, error) {
 		}
 	}
 	return 0, fmt.Errorf("invalid byte size: %s", s)
+}
+
+func (c *Converter) convertL4Listeners(configs []L4ListenerStandaloneConfig, endpoints map[string]*pb.EndpointList) []*pb.L4Listener {
+	result := make([]*pb.L4Listener, 0, len(configs))
+
+	for _, cfg := range configs {
+		l4Listener := &pb.L4Listener{
+			Name:     cfg.Name,
+			Port:     safeInt32(cfg.Port),
+			Protocol: c.parseProtocol(cfg.Protocol),
+		}
+
+		switch cfg.Protocol {
+		case "TCP":
+			l4Listener.BackendName = cfg.Backend
+			clusterKey := fmt.Sprintf("default/%s", cfg.Backend)
+			if epList, ok := endpoints[clusterKey]; ok {
+				l4Listener.Backends = epList.Endpoints
+			}
+			if cfg.TCP != nil {
+				l4Listener.TcpConfig = &pb.L4TCPConfig{
+					BufferSize: safeInt32(cfg.TCP.BufferSize),
+				}
+				if d, err := time.ParseDuration(cfg.TCP.ConnectTimeout); err == nil {
+					l4Listener.TcpConfig.ConnectTimeoutMs = d.Milliseconds()
+				}
+				if d, err := time.ParseDuration(cfg.TCP.IdleTimeout); err == nil {
+					l4Listener.TcpConfig.IdleTimeoutMs = d.Milliseconds()
+				}
+				if d, err := time.ParseDuration(cfg.TCP.DrainTimeout); err == nil {
+					l4Listener.TcpConfig.DrainTimeoutMs = d.Milliseconds()
+				}
+			}
+
+		case "UDP":
+			l4Listener.BackendName = cfg.Backend
+			clusterKey := fmt.Sprintf("default/%s", cfg.Backend)
+			if epList, ok := endpoints[clusterKey]; ok {
+				l4Listener.Backends = epList.Endpoints
+			}
+			if cfg.UDP != nil {
+				l4Listener.UdpConfig = &pb.L4UDPConfig{
+					BufferSize: safeInt32(cfg.UDP.BufferSize),
+				}
+				if d, err := time.ParseDuration(cfg.UDP.SessionTimeout); err == nil {
+					l4Listener.UdpConfig.SessionTimeoutMs = d.Milliseconds()
+				}
+			}
+
+		case "TLS":
+			var tlsRoutes []*pb.L4TLSRoute
+			for _, route := range cfg.TLSRoutes {
+				clusterKey := fmt.Sprintf("default/%s", route.Backend)
+				var backends []*pb.Endpoint
+				if epList, ok := endpoints[clusterKey]; ok {
+					backends = epList.Endpoints
+				}
+				tlsRoutes = append(tlsRoutes, &pb.L4TLSRoute{
+					Hostname:    route.Hostname,
+					BackendName: route.Backend,
+					Backends:    backends,
+				})
+			}
+			l4Listener.TlsRoutes = tlsRoutes
+
+			if cfg.DefaultTLSBackend != "" {
+				clusterKey := fmt.Sprintf("default/%s", cfg.DefaultTLSBackend)
+				var backends []*pb.Endpoint
+				if epList, ok := endpoints[clusterKey]; ok {
+					backends = epList.Endpoints
+				}
+				l4Listener.DefaultTlsBackend = &pb.L4TLSRoute{
+					Hostname:    "*",
+					BackendName: cfg.DefaultTLSBackend,
+					Backends:    backends,
+				}
+			}
+		}
+
+		result = append(result, l4Listener)
+	}
+
+	return result
 }
 func (c *Converter) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	data, _ := proto.Marshal(snapshot)

@@ -93,6 +93,10 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	}
 	snapshot.Policies = policies
 
+	// Build L4 listeners (TCP/UDP/TLS passthrough)
+	l4Listeners := b.buildL4Listeners(ctx, snapshot.Gateways, snapshot.Endpoints)
+	snapshot.L4Listeners = l4Listeners
+
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
 
@@ -100,11 +104,12 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	duration := time.Since(startTime).Seconds()
 	sizeBytes := proto.Size(snapshot)
 	resourceCounts := map[string]int{
-		"gateways": len(snapshot.Gateways),
-		"routes":   len(snapshot.Routes),
-		"clusters": len(snapshot.Clusters),
-		"vips":     len(snapshot.VipAssignments),
-		"policies": len(snapshot.Policies),
+		"gateways":     len(snapshot.Gateways),
+		"routes":       len(snapshot.Routes),
+		"clusters":     len(snapshot.Clusters),
+		"vips":         len(snapshot.VipAssignments),
+		"policies":     len(snapshot.Policies),
+		"l4_listeners": len(snapshot.L4Listeners),
 	}
 	RecordSnapshotBuild(nodeName, duration, sizeBytes, resourceCounts)
 
@@ -115,6 +120,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"clusters", len(snapshot.Clusters),
 		"vips", len(snapshot.VipAssignments),
 		"policies", len(snapshot.Policies),
+		"l4_listeners", len(snapshot.L4Listeners),
 		"duration_ms", duration*1000,
 		"size_bytes", sizeBytes)
 
@@ -627,6 +633,9 @@ func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	}
 	for _, p := range snapshot.Policies {
 		parts = append(parts, fmt.Sprintf("policy:%s/%s", p.Namespace, p.Name))
+	}
+	for _, l := range snapshot.L4Listeners {
+		parts = append(parts, fmt.Sprintf("l4:%s:%d", l.Name, l.Port))
 	}
 
 	// Sort for determinism

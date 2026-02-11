@@ -53,8 +53,12 @@ func runGet(cmd *cobra.Command, args []string) error {
 		rt = client.ResourcePolicy
 	case resourceAliasVIPs, resourceAliasVIP:
 		rt = client.ResourceVIP
+	case resourceAliasTCPRoutes, resourceAliasTCPRoute:
+		rt = client.ResourceTCPRoute
+	case resourceAliasTLSRoutes, resourceAliasTLSRoute:
+		rt = client.ResourceTLSRoute
 	default:
-		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips)", resourceType)
+		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes)", resourceType)
 	}
 
 	ctx := context.Background()

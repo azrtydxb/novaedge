@@ -1,0 +1,52 @@
+# Gateway API TLSRoute Example
+# Uses TLSRoute for SNI-based TLS passthrough routing through NovaEdge.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: tls-gateway
+  namespace: default
+spec:
+  gatewayClassName: novaedge
+  listeners:
+    - name: tls
+      port: 443
+      protocol: TLS
+      tls:
+        mode: Passthrough
+---
+# TLSRoute for api.example.com (Gateway API v1alpha2)
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: api-tlsroute
+  namespace: default
+spec:
+  parentRefs:
+    - name: tls-gateway
+      sectionName: tls
+  hostnames:
+    - "api.example.com"
+  rules:
+    - backendRefs:
+        - name: api-service
+          port: 443
+          weight: 1
+---
+# TLSRoute for app.example.com
+apiVersion: gateway.networking.k8s.io/v1alpha2
+kind: TLSRoute
+metadata:
+  name: app-tlsroute
+  namespace: default
+spec:
+  parentRefs:
+    - name: tls-gateway
+      sectionName: tls
+  hostnames:
+    - "app.example.com"
+    - "*.app.example.com"
+  rules:
+    - backendRefs:
+        - name: app-service
+          port: 443
+          weight: 1

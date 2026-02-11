@@ -47,6 +47,10 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 		rt = client.ResourcePolicy
 	case resourceAliasVIPs, resourceAliasVIP:
 		rt = client.ResourceVIP
+	case resourceAliasTCPRoutes, resourceAliasTCPRoute:
+		rt = client.ResourceTCPRoute
+	case resourceAliasTLSRoutes, resourceAliasTLSRoute:
+		rt = client.ResourceTLSRoute
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}

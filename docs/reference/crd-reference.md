@@ -670,6 +670,39 @@ spec:
         enable0RTT: true
 ```
 
+### L4 Listener Examples
+
+TCP and UDP listeners enable Layer 4 proxying for non-HTTP protocols:
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: l4-gateway
+spec:
+  vipRef: my-vip
+  listeners:
+    # TCP listener for database traffic
+    - name: mysql
+      port: 3306
+      protocol: TCP
+
+    # UDP listener for DNS traffic
+    - name: dns
+      port: 53
+      protocol: UDP
+
+    # TLS passthrough listener (SNI-based routing)
+    - name: tls-passthrough
+      port: 8443
+      protocol: TLS
+      hostnames:
+        - "api.example.com"
+        - "*.internal.example.com"
+```
+
+For L4 proxying details, see [Layer 4 TCP/UDP Proxying](../user-guide/l4-proxying.md).
+
 ### Fields
 
 | Field | Type | Required | Description |
@@ -678,7 +711,7 @@ spec:
 | `spec.listeners` | array | Yes | List of listener configurations |
 | `spec.listeners[].name` | string | Yes | Unique listener name |
 | `spec.listeners[].port` | int32 | Yes | Port number |
-| `spec.listeners[].protocol` | string | Yes | Protocol: `HTTP`, `HTTPS`, `HTTP3`, `TCP`, `TLS` |
+| `spec.listeners[].protocol` | string | Yes | Protocol: `HTTP`, `HTTPS`, `HTTP3`, `TCP`, `TLS`, `UDP` |
 | `spec.listeners[].hostnames` | array | No | Hostnames to match (wildcards supported) |
 | `spec.listeners[].tls` | object | HTTPS/HTTP3 | TLS configuration |
 | `spec.listeners[].quic` | object | HTTP3 only | QUIC configuration |

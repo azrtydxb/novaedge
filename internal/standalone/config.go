@@ -49,6 +49,9 @@ type Config struct {
 	// VIPs define virtual IP addresses (optional)
 	VIPs []VIPConfig `yaml:"vips,omitempty"`
 
+	// L4Listeners define Layer 4 TCP/UDP/TLS passthrough listeners (optional)
+	L4Listeners []L4ListenerStandaloneConfig `yaml:"l4Listeners,omitempty"`
+
 	// Policies define rate limiting, CORS, etc. (optional)
 	Policies []PolicyConfig `yaml:"policies,omitempty"`
 
@@ -438,6 +441,46 @@ type JWTPolicy struct {
 	Audience  []string `yaml:"audience,omitempty"`
 	JWKSURI   string   `yaml:"jwksUri,omitempty"`
 	SecretKey string   `yaml:"secretKey,omitempty"`
+}
+
+// L4ListenerStandaloneConfig defines a Layer 4 listener in standalone mode
+type L4ListenerStandaloneConfig struct {
+	// Name identifies this listener
+	Name string `yaml:"name"`
+	// Port to listen on
+	Port int `yaml:"port"`
+	// Protocol: TCP, UDP, or TLS (passthrough)
+	Protocol string `yaml:"protocol"`
+	// Backend name for TCP/UDP listeners
+	Backend string `yaml:"backend,omitempty"`
+	// TCPConfig holds TCP-specific settings
+	TCP *L4TCPStandaloneConfig `yaml:"tcp,omitempty"`
+	// UDPConfig holds UDP-specific settings
+	UDP *L4UDPStandaloneConfig `yaml:"udp,omitempty"`
+	// TLSRoutes maps SNI hostnames to backends for TLS passthrough
+	TLSRoutes []L4TLSRouteStandaloneConfig `yaml:"tlsRoutes,omitempty"`
+	// DefaultTLSBackend is the fallback for unmatched SNI
+	DefaultTLSBackend string `yaml:"defaultTlsBackend,omitempty"`
+}
+
+// L4TCPStandaloneConfig holds TCP-specific configuration
+type L4TCPStandaloneConfig struct {
+	ConnectTimeout string `yaml:"connectTimeout,omitempty"`
+	IdleTimeout    string `yaml:"idleTimeout,omitempty"`
+	BufferSize     int    `yaml:"bufferSize,omitempty"`
+	DrainTimeout   string `yaml:"drainTimeout,omitempty"`
+}
+
+// L4UDPStandaloneConfig holds UDP-specific configuration
+type L4UDPStandaloneConfig struct {
+	SessionTimeout string `yaml:"sessionTimeout,omitempty"`
+	BufferSize     int    `yaml:"bufferSize,omitempty"`
+}
+
+// L4TLSRouteStandaloneConfig maps an SNI hostname to a backend for TLS passthrough
+type L4TLSRouteStandaloneConfig struct {
+	Hostname string `yaml:"hostname"`
+	Backend  string `yaml:"backend"`
 }
 
 // CertificateConfig defines a managed TLS certificate
