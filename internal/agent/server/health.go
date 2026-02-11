@@ -100,13 +100,19 @@ func (h *HealthServer) Start(ctx context.Context) error {
 				pattern = "*"
 			}
 			count := h.router.Cache().Purge(pattern)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			resp, _ := json.Marshal(map[string]interface{}{
+			resp, err := json.Marshal(map[string]interface{}{
 				"purged":  count,
 				"pattern": pattern,
 			})
-			_, _ = w.Write(resp)
+			if err != nil {
+				http.Error(w, "Failed to serialize response", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if _, err := w.Write(resp); err != nil {
+				h.logger.Debug("Failed to write response", zap.Error(err))
+			}
 			h.logger.Info("Cache purged", zap.String("pattern", pattern), zap.Int("count", count))
 			return
 		}
@@ -118,10 +124,16 @@ func (h *HealthServer) Start(ctx context.Context) error {
 				return
 			}
 			stats := h.router.Cache().Stats()
+			resp, err := json.Marshal(stats)
+			if err != nil {
+				http.Error(w, "Failed to serialize response", http.StatusInternalServerError)
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
-			resp, _ := json.Marshal(stats)
-			_, _ = w.Write(resp)
+			if _, err := w.Write(resp); err != nil {
+				h.logger.Debug("Failed to write response", zap.Error(err))
+			}
 			return
 		}
 		w.WriteHeader(http.StatusMethodNotAllowed)
