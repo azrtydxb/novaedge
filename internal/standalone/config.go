@@ -539,7 +539,7 @@ type BFDStandaloneConfig struct {
 // PolicyConfig defines a policy (rate limit, CORS, etc.)
 type PolicyConfig struct {
 	Name string `yaml:"name"`
-	Type string `yaml:"type"` // RateLimit, CORS, IPFilter, JWT, WASMPlugin
+	Type string `yaml:"type"` // RateLimit, CORS, IPFilter, JWT, WASMPlugin, BasicAuth, ForwardAuth, OIDC
 
 	// Rate limiting
 	RateLimit *RateLimitPolicy `yaml:"rateLimit,omitempty"`
@@ -561,6 +561,15 @@ type PolicyConfig struct {
 
 	// WASM plugin
 	WASMPlugin *WASMPluginPolicy `yaml:"wasmPlugin,omitempty"`
+
+	// Basic Auth
+	BasicAuth *BasicAuthPolicy `yaml:"basicAuth,omitempty"`
+
+	// Forward Auth
+	ForwardAuth *ForwardAuthPolicy `yaml:"forwardAuth,omitempty"`
+
+	// OIDC
+	OIDC *OIDCPolicy `yaml:"oidc,omitempty"`
 }
 
 // DistributedRateLimitPolicy defines distributed rate limiting
@@ -673,6 +682,87 @@ type L4UDPStandaloneConfig struct {
 type L4TLSRouteStandaloneConfig struct {
 	Hostname string `yaml:"hostname"`
 	Backend  string `yaml:"backend"`
+}
+
+// BasicAuthPolicy defines HTTP Basic Authentication for standalone mode
+type BasicAuthPolicy struct {
+	// Realm for WWW-Authenticate header
+	Realm string `yaml:"realm,omitempty"`
+
+	// HtpasswdFile path to htpasswd file
+	HtpasswdFile string `yaml:"htpasswdFile,omitempty"`
+
+	// Users inline username:hash map (alternative to htpasswdFile)
+	Users map[string]string `yaml:"users,omitempty"`
+
+	// StripAuth removes Authorization header before forwarding
+	StripAuth bool `yaml:"stripAuth,omitempty"`
+}
+
+// ForwardAuthPolicy defines external auth delegation for standalone mode
+type ForwardAuthPolicy struct {
+	// Address of the external auth service
+	Address string `yaml:"address"`
+
+	// AuthHeaders to forward to auth service
+	AuthHeaders []string `yaml:"authHeaders,omitempty"`
+
+	// ResponseHeaders to copy from auth response
+	ResponseHeaders []string `yaml:"responseHeaders,omitempty"`
+
+	// Timeout for auth subrequest (e.g., "5s")
+	Timeout string `yaml:"timeout,omitempty"`
+
+	// CacheTTL for caching auth decisions (e.g., "5m")
+	CacheTTL string `yaml:"cacheTTL,omitempty"`
+}
+
+// OIDCPolicy defines OAuth2/OIDC authentication for standalone mode
+type OIDCPolicy struct {
+	// Provider type: generic, keycloak
+	Provider string `yaml:"provider,omitempty"`
+
+	// IssuerURL for OIDC discovery
+	IssuerURL string `yaml:"issuerURL,omitempty"`
+
+	// ClientID for OAuth2
+	ClientID string `yaml:"clientID"`
+
+	// ClientSecret for OAuth2
+	ClientSecret string `yaml:"clientSecret"`
+
+	// RedirectURL for OAuth2 callback
+	RedirectURL string `yaml:"redirectURL"`
+
+	// Scopes to request
+	Scopes []string `yaml:"scopes,omitempty"`
+
+	// SessionSecret for encrypting session cookies (base64, 32 bytes)
+	SessionSecret string `yaml:"sessionSecret"`
+
+	// ForwardHeaders to set from user info claims
+	ForwardHeaders []string `yaml:"forwardHeaders,omitempty"`
+
+	// Keycloak-specific config
+	Keycloak *KeycloakPolicy `yaml:"keycloak,omitempty"`
+
+	// Authorization config
+	Authorization *AuthorizationPolicy `yaml:"authorization,omitempty"`
+}
+
+// KeycloakPolicy defines Keycloak-specific settings for standalone mode
+type KeycloakPolicy struct {
+	ServerURL  string `yaml:"serverURL"`
+	Realm      string `yaml:"realm"`
+	RoleClaim  string `yaml:"roleClaim,omitempty"`
+	GroupClaim string `yaml:"groupClaim,omitempty"`
+}
+
+// AuthorizationPolicy defines role-based access control for standalone mode
+type AuthorizationPolicy struct {
+	RequiredRoles  []string `yaml:"requiredRoles,omitempty"`
+	RequiredGroups []string `yaml:"requiredGroups,omitempty"`
+	Mode           string   `yaml:"mode,omitempty"` // any, all
 }
 
 // CertificateConfig defines a managed TLS certificate

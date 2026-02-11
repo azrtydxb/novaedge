@@ -399,6 +399,30 @@ spec:
         name: api-backend
 ```
 
+## Authentication Policies
+
+NovaEdge supports multiple authentication methods as policies:
+
+| Type | Description |
+|------|-------------|
+| **BasicAuth** | HTTP Basic Authentication against htpasswd credentials |
+| **ForwardAuth** | Delegate auth to an external service (Authelia, oauth2-proxy) |
+| **OIDC** | OAuth2/OIDC SSO with providers like Google, Okta, Keycloak |
+
+For detailed configuration, see the [Authentication Guide](authentication.md) and [Keycloak Integration Guide](keycloak.md).
+
+### Quick Example: Basic Auth
+
+
+
+### Quick Example: Forward Auth
+
+
+
+### Quick Example: OIDC with Keycloak
+
+
+
 ## Metrics
 
 | Metric | Description |
@@ -409,9 +433,14 @@ spec:
 | `novaedge_jwt_validation_failed_total` | Failed JWT validations |
 | `novaedge_cors_preflight_total` | CORS preflight requests |
 | `novaedge_ip_filter_blocked_total` | IP-blocked requests |
+| `novaedge_basic_auth_total` | Basic auth validation attempts |
+| `novaedge_forward_auth_total` | Forward auth delegation attempts |
+| `novaedge_oidc_auth_total` | OIDC authentication events |
 
 ## Next Steps
 
+- [Authentication](authentication.md) - Detailed auth configuration guide
+- [Keycloak](keycloak.md) - Keycloak-specific setup
 - [TLS](tls.md) - TLS termination and mTLS
 - [Health Checks](health-checks.md) - Backend health checking
 - [Observability](../operations/observability.md) - Monitoring policies

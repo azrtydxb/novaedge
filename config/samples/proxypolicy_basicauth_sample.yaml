@@ -1,0 +1,29 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: basic-auth-policy
+  namespace: default
+spec:
+  type: BasicAuth
+  targetRef:
+    kind: ProxyRoute
+    name: protected-route
+    namespace: default
+  basicAuth:
+    realm: "Admin Area"
+    secretRef:
+      name: htpasswd-secret
+    stripAuth: true
+---
+# Secret containing htpasswd-formatted credentials
+# Create with: htpasswd -nbBC 10 admin password123 | kubectl create secret generic htpasswd-secret --from-file=htpasswd=/dev/stdin
+apiVersion: v1
+kind: Secret
+metadata:
+  name: htpasswd-secret
+  namespace: default
+type: Opaque
+stringData:
+  htpasswd: |
+    admin:$2y$10$EXAMPLEHASHHERE
+    readonly:$2y$10$EXAMPLEHASHHERE

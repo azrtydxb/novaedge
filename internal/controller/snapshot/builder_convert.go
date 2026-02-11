@@ -166,6 +166,12 @@ func convertPolicyType(policyType novaedgev1alpha1.PolicyType) pb.PolicyType {
 		return pb.PolicyType_WAF
 	case novaedgev1alpha1.PolicyTypeWASMPlugin:
 		return pb.PolicyType_WASM_PLUGIN
+	case novaedgev1alpha1.PolicyTypeBasicAuth:
+		return pb.PolicyType_BASIC_AUTH
+	case novaedgev1alpha1.PolicyTypeForwardAuth:
+		return pb.PolicyType_FORWARD_AUTH
+	case novaedgev1alpha1.PolicyTypeOIDC:
+		return pb.PolicyType_OIDC
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}

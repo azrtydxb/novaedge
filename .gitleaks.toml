@@ -3,8 +3,9 @@
 useDefault = true
 
 [allowlist]
-description = "Allow sample/example Kubernetes manifests"
+description = "Allow sample/example Kubernetes manifests and documentation"
 paths = [
   '''config/samples/.*\.yaml''',
   '''config/samples/.*\.yml''',
+  '''docs/.*\.md''',
 ]

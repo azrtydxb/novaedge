@@ -1037,6 +1037,9 @@ flowchart TB
         JWT["JWT Validation<br/>JWKS support<br/>Token verification"]
         IP["IP Filter<br/>Allow/deny lists<br/>CIDR support"]
         SEC["Security Headers<br/>HSTS, CSP<br/>XSS protection"]
+        BA["BasicAuth<br/>HTTP Basic<br/>htpasswd support"]
+        FA["ForwardAuth<br/>External auth<br/>delegation"]
+        OIDC["OIDC<br/>OAuth2 SSO<br/>Keycloak support"]
     end
 
     subgraph Targets["Policy Targets"]
@@ -1050,6 +1053,9 @@ flowchart TB
     IP --> GW
     IP --> RT
     SEC --> GW
+    BA --> RT
+    FA --> RT
+    OIDC --> RT
 
     style PolicyTypes fill:#DDA0DD
     style Targets fill:#fff5e6
@@ -1143,6 +1149,45 @@ spec:
     denyList:
       - 10.0.0.5/32
 ```
+
+
+### BasicAuth
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `spec.basicAuth.realm` | string | No | Authentication realm (default: "Restricted") |
+| `spec.basicAuth.secretRef.name` | string | Yes | Secret containing htpasswd data |
+| `spec.basicAuth.stripAuth` | bool | No | Strip Authorization header (default: true) |
+
+### ForwardAuth
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `spec.forwardAuth.address` | string | Yes | Auth service URL |
+| `spec.forwardAuth.authHeaders` | []string | No | Headers to forward |
+| `spec.forwardAuth.responseHeaders` | []string | No | Headers to copy from response |
+| `spec.forwardAuth.timeout` | string | No | Auth subrequest timeout (default: "5s") |
+| `spec.forwardAuth.cacheTTL` | string | No | Cache TTL (empty = no cache) |
+
+### OIDC
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `spec.oidc.provider` | string | No | Provider type: "generic" or "keycloak" |
+| `spec.oidc.issuerURL` | string | Conditional | OIDC issuer URL (auto-set for Keycloak) |
+| `spec.oidc.clientID` | string | Yes | OAuth2 client ID |
+| `spec.oidc.clientSecretRef.name` | string | Yes | Secret with "client-secret" key |
+| `spec.oidc.redirectURL` | string | Yes | OAuth2 callback URL |
+| `spec.oidc.scopes` | []string | No | OAuth2 scopes (default: openid, profile, email) |
+| `spec.oidc.sessionSecretRef.name` | string | Yes | Secret with "session-secret" key (32 bytes) |
+| `spec.oidc.forwardHeaders` | []string | No | Claims to forward as headers |
+| `spec.oidc.keycloak.serverURL` | string | Yes (keycloak) | Keycloak server URL |
+| `spec.oidc.keycloak.realm` | string | Yes (keycloak) | Keycloak realm |
+| `spec.oidc.keycloak.roleClaim` | string | No | Role claim path (default: realm_access.roles) |
+| `spec.oidc.keycloak.groupClaim` | string | No | Group claim path (default: groups) |
+| `spec.oidc.authorization.requiredRoles` | []string | No | Required roles |
+| `spec.oidc.authorization.requiredGroups` | []string | No | Required groups |
+| `spec.oidc.authorization.mode` | string | No | "any" (OR) or "all" (AND) |
 
 ### Security Headers
 
