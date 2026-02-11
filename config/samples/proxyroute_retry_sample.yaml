@@ -1,0 +1,28 @@
+# Example: ProxyRoute with automatic retry configuration
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-route-with-retry
+  namespace: default
+spec:
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: api-backend
+      retry:
+        maxRetries: 3
+        perTryTimeout: 2s
+        retryOn:
+          - "5xx"
+          - "connection-failure"
+        retryBudget: 0.2
+        backoffBase: 25ms
+        retryMethods:
+          - GET
+          - HEAD
+          - OPTIONS
