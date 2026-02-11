@@ -246,6 +246,15 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 			gateway.Compression = convertCompressionConfig(gw.Spec.Compression)
 		}
 
+		// Convert error pages configuration
+		if len(gw.Spec.CustomErrorPages) > 0 {
+			gateway.ErrorPages = convertErrorPages(gw.Spec.CustomErrorPages)
+		}
+
+		// Convert redirect scheme configuration
+		if gw.Spec.RedirectScheme != nil && gw.Spec.RedirectScheme.Enabled {
+			gateway.RedirectScheme = convertRedirectScheme(gw.Spec.RedirectScheme)
+		}
 		gateways = append(gateways, gateway)
 	}
 
@@ -312,6 +321,10 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 			route.Rules = append(route.Rules, pbRule)
 		}
 
+		// Convert access log configuration
+		if r.Spec.AccessLog != nil && r.Spec.AccessLog.Enabled {
+			route.AccessLog = convertRouteAccessLog(r.Spec.AccessLog)
+		}
 		routes = append(routes, route)
 	}
 

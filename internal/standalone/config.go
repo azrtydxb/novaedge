@@ -55,6 +55,12 @@ type Config struct {
 	// Policies define rate limiting, CORS, etc. (optional)
 	Policies []PolicyConfig `yaml:"policies,omitempty"`
 
+	// ErrorPages define custom error page templates
+	ErrorPages *ErrorPagesConfig `yaml:"errorPages,omitempty"`
+
+	// RedirectScheme defines HTTP to HTTPS redirect
+	RedirectScheme *RedirectSchemeStandaloneConfig `yaml:"redirectScheme,omitempty"`
+
 	// Management defines management plane configuration
 	Management *ManagementConfig `yaml:"management,omitempty"`
 }
@@ -94,9 +100,31 @@ type StandaloneCompressionConfig struct {
 
 // AccessLogConfig defines access logging
 type AccessLogConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Format  string `yaml:"format"` // json, common, combined
-	Path    string `yaml:"path"`   // file path or "stdout"
+	Enabled           bool    `yaml:"enabled"`
+	Format            string  `yaml:"format"`   // clf, json, custom
+	Template          string  `yaml:"template"` // custom format template
+	Path              string  `yaml:"path"`     // file path or "stdout"
+	Output            string  `yaml:"output"`   // stdout, file, both
+	MaxSize           string  `yaml:"maxSize"`  // e.g., "100Mi"
+	MaxBackups        int     `yaml:"maxBackups"`
+	FilterStatusCodes []int   `yaml:"filterStatusCodes"` // only log these codes
+	SampleRate        float64 `yaml:"sampleRate"`        // 0.0-1.0
+}
+
+// ErrorPagesConfig defines custom error pages for standalone mode
+type ErrorPagesConfig struct {
+	Enabled     bool           `yaml:"enabled"`
+	Pages       map[int]string `yaml:"pages"`       // status code -> HTML template
+	DefaultPage string         `yaml:"defaultPage"` // fallback HTML template
+}
+
+// RedirectSchemeStandaloneConfig defines HTTP to HTTPS redirect for standalone mode
+type RedirectSchemeStandaloneConfig struct {
+	Enabled    bool     `yaml:"enabled"`
+	Scheme     string   `yaml:"scheme"`     // target scheme (default: "https")
+	Port       int      `yaml:"port"`       // target port (default: 443)
+	StatusCode int      `yaml:"statusCode"` // 301 or 302
+	Exclusions []string `yaml:"exclusions"` // paths to skip
 }
 
 // TracingConfig defines request tracing
