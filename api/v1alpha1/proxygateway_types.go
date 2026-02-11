@@ -214,11 +214,33 @@ type AccessLogConfig struct {
 	// +kubebuilder:default=true
 	Enabled bool `json:"enabled,omitempty"`
 
-	// Format specifies the log format (json, common, combined)
+	// Format specifies the log format (json, clf, custom)
 	// +optional
-	// +kubebuilder:validation:Enum=json;common;combined
+	// +kubebuilder:validation:Enum=json;clf;custom
 	// +kubebuilder:default="json"
 	Format string `json:"format,omitempty"`
+
+	// Template defines a custom log format template (for format=custom)
+	// +optional
+	Template string `json:"template,omitempty"`
+
+	// Output defines where logs are written (stdout, file, both)
+	// +optional
+	// +kubebuilder:validation:Enum=stdout;file;both
+	// +kubebuilder:default="stdout"
+	Output string `json:"output,omitempty"`
+
+	// FilePath is the path to the log file (required when output is file or both)
+	// +optional
+	FilePath string `json:"filePath,omitempty"`
+
+	// MaxSize is the maximum size of a log file before rotation (e.g., "100Mi")
+	// +optional
+	MaxSize string `json:"maxSize,omitempty"`
+
+	// MaxBackups is the maximum number of rotated log files to retain
+	// +optional
+	MaxBackups *int32 `json:"maxBackups,omitempty"`
 
 	// IncludeHeaders includes specified request/response headers in logs
 	// +optional
@@ -227,6 +249,14 @@ type AccessLogConfig struct {
 	// ExcludePaths excludes specified paths from logging (e.g., health checks)
 	// +optional
 	ExcludePaths []string `json:"excludePaths,omitempty"`
+
+	// FilterStatusCodes limits logging to specific HTTP status codes
+	// +optional
+	FilterStatusCodes []int32 `json:"filterStatusCodes,omitempty"`
+
+	// SampleRate defines the fraction of requests to log (0.0-1.0, default 1.0)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
 }
 
 // CustomErrorPage defines a custom error page configuration
@@ -281,6 +311,33 @@ type CompressionConfig struct {
 	ExcludeTypes []string `json:"excludeTypes,omitempty"`
 }
 
+// RedirectSchemeConfig defines HTTP to HTTPS redirect configuration
+type RedirectSchemeConfig struct {
+	// Enabled enables scheme redirection
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Scheme is the target scheme (default: "https")
+	// +optional
+	// +kubebuilder:default="https"
+	Scheme string `json:"scheme,omitempty"`
+
+	// Port is the target port (default: 443)
+	// +optional
+	// +kubebuilder:default=443
+	Port int32 `json:"port,omitempty"`
+
+	// StatusCode is the HTTP redirect status code (301 or 302, default: 301)
+	// +optional
+	// +kubebuilder:validation:Enum=301;302
+	// +kubebuilder:default=301
+	StatusCode int32 `json:"statusCode,omitempty"`
+
+	// Exclusions is a list of path prefixes to exclude from redirection
+	// +optional
+	Exclusions []string `json:"exclusions,omitempty"`
+}
+
 // ProxyGatewaySpec defines the desired state of ProxyGateway
 type ProxyGatewaySpec struct {
 	// VIPRef references the ProxyVIP to use for this gateway
@@ -321,6 +378,10 @@ type ProxyGatewaySpec struct {
 	// Compression defines response compression configuration
 	// +optional
 	Compression *CompressionConfig `json:"compression,omitempty"`
+
+	// RedirectScheme defines HTTP to HTTPS redirect configuration
+	// +optional
+	RedirectScheme *RedirectSchemeConfig `json:"redirectScheme,omitempty"`
 }
 
 // GatewayCacheConfig configures HTTP response caching for the gateway

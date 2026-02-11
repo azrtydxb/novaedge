@@ -1162,6 +1162,56 @@ Request/response buffering settings, defined on `ProxyRoute.spec.rules[].bufferi
 
 ---
 
+## RedirectSchemeConfig
+
+Configures automatic HTTP to HTTPS redirection on a ProxyGateway.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | `false` | Enable scheme redirection |
+| `scheme` | string | `"https"` | Target scheme |
+| `port` | int32 | `443` | Target port |
+| `statusCode` | int32 | `301` | HTTP redirect status code (301 or 302) |
+| `exclusions` | []string | `[]` | Paths to exclude from redirection |
+
+## AccessLogConfig (Enhanced)
+
+Configures access logging on a ProxyGateway or ProxyRoute.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | `true` | Enable access logging |
+| `format` | string | `"json"` | Log format: `json`, `clf`, or `custom` |
+| `template` | string | `""` | Custom Go template (for format=custom) |
+| `output` | string | `"stdout"` | Output destination: `stdout`, `file`, or `both` |
+| `filePath` | string | `""` | Log file path (required for file/both output) |
+| `maxSize` | string | `"100Mi"` | Maximum log file size before rotation |
+| `maxBackups` | int32 | `5` | Number of rotated files to keep |
+| `filterStatusCodes` | []int32 | `[]` | Status codes to log (empty = all) |
+| `sampleRate` | float64 | `1.0` | Fraction of requests to log (0.0-1.0) |
+
+## CustomErrorPage
+
+Defines custom error pages on a ProxyGateway.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `codes` | []int32 | required | HTTP status codes this page applies to |
+| `path` | string | `""` | Path to serve for these error codes |
+| `body` | string | `""` | HTML template body (supports template variables) |
+| `contentType` | string | `"text/html"` | Response Content-Type header |
+
+### Template Variables
+
+| Variable | Description |
+|----------|-------------|
+| `{{.StatusCode}}` | HTTP status code (e.g., 404) |
+| `{{.StatusText}}` | HTTP status text (e.g., "Not Found") |
+| `{{.RequestID}}` | X-Request-ID header value |
+| `{{.Timestamp}}` | UTC timestamp in RFC3339 format |
+
+---
+
 ## Gateway API Resources
 
 NovaEdge supports standard Kubernetes Gateway API resources in addition to its custom CRDs.

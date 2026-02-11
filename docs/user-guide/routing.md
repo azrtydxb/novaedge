@@ -735,3 +735,71 @@ The controller will only reconcile gateways whose `loadBalancerClass` matches. G
 
 - **Ingress**: The controller respects the `ingressClassName` field and only reconciles Ingress resources matching the configured class
 - **Gateway API**: The controller respects the `GatewayClass` resource and only handles Gateways referencing the NovaEdge GatewayClass
+
+## HTTP to HTTPS Redirect
+
+NovaEdge can automatically redirect HTTP requests to HTTPS using the
+`redirectScheme` configuration on a `ProxyGateway`.
+
+### Configuration
+
+#### Kubernetes CRD
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: web-gateway
+spec:
+  vipRef: web-vip
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+    - name: https
+      port: 443
+      protocol: HTTPS
+      tls:
+        secretRef:
+          name: tls-secret
+  redirectScheme:
+    enabled: true
+    scheme: https
+    port: 443
+    statusCode: 301
+    exclusions:
+      - /healthz
+      - /readyz
+      - /.well-known/
+```
+
+#### Standalone Mode
+
+```yaml
+redirectScheme:
+  enabled: true
+  scheme: https
+  port: 443
+  statusCode: 301
+  exclusions:
+    - /healthz
+    - /readyz
+```
+
+### Behavior
+
+- Requests already using HTTPS (detected via TLS connection or `X-Forwarded-Proto: https` header) are not redirected
+- The original path and query string are preserved in the redirect URL
+- Health check paths and other exclusions are not redirected
+- Supported status codes: `301` (permanent) and `302` (temporary), defaulting to `301`
+- When using a non-standard port (not 443 for HTTPS), the port is included in the redirect URL
+
+### Exclusions
+
+Exclusions support exact path matches and prefix matches (paths ending with `/`):
+
+```yaml
+exclusions:
+  - /healthz           # Exact match: only /healthz
+  - /.well-known/      # Prefix match: /.well-known/anything
+```

@@ -81,6 +81,24 @@ func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot
 	}
 	snapshot.VipAssignments = vips
 
+	// Apply error pages configuration to gateways
+	if cfg.ErrorPages != nil && cfg.ErrorPages.Enabled && len(gateways) > 0 {
+		gateways[0].ErrorPages = c.convertErrorPages(cfg.ErrorPages)
+	}
+
+	// Apply redirect scheme configuration to gateways
+	if cfg.RedirectScheme != nil && cfg.RedirectScheme.Enabled && len(gateways) > 0 {
+		gateways[0].RedirectScheme = c.convertRedirectSchemeConfig(cfg.RedirectScheme)
+	}
+
+	// Apply access log configuration to routes
+	if cfg.Global.AccessLog.Enabled && len(routes) > 0 {
+		accessLogConfig := c.convertAccessLogConfig(&cfg.Global.AccessLog)
+		for _, route := range routes {
+			route.AccessLog = accessLogConfig
+		}
+	}
+
 	// Convert policies
 	policies := c.convertPolicies(cfg.Policies)
 	snapshot.Policies = policies
@@ -782,4 +800,68 @@ func (c *Converter) convertSessionAffinity(sa *SessionAffinityStandaloneConfig) 
 		CookieSecure:     sa.Secure,
 		CookieSameSite:   sa.SameSite,
 	}
+}
+
+func (c *Converter) convertErrorPages(ep *ErrorPagesConfig) *pb.ErrorPageConfig {
+	if ep == nil || !ep.Enabled {
+		return nil
+	}
+
+	config := &pb.ErrorPageConfig{
+		Enabled:     true,
+		Pages:       make(map[int32]string),
+		DefaultPage: ep.DefaultPage,
+	}
+
+	for code, tmpl := range ep.Pages {
+		config.Pages[safeInt32(code)] = tmpl
+	}
+
+	return config
+}
+
+func (c *Converter) convertRedirectSchemeConfig(rs *RedirectSchemeStandaloneConfig) *pb.RedirectSchemeConfig {
+	if rs == nil || !rs.Enabled {
+		return nil
+	}
+
+	return &pb.RedirectSchemeConfig{
+		Enabled:    true,
+		Scheme:     rs.Scheme,
+		Port:       safeInt32(rs.Port),
+		StatusCode: safeInt32(rs.StatusCode),
+		Exclusions: rs.Exclusions,
+	}
+}
+
+func (c *Converter) convertAccessLogConfig(al *AccessLogConfig) *pb.AccessLogConfig {
+	if al == nil || !al.Enabled {
+		return nil
+	}
+
+	config := &pb.AccessLogConfig{
+		Enabled:  true,
+		Format:   al.Format,
+		Template: al.Template,
+		Output:   al.Output,
+		MaxSize:  al.MaxSize,
+	}
+
+	// Use Path as FilePath for backward compatibility
+	if al.Path != "" && al.Path != "stdout" {
+		config.FilePath = al.Path
+	}
+
+	config.MaxBackups = safeInt32(al.MaxBackups)
+
+	for _, code := range al.FilterStatusCodes {
+		config.FilterStatusCodes = append(config.FilterStatusCodes, safeInt32(code))
+	}
+
+	config.SampleRate = al.SampleRate
+	if config.SampleRate <= 0 {
+		config.SampleRate = 1.0
+	}
+
+	return config
 }

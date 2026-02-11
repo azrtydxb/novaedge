@@ -63,13 +63,24 @@ spec:
                     items:
                       type: string
                     type: array
+                  filePath:
+                    description: FilePath is the path to the log file (required when
+                      output is file or both)
+                    type: string
+                  filterStatusCodes:
+                    description: FilterStatusCodes limits logging to specific HTTP
+                      status codes
+                    items:
+                      format: int32
+                      type: integer
+                    type: array
                   format:
                     default: json
-                    description: Format specifies the log format (json, common, combined)
+                    description: Format specifies the log format (json, clf, custom)
                     enum:
                     - json
-                    - common
-                    - combined
+                    - clf
+                    - custom
                     type: string
                   includeHeaders:
                     description: IncludeHeaders includes specified request/response
@@ -77,6 +88,28 @@ spec:
                     items:
                       type: string
                     type: array
+                  maxBackups:
+                    description: MaxBackups is the maximum number of rotated log files
+                      to retain
+                    format: int32
+                    type: integer
+                  maxSize:
+                    description: MaxSize is the maximum size of a log file before
+                      rotation (e.g., "100Mi")
+                    type: string
+                  output:
+                    default: stdout
+                    description: Output defines where logs are written (stdout, file,
+                      both)
+                    enum:
+                    - stdout
+                    - file
+                    - both
+                    type: string
+                  template:
+                    description: Template defines a custom log format template (for
+                      format=custom)
+                    type: string
                 type: object
               compression:
                 description: Compression defines response compression configuration
@@ -423,6 +456,37 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              redirectScheme:
+                description: RedirectScheme defines HTTP to HTTPS redirect configuration
+                properties:
+                  enabled:
+                    description: Enabled enables scheme redirection
+                    type: boolean
+                  exclusions:
+                    description: Exclusions is a list of path prefixes to exclude
+                      from redirection
+                    items:
+                      type: string
+                    type: array
+                  port:
+                    default: 443
+                    description: 'Port is the target port (default: 443)'
+                    format: int32
+                    type: integer
+                  scheme:
+                    default: https
+                    description: 'Scheme is the target scheme (default: "https")'
+                    type: string
+                  statusCode:
+                    default: 301
+                    description: 'StatusCode is the HTTP redirect status code (301
+                      or 302, default: 301)'
+                    enum:
+                    - 301
+                    - 302
+                    format: int32
+                    type: integer
+                type: object
               tracing:
                 description: Tracing defines request tracing configuration
                 properties:

@@ -96,6 +96,8 @@ message Gateway {
   CompressionConfig compression = 6; // Response compression configuration
   string load_balancer_class = 7;
   GatewayCacheConfig cache = 8;
+  ErrorPageConfig error_pages = 9;
+  RedirectSchemeConfig redirect_scheme = 10;
 }
 
 // GatewayCacheConfig configures response caching for a gateway
@@ -154,6 +156,7 @@ message Route {
   string namespace = 2;
   repeated string hostnames = 3;
   repeated RouteRule rules = 4;
+  AccessLogConfig access_log = 5;
 }
 
 // MirrorConfig configures traffic mirroring for a route rule
@@ -538,6 +541,35 @@ message L4TLSRoute {
   string backend_name = 2;
   // Backend endpoints
   repeated Endpoint backends = 3;
+}
+
+// ErrorPageConfig defines custom error page configuration
+message ErrorPageConfig {
+  bool enabled = 1;
+  map<int32, string> pages = 2; // status code -> HTML template
+  string default_page = 3; // fallback HTML template
+}
+
+// RedirectSchemeConfig defines HTTP to HTTPS redirect configuration
+message RedirectSchemeConfig {
+  bool enabled = 1;
+  string scheme = 2; // target scheme (e.g., "https")
+  int32 port = 3; // target port (e.g., 443)
+  int32 status_code = 4; // 301 or 302
+  repeated string exclusions = 5; // paths to skip redirect
+}
+
+// AccessLogConfig defines access logging configuration
+message AccessLogConfig {
+  bool enabled = 1;
+  string format = 2; // "clf", "json", "custom"
+  string template = 3; // custom format template
+  string output = 4; // "stdout", "file", "both"
+  string file_path = 5;
+  string max_size = 6; // e.g., "100Mi"
+  int32 max_backups = 7;
+  repeated int32 filter_status_codes = 8; // only log these status codes
+  double sample_rate = 9; // 0.0 - 1.0
 }
 
 // ConfigService is the gRPC service for distributing config snapshots

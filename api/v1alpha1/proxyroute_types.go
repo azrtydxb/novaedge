@@ -312,6 +312,11 @@ type ProxyRouteSpec struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	Rules []HTTPRouteRule `json:"rules"`
+
+	// AccessLog defines per-route access logging configuration
+	// Overrides gateway-level access log settings for this route
+	// +optional
+	AccessLog *RouteAccessLogConfig `json:"accessLog,omitempty"`
 }
 
 // ProxyRouteStatus defines the observed state of ProxyRoute
@@ -352,4 +357,47 @@ type ProxyRouteList struct {
 
 func init() {
 	SchemeBuilder.Register(&ProxyRoute{}, &ProxyRouteList{})
+}
+
+// RouteAccessLogConfig defines per-route access logging configuration
+type RouteAccessLogConfig struct {
+	// Enabled enables access logging for this route
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Format specifies the log format (json, clf, custom)
+	// +optional
+	// +kubebuilder:validation:Enum=json;clf;custom
+	Format string `json:"format,omitempty"`
+
+	// Template defines a custom log format template (for format=custom)
+	// +optional
+	Template string `json:"template,omitempty"`
+
+	// Output defines where logs are written (stdout, file, both)
+	// +optional
+	// +kubebuilder:validation:Enum=stdout;file;both
+	Output string `json:"output,omitempty"`
+
+	// FilePath is the path to the log file
+	// +optional
+	FilePath string `json:"filePath,omitempty"`
+
+	// MaxSize is the maximum size of a log file before rotation (e.g., "100Mi")
+	// +optional
+	MaxSize string `json:"maxSize,omitempty"`
+
+	// MaxBackups is the maximum number of rotated log files to retain
+	// +optional
+	MaxBackups *int32 `json:"maxBackups,omitempty"`
+
+	// FilterStatusCodes limits logging to specific HTTP status codes
+	// +optional
+	FilterStatusCodes []int32 `json:"filterStatusCodes,omitempty"`
+
+	// SampleRate defines the percentage of requests to log (0-100)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	SampleRate *int32 `json:"sampleRate,omitempty"`
 }
