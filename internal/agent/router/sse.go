@@ -65,6 +65,7 @@ type SSEProxy struct {
 	activeConnections atomic.Int64
 	mu                sync.RWMutex
 	draining          atomic.Bool
+	httpClient        *http.Client
 }
 
 // NewSSEProxy creates a new SSE proxy with the given configuration
@@ -72,9 +73,19 @@ func NewSSEProxy(logger *zap.Logger, config *SSEConfig) *SSEProxy {
 	if config == nil {
 		config = DefaultSSEConfig()
 	}
+	transport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+		DisableCompression:  true, // SSE streams should not be compressed
+	}
 	return &SSEProxy{
 		logger: logger.With(zap.String("component", "sse-proxy")),
 		config: config,
+		httpClient: &http.Client{
+			Timeout:   0, // No timeout for SSE streaming
+			Transport: transport,
+		},
 	}
 }
 
@@ -162,10 +173,7 @@ func (p *SSEProxy) ProxySSE(w http.ResponseWriter, r *http.Request, backendURL s
 	copySSEHeaders(r.Header, backendReq.Header)
 	backendReq.Header.Set("Accept", SSEContentType)
 
-	client := &http.Client{
-		Timeout: 0, // No timeout for SSE streaming
-	}
-	backendResp, err := client.Do(backendReq)
+	backendResp, err := p.httpClient.Do(backendReq)
 	if err != nil {
 		p.logger.Error("Failed to connect to SSE backend",
 			zap.String("backend", backendURL),

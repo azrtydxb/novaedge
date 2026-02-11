@@ -169,6 +169,9 @@ func (s *HTTPServer) enableAltSvcAdvertising(_ int32) {
 
 // addAltSvcHeader adds the Alt-Svc header to advertise HTTP/3 availability
 func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	// Check if there's an HTTP/3 server on any port
 	for port, h3srv := range s.http3servers {
 		// Use SetQuicHeaders if available for standard-compliant Alt-Svc

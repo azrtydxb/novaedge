@@ -47,8 +47,8 @@ func NewHTTP3Server(logger *zap.Logger, port int32, tlsConfig *tls.Config, quicC
 
 	// Wrap handler with HTTP/3 metrics collection
 	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		QUICConnections.Inc()
-		defer QUICConnections.Dec()
+		HTTP3ActiveRequests.Inc()
+		defer HTTP3ActiveRequests.Dec()
 
 		// Wrap the response writer to capture status code
 		rw := &http3ResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
@@ -91,6 +91,16 @@ type http3ResponseWriter struct {
 func (w *http3ResponseWriter) WriteHeader(code int) {
 	w.statusCode = code
 	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *http3ResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *http3ResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 // Start starts the HTTP/3 server

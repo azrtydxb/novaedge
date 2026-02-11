@@ -75,7 +75,11 @@ func GetGVR(resourceType ResourceType) schema.GroupVersionResource {
 	case ResourceTLSRoute:
 		resource = "tlsroutes"
 	case ResourceGRPCRoute:
-		resource = "grpcroutes"
+		return schema.GroupVersionResource{
+			Group:    "gateway.networking.k8s.io",
+			Version:  "v1",
+			Resource: "grpcroutes",
+		}
 	default:
 		resource = string(resourceType)
 	}

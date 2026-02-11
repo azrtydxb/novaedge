@@ -22,12 +22,12 @@ import (
 )
 
 var (
-	// QUICConnections tracks the number of active QUIC connections
-	QUICConnections = promauto.NewGauge(prometheus.GaugeOpts{
+	// HTTP3ActiveRequests tracks the number of active HTTP/3 requests
+	HTTP3ActiveRequests = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "http3",
-		Name:      "quic_connections",
-		Help:      "Number of active QUIC connections",
+		Name:      "active_requests",
+		Help:      "Number of active HTTP/3 requests",
 	})
 
 	// QUICStreams tracks the number of active QUIC streams
