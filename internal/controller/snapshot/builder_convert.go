@@ -115,6 +115,8 @@ func convertPolicyType(policyType novaedgev1alpha1.PolicyType) pb.PolicyType {
 		return pb.PolicyType_IP_DENY_LIST
 	case novaedgev1alpha1.PolicyTypeCORS:
 		return pb.PolicyType_CORS
+	case novaedgev1alpha1.PolicyTypeSecurityHeaders:
+		return pb.PolicyType_SECURITY_HEADERS
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}

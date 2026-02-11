@@ -413,6 +413,29 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 			}
 		}
 
+		if p.Spec.SecurityHeaders != nil {
+			shConfig := &pb.SecurityHeadersConfig{
+				ContentSecurityPolicy:     p.Spec.SecurityHeaders.ContentSecurityPolicy,
+				XFrameOptions:             p.Spec.SecurityHeaders.XFrameOptions,
+				XContentTypeOptions:       p.Spec.SecurityHeaders.XContentTypeOptions,
+				XXssProtection:            p.Spec.SecurityHeaders.XXSSProtection,
+				ReferrerPolicy:            p.Spec.SecurityHeaders.ReferrerPolicy,
+				PermissionsPolicy:         p.Spec.SecurityHeaders.PermissionsPolicy,
+				CrossOriginEmbedderPolicy: p.Spec.SecurityHeaders.CrossOriginEmbedderPolicy,
+				CrossOriginOpenerPolicy:   p.Spec.SecurityHeaders.CrossOriginOpenerPolicy,
+				CrossOriginResourcePolicy: p.Spec.SecurityHeaders.CrossOriginResourcePolicy,
+			}
+			if p.Spec.SecurityHeaders.HSTS != nil {
+				shConfig.Hsts = &pb.HSTSConfig{
+					Enabled:           p.Spec.SecurityHeaders.HSTS.Enabled,
+					MaxAgeSeconds:     p.Spec.SecurityHeaders.HSTS.MaxAge,
+					IncludeSubdomains: p.Spec.SecurityHeaders.HSTS.IncludeSubDomains,
+					Preload:           p.Spec.SecurityHeaders.HSTS.Preload,
+				}
+			}
+			policy.SecurityHeaders = shConfig
+		}
+
 		policies = append(policies, policy)
 	}
 
@@ -432,13 +455,19 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 		return nil, fmt.Errorf("failed to get service: %w", err)
 	}
 
-	// Resolve the target port name from the Service spec for the requested port.
+	// Resolve the target port name and numeric targetPort from the Service spec.
 	// EndpointSlices contain targetPort values (not Service ports), so we need
-	// to find which port name corresponds to the serviceRef.Port.
+	// to find the port name or numeric targetPort that corresponds to serviceRef.Port.
 	var targetPortName string
+	var targetPortNumber int32
 	for _, sp := range svc.Spec.Ports {
 		if sp.Port == serviceRef.Port {
 			targetPortName = sp.Name
+			// TargetPort can be a string (port name) or int (port number).
+			// When it is numeric, use it for direct matching against EndpointSlice ports.
+			if sp.TargetPort.IntValue() > 0 {
+				targetPortNumber = int32(sp.TargetPort.IntValue())
+			}
 			break
 		}
 	}
@@ -460,21 +489,34 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 			}
 
 			// Find the matching port in the EndpointSlice.
-			// Match by port name (which links Service port to targetPort),
-			// or fall back to direct port number match for unnamed ports.
+			// Priority: 1) match by port name, 2) match by targetPort number,
+			// 3) fall back to service port number for unnamed single-port services.
 			var port int32
 			for _, p := range es.Ports {
 				if p.Port == nil {
 					continue
 				}
+				// Named port match: links Service port name to EndpointSlice port name
 				if targetPortName != "" && p.Name != nil && *p.Name == targetPortName {
 					port = *p.Port
 					break
 				}
-				if *p.Port == serviceRef.Port {
+				// Numeric targetPort match: the Service explicitly sets targetPort
+				if targetPortNumber > 0 && *p.Port == targetPortNumber {
 					port = *p.Port
 					break
 				}
+				// Fallback for unnamed ports: direct port number match
+				if targetPortName == "" && targetPortNumber == 0 && *p.Port == serviceRef.Port {
+					port = *p.Port
+					break
+				}
+			}
+			// Final fallback: if the EndpointSlice has exactly one port, use it.
+			// This handles the common case of a single-port Service where the port
+			// name is empty and targetPort differs from port.
+			if port == 0 && len(es.Ports) == 1 && es.Ports[0].Port != nil {
+				port = *es.Ports[0].Port
 			}
 
 			if port == 0 {

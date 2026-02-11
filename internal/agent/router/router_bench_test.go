@@ -160,7 +160,7 @@ func BenchmarkHashEndpointList(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		_ = hashEndpointList(endpoints)
+		_ = hashEndpointList(endpoints, pb.LoadBalancingPolicy_ROUND_ROBIN)
 	}
 }
 

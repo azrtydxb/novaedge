@@ -185,14 +185,10 @@ func (p *Printer) printPolicyTable(w *tabwriter.Writer, items []unstructured.Uns
 
 		spec, _, _ := unstructured.NestedMap(item.Object, "spec")
 
-		// Determine policy type
-		policyType := "unknown"
-		if _, found, _ := unstructured.NestedMap(spec, "rateLimit"); found {
-			policyType = "rateLimit"
-		} else if _, found, _ := unstructured.NestedMap(spec, "cors"); found {
-			policyType = "cors"
-		} else if _, found, _ := unstructured.NestedMap(spec, "tlsPolicy"); found {
-			policyType = "tls"
+		// Determine policy type from spec.type field
+		policyType, _, _ := unstructured.NestedString(spec, "type")
+		if policyType == "" {
+			policyType = "unknown"
 		}
 
 		targetRef, _, _ := unstructured.NestedMap(spec, "targetRef")

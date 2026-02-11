@@ -165,3 +165,63 @@ func NewRegexMatcher(pattern string) (*RegexMatcher, error) {
 	}
 	return &RegexMatcher{Pattern: regex}, nil
 }
+
+func TestHashEndpointListIncludesLBPolicy(t *testing.T) {
+	endpoints := []*pb.Endpoint{
+		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: "10.0.0.2", Port: 8080, Ready: true},
+	}
+
+	hashRR := hashEndpointList(endpoints, pb.LoadBalancingPolicy_ROUND_ROBIN)
+	hashEWMA := hashEndpointList(endpoints, pb.LoadBalancingPolicy_EWMA)
+	hashP2C := hashEndpointList(endpoints, pb.LoadBalancingPolicy_P2C)
+
+	// Same endpoints with different LB policies must produce different hashes
+	if hashRR == hashEWMA {
+		t.Error("Expected different hashes for ROUND_ROBIN vs EWMA with same endpoints")
+	}
+	if hashRR == hashP2C {
+		t.Error("Expected different hashes for ROUND_ROBIN vs P2C with same endpoints")
+	}
+	if hashEWMA == hashP2C {
+		t.Error("Expected different hashes for EWMA vs P2C with same endpoints")
+	}
+
+	// Same endpoints and same policy must produce the same hash
+	hashRR2 := hashEndpointList(endpoints, pb.LoadBalancingPolicy_ROUND_ROBIN)
+	if hashRR != hashRR2 {
+		t.Error("Expected same hash for identical endpoints and policy")
+	}
+}
+
+func TestHashEndpointListDeterministic(t *testing.T) {
+	// Endpoints in different order should produce the same hash (sorted internally)
+	endpoints1 := []*pb.Endpoint{
+		{Address: "10.0.0.2", Port: 8080, Ready: true},
+		{Address: "10.0.0.1", Port: 8080, Ready: true},
+	}
+	endpoints2 := []*pb.Endpoint{
+		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: "10.0.0.2", Port: 8080, Ready: true},
+	}
+
+	hash1 := hashEndpointList(endpoints1, pb.LoadBalancingPolicy_ROUND_ROBIN)
+	hash2 := hashEndpointList(endpoints2, pb.LoadBalancingPolicy_ROUND_ROBIN)
+
+	if hash1 != hash2 {
+		t.Error("Expected same hash regardless of endpoint order")
+	}
+}
+
+func TestHashEndpointListEmpty(t *testing.T) {
+	hash := hashEndpointList(nil, pb.LoadBalancingPolicy_ROUND_ROBIN)
+	if hash == 0 {
+		t.Error("Expected non-zero hash even for empty endpoints (LB policy is hashed)")
+	}
+
+	// Different policies with empty endpoints should differ
+	hashEWMA := hashEndpointList(nil, pb.LoadBalancingPolicy_EWMA)
+	if hash == hashEWMA {
+		t.Error("Expected different hashes for different policies even with empty endpoints")
+	}
+}
