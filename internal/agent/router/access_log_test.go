@@ -33,7 +33,7 @@ import (
 
 func TestAccessLog_Disabled(t *testing.T) {
 	logger := zap.NewNop()
-	middleware := NewAccessLogMiddleware(nil, logger)
+	middleware, _ := NewAccessLogMiddleware(nil, logger)
 
 	if middleware.IsEnabled() {
 		t.Error("Expected middleware to be disabled when config is nil")
@@ -52,7 +52,10 @@ func TestAccessLog_CLFFormat(t *testing.T) {
 		SampleRate: 1.0,
 	}
 
-	middleware := NewAccessLogMiddleware(config, logger)
+	middleware, err := NewAccessLogMiddleware(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create middleware: %v", err)
+	}
 	middleware.writer = &buf
 
 	if !middleware.IsEnabled() {
@@ -97,7 +100,10 @@ func TestAccessLog_JSONFormat(t *testing.T) {
 		SampleRate: 1.0,
 	}
 
-	middleware := NewAccessLogMiddleware(config, logger)
+	middleware, err := NewAccessLogMiddleware(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create middleware: %v", err)
+	}
 	middleware.writer = &buf
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -152,7 +158,10 @@ func TestAccessLog_CustomTemplate(t *testing.T) {
 		SampleRate: 1.0,
 	}
 
-	middleware := NewAccessLogMiddleware(config, logger)
+	middleware, err := NewAccessLogMiddleware(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create middleware: %v", err)
+	}
 	middleware.writer = &buf
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -188,7 +197,10 @@ func TestAccessLog_FileOutput(t *testing.T) {
 		SampleRate: 1.0,
 	}
 
-	middleware := NewAccessLogMiddleware(config, logger)
+	middleware, err := NewAccessLogMiddleware(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create middleware: %v", err)
+	}
 	defer middleware.Close()
 
 	if !middleware.IsEnabled() {
@@ -231,7 +243,10 @@ func TestAccessLog_Sampling(t *testing.T) {
 		SampleRate: 0.0, // Sample nothing
 	}
 
-	middleware := NewAccessLogMiddleware(config, logger)
+	middleware, err := NewAccessLogMiddleware(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create middleware: %v", err)
+	}
 	// Since sampleRate <= 0 defaults to 1.0, let's test by setting it directly
 	middleware.sampleRate = 0.0
 
@@ -268,7 +283,10 @@ func TestAccessLog_StatusCodeFilter(t *testing.T) {
 		SampleRate:        1.0,
 	}
 
-	middleware := NewAccessLogMiddleware(config, logger)
+	middleware, err := NewAccessLogMiddleware(config, logger)
+	if err != nil {
+		t.Fatalf("Failed to create middleware: %v", err)
+	}
 	middleware.writer = &buf
 
 	tests := []struct {
@@ -351,21 +369,32 @@ func TestAccessLog_ExtractClientIP(t *testing.T) {
 
 func TestParseByteSize(t *testing.T) {
 	tests := []struct {
-		input    string
-		expected int64
+		input     string
+		expected  int64
+		expectErr bool
 	}{
-		{"100Mi", 100 * 1024 * 1024},
-		{"1Gi", 1024 * 1024 * 1024},
-		{"512Ki", 512 * 1024},
-		{"1M", 1000 * 1000},
-		{"1G", 1000 * 1000 * 1000},
-		{"1024", 1024},
-		{"", 0},
-		{"invalid", 0},
+		{"100Mi", 100 * 1024 * 1024, false},
+		{"1Gi", 1024 * 1024 * 1024, false},
+		{"512Ki", 512 * 1024, false},
+		{"1M", 1000 * 1000, false},
+		{"1G", 1000 * 1000 * 1000, false},
+		{"1024", 1024, false},
+		{"", 0, false},
+		{"invalid", 0, true},
 	}
 
 	for _, tt := range tests {
-		result := parseByteSize(tt.input)
+		result, err := parseByteSize(tt.input)
+		if tt.expectErr {
+			if err == nil {
+				t.Errorf("parseByteSize(%q) expected error, got nil", tt.input)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("parseByteSize(%q) unexpected error: %v", tt.input, err)
+			continue
+		}
 		if result != tt.expected {
 			t.Errorf("parseByteSize(%q) = %d, want %d", tt.input, result, tt.expected)
 		}

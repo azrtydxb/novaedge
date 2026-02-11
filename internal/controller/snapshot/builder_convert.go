@@ -535,13 +535,10 @@ func convertRouteAccessLog(al *novaedgev1alpha1.RouteAccessLogConfig) *pb.Access
 
 	config.FilterStatusCodes = al.FilterStatusCodes
 
-	if al.SampleRate != nil && *al.SampleRate != "" {
-		if parsed, err := strconv.ParseFloat(*al.SampleRate, 64); err == nil {
-			config.SampleRate = parsed
-		}
+	if al.SampleRate != nil {
+		config.SampleRate = float64(*al.SampleRate) / 100.0
 	} else {
 		config.SampleRate = 1.0
 	}
-
 	return config
 }

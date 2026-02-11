@@ -395,7 +395,9 @@ type RouteAccessLogConfig struct {
 	// +optional
 	FilterStatusCodes []int32 `json:"filterStatusCodes,omitempty"`
 
-	// SampleRate defines the fraction of requests to log (0.0-1.0)
+	// SampleRate defines the percentage of requests to log (0-100)
 	// +optional
-	SampleRate *string `json:"sampleRate,omitempty"`
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	SampleRate *int32 `json:"sampleRate,omitempty"`
 }

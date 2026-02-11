@@ -671,7 +671,15 @@ func (r *Router) configureMiddleware(snapshot *config.Snapshot) {
 	// Access log can be configured per-route; check gateway-level routes
 	for _, route := range snapshot.Routes {
 		if route.AccessLog != nil && route.AccessLog.Enabled {
-			r.accessLog = NewAccessLogMiddleware(route.AccessLog, r.logger)
+			alm, err := NewAccessLogMiddleware(route.AccessLog, r.logger)
+			if err != nil {
+				r.logger.Error("Failed to create access log middleware",
+					zap.String("route", route.Name),
+					zap.Error(err),
+				)
+				continue
+			}
+			r.accessLog = alm
 			r.logger.Info("Access log middleware configured",
 				zap.String("route", route.Name),
 				zap.String("format", route.AccessLog.Format),

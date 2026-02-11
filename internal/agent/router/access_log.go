@@ -97,7 +97,7 @@ type AccessLogMiddleware struct {
 }
 
 // NewAccessLogMiddleware creates a new access log middleware from proto config
-func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) *AccessLogMiddleware {
+func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) (*AccessLogMiddleware, error) {
 	alm := &AccessLogMiddleware{
 		filterCodes: make(map[int]bool),
 		logger:      logger,
@@ -110,7 +110,7 @@ func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) *Acc
 
 	if config == nil || !config.Enabled {
 		alm.enabled = false
-		return alm
+		return alm, nil
 	}
 
 	alm.enabled = true
@@ -124,12 +124,9 @@ func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) *Acc
 		if config.Template != "" {
 			tmpl, err := template.New("access-log").Parse(config.Template)
 			if err != nil {
-				logger.Error("Failed to parse access log template, falling back to CLF",
-					zap.Error(err))
-				alm.format = AccessLogFormatCLF
-			} else {
-				alm.customTemplate = tmpl
+				return nil, fmt.Errorf("failed to parse access log template: %w", err)
 			}
+			alm.customTemplate = tmpl
 		} else {
 			// No template provided, fall back to CLF
 			alm.format = AccessLogFormatCLF
@@ -151,7 +148,10 @@ func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) *Acc
 	// Set up file writer if needed
 	if alm.output == AccessLogOutputFile || alm.output == AccessLogOutputBoth {
 		if config.FilePath != "" {
-			maxSize := parseByteSize(config.MaxSize)
+			maxSize, err := parseByteSize(config.MaxSize)
+			if err != nil {
+				return nil, fmt.Errorf("invalid max size %q: %w", config.MaxSize, err)
+			}
 			if maxSize == 0 {
 				maxSize = 100 * 1024 * 1024 // Default 100MB
 			}
@@ -160,7 +160,7 @@ func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) *Acc
 				maxBackups = 5
 			}
 
-			fw, err := newRotatingFileWriter(config.FilePath, maxSize, maxBackups)
+			fw, err := newRotatingFileWriter(config.FilePath, maxSize, maxBackups, logger)
 			if err != nil {
 				logger.Error("Failed to create access log file writer, falling back to stdout",
 					zap.String("path", config.FilePath),
@@ -203,7 +203,7 @@ func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) *Acc
 		alm.sampleRate = 1.0 // Default: log everything
 	}
 
-	return alm
+	return alm, nil
 }
 
 // IsEnabled returns whether access logging is enabled
@@ -340,7 +340,9 @@ func (alm *AccessLogMiddleware) writeCLF(buf *bytes.Buffer, entry AccessLogEntry
 func (alm *AccessLogMiddleware) writeJSON(buf *bytes.Buffer, entry AccessLogEntry) {
 	encoder := json.NewEncoder(buf)
 	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(entry) // nolint: we intentionally discard the error
+	if err := encoder.Encode(entry); err != nil {
+		alm.logger.Debug("Failed to encode access log entry", zap.Error(err))
+	}
 	// Remove trailing newline added by Encode (we add our own)
 	if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {
 		buf.Truncate(buf.Len() - 1)
@@ -423,6 +425,7 @@ func (w *accessLogResponseWriter) Unwrap() http.ResponseWriter {
 
 // rotatingFileWriter implements a simple log file writer with rotation
 type rotatingFileWriter struct {
+	logger     *zap.Logger
 	path       string
 	maxSize    int64
 	maxBackups int
@@ -432,7 +435,7 @@ type rotatingFileWriter struct {
 }
 
 // newRotatingFileWriter creates a new rotating file writer
-func newRotatingFileWriter(path string, maxSize int64, maxBackups int) (*rotatingFileWriter, error) {
+func newRotatingFileWriter(path string, maxSize int64, maxBackups int, logger *zap.Logger) (*rotatingFileWriter, error) {
 	cleanPath := filepath.Clean(path)
 
 	// Ensure parent directory exists
@@ -442,6 +445,7 @@ func newRotatingFileWriter(path string, maxSize int64, maxBackups int) (*rotatin
 	}
 
 	fw := &rotatingFileWriter{
+		logger:     logger,
 		path:       cleanPath,
 		maxSize:    maxSize,
 		maxBackups: maxBackups,
@@ -496,15 +500,31 @@ func (fw *rotatingFileWriter) rotate() error {
 	for i := fw.maxBackups - 1; i >= 1; i-- {
 		oldPath := fmt.Sprintf("%s.%d", fw.path, i)
 		newPath := fmt.Sprintf("%s.%d", fw.path, i+1)
-		_ = os.Rename(filepath.Clean(oldPath), filepath.Clean(newPath))
+		if err := os.Rename(filepath.Clean(oldPath), filepath.Clean(newPath)); err != nil && !os.IsNotExist(err) {
+			fw.logger.Warn("Failed to rotate log backup",
+				zap.String("old", oldPath),
+				zap.String("new", newPath),
+				zap.Error(err),
+			)
+		}
 	}
 
 	// Rename current to .1
-	_ = os.Rename(fw.path, filepath.Clean(fmt.Sprintf("%s.1", fw.path)))
+	if err := os.Rename(fw.path, filepath.Clean(fmt.Sprintf("%s.1", fw.path))); err != nil && !os.IsNotExist(err) {
+		fw.logger.Warn("Failed to rename current log file",
+			zap.String("path", fw.path),
+			zap.Error(err),
+		)
+	}
 
 	// Remove oldest backup if beyond maxBackups
 	oldest := filepath.Clean(fmt.Sprintf("%s.%d", fw.path, fw.maxBackups+1))
-	_ = os.Remove(oldest)
+	if err := os.Remove(oldest); err != nil && !os.IsNotExist(err) {
+		fw.logger.Warn("Failed to remove oldest log backup",
+			zap.String("path", oldest),
+			zap.Error(err),
+		)
+	}
 
 	// Open new file
 	return fw.openFile()
@@ -521,9 +541,9 @@ func (fw *rotatingFileWriter) Close() error {
 }
 
 // parseByteSize parses a size string like "100Mi" or "1Gi" into bytes
-func parseByteSize(s string) int64 {
+func parseByteSize(s string) (int64, error) {
 	if s == "" {
-		return 0
+		return 0, nil
 	}
 
 	s = strings.TrimSpace(s)
@@ -543,16 +563,16 @@ func parseByteSize(s string) int64 {
 			numStr := strings.TrimSuffix(s, suffix)
 			num, err := strconv.ParseInt(numStr, 10, 64)
 			if err != nil {
-				return 0
+				return 0, fmt.Errorf("invalid byte size %q: %w", s, err)
 			}
-			return num * multiplier
+			return num * multiplier, nil
 		}
 	}
 
 	// Try parsing as plain bytes
 	num, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
-		return 0
+		return 0, fmt.Errorf("invalid byte size %q: %w", s, err)
 	}
-	return num
+	return num, nil
 }

@@ -115,7 +115,7 @@ func defaultBuiltInTemplate() *template.Template {
   </div>
 </body>
 </html>`
-	tmpl, _ := template.New("error-builtin").Parse(builtInHTML)
+	tmpl := template.Must(template.New("error-builtin").Parse(builtInHTML))
 	return tmpl
 }
 
@@ -175,6 +175,10 @@ func (epi *ErrorPageInterceptor) renderErrorPage(w http.ResponseWriter, r *http.
 
 	var buf bytes.Buffer
 	if err := tmpl.Execute(&buf, data); err != nil {
+		epi.logger.Warn("Failed to execute error page template",
+			zap.Int("status_code", statusCode),
+			zap.Error(err),
+		)
 		return false
 	}
 
