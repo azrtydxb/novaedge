@@ -103,13 +103,56 @@ limitations under the License.
 //	lb := lb.NewMaglev(endpoints)
 //	endpoint := lb.Select(clientIP)
 //
+// # Least Connections (LeastConn)
+//
+// Selects the endpoint with the fewest active connections. When multiple endpoints
+// have the same minimum count, one is chosen at random to prevent bias.
+//
+// Use cases:
+//   - Requests with highly variable processing times
+//   - Long-running connections (WebSockets, gRPC streams)
+//   - Heterogeneous backends with different capacities
+//
+// Example:
+//
+//	endpoints := []*pb.Endpoint{
+//	    {Address: "10.0.0.1", Port: 8080, Ready: true},
+//	    {Address: "10.0.0.2", Port: 8080, Ready: true},
+//	}
+//	lb := lb.NewLeastConn(endpoints)
+//	endpoint := lb.Select()
+//	lb.IncrementActive(endpoint)
+//	defer lb.DecrementActive(endpoint)
+//
+// # Cookie-Based Session Affinity (Sticky Sessions)
+//
+// StickyWrapper wraps any LoadBalancer with cookie-based session affinity.
+// On the first request, the underlying LB picks an endpoint and a cookie is set.
+// On subsequent requests, the cookie routes to the same endpoint if still healthy.
+//
+// Use cases:
+//   - Stateful applications with in-memory sessions
+//   - Shopping carts, user preferences
+//   - WebSocket connection persistence
+//
+// Example:
+//
+//	inner := lb.NewLeastConn(endpoints)
+//	config := lb.DefaultStickyConfig()
+//	config.CookieName = "MY_SESSION"
+//	config.TTL = 30 * time.Minute
+//	sticky := lb.NewStickyWrapper(inner, config, endpoints)
+//	endpoint := sticky.SelectWithAffinity(req, w)
+//
 // # Choosing an Algorithm
 //
 // Selection criteria:
 //   - Use Round Robin for simple, equal distribution
 //   - Use P2C when backends have similar but variable capacity
 //   - Use EWMA when latency-awareness is critical
-//   - Use Ring Hash or Maglev when session affinity is required
+//   - Use LeastConn when request durations vary significantly
+//   - Use Ring Hash or Maglev when hash-based session affinity is required
+//   - Use StickyWrapper with any algorithm for cookie-based session affinity
 //
 // All algorithms automatically filter out unhealthy endpoints and handle
 // endpoint additions/removals gracefully.

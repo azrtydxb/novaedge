@@ -1,0 +1,51 @@
+# Sticky Sessions Example
+# This example demonstrates cookie-based session affinity (sticky sessions)
+# using the Least Connections load balancing algorithm.
+#
+# Configuration:
+#   - LeastConn LB ensures new sessions go to the least-loaded backend
+#   - Cookie-based affinity keeps returning clients on the same backend
+#   - If the backend becomes unavailable, the client is routed to a new backend
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: stateful-backend
+spec:
+  serviceRef:
+    name: stateful-app
+    port: 8080
+  lbPolicy: LeastConn
+  sessionAffinity:
+    type: Cookie
+    cookieName: NOVAEDGE_SESSION
+    cookieTTL: 30m
+    cookiePath: /
+    secure: true
+    sameSite: Lax
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    httpPath: /health
+  circuitBreaker:
+    consecutiveFailures: 5
+    interval: 30s
+    baseEjectionTime: 30s
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: stateful-route
+spec:
+  parentRefs:
+    - name: main-gateway
+  hostnames:
+    - app.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: stateful-backend
+          weight: 100

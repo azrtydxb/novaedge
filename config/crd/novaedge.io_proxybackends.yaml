@@ -176,6 +176,7 @@ spec:
                 - EWMA
                 - RingHash
                 - Maglev
+                - LeastConn
                 type: string
               protocol:
                 default: HTTP
@@ -266,6 +267,16 @@ spec:
                   headerName:
                     description: HeaderName is the header name for header-based affinity
                     type: string
+                  sameSite:
+                    description: SameSite sets the SameSite attribute on the affinity cookie
+                    enum:
+                    - Strict
+                    - Lax
+                    - None
+                    type: string
+                  secure:
+                    description: Secure sets the Secure flag on the affinity cookie
+                    type: boolean
                   type:
                     default: Cookie
                     description: Type specifies the session affinity type

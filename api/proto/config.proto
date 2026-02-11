@@ -228,6 +228,7 @@ message Cluster {
   HealthCheck health_check = 7;
   BackendTLS tls = 8;
   ConnectionPool connection_pool = 9;
+  SessionAffinityConfig session_affinity = 10; // Session affinity (sticky sessions) configuration
 }
 
 // ConnectionPool defines connection pool configuration
@@ -241,6 +242,16 @@ message ConnectionPool {
   int32 max_response_header_bytes = 7;   // Max response header bytes (0 = 10MB default)
 }
 
+// SessionAffinityConfig defines session affinity (sticky sessions) configuration
+message SessionAffinityConfig {
+  string type = 1;           // Affinity type: "cookie", "header", "source_ip"
+  string cookie_name = 2;    // Cookie name for cookie-based affinity
+  int64 cookie_ttl_seconds = 3; // Cookie TTL in seconds (0 = session cookie)
+  string cookie_path = 4;    // Cookie path (default: "/")
+  bool cookie_secure = 5;    // Secure flag on cookie
+  string cookie_same_site = 6; // SameSite attribute: "Strict", "Lax", "None"
+}
+
 enum LoadBalancingPolicy {
   LB_POLICY_UNSPECIFIED = 0;
   ROUND_ROBIN = 1;
@@ -248,6 +259,7 @@ enum LoadBalancingPolicy {
   EWMA = 3;
   RING_HASH = 4;
   MAGLEV = 5;
+  LEAST_CONN = 6;
 }
 
 // CircuitBreaker defines circuit breaker settings

@@ -207,6 +207,9 @@ type BackendConfig struct {
 
 	// TLS settings for backend connections
 	TLS *BackendTLSConfig `yaml:"tls,omitempty"`
+
+	// Session affinity configuration
+	SessionAffinity *SessionAffinityStandaloneConfig `yaml:"sessionAffinity,omitempty"`
 }
 
 // EndpointConfig defines a backend endpoint
@@ -272,6 +275,27 @@ type BackendTLSConfig struct {
 
 	// InsecureSkipVerify skips certificate verification (deprecated: use mode: skip-verify)
 	InsecureSkipVerify bool `yaml:"insecureSkipVerify,omitempty"`
+}
+
+// SessionAffinityStandaloneConfig defines session affinity in standalone mode
+type SessionAffinityStandaloneConfig struct {
+	// Type: Cookie, Header, SourceIP
+	Type string `yaml:"type"`
+
+	// CookieName for cookie-based affinity
+	CookieName string `yaml:"cookieName,omitempty"`
+
+	// CookieTTL as a duration string (e.g. "30m")
+	CookieTTL string `yaml:"cookieTTL,omitempty"`
+
+	// CookiePath for the affinity cookie
+	CookiePath string `yaml:"cookiePath,omitempty"`
+
+	// Secure flag on the cookie
+	Secure bool `yaml:"secure,omitempty"`
+
+	// SameSite attribute: Strict, Lax, None
+	SameSite string `yaml:"sameSite,omitempty"`
 }
 
 // VIPConfig defines a virtual IP address
