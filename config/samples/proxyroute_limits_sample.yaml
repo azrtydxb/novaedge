@@ -1,0 +1,52 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-route-with-limits
+  namespace: default
+spec:
+  hostnames:
+    - api.example.com
+  rules:
+    # Standard API endpoint with strict size limits and fast timeout
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/
+      backendRefs:
+        - name: api-backend
+      # Per-route limits: strict for API calls
+      limits:
+        maxRequestBodySize: "1Mi"     # 1 MiB max request body
+        requestTimeout: "10s"          # 10 second timeout
+        idleTimeout: "30s"             # 30 second idle timeout
+
+    # File upload endpoint with larger limits
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/upload
+      backendRefs:
+        - name: upload-backend
+      limits:
+        maxRequestBodySize: "100Mi"   # 100 MiB for file uploads
+        requestTimeout: "5m"           # 5 minute timeout for uploads
+        idleTimeout: "60s"
+      # Buffer the request for retry support
+      buffering:
+        request: true
+        response: false
+        maxSize: "100Mi"
+
+    # Response-buffered endpoint for transformations
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1/reports
+      backendRefs:
+        - name: reports-backend
+      limits:
+        requestTimeout: "2m"
+      buffering:
+        request: false
+        response: true                 # Buffer response for transformations
+        maxSize: "50Mi"

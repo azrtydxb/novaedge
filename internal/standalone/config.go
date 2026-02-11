@@ -72,6 +72,18 @@ type GlobalConfig struct {
 
 	// Tracing settings
 	Tracing TracingConfig `yaml:"tracing"`
+
+	// Compression settings for response compression
+	Compression *StandaloneCompressionConfig `yaml:"compression,omitempty"`
+}
+
+// StandaloneCompressionConfig defines response compression for standalone mode
+type StandaloneCompressionConfig struct {
+	Enabled      bool     `yaml:"enabled"`
+	MinSize      string   `yaml:"minSize,omitempty"`      // e.g., "1024"
+	Level        int      `yaml:"level,omitempty"`        // Compression level
+	Algorithms   []string `yaml:"algorithms,omitempty"`   // ["gzip", "br"]
+	ExcludeTypes []string `yaml:"excludeTypes,omitempty"` // ["image/*", "video/*"]
 }
 
 // AccessLogConfig defines access logging
@@ -141,6 +153,26 @@ type RouteConfig struct {
 
 	// Policies to apply (by name)
 	Policies []string `yaml:"policies,omitempty"`
+
+	// Limits defines per-route request size limits and timeouts
+	Limits *StandaloneRouteLimits `yaml:"limits,omitempty"`
+
+	// Buffering defines request/response buffering settings
+	Buffering *StandaloneBufferingConfig `yaml:"buffering,omitempty"`
+}
+
+// StandaloneRouteLimits defines per-route request limits for standalone mode
+type StandaloneRouteLimits struct {
+	MaxRequestBodySize string `yaml:"maxRequestBodySize,omitempty"` // e.g., "10Mi"
+	RequestTimeout     string `yaml:"requestTimeout,omitempty"`     // e.g., "30s"
+	IdleTimeout        string `yaml:"idleTimeout,omitempty"`        // e.g., "60s"
+}
+
+// StandaloneBufferingConfig defines buffering settings for standalone mode
+type StandaloneBufferingConfig struct {
+	Request  bool   `yaml:"request,omitempty"`
+	Response bool   `yaml:"response,omitempty"`
+	MaxSize  string `yaml:"maxSize,omitempty"` // e.g., "50Mi"
 }
 
 // RouteMatch defines matching conditions

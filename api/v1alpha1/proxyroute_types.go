@@ -211,6 +211,42 @@ type BackendRef struct {
 	Weight *int32 `json:"weight,omitempty"`
 }
 
+// RouteLimits defines per-route request size limits and timeouts
+type RouteLimits struct {
+	// MaxRequestBodySize is the maximum request body size (e.g., "10Mi", "1048576")
+	// Requests exceeding this limit receive a 413 Payload Too Large response
+	// +optional
+	MaxRequestBodySize string `json:"maxRequestBodySize,omitempty"`
+
+	// RequestTimeout is the total request timeout (e.g., "30s", "1m")
+	// If the upstream does not respond in time, a 504 Gateway Timeout is returned
+	// +optional
+	RequestTimeout string `json:"requestTimeout,omitempty"`
+
+	// IdleTimeout is the connection idle timeout (e.g., "60s")
+	// Connections with no data received within this time are closed
+	// +optional
+	IdleTimeout string `json:"idleTimeout,omitempty"`
+}
+
+// RouteBufferingConfig defines request and response buffering settings
+type RouteBufferingConfig struct {
+	// Request enables buffering the entire request body before forwarding
+	// This is required for retry support since the body must be re-readable
+	// +optional
+	Request bool `json:"request,omitempty"`
+
+	// Response enables buffering the entire response body before sending to client
+	// This is useful for response transformations
+	// +optional
+	Response bool `json:"response,omitempty"`
+
+	// MaxSize is the maximum buffer size (e.g., "50Mi", "52428800")
+	// Bodies exceeding this receive 413 for requests or stream-through for responses
+	// +optional
+	MaxSize string `json:"maxSize,omitempty"`
+}
+
 // HTTPRouteRule defines semantics for matching an HTTP request and routing it
 type HTTPRouteRule struct {
 	// Matches define conditions used for matching the rule against incoming requests
@@ -237,6 +273,14 @@ type HTTPRouteRule struct {
 	// Overrides the listener-level setting for this specific route
 	// +optional
 	MaxRequestBodySize *int64 `json:"maxRequestBodySize,omitempty"`
+
+	// Limits defines per-route request size limits and timeouts
+	// +optional
+	Limits *RouteLimits `json:"limits,omitempty"`
+
+	// Buffering defines request and response buffering settings
+	// +optional
+	Buffering *RouteBufferingConfig `json:"buffering,omitempty"`
 }
 
 // ProxyRouteSpec defines the desired state of ProxyRoute

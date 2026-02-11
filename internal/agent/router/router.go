@@ -102,6 +102,9 @@ type Router struct {
 	// Request size limits (in bytes)
 	maxRequestBodyBytes int64
 	maxUploadBodyBytes  int64
+
+	// Compression configuration (gateway-level)
+	compressionConfig *pb.CompressionConfig
 }
 
 // NewRouter creates a new router
@@ -133,6 +136,9 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Update request size limits from gateway configuration
 	r.updateRequestLimits(snapshot)
 
+	// Update compression configuration from gateway settings
+	r.updateCompressionConfig(snapshot)
+
 	// Clear route table (rebuilt below); preserve load balancers
 	// so they survive config snapshots with unchanged endpoints.
 	r.routes = make(map[string][]*RouteEntry)
@@ -150,6 +156,8 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 					Policies:       r.createPolicyMiddleware(ctx, route, snapshot),
 					HeaderRegexes:  compileHeaderRegexes(rule),
 					ResponseFilter: collectResponseFilters(rule.Filters),
+					Limits:         rule.Limits,
+					Buffering:      rule.Buffering,
 				}
 				r.routes[hostname] = append(r.routes[hostname], entry)
 			}
@@ -526,4 +534,22 @@ func (r *Router) updateRequestLimits(snapshot *config.Snapshot) {
 		r.maxRequestBodyBytes = maxRequest
 		r.maxUploadBodyBytes = maxUpload
 	}
+}
+
+// updateCompressionConfig extracts compression configuration from gateway settings.
+func (r *Router) updateCompressionConfig(snapshot *config.Snapshot) {
+	for _, gateway := range snapshot.Gateways {
+		if gateway.Compression != nil && gateway.Compression.Enabled {
+			r.compressionConfig = gateway.Compression
+			r.logger.Info("Compression enabled",
+				zap.Bool("enabled", gateway.Compression.Enabled),
+				zap.Int64("min_size", gateway.Compression.MinSize),
+				zap.Int32("level", gateway.Compression.Level),
+				zap.Strings("algorithms", gateway.Compression.Algorithms),
+			)
+			return
+		}
+	}
+	// No gateway has compression enabled
+	r.compressionConfig = nil
 }

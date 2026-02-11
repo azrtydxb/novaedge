@@ -317,6 +317,40 @@ spec:
                         Overrides the listener-level setting for this specific route
                       format: int64
                       type: integer
+                    limits:
+                      description: Limits defines per-route request size limits and
+                        timeouts
+                      properties:
+                        maxRequestBodySize:
+                          description: MaxRequestBodySize is the maximum request body
+                            size (e.g., "10Mi", "1048576")
+                          type: string
+                        requestTimeout:
+                          description: RequestTimeout is the total request timeout
+                            (e.g., "30s", "1m")
+                          type: string
+                        idleTimeout:
+                          description: IdleTimeout is the connection idle timeout
+                            (e.g., "60s")
+                          type: string
+                      type: object
+                    buffering:
+                      description: Buffering defines request and response buffering
+                        settings
+                      properties:
+                        request:
+                          description: Request enables buffering the entire request
+                            body before forwarding
+                          type: boolean
+                        response:
+                          description: Response enables buffering the entire response
+                            body before sending to client
+                          type: boolean
+                        maxSize:
+                          description: MaxSize is the maximum buffer size (e.g.,
+                            "50Mi", "52428800")
+                          type: string
+                      type: object
                     timeout:
                       description: Timeout is the request timeout for this rule
                       type: string
