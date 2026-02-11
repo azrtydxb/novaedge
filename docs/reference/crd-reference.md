@@ -1159,3 +1159,100 @@ Request/response buffering settings, defined on `ProxyRoute.spec.rules[].bufferi
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--controller-class` | `novaedge.io/proxy` | loadBalancerClass this controller handles |
+
+---
+
+## Gateway API Resources
+
+NovaEdge supports standard Kubernetes Gateway API resources in addition to its custom CRDs.
+
+### GatewayClass
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: novaedge
+spec:
+  controllerName: novaedge.io/gateway-controller
+  description: "NovaEdge Gateway Controller"
+```
+
+**Status Conditions:**
+
+| Condition | Description |
+|-----------|-------------|
+| Accepted | `True` when the controller recognizes the GatewayClass |
+| SupportedVersion | `True` when the Gateway API version is supported |
+
+### Gateway
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: example-gateway
+  namespace: default
+spec:
+  gatewayClassName: novaedge
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+  - name: https
+    protocol: HTTPS
+    port: 443
+    tls:
+      mode: Terminate
+      certificateRefs:
+      - kind: Secret
+        name: tls-secret
+```
+
+**Status Conditions:**
+
+| Condition | Description |
+|-----------|-------------|
+| Accepted | Gateway accepted by the controller |
+| Programmed | Gateway ready to accept traffic |
+
+**Listener Status Conditions:**
+
+| Condition | Description |
+|-----------|-------------|
+| Accepted | Listener configuration is valid |
+| Programmed | Listener is ready |
+| ResolvedRefs | All TLS references resolved |
+| Conflicted | Listener has port/hostname conflicts |
+
+### HTTPRoute
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: example-route
+  namespace: default
+spec:
+  parentRefs:
+  - name: example-gateway
+  hostnames:
+  - "example.com"
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    backendRefs:
+    - name: api-service
+      port: 8080
+```
+
+**Parent Status Conditions:**
+
+| Condition | Description |
+|-----------|-------------|
+| Accepted | Route accepted by the parent Gateway |
+| ResolvedRefs | All backend references resolved |
+
+For detailed Gateway API documentation, see [Gateway API Guide](../advanced/gateway-api.md).

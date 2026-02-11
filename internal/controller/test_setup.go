@@ -38,6 +38,7 @@ type testEnv struct {
 	client                 client.Client
 	scheme                 *runtime.Scheme
 	gatewayReconciler      *GatewayReconciler
+	gatewayClassReconciler *GatewayClassReconciler
 	httpRouteReconciler    *HTTPRouteReconciler
 	ingressReconciler      *IngressReconciler
 	proxyBackendReconciler *ProxyBackendReconciler
@@ -80,6 +81,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 			&novaedgev1alpha1.ProxyVIP{},
 			&novaedgev1alpha1.ProxyPolicy{},
 			&gatewayv1.Gateway{},
+			&gatewayv1.GatewayClass{},
 			&gatewayv1.HTTPRoute{},
 			&networkingv1.Ingress{},
 		).
@@ -92,6 +94,11 @@ func setupTestEnv(t *testing.T) *testEnv {
 
 	// Initialize all reconcilers
 	env.gatewayReconciler = &GatewayReconciler{
+		Client: k8sClient,
+		Scheme: scheme,
+	}
+
+	env.gatewayClassReconciler = &GatewayClassReconciler{
 		Client: k8sClient,
 		Scheme: scheme,
 	}

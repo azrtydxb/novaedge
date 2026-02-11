@@ -68,31 +68,116 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return r.handleDeletion(ctx, httpRoute)
 	}
 
-	// Check if any parent refs point to our Gateway
+	// Build parent statuses for each parent ref
+	parentStatuses := make([]gatewayv1.RouteParentStatus, 0, len(httpRoute.Spec.ParentRefs))
 	hasNovaEdgeGateway := false
+
 	for _, parentRef := range httpRoute.Spec.ParentRefs {
+		parentStatus := gatewayv1.RouteParentStatus{
+			ParentRef:      parentRef,
+			ControllerName: gatewayv1.GatewayController(NovaEdgeControllerName),
+			Conditions:     make([]metav1.Condition, 0, 2),
+		}
+
 		// Per Gateway API spec, Kind defaults to "Gateway" when nil
 		kind := "Gateway"
 		if parentRef.Kind != nil {
 			kind = string(*parentRef.Kind)
 		}
-		if kind == "Gateway" {
-			// Get the Gateway to check its class
-			gatewayNamespace := httpRoute.Namespace
-			if parentRef.Namespace != nil {
-				gatewayNamespace = string(*parentRef.Namespace)
-			}
 
-			gateway := &gatewayv1.Gateway{}
-			err := r.Get(ctx, types.NamespacedName{
-				Name:      string(parentRef.Name),
-				Namespace: gatewayNamespace,
-			}, gateway)
-			if err == nil && string(gateway.Spec.GatewayClassName) == NovaEdgeGatewayClassName {
-				hasNovaEdgeGateway = true
-				break
+		if kind != "Gateway" {
+			parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.RouteConditionAccepted),
+				Status:             metav1.ConditionFalse,
+				Reason:             string(gatewayv1.RouteReasonNotAllowedByListeners),
+				Message:            fmt.Sprintf("Unsupported parent kind: %s", kind),
+				ObservedGeneration: httpRoute.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+			parentStatuses = append(parentStatuses, parentStatus)
+			continue
+		}
+
+		// Get the Gateway to check its class
+		gatewayNamespace := httpRoute.Namespace
+		if parentRef.Namespace != nil {
+			gatewayNamespace = string(*parentRef.Namespace)
+		}
+
+		gateway := &gatewayv1.Gateway{}
+		err := r.Get(ctx, types.NamespacedName{
+			Name:      string(parentRef.Name),
+			Namespace: gatewayNamespace,
+		}, gateway)
+
+		if err != nil {
+			if errors.IsNotFound(err) {
+				parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
+					Type:               string(gatewayv1.RouteConditionAccepted),
+					Status:             metav1.ConditionFalse,
+					Reason:             "GatewayNotFound",
+					Message:            fmt.Sprintf("Gateway %s/%s not found", gatewayNamespace, parentRef.Name),
+					ObservedGeneration: httpRoute.Generation,
+					LastTransitionTime: metav1.Now(),
+				})
+			} else {
+				parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
+					Type:               string(gatewayv1.RouteConditionAccepted),
+					Status:             metav1.ConditionFalse,
+					Reason:             "GatewayError",
+					Message:            fmt.Sprintf("Failed to get Gateway: %v", err),
+					ObservedGeneration: httpRoute.Generation,
+					LastTransitionTime: metav1.Now(),
+				})
+			}
+			parentStatuses = append(parentStatuses, parentStatus)
+			continue
+		}
+
+		// Check if this is a NovaEdge gateway
+		if string(gateway.Spec.GatewayClassName) != NovaEdgeGatewayClassName {
+			// Not our gateway - skip it entirely (don't set status for other controllers)
+			continue
+		}
+
+		hasNovaEdgeGateway = true
+
+		// Validate listener attachment if SectionName is specified
+		listenerMatch := true
+		if parentRef.SectionName != nil {
+			listenerMatch = false
+			for _, listener := range gateway.Spec.Listeners {
+				if string(listener.Name) == string(*parentRef.SectionName) {
+					listenerMatch = true
+					break
+				}
 			}
 		}
+
+		if !listenerMatch {
+			parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.RouteConditionAccepted),
+				Status:             metav1.ConditionFalse,
+				Reason:             string(gatewayv1.RouteReasonNoMatchingParent),
+				Message:            fmt.Sprintf("No listener matches SectionName %s", *parentRef.SectionName),
+				ObservedGeneration: httpRoute.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+			parentStatuses = append(parentStatuses, parentStatus)
+			continue
+		}
+
+		// Route is accepted by this parent
+		parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
+			Type:               string(gatewayv1.RouteConditionAccepted),
+			Status:             metav1.ConditionTrue,
+			Reason:             string(gatewayv1.RouteReasonAccepted),
+			Message:            "HTTPRoute has been accepted",
+			ObservedGeneration: httpRoute.Generation,
+			LastTransitionTime: metav1.Now(),
+		})
+
+		parentStatuses = append(parentStatuses, parentStatus)
 	}
 
 	if !hasNovaEdgeGateway {
@@ -104,27 +189,34 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	proxyRoute, err := TranslateHTTPRouteToProxyRoute(httpRoute)
 	if err != nil {
 		logger.Error(err, "Failed to translate HTTPRoute to ProxyRoute")
-		return r.updateHTTPRouteStatus(ctx, httpRoute, metav1.Condition{
-			Type:               string(gatewayv1.RouteConditionAccepted),
-			Status:             metav1.ConditionFalse,
-			Reason:             "Invalid",
-			Message:            fmt.Sprintf("Translation failed: %v", err),
-			ObservedGeneration: httpRoute.Generation,
-			LastTransitionTime: metav1.Now(),
-		})
+		// Update all parent statuses with the error
+		for i := range parentStatuses {
+			meta.SetStatusCondition(&parentStatuses[i].Conditions, metav1.Condition{
+				Type:               string(gatewayv1.RouteConditionAccepted),
+				Status:             metav1.ConditionFalse,
+				Reason:             "TranslationFailed",
+				Message:            fmt.Sprintf("Translation failed: %v", err),
+				ObservedGeneration: httpRoute.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+		httpRoute.Status.Parents = parentStatuses
+		if statusErr := r.Status().Update(ctx, httpRoute); statusErr != nil {
+			return ctrl.Result{}, statusErr
+		}
+		return ctrl.Result{Requeue: true}, nil
 	}
 
-	// Create or update ProxyBackends for each backend reference
+	// Reconcile backends and track resolved refs status
+	resolvedRefs := true
+	resolvedRefsMessage := "All backend references have been resolved"
+	resolvedRefsReason := string(gatewayv1.RouteReasonResolvedRefs)
+
 	if err := r.reconcileBackends(ctx, httpRoute); err != nil {
 		logger.Error(err, "Failed to reconcile backends")
-		return r.updateHTTPRouteStatus(ctx, httpRoute, metav1.Condition{
-			Type:               string(gatewayv1.RouteConditionAccepted),
-			Status:             metav1.ConditionFalse,
-			Reason:             string(gatewayv1.RouteReasonBackendNotFound),
-			Message:            fmt.Sprintf("Backend reconciliation failed: %v", err),
-			ObservedGeneration: httpRoute.Generation,
-			LastTransitionTime: metav1.Now(),
-		})
+		resolvedRefs = false
+		resolvedRefsMessage = fmt.Sprintf("Backend reconciliation failed: %v", err)
+		resolvedRefsReason = string(gatewayv1.RouteReasonBackendNotFound)
 	}
 
 	// Create or update the ProxyRoute
@@ -136,14 +228,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			logger.Info("Creating ProxyRoute", "name", proxyRoute.Name)
 			if err := r.Create(ctx, proxyRoute); err != nil {
 				logger.Error(err, "Failed to create ProxyRoute")
-				return r.updateHTTPRouteStatus(ctx, httpRoute, metav1.Condition{
-					Type:               string(gatewayv1.RouteConditionAccepted),
-					Status:             metav1.ConditionFalse,
-					Reason:             "CreationFailed",
-					Message:            fmt.Sprintf("Failed to create ProxyRoute: %v", err),
-					ObservedGeneration: httpRoute.Generation,
-					LastTransitionTime: metav1.Now(),
-				})
+				return ctrl.Result{}, err
 			}
 		} else {
 			logger.Error(err, "Failed to get ProxyRoute")
@@ -157,43 +242,25 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		existingProxyRoute.Annotations = proxyRoute.Annotations
 		if err := r.Update(ctx, existingProxyRoute); err != nil {
 			logger.Error(err, "Failed to update ProxyRoute")
-			return r.updateHTTPRouteStatus(ctx, httpRoute, metav1.Condition{
-				Type:               string(gatewayv1.RouteConditionAccepted),
-				Status:             metav1.ConditionFalse,
-				Reason:             "UpdateFailed",
-				Message:            fmt.Sprintf("Failed to update ProxyRoute: %v", err),
-				ObservedGeneration: httpRoute.Generation,
-				LastTransitionTime: metav1.Now(),
-			})
+			return ctrl.Result{}, err
 		}
 	}
 
-	// Update HTTPRoute status
-	parentStatuses := make([]gatewayv1.RouteParentStatus, 0, len(httpRoute.Spec.ParentRefs))
-	for _, parentRef := range httpRoute.Spec.ParentRefs {
-		parentStatus := gatewayv1.RouteParentStatus{
-			ParentRef:      parentRef,
-			ControllerName: gatewayv1.GatewayController("novaedge.io/gateway-controller"),
-			Conditions: []metav1.Condition{
-				{
-					Type:               string(gatewayv1.RouteConditionAccepted),
-					Status:             metav1.ConditionTrue,
-					Reason:             string(gatewayv1.RouteReasonAccepted),
-					Message:            "HTTPRoute has been accepted and translated to ProxyRoute",
-					ObservedGeneration: httpRoute.Generation,
-					LastTransitionTime: metav1.Now(),
-				},
-				{
-					Type:               string(gatewayv1.RouteConditionResolvedRefs),
-					Status:             metav1.ConditionTrue,
-					Reason:             string(gatewayv1.RouteReasonResolvedRefs),
-					Message:            "All backend references have been resolved",
-					ObservedGeneration: httpRoute.Generation,
-					LastTransitionTime: metav1.Now(),
-				},
-			},
-		}
-		parentStatuses = append(parentStatuses, parentStatus)
+	// Set ResolvedRefs condition on all parent statuses
+	resolvedRefsStatus := metav1.ConditionTrue
+	if !resolvedRefs {
+		resolvedRefsStatus = metav1.ConditionFalse
+	}
+
+	for i := range parentStatuses {
+		meta.SetStatusCondition(&parentStatuses[i].Conditions, metav1.Condition{
+			Type:               string(gatewayv1.RouteConditionResolvedRefs),
+			Status:             resolvedRefsStatus,
+			Reason:             resolvedRefsReason,
+			Message:            resolvedRefsMessage,
+			ObservedGeneration: httpRoute.Generation,
+			LastTransitionTime: metav1.Now(),
+		})
 	}
 
 	httpRoute.Status.Parents = parentStatuses
@@ -227,7 +294,7 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 
 				port := int32(80)
 				if backendRef.Port != nil {
-					port = *backendRef.Port
+					port = int32(*backendRef.Port)
 				}
 
 				key := GenerateProxyBackendName(string(backendRef.Name), namespace, port)
@@ -245,7 +312,7 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 
 		port := int32(80)
 		if backendRef.Port != nil {
-			port = *backendRef.Port
+			port = int32(*backendRef.Port)
 		}
 
 		// Verify Service exists
@@ -351,19 +418,6 @@ func (r *HTTPRouteReconciler) handleDeletion(ctx context.Context, httpRoute *gat
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// updateHTTPRouteStatus updates the HTTPRoute status with the given condition
-func (r *HTTPRouteReconciler) updateHTTPRouteStatus(ctx context.Context, httpRoute *gatewayv1.HTTPRoute, condition metav1.Condition) (ctrl.Result, error) {
-	// Update all parent statuses with the condition
-	for i := range httpRoute.Status.Parents {
-		meta.SetStatusCondition(&httpRoute.Status.Parents[i].Conditions, condition)
-	}
-
-	if err := r.Status().Update(ctx, httpRoute); err != nil {
-		return ctrl.Result{}, err
-	}
-	return ctrl.Result{Requeue: true}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager

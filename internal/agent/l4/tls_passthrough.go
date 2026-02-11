@@ -84,7 +84,7 @@ type TLSPassthrough struct {
 	// roundRobinIdx for simple round-robin backend selection per route
 	roundRobinCounters sync.Map // string (hostname) -> *atomic.Uint64
 	// activeConns tracks active connections for graceful shutdown
-	activeConns sync.WaitGroup
+	activeConns atomic.Int64
 	// draining signals that the proxy is draining connections
 	draining atomic.Bool
 }
@@ -123,7 +123,7 @@ func (p *TLSPassthrough) HandleConnection(ctx context.Context, clientConn net.Co
 	}
 
 	p.activeConns.Add(1)
-	defer p.activeConns.Done()
+	defer p.activeConns.Add(-1)
 
 	startTime := time.Now()
 	listenerName := p.config.ListenerName
@@ -308,18 +308,22 @@ func (p *TLSPassthrough) UpdateRoutes(routes map[string]*TLSRoute, defaultBacken
 func (p *TLSPassthrough) Drain(timeout time.Duration) {
 	p.draining.Store(true)
 
-	done := make(chan struct{})
-	go func() {
-		p.activeConns.Wait()
-		close(done)
-	}()
+	deadline := time.After(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
 
-	select {
-	case <-done:
-		p.logger.Info("All TLS passthrough connections drained")
-	case <-time.After(timeout):
-		p.logger.Warn("TLS passthrough drain timeout reached",
-			zap.Duration("timeout", timeout))
+	for {
+		if p.activeConns.Load() <= 0 {
+			p.logger.Info("All TLS passthrough connections drained")
+			return
+		}
+		select {
+		case <-deadline:
+			p.logger.Warn("TLS passthrough drain timeout reached",
+				zap.Duration("timeout", timeout))
+			return
+		case <-ticker.C:
+		}
 	}
 }
 

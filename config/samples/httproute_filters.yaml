@@ -1,0 +1,142 @@
+# HTTPRoute with various filter types
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: filtered-httproute
+  namespace: default
+spec:
+  parentRefs:
+  - name: example-gateway
+  hostnames:
+  - "filters.example.com"
+  rules:
+  # Request Header Modification
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api
+    filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        add:
+        - name: X-Request-Source
+          value: gateway
+        set:
+        - name: X-Forwarded-Proto
+          value: https
+        remove:
+        - X-Legacy-Header
+    backendRefs:
+    - name: api-service
+      port: 8080
+
+  # Response Header Modification
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /static
+    filters:
+    - type: ResponseHeaderModifier
+      responseHeaderModifier:
+        add:
+        - name: X-Cache-Status
+          value: HIT
+        set:
+        - name: Cache-Control
+          value: "public, max-age=3600"
+        remove:
+        - Server
+    backendRefs:
+    - name: static-service
+      port: 80
+
+  # URL Rewrite - Full Path
+  - matches:
+    - path:
+        type: Exact
+        value: /old-login
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplaceFullPath
+          replaceFullPath: /auth/login
+    backendRefs:
+    - name: auth-service
+      port: 8080
+
+  # URL Rewrite - Prefix Match
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /api/v1
+    filters:
+    - type: URLRewrite
+      urlRewrite:
+        path:
+          type: ReplacePrefixMatch
+          replacePrefixMatch: /api/v2
+        hostname: internal-api.example.com
+    backendRefs:
+    - name: api-v2-service
+      port: 8080
+
+  # Request Redirect
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /legacy
+    filters:
+    - type: RequestRedirect
+      requestRedirect:
+        scheme: https
+        hostname: new.example.com
+        port: 443
+        statusCode: 301
+
+  # Request Mirror
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /canary
+    filters:
+    - type: RequestMirror
+      requestMirror:
+        backendRef:
+          name: canary-service
+          port: 8080
+    backendRefs:
+    - name: production-service
+      port: 8080
+
+  # Header-based routing with method matching
+  - matches:
+    - headers:
+      - name: X-API-Version
+        value: "v2"
+      method: POST
+    backendRefs:
+    - name: api-v2-service
+      port: 8080
+
+  # Query parameter matching
+  - matches:
+    - queryParams:
+      - name: format
+        value: json
+    backendRefs:
+    - name: json-api-service
+      port: 8080
+
+  # Weighted traffic splitting
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /split
+    backendRefs:
+    - name: stable-service
+      port: 8080
+      weight: 90
+    - name: canary-service
+      port: 8080
+      weight: 10
