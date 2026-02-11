@@ -28,6 +28,7 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/router"
+	proto "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 // HTTPServer manages HTTP/HTTPS/HTTP3 listeners and routing
@@ -40,6 +41,7 @@ type HTTPServer struct {
 	router           *router.Router
 	inFlightRequests sync.WaitGroup // Track in-flight requests for graceful shutdown
 	shuttingDown     atomic.Bool    // Flag to indicate shutdown in progress
+	ocspStapler      *OCSPStapler   // OCSP stapling manager
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -50,6 +52,7 @@ func NewHTTPServer(logger *zap.Logger) *HTTPServer {
 		http3servers: make(map[int32]*HTTP3Server),
 		listeners:    make(map[int32]*ListenerInfo),
 		router:       router.NewRouter(logger),
+		ocspStapler:  NewOCSPStapler(logger),
 	}
 }
 
@@ -90,7 +93,17 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 
 			// Create TLS config if listener uses TLS
 			if listener.Tls != nil || len(listener.TlsCertificates) > 0 {
-				tlsConfig, err := s.createTLSConfigWithSNI(listener)
+				// Check for mTLS and OCSP extensions
+				gatewayKey := fmt.Sprintf("%s/%s", gateway.Namespace, gateway.Name)
+				ext := snapshot.GetListenerExtensions(gatewayKey, listener.Name)
+				var clientAuth *proto.ClientAuthConfig
+				var enableOCSP bool
+				if ext != nil {
+					clientAuth = ext.ClientAuth
+					enableOCSP = ext.OCSPStapling
+				}
+
+				tlsConfig, err := s.createTLSConfigWithMTLS(listener, clientAuth, enableOCSP)
 				if err != nil {
 					s.logger.Error("Failed to create TLS config",
 						zap.String("gateway", listenerInfo.Gateway),
@@ -100,6 +113,14 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 					continue
 				}
 				listenerInfo.TLSConfig = tlsConfig
+			}
+
+			// Configure PROXY protocol if extensions specify it
+			if ext := snapshot.GetListenerExtensions(
+				fmt.Sprintf("%s/%s", gateway.Namespace, gateway.Name),
+				listener.Name,
+			); ext != nil && ext.ProxyProtocol != nil && ext.ProxyProtocol.Enabled {
+				listenerInfo.ProxyProtocol = ext.ProxyProtocol
 			}
 
 			newListeners[listener.Port] = listenerInfo
@@ -200,6 +221,9 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Add Alt-Svc header to advertise HTTP/3 availability
 	s.addAltSvcHeader(w, r)
+
+	// Inject client certificate headers if mTLS is active
+	injectClientCertHeaders(r)
 
 	s.logger.Debug("Incoming request",
 		zap.String("method", r.Method),

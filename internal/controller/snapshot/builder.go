@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -45,6 +46,125 @@ func NewBuilder(client client.Client) *Builder {
 	return &Builder{
 		client: client,
 	}
+}
+
+// BuildSnapshotWithExtensions builds a complete ConfigSnapshot with TLS extensions for a specific node
+func (b *Builder) BuildSnapshotWithExtensions(ctx context.Context, nodeName string) (*pb.ConfigSnapshot, *agentconfig.SnapshotExtensions, error) {
+	snapshot, err := b.BuildSnapshot(ctx, nodeName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	extensions, err := b.buildExtensions(ctx, snapshot)
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to build snapshot extensions")
+		// Non-fatal: return snapshot without extensions
+		return snapshot, nil, nil
+	}
+
+	return snapshot, extensions, nil
+}
+
+// buildExtensions builds mTLS, PROXY protocol, and OCSP extensions from gateway/backend CRDs
+func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*agentconfig.SnapshotExtensions, error) {
+	ext := &agentconfig.SnapshotExtensions{
+		ListenerExtensions: make(map[string]*pb.ListenerExtensions),
+		ClusterExtensions:  make(map[string]*pb.ClusterExtensions),
+	}
+
+	// Build listener extensions from gateways
+	gatewayList := &novaedgev1alpha1.ProxyGatewayList{}
+	if err := b.client.List(ctx, gatewayList); err != nil {
+		return nil, err
+	}
+
+	for _, gw := range gatewayList.Items {
+		for _, listener := range gw.Spec.Listeners {
+			listenerExt := &pb.ListenerExtensions{
+				OCSPStapling: listener.OCSPStapling,
+			}
+
+			// Build mTLS config
+			if listener.ClientAuth != nil && listener.ClientAuth.Mode != "" && listener.ClientAuth.Mode != novaedgev1alpha1.ClientAuthModeNone {
+				clientAuth := &pb.ClientAuthConfig{
+					Mode:               string(listener.ClientAuth.Mode),
+					RequiredCNPatterns: listener.ClientAuth.RequiredCNPatterns,
+					RequiredSANs:       listener.ClientAuth.RequiredSANs,
+				}
+
+				// Load CA certificate from secret
+				if listener.ClientAuth.CACertRef != nil {
+					caCert, err := b.loadCACert(ctx, listener.ClientAuth.CACertRef.Name,
+						listener.ClientAuth.CACertRef.Namespace, gw.Namespace)
+					if err != nil {
+						log.FromContext(ctx).Error(err, "Failed to load mTLS CA cert",
+							"gateway", gw.Name, "listener", listener.Name)
+					} else {
+						clientAuth.CACert = caCert
+					}
+				}
+
+				listenerExt.ClientAuth = clientAuth
+			}
+
+			// Build PROXY protocol config
+			if listener.ProxyProtocol != nil && listener.ProxyProtocol.Enabled {
+				listenerExt.ProxyProtocol = &pb.ProxyProtocolConfig{
+					Enabled:      true,
+					Version:      listener.ProxyProtocol.Version,
+					TrustedCIDRs: listener.ProxyProtocol.TrustedCIDRs,
+				}
+			}
+
+			key := fmt.Sprintf("%s/%s/%s", gw.Namespace, gw.Name, listener.Name)
+			ext.ListenerExtensions[key] = listenerExt
+		}
+	}
+
+	// Build cluster extensions from backends
+	backendList := &novaedgev1alpha1.ProxyBackendList{}
+	if err := b.client.List(ctx, backendList); err != nil {
+		return nil, err
+	}
+
+	for _, backend := range backendList.Items {
+		if backend.Spec.UpstreamProxyProtocol != nil && backend.Spec.UpstreamProxyProtocol.Enabled {
+			clusterKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
+			ext.ClusterExtensions[clusterKey] = &pb.ClusterExtensions{
+				UpstreamProxyProtocol: &pb.UpstreamProxyProtocol{
+					Enabled: true,
+					Version: backend.Spec.UpstreamProxyProtocol.Version,
+				},
+			}
+		}
+	}
+
+	return ext, nil
+}
+
+// loadCACert loads a CA certificate from a Kubernetes Secret
+func (b *Builder) loadCACert(ctx context.Context, secretName, secretNamespace, defaultNamespace string) ([]byte, error) {
+	namespace := secretNamespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	secret := &corev1.Secret{}
+	if err := b.client.Get(ctx, types.NamespacedName{
+		Namespace: namespace,
+		Name:      secretName,
+	}, secret); err != nil {
+		return nil, fmt.Errorf("failed to get CA cert secret %s/%s: %w", namespace, secretName, err)
+	}
+
+	// Try common CA cert keys
+	for _, key := range []string{"ca.crt", "ca-bundle.crt", "tls.crt"} {
+		if caCert, ok := secret.Data[key]; ok {
+			return caCert, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no CA certificate found in secret %s/%s (tried ca.crt, ca-bundle.crt, tls.crt)", namespace, secretName)
 }
 
 // BuildSnapshot builds a complete ConfigSnapshot for a specific node

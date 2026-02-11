@@ -21,6 +21,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 
 	"go.uber.org/zap"
@@ -32,9 +33,10 @@ import (
 
 // ListenerInfo contains information about a configured listener
 type ListenerInfo struct {
-	Gateway   string
-	Listener  *pb.Listener
-	TLSConfig *tls.Config
+	Gateway       string
+	Listener      *pb.Listener
+	TLSConfig     *tls.Config
+	ProxyProtocol *pb.ProxyProtocolConfig // PROXY protocol configuration
 }
 
 // startListener starts an HTTP, HTTPS, or HTTP/3 listener on the specified port
@@ -86,10 +88,13 @@ func (s *HTTPServer) startListener(ctx context.Context, port int32, listenerInfo
 
 	s.servers[port] = server
 
-	// Start server in goroutine
+	// Start server in goroutine with optional PROXY protocol wrapping
 	go func() {
 		var err error
-		if listenerInfo.TLSConfig != nil {
+		if listenerInfo.ProxyProtocol != nil && listenerInfo.ProxyProtocol.Enabled {
+			// Use custom listener with PROXY protocol support
+			err = s.startWithProxyProtocol(server, port, listenerInfo)
+		} else if listenerInfo.TLSConfig != nil {
 			// Start HTTPS listener with HTTP/2
 			// Note: We pass empty cert/key files because TLSConfig already has certificates
 			err = server.ListenAndServeTLS("", "")
@@ -182,4 +187,38 @@ func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, _ *http.Request) {
 		}
 		break // Only advertise one HTTP/3 endpoint for now
 	}
+}
+
+// startWithProxyProtocol starts a server with PROXY protocol listener wrapping
+func (s *HTTPServer) startWithProxyProtocol(server *http.Server, port int32, listenerInfo *ListenerInfo) error {
+	addr := fmt.Sprintf(":%d", port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+	}
+
+	// Wrap with PROXY protocol listener
+	ppListener, err := NewProxyProtocolListener(
+		ln,
+		listenerInfo.ProxyProtocol.Version,
+		listenerInfo.ProxyProtocol.TrustedCIDRs,
+		s.logger,
+	)
+	if err != nil {
+		_ = ln.Close()
+		return fmt.Errorf("failed to create PROXY protocol listener: %w", err)
+	}
+
+	s.logger.Info("PROXY protocol enabled on listener",
+		zap.Int32("port", port),
+		zap.Int32("version", listenerInfo.ProxyProtocol.Version),
+		zap.Strings("trusted_cidrs", listenerInfo.ProxyProtocol.TrustedCIDRs),
+	)
+
+	var listener net.Listener = ppListener
+	if listenerInfo.TLSConfig != nil {
+		listener = tls.NewListener(ppListener, listenerInfo.TLSConfig)
+	}
+
+	return server.Serve(listener)
 }

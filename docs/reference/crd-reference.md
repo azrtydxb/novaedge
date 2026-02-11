@@ -1330,6 +1330,38 @@ Defines custom error pages on a ProxyGateway.
 
 ---
 
+## ClientAuthConfig
+
+Client certificate authentication settings for a listener.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `mode` | string | No | `none` | Client auth mode: `none`, `optional`, `require` |
+| `caCertRef` | SecretReference | No | - | Secret containing CA cert for client verification (must have `ca.crt` key) |
+| `requiredCNPatterns` | []string | No | - | Regex patterns the client cert CN must match |
+| `requiredSANs` | []string | No | - | SANs the client cert must contain |
+
+## ProxyProtocolConfig
+
+PROXY protocol configuration for a listener.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | No | `false` | Enable PROXY protocol parsing |
+| `version` | int32 | No | `0` | Version: `0` (both), `1` (v1 only), `2` (v2 only) |
+| `trustedCIDRs` | []string | No | `[]` (all) | Source CIDRs from which PROXY headers are accepted |
+
+## UpstreamProxyProtocolConfig
+
+PROXY protocol configuration for backend connections.
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `enabled` | bool | No | `false` | Enable sending PROXY protocol headers to backends |
+| `version` | int32 | No | `1` | Version: `1` or `2` |
+
+---
+
 ## Gateway API Resources
 
 NovaEdge supports standard Kubernetes Gateway API resources in addition to its custom CRDs.

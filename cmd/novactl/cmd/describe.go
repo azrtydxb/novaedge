@@ -14,8 +14,14 @@ func newDescribeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "describe [resource-type] [name]",
 		Short: "Describe a NovaEdge resource",
-		Long:  `Show detailed information about a specific NovaEdge resource.`,
-		Example: `  # Describe a gateway (includes HTTP/3 status, SSE config)
+		Long: `Show detailed information about a specific NovaEdge resource.
+
+For ProxyGateway resources, shows HTTP/3 status, SSE config, mTLS client
+authentication mode, PROXY protocol configuration, and OCSP stapling status
+per listener.
+
+For ProxyBackend resources, shows upstream PROXY protocol configuration.`,
+		Example: `  # Describe a gateway (includes HTTP/3 status, SSE config, mTLS, PROXY protocol)
   novactl describe gateway external-gateway
 
   # Describe a route in a specific namespace
