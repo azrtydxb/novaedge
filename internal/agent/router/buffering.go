@@ -167,7 +167,7 @@ type tempFileReadCloser struct {
 
 // Close closes and removes the temporary file.
 func (t *tempFileReadCloser) Close() error {
-	name := filepath.Clean(t.File.Name())
+	name := filepath.Clean(t.Name())
 	cerr := t.File.Close()
 	rerr := os.Remove(name)
 	if cerr != nil {

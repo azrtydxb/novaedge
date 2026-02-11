@@ -17,7 +17,6 @@ limitations under the License.
 package router
 
 import (
-	"bytes"
 	"compress/gzip"
 	"io"
 	"net/http"
@@ -364,14 +363,4 @@ func TestCompressResponseWriter_NoContent(t *testing.T) {
 	if result.Header.Get("Content-Encoding") == "gzip" {
 		t.Error("expected no compression for 204 No Content")
 	}
-}
-
-// Helper to verify compressed data
-func decompressGzip(data []byte) ([]byte, error) {
-	reader, err := gzip.NewReader(bytes.NewReader(data))
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = reader.Close() }()
-	return io.ReadAll(reader)
 }
