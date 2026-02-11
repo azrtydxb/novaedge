@@ -533,7 +533,11 @@ func (c *Converter) convertCompression(comp *StandaloneCompressionConfig) *pb.Co
 	}
 	var minSize int64
 	if comp.MinSize != "" {
-		if n, err := strconv.ParseInt(comp.MinSize, 10, 64); err == nil {
+		n, err := strconv.ParseInt(comp.MinSize, 10, 64)
+		if err != nil {
+			zap.L().Warn("failed to parse compression min size, using 0",
+				zap.String("value", comp.MinSize), zap.Error(err))
+		} else {
 			minSize = n
 		}
 	}
@@ -552,17 +556,29 @@ func (c *Converter) convertRouteLimits(limits *StandaloneRouteLimits) *pb.RouteL
 	}
 	result := &pb.RouteLimitsConfig{}
 	if limits.MaxRequestBodySize != "" {
-		if n, err := standaloneParseByteSize(limits.MaxRequestBodySize); err == nil {
+		n, err := standaloneParseByteSize(limits.MaxRequestBodySize)
+		if err != nil {
+			zap.L().Warn("failed to parse max request body size, using 0",
+				zap.String("value", limits.MaxRequestBodySize), zap.Error(err))
+		} else {
 			result.MaxRequestBodySize = n
 		}
 	}
 	if limits.RequestTimeout != "" {
-		if d, err := time.ParseDuration(limits.RequestTimeout); err == nil {
+		d, err := time.ParseDuration(limits.RequestTimeout)
+		if err != nil {
+			zap.L().Warn("failed to parse request timeout, using 0",
+				zap.String("value", limits.RequestTimeout), zap.Error(err))
+		} else {
 			result.RequestTimeoutMs = d.Milliseconds()
 		}
 	}
 	if limits.IdleTimeout != "" {
-		if d, err := time.ParseDuration(limits.IdleTimeout); err == nil {
+		d, err := time.ParseDuration(limits.IdleTimeout)
+		if err != nil {
+			zap.L().Warn("failed to parse idle timeout, using 0",
+				zap.String("value", limits.IdleTimeout), zap.Error(err))
+		} else {
 			result.IdleTimeoutMs = d.Milliseconds()
 		}
 	}
@@ -578,7 +594,11 @@ func (c *Converter) convertRouteBuffering(buf *StandaloneBufferingConfig) *pb.Bu
 		ResponseBuffering: buf.Response,
 	}
 	if buf.MaxSize != "" {
-		if n, err := standaloneParseByteSize(buf.MaxSize); err == nil {
+		n, err := standaloneParseByteSize(buf.MaxSize)
+		if err != nil {
+			zap.L().Warn("failed to parse max buffer size, using 0",
+				zap.String("value", buf.MaxSize), zap.Error(err))
+		} else {
 			result.MaxBufferSize = n
 		}
 	}

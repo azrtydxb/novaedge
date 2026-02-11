@@ -64,9 +64,13 @@ func (m *RequestBufferingMiddleware) Wrap(next http.Handler) http.Handler {
 		r.Body = buffered
 		if seeker, ok := buffered.(io.ReadSeeker); ok {
 			// Store content length for the buffered body
-			pos, _ := seeker.Seek(0, io.SeekEnd)
-			_, _ = seeker.Seek(0, io.SeekStart)
-			r.ContentLength = pos
+			pos, seekErr := seeker.Seek(0, io.SeekEnd)
+			if seekErr == nil {
+				_, seekErr = seeker.Seek(0, io.SeekStart)
+			}
+			if seekErr == nil {
+				r.ContentLength = pos
+			}
 		}
 
 		next.ServeHTTP(w, r)
@@ -206,6 +210,7 @@ type bufferedResponseWriter struct {
 	buf         bytes.Buffer
 	statusCode  int
 	wroteHeader bool
+	headersSent bool
 	maxSize     int64
 	overflowed  bool
 }
@@ -219,17 +224,30 @@ func (bw *bufferedResponseWriter) WriteHeader(code int) {
 	bw.statusCode = code
 }
 
-// Write buffers response data.
+// Write buffers response data. If the buffer overflows maxSize, it switches
+// to streaming mode: flushing the buffer and writing directly to the client.
 func (bw *bufferedResponseWriter) Write(b []byte) (int, error) {
 	if !bw.wroteHeader {
 		bw.WriteHeader(http.StatusOK)
 	}
 	if bw.overflowed {
-		return len(b), nil // discard; already overflowed
+		// Already in streaming mode; write directly to the underlying writer
+		return bw.ResponseWriter.Write(b)
 	}
 	if bw.maxSize > 0 && int64(bw.buf.Len()+len(b)) > bw.maxSize {
+		// Buffer would overflow; switch to streaming mode
 		bw.overflowed = true
-		return len(b), nil
+		// Flush buffered data to the underlying writer
+		bw.ResponseWriter.WriteHeader(bw.statusCode)
+		bw.headersSent = true
+		if bw.buf.Len() > 0 {
+			if _, err := bw.ResponseWriter.Write(bw.buf.Bytes()); err != nil {
+				return 0, err
+			}
+			bw.buf.Reset()
+		}
+		// Write current data directly
+		return bw.ResponseWriter.Write(b)
 	}
 	return bw.buf.Write(b)
 }
@@ -249,7 +267,10 @@ func (bw *bufferedResponseWriter) Unwrap() http.ResponseWriter {
 
 // flush writes the buffered response to the underlying writer.
 func (bw *bufferedResponseWriter) flush() {
-	// Copy headers (they were set on the underlying writer already by the handler)
+	if bw.overflowed {
+		// Already streamed directly; nothing to flush
+		return
+	}
 	bw.ResponseWriter.WriteHeader(bw.statusCode)
 	if bw.buf.Len() > 0 {
 		_, _ = bw.ResponseWriter.Write(bw.buf.Bytes())

@@ -23,6 +23,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"go.uber.org/zap"
+
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -332,7 +334,11 @@ func convertCompressionConfig(config *novaedgev1alpha1.CompressionConfig) *pb.Co
 		return nil
 	}
 
-	minSize, _ := parseByteSize(config.MinSize)
+	minSize, err := parseByteSize(config.MinSize)
+	if err != nil {
+		zap.L().Warn("failed to parse compression min size, using 0",
+			zap.String("value", config.MinSize), zap.Error(err))
+	}
 
 	return &pb.CompressionConfig{
 		Enabled:      config.Enabled,
@@ -349,9 +355,21 @@ func convertRouteLimits(limits *novaedgev1alpha1.RouteLimits) *pb.RouteLimitsCon
 		return nil
 	}
 
-	maxBody, _ := parseByteSize(limits.MaxRequestBodySize)
-	reqTimeout, _ := parseDurationMs(limits.RequestTimeout)
-	idleTimeout, _ := parseDurationMs(limits.IdleTimeout)
+	maxBody, err := parseByteSize(limits.MaxRequestBodySize)
+	if err != nil {
+		zap.L().Warn("failed to parse max request body size, using 0",
+			zap.String("value", limits.MaxRequestBodySize), zap.Error(err))
+	}
+	reqTimeout, err := parseDurationMs(limits.RequestTimeout)
+	if err != nil {
+		zap.L().Warn("failed to parse request timeout, using 0",
+			zap.String("value", limits.RequestTimeout), zap.Error(err))
+	}
+	idleTimeout, err := parseDurationMs(limits.IdleTimeout)
+	if err != nil {
+		zap.L().Warn("failed to parse idle timeout, using 0",
+			zap.String("value", limits.IdleTimeout), zap.Error(err))
+	}
 
 	return &pb.RouteLimitsConfig{
 		MaxRequestBodySize: maxBody,
@@ -366,7 +384,11 @@ func convertBufferingConfig(config *novaedgev1alpha1.RouteBufferingConfig) *pb.B
 		return nil
 	}
 
-	maxSize, _ := parseByteSize(config.MaxSize)
+	maxSize, err := parseByteSize(config.MaxSize)
+	if err != nil {
+		zap.L().Warn("failed to parse max buffer size, using 0",
+			zap.String("value", config.MaxSize), zap.Error(err))
+	}
 
 	return &pb.BufferingConfig{
 		RequestBuffering:  config.Request,

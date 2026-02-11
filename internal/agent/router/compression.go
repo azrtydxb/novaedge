@@ -28,6 +28,7 @@ import (
 	"sync"
 
 	"github.com/andybalholm/brotli"
+	"go.uber.org/zap"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -270,7 +271,9 @@ func (cw *compressResponseWriter) finish() {
 
 	if cw.writer != nil {
 		// Close the compressor (flushes remaining data)
-		_ = cw.writer.Close()
+		if err := cw.writer.Close(); err != nil {
+			zap.L().Warn("failed to close compression writer", zap.Error(err))
+		}
 		return
 	}
 

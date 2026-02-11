@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -79,11 +80,17 @@ func (m *RequestLimitsMiddleware) Wrap(next http.Handler) http.Handler {
 			r = r.WithContext(ctx)
 		}
 
-		// Serve with the modified request
+		// Use sync.Once to prevent concurrent writes to ResponseWriter.
+		// Both the handler goroutine and the timeout path may attempt to
+		// write; Once ensures only the first one succeeds.
+		var once sync.Once
 		done := make(chan struct{})
 		go func() {
+			defer close(done)
 			next.ServeHTTP(w, r)
-			close(done)
+			once.Do(func() {
+				// Handler completed normally; nothing extra to write
+			})
 		}()
 
 		select {
@@ -92,7 +99,9 @@ func (m *RequestLimitsMiddleware) Wrap(next http.Handler) http.Handler {
 		case <-ctx.Done():
 			// Context expired (timeout)
 			if ctx.Err() == context.DeadlineExceeded {
-				http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+				once.Do(func() {
+					http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+				})
 			}
 		}
 	})

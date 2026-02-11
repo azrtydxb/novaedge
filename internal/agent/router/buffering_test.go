@@ -236,10 +236,11 @@ func TestResponseBufferingMiddleware_MaxSizeOverflow(t *testing.T) {
 	result := rec.Result()
 	defer func() { _ = result.Body.Close() }()
 
-	// When overflow happens, the buffered writer discards excess data
+	// When overflow happens, the buffered writer switches to streaming mode
+	// and delivers the full response instead of silently truncating
 	respBody, _ := io.ReadAll(result.Body)
-	if len(respBody) > 50 {
-		t.Errorf("expected response to be truncated at max buffer size, got %d bytes", len(respBody))
+	if len(respBody) != 100 {
+		t.Errorf("expected full response to be streamed on overflow, got %d bytes", len(respBody))
 	}
 }
 
