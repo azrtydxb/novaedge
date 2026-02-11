@@ -348,6 +348,10 @@ message VIPAssignment {
   bool is_active = 5; // For L2ARP mode
   BGPConfig bgp_config = 6; // BGP configuration (when mode is BGP)
   OSPFConfig ospf_config = 7; // OSPF configuration (when mode is OSPF)
+  BFDConfig bfd_config = 8; // BFD configuration for fast failure detection
+  string ipv6_address = 9; // IPv6 address for dual-stack VIPs
+  string address_family = 10; // Address family: ipv4, ipv6, dual
+  string pool_ref = 11; // Reference to IP pool for auto-allocation
 }
 
 enum VIPMode {
@@ -382,12 +386,23 @@ message OSPFConfig {
   uint32 dead_interval = 5; // in seconds
   string auth_type = 6; // none, simple, md5
   string auth_key = 7;
+  uint32 cost = 8; // OSPF route cost metric
+  bool graceful_restart = 9; // Enable OSPF graceful restart
 }
 
 // OSPFNeighbor defines an OSPF neighbor
 message OSPFNeighbor {
   string address = 1;
   uint32 priority = 2;
+}
+
+// BFDConfig defines BFD (Bidirectional Forwarding Detection) settings
+message BFDConfig {
+  bool enabled = 1;
+  int32 detect_multiplier = 2;
+  string desired_min_tx_interval = 3; // e.g., "300ms"
+  string required_min_rx_interval = 4; // e.g., "300ms"
+  bool echo_mode = 5;
 }
 
 // Policy represents a ProxyPolicy resource

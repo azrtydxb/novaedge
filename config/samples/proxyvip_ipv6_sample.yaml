@@ -1,0 +1,12 @@
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: ipv6-vip
+spec:
+  ipv6Address: "2001:db8::100/128"
+  mode: L2ARP
+  addressFamily: ipv6
+  ports:
+    - 80
+    - 443

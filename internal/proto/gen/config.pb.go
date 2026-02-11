@@ -7,6 +7,8 @@
 package proto
 
 import (
+	"fmt"
+
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
@@ -2559,13 +2561,17 @@ type VIPAssignment struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	VipName    string      `protobuf:"bytes,1,opt,name=vip_name,json=vipName,proto3" json:"vip_name,omitempty"`
-	Address    string      `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
-	Mode       VIPMode     `protobuf:"varint,3,opt,name=mode,proto3,enum=novaedge.proto.VIPMode" json:"mode,omitempty"`
-	Ports      []int32     `protobuf:"varint,4,rep,packed,name=ports,proto3" json:"ports,omitempty"`
-	IsActive   bool        `protobuf:"varint,5,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`      // For L2ARP mode
-	BgpConfig  *BGPConfig  `protobuf:"bytes,6,opt,name=bgp_config,json=bgpConfig,proto3" json:"bgp_config,omitempty"`    // BGP configuration (when mode is BGP)
-	OspfConfig *OSPFConfig `protobuf:"bytes,7,opt,name=ospf_config,json=ospfConfig,proto3" json:"ospf_config,omitempty"` // OSPF configuration (when mode is OSPF)
+	VipName       string      `protobuf:"bytes,1,opt,name=vip_name,json=vipName,proto3" json:"vip_name,omitempty"`
+	Address       string      `protobuf:"bytes,2,opt,name=address,proto3" json:"address,omitempty"`
+	Mode          VIPMode     `protobuf:"varint,3,opt,name=mode,proto3,enum=novaedge.proto.VIPMode" json:"mode,omitempty"`
+	Ports         []int32     `protobuf:"varint,4,rep,packed,name=ports,proto3" json:"ports,omitempty"`
+	IsActive      bool        `protobuf:"varint,5,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`                // For L2ARP mode
+	BgpConfig     *BGPConfig  `protobuf:"bytes,6,opt,name=bgp_config,json=bgpConfig,proto3" json:"bgp_config,omitempty"`              // BGP configuration (when mode is BGP)
+	OspfConfig    *OSPFConfig `protobuf:"bytes,7,opt,name=ospf_config,json=ospfConfig,proto3" json:"ospf_config,omitempty"`           // OSPF configuration (when mode is OSPF)
+	BfdConfig     *BFDConfig  `protobuf:"bytes,8,opt,name=bfd_config,json=bfdConfig,proto3" json:"bfd_config,omitempty"`              // BFD configuration for fast failure detection
+	Ipv6Address   string      `protobuf:"bytes,9,opt,name=ipv6_address,json=ipv6Address,proto3" json:"ipv6_address,omitempty"`        // IPv6 address for dual-stack VIPs
+	AddressFamily string      `protobuf:"bytes,10,opt,name=address_family,json=addressFamily,proto3" json:"address_family,omitempty"` // Address family: ipv4, ipv6, dual
+	PoolRef       string      `protobuf:"bytes,11,opt,name=pool_ref,json=poolRef,proto3" json:"pool_ref,omitempty"`                   // Reference to IP pool for auto-allocation
 }
 
 func (x *VIPAssignment) Reset() {
@@ -2645,6 +2651,34 @@ func (x *VIPAssignment) GetOspfConfig() *OSPFConfig {
 		return x.OspfConfig
 	}
 	return nil
+}
+
+func (x *VIPAssignment) GetBfdConfig() *BFDConfig {
+	if x != nil {
+		return x.BfdConfig
+	}
+	return nil
+}
+
+func (x *VIPAssignment) GetIpv6Address() string {
+	if x != nil {
+		return x.Ipv6Address
+	}
+	return ""
+}
+
+func (x *VIPAssignment) GetAddressFamily() string {
+	if x != nil {
+		return x.AddressFamily
+	}
+	return ""
+}
+
+func (x *VIPAssignment) GetPoolRef() string {
+	if x != nil {
+		return x.PoolRef
+	}
+	return ""
 }
 
 // BGPConfig defines BGP speaker configuration
@@ -2793,13 +2827,15 @@ type OSPFConfig struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	RouterId      string          `protobuf:"bytes,1,opt,name=router_id,json=routerId,proto3" json:"router_id,omitempty"`
-	AreaId        uint32          `protobuf:"varint,2,opt,name=area_id,json=areaId,proto3" json:"area_id,omitempty"`
-	Neighbors     []*OSPFNeighbor `protobuf:"bytes,3,rep,name=neighbors,proto3" json:"neighbors,omitempty"`
-	HelloInterval uint32          `protobuf:"varint,4,opt,name=hello_interval,json=helloInterval,proto3" json:"hello_interval,omitempty"` // in seconds
-	DeadInterval  uint32          `protobuf:"varint,5,opt,name=dead_interval,json=deadInterval,proto3" json:"dead_interval,omitempty"`    // in seconds
-	AuthType      string          `protobuf:"bytes,6,opt,name=auth_type,json=authType,proto3" json:"auth_type,omitempty"`                 // none, simple, md5
-	AuthKey       string          `protobuf:"bytes,7,opt,name=auth_key,json=authKey,proto3" json:"auth_key,omitempty"`
+	RouterId        string          `protobuf:"bytes,1,opt,name=router_id,json=routerId,proto3" json:"router_id,omitempty"`
+	AreaId          uint32          `protobuf:"varint,2,opt,name=area_id,json=areaId,proto3" json:"area_id,omitempty"`
+	Neighbors       []*OSPFNeighbor `protobuf:"bytes,3,rep,name=neighbors,proto3" json:"neighbors,omitempty"`
+	HelloInterval   uint32          `protobuf:"varint,4,opt,name=hello_interval,json=helloInterval,proto3" json:"hello_interval,omitempty"` // in seconds
+	DeadInterval    uint32          `protobuf:"varint,5,opt,name=dead_interval,json=deadInterval,proto3" json:"dead_interval,omitempty"`    // in seconds
+	AuthType        string          `protobuf:"bytes,6,opt,name=auth_type,json=authType,proto3" json:"auth_type,omitempty"`                 // none, simple, md5
+	AuthKey         string          `protobuf:"bytes,7,opt,name=auth_key,json=authKey,proto3" json:"auth_key,omitempty"`
+	Cost            uint32          `protobuf:"varint,8,opt,name=cost,proto3" json:"cost,omitempty"`
+	GracefulRestart bool            `protobuf:"varint,9,opt,name=graceful_restart,json=gracefulRestart,proto3" json:"graceful_restart,omitempty"`
 }
 
 func (x *OSPFConfig) Reset() {
@@ -2881,6 +2917,20 @@ func (x *OSPFConfig) GetAuthKey() string {
 	return ""
 }
 
+func (x *OSPFConfig) GetCost() uint32 {
+	if x != nil {
+		return x.Cost
+	}
+	return 0
+}
+
+func (x *OSPFConfig) GetGracefulRestart() bool {
+	if x != nil {
+		return x.GracefulRestart
+	}
+	return false
+}
+
 // OSPFNeighbor defines an OSPF neighbor
 type OSPFNeighbor struct {
 	state         protoimpl.MessageState
@@ -2933,6 +2983,61 @@ func (x *OSPFNeighbor) GetPriority() uint32 {
 		return x.Priority
 	}
 	return 0
+}
+
+// BFDConfig defines BFD (Bidirectional Forwarding Detection) settings
+type BFDConfig struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Enabled               bool   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	DetectMultiplier      int32  `protobuf:"varint,2,opt,name=detect_multiplier,json=detectMultiplier,proto3" json:"detect_multiplier,omitempty"`
+	DesiredMinTxInterval  string `protobuf:"bytes,3,opt,name=desired_min_tx_interval,json=desiredMinTxInterval,proto3" json:"desired_min_tx_interval,omitempty"`
+	RequiredMinRxInterval string `protobuf:"bytes,4,opt,name=required_min_rx_interval,json=requiredMinRxInterval,proto3" json:"required_min_rx_interval,omitempty"`
+	EchoMode              bool   `protobuf:"varint,5,opt,name=echo_mode,json=echoMode,proto3" json:"echo_mode,omitempty"`
+}
+
+func (x *BFDConfig) Reset() { *x = BFDConfig{} }
+func (x *BFDConfig) String() string {
+	return fmt.Sprintf("enabled:%v detect_multiplier:%v desired_min_tx:%v required_min_rx:%v echo:%v",
+		x.Enabled, x.DetectMultiplier, x.DesiredMinTxInterval, x.RequiredMinRxInterval, x.EchoMode)
+}
+func (*BFDConfig) ProtoMessage() {}
+
+func (x *BFDConfig) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *BFDConfig) GetDetectMultiplier() int32 {
+	if x != nil {
+		return x.DetectMultiplier
+	}
+	return 0
+}
+
+func (x *BFDConfig) GetDesiredMinTxInterval() string {
+	if x != nil {
+		return x.DesiredMinTxInterval
+	}
+	return ""
+}
+
+func (x *BFDConfig) GetRequiredMinRxInterval() string {
+	if x != nil {
+		return x.RequiredMinRxInterval
+	}
+	return ""
+}
+
+func (x *BFDConfig) GetEchoMode() bool {
+	if x != nil {
+		return x.EchoMode
+	}
+	return false
 }
 
 // Policy represents a ProxyPolicy resource

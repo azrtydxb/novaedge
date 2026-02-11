@@ -56,6 +56,8 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 		rt = client.ResourceTLSRoute
 	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
 		rt = client.ResourceGRPCRoute
+	case resourceAliasIPPools, resourceAliasIPPool:
+		rt = client.ResourceIPPool
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}

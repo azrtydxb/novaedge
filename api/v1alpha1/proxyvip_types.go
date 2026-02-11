@@ -33,12 +33,53 @@ const (
 	VIPModeOSPF VIPMode = "OSPF"
 )
 
+// AddressFamily defines the IP address family for a VIP
+// +kubebuilder:validation:Enum=ipv4;ipv6;dual
+type AddressFamily string
+
+const (
+	// AddressFamilyIPv4 is IPv4 only
+	AddressFamilyIPv4 AddressFamily = "ipv4"
+	// AddressFamilyIPv6 is IPv6 only
+	AddressFamilyIPv6 AddressFamily = "ipv6"
+	// AddressFamilyDual is dual-stack (both IPv4 and IPv6)
+	AddressFamilyDual AddressFamily = "dual"
+)
+
 // HealthPolicy defines health requirements for VIP ownership
 type HealthPolicy struct {
 	// MinHealthyNodes is the minimum number of healthy nodes required
 	// +kubebuilder:validation:Minimum=1
 	// +optional
 	MinHealthyNodes int32 `json:"minHealthyNodes,omitempty"`
+}
+
+// BFDConfig defines BFD (Bidirectional Forwarding Detection) settings
+type BFDConfig struct {
+	// Enabled enables BFD for this VIP's BGP sessions
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// DetectMultiplier is the detection time multiplier (default 3)
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=255
+	// +kubebuilder:default=3
+	DetectMultiplier int32 `json:"detectMultiplier,omitempty"`
+
+	// DesiredMinTxInterval is the desired minimum transmit interval (e.g., "300ms")
+	// +optional
+	// +kubebuilder:default="300ms"
+	DesiredMinTxInterval string `json:"desiredMinTxInterval,omitempty"`
+
+	// RequiredMinRxInterval is the required minimum receive interval (e.g., "300ms")
+	// +optional
+	// +kubebuilder:default="300ms"
+	RequiredMinRxInterval string `json:"requiredMinRxInterval,omitempty"`
+
+	// EchoMode enables BFD echo mode for sub-millisecond detection
+	// +optional
+	EchoMode bool `json:"echoMode,omitempty"`
 }
 
 // BGPConfig defines BGP configuration for BGP mode VIPs
@@ -89,16 +130,67 @@ type BGPPeer struct {
 	Port uint16 `json:"port,omitempty"`
 }
 
+// OSPFConfig defines OSPF configuration for OSPF mode VIPs
+type OSPFConfig struct {
+	// RouterID is the OSPF router ID
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}$`
+	RouterID string `json:"routerID"`
+
+	// AreaID is the OSPF area ID
+	// +kubebuilder:validation:Required
+	AreaID uint32 `json:"areaID"`
+
+	// Cost is the OSPF route cost metric (default 10)
+	// +optional
+	// +kubebuilder:default=10
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Cost uint32 `json:"cost,omitempty"`
+
+	// HelloInterval is the OSPF hello interval in seconds (default 10)
+	// +optional
+	// +kubebuilder:default=10
+	HelloInterval uint32 `json:"helloInterval,omitempty"`
+
+	// DeadInterval is the OSPF dead interval in seconds (default 40)
+	// +optional
+	// +kubebuilder:default=40
+	DeadInterval uint32 `json:"deadInterval,omitempty"`
+
+	// AuthType is the authentication type (none, simple, md5)
+	// +optional
+	// +kubebuilder:validation:Enum=none;simple;md5
+	// +kubebuilder:default="none"
+	AuthType string `json:"authType,omitempty"`
+
+	// AuthKey is the authentication key
+	// +optional
+	AuthKey string `json:"authKey,omitempty"`
+
+	// GracefulRestart enables OSPF graceful restart
+	// +optional
+	GracefulRestart bool `json:"gracefulRestart,omitempty"`
+}
+
 // ProxyVIPSpec defines the desired state of ProxyVIP
 type ProxyVIPSpec struct {
-	// Address is the VIP as CIDR notation, usually /32 for a single IP
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$`
-	Address string `json:"address"`
+	// Address is the VIP as CIDR notation, usually /32 for a single IP (IPv4 or IPv6)
+	// +optional
+	Address string `json:"address,omitempty"`
+
+	// IPv6Address is the IPv6 VIP address in CIDR notation (for dual-stack mode)
+	// +optional
+	IPv6Address string `json:"ipv6Address,omitempty"`
 
 	// Mode determines how the VIP is exposed (L2ARP, BGP, or OSPF)
 	// +kubebuilder:validation:Required
 	Mode VIPMode `json:"mode"`
+
+	// AddressFamily specifies the IP address family (ipv4, ipv6, or dual)
+	// +optional
+	// +kubebuilder:default="ipv4"
+	AddressFamily AddressFamily `json:"addressFamily,omitempty"`
 
 	// Ports lists the ports to bind on hostNetwork
 	// +kubebuilder:validation:Required
@@ -117,6 +209,21 @@ type ProxyVIPSpec struct {
 	// Required when Mode is BGP
 	// +optional
 	BGPConfig *BGPConfig `json:"bgpConfig,omitempty"`
+
+	// OSPFConfig defines OSPF configuration for OSPF mode VIPs
+	// Required when Mode is OSPF
+	// +optional
+	OSPFConfig *OSPFConfig `json:"ospfConfig,omitempty"`
+
+	// BFD defines BFD configuration for fast failure detection
+	// Used with BGP mode VIPs
+	// +optional
+	BFD *BFDConfig `json:"bfd,omitempty"`
+
+	// PoolRef references a ProxyIPPool for automatic address allocation
+	// When set, Address may be left empty and will be allocated from the pool
+	// +optional
+	PoolRef *LocalObjectReference `json:"poolRef,omitempty"`
 }
 
 // ProxyVIPStatus defines the observed state of ProxyVIP
@@ -128,6 +235,18 @@ type ProxyVIPStatus struct {
 	// AnnouncingNodes lists nodes currently announcing this VIP (for BGP/OSPF mode)
 	// +optional
 	AnnouncingNodes []string `json:"announcingNodes,omitempty"`
+
+	// AllocatedAddress is the address allocated from the IP pool (if using pool)
+	// +optional
+	AllocatedAddress string `json:"allocatedAddress,omitempty"`
+
+	// AllocatedIPv6Address is the IPv6 address allocated from the IP pool (if dual-stack)
+	// +optional
+	AllocatedIPv6Address string `json:"allocatedIPv6Address,omitempty"`
+
+	// BFDSessionState is the current BFD session state (if BFD is enabled)
+	// +optional
+	BFDSessionState string `json:"bfdSessionState,omitempty"`
 
 	// Conditions represent the latest available observations of the VIP's state
 	// +optional
@@ -145,6 +264,8 @@ type ProxyVIPStatus struct {
 // +kubebuilder:resource:scope=Cluster
 // +kubebuilder:printcolumn:name="Address",type=string,JSONPath=`.spec.address`
 // +kubebuilder:printcolumn:name="Mode",type=string,JSONPath=`.spec.mode`
+// +kubebuilder:printcolumn:name="Family",type=string,JSONPath=`.spec.addressFamily`
+// +kubebuilder:printcolumn:name="BFD",type=boolean,JSONPath=`.spec.bfd.enabled`
 // +kubebuilder:printcolumn:name="Active Node",type=string,JSONPath=`.status.activeNode`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

@@ -19,6 +19,7 @@ package vip
 import (
 	"context"
 	"fmt"
+	"net"
 	"sync"
 
 	"go.uber.org/zap"
@@ -42,7 +43,7 @@ type Manager interface {
 	Start(ctx context.Context) error
 }
 
-// VIPManager manages VIP lifecycle
+// VIPManager manages VIP lifecycle with dual-stack support
 type VIPManager struct {
 	logger *zap.Logger
 	mu     sync.RWMutex
@@ -86,17 +87,14 @@ func NewManager(logger *zap.Logger) (*VIPManager, error) {
 func (m *VIPManager) Start(ctx context.Context) error {
 	m.logger.Info("Starting VIP manager")
 
-	// Start L2 handler
 	if err := m.l2Handler.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start L2 handler: %w", err)
 	}
 
-	// Start BGP handler
 	if err := m.bgpHandler.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start BGP handler: %w", err)
 	}
 
-	// Start OSPF handler
 	if err := m.ospfHandler.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start OSPF handler: %w", err)
 	}
@@ -153,38 +151,78 @@ func (m *VIPManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAssignm
 			)
 			continue
 		}
+
+		// For dual-stack: also apply the IPv6 address if present
+		if assignment.Ipv6Address != "" && assignment.IsActive {
+			ipv6Assignment := cloneAssignmentWithAddress(assignment, assignment.Ipv6Address)
+			ipv6Assignment.VipName = vipName + "-v6"
+
+			if err := m.applyVIP(ctx, ipv6Assignment); err != nil {
+				m.logger.Error("Failed to apply IPv6 VIP",
+					zap.String("vip", vipName),
+					zap.String("ipv6_address", assignment.Ipv6Address),
+					zap.Error(err),
+				)
+			}
+		}
 	}
 
 	m.assignments = newAssignments
 	return nil
 }
 
+// cloneAssignmentWithAddress creates a copy of a VIPAssignment with a different address
+func cloneAssignmentWithAddress(orig *pb.VIPAssignment, address string) *pb.VIPAssignment {
+	return &pb.VIPAssignment{
+		VipName:    orig.VipName,
+		Address:    address,
+		Mode:       orig.Mode,
+		Ports:      orig.Ports,
+		IsActive:   orig.IsActive,
+		BgpConfig:  orig.BgpConfig,
+		OspfConfig: orig.OspfConfig,
+		BfdConfig:  orig.BfdConfig,
+	}
+}
+
 // applyVIP applies a single VIP assignment
 func (m *VIPManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	if !assignment.IsActive {
-		// Not active on this node, update metric and skip
 		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), false)
 		return nil
 	}
 
-	var err error
-	switch assignment.Mode {
-	case pb.VIPMode_L2_ARP:
-		err = m.l2Handler.AddVIP(ctx, assignment)
-	case pb.VIPMode_BGP:
-		err = m.bgpHandler.AddVIP(ctx, assignment)
-	case pb.VIPMode_OSPF:
-		err = m.ospfHandler.AddVIP(ctx, assignment)
-	default:
-		err = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
+	// Detect address family
+	ip, _, err := net.ParseCIDR(assignment.Address)
+	if err != nil {
+		return fmt.Errorf(errInvalidVIPAddressFmt, assignment.Address, err)
 	}
 
-	// Update VIP status metric
-	if err == nil {
+	isIPv6 := ip.To4() == nil
+
+	m.logger.Debug("Applying VIP",
+		zap.String("vip", assignment.VipName),
+		zap.String("address", assignment.Address),
+		zap.Bool("ipv6", isIPv6),
+	)
+
+	var applyErr error
+	switch assignment.Mode {
+	case pb.VIPMode_L2_ARP:
+		applyErr = m.l2Handler.AddVIP(ctx, assignment)
+	case pb.VIPMode_BGP:
+		applyErr = m.bgpHandler.AddVIP(ctx, assignment)
+	case pb.VIPMode_OSPF:
+		applyErr = m.ospfHandler.AddVIP(ctx, assignment)
+	default:
+		applyErr = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
+	}
+
+	if applyErr == nil {
 		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), assignment.IsActive)
 	}
 
-	return err
+	return applyErr
 }
 
 // releaseVIP releases a single VIP
@@ -201,9 +239,30 @@ func (m *VIPManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssignmen
 		err = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
 	}
 
-	// Update VIP status metric to inactive
 	if err == nil {
 		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), false)
+	}
+
+	// Also release dual-stack IPv6 address if present
+	if assignment.Ipv6Address != "" {
+		ipv6Assignment := cloneAssignmentWithAddress(assignment, assignment.Ipv6Address)
+		ipv6Assignment.VipName = assignment.VipName + "-v6"
+
+		var ipv6Err error
+		switch assignment.Mode {
+		case pb.VIPMode_L2_ARP:
+			ipv6Err = m.l2Handler.RemoveVIP(ctx, ipv6Assignment)
+		case pb.VIPMode_BGP:
+			ipv6Err = m.bgpHandler.RemoveVIP(ctx, ipv6Assignment)
+		case pb.VIPMode_OSPF:
+			ipv6Err = m.ospfHandler.RemoveVIP(ctx, ipv6Assignment)
+		}
+		if ipv6Err != nil {
+			m.logger.Error("Failed to release IPv6 VIP",
+				zap.String("vip", assignment.VipName),
+				zap.Error(ipv6Err),
+			)
+		}
 	}
 
 	return err
@@ -216,17 +275,17 @@ func (m *VIPManager) Release() error {
 
 	m.logger.Info("Releasing all VIPs", zap.Int("count", len(m.assignments)))
 
-	var errors []error
+	var errs []error
 	for _, assignment := range m.assignments {
 		if err := m.releaseVIP(context.Background(), assignment); err != nil {
-			errors = append(errors, err)
+			errs = append(errs, err)
 		}
 	}
 
 	m.assignments = make(map[string]*pb.VIPAssignment)
 
-	if len(errors) > 0 {
-		return fmt.Errorf("failed to release some VIPs: %v", errors)
+	if len(errs) > 0 {
+		return fmt.Errorf("failed to release some VIPs: %v", errs)
 	}
 
 	return nil
@@ -255,10 +314,16 @@ func assignmentsEqual(a, b *pb.VIPAssignment) bool {
 	if a.Address != b.Address {
 		return false
 	}
+	if a.Ipv6Address != b.Ipv6Address {
+		return false
+	}
 	if a.Mode != b.Mode {
 		return false
 	}
 	if a.IsActive != b.IsActive {
+		return false
+	}
+	if a.AddressFamily != b.AddressFamily {
 		return false
 	}
 	if len(a.Ports) != len(b.Ports) {

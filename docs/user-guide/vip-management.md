@@ -4,7 +4,7 @@ Configure Virtual IP addresses for bare-metal and on-premises deployments.
 
 ## Overview
 
-NovaEdge manages VIPs to provide external access to your services without cloud load balancers.
+NovaEdge manages VIPs to provide external access to your services without cloud load balancers. It supports IPv4, IPv6, and dual-stack configurations with automatic IP address pool management.
 
 ```mermaid
 flowchart TB
@@ -19,15 +19,25 @@ flowchart TB
 
 ## VIP Modes
 
-| Mode | Description | Network | Availability |
-|------|-------------|---------|--------------|
-| L2 ARP | Single active node | Layer 2 | Active/Standby |
-| BGP | All nodes announce | Layer 3 | Active/Active |
-| OSPF | OSPF routing | Layer 3 | Active/Active |
+| Mode | Description | Network | Availability | IPv6 |
+|------|-------------|---------|--------------|------|
+| L2 ARP | Single active node | Layer 2 | Active/Standby | NDP |
+| BGP | All nodes announce | Layer 3 | Active/Active | Yes |
+| OSPF | OSPF routing | Layer 3 | Active/Active | OSPFv3 |
+
+## Address Families
+
+NovaEdge supports three address family modes:
+
+| Family | Description | Fields Used |
+|--------|-------------|-------------|
+| `ipv4` | IPv4 only (default) | `address` |
+| `ipv6` | IPv6 only | `ipv6Address` |
+| `dual` | Dual-stack (IPv4 + IPv6) | `address` + `ipv6Address` |
 
 ## L2 ARP Mode
 
-Single node owns the VIP at a time. Uses Gratuitous ARP for failover.
+Single node owns the VIP at a time. Uses Gratuitous ARP (IPv4) or Unsolicited Neighbor Advertisement (IPv6) for failover.
 
 ```mermaid
 flowchart TB
@@ -43,7 +53,7 @@ flowchart TB
     style N3 fill:#FFE4B5
 ```
 
-### Configuration
+### IPv4 Configuration
 
 ```yaml
 apiVersion: novaedge.io/v1alpha1
@@ -52,23 +62,44 @@ metadata:
   name: main-vip
 spec:
   address: 192.168.1.100/32
-  mode: L2
-  interface: eth0
+  mode: L2ARP
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
+```
+
+### IPv6 Configuration
+
+For IPv6-only L2 mode, NovaEdge sends Unsolicited Neighbor Advertisements (NDP) instead of Gratuitous ARP:
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: ipv6-vip
+spec:
+  ipv6Address: "2001:db8::100/128"
+  mode: L2ARP
+  addressFamily: ipv6
+  ports:
+    - 80
+    - 443
 ```
 
 ### L2 Options
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `address` | - | VIP address with CIDR |
-| `mode` | L2 | VIP mode |
-| `interface` | - | Network interface to bind |
-| `arpInterval` | 3s | ARP announcement interval |
+| `address` | - | VIP IPv4 address with CIDR |
+| `ipv6Address` | - | VIP IPv6 address with CIDR |
+| `mode` | - | Must be `L2ARP` |
+| `addressFamily` | `ipv4` | `ipv4`, `ipv6`, or `dual` |
 
 ### Requirements
 
 - All nodes on same Layer 2 network
-- Network allows Gratuitous ARP
+- Network allows Gratuitous ARP (IPv4) or NDP (IPv6)
 - `NET_ADMIN` and `NET_RAW` capabilities
 
 ### Failover Process
@@ -121,52 +152,141 @@ metadata:
 spec:
   address: 192.168.1.100/32
   mode: BGP
-  bgp:
-    asn: 65000
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
+  bgpConfig:
+    localAS: 65000
     routerID: "10.0.0.1"
     peers:
       - address: "10.0.0.254"
-        asn: 65001
+        as: 65001
         port: 179
       - address: "10.0.0.253"
-        asn: 65001
+        as: 65001
         port: 179
+```
+
+### IPv6 BGP Peering
+
+BGP supports IPv6 peers with MP_REACH_NLRI for IPv6 route announcements:
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: dual-stack-vip
+spec:
+  address: 10.200.0.50/32
+  ipv6Address: "2001:db8::50/128"
+  mode: BGP
+  addressFamily: dual
+  ports:
+    - 80
+    - 443
+  bgpConfig:
+    localAS: 65000
+    routerID: "10.0.0.1"
+    peers:
+      - address: "10.0.0.254"
+        as: 65001
 ```
 
 ### BGP Options
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `asn` | - | Local BGP AS number |
-| `routerID` | - | BGP router ID |
-| `peers` | [] | List of BGP peers |
-| `peers[].address` | - | Peer IP address |
-| `peers[].asn` | - | Peer AS number |
-| `peers[].port` | 179 | Peer BGP port |
-| `peers[].password` | - | MD5 password (optional) |
-| `holdTime` | 90s | BGP hold time |
-| `keepaliveTime` | 30s | Keepalive interval |
+| `bgpConfig.localAS` | - | Local BGP AS number |
+| `bgpConfig.routerID` | - | BGP router ID |
+| `bgpConfig.peers` | [] | List of BGP peers |
+| `bgpConfig.peers[].address` | - | Peer IP address (IPv4 or IPv6) |
+| `bgpConfig.peers[].as` | - | Peer AS number |
+| `bgpConfig.peers[].port` | 179 | Peer BGP port |
+| `bgpConfig.communities` | [] | BGP communities to attach |
+| `bgpConfig.localPreference` | 0 | Local preference for iBGP |
 
-### Cluster Configuration
+### BFD (Bidirectional Forwarding Detection)
 
-Configure BGP at the cluster level:
+BFD provides sub-second failure detection for BGP sessions. When a BFD session detects a peer failure, the corresponding BGP routes are immediately withdrawn.
+
+```mermaid
+sequenceDiagram
+    participant N as Node Agent
+    participant R as Router
+    
+    Note over N,R: BFD Session Established (300ms intervals)
+    
+    loop Every 300ms
+        N->>R: BFD Control Packet
+        R->>N: BFD Control Packet
+    end
+    
+    Note over R: Router fails
+    
+    N->>R: BFD Control Packet (no response)
+    N->>R: BFD Control Packet (no response)
+    N->>R: BFD Control Packet (no response)
+    
+    Note over N: Detection: 3 x 300ms = 900ms
+    Note over N: Withdraw BGP routes immediately
+```
+
+#### BFD Configuration
 
 ```yaml
 apiVersion: novaedge.io/v1alpha1
-kind: NovaEdgeCluster
+kind: ProxyVIP
 metadata:
-  name: novaedge
+  name: bgp-vip-with-bfd
 spec:
-  agent:
-    vip:
-      enabled: true
-      mode: BGP
-      bgp:
-        asn: 65000
-        peers:
-          - address: "10.0.0.254"
-            asn: 65001
+  address: 10.200.0.100/32
+  mode: BGP
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
+  bgpConfig:
+    localAS: 65000
+    routerID: "10.0.0.1"
+    peers:
+      - address: "10.0.0.254"
+        as: 65001
+        port: 179
+      - address: "10.0.0.253"
+        as: 65001
+        port: 179
+  bfd:
+    enabled: true
+    detectMultiplier: 3
+    desiredMinTxInterval: "300ms"
+    requiredMinRxInterval: "300ms"
+    echoMode: false
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/loadbalancer: "true"
 ```
+
+#### BFD Options
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `bfd.enabled` | `false` | Enable BFD for this VIP |
+| `bfd.detectMultiplier` | `3` | Missed packets before session down |
+| `bfd.desiredMinTxInterval` | `300ms` | Min TX interval (e.g., "300ms", "1s") |
+| `bfd.requiredMinRxInterval` | `300ms` | Min RX interval |
+| `bfd.echoMode` | `false` | Enable BFD echo mode |
+
+#### BFD State Machine
+
+BFD sessions follow the RFC 5880 state machine:
+
+| State | Description |
+|-------|-------------|
+| `AdminDown` | Administratively disabled |
+| `Down` | Session not established |
+| `Init` | Local system wants session up |
+| `Up` | Session established and operational |
 
 ### Router Configuration (Example: FRRouting)
 
@@ -204,7 +324,26 @@ sequenceDiagram
 
 ## OSPF Mode
 
-Similar to BGP but uses OSPF routing protocol.
+OSPF mode announces VIPs as AS-External LSAs for active-active load distribution. NovaEdge supports both OSPFv2 (IPv4) and OSPFv3 (IPv6).
+
+```mermaid
+flowchart TB
+    Client((Client)) --> Router[["OSPF Router"]]
+
+    Router -->|"ECMP"| N1["Node 1<br/>Agent"]
+    Router -->|"ECMP"| N2["Node 2<br/>Agent"]
+    Router -->|"ECMP"| N3["Node 3<br/>Agent"]
+
+    N1 -.->|"OSPF LSA"| Router
+    N2 -.->|"OSPF LSA"| Router
+    N3 -.->|"OSPF LSA"| Router
+
+    style N1 fill:#DDA0DD
+    style N2 fill:#DDA0DD
+    style N3 fill:#DDA0DD
+```
+
+### Configuration
 
 ```yaml
 apiVersion: novaedge.io/v1alpha1
@@ -212,13 +351,103 @@ kind: ProxyVIP
 metadata:
   name: ospf-vip
 spec:
-  address: 192.168.1.100/32
+  address: 10.200.0.200/32
   mode: OSPF
-  ospf:
-    area: "0.0.0.0"
-    interface: eth0
-    helloInterval: 10s
-    deadInterval: 40s
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
+  ospfConfig:
+    routerID: "10.0.0.1"
+    areaID: 0
+    cost: 10
+    helloInterval: 10
+    deadInterval: 40
+    authType: md5
+    authKey: "mySecretKey"
+    gracefulRestart: true
+```
+
+### OSPF Options
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `ospfConfig.routerID` | - | OSPF router ID (required) |
+| `ospfConfig.areaID` | `0` | OSPF area (0 = backbone) |
+| `ospfConfig.cost` | `10` | Route metric cost |
+| `ospfConfig.helloInterval` | `10` | Hello interval (seconds) |
+| `ospfConfig.deadInterval` | `40` | Dead interval (seconds) |
+| `ospfConfig.authType` | `none` | Auth: `none`, `plaintext`, `md5` |
+| `ospfConfig.authKey` | - | Authentication key |
+| `ospfConfig.gracefulRestart` | `false` | Enable OSPF graceful restart |
+
+### OSPFv3 (IPv6)
+
+For IPv6 networks, OSPF automatically uses OSPFv3:
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: ospf-ipv6-vip
+spec:
+  ipv6Address: "2001:db8::200/128"
+  mode: OSPF
+  addressFamily: ipv6
+  ports:
+    - 80
+    - 443
+  ospfConfig:
+    routerID: "10.0.0.1"
+    areaID: 0
+    cost: 10
+```
+
+### OSPF Neighbor States
+
+The OSPF implementation tracks neighbor states through the full state machine:
+
+| State | Description |
+|-------|-------------|
+| Down | No recent hello received |
+| Init | Hello received, waiting for 2-way |
+| 2-Way | Bidirectional communication established |
+| ExStart | Database exchange starting |
+| Exchange | Database description exchange |
+| Loading | Loading LSAs from neighbor |
+| Full | Fully adjacent, LSDBs synchronized |
+
+## IP Address Pools
+
+For dynamic VIP address assignment, use `ProxyIPPool` resources. See [IP Address Pools](ip-pools.md) for full documentation.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyIPPool
+metadata:
+  name: main-vip-pool
+spec:
+  cidrs:
+    - "10.200.0.0/24"
+  autoAssign: true
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: auto-assigned-vip
+spec:
+  mode: BGP
+  addressFamily: ipv4
+  ports:
+    - 80
+  poolRef:
+    name: main-vip-pool
+  bgpConfig:
+    localAS: 65000
+    routerID: "10.0.0.1"
+    peers:
+      - address: "10.0.0.254"
+        as: 65001
 ```
 
 ## Multiple VIPs
@@ -233,8 +462,11 @@ metadata:
   name: web-vip
 spec:
   address: 192.168.1.100/32
-  mode: L2
-  interface: eth0
+  mode: L2ARP
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
 ---
 apiVersion: novaedge.io/v1alpha1
 kind: ProxyVIP
@@ -242,8 +474,10 @@ metadata:
   name: api-vip
 spec:
   address: 192.168.1.101/32
-  mode: L2
-  interface: eth0
+  mode: L2ARP
+  addressFamily: ipv4
+  ports:
+    - 8080
 ```
 
 ## VIP Status
@@ -256,15 +490,29 @@ kubectl get proxyvip
 
 # Detailed status
 kubectl describe proxyvip main-vip
+
+# Using novactl
+novactl get vips
+novactl describe vip main-vip
+```
+
+Example output:
+
+```
+NAME              ADDRESS            MODE   FAMILY   BFD   ACTIVE NODE   AGE
+main-vip          192.168.1.100/32   L2ARP  ipv4           node-1        5h
+bgp-vip           10.200.0.100/32    BGP    ipv4     Up    <all>         3h
+dual-stack-vip    10.200.0.50/32     BGP    dual     Up    <all>         1h
+ipv6-vip          2001:db8::100/128  L2ARP  ipv6           node-2        30m
 ```
 
 Example status:
 
 ```yaml
 status:
-  phase: Bound
-  currentNode: node-1
-  lastTransition: "2024-01-15T10:30:00Z"
+  activeNode: node-1
+  bfdSessionState: Up
+  allocatedAddress: "10.200.0.5/32"
   conditions:
     - type: Bound
       status: "True"
@@ -280,17 +528,21 @@ flowchart TB
     Q1{"Layer 3<br/>network?"}
     Q2{"Need<br/>ECMP?"}
     Q3{"BGP or<br/>OSPF?"}
+    Q4{"Need sub-second<br/>failover?"}
 
     Start --> Q1
     Q1 -->|No| L2["Use L2 ARP"]
     Q1 -->|Yes| Q2
     Q2 -->|No| L2
     Q2 -->|Yes| Q3
-    Q3 -->|BGP| BGP["Use BGP"]
+    Q3 -->|BGP| Q4
     Q3 -->|OSPF| OSPF["Use OSPF"]
+    Q4 -->|Yes| BFD["Use BGP + BFD"]
+    Q4 -->|No| BGP["Use BGP"]
 
     style L2 fill:#90EE90
     style BGP fill:#87CEEB
+    style BFD fill:#87CEEB
     style OSPF fill:#DDA0DD
 ```
 
@@ -298,8 +550,12 @@ flowchart TB
 |----------|------------------|
 | Simple L2 network | L2 ARP |
 | Data center with ToR switches | BGP |
+| Sub-second failover needed | BGP + BFD |
 | OSPF-only environment | OSPF |
 | Need active/active | BGP or OSPF |
+| IPv6-only network | L2ARP (NDP), BGP, or OSPF (v3) |
+| Dual-stack environment | BGP or OSPF with `dual` family |
+| Dynamic VIP assignment | Any mode + IP Pool |
 | Cloud environment | Use cloud LB instead |
 
 ## Node Affinity
@@ -313,10 +569,13 @@ metadata:
   name: main-vip
 spec:
   address: 192.168.1.100/32
-  mode: L2
-  interface: eth0
+  mode: L2ARP
+  addressFamily: ipv4
+  ports:
+    - 80
   nodeSelector:
-    node-role.kubernetes.io/loadbalancer: "true"
+    matchLabels:
+      node-role.kubernetes.io/loadbalancer: "true"
 ```
 
 ## Troubleshooting
@@ -342,6 +601,9 @@ arp -a | grep 192.168.1.100
 
 # Send test ARP from node
 arping -I eth0 192.168.1.100
+
+# For IPv6, check NDP
+ip -6 neigh show
 ```
 
 ### BGP Issues
@@ -355,6 +617,27 @@ show ip bgp summary
 show ip route 192.168.1.100
 ```
 
+### BFD Issues
+
+```bash
+# Check BFD session state in VIP status
+kubectl get proxyvip -o wide
+
+# Check BFD metrics
+curl -s http://<agent-ip>:9090/metrics | grep bfd
+```
+
+### OSPF Issues
+
+```bash
+# Check OSPF neighbor states
+kubectl logs -n novaedge-system <agent-pod> | grep ospf
+
+# Verify OSPF routes on router
+show ip ospf neighbor
+show ip ospf database external
+```
+
 ## Metrics
 
 | Metric | Description |
@@ -363,9 +646,16 @@ show ip route 192.168.1.100
 | `novaedge_vip_failovers_total` | Number of failovers |
 | `novaedge_bgp_session_state` | BGP session state |
 | `novaedge_bgp_routes_announced` | Routes announced via BGP |
+| `novaedge_bfd_session_state` | BFD session state gauge |
+| `novaedge_bfd_packet_rx_total` | BFD packets received |
+| `novaedge_bfd_packet_tx_total` | BFD packets sent |
+| `novaedge_bfd_session_flaps_total` | BFD session flap count |
+| `novaedge_ospf_neighbor_state` | OSPF neighbor adjacency state |
+| `novaedge_ospf_lsdb_count` | OSPF link-state database entries |
 
 ## Next Steps
 
+- [IP Address Pools](ip-pools.md) - Dynamic VIP address management
 - [Routing](routing.md) - Configure routes
 - [Load Balancing](load-balancing.md) - LB algorithms
 - [Observability](../operations/observability.md) - Monitoring

@@ -1,0 +1,139 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: proxyippools.novaedge.io
+spec:
+  group: novaedge.io
+  names:
+    kind: ProxyIPPool
+    listKind: ProxyIPPoolList
+    plural: proxyippools
+    singular: proxyippool
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.cidrs
+      name: CIDRs
+      type: string
+    - jsonPath: .spec.autoAssign
+      name: Auto Assign
+      type: boolean
+    - jsonPath: .status.allocated
+      name: Allocated
+      type: integer
+    - jsonPath: .status.available
+      name: Available
+      type: integer
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ProxyIPPool defines a pool of IP addresses for VIP allocation
+        properties:
+          apiVersion:
+            type: string
+          kind:
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ProxyIPPoolSpec defines the desired state of ProxyIPPool
+            properties:
+              addresses:
+                description: Addresses is an explicit list of IP addresses
+                items:
+                  type: string
+                type: array
+              autoAssign:
+                default: true
+                description: AutoAssign enables automatic IP allocation for VIPs referencing
+                  this pool
+                type: boolean
+              cidrs:
+                description: CIDRs defines IP address ranges in CIDR notation
+                items:
+                  type: string
+                type: array
+            type: object
+          status:
+            description: ProxyIPPoolStatus defines the observed state of ProxyIPPool
+            properties:
+              allocated:
+                description: Allocated is the number of currently allocated addresses
+                format: int32
+                type: integer
+              allocations:
+                description: Allocations lists all current IP allocations from this
+                  pool
+                items:
+                  description: IPAllocation tracks a single IP allocation from a pool
+                  properties:
+                    address:
+                      type: string
+                    allocatedAt:
+                      format: date-time
+                      type: string
+                    vipRef:
+                      type: string
+                  required:
+                  - address
+                  - vipRef
+                  type: object
+                type: array
+              available:
+                description: Available is the number of available addresses in the
+                  pool
+                format: int32
+                type: integer
+              conditions:
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              observedGeneration:
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

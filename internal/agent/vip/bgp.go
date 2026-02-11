@@ -32,7 +32,7 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// BGPHandler manages BGP VIP mode
+// BGPHandler manages BGP VIP mode with IPv4/IPv6 and BFD support
 type BGPHandler struct {
 	logger *zap.Logger
 	mu     sync.RWMutex
@@ -45,6 +45,9 @@ type BGPHandler struct {
 
 	// BGP server started flag
 	started bool
+
+	// BFD manager for fast failure detection
+	bfdManager *BFDManager
 }
 
 // BGPVIPState tracks the state of a BGP VIP
@@ -53,15 +56,21 @@ type BGPVIPState struct {
 	IP         net.IP
 	AddedAt    time.Time
 	Announced  bool
+	IsIPv6     bool
 }
 
 // NewBGPHandler creates a new BGP handler
 func NewBGPHandler(logger *zap.Logger) (*BGPHandler, error) {
-	return &BGPHandler{
+	handler := &BGPHandler{
 		logger:     logger,
 		activeVIPs: make(map[string]*BGPVIPState),
 		started:    false,
-	}, nil
+	}
+
+	// Create BFD manager with callback to withdraw routes on neighbor failure
+	handler.bfdManager = NewBFDManager(logger, handler.onBFDNeighborDown)
+
+	return handler, nil
 }
 
 // Start starts the BGP handler
@@ -75,14 +84,17 @@ func (h *BGPHandler) Start(ctx context.Context) error {
 
 	h.logger.Info("Starting BGP handler")
 
-	// BGP server will be started when first VIP is added
-	// (we need config from VIP assignment)
+	// Start BFD manager
+	if err := h.bfdManager.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start BFD manager: %w", err)
+	}
+
 	h.started = true
 
 	return nil
 }
 
-// AddVIP adds a VIP with BGP announcement
+// AddVIP adds a VIP with BGP announcement (IPv4 or IPv6)
 func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -104,10 +116,13 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 		return fmt.Errorf("BGP config is required for BGP mode VIPs")
 	}
 
+	isIPv6 := ip.To4() == nil
+
 	h.logger.Info("Adding VIP with BGP announcement",
 		zap.String("vip", assignment.VipName),
 		zap.String("address", assignment.Address),
 		zap.Uint32("local_as", assignment.BgpConfig.LocalAs),
+		zap.Bool("ipv6", isIPv6),
 	)
 
 	// Start BGP server if not already started
@@ -118,12 +133,11 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 	}
 
 	// Announce route
-	if err := h.announceRoute(ctx, ip, assignment.BgpConfig); err != nil {
+	if err := h.announceRoute(ctx, ip, assignment.BgpConfig, isIPv6); err != nil {
 		h.logger.Warn("Failed to announce BGP route",
 			zap.String("vip", assignment.VipName),
 			zap.Error(err),
 		)
-		// Don't fail the whole operation if announcement fails
 	}
 
 	// Track VIP state
@@ -132,6 +146,12 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 		IP:         ip,
 		AddedAt:    time.Now(),
 		Announced:  true,
+		IsIPv6:     isIPv6,
+	}
+
+	// Setup BFD sessions for peers if BFD is configured
+	if assignment.BfdConfig != nil && assignment.BfdConfig.Enabled {
+		h.setupBFDSessions(assignment)
 	}
 
 	// Update metrics
@@ -163,11 +183,21 @@ func (h *BGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment
 
 	// Withdraw route
 	if state.Announced && h.bgpServer != nil {
-		if err := h.withdrawRoute(ctx, state.IP, assignment.BgpConfig); err != nil {
+		if err := h.withdrawRoute(ctx, state.IP, assignment.BgpConfig, state.IsIPv6); err != nil {
 			h.logger.Warn("Failed to withdraw BGP route",
 				zap.String("vip", assignment.VipName),
 				zap.Error(err),
 			)
+		}
+	}
+
+	// Remove BFD sessions for peers
+	if assignment.BgpConfig != nil {
+		for _, peer := range assignment.BgpConfig.Peers {
+			peerIP := net.ParseIP(peer.Address)
+			if peerIP != nil {
+				h.bfdManager.RemoveSession(peerIP)
+			}
 		}
 	}
 
@@ -184,6 +214,128 @@ func (h *BGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment
 	return nil
 }
 
+// setupBFDSessions creates BFD sessions for all BGP peers
+func (h *BGPHandler) setupBFDSessions(assignment *pb.VIPAssignment) {
+	if assignment.BfdConfig == nil || !assignment.BfdConfig.Enabled {
+		return
+	}
+
+	bfdCfg := BFDConfig{
+		DetectMultiplier: assignment.BfdConfig.DetectMultiplier,
+		EchoMode:         assignment.BfdConfig.EchoMode,
+	}
+
+	// Parse duration strings
+	if assignment.BfdConfig.DesiredMinTxInterval != "" {
+		if d, err := time.ParseDuration(assignment.BfdConfig.DesiredMinTxInterval); err == nil {
+			bfdCfg.DesiredMinTxInterval = d
+		} else {
+			h.logger.Warn("Invalid BFD DesiredMinTxInterval, using default",
+				zap.String("value", assignment.BfdConfig.DesiredMinTxInterval),
+				zap.Error(err),
+			)
+		}
+	}
+	if assignment.BfdConfig.RequiredMinRxInterval != "" {
+		if d, err := time.ParseDuration(assignment.BfdConfig.RequiredMinRxInterval); err == nil {
+			bfdCfg.RequiredMinRxInterval = d
+		} else {
+			h.logger.Warn("Invalid BFD RequiredMinRxInterval, using default",
+				zap.String("value", assignment.BfdConfig.RequiredMinRxInterval),
+				zap.Error(err),
+			)
+		}
+	}
+
+	for _, peer := range assignment.BgpConfig.Peers {
+		peerIP := net.ParseIP(peer.Address)
+		if peerIP == nil {
+			h.logger.Warn("Invalid peer IP for BFD session", zap.String("peer", peer.Address))
+			continue
+		}
+
+		if err := h.bfdManager.AddSession(peerIP, bfdCfg); err != nil {
+			h.logger.Error("Failed to add BFD session",
+				zap.String("peer", peer.Address),
+				zap.Error(err),
+			)
+		}
+	}
+}
+
+// onBFDNeighborDown is called when BFD detects a neighbor failure.
+// It withdraws all routes that were announced through the failed BGP peer
+// for sub-second failover. The BGP session will also eventually detect the
+// failure via holdtimer, but BFD gives much faster detection.
+func (h *BGPHandler) onBFDNeighborDown(peerIP net.IP) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	peerStr := peerIP.String()
+	h.logger.Warn("BFD detected neighbor down, withdrawing routes through failed peer",
+		zap.String("peer", peerStr),
+	)
+
+	if h.bgpServer == nil {
+		h.logger.Warn("BGP server not running, cannot withdraw routes",
+			zap.String("peer", peerStr),
+		)
+		return
+	}
+
+	ctx := context.Background()
+	withdrawn := 0
+
+	for vipName, state := range h.activeVIPs {
+		if state.Assignment.BgpConfig == nil {
+			continue
+		}
+
+		// Check if this VIP has the failed peer in its BGP config
+		peerFound := false
+		for _, peer := range state.Assignment.BgpConfig.Peers {
+			if peer.Address == peerStr {
+				peerFound = true
+				break
+			}
+		}
+
+		if !peerFound {
+			continue
+		}
+
+		if !state.Announced {
+			continue
+		}
+
+		h.logger.Warn("Withdrawing route for VIP due to BFD neighbor failure",
+			zap.String("vip", vipName),
+			zap.String("address", state.Assignment.Address),
+			zap.String("failed_peer", peerStr),
+		)
+
+		if err := h.withdrawRoute(ctx, state.IP, state.Assignment.BgpConfig, state.IsIPv6); err != nil {
+			h.logger.Error("Failed to withdraw route on BFD neighbor down",
+				zap.String("vip", vipName),
+				zap.String("peer", peerStr),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		state.Announced = false
+		withdrawn++
+	}
+
+	if withdrawn > 0 {
+		metrics.BGPAnnouncedRoutes.Set(float64(len(h.activeVIPs) - withdrawn))
+		h.logger.Warn("Routes withdrawn due to BFD neighbor failure",
+			zap.String("peer", peerStr),
+			zap.Int("withdrawn_count", withdrawn),
+		)
+	}
+}
+
 // startBGPServer initializes and starts the BGP server
 func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) error {
 	h.logger.Info("Starting BGP server",
@@ -191,17 +343,14 @@ func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) e
 		zap.String("router_id", config.RouterId),
 	)
 
-	// Create BGP server
 	h.bgpServer = server.NewBgpServer()
 	go h.bgpServer.Serve()
 
-	// Global BGP configuration
 	globalConfig := &api.StartBgpRequest{
 		Global: &api.Global{
-			Asn:      config.LocalAs,
-			RouterId: config.RouterId,
-			// Listen on all interfaces
-			ListenAddresses: []string{"0.0.0.0"},
+			Asn:             config.LocalAs,
+			RouterId:        config.RouterId,
+			ListenAddresses: []string{"0.0.0.0", "::"},
 			ListenPort:      179,
 		},
 	}
@@ -217,21 +366,52 @@ func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) e
 			port = 179
 		}
 
+		peerIP := net.ParseIP(peer.Address)
+		isIPv6Peer := peerIP != nil && peerIP.To4() == nil
+
 		h.logger.Info("Adding BGP peer",
 			zap.String("address", peer.Address),
 			zap.Uint32("as", peer.As),
 			zap.Uint32("port", port),
+			zap.Bool("ipv6", isIPv6Peer),
 		)
+
+		peerConf := &api.PeerConf{
+			NeighborAddress: peer.Address,
+			PeerAsn:         peer.As,
+		}
+
+		// Configure address families based on peer IP version
+		afiSafis := []*api.AfiSafi{}
+		if isIPv6Peer {
+			afiSafis = append(afiSafis, &api.AfiSafi{
+				Config: &api.AfiSafiConfig{
+					Family: &api.Family{
+						Afi:  api.Family_AFI_IP6,
+						Safi: api.Family_SAFI_UNICAST,
+					},
+					Enabled: true,
+				},
+			})
+		} else {
+			afiSafis = append(afiSafis, &api.AfiSafi{
+				Config: &api.AfiSafiConfig{
+					Family: &api.Family{
+						Afi:  api.Family_AFI_IP,
+						Safi: api.Family_SAFI_UNICAST,
+					},
+					Enabled: true,
+				},
+			})
+		}
 
 		peerConfig := &api.AddPeerRequest{
 			Peer: &api.Peer{
-				Conf: &api.PeerConf{
-					NeighborAddress: peer.Address,
-					PeerAsn:         peer.As,
-				},
+				Conf: peerConf,
 				Transport: &api.Transport{
 					RemotePort: port,
 				},
+				AfiSafis: afiSafis,
 			},
 		}
 
@@ -240,7 +420,6 @@ func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) e
 				zap.String("address", peer.Address),
 				zap.Error(err),
 			)
-			// Continue with other peers
 		}
 	}
 
@@ -248,52 +427,88 @@ func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) e
 	return nil
 }
 
-// announceRoute announces a route for a VIP
-func (h *BGPHandler) announceRoute(ctx context.Context, ip net.IP, config *pb.BGPConfig) error {
-	// Create /32 prefix for the VIP
-	prefix := fmt.Sprintf("%s/32", ip.String())
+// announceRoute announces a route for a VIP (IPv4 or IPv6)
+func (h *BGPHandler) announceRoute(ctx context.Context, ip net.IP, config *pb.BGPConfig, isIPv6 bool) error {
+	var prefixLen uint32
+	var family *api.Family
 
-	h.logger.Info("Announcing BGP route", zap.String("prefix", prefix))
+	if isIPv6 {
+		prefixLen = 128
+		family = &api.Family{
+			Afi:  api.Family_AFI_IP6,
+			Safi: api.Family_SAFI_UNICAST,
+		}
+	} else {
+		prefixLen = 32
+		family = &api.Family{
+			Afi:  api.Family_AFI_IP,
+			Safi: api.Family_SAFI_UNICAST,
+		}
+	}
 
-	// Build path attributes as Any protobuf messages
+	prefix := fmt.Sprintf("%s/%d", ip.String(), prefixLen)
+	h.logger.Info("Announcing BGP route", zap.String("prefix", prefix), zap.Bool("ipv6", isIPv6))
+
 	attrs := []*anypb.Any{}
 
 	// Origin attribute
-	originAttr, _ := anypb.New(&api.OriginAttribute{
+	originAttr, err := anypb.New(&api.OriginAttribute{
 		Origin: 0, // IGP
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal origin attribute: %w", err)
+	}
 	attrs = append(attrs, originAttr)
 
 	// Next hop attribute
-	nexthopAttr, _ := anypb.New(&api.NextHopAttribute{
-		NextHop: config.RouterId,
-	})
-	attrs = append(attrs, nexthopAttr)
+	if isIPv6 {
+		// For IPv6 BGP, use MP_REACH_NLRI with next-hop
+		mpReachAttr, err := anypb.New(&api.MpReachNLRIAttribute{
+			Family: family,
+			NextHops: []string{
+				config.RouterId,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal MP_REACH_NLRI attribute: %w", err)
+		}
+		attrs = append(attrs, mpReachAttr)
+	} else {
+		nexthopAttr, err := anypb.New(&api.NextHopAttribute{
+			NextHop: config.RouterId,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal next-hop attribute: %w", err)
+		}
+		attrs = append(attrs, nexthopAttr)
+	}
 
-	// Add local preference for iBGP
+	// Local preference for iBGP
 	if config.LocalPreference > 0 {
-		lpAttr, _ := anypb.New(&api.LocalPrefAttribute{
+		lpAttr, err := anypb.New(&api.LocalPrefAttribute{
 			LocalPref: config.LocalPreference,
 		})
+		if err != nil {
+			return fmt.Errorf("failed to marshal local-pref attribute: %w", err)
+		}
 		attrs = append(attrs, lpAttr)
 	}
 
-	// Build NLRI for IPv4 /32 prefix
-	nlri, _ := anypb.New(&api.IPAddressPrefix{
-		PrefixLen: 32,
+	// Build NLRI
+	nlri, err := anypb.New(&api.IPAddressPrefix{
+		PrefixLen: prefixLen,
 		Prefix:    ip.String(),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal NLRI: %w", err)
+	}
 
-	// Add path to global RIB
-	_, err := h.bgpServer.AddPath(ctx, &api.AddPathRequest{
+	_, err = h.bgpServer.AddPath(ctx, &api.AddPathRequest{
 		TableType: api.TableType_GLOBAL,
 		Path: &api.Path{
 			Nlri:   nlri,
 			Pattrs: attrs,
-			Family: &api.Family{
-				Afi:  api.Family_AFI_IP,
-				Safi: api.Family_SAFI_UNICAST,
-			},
+			Family: family,
 		},
 	})
 
@@ -305,27 +520,41 @@ func (h *BGPHandler) announceRoute(ctx context.Context, ip net.IP, config *pb.BG
 	return nil
 }
 
-// withdrawRoute withdraws a route for a VIP
-func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, _ *pb.BGPConfig) error {
-	prefix := fmt.Sprintf("%s/32", ip.String())
+// withdrawRoute withdraws a route for a VIP (IPv4 or IPv6)
+func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, _ *pb.BGPConfig, isIPv6 bool) error {
+	var prefixLen uint32
+	var family *api.Family
 
+	if isIPv6 {
+		prefixLen = 128
+		family = &api.Family{
+			Afi:  api.Family_AFI_IP6,
+			Safi: api.Family_SAFI_UNICAST,
+		}
+	} else {
+		prefixLen = 32
+		family = &api.Family{
+			Afi:  api.Family_AFI_IP,
+			Safi: api.Family_SAFI_UNICAST,
+		}
+	}
+
+	prefix := fmt.Sprintf("%s/%d", ip.String(), prefixLen)
 	h.logger.Info("Withdrawing BGP route", zap.String("prefix", prefix))
 
-	// Build NLRI for IPv4 /32 prefix
-	nlri, _ := anypb.New(&api.IPAddressPrefix{
-		PrefixLen: 32,
+	nlri, err := anypb.New(&api.IPAddressPrefix{
+		PrefixLen: prefixLen,
 		Prefix:    ip.String(),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal NLRI: %w", err)
+	}
 
-	// Delete path from global RIB
-	err := h.bgpServer.DeletePath(ctx, &api.DeletePathRequest{
+	err = h.bgpServer.DeletePath(ctx, &api.DeletePathRequest{
 		TableType: api.TableType_GLOBAL,
 		Path: &api.Path{
-			Nlri: nlri,
-			Family: &api.Family{
-				Afi:  api.Family_AFI_IP,
-				Safi: api.Family_SAFI_UNICAST,
-			},
+			Nlri:   nlri,
+			Family: family,
 		},
 	})
 
@@ -337,10 +566,19 @@ func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, _ *pb.BGPConf
 	return nil
 }
 
+// GetBFDManager returns the BFD manager for external access
+func (h *BGPHandler) GetBFDManager() *BFDManager {
+	return h.bfdManager
+}
+
 // Shutdown gracefully shuts down the BGP handler
 func (h *BGPHandler) Shutdown() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	if h.bfdManager != nil {
+		h.bfdManager.Stop()
+	}
 
 	if h.bgpServer != nil {
 		h.logger.Info("Shutting down BGP server")
