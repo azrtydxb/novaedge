@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -392,6 +393,7 @@ func (c *Converter) parseLBPolicy(policy string) pb.LoadBalancingPolicy {
 	case "LeastConn", "LeastConnections":
 		return pb.LoadBalancingPolicy_LEAST_CONN
 	default:
+		zap.L().Warn("Unknown LB policy, defaulting to RoundRobin", zap.String("policy", policy))
 		return pb.LoadBalancingPolicy_ROUND_ROBIN
 	}
 }
@@ -529,6 +531,8 @@ func (c *Converter) convertSessionAffinity(sa *SessionAffinityStandaloneConfig) 
 		affinityType = "header"
 	case "SourceIP":
 		affinityType = "source_ip"
+	default:
+		zap.L().Warn("Unknown session affinity type, defaulting to cookie", zap.String("type", sa.Type))
 	}
 
 	cookieName := sa.CookieName
@@ -545,6 +549,8 @@ func (c *Converter) convertSessionAffinity(sa *SessionAffinityStandaloneConfig) 
 	if sa.CookieTTL != "" {
 		if d, err := time.ParseDuration(sa.CookieTTL); err == nil {
 			ttlSeconds = int64(d.Seconds())
+		} else {
+			zap.L().Warn("Failed to parse session affinity cookie TTL duration", zap.String("ttl", sa.CookieTTL), zap.Error(err))
 		}
 	}
 

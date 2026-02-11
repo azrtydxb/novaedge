@@ -18,6 +18,7 @@ package snapshot
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -296,6 +297,8 @@ func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.Sess
 		affinityType = "header"
 	case "SourceIP":
 		affinityType = "source_ip"
+	default:
+		log.Log.Info("Unknown session affinity type, defaulting to cookie", "type", string(sa.Type))
 	}
 
 	cookieName := sa.CookieName

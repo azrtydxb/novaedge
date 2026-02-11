@@ -96,7 +96,6 @@ func (lc *LeastConn) Select() *pb.Endpoint {
 	if len(candidates) == 1 {
 		return candidates[0]
 	}
-	//nolint:gosec // G404: math/rand is acceptable for load balancer selection
 	return candidates[rand.IntN(len(candidates))]
 }
 
