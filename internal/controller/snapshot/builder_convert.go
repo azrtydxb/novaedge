@@ -314,7 +314,7 @@ func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.Sess
 	return &pb.SessionAffinityConfig{
 		Type:             affinityType,
 		CookieName:       cookieName,
-		CookieTtlSeconds: int64(sa.CookieTTL.Duration.Seconds()),
+		CookieTtlSeconds: int64(sa.CookieTTL.Seconds()),
 		CookiePath:       cookiePath,
 		CookieSecure:     sa.Secure,
 		CookieSameSite:   sa.SameSite,

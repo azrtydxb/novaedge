@@ -45,7 +45,7 @@ func TestStickyWrapperFirstRequestSetsCookie(t *testing.T) {
 
 	// Check that a cookie was set
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	cookies := resp.Cookies()
 
 	found := false
@@ -131,7 +131,7 @@ func TestStickyWrapperFallbackWhenEndpointGone(t *testing.T) {
 
 	// A new cookie should have been set
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	cookies := resp.Cookies()
 	found := false
 	for _, c := range cookies {
@@ -195,7 +195,7 @@ func TestStickyWrapperCookieTTL(t *testing.T) {
 	sw.SelectWithAffinity(req, w)
 
 	resp := w.Result()
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	cookies := resp.Cookies()
 
 	for _, c := range cookies {

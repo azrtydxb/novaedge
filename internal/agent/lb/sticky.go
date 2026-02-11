@@ -18,7 +18,6 @@ package lb
 
 import (
 	"net/http"
-	"strconv"
 	"sync"
 	"time"
 
@@ -164,9 +163,4 @@ func (sw *StickyWrapper) setAffinityCookie(w http.ResponseWriter, ep *pb.Endpoin
 // This is useful for calling algorithm-specific methods (e.g., IncrementActive).
 func (sw *StickyWrapper) GetInner() LoadBalancer {
 	return sw.inner
-}
-
-// endpointKeyFromParts builds an endpoint key from address and port.
-func endpointKeyFromParts(address string, port int32) string {
-	return address + ":" + strconv.FormatInt(int64(port), 10)
 }
