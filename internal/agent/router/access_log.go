@@ -29,7 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"text/template"
 	"time"
 
@@ -92,7 +91,6 @@ type AccessLogMiddleware struct {
 	writer         io.Writer
 	fileWriter     *rotatingFileWriter
 	mu             sync.RWMutex
-	requestCounter atomic.Uint64
 	bufPool        sync.Pool
 }
 
