@@ -4,64 +4,87 @@ NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VI
 
 ## Features
 
-- **Distributed L7 load balancing** (HTTP/1.1, HTTP/2, HTTP/3, WebSockets, gRPC)
-- **Reverse proxy with filters** (auth, rate-limit, rewrites, CORS, response headers)
-- **Ingress Controller** compatible with Kubernetes Ingress and Gateway API
-- **Distributed VIP management**:
-  - L2 ARP mode (active-passive VIP ownership)
-  - BGP mode (active-active multi-node ECMP)
-  - OSPF mode (active-active L3 routing)
-- **Node-level edge agents** binding to hostNetwork
-- **Kubernetes-native control plane** using CRDs
-- **Health checks, circuit breaking, outlier detection**
-- **High availability** and multi-node awareness
-- **Observability** (OpenTelemetry, Prometheus, structured logging)
+### L7 Load Balancing & Reverse Proxy
+- **Protocol support**: HTTP/1.1, HTTP/2 (h2/h2c), HTTP/3 (QUIC), WebSockets, gRPC, Server-Sent Events
+- **6 load balancing algorithms**: RoundRobin, P2C, EWMA, RingHash, Maglev, LeastConn
+- **Cookie-based session affinity** (sticky sessions)
+- **Advanced routing**: hostname, path, header, method matching with boolean routing expressions
+- **Traffic management**: canary/weighted splitting, traffic mirroring, request retry with configurable policies
+- **Response processing**: HTTP caching, gzip/Brotli compression, buffering, custom error pages
+- **Composable middleware pipelines** with per-route configuration
+- **HTTP-to-HTTPS redirect**, URL rewrite, header modification (request and response)
+
+### L4 Proxying
+- **TCP and UDP proxying** with connection tracking
+- **TLS passthrough** (SNI-based routing without termination)
+
+### VIP Management
+- **L2 ARP mode**: active-passive VIP ownership with GARP
+- **BGP mode**: active-active multi-node ECMP via GoBGP
+- **OSPF mode**: active-active L3 routing
+- **BFD** (Bidirectional Forwarding Detection) for sub-second failure detection
+- **IPv6 dual-stack** support
+- **IP address pools** (`ProxyIPPool` CRD) with IPAM allocation
+
+### Security & Authentication
+- **TLS termination** with SNI multi-certificate support and TLS 1.3 minimum
+- **Frontend mTLS** (mutual TLS client certificate verification)
+- **OCSP stapling** for certificate revocation checking
+- **PROXY protocol** v1/v2 support
+- **Authentication stack**: basic auth, forward auth, OAuth2/OIDC, Keycloak integration
+- **JWT validation** with JWKS support
+- **Rate limiting**: local (token bucket) and distributed (Redis-backed)
+- **CORS**, **IP filtering**, **security headers** (HSTS, CSP, X-Frame-Options)
+- **WAF** (Web Application Firewall) powered by Coraza
+- **Request size limits** and per-route access logging
+
+### Certificate Management
+- **ACME** (Let's Encrypt) with HTTP-01, DNS-01, and TLS-ALPN-01 challenges
+- **DNS providers**: Cloudflare, Route53, Google Cloud DNS
+- **cert-manager integration** for Kubernetes-native certificate lifecycle
+- **HashiCorp Vault** integration (PKI secrets engine, KV store)
+- **Self-signed certificate** generation
+- **Certificate hot-reload** without downtime
+
+### Extensibility
+- **WASM plugin system** (via Wazero runtime) for custom request/response processing
+- **Composable middleware pipelines** with boolean expressions for conditional routing
+- **10 Custom Resource Definitions** for declarative configuration
+
+### Kubernetes Integration
+- **Ingress API v1** support with automatic translation
+- **Gateway API v1** support (Gateway, HTTPRoute, GRPCRoute, TCPRoute, TLSRoute)
+- **Operator** (`NovaEdgeCluster` CRD) for lifecycle management
+- **Multi-cluster federation** with hub-spoke topology and split-brain detection
+- **Helm charts** for controller, agent, and operator deployment
+
+### Observability
+- **OpenTelemetry** distributed tracing
+- **Prometheus** metrics with cardinality limiting
+- **Structured logging** (zap) with correlation IDs
+- **Web UI dashboard** (via novactl)
+- **Per-route access logging**
+- **CLI tool** (novactl) with trace query, metrics query, and agent inspection
+
+### Health & Resilience
+- **Active and passive health checking**
+- **Circuit breaking** with configurable thresholds
+- **Graceful shutdown** with in-flight request tracking
+- **Connection pooling** with per-cluster limits
 
 ## Architecture
 
-NovaEdge consists of three major components:
+NovaEdge consists of four major components:
 
-1. **Kubernetes Controller (Control-Plane)**: Runs as a Deployment, watches CRDs and Kubernetes resources, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
-2. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L7 load balancing, VIP management, and executes routing/filtering logic
-3. **CRDs**: Custom Resource Definitions for `ProxyVIP`, `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`
+1. **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
+2. **Controller (Control-Plane)**: Runs as a Deployment, watches CRDs and Kubernetes resources, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
+3. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L4/L7 load balancing, VIP management, and executes routing/filtering/policy logic
+4. **CRDs**: 10 Custom Resource Definitions:
+   - Core: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
+   - Certificate & IP: `ProxyCertificate`, `ProxyIPPool`
+   - Cluster management: `NovaEdgeCluster`, `NovaEdgeFederation`, `NovaEdgeRemoteCluster`
 
-See [NovaEdge_FullSpec.md](NovaEdge_FullSpec.md) for detailed architecture and specifications.
-
-## Current Status
-
-✅ **Phases 1-11 Complete + Comprehensive Quality Audit**: Production-Ready System
-
-NovaEdge is now **production-ready** and enterprise-grade, capable of replacing Envoy + MetalLB + NGINX Ingress in Kubernetes clusters with superior performance and comprehensive test coverage.
-
-**Completed Features:**
-- ✅ All 5 CRD types with full validation and status tracking
-- ✅ Complete controller with reconcilers for all CRDs
-- ✅ Config snapshot builder with versioning and gRPC distribution
-- ✅ Full HTTP/1.1, HTTP/2 (h2/h2c), and HTTP/3 (QUIC) support
-- ✅ WebSocket proxying with bidirectional streaming and origin validation
-- ✅ gRPC support with metadata forwarding
-- ✅ All 3 VIP modes: L2 ARP (with actual GARP), BGP, and OSPF
-- ✅ 5 load balancing algorithms: RoundRobin, P2C, EWMA, RingHash, Maglev
-- ✅ Advanced filters: header modification, URL rewrite, redirects, response headers
-- ✅ Policy enforcement: rate limiting, CORS, IP filtering, JWT validation, security headers
-- ✅ Health checking (active & passive) and circuit breaking
-- ✅ TLS/SSL termination with SNI multi-certificate support
-- ✅ Ingress API v1 support with automatic translation
-- ✅ Gateway API v1 support (Gateway + HTTPRoute)
-- ✅ OpenTelemetry distributed tracing
-- ✅ Prometheus metrics and structured logging
-- ✅ CLI tool (novactl) with advanced features (trace query, metrics query, agent query)
-- ✅ Complete deployment manifests with PodDisruptionBudgets and HPA
-- ✅ Request size limits and graceful shutdown
-- ✅ Rate limiting on observability endpoints
-
-**Recent Comprehensive Quality Audit (37 Improvements):**
-- ✅ **Security Hardening**: TLS 1.3 minimum, WebSocket origin validation, request size limits
-- ✅ **Test Coverage**: 191 test functions covering all critical components (46.5% integration coverage)
-- ✅ **Performance**: 90% faster config updates, 80% memory reduction, 40% fewer allocations
-- ✅ **Code Quality**: Standardized error handling, logging, context propagation, interface abstractions
-- ✅ **Documentation**: Comprehensive guides for logging, context, performance, and code quality
-- ✅ **Infrastructure**: Kubernetes resource limits, PDBs, HPA for production readiness
+See the [documentation site](docs/index.md) for detailed architecture and specifications.
 
 ## Getting Started
 
@@ -75,12 +98,14 @@ NovaEdge is now **production-ready** and enterprise-grade, capable of replacing 
 ### Building
 
 ```bash
-# Build all components (controller, agent, novactl)
+# Build all 5 binaries (controller, agent, standalone, operator, novactl)
 make build-all
 
 # Or build individually
 make build-controller
 make build-agent
+make build-standalone
+make build-operator
 make build-novactl
 
 # Build Docker images
@@ -96,17 +121,33 @@ make test-coverage
 make lint
 ```
 
-### Installing CRDs
+### Deploying with Helm
 
 ```bash
-# Install CRDs to your cluster
-make install-crds
+# Install the operator
+helm install novaedge-operator ./charts/novaedge-operator \
+  --namespace novaedge-system --create-namespace
 
-# Verify CRDs are installed
-kubectl get crds | grep novaedge.io
+# Deploy NovaEdge via operator
+kubectl apply -f - <<EOF
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeCluster
+metadata:
+  name: novaedge
+  namespace: novaedge-system
+spec:
+  version: "v0.1.0"
+  agent:
+    vip:
+      enabled: true
+      mode: L2
+EOF
+
+# Verify
+kubectl get pods -n novaedge-system
 ```
 
-### Deploying to Kubernetes
+### Deploying Manually
 
 ```bash
 # 1. Install CRDs and create namespace
@@ -140,7 +181,7 @@ kubectl apply -f config/samples/proxyroute_sample.yaml
 kubectl apply -f config/samples/proxypolicy_ratelimit_sample.yaml
 kubectl apply -f config/samples/proxypolicy_cors_sample.yaml
 kubectl apply -f config/samples/proxypolicy_jwt_sample.yaml
-kubectl apply -f config/samples/proxypolicy_securityheaders_sample.yaml
+kubectl apply -f config/samples/proxycertificate_acme.yaml
 
 # Or use standard Kubernetes Ingress
 kubectl apply -f config/samples/ingress_sample.yaml
@@ -156,6 +197,8 @@ kubectl get proxygateways
 kubectl get proxyroutes
 kubectl get proxybackends
 kubectl get proxypolicies
+kubectl get proxycertificates
+kubectl get proxyippools
 
 # Or use the novactl CLI tool
 ./novactl get gateways
@@ -174,10 +217,8 @@ kubectl get proxypolicies
 
 ## Testing & Quality
 
-NovaEdge has comprehensive test coverage ensuring production readiness:
-
 ### Test Suite
-- **191 test functions** across unit, integration, and controller tests
+- **191+ test functions** across unit, integration, and controller tests
 - **46.5% integration coverage** with end-to-end request flow validation
 - **85%+ unit coverage** for critical components (router, health, VIP, load balancing)
 
@@ -201,79 +242,27 @@ go test -v ./internal/controller/...
 go test -bench=. -benchmem ./internal/agent/...
 ```
 
-### Performance Benchmarks
-- **90% faster** configuration updates when endpoints unchanged
-- **80% memory reduction** with metrics cardinality limiting
-- **40% fewer allocations** per request with sync.Pool optimization
-- **30% reduction** in GC pause time
-- **20% improvement** in P99 latency
-
 ### Code Quality
-- **Zero linting errors** with comprehensive rules enabled
+- **Zero linting errors** with 16 strict linters enabled (golangci-lint)
+- **CI pipeline**: gofmt, golangci-lint, go vet, govulncheck, unit tests, build all 5 binaries
 - **Standardized error handling** with custom error types
 - **Interface abstractions** for improved testability
-- **Comprehensive documentation** in `docs/` directory
 
-## Advanced Features
+## Documentation
 
-### CLI Tool (novactl)
+Comprehensive documentation is available in the [docs/](docs/index.md) directory covering:
 
-The NovaEdge CLI provides powerful observability and management:
-
-```bash
-# Agent Queries (requires proto extensions)
-novactl agent config <node-name>
-novactl agent backends <node-name>
-novactl agent vips <node-name>
-
-# Distributed Tracing
-novactl trace list --limit 20 --lookback 1h
-novactl trace get <trace-id>
-novactl trace search --service novaedge-agent --min-duration 1s
-
-# Metrics Queries
-novactl metrics query '<promql-expression>'
-novactl metrics top-backends --limit 10
-novactl metrics top-routes --limit 10
-novactl metrics dashboard
-```
-
-### Security Features
-- **TLS 1.3 minimum** with secure AEAD cipher suites
-- **WebSocket origin validation** with wildcard support
-- **Request size limits** (10MB default, 100MB for uploads)
-- **Rate limiting** on observability endpoints (100 req/min per IP)
-- **JWT validation** with JWKS support
-- **IP filtering** with CIDR and trusted proxy support
-- **Circuit breakers** prevent cascading failures
-- **Security headers policy** (HSTS, CSP, X-Frame-Options, X-Content-Type-Options)
-- **Response header modification** (add, set, remove headers on responses)
-- **Management plane protection** (run Web UI behind NovaEdge proxy)
-
-### Performance Optimizations
-- **Connection pooling** with configurable limits per cluster
-- **Load balancer state caching** reduces config update overhead
-- **Metrics cardinality limiting** prevents memory exhaustion
-- **Memory pooling** (sync.Pool) for frequent allocations
-- **Graceful shutdown** with 30s timeout and in-flight request tracking
-
-## Development Roadmap
-
-- [x] **Phase 1**: Core CRDs + Controller skeleton
-- [x] **Phase 2**: Config snapshot builder
-- [x] **Phase 3**: Basic HTTP L7 proxy + routing
-- [x] **Phase 4**: L2 VIP mode
-- [x] **Phase 5**: BGP VIP mode
-- [x] **Phase 6**: Filters + LB algorithms
-- [x] **Phase 7**: Health checking + circuit breaking
-- [x] **Phase 8**: Ingress + Gateway API support
-- [x] **Phase 9**: Observability + CLI
-- [x] **Phase 10**: Policy enforcement and traffic management
-- [x] **Phase 11**: HTTP/3 QUIC
+- **Architecture**: system design, component deep-dives, federation model
+- **User Guides**: routing, load balancing, VIP management, TLS, authentication, WASM plugins, L4 proxying, WAF, and more
+- **Operations**: observability, Web UI dashboard, troubleshooting, access logging
+- **Reference**: CRD specifications, CLI reference, Helm values
+- **Development**: contributing guide, development setup
 
 ## Contributing
 
-See [CLAUDE.md](CLAUDE.md) for development guidelines and best practices when working with Claude Code.
+See [docs/development/contributing.md](docs/development/contributing.md) for contribution guidelines.
+
+See [CLAUDE.md](CLAUDE.md) for development guidelines when working with Claude Code.
 
 ## License
 
