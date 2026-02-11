@@ -22,7 +22,7 @@ import (
 )
 
 // CertificateIssuerType defines the type of certificate issuer
-// +kubebuilder:validation:Enum=acme;manual;self-signed;cert-manager
+// +kubebuilder:validation:Enum=acme;manual;self-signed;cert-manager;vault-pki
 type CertificateIssuerType string
 
 const (
@@ -34,6 +34,8 @@ const (
 	CertificateIssuerTypeSelfSigned CertificateIssuerType = "self-signed"
 	// CertificateIssuerTypeCertManager integrates with cert-manager
 	CertificateIssuerTypeCertManager CertificateIssuerType = "cert-manager"
+	// CertificateIssuerTypeVaultPKI integrates with HashiCorp Vault PKI
+	CertificateIssuerTypeVaultPKI CertificateIssuerType = "vault-pki"
 )
 
 // ACMEChallengeType defines the ACME challenge type
@@ -108,6 +110,46 @@ type ACMEIssuerConfig struct {
 	// AcceptTOS indicates acceptance of the ACME Terms of Service
 	// +kubebuilder:default=true
 	AcceptTOS bool `json:"acceptTOS,omitempty"`
+
+	// DNS01 configures DNS-01 specific options
+	// +optional
+	DNS01 *DNS01Config `json:"dns01,omitempty"`
+
+	// TLSALPN01 configures TLS-ALPN-01 specific options
+	// +optional
+	TLSALPN01 *TLSALPN01Config `json:"tlsAlpn01,omitempty"`
+}
+
+// DNS01Config configures DNS-01 ACME challenge
+type DNS01Config struct {
+	// Provider specifies the DNS provider (cloudflare, route53, googledns)
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=cloudflare;route53;googledns
+	Provider string `json:"provider"`
+
+	// CredentialsRef references a Secret containing DNS provider credentials
+	// +kubebuilder:validation:Required
+	CredentialsRef LocalObjectReference `json:"credentialsRef"`
+
+	// PropagationTimeout is the maximum time to wait for DNS propagation
+	// +optional
+	// +kubebuilder:default="120s"
+	PropagationTimeout string `json:"propagationTimeout,omitempty"`
+
+	// PollingInterval is the time between DNS propagation checks
+	// +optional
+	// +kubebuilder:default="5s"
+	PollingInterval string `json:"pollingInterval,omitempty"`
+}
+
+// TLSALPN01Config configures TLS-ALPN-01 ACME challenge
+type TLSALPN01Config struct {
+	// Port is the port to listen on for TLS-ALPN-01 challenges (default: 443)
+	// +optional
+	// +kubebuilder:default=443
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=65535
+	Port int32 `json:"port,omitempty"`
 }
 
 // ManualIssuerConfig configures manual certificate provision
@@ -158,6 +200,25 @@ type CertificateIssuer struct {
 	// CertManager configures cert-manager integration
 	// +optional
 	CertManager *CertManagerIssuerConfig `json:"certManager,omitempty"`
+
+	// VaultPKI configures HashiCorp Vault PKI integration
+	// +optional
+	VaultPKI *VaultPKIIssuerConfig `json:"vaultPKI,omitempty"`
+}
+
+// VaultPKIIssuerConfig configures Vault PKI secrets engine for certificate issuance
+type VaultPKIIssuerConfig struct {
+	// Path is the Vault PKI mount path (e.g., "pki" or "pki-int")
+	// +kubebuilder:validation:Required
+	Path string `json:"path"`
+
+	// Role is the Vault PKI role name
+	// +kubebuilder:validation:Required
+	Role string `json:"role"`
+
+	// TTL is the requested certificate TTL (e.g., "720h")
+	// +optional
+	TTL string `json:"ttl,omitempty"`
 }
 
 // ProxyCertificateSpec defines the desired state of ProxyCertificate

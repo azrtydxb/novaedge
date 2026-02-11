@@ -25,6 +25,38 @@ import (
 // +kubebuilder:validation:Enum=HTTP;HTTPS;TCP;TLS;UDP
 type ProtocolType string
 
+// Cert-manager annotation keys recognized by ProxyGateway.
+// When these annotations are present on a ProxyGateway resource,
+// the controller will create cert-manager Certificate CRs automatically.
+const (
+	// AnnotationCertManagerClusterIssuer triggers cert-manager Certificate creation
+	// using the specified ClusterIssuer
+	AnnotationCertManagerClusterIssuer = "cert-manager.io/cluster-issuer"
+
+	// AnnotationCertManagerIssuer triggers cert-manager Certificate creation
+	// using the specified namespaced Issuer
+	AnnotationCertManagerIssuer = "cert-manager.io/issuer"
+)
+
+// VaultCertReference references a certificate to be issued from Vault PKI
+type VaultCertReference struct {
+	// Path is the Vault PKI secrets engine mount path
+	// +kubebuilder:validation:Required
+	Path string `json:"path"`
+
+	// Role is the Vault PKI role name
+	// +kubebuilder:validation:Required
+	Role string `json:"role"`
+
+	// TTL is the requested certificate TTL
+	// +optional
+	TTL string `json:"ttl,omitempty"`
+
+	// CacheSecretName is the name of the K8s Secret to cache the Vault-issued cert
+	// +optional
+	CacheSecretName string `json:"cacheSecretName,omitempty"`
+}
+
 const (
 	// ProtocolTypeHTTP is plain HTTP
 	ProtocolTypeHTTP ProtocolType = "HTTP"
@@ -59,6 +91,11 @@ type TLSConfig struct {
 	// SelfSigned generates a self-signed certificate
 	// +optional
 	SelfSigned *InlineSelfSignedConfig `json:"selfSigned,omitempty"`
+
+	// VaultCertRef references a certificate from HashiCorp Vault PKI
+	// The controller will request the cert from Vault and cache it in a K8s Secret
+	// +optional
+	VaultCertRef *VaultCertReference `json:"vaultCertRef,omitempty"`
 
 	// MinVersion is the minimum TLS version (default: TLS 1.2)
 	// +optional

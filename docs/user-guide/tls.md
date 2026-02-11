@@ -611,3 +611,122 @@ OCSP status is available through the health/status endpoint and includes:
 - Whether stapling is active per certificate
 - Next OCSP response update time
 - Last refresh time and any errors
+
+## DNS-01 ACME Challenges
+
+DNS-01 challenges are useful for:
+- Wildcard certificates (e.g., `*.example.com`)
+- Environments where HTTP-01 is not possible (private networks, firewalls)
+- Multi-domain certificates
+
+### Supported DNS Providers
+
+| Provider | Credentials Required |
+|----------|---------------------|
+| Cloudflare | `api_token` |
+| Route53 | `access_key_id`, `secret_access_key`, `hosted_zone_id` |
+| Google Cloud DNS | `project`, `managed_zone`, `access_token` or `service_account_json` |
+
+### Kubernetes Configuration
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyCertificate
+metadata:
+  name: wildcard-cert
+spec:
+  domains:
+    - "*.example.com"
+    - "example.com"
+  issuer:
+    type: acme
+    acme:
+      email: admin@example.com
+      challengeType: dns-01
+      dnsProvider: cloudflare
+      dnsCredentialsRef:
+        name: cloudflare-api-token
+        namespace: novaedge-system
+      dns01:
+        provider: cloudflare
+        credentialsRef:
+          name: cloudflare-api-token
+        propagationTimeout: "120s"
+        pollingInterval: "5s"
+  secretName: wildcard-tls
+```
+
+DNS provider credentials Secret:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-api-token
+  namespace: novaedge-system
+type: Opaque
+stringData:
+  api_token: "your-cloudflare-api-token"
+```
+
+### Standalone Mode Configuration
+
+```yaml
+certificates:
+  - name: wildcard
+    domains:
+      - "*.example.com"
+      - "example.com"
+    issuer:
+      type: acme
+      acme:
+        email: admin@example.com
+        challengeType: dns-01
+        dnsProvider: cloudflare
+        dns01:
+          provider: cloudflare
+          credentials:
+            api_token: "${CLOUDFLARE_API_TOKEN}"
+          propagationTimeout: "120s"
+        acceptTOS: true
+```
+
+## TLS-ALPN-01 ACME Challenges
+
+TLS-ALPN-01 challenges validate domain ownership over TLS on port 443 using the `acme-tls/1` ALPN protocol. This is useful when:
+
+- Port 80 is not available (HTTP-01 requires port 80)
+- DNS API access is not available (DNS-01 requires DNS provider API)
+
+### Kubernetes Configuration
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyCertificate
+metadata:
+  name: api-cert
+spec:
+  domains:
+    - api.example.com
+  issuer:
+    type: acme
+    acme:
+      email: admin@example.com
+      challengeType: tls-alpn-01
+      tlsAlpn01:
+        port: 443
+  secretName: api-tls
+```
+
+### How TLS-ALPN-01 Works
+
+1. ACME server sends a challenge token
+2. NovaEdge creates a temporary self-signed certificate containing the challenge token as an ACME identifier extension
+3. The certificate is served on port 443 with the `acme-tls/1` ALPN protocol
+4. ACME server validates and issues the certificate
+
+### TLS-ALPN-01 Requirements
+
+- Port 443 must be accessible from the ACME server
+- No other TLS service can be using port 443 during the challenge
+- The domain must resolve to the NovaEdge node

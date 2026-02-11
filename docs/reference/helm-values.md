@@ -825,3 +825,23 @@ failover:
       priority: 100
   persistConfig: true
 ```
+
+## cert-manager Integration
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `certManager.enabled` | string | `"auto"` | Enable cert-manager integration (`auto`, `true`, `false`) |
+
+When set to `auto`, the controller auto-detects cert-manager CRDs at startup.
+
+## Vault Integration
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `vault.enabled` | string | `"false"` | Enable Vault integration (`auto`, `true`, `false`) |
+| `vault.address` | string | `""` | Vault server address |
+| `vault.authMethod` | string | `"kubernetes"` | Auth method (`kubernetes`, `approle`, `token`) |
+| `vault.role` | string | `"novaedge"` | Vault auth role name |
+| `vault.namespace` | string | `""` | Vault Enterprise namespace |
+| `vault.tlsSkipVerify` | bool | `false` | Skip TLS verification (dev only) |
+| `vault.caCert` | string | `""` | Path to CA certificate for Vault TLS |
