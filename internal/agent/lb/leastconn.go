@@ -92,6 +92,11 @@ func (lc *LeastConn) Select() *pb.Endpoint {
 		}
 	}
 
+	// Fallback if atomic counters changed between two passes (concurrent access)
+	if len(candidates) == 0 {
+		return healthy[rand.IntN(len(healthy))]
+	}
+
 	// Random selection among tied candidates to prevent bias
 	if len(candidates) == 1 {
 		return candidates[0]
