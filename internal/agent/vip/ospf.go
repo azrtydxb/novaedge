@@ -80,6 +80,9 @@ type OSPFHandler struct {
 	// Context for background tasks
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// wg tracks background goroutines for clean shutdown
+	wg sync.WaitGroup
 }
 
 // OSPFVIPState tracks the state of an OSPF VIP
@@ -321,10 +324,17 @@ func (h *OSPFHandler) startOSPFServer(config *pb.OSPFConfig) error {
 	}
 
 	// Start OSPF protocol handling
-	go h.ospfProtocolLoop()
+	h.wg.Add(2)
+	go func() {
+		defer h.wg.Done()
+		h.ospfProtocolLoop()
+	}()
 
 	// Start LSA aging
-	go h.lsaAgingLoop()
+	go func() {
+		defer h.wg.Done()
+		h.lsaAgingLoop()
+	}()
 
 	h.logger.Info("OSPF server started successfully",
 		zap.Uint32("cost", cost),
@@ -338,9 +348,11 @@ func (h *OSPFHandler) ospfProtocolLoop() {
 	h.logger.Info("Starting OSPF protocol loop")
 
 	helloInterval := time.Duration(ospfDefaultHelloIvl) * time.Second
+	h.mu.RLock()
 	if h.ospfServer != nil && h.ospfServer.config.HelloInterval > 0 {
 		helloInterval = time.Duration(h.ospfServer.config.HelloInterval) * time.Second
 	}
+	h.mu.RUnlock()
 
 	ticker := time.NewTicker(helloInterval)
 	defer ticker.Stop()
@@ -641,14 +653,22 @@ func (h *OSPFHandler) GetLSDBCount() int {
 
 // Shutdown gracefully shuts down the OSPF handler
 func (h *OSPFHandler) Shutdown() {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
 	h.logger.Info("Shutting down OSPF handler")
 
-	if h.cancel != nil {
-		h.cancel()
+	// Cancel context first to signal goroutines to stop
+	h.mu.RLock()
+	cancel := h.cancel
+	h.mu.RUnlock()
+
+	if cancel != nil {
+		cancel()
 	}
+
+	// Wait for background goroutines to finish before cleaning up
+	h.wg.Wait()
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
 
 	if h.ospfServer != nil {
 		h.ospfServer.mu.Lock()
