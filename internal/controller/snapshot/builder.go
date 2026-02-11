@@ -173,13 +173,14 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 			}
 
 			// Add IPv6 address for dual-stack
-			if vip.Spec.AddressFamily == novaedgev1alpha1.AddressFamilyDual {
+			switch vip.Spec.AddressFamily {
+			case novaedgev1alpha1.AddressFamilyDual:
 				if vip.Status.AllocatedIPv6Address != "" {
 					assignment.Ipv6Address = vip.Status.AllocatedIPv6Address
 				} else if vip.Spec.IPv6Address != "" {
 					assignment.Ipv6Address = vip.Spec.IPv6Address
 				}
-			} else if vip.Spec.AddressFamily == novaedgev1alpha1.AddressFamilyIPv6 {
+			case novaedgev1alpha1.AddressFamilyIPv6:
 				// For IPv6 only, use IPv6 address as primary
 				if vip.Spec.IPv6Address != "" {
 					assignment.Address = vip.Spec.IPv6Address

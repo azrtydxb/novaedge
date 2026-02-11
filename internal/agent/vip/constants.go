@@ -25,7 +25,4 @@ const (
 
 	// errInvalidVIPAddressFmt is the format string for invalid VIP address errors
 	errInvalidVIPAddressFmt = "invalid VIP address %s: %w"
-
-	// neighborStateDown represents OSPF neighbor Down state
-	neighborStateDown = "Down"
 )
