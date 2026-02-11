@@ -1,0 +1,58 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: keycloak-auth-policy
+  namespace: default
+spec:
+  type: OIDC
+  targetRef:
+    kind: ProxyRoute
+    name: admin-route
+    namespace: default
+  oidc:
+    provider: keycloak
+    # IssuerURL is auto-constructed from keycloak config below
+    clientID: "my-application"
+    clientSecretRef:
+      name: keycloak-client-secret
+    redirectURL: "https://myapp.example.com/oauth2/callback"
+    scopes:
+      - openid
+      - profile
+      - email
+      - roles
+    sessionSecretRef:
+      name: keycloak-session-secret
+    forwardHeaders:
+      - X-Auth-Email
+      - X-Auth-Name
+    keycloak:
+      serverURL: "https://keycloak.example.com"
+      realm: "my-realm"
+      roleClaim: "realm_access.roles"
+      groupClaim: "groups"
+    authorization:
+      requiredRoles:
+        - admin
+        - editor
+      requiredGroups:
+        - /engineering
+      mode: any  # User needs any of the roles OR any of the groups
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-client-secret
+  namespace: default
+type: Opaque
+stringData:
+  client-secret: "your-keycloak-client-secret"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keycloak-session-secret
+  namespace: default
+type: Opaque
+data:
+  session-secret: "REPLACE_WITH_BASE64_32_BYTE_KEY"

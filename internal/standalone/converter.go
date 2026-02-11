@@ -18,6 +18,7 @@ package standalone
 
 import (
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math"
@@ -731,6 +732,35 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 					Priority: safeInt32(p.WASMPlugin.Priority),
 				}
 			}
+		case "BasicAuth":
+			if p.BasicAuth != nil {
+				htpasswd := buildHtpasswdFromConfig(p.BasicAuth)
+				policy.BasicAuth = &pb.BasicAuthConfig{
+					Realm:     p.BasicAuth.Realm,
+					Htpasswd:  htpasswd,
+					StripAuth: p.BasicAuth.StripAuth,
+				}
+			}
+		case "ForwardAuth":
+			if p.ForwardAuth != nil {
+				config := &pb.ForwardAuthConfig{
+					Address:         p.ForwardAuth.Address,
+					AuthHeaders:     p.ForwardAuth.AuthHeaders,
+					ResponseHeaders: p.ForwardAuth.ResponseHeaders,
+				}
+				if d, err := time.ParseDuration(p.ForwardAuth.Timeout); err == nil {
+					config.TimeoutMs = d.Milliseconds()
+				}
+				if d, err := time.ParseDuration(p.ForwardAuth.CacheTTL); err == nil {
+					config.CacheTtlSeconds = int64(d.Seconds())
+				}
+				policy.ForwardAuth = config
+			}
+		case "OIDC":
+			if p.OIDC != nil {
+				oidcConfig := convertOIDCPolicy(p.OIDC)
+				policy.Oidc = oidcConfig
+			}
 		}
 
 		result = append(result, policy)
@@ -989,6 +1019,66 @@ func (c *Converter) convertErrorPages(ep *ErrorPagesConfig) *pb.ErrorPageConfig 
 
 	for code, tmpl := range ep.Pages {
 		config.Pages[safeInt32(code)] = tmpl
+	}
+
+	return config
+}
+
+// buildHtpasswdFromConfig builds htpasswd content from standalone BasicAuth config.
+func buildHtpasswdFromConfig(config *BasicAuthPolicy) string {
+	var lines []string
+
+	// Load from htpasswd file if specified
+	if config.HtpasswdFile != "" {
+		data, err := os.ReadFile(filepath.Clean(config.HtpasswdFile))
+		if err == nil {
+			return string(data)
+		}
+	}
+
+	// Build from inline users map
+	for username, hash := range config.Users {
+		lines = append(lines, username+":"+hash)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// convertOIDCPolicy converts standalone OIDC policy to proto config.
+func convertOIDCPolicy(p *OIDCPolicy) *pb.OIDCConfig {
+	issuerURL := p.IssuerURL
+	if issuerURL == "" && p.Keycloak != nil {
+		issuerURL = fmt.Sprintf("%s/realms/%s",
+			strings.TrimRight(p.Keycloak.ServerURL, "/"), p.Keycloak.Realm)
+	}
+
+	sessionSecret, _ := base64.StdEncoding.DecodeString(p.SessionSecret)
+
+	config := &pb.OIDCConfig{
+		Provider:       p.Provider,
+		IssuerUrl:      issuerURL,
+		ClientId:       p.ClientID,
+		ClientSecret:   p.ClientSecret,
+		RedirectUrl:    p.RedirectURL,
+		Scopes:         p.Scopes,
+		SessionSecret:  sessionSecret,
+		ForwardHeaders: p.ForwardHeaders,
+	}
+
+	if p.Keycloak != nil {
+		config.Keycloak = &pb.KeycloakConfig{
+			ServerUrl:  p.Keycloak.ServerURL,
+			Realm:      p.Keycloak.Realm,
+			RoleClaim:  p.Keycloak.RoleClaim,
+			GroupClaim: p.Keycloak.GroupClaim,
+		}
+	}
+
+	if p.Authorization != nil {
+		config.Authorization = &pb.AuthorizationConfig{
+			RequiredRoles:  p.Authorization.RequiredRoles,
+			RequiredGroups: p.Authorization.RequiredGroups,
+			Mode:           p.Authorization.Mode,
+		}
 	}
 
 	return config

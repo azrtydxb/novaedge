@@ -246,6 +246,142 @@ spec:
                       "1; mode=block")
                     type: string
                 type: object
+              basicAuth:
+                description: BasicAuth configuration (for BasicAuth type)
+                properties:
+                  realm:
+                    default: Restricted
+                    description: Realm is the authentication realm name
+                    type: string
+                  secretRef:
+                    description: SecretRef references a Secret with htpasswd data
+                    properties:
+                      name:
+                        description: Name is the name of the referenced object
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  stripAuth:
+                    default: true
+                    description: StripAuth removes Authorization header before forwarding
+                    type: boolean
+                type: object
+              forwardAuth:
+                description: ForwardAuth configuration (for ForwardAuth type)
+                properties:
+                  address:
+                    description: Address is the URL of the external auth service
+                    pattern: ^https?://
+                    type: string
+                  authHeaders:
+                    description: Headers to forward to auth service
+                    items:
+                      type: string
+                    type: array
+                  cacheTTL:
+                    description: Cache TTL for auth decisions (e.g., 5m)
+                    type: string
+                  responseHeaders:
+                    description: Headers to copy from auth response
+                    items:
+                      type: string
+                    type: array
+                  timeout:
+                    default: 5s
+                    description: Timeout for auth subrequest
+                    type: string
+                required:
+                - address
+                type: object
+              oidc:
+                description: OIDC configuration (for OIDC type)
+                properties:
+                  authorization:
+                    description: Role-based access control configuration
+                    properties:
+                      mode:
+                        default: any
+                        enum:
+                        - any
+                        - all
+                        type: string
+                      requiredGroups:
+                        items:
+                          type: string
+                        type: array
+                      requiredRoles:
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  clientID:
+                    description: OAuth2 client ID
+                    type: string
+                  clientSecretRef:
+                    description: Secret containing OAuth2 client secret
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  forwardHeaders:
+                    description: User info claims to forward as headers
+                    items:
+                      type: string
+                    type: array
+                  issuerURL:
+                    description: OIDC provider issuer URL
+                    type: string
+                  keycloak:
+                    description: Keycloak-specific configuration
+                    properties:
+                      groupClaim:
+                        default: groups
+                        type: string
+                      realm:
+                        type: string
+                      roleClaim:
+                        default: realm_access.roles
+                        type: string
+                      serverURL:
+                        type: string
+                    required:
+                    - realm
+                    - serverURL
+                    type: object
+                  provider:
+                    default: generic
+                    enum:
+                    - generic
+                    - keycloak
+                    type: string
+                  redirectURL:
+                    description: OAuth2 callback URL
+                    type: string
+                  scopes:
+                    default:
+                    - openid
+                    - profile
+                    - email
+                    items:
+                      type: string
+                    type: array
+                  sessionSecretRef:
+                    description: Secret containing session encryption key
+                    properties:
+                      name:
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - clientID
+                - clientSecretRef
+                - redirectURL
+                - sessionSecretRef
+                type: object
               targetRef:
                 description: TargetRef identifies the resource this policy applies
                   to
@@ -279,6 +415,9 @@ spec:
                 - CORS
                 - SecurityHeaders
                 - WASMPlugin
+                - BasicAuth
+                - ForwardAuth
+                - OIDC
                 type: string
               wasmPlugin:
                 description: WASMPlugin configuration (for WASMPlugin type)

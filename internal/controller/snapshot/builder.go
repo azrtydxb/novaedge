@@ -695,6 +695,33 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 			policy.WasmPlugin = wasmConfig
 		}
 
+		// Build BasicAuth config
+		if p.Spec.BasicAuth != nil {
+			basicAuthConfig, err := b.buildBasicAuthConfig(ctx, &p)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "Failed to build BasicAuth config",
+					"policy", p.Name)
+			} else {
+				policy.BasicAuth = basicAuthConfig
+			}
+		}
+
+		// Build ForwardAuth config
+		if p.Spec.ForwardAuth != nil {
+			policy.ForwardAuth = b.buildForwardAuthConfig(p.Spec.ForwardAuth)
+		}
+
+		// Build OIDC config
+		if p.Spec.OIDC != nil {
+			oidcConfig, err := b.buildOIDCConfig(ctx, &p)
+			if err != nil {
+				log.FromContext(ctx).Error(err, "Failed to build OIDC config",
+					"policy", p.Name)
+			} else {
+				policy.Oidc = oidcConfig
+			}
+		}
+
 		policies = append(policies, policy)
 	}
 
