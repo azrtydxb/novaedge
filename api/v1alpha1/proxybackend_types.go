@@ -21,7 +21,7 @@ import (
 )
 
 // LoadBalancingPolicy defines the load balancing algorithm
-// +kubebuilder:validation:Enum=RoundRobin;P2C;EWMA;RingHash;Maglev
+// +kubebuilder:validation:Enum=RoundRobin;P2C;EWMA;RingHash;Maglev;LeastConn
 type LoadBalancingPolicy string
 
 const (
@@ -35,6 +35,8 @@ const (
 	LBPolicyRingHash LoadBalancingPolicy = "RingHash"
 	// LBPolicyMaglev uses Maglev consistent hashing
 	LBPolicyMaglev LoadBalancingPolicy = "Maglev"
+	// LBPolicyLeastConn uses Least Connections algorithm
+	LBPolicyLeastConn LoadBalancingPolicy = "LeastConn"
 )
 
 // ServiceReference references a Kubernetes Service
@@ -166,6 +168,15 @@ type SessionAffinityConfig struct {
 	// HeaderName is the header name for header-based affinity
 	// +optional
 	HeaderName string `json:"headerName,omitempty"`
+
+	// Secure sets the Secure flag on the affinity cookie
+	// +optional
+	Secure bool `json:"secure,omitempty"`
+
+	// SameSite sets the SameSite attribute on the affinity cookie
+	// +optional
+	// +kubebuilder:validation:Enum=Strict;Lax;None
+	SameSite string `json:"sameSite,omitempty"`
 }
 
 // ConnectionPool defines connection pool configuration

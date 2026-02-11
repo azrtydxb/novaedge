@@ -796,7 +796,7 @@ spec:
       port: 8080
 
   # Load balancing policy
-  lbPolicy: RoundRobin  # RoundRobin, P2C, EWMA, RingHash, Maglev
+  lbPolicy: RoundRobin  # RoundRobin, P2C, EWMA, LeastConn, RingHash, Maglev
 
   # Health check configuration
   healthCheck:
@@ -818,6 +818,15 @@ spec:
     consecutiveErrors: 5
     ejectionTime: 30s
 
+  # Session affinity (sticky sessions)
+  sessionAffinity:
+    type: Cookie           # Cookie, Header, SourceIP
+    cookieName: NOVAEDGE_AFFINITY
+    cookieTTL: 30m
+    cookiePath: /
+    secure: true
+    sameSite: Lax          # Strict, Lax, None
+
   # Connection pool configuration
   connectionPool:
     maxIdleConns: 100
@@ -833,6 +842,7 @@ flowchart LR
         RR["RoundRobin<br/>Equal distribution"]
         P2C["P2C<br/>Best of 2 random"]
         EWMA["EWMA<br/>Latency-aware"]
+        LC["LeastConn<br/>Connection-aware"]
         RH["RingHash<br/>Consistent hashing"]
         MAG["Maglev<br/>Google's algorithm"]
     end

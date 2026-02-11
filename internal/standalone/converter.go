@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -328,6 +329,11 @@ func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, ma
 			}
 		}
 
+		// Session affinity
+		if b.SessionAffinity != nil {
+			cluster.SessionAffinity = c.convertSessionAffinity(b.SessionAffinity)
+		}
+
 		clusters = append(clusters, cluster)
 
 		// Endpoints - key is "namespace/name"
@@ -384,7 +390,10 @@ func (c *Converter) parseLBPolicy(policy string) pb.LoadBalancingPolicy {
 		return pb.LoadBalancingPolicy_RING_HASH
 	case "Maglev":
 		return pb.LoadBalancingPolicy_MAGLEV
+	case "LeastConn", "LeastConnections":
+		return pb.LoadBalancingPolicy_LEAST_CONN
 	default:
+		zap.L().Warn("Unknown LB policy, defaulting to RoundRobin", zap.String("policy", policy))
 		return pb.LoadBalancingPolicy_ROUND_ROBIN
 	}
 }
@@ -507,4 +516,50 @@ func (c *Converter) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	data, _ := proto.Marshal(snapshot)
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:8])
+}
+
+func (c *Converter) convertSessionAffinity(sa *SessionAffinityStandaloneConfig) *pb.SessionAffinityConfig {
+	if sa == nil {
+		return nil
+	}
+
+	affinityType := "cookie"
+	switch sa.Type {
+	case "Cookie":
+		affinityType = "cookie"
+	case "Header":
+		affinityType = "header"
+	case "SourceIP":
+		affinityType = "source_ip"
+	default:
+		zap.L().Warn("Unknown session affinity type, defaulting to cookie", zap.String("type", sa.Type))
+	}
+
+	cookieName := sa.CookieName
+	if cookieName == "" {
+		cookieName = "NOVAEDGE_AFFINITY"
+	}
+
+	cookiePath := sa.CookiePath
+	if cookiePath == "" {
+		cookiePath = "/"
+	}
+
+	var ttlSeconds int64
+	if sa.CookieTTL != "" {
+		if d, err := time.ParseDuration(sa.CookieTTL); err == nil {
+			ttlSeconds = int64(d.Seconds())
+		} else {
+			zap.L().Warn("Failed to parse session affinity cookie TTL duration", zap.String("ttl", sa.CookieTTL), zap.Error(err))
+		}
+	}
+
+	return &pb.SessionAffinityConfig{
+		Type:             affinityType,
+		CookieName:       cookieName,
+		CookieTtlSeconds: ttlSeconds,
+		CookiePath:       cookiePath,
+		CookieSecure:     sa.Secure,
+		CookieSameSite:   sa.SameSite,
+	}
 }

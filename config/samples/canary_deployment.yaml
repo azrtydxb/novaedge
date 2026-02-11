@@ -1,0 +1,64 @@
+# Canary Deployment Example
+# This example demonstrates traffic splitting between stable and canary versions
+# with support for header-based canary routing.
+#
+# Traffic distribution:
+#   - 90% of traffic goes to api-v1-backend (stable)
+#   - 10% of traffic goes to api-v2-backend (canary)
+#   - Requests with "X-Canary: true" header always go to api-v2-backend
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: api-v1-backend
+  labels:
+    app: api
+    version: v1
+spec:
+  serviceRef:
+    name: api-v1-service
+    port: 8080
+  lbPolicy: RoundRobin
+  healthCheck:
+    interval: 5s
+    timeout: 2s
+    httpPath: /healthz
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: api-v2-backend
+  labels:
+    app: api
+    version: v2
+spec:
+  serviceRef:
+    name: api-v2-service
+    port: 8080
+  lbPolicy: RoundRobin
+  healthCheck:
+    interval: 5s
+    timeout: 2s
+    httpPath: /healthz
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-canary-route
+spec:
+  parentRefs:
+    - name: main-gateway
+  hostnames:
+    - api.example.com
+  rules:
+    # Weighted traffic split: 90% v1, 10% v2
+    # Requests with "X-Canary: true" header override to v2
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: api-v1-backend
+          weight: 90
+        - name: api-v2-backend
+          weight: 10

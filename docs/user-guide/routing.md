@@ -319,9 +319,13 @@ flowchart TB
 3. **More specific** header matches
 4. **Explicit method** matches before wildcard
 
-## Traffic Splitting
+## Traffic Splitting and Canary Deployments
 
-Split traffic between backends (canary deployments):
+Split traffic between backends for canary deployments and gradual rollouts.
+
+### Weighted Traffic Split
+
+Use `backendRefs` with `weight` to distribute traffic proportionally:
 
 ```yaml
 apiVersion: novaedge.io/v1alpha1
@@ -331,6 +335,8 @@ metadata:
 spec:
   parentRefs:
     - name: main-gateway
+  hostnames:
+    - api.example.com
   rules:
     - matches:
         - path:
@@ -338,9 +344,70 @@ spec:
             value: /api
       backendRefs:
         - name: api-v1-backend
-          weight: 90
+          weight: 90    # 90% of traffic
         - name: api-v2-backend
-          weight: 10
+          weight: 10    # 10% of traffic
+```
+
+```mermaid
+flowchart LR
+    Client((Client)) --> Router{Router}
+    Router -->|"90%"| V1["api-v1-backend"]
+    Router -->|"10%"| V2["api-v2-backend"]
+
+    style V1 fill:#e8f5e9
+    style V2 fill:#fff4e6
+```
+
+### Header-Based Canary Routing
+
+Send specific requests directly to the canary backend using the `X-Canary: true` header.
+When this header is present, traffic is always routed to the backend with the lowest
+weight (the canary):
+
+```bash
+# Force canary routing for testing
+curl -H "X-Canary: true" https://api.example.com/api/users
+
+# Normal weighted routing (no header)
+curl https://api.example.com/api/users
+```
+
+This enables:
+- **Developers** to test canary releases in production
+- **CI/CD pipelines** to validate canary deployments
+- **QA teams** to target the new version specifically
+
+### Gradual Rollout Strategy
+
+Gradually shift traffic from v1 to v2:
+
+```yaml
+# Phase 1: 95/5 split
+backendRefs:
+  - name: api-v1-backend
+    weight: 95
+  - name: api-v2-backend
+    weight: 5
+
+# Phase 2: 80/20 split
+backendRefs:
+  - name: api-v1-backend
+    weight: 80
+  - name: api-v2-backend
+    weight: 20
+
+# Phase 3: 50/50 split
+backendRefs:
+  - name: api-v1-backend
+    weight: 50
+  - name: api-v2-backend
+    weight: 50
+
+# Phase 4: Complete rollout
+backendRefs:
+  - name: api-v2-backend
+    weight: 100
 ```
 
 ## Hostname Wildcards

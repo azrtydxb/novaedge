@@ -4,7 +4,7 @@ Configure how NovaEdge distributes traffic across backend endpoints.
 
 ## Algorithms
 
-NovaEdge supports five load balancing algorithms:
+NovaEdge supports six load balancing algorithms:
 
 ```mermaid
 flowchart TB
@@ -12,6 +12,7 @@ flowchart TB
         RR["Round Robin<br/>Equal distribution"]
         P2C["P2C<br/>Low latency"]
         EWMA["EWMA<br/>Latency-aware"]
+        LC["Least Conn<br/>Connection-aware"]
         RH["Ring Hash<br/>Session affinity"]
         MG["Maglev<br/>Consistent hashing"]
     end
@@ -22,6 +23,7 @@ flowchart TB
 | RoundRobin | General purpose | No |
 | P2C | Low latency | No |
 | EWMA | Variable backend performance | No |
+| LeastConn | Connection-aware distribution | No |
 | RingHash | Stateful applications | Yes |
 | Maglev | High-performance consistent hashing | Yes |
 
@@ -143,6 +145,114 @@ flowchart TB
 - Backend performance varies
 - Need latency-aware routing
 - Backends have different capacities
+
+## Least Connections (LeastConn)
+
+Routes traffic to the backend with the fewest active connections. This is ideal for
+workloads where requests have variable processing times.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: api-backend
+spec:
+  serviceRef:
+    name: api-service
+    port: 8080
+  lbPolicy: LeastConn
+```
+
+```mermaid
+flowchart LR
+    subgraph LeastConn["Least Connections"]
+        T["Track connections"]
+        C["Compare counts"]
+        S["Select lowest"]
+    end
+
+    B1["Backend 1<br/>3 connections"]
+    B2["Backend 2<br/>1 connection"]
+    B3["Backend 3<br/>5 connections"]
+
+    C --> B1 & B2 & B3
+    S -->|"selects"| B2
+
+    style B2 fill:#90EE90
+```
+
+**Use when:**
+- Requests have variable processing times
+- Backends may have different capacities
+- Long-running connections (WebSockets, gRPC streams)
+- Need connection-aware load distribution
+
+## Cookie-Based Session Affinity (Sticky Sessions)
+
+Any LB algorithm can be wrapped with cookie-based session affinity. On the first
+request, the LB picks an endpoint normally and sets an affinity cookie. On
+subsequent requests from the same client, the cookie routes traffic to the same
+backend. If the backend is unavailable, the LB falls back to normal selection.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: stateful-backend
+spec:
+  serviceRef:
+    name: stateful-app
+    port: 8080
+  lbPolicy: LeastConn
+  sessionAffinity:
+    type: Cookie
+    cookieName: NOVAEDGE_SESSION
+    cookieTTL: 30m
+    cookiePath: /
+    secure: true
+    sameSite: Lax
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant LB as Load Balancer
+    participant B1 as Backend 1
+    participant B2 as Backend 2
+
+    C->>LB: Request 1 (no cookie)
+    LB->>B1: Forward (LB selects B1)
+    B1-->>LB: Response
+    LB-->>C: Response + Set-Cookie: NOVAEDGE_SESSION=B1
+
+    C->>LB: Request 2 (cookie: B1)
+    LB->>B1: Forward (cookie affinity)
+    B1-->>LB: Response
+    LB-->>C: Response
+
+    Note over B1: Backend 1 goes down
+
+    C->>LB: Request 3 (cookie: B1)
+    LB->>B2: Forward (fallback - B1 unhealthy)
+    B2-->>LB: Response
+    LB-->>C: Response + Set-Cookie: NOVAEDGE_SESSION=B2
+```
+
+### Session Affinity Options
+
+| Field | Default | Description |
+|-------|---------|-------------|
+|  |  | Affinity type (, , ) |
+|  |  | Name of the affinity cookie |
+|  |  | Cookie TTL ( = session cookie) |
+|  |  | Cookie path attribute |
+|  |  | Set the Secure flag |
+|  |  | SameSite attribute (, , ) |
+
+**Use when:**
+- Stateful applications that store session data in-memory
+- Shopping carts, user preferences, WebSocket connections
+- Applications that benefit from cache locality
 
 ## Ring Hash
 

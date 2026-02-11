@@ -90,6 +90,9 @@ type Router struct {
 	// These require a key for consistent hashing
 	hashBasedLBs map[string]interface{}
 
+	// Sticky session wrappers per cluster
+	stickyWrappers map[string]*lb.StickyWrapper
+
 	// gRPC handler for gRPC-specific request processing
 	grpcHandler *grpchandler.GRPCHandler
 
@@ -109,6 +112,7 @@ func NewRouter(logger *zap.Logger) *Router {
 		pools:               make(map[string]*upstream.Pool),
 		loadBalancers:       make(map[string]lb.LoadBalancer),
 		hashBasedLBs:        make(map[string]interface{}),
+		stickyWrappers:      make(map[string]*lb.StickyWrapper),
 		grpcHandler:         grpchandler.NewGRPCHandler(logger),
 		endpointVersions:    make(map[string]uint64),
 		maxRequestBodyBytes: 10 * 1024 * 1024,  // Default: 10MB
@@ -206,6 +210,10 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 				newHashBasedLBs[clusterKey] = lb.NewMaglev(endpointList.Endpoints)
 				r.logger.Debug("Created Maglev load balancer", zap.String("cluster", clusterKey))
 
+			case pb.LoadBalancingPolicy_LEAST_CONN:
+				newLoadBalancers[clusterKey] = lb.NewLeastConn(endpointList.Endpoints)
+				r.logger.Debug("Created LeastConn load balancer", zap.String("cluster", clusterKey))
+
 			case pb.LoadBalancingPolicy_ROUND_ROBIN, pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
 				newLoadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
 				r.logger.Debug("Created RoundRobin load balancer", zap.String("cluster", clusterKey))
@@ -250,6 +258,48 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	r.pools = newPools
 	r.loadBalancers = newLoadBalancers
 	r.hashBasedLBs = newHashBasedLBs
+
+	// Create sticky session wrappers for clusters with session affinity configured
+	newStickyWrappers := make(map[string]*lb.StickyWrapper)
+	for _, cluster := range snapshot.Clusters {
+		clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
+		sa := cluster.GetSessionAffinity()
+		if sa == nil || sa.GetType() == "" {
+			continue
+		}
+		if sa.GetType() != "cookie" {
+			continue
+		}
+		baseLB, hasLB := newLoadBalancers[clusterKey]
+		if !hasLB {
+			continue
+		}
+		endpointList := snapshot.Endpoints[clusterKey]
+		if endpointList == nil {
+			continue
+		}
+		cookieName := sa.GetCookieName()
+		if cookieName == "" {
+			cookieName = "NOVAEDGE_AFFINITY"
+		}
+		cookiePath := sa.GetCookiePath()
+		if cookiePath == "" {
+			cookiePath = "/"
+		}
+		cfg := lb.StickyConfig{
+			CookieName: cookieName,
+			TTL:        time.Duration(sa.GetCookieTtlSeconds()) * time.Second,
+			Path:       cookiePath,
+			Secure:     sa.GetCookieSecure(),
+			SameSite:   lb.ParseSameSite(sa.GetCookieSameSite()),
+		}
+		newStickyWrappers[clusterKey] = lb.NewStickyWrapper(baseLB, cfg, endpointList.Endpoints)
+		r.logger.Debug("Created sticky session wrapper",
+			zap.String("cluster", clusterKey),
+			zap.String("cookie", cookieName),
+		)
+	}
+	r.stickyWrappers = newStickyWrappers
 
 	r.logger.Info("Router configuration applied",
 		zap.Int("hostnames", len(r.routes)),
