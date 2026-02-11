@@ -247,6 +247,20 @@ type RouteBufferingConfig struct {
 	MaxSize string `json:"maxSize,omitempty"`
 }
 
+// RouteMirrorConfig configures traffic mirroring for a route rule
+type RouteMirrorConfig struct {
+	// BackendRef references the mirror backend
+	// +kubebuilder:validation:Required
+	BackendRef BackendRef `json:"backendRef"`
+
+	// Percentage is the percentage of requests to mirror (0-100)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	// +kubebuilder:default=100
+	Percentage int32 `json:"percentage,omitempty"`
+}
+
 // HTTPRouteRule defines semantics for matching an HTTP request and routing it
 type HTTPRouteRule struct {
 	// Matches define conditions used for matching the rule against incoming requests
@@ -264,6 +278,10 @@ type HTTPRouteRule struct {
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=16
 	BackendRefs []BackendRef `json:"backendRefs"`
+
+	// Mirror configures traffic mirroring for this route rule
+	// +optional
+	Mirror *RouteMirrorConfig `json:"mirror,omitempty"`
 
 	// Timeout is the request timeout for this rule
 	// +optional

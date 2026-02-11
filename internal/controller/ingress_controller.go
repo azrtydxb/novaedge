@@ -44,7 +44,8 @@ const (
 // IngressReconciler reconciles Kubernetes Ingress objects
 type IngressReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	IngressClass string // Configurable ingress class name to watch
 }
 
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;update;patch
@@ -142,7 +143,11 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 // shouldProcessIngress checks if this Ingress should be processed by NovaEdge
 func (r *IngressReconciler) shouldProcessIngress(ingress *networkingv1.Ingress) bool {
 	ingressClass := r.getIngressClass(ingress)
-	return ingressClass == IngressClassName
+	expected := r.IngressClass
+	if expected == "" {
+		expected = IngressClassName
+	}
+	return ingressClass == expected
 }
 
 // getIngressClass returns the ingress class for the given Ingress

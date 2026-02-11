@@ -1,0 +1,22 @@
+# Example: Response caching configuration
+# This gateway enables HTTP response caching with a 256Mi cache
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: cached-gateway
+  namespace: default
+spec:
+  vipRef: web-vip
+  loadBalancerClass: novaedge.io/proxy
+  cache:
+    enabled: true
+    maxSize: "256Mi"
+    defaultTTL: "5m"
+    maxTTL: "1h"
+    maxEntrySize: "1Mi"
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostnames:
+        - "*.example.com"

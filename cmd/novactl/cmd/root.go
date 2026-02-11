@@ -70,4 +70,5 @@ func init() {
 	rootCmd.AddCommand(newTraceCommand())
 	rootCmd.AddCommand(newWebCommand())
 	rootCmd.AddCommand(newFederationCommand())
+	rootCmd.AddCommand(newCacheCommand())
 }

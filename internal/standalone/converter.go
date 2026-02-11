@@ -243,6 +243,20 @@ func (c *Converter) convertRoutes(routes []RouteConfig) []*pb.Route {
 			rule.Filters = append(rule.Filters, filter)
 		}
 
+		// Convert mirror configuration if present
+		if r.Mirror != nil && r.Mirror.Backend != "" {
+			percentage := safeInt32(r.Mirror.Percentage)
+			if percentage == 0 {
+				percentage = 100 // Default: mirror all requests
+			}
+			rule.MirrorBackend = &pb.BackendRef{
+				Name:      r.Mirror.Backend,
+				Namespace: "default",
+				Weight:    1,
+			}
+			rule.MirrorPercent = percentage
+		}
+
 		route.Rules = append(route.Rules, rule)
 		result = append(result, route)
 	}

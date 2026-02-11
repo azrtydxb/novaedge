@@ -91,6 +91,17 @@ message Gateway {
   string ingress_class_name = 4;
   repeated Listener listeners = 5;
   CompressionConfig compression = 6; // Response compression configuration
+  string load_balancer_class = 7;
+  GatewayCacheConfig cache = 8;
+}
+
+// GatewayCacheConfig configures response caching for a gateway
+message GatewayCacheConfig {
+  bool enabled = 1;
+  int64 max_size_bytes = 2;
+  int64 default_ttl_seconds = 3;
+  int64 max_ttl_seconds = 4;
+  int64 max_entry_size_bytes = 5;
 }
 
 // Listener represents a port and protocol to listen on
@@ -141,6 +152,12 @@ message Route {
   repeated RouteRule rules = 4;
 }
 
+// MirrorConfig configures traffic mirroring for a route rule
+message MirrorConfig {
+  BackendRef backend_ref = 1;
+  int32 percentage = 2; // 0-100
+}
+
 // RouteRule defines matching and routing logic
 message RouteRule {
   repeated RouteMatch matches = 1;
@@ -148,6 +165,8 @@ message RouteRule {
   repeated BackendRef backend_refs = 3; // Support multiple weighted backends
   RouteLimitsConfig limits = 4;         // Per-route size limits and timeouts
   BufferingConfig buffering = 5;        // Request/response buffering settings
+  BackendRef mirror_backend = 6;        // Mirror backend reference (optional)
+  int32 mirror_percent = 7;             // Percentage of requests to mirror (0-100)
 }
 
 // RouteMatch defines conditions for matching requests
