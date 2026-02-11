@@ -201,7 +201,7 @@ func (s *HTTPServer) startWithProxyProtocol(server *http.Server, port int32, lis
 	ppListener, err := NewProxyProtocolListener(
 		ln,
 		listenerInfo.ProxyProtocol.Version,
-		listenerInfo.ProxyProtocol.TrustedCIDRs,
+		listenerInfo.ProxyProtocol.TrustedCidrs,
 		s.logger,
 	)
 	if err != nil {
@@ -212,7 +212,7 @@ func (s *HTTPServer) startWithProxyProtocol(server *http.Server, port int32, lis
 	s.logger.Info("PROXY protocol enabled on listener",
 		zap.Int32("port", port),
 		zap.Int32("version", listenerInfo.ProxyProtocol.Version),
-		zap.Strings("trusted_cidrs", listenerInfo.ProxyProtocol.TrustedCIDRs),
+		zap.Strings("trusted_cidrs", listenerInfo.ProxyProtocol.TrustedCidrs),
 	)
 
 	var listener net.Listener = ppListener

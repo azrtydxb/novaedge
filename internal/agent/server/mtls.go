@@ -51,16 +51,16 @@ func (s *HTTPServer) applyClientAuthConfig(tlsConfig *tls.Config, clientAuth *pb
 	tlsConfig.ClientAuth = parseClientAuth(clientAuth.Mode)
 
 	// Load CA certificate pool for client cert verification
-	if len(clientAuth.CACert) > 0 {
+	if len(clientAuth.CaCert) > 0 {
 		caCertPool := x509.NewCertPool()
-		if !caCertPool.AppendCertsFromPEM(clientAuth.CACert) {
+		if !caCertPool.AppendCertsFromPEM(clientAuth.CaCert) {
 			return fmt.Errorf("failed to parse client CA certificate bundle")
 		}
 		tlsConfig.ClientCAs = caCertPool
 
 		s.logger.Info("mTLS client authentication configured",
 			zap.String("mode", clientAuth.Mode),
-			zap.Int("ca_certs_loaded", len(clientAuth.CACert)),
+			zap.Int("ca_certs_loaded", len(clientAuth.CaCert)),
 		)
 	} else if clientAuth.Mode == "require" {
 		return fmt.Errorf("mTLS mode 'require' needs a CA certificate bundle but none was provided")

@@ -220,7 +220,7 @@ func (rw *wasmResponseWriter) WriteHeader(code int) {
 	reqCtx := &RequestContext{
 		Request:            rw.request,
 		ResponseWriter:     rw.ResponseWriter,
-		ResponseHeaders:    rw.ResponseWriter.Header(),
+		ResponseHeaders:    rw.Header(),
 		ResponseStatusCode: code,
 		Action:             ActionContinue,
 	}

@@ -18,8 +18,6 @@ package wasm
 
 import (
 	"context"
-	"fmt"
-	"strconv"
 
 	"github.com/tetratelabs/wazero/api"
 	"go.uber.org/zap"
@@ -295,7 +293,7 @@ func hostSendResponse(ctx context.Context, mod api.Module, stack []uint64) {
 	bodyBytes, ok := mem.Read(bodyPtr, bodyLen)
 	if !ok {
 		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSendResponse"))
-		bodyBytes = []byte(fmt.Sprintf("WASM plugin error: could not read body from memory"))
+		bodyBytes = []byte("WASM plugin error: could not read body from memory")
 	}
 
 	rc.ResponseWriter.WriteHeader(int(statusCode))
@@ -319,60 +317,4 @@ func writeStringToMemory(mem api.Memory, ptr, cap uint32, value string) uint32 {
 		return 0
 	}
 	return uint32(len(b))
-}
-
-// readStringFromMemory reads a string from WASM linear memory.
-func readStringFromMemory(mem api.Memory, ptr, length uint32) (string, error) {
-	data, ok := mem.Read(ptr, length)
-	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "readStringFromMemory"))
-		return "", fmt.Errorf("failed to read %d bytes at offset %d", length, ptr)
-	}
-	return string(data), nil
-}
-
-// writeToGuestMemory allocates memory in the guest via its exported malloc,
-// writes data into it, and returns (ptr, len). The caller is responsible
-// for calling guest free later.
-func writeToGuestMemory(ctx context.Context, mod api.Module, data []byte) (uint32, uint32, error) {
-	malloc := mod.ExportedFunction(guestExportNames.Malloc)
-	if malloc == nil {
-		return 0, 0, fmt.Errorf("guest does not export %s", guestExportNames.Malloc)
-	}
-
-	size := uint64(len(data))
-	results, err := malloc.Call(ctx, size)
-	if err != nil {
-		return 0, 0, fmt.Errorf("malloc call failed: %w", err)
-	}
-	if len(results) == 0 {
-		return 0, 0, fmt.Errorf("malloc returned no results")
-	}
-	ptr := uint32(results[0])
-	if ptr == 0 {
-		return 0, 0, fmt.Errorf("malloc returned null pointer for size %d", size)
-	}
-
-	if !mod.Memory().Write(ptr, data) {
-		zap.L().Debug("WASM host: memory write failed", zap.String("function", "writeToGuestMemory"))
-		return 0, 0, fmt.Errorf("failed to write %d bytes to guest memory at %d", len(data), ptr)
-	}
-
-	return ptr, uint32(len(data)), nil
-}
-
-// freeGuestMemory frees memory previously allocated in the guest via malloc.
-func freeGuestMemory(ctx context.Context, mod api.Module, ptr, size uint32) {
-	free := mod.ExportedFunction(guestExportNames.Free)
-	if free == nil {
-		return
-	}
-	_, _ = free.Call(ctx, uint64(ptr), uint64(size))
-}
-
-// writeHeaderCountToMemory is a helper that writes a header count as a
-// uint32 string into guest memory at the given ptr.
-func writeHeaderCountToMemory(mem api.Memory, ptr, cap uint32, count int) uint32 {
-	s := strconv.Itoa(count)
-	return writeStringToMemory(mem, ptr, cap, s)
 }

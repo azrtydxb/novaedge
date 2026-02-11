@@ -604,18 +604,6 @@ func (r *Router) matchHeader(match *pb.HeaderMatch, headerIdx, matchIdx int, val
 	}
 }
 
-// createWASMMiddleware creates a WASM middleware handler from a plugin name and config.
-func (r *Router) createWASMMiddleware(name string, _ map[string]string) (func(http.Handler) http.Handler, error) {
-	if r.wasmRuntime == nil {
-		return nil, fmt.Errorf("WASM runtime not initialized")
-	}
-	plugin, ok := r.wasmRuntime.GetPlugin(name)
-	if !ok {
-		return nil, fmt.Errorf("WASM plugin %s not loaded", name)
-	}
-	return plugin.Middleware(), nil
-}
-
 // updateRequestLimits updates request size limits from gateway configuration
 func (r *Router) updateRequestLimits(snapshot *config.Snapshot) {
 	// Find the maximum request size limits across all gateways

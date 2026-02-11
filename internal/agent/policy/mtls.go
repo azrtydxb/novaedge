@@ -41,7 +41,7 @@ func NewMTLSValidator(config *pb.ClientAuthConfig, logger *zap.Logger) (*MTLSVal
 	}
 
 	// Pre-compile CN patterns
-	for _, pattern := range config.RequiredCNPatterns {
+	for _, pattern := range config.RequiredCnPatterns {
 		re, err := regexp.Compile(pattern)
 		if err != nil {
 			return nil, &MTLSPolicyError{
@@ -125,7 +125,7 @@ func (v *MTLSValidator) Validate(r *http.Request) error {
 	}
 
 	// Validate required SANs
-	requiredSANs := v.config.RequiredSANs
+	requiredSANs := v.config.RequiredSans
 	if len(requiredSANs) > 0 {
 		// Collect all SANs from the certificate
 		certSANs := make(map[string]bool)

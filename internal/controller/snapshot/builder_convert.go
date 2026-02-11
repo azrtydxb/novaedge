@@ -677,11 +677,3 @@ func convertMiddlewarePipeline(pipeline *novaedgev1alpha1.MiddlewarePipelineConf
 
 	return pbPipeline
 }
-
-// convertWASMPolicyType converts WASMPlugin policy type
-func convertWASMPolicyType(policyType novaedgev1alpha1.PolicyType) pb.PolicyType {
-	if policyType == novaedgev1alpha1.PolicyTypeWASMPlugin {
-		return pb.PolicyType_WASM_PLUGIN
-	}
-	return convertPolicyType(policyType)
-}

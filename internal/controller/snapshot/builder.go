@@ -90,8 +90,8 @@ func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*a
 			if listener.ClientAuth != nil && listener.ClientAuth.Mode != "" && listener.ClientAuth.Mode != novaedgev1alpha1.ClientAuthModeNone {
 				clientAuth := &pb.ClientAuthConfig{
 					Mode:               string(listener.ClientAuth.Mode),
-					RequiredCNPatterns: listener.ClientAuth.RequiredCNPatterns,
-					RequiredSANs:       listener.ClientAuth.RequiredSANs,
+					RequiredCnPatterns: listener.ClientAuth.RequiredCNPatterns,
+					RequiredSans:       listener.ClientAuth.RequiredSANs,
 				}
 
 				// Load CA certificate from secret
@@ -102,7 +102,7 @@ func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*a
 						log.FromContext(ctx).Error(err, "Failed to load mTLS CA cert",
 							"gateway", gw.Name, "listener", listener.Name)
 					} else {
-						clientAuth.CACert = caCert
+						clientAuth.CaCert = caCert
 					}
 				}
 
@@ -114,7 +114,7 @@ func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*a
 				listenerExt.ProxyProtocol = &pb.ProxyProtocolConfig{
 					Enabled:      true,
 					Version:      listener.ProxyProtocol.Version,
-					TrustedCIDRs: listener.ProxyProtocol.TrustedCIDRs,
+					TrustedCidrs: listener.ProxyProtocol.TrustedCIDRs,
 				}
 			}
 

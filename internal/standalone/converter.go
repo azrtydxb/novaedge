@@ -143,15 +143,15 @@ func (c *Converter) buildExtensions(cfg *Config) *agentconfig.SnapshotExtensions
 		if l.ClientAuth != nil && l.ClientAuth.Mode != "" && l.ClientAuth.Mode != "none" {
 			clientAuth := &pb.ClientAuthConfig{
 				Mode:               l.ClientAuth.Mode,
-				RequiredCNPatterns: l.ClientAuth.RequiredCNPatterns,
-				RequiredSANs:       l.ClientAuth.RequiredSANs,
+				RequiredCnPatterns: l.ClientAuth.RequiredCNPatterns,
+				RequiredSans:       l.ClientAuth.RequiredSANs,
 			}
 
 			// Load CA certificate from file
 			if l.ClientAuth.CAFile != "" {
 				caCert, err := os.ReadFile(filepath.Clean(l.ClientAuth.CAFile))
 				if err == nil {
-					clientAuth.CACert = caCert
+					clientAuth.CaCert = caCert
 				}
 			}
 
@@ -162,7 +162,7 @@ func (c *Converter) buildExtensions(cfg *Config) *agentconfig.SnapshotExtensions
 			listenerExt.ProxyProtocol = &pb.ProxyProtocolConfig{
 				Enabled:      true,
 				Version:      safeInt32(l.ProxyProtocol.Version),
-				TrustedCIDRs: l.ProxyProtocol.TrustedCIDRs,
+				TrustedCidrs: l.ProxyProtocol.TrustedCIDRs,
 			}
 		}
 
