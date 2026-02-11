@@ -44,6 +44,11 @@ func (b *Builder) buildL4Listeners(ctx context.Context, gateways []*pb.Gateway, 
 				if l4Listener != nil {
 					l4Listeners = append(l4Listeners, l4Listener)
 				}
+			case pb.Protocol_UDP:
+				l4Listener := b.buildUDPListener(ctx, gw, listener, endpoints)
+				if l4Listener != nil {
+					l4Listeners = append(l4Listeners, l4Listener)
+				}
 			default:
 				// HTTP/HTTPS/HTTP3 listeners are handled by the HTTP server
 				continue
@@ -127,6 +132,36 @@ func (b *Builder) buildTLSPassthroughListener(ctx context.Context, gw *pb.Gatewa
 	}
 
 	l4Listener.TlsRoutes = tlsRoutes
+
+	return l4Listener
+}
+
+// buildUDPListener builds a UDP L4 listener from gateway and route configuration
+func (b *Builder) buildUDPListener(ctx context.Context, gw *pb.Gateway, listener *pb.Listener, endpoints map[string]*pb.EndpointList) *pb.L4Listener {
+	logger := log.FromContext(ctx)
+
+	l4Listener := &pb.L4Listener{
+		Name:     fmt.Sprintf("%s-%s-%s", gw.Namespace, gw.Name, listener.Name),
+		Port:     listener.Port,
+		Protocol: pb.Protocol_UDP,
+	}
+
+	backendName, backendEndpoints := b.findL4BackendForListener(ctx, gw, listener, endpoints)
+	if backendName == "" {
+		logger.Info("No backends found for UDP listener",
+			"gateway", gw.Name,
+			"listener", listener.Name)
+		return nil
+	}
+
+	l4Listener.BackendName = backendName
+	l4Listener.Backends = backendEndpoints
+
+	// UDP configuration with defaults
+	l4Listener.UdpConfig = &pb.L4UDPConfig{
+		SessionTimeoutMs: 30000,
+		BufferSize:       65535,
+	}
 
 	return l4Listener
 }

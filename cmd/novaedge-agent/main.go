@@ -33,6 +33,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	"github.com/piwi3910/novaedge/internal/observability"
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 var (
@@ -320,7 +321,7 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 		}
 
 		switch l4Listener.Protocol {
-		case 4: // TCP
+		case pb.Protocol_TCP:
 			cfg.Type = l4.ListenerTypeTCP
 			if l4Listener.TcpConfig != nil {
 				cfg.TCPConfig = &l4.TCPProxyConfig{
@@ -330,7 +331,7 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 					DrainTimeout:   time.Duration(l4Listener.TcpConfig.DrainTimeoutMs) * time.Millisecond,
 				}
 			}
-		case 5: // TLS (passthrough)
+		case pb.Protocol_TLS:
 			cfg.Type = l4.ListenerTypeTLSPassthrough
 			routes := make(map[string]*l4.TLSRoute)
 			for _, tlsRoute := range l4Listener.TlsRoutes {
@@ -351,6 +352,14 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 			cfg.TLSPassthroughConfig = &l4.TLSPassthroughConfig{
 				Routes:         routes,
 				DefaultBackend: defaultBackend,
+			}
+		case pb.Protocol_UDP:
+			cfg.Type = l4.ListenerTypeUDP
+			if l4Listener.UdpConfig != nil {
+				cfg.UDPConfig = &l4.UDPProxyConfig{
+					SessionTimeout: time.Duration(l4Listener.UdpConfig.SessionTimeoutMs) * time.Millisecond,
+					BufferSize:     int(l4Listener.UdpConfig.BufferSize),
+				}
 			}
 		default:
 			logger.Warn("Unknown L4 listener protocol",

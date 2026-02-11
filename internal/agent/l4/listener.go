@@ -122,6 +122,8 @@ func (m *Manager) ApplyConfig(ctx context.Context, configs []L4ListenerConfig) e
 				m.logger.Error("Failed to start L4 listener",
 					zap.String("name", cfg.Name),
 					zap.Int32("port", cfg.Port),
+					zap.String("type", string(cfg.Type)),
+					zap.Int("backend_count", len(cfg.Backends)),
 					zap.Error(err))
 				continue
 			}

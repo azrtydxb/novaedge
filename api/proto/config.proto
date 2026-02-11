@@ -129,6 +129,7 @@ enum Protocol {
   HTTP3 = 3;
   TCP = 4;
   TLS = 5;
+  UDP = 6;
 }
 
 // TLSConfig contains TLS certificate and configuration

@@ -147,6 +147,8 @@ func (c *Converter) parseProtocol(protocol string) pb.Protocol {
 		return pb.Protocol_TCP
 	case "TLS":
 		return pb.Protocol_TLS
+	case "UDP":
+		return pb.Protocol_UDP
 	default:
 		return pb.Protocol_PROTOCOL_UNSPECIFIED
 	}

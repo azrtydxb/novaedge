@@ -18,6 +18,7 @@ package l4
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
@@ -247,11 +248,7 @@ func (p *UDPProxy) readBackendResponses(ctx context.Context, listenerConn *net.U
 
 // isNetError checks if the error is a net.Error and extracts it
 func isNetError(err error, target *net.Error) bool {
-	netErr, ok := err.(net.Error) //nolint:errorlint // net.Error is an interface, type assertion is appropriate
-	if ok {
-		*target = netErr
-	}
-	return ok
+	return errors.As(err, target)
 }
 
 // pickBackendBySourceIP selects a backend using source IP hash for session affinity
@@ -307,8 +304,9 @@ func (p *UDPProxy) CleanupExpiredSessions() {
 			}
 			p.sessions.Delete(key)
 			L4UDPActiveSessions.WithLabelValues(p.config.ListenerName).Dec()
+			sourceKey, _ := key.(string)
 			p.logger.Debug("Cleaned up expired UDP session",
-				zap.String("source", key.(string))) //nolint:forcetypeassert // key is always string from sessions map
+				zap.String("source", sourceKey))
 		}
 		return true
 	})
