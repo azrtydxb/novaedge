@@ -83,7 +83,7 @@ func runCachePurge(agentAddr, pattern string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -99,7 +99,7 @@ func runCachePurge(agentAddr, pattern string) error {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	fmt.Fprintf(os.Stdout, "Cache purge successful: %v entries purged (pattern: %s)\n",
+	_, _ = fmt.Fprintf(os.Stdout, "Cache purge successful: %v entries purged (pattern: %s)\n",
 		result["purged"], result["pattern"])
 	return nil
 }
@@ -115,7 +115,7 @@ func runCacheStats(agentAddr string) error {
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -131,13 +131,13 @@ func runCacheStats(agentAddr string) error {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	fmt.Fprintln(os.Stdout, "NovaEdge Cache Statistics:")
-	fmt.Fprintf(os.Stdout, "  Entries:        %.0f\n", stats["entries"])
-	fmt.Fprintf(os.Stdout, "  Memory Used:    %.0f bytes\n", stats["memoryUsed"])
-	fmt.Fprintf(os.Stdout, "  Max Memory:     %.0f bytes\n", stats["maxMemory"])
-	fmt.Fprintf(os.Stdout, "  Hit Count:      %.0f\n", stats["hitCount"])
-	fmt.Fprintf(os.Stdout, "  Miss Count:     %.0f\n", stats["missCount"])
-	fmt.Fprintf(os.Stdout, "  Eviction Count: %.0f\n", stats["evictionCount"])
+	_, _ = fmt.Fprintln(os.Stdout, "NovaEdge Cache Statistics:")
+	_, _ = fmt.Fprintf(os.Stdout, "  Entries:        %.0f\n", stats["entries"])
+	_, _ = fmt.Fprintf(os.Stdout, "  Memory Used:    %.0f bytes\n", stats["memoryUsed"])
+	_, _ = fmt.Fprintf(os.Stdout, "  Max Memory:     %.0f bytes\n", stats["maxMemory"])
+	_, _ = fmt.Fprintf(os.Stdout, "  Hit Count:      %.0f\n", stats["hitCount"])
+	_, _ = fmt.Fprintf(os.Stdout, "  Miss Count:     %.0f\n", stats["missCount"])
+	_, _ = fmt.Fprintf(os.Stdout, "  Eviction Count: %.0f\n", stats["evictionCount"])
 
 	return nil
 }
