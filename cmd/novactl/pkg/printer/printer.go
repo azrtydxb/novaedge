@@ -109,6 +109,8 @@ func (p *Printer) printTable(resourceType string, items []unstructured.Unstructu
 		p.printPolicyTable(w, items)
 	case "vips", "proxyvips":
 		p.printVIPTable(w, items)
+	case "ippools", "proxyippools":
+		p.printIPPoolTable(w, items)
 	default:
 		p.printGenericTable(w, items)
 	}
@@ -201,20 +203,61 @@ func (p *Printer) printPolicyTable(w *tabwriter.Writer, items []unstructured.Uns
 }
 
 func (p *Printer) printVIPTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
-	_, _ = fmt.Fprintln(w, "NAME\tIP\tMODE\tNODE\tSTATUS\tAGE")
+	_, _ = fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tFAMILY\tBFD\tNODE\tAGE")
 	for _, item := range items {
 		name := item.GetName()
 		age := formatAge(item.GetCreationTimestamp().Time)
 
 		spec, _, _ := unstructured.NestedMap(item.Object, "spec")
-		ip, _, _ := unstructured.NestedString(spec, "ip")
+		address, _, _ := unstructured.NestedString(spec, "address")
 		mode, _, _ := unstructured.NestedString(spec, "mode")
+		family, _, _ := unstructured.NestedString(spec, "addressFamily")
+		if family == "" {
+			family = "ipv4"
+		}
+
+		bfdEnabled := false
+		if bfd, found, _ := unstructured.NestedMap(spec, "bfd"); found {
+			bfdEnabled, _, _ = unstructured.NestedBool(bfd, "enabled")
+		}
+		bfdStr := "No"
+		if bfdEnabled {
+			bfdStr = "Yes"
+		}
 
 		status, _, _ := unstructured.NestedMap(item.Object, "status")
-		assignedNode, _, _ := unstructured.NestedString(status, "assignedNode")
-		vipStatus, _, _ := unstructured.NestedString(status, "status")
+		activeNode, _, _ := unstructured.NestedString(status, "activeNode")
+		if activeNode == "" {
+			announcingNodes, _, _ := unstructured.NestedStringSlice(status, "announcingNodes")
+			if len(announcingNodes) > 0 {
+				activeNode = fmt.Sprintf("%d nodes", len(announcingNodes))
+			}
+		}
 
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", name, ip, mode, assignedNode, vipStatus, age)
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", name, address, mode, family, bfdStr, activeNode, age)
+	}
+}
+
+func (p *Printer) printIPPoolTable(w *tabwriter.Writer, items []unstructured.Unstructured) {
+	_, _ = fmt.Fprintln(w, "NAME\tCIDRS\tAUTO-ASSIGN\tALLOCATED\tAVAILABLE\tAGE")
+	for _, item := range items {
+		name := item.GetName()
+		age := formatAge(item.GetCreationTimestamp().Time)
+
+		spec, _, _ := unstructured.NestedMap(item.Object, "spec")
+		cidrs, _, _ := unstructured.NestedStringSlice(spec, "cidrs")
+		cidrsStr := strings.Join(cidrs, ",")
+		autoAssign, _, _ := unstructured.NestedBool(spec, "autoAssign")
+		autoAssignStr := "No"
+		if autoAssign {
+			autoAssignStr = "Yes"
+		}
+
+		status, _, _ := unstructured.NestedMap(item.Object, "status")
+		allocated, _, _ := unstructured.NestedInt64(status, "allocated")
+		available, _, _ := unstructured.NestedInt64(status, "available")
+
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%d\t%s\n", name, cidrsStr, autoAssignStr, allocated, available, age)
 	}
 }
 

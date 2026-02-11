@@ -72,6 +72,39 @@ func convertBGPConfig(config *novaedgev1alpha1.BGPConfig) *pb.BGPConfig {
 	return pbConfig
 }
 
+// convertOSPFConfig converts NovaEdge OSPFConfig to protobuf OSPFConfig
+func convertOSPFConfig(config *novaedgev1alpha1.OSPFConfig) *pb.OSPFConfig {
+	if config == nil {
+		return nil
+	}
+
+	return &pb.OSPFConfig{
+		RouterId:        config.RouterID,
+		AreaId:          config.AreaID,
+		HelloInterval:   config.HelloInterval,
+		DeadInterval:    config.DeadInterval,
+		AuthType:        config.AuthType,
+		AuthKey:         config.AuthKey,
+		Cost:            config.Cost,
+		GracefulRestart: config.GracefulRestart,
+	}
+}
+
+// convertBFDConfig converts NovaEdge BFDConfig to protobuf BFDConfig
+func convertBFDConfig(config *novaedgev1alpha1.BFDConfig) *pb.BFDConfig {
+	if config == nil {
+		return nil
+	}
+
+	return &pb.BFDConfig{
+		Enabled:               config.Enabled,
+		DetectMultiplier:      config.DetectMultiplier,
+		DesiredMinTxInterval:  config.DesiredMinTxInterval,
+		RequiredMinRxInterval: config.RequiredMinRxInterval,
+		EchoMode:              config.EchoMode,
+	}
+}
+
 // convertProtocol converts NovaEdge ProtocolType to protobuf Protocol
 func convertProtocol(protocol novaedgev1alpha1.ProtocolType) pb.Protocol {
 	switch protocol {

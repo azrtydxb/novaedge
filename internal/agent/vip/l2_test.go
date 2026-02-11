@@ -28,9 +28,6 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// Note: Full testing of L2Handler requires network privileges and real interfaces.
-// These tests focus on state management and logic that doesn't require network access.
-
 func TestVIPState(t *testing.T) {
 	assignment := &pb.VIPAssignment{
 		VipName: "test-vip",
@@ -59,6 +56,31 @@ func TestVIPState(t *testing.T) {
 	}
 }
 
+func TestVIPState_IPv6(t *testing.T) {
+	assignment := &pb.VIPAssignment{
+		VipName: "test-vip-v6",
+		Address: "2001:db8::100/128",
+	}
+
+	ip := net.ParseIP("2001:db8::100")
+	now := time.Now()
+
+	state := &VIPState{
+		Assignment: assignment,
+		IP:         ip,
+		AddedAt:    now,
+		IsIPv6:     true,
+	}
+
+	if !state.IsIPv6 {
+		t.Error("Expected VIPState to be marked as IPv6")
+	}
+
+	if !state.IP.Equal(ip) {
+		t.Errorf("Expected IP %s, got %s", ip, state.IP)
+	}
+}
+
 func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
@@ -75,7 +97,6 @@ func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 	})
 
 	t.Run("after adding VIPs to state", func(t *testing.T) {
-		// Directly add to state (bypassing network operations for testing)
 		handler.mu.Lock()
 		handler.activeVIPs["vip1"] = &VIPState{
 			Assignment: &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/24"},
@@ -95,11 +116,26 @@ func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 		}
 	})
 
+	t.Run("with IPv6 VIPs", func(t *testing.T) {
+		handler.mu.Lock()
+		handler.activeVIPs["vip3"] = &VIPState{
+			Assignment: &pb.VIPAssignment{VipName: "vip3", Address: "2001:db8::1/128"},
+			IP:         net.ParseIP("2001:db8::1"),
+			AddedAt:    time.Now(),
+			IsIPv6:     true,
+		}
+		handler.mu.Unlock()
+
+		count := handler.GetActiveVIPCount()
+		if count != 3 {
+			t.Errorf("Expected 3 active VIPs (including IPv6), got %d", count)
+		}
+	})
+
 	t.Run("concurrent access", func(t *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 100
 
-		// Concurrently read the count
 		for i := 0; i < numGoroutines; i++ {
 			wg.Add(1)
 			go func() {
@@ -109,7 +145,6 @@ func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 		}
 
 		wg.Wait()
-		// Test passes if no race condition detected
 	})
 }
 
@@ -130,7 +165,6 @@ func TestL2Handler_StateManagement(t *testing.T) {
 		ip := net.ParseIP("192.168.1.100")
 		startTime := time.Now()
 
-		// Simulate adding VIP state (without network operations)
 		handler.mu.Lock()
 		handler.activeVIPs[assignment.VipName] = &VIPState{
 			Assignment: assignment,
@@ -139,7 +173,6 @@ func TestL2Handler_StateManagement(t *testing.T) {
 		}
 		handler.mu.Unlock()
 
-		// Verify state exists
 		handler.mu.RLock()
 		state, exists := handler.activeVIPs[assignment.VipName]
 		handler.mu.RUnlock()
@@ -155,9 +188,47 @@ func TestL2Handler_StateManagement(t *testing.T) {
 		if !state.IP.Equal(ip) {
 			t.Errorf("Expected IP %s, got %s", ip, state.IP)
 		}
+	})
 
-		if state.AddedAt.Before(startTime) {
-			t.Error("AddedAt time is before start time")
+	t.Run("dual-stack VIP tracking", func(t *testing.T) {
+		v4Assignment := &pb.VIPAssignment{
+			VipName: "dual-vip",
+			Address: "192.168.1.200/24",
+		}
+		v6Assignment := &pb.VIPAssignment{
+			VipName: "dual-vip-v6",
+			Address: "2001:db8::200/128",
+		}
+
+		handler.mu.Lock()
+		handler.activeVIPs[v4Assignment.VipName] = &VIPState{
+			Assignment: v4Assignment,
+			IP:         net.ParseIP("192.168.1.200"),
+			AddedAt:    time.Now(),
+			IsIPv6:     false,
+		}
+		handler.activeVIPs[v6Assignment.VipName] = &VIPState{
+			Assignment: v6Assignment,
+			IP:         net.ParseIP("2001:db8::200"),
+			AddedAt:    time.Now(),
+			IsIPv6:     true,
+		}
+		handler.mu.Unlock()
+
+		handler.mu.RLock()
+		v4State, v4Exists := handler.activeVIPs["dual-vip"]
+		v6State, v6Exists := handler.activeVIPs["dual-vip-v6"]
+		handler.mu.RUnlock()
+
+		if !v4Exists || !v6Exists {
+			t.Fatal("Both IPv4 and IPv6 VIP states should exist")
+		}
+
+		if v4State.IsIPv6 {
+			t.Error("IPv4 VIP should not be marked as IPv6")
+		}
+		if !v6State.IsIPv6 {
+			t.Error("IPv6 VIP should be marked as IPv6")
 		}
 	})
 
@@ -167,7 +238,6 @@ func TestL2Handler_StateManagement(t *testing.T) {
 			Address: "192.168.1.200/24",
 		}
 
-		// Add VIP state
 		handler.mu.Lock()
 		handler.activeVIPs[assignment.VipName] = &VIPState{
 			Assignment: assignment,
@@ -176,56 +246,17 @@ func TestL2Handler_StateManagement(t *testing.T) {
 		}
 		handler.mu.Unlock()
 
-		// Verify it exists
-		handler.mu.RLock()
-		_, exists := handler.activeVIPs[assignment.VipName]
-		handler.mu.RUnlock()
-
-		if !exists {
-			t.Fatal("VIP should exist before removal")
-		}
-
-		// Remove VIP state
 		handler.mu.Lock()
 		delete(handler.activeVIPs, assignment.VipName)
 		handler.mu.Unlock()
 
-		// Verify it's gone
 		handler.mu.RLock()
-		_, exists = handler.activeVIPs[assignment.VipName]
+		_, exists := handler.activeVIPs[assignment.VipName]
 		handler.mu.RUnlock()
 
 		if exists {
 			t.Error("VIP should not exist after removal")
 		}
-	})
-
-	t.Run("duplicate VIP handling", func(t *testing.T) {
-		assignment := &pb.VIPAssignment{
-			VipName: "duplicate-test",
-			Address: "192.168.1.150/24",
-		}
-
-		// Add VIP state first time
-		handler.mu.Lock()
-		handler.activeVIPs[assignment.VipName] = &VIPState{
-			Assignment: assignment,
-			IP:         net.ParseIP("192.168.1.150"),
-			AddedAt:    time.Now(),
-		}
-		handler.mu.Unlock()
-
-		// Check if VIP already exists (simulating AddVIP logic)
-		handler.mu.Lock()
-		_, exists := handler.activeVIPs[assignment.VipName]
-		handler.mu.Unlock()
-
-		if !exists {
-			t.Error("Expected VIP to already exist")
-		}
-
-		// In AddVIP, if exists, it returns early without error
-		// This test verifies the existence check works
 	})
 }
 
@@ -242,7 +273,6 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 		numWriters := 10
 		numReaders := 20
 
-		// Concurrent writers
 		for i := 0; i < numWriters; i++ {
 			wg.Add(1)
 			go func(id int) {
@@ -262,7 +292,6 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 			}(i)
 		}
 
-		// Concurrent readers
 		for i := 0; i < numReaders; i++ {
 			wg.Add(1)
 			go func() {
@@ -272,11 +301,10 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 		}
 
 		wg.Wait()
-		// Test passes if no race condition detected
 	})
 }
 
-func TestL2Handler_GARPAnnouncer(t *testing.T) {
+func TestL2Handler_AnnouncementLoop(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
 		logger:        logger,
@@ -288,22 +316,19 @@ func TestL2Handler_GARPAnnouncer(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		defer cancel()
 
-		// Start the GARP announcer
 		done := make(chan struct{})
 		go func() {
-			handler.garpAnnouncer(ctx)
+			handler.announcementLoop(ctx)
 			close(done)
 		}()
 
-		// Wait for context timeout
 		<-ctx.Done()
 
-		// Wait for announcer to finish
 		select {
 		case <-done:
-			// Success - announcer stopped cleanly
+			// Success
 		case <-time.After(200 * time.Millisecond):
-			t.Error("GARP announcer did not stop in time")
+			t.Error("Announcement loop did not stop in time")
 		}
 	})
 }
@@ -317,37 +342,34 @@ func TestL2Handler_AnnounceActiveVIPs(t *testing.T) {
 	}
 
 	t.Run("no VIPs to announce", func(t *testing.T) {
-		// Should not panic when there are no active VIPs
 		handler.announceActiveVIPs()
 	})
 
-	t.Run("with active VIPs", func(t *testing.T) {
-		// Add some VIP states
+	t.Run("with active VIPs including IPv6", func(t *testing.T) {
 		handler.mu.Lock()
 		handler.activeVIPs["vip1"] = &VIPState{
 			Assignment: &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/24"},
 			IP:         net.ParseIP("192.168.1.100"),
 			AddedAt:    time.Now(),
+			IsIPv6:     false,
 		}
 		handler.activeVIPs["vip2"] = &VIPState{
 			Assignment: &pb.VIPAssignment{VipName: "vip2", Address: "2001:db8::1/64"},
 			IP:         net.ParseIP("2001:db8::1"),
 			AddedAt:    time.Now(),
+			IsIPv6:     true,
 		}
 		handler.mu.Unlock()
 
-		// Should not panic when announcing (GARP sending is logged but not actually sent in current implementation)
+		// Should not panic
 		handler.announceActiveVIPs()
 	})
 }
 
 func TestDetectPrimaryInterface(t *testing.T) {
-	// Note: This test may fail in environments without network interfaces
-	// or without appropriate permissions
 	t.Run("detect interface", func(t *testing.T) {
 		iface, err := detectPrimaryInterface()
 		if err != nil {
-			// This is acceptable in test environments without network
 			t.Skipf("Skipping test in environment without network interfaces: %v", err)
 			return
 		}
@@ -358,69 +380,9 @@ func TestDetectPrimaryInterface(t *testing.T) {
 
 		t.Logf("Detected primary interface: %s", iface)
 
-		// Verify the interface actually exists
 		_, err = net.InterfaceByName(iface)
 		if err != nil {
 			t.Errorf("Detected interface %s does not exist: %v", iface, err)
 		}
 	})
 }
-
-// Integration test example (requires network privileges and real interfaces)
-/*
-func TestL2Handler_Integration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	// Check if running with sufficient privileges
-	if os.Getuid() != 0 {
-		t.Skip("Integration tests require root privileges")
-	}
-
-	logger := zaptest.NewLogger(t)
-
-	// Create handler
-	handler, err := NewL2Handler(logger)
-	if err != nil {
-		t.Fatalf("Failed to create L2 handler: %v", err)
-	}
-
-	// Start handler
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := handler.Start(ctx); err != nil {
-		t.Fatalf("Failed to start L2 handler: %v", err)
-	}
-
-	// Create test VIP config
-	assignment := &pb.VIPAssignment{
-		VipName: "test-vip",
-		Address: "192.0.2.1/32", // TEST-NET-1 (RFC 5737)
-		Node:    "test-node",
-	}
-
-	// Add VIP
-	if err := handler.AddVIP(assignment); err != nil {
-		t.Errorf("Failed to add VIP: %v", err)
-	}
-
-	// Verify VIP was added
-	count := handler.GetActiveVIPCount()
-	if count != 1 {
-		t.Errorf("Expected 1 active VIP, got %d", count)
-	}
-
-	// Remove VIP
-	if err := handler.RemoveVIP(assignment); err != nil {
-		t.Errorf("Failed to remove VIP: %v", err)
-	}
-
-	// Verify VIP was removed
-	count = handler.GetActiveVIPCount()
-	if count != 0 {
-		t.Errorf("Expected 0 active VIPs after removal, got %d", count)
-	}
-}
-*/

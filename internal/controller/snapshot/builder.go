@@ -157,17 +157,54 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 		// Only include assignment if this node should handle the VIP
 		// (either as active node or as announcing node)
 		if isActive {
+			// Use allocated address if available, otherwise use spec address
+			address := vip.Spec.Address
+			if vip.Status.AllocatedAddress != "" {
+				address = vip.Status.AllocatedAddress
+			}
+
 			assignment := &pb.VIPAssignment{
-				VipName:  vip.Name,
-				Address:  vip.Spec.Address,
-				Mode:     convertVIPMode(vip.Spec.Mode),
-				Ports:    vip.Spec.Ports,
-				IsActive: true,
+				VipName:       vip.Name,
+				Address:       address,
+				Mode:          convertVIPMode(vip.Spec.Mode),
+				Ports:         vip.Spec.Ports,
+				IsActive:      true,
+				AddressFamily: string(vip.Spec.AddressFamily),
+			}
+
+			// Add IPv6 address for dual-stack
+			switch vip.Spec.AddressFamily {
+			case novaedgev1alpha1.AddressFamilyDual:
+				if vip.Status.AllocatedIPv6Address != "" {
+					assignment.Ipv6Address = vip.Status.AllocatedIPv6Address
+				} else if vip.Spec.IPv6Address != "" {
+					assignment.Ipv6Address = vip.Spec.IPv6Address
+				}
+			case novaedgev1alpha1.AddressFamilyIPv6:
+				// For IPv6 only, use IPv6 address as primary
+				if vip.Spec.IPv6Address != "" {
+					assignment.Address = vip.Spec.IPv6Address
+				}
+			}
+
+			// Add pool reference
+			if vip.Spec.PoolRef != nil {
+				assignment.PoolRef = vip.Spec.PoolRef.Name
 			}
 
 			// Add BGP config for BGP mode VIPs
 			if vip.Spec.Mode == novaedgev1alpha1.VIPModeBGP && vip.Spec.BGPConfig != nil {
 				assignment.BgpConfig = convertBGPConfig(vip.Spec.BGPConfig)
+			}
+
+			// Add OSPF config for OSPF mode VIPs
+			if vip.Spec.Mode == novaedgev1alpha1.VIPModeOSPF && vip.Spec.OSPFConfig != nil {
+				assignment.OspfConfig = convertOSPFConfig(vip.Spec.OSPFConfig)
+			}
+
+			// Add BFD config if enabled
+			if vip.Spec.BFD != nil && vip.Spec.BFD.Enabled {
+				assignment.BfdConfig = convertBFDConfig(vip.Spec.BFD)
 			}
 
 			assignments = append(assignments, assignment)

@@ -62,8 +62,10 @@ func runGet(cmd *cobra.Command, args []string) error {
 		rt = client.ResourceTLSRoute
 	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
 		rt = client.ResourceGRPCRoute
+	case resourceAliasIPPools, resourceAliasIPPool:
+		rt = client.ResourceIPPool
 	default:
-		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes, grpcroutes)", resourceType)
+		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes, grpcroutes, ippools)", resourceType)
 	}
 
 	ctx := context.Background()

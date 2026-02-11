@@ -471,11 +471,19 @@ func (c *Converter) convertVIPs(vips []VIPConfig) ([]*pb.VIPAssignment, error) {
 	result := make([]*pb.VIPAssignment, 0, len(vips))
 
 	for _, v := range vips {
+		addressFamily := v.AddressFamily
+		if addressFamily == "" {
+			addressFamily = "ipv4"
+		}
+
 		assignment := &pb.VIPAssignment{
-			VipName:  v.Name,
-			Address:  v.Address,
-			Mode:     c.parseVIPMode(v.Mode),
-			IsActive: true,
+			VipName:       v.Name,
+			Address:       v.Address,
+			Mode:          c.parseVIPMode(v.Mode),
+			IsActive:      true,
+			AddressFamily: addressFamily,
+			Ipv6Address:   v.IPv6Address,
+			PoolRef:       v.PoolRef,
 		}
 
 		// BGP config
@@ -494,14 +502,30 @@ func (c *Converter) convertVIPs(vips []VIPConfig) ([]*pb.VIPAssignment, error) {
 
 		// OSPF config
 		if v.OSPF != nil {
-			// Parse area as uint32 if possible
 			var areaID uint32
 			if _, err := fmt.Sscanf(v.OSPF.Area, "%d", &areaID); err != nil {
 				return nil, fmt.Errorf("failed to parse OSPF area %q: %w", v.OSPF.Area, err)
 			}
 			assignment.OspfConfig = &pb.OSPFConfig{
-				RouterId: v.OSPF.RouterID,
-				AreaId:   areaID,
+				RouterId:        v.OSPF.RouterID,
+				AreaId:          areaID,
+				Cost:            uint32(v.OSPF.Cost),
+				HelloInterval:   uint32(v.OSPF.HelloInterval),
+				DeadInterval:    uint32(v.OSPF.DeadInterval),
+				AuthType:        v.OSPF.AuthType,
+				AuthKey:         v.OSPF.AuthKey,
+				GracefulRestart: v.OSPF.GracefulRestart,
+			}
+		}
+
+		// BFD config
+		if v.BFD != nil && v.BFD.Enabled {
+			assignment.BfdConfig = &pb.BFDConfig{
+				Enabled:               true,
+				DetectMultiplier:      safeInt32(v.BFD.DetectMultiplier),
+				DesiredMinTxInterval:  v.BFD.DesiredMinTxInterval,
+				RequiredMinRxInterval: v.BFD.RequiredMinRxInterval,
+				EchoMode:              v.BFD.EchoMode,
 			}
 		}
 

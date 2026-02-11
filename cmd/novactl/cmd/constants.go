@@ -13,6 +13,8 @@ const (
 	resourceAliasPol      = "pol"
 	resourceAliasVIPs     = "vips"
 	resourceAliasVIP      = "vip"
+	resourceAliasIPPools  = "ippools"
+	resourceAliasIPPool   = "ippool"
 
 	resourceAliasTCPRoutes  = "tcproutes"
 	resourceAliasTCPRoute   = "tcproute"

@@ -1,0 +1,31 @@
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: bgp-vip-with-bfd
+spec:
+  address: 10.200.0.100/32
+  mode: BGP
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
+  bgpConfig:
+    localAS: 65000
+    routerID: "10.0.0.1"
+    peers:
+      - address: "10.0.0.254"
+        as: 65001
+        port: 179
+      - address: "10.0.0.253"
+        as: 65001
+        port: 179
+  bfd:
+    enabled: true
+    detectMultiplier: 3
+    desiredMinTxInterval: "300ms"
+    requiredMinRxInterval: "300ms"
+    echoMode: false
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/loadbalancer: "true"

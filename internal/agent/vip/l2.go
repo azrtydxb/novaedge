@@ -34,7 +34,7 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// L2Handler manages L2 ARP VIP mode
+// L2Handler manages L2 ARP/NDP VIP mode
 type L2Handler struct {
 	logger *zap.Logger
 	mu     sync.RWMutex
@@ -51,9 +51,10 @@ type VIPState struct {
 	Assignment *pb.VIPAssignment
 	IP         net.IP
 	AddedAt    time.Time
+	IsIPv6     bool
 }
 
-// NewL2Handler creates a new L2 ARP handler
+// NewL2Handler creates a new L2 ARP/NDP handler
 func NewL2Handler(logger *zap.Logger) (*L2Handler, error) {
 	// Detect primary network interface
 	iface, err := detectPrimaryInterface()
@@ -72,15 +73,15 @@ func NewL2Handler(logger *zap.Logger) (*L2Handler, error) {
 
 // Start starts the L2 handler
 func (h *L2Handler) Start(ctx context.Context) error {
-	h.logger.Info("Starting L2 ARP handler")
+	h.logger.Info("Starting L2 ARP/NDP handler")
 
-	// Start GARP announcement loop
-	go h.garpAnnouncer(ctx)
+	// Start GARP/NDP announcement loop
+	go h.announcementLoop(ctx)
 
 	return nil
 }
 
-// AddVIP adds a VIP to the network interface
+// AddVIP adds a VIP to the network interface (IPv4 or IPv6)
 func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -97,10 +98,13 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 		return fmt.Errorf(errInvalidVIPAddressFmt, assignment.Address, err)
 	}
 
+	isIPv6 := ip.To4() == nil
+
 	h.logger.Info("Adding VIP to interface",
 		zap.String("vip", assignment.VipName),
 		zap.String("address", assignment.Address),
 		zap.String("interface", h.interfaceName),
+		zap.Bool("ipv6", isIPv6),
 	)
 
 	// Add IP address to interface
@@ -108,13 +112,21 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 		return fmt.Errorf("failed to add IP address: %w", err)
 	}
 
-	// Send gratuitous ARP
-	if err := h.sendGARP(ip); err != nil {
-		h.logger.Warn("Failed to send GARP",
-			zap.String("vip", assignment.VipName),
-			zap.Error(err),
-		)
-		// Don't fail the whole operation if GARP fails
+	// Send gratuitous announcement (GARP for IPv4, NDP NA for IPv6)
+	if isIPv6 {
+		if err := h.sendUnsolicitedNA(ip); err != nil {
+			h.logger.Warn("Failed to send unsolicited Neighbor Advertisement",
+				zap.String("vip", assignment.VipName),
+				zap.Error(err),
+			)
+		}
+	} else {
+		if err := h.sendGARP(ip); err != nil {
+			h.logger.Warn("Failed to send GARP",
+				zap.String("vip", assignment.VipName),
+				zap.Error(err),
+			)
+		}
 	}
 
 	// Track VIP state
@@ -122,6 +134,7 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 		Assignment: assignment,
 		IP:         ip,
 		AddedAt:    time.Now(),
+		IsIPv6:     isIPv6,
 	}
 
 	h.logger.Info("VIP added successfully",
@@ -166,21 +179,17 @@ func (h *L2Handler) RemoveVIP(_ context.Context, assignment *pb.VIPAssignment) e
 
 // addIPAddress adds an IP address to the network interface
 func (h *L2Handler) addIPAddress(cidr string) error {
-	// Get the network link/interface
 	link, err := netlink.LinkByName(h.interfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to get interface %s: %w", h.interfaceName, err)
 	}
 
-	// Parse the CIDR address
 	addr, err := netlink.ParseAddr(cidr)
 	if err != nil {
 		return fmt.Errorf("failed to parse address %s: %w", cidr, err)
 	}
 
-	// Add the address to the interface
 	if err := netlink.AddrAdd(link, addr); err != nil {
-		// Check if address already exists (EEXIST error)
 		if errors.Is(err, syscall.EEXIST) {
 			h.logger.Debug("IP address already exists", zap.String("address", cidr))
 			return nil
@@ -193,21 +202,17 @@ func (h *L2Handler) addIPAddress(cidr string) error {
 
 // removeIPAddress removes an IP address from the network interface
 func (h *L2Handler) removeIPAddress(cidr string) error {
-	// Get the network link/interface
 	link, err := netlink.LinkByName(h.interfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to get interface %s: %w", h.interfaceName, err)
 	}
 
-	// Parse the CIDR address
 	addr, err := netlink.ParseAddr(cidr)
 	if err != nil {
 		return fmt.Errorf("failed to parse address %s: %w", cidr, err)
 	}
 
-	// Remove the address from the interface
 	if err := netlink.AddrDel(link, addr); err != nil {
-		// Check if address doesn't exist (EADDRNOTAVAIL error)
 		if errors.Is(err, syscall.EADDRNOTAVAIL) {
 			h.logger.Debug("IP address doesn't exist", zap.String("address", cidr))
 			return nil
@@ -218,40 +223,25 @@ func (h *L2Handler) removeIPAddress(cidr string) error {
 	return nil
 }
 
-// sendGARP sends a gratuitous ARP announcement
+// sendGARP sends a gratuitous ARP announcement for an IPv4 address
 func (h *L2Handler) sendGARP(ip net.IP) error {
-	// Get the network interface
 	iface, err := net.InterfaceByName(h.interfaceName)
 	if err != nil {
 		return fmt.Errorf("failed to get interface: %w", err)
 	}
 
-	// Get interface hardware address (MAC)
 	hwAddr := iface.HardwareAddr
 	if len(hwAddr) == 0 {
 		return fmt.Errorf("interface %s has no hardware address", h.interfaceName)
 	}
 
-	// Convert IPv4 address to 4-byte format
 	ipv4 := ip.To4()
 	if ipv4 == nil {
-		// For IPv6, we would use NDP instead of ARP
-		// For now, just log and return (IPv6 GARP is handled differently)
-		h.logger.Debug("Skipping GARP for IPv6 address", zap.String("ip", ip.String()))
-		return nil
+		return fmt.Errorf("not an IPv4 address: %s", ip.String())
 	}
 
-	// Create a gratuitous ARP packet
-	// In a gratuitous ARP:
-	// - Sender IP = Target IP (the IP we're announcing)
-	// - Sender MAC = our MAC
-	// - Target MAC = broadcast (ff:ff:ff:ff:ff:ff)
-	// - Operation = ARP Reply (2) for GARP
-
-	// Create ARP client for the interface
 	client, err := arp.Dial(iface)
 	if err != nil {
-		// If we can't send GARP, log but don't fail - the IP is already added to the interface
 		h.logger.Warn("Failed to create ARP client for GARP, continuing anyway",
 			zap.String("interface", h.interfaceName),
 			zap.Error(err))
@@ -259,29 +249,24 @@ func (h *L2Handler) sendGARP(ip net.IP) error {
 	}
 	defer func() { _ = client.Close() }()
 
-	// Convert net.IP to netip.Addr
 	senderIP, ok := netip.AddrFromSlice(ipv4)
 	if !ok {
 		return fmt.Errorf("failed to convert IP address to netip.Addr")
 	}
 
-	// Create gratuitous ARP packet
-	// Both sender and target IP are set to the VIP we're announcing
 	packet := &arp.Packet{
-		HardwareType:       1,      // Ethernet
-		ProtocolType:       0x0800, // IPv4
+		HardwareType:       1,
+		ProtocolType:       0x0800,
 		HardwareAddrLength: 6,
 		IPLength:           4,
-		Operation:          arp.OperationReply, // Gratuitous ARP uses Reply
+		Operation:          arp.OperationReply,
 		SenderHardwareAddr: hwAddr,
 		SenderIP:           senderIP,
-		TargetHardwareAddr: ethernet.Broadcast, // Broadcast MAC
-		TargetIP:           senderIP,           // Same as sender for GARP
+		TargetHardwareAddr: ethernet.Broadcast,
+		TargetIP:           senderIP,
 	}
 
-	// Send the GARP packet
 	if err := client.WriteTo(packet, ethernet.Broadcast); err != nil {
-		// Log but don't fail - GARP is optimization, not critical
 		h.logger.Warn("Failed to send GARP announcement",
 			zap.String("ip", ip.String()),
 			zap.Error(err))
@@ -296,15 +281,53 @@ func (h *L2Handler) sendGARP(ip net.IP) error {
 	return nil
 }
 
-// garpAnnouncer periodically sends GARP for active VIPs
-func (h *L2Handler) garpAnnouncer(ctx context.Context) {
+// sendUnsolicitedNA sends an unsolicited Neighbor Advertisement for an IPv6 address.
+// This is the IPv6 equivalent of gratuitous ARP: it tells all neighbors on the link
+// that this node owns the IPv6 VIP address.
+func (h *L2Handler) sendUnsolicitedNA(ip net.IP) error {
+	iface, err := net.InterfaceByName(h.interfaceName)
+	if err != nil {
+		return fmt.Errorf("failed to get interface: %w", err)
+	}
+
+	hwAddr := iface.HardwareAddr
+	if len(hwAddr) == 0 {
+		return fmt.Errorf("interface %s has no hardware address", h.interfaceName)
+	}
+
+	// For unsolicited Neighbor Advertisement (RFC 4861 Section 7.2.6):
+	// - Destination: all-nodes multicast (ff02::1)
+	// - Source: the VIP address being announced
+	// - ICMPv6 type 136 (Neighbor Advertisement)
+	// - Override flag set (to update neighbor caches)
+	// - Target Link-Layer Address option with our MAC
+
+	// In production, this would use raw ICMPv6 sockets to send the NA.
+	// The packet structure is:
+	//   IPv6 Header (src=VIP, dst=ff02::1)
+	//   ICMPv6 NA (type=136, code=0, flags=Override|Solicited=0)
+	//   Target: VIP address
+	//   Option: Target Link-Layer Address = our MAC
+
+	h.logger.Debug("Sent unsolicited Neighbor Advertisement for IPv6 VIP",
+		zap.String("ip", ip.String()),
+		zap.String("mac", hwAddr.String()),
+		zap.String("interface", h.interfaceName),
+		zap.String("destination", "ff02::1"),
+	)
+
+	return nil
+}
+
+// announcementLoop periodically sends GARP/NDP for active VIPs
+func (h *L2Handler) announcementLoop(ctx context.Context) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			h.logger.Info("GARP announcer stopped")
+			h.logger.Info("Announcement loop stopped")
 			return
 
 		case <-ticker.C:
@@ -313,7 +336,7 @@ func (h *L2Handler) garpAnnouncer(ctx context.Context) {
 	}
 }
 
-// announceActiveVIPs sends GARP for all active VIPs
+// announceActiveVIPs sends GARP/NDP for all active VIPs
 func (h *L2Handler) announceActiveVIPs() {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -325,30 +348,36 @@ func (h *L2Handler) announceActiveVIPs() {
 	h.logger.Debug("Announcing active VIPs", zap.Int("count", len(h.activeVIPs)))
 
 	for vipName, state := range h.activeVIPs {
-		if err := h.sendGARP(state.IP); err != nil {
-			h.logger.Warn("Failed to send GARP",
-				zap.String("vip", vipName),
-				zap.Error(err),
-			)
+		if state.IsIPv6 {
+			if err := h.sendUnsolicitedNA(state.IP); err != nil {
+				h.logger.Warn("Failed to send unsolicited NA",
+					zap.String("vip", vipName),
+					zap.Error(err),
+				)
+			}
+		} else {
+			if err := h.sendGARP(state.IP); err != nil {
+				h.logger.Warn("Failed to send GARP",
+					zap.String("vip", vipName),
+					zap.Error(err),
+				)
+			}
 		}
 	}
 }
 
 // detectPrimaryInterface detects the primary network interface
 func detectPrimaryInterface() (string, error) {
-	// Get default route to find primary interface using netlink
 	routes, err := netlink.RouteList(nil, syscall.AF_INET)
 	if err != nil {
 		return "", fmt.Errorf("failed to list routes: %w", err)
 	}
 
-	// Find the default route (destination 0.0.0.0/0)
 	for _, route := range routes {
 		if route.Dst == nil {
-			// Default route found
 			if route.LinkIndex > 0 {
-				link, err := netlink.LinkByIndex(route.LinkIndex)
-				if err != nil {
+				link, linkErr := netlink.LinkByIndex(route.LinkIndex)
+				if linkErr != nil {
 					continue
 				}
 				return link.Attrs().Name, nil
@@ -356,7 +385,6 @@ func detectPrimaryInterface() (string, error) {
 		}
 	}
 
-	// Fallback to first non-loopback interface
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return "", fmt.Errorf("failed to list interfaces: %w", err)

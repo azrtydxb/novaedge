@@ -1,0 +1,21 @@
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: ospf-vip
+spec:
+  address: 10.200.0.200/32
+  mode: OSPF
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
+  ospfConfig:
+    routerID: "10.0.0.1"
+    areaID: 0
+    cost: 10
+    helloInterval: 10
+    deadInterval: 40
+    authType: md5
+    authKey: "mySecretKey"
+    gracefulRestart: true
