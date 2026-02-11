@@ -38,3 +38,10 @@ func IsWebSocketUpgrade(r *http.Request) bool {
 	return r.Header.Get("Upgrade") == "websocket" &&
 		strings.ToLower(r.Header.Get("Connection")) == "upgrade"
 }
+
+// IsSSERequest checks if an HTTP request is a Server-Sent Events request
+// SSE clients send Accept: text/event-stream header
+func IsSSERequest(r *http.Request) bool {
+	accept := r.Header.Get("Accept")
+	return accept == "text/event-stream"
+}

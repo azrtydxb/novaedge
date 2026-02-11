@@ -494,3 +494,166 @@ func GenerateProxyBackendName(serviceName, namespace string, port int32) string 
 func boolPtr(b bool) *bool {
 	return &b
 }
+
+// TranslateGRPCRouteToProxyRoute translates a Gateway API GRPCRoute to a NovaEdge ProxyRoute
+func TranslateGRPCRouteToProxyRoute(grpcRoute *gatewayv1.GRPCRoute) (*novaedgev1alpha1.ProxyRoute, error) {
+	// Translate hostnames
+	hostnames := make([]string, 0, len(grpcRoute.Spec.Hostnames))
+	for _, hostname := range grpcRoute.Spec.Hostnames {
+		hostnames = append(hostnames, string(hostname))
+	}
+
+	// Translate rules
+	rules := make([]novaedgev1alpha1.HTTPRouteRule, 0, len(grpcRoute.Spec.Rules))
+	for i, gwRule := range grpcRoute.Spec.Rules {
+		rule, err := translateGRPCRouteRule(gwRule, grpcRoute.Namespace)
+		if err != nil {
+			return nil, fmt.Errorf("failed to translate gRPC rule %d: %w", i, err)
+		}
+		rules = append(rules, rule)
+	}
+
+	proxyRoute := &novaedgev1alpha1.ProxyRoute{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "grpc-" + grpcRoute.Name,
+			Namespace: grpcRoute.Namespace,
+			Labels:    grpcRoute.Labels,
+			Annotations: map[string]string{
+				OwnerAnnotation:          fmt.Sprintf("GRPCRoute/%s/%s", grpcRoute.Namespace, grpcRoute.Name),
+				"novaedge.io/route-type": "grpc",
+			},
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion: gatewayv1.GroupVersion.String(),
+					Kind:       "GRPCRoute",
+					Name:       grpcRoute.Name,
+					UID:        grpcRoute.UID,
+					Controller: boolPtr(true),
+				},
+			},
+		},
+		Spec: novaedgev1alpha1.ProxyRouteSpec{
+			Hostnames: hostnames,
+			Rules:     rules,
+		},
+	}
+
+	return proxyRoute, nil
+}
+
+// translateGRPCRouteRule translates a Gateway API GRPCRouteRule to a NovaEdge HTTPRouteRule
+func translateGRPCRouteRule(gwRule gatewayv1.GRPCRouteRule, namespace string) (novaedgev1alpha1.HTTPRouteRule, error) {
+	rule := novaedgev1alpha1.HTTPRouteRule{}
+
+	// Translate gRPC matches into HTTP matches
+	// gRPC uses path-based matching: /<service>/<method>
+	for _, gwMatch := range gwRule.Matches {
+		match := novaedgev1alpha1.HTTPRouteMatch{}
+
+		// gRPC service and method are encoded as path matches
+		if gwMatch.Method != nil {
+			pathValue := "/"
+			if gwMatch.Method.Service != nil {
+				pathValue += *gwMatch.Method.Service
+			}
+			if gwMatch.Method.Method != nil {
+				pathValue += "/" + *gwMatch.Method.Method
+			}
+
+			matchType := novaedgev1alpha1.PathMatchExact
+			if gwMatch.Method.Type != nil && *gwMatch.Method.Type == gatewayv1.GRPCMethodMatchRegularExpression {
+				matchType = novaedgev1alpha1.PathMatchRegularExpression
+			}
+
+			match.Path = &novaedgev1alpha1.HTTPPathMatch{
+				Type:  matchType,
+				Value: pathValue,
+			}
+		}
+
+		// Translate gRPC header matches
+		for _, gwHeader := range gwMatch.Headers {
+			headerMatch := novaedgev1alpha1.HTTPHeaderMatch{
+				Name:  string(gwHeader.Name),
+				Value: gwHeader.Value,
+			}
+
+			if gwHeader.Type != nil {
+				switch *gwHeader.Type {
+				case gatewayv1.GRPCHeaderMatchExact:
+					headerMatch.Type = novaedgev1alpha1.HeaderMatchExact
+				case gatewayv1.GRPCHeaderMatchRegularExpression:
+					headerMatch.Type = novaedgev1alpha1.HeaderMatchRegularExpression
+				default:
+					headerMatch.Type = novaedgev1alpha1.HeaderMatchExact
+				}
+			} else {
+				headerMatch.Type = novaedgev1alpha1.HeaderMatchExact
+			}
+
+			match.Headers = append(match.Headers, headerMatch)
+		}
+
+		// Force POST method for gRPC (all gRPC calls use POST)
+		postMethod := "POST"
+		match.Method = &postMethod
+
+		// Add gRPC content-type header match
+		match.Headers = append(match.Headers, novaedgev1alpha1.HTTPHeaderMatch{
+			Name:  "Content-Type",
+			Type:  novaedgev1alpha1.HeaderMatchExact,
+			Value: "application/grpc",
+		})
+
+		rule.Matches = append(rule.Matches, match)
+	}
+
+	// If no matches specified, create a wildcard match for all gRPC traffic
+	if len(gwRule.Matches) == 0 {
+		postMethod := "POST"
+		rule.Matches = append(rule.Matches, novaedgev1alpha1.HTTPRouteMatch{
+			Method: &postMethod,
+			Headers: []novaedgev1alpha1.HTTPHeaderMatch{
+				{
+					Name:  "Content-Type",
+					Type:  novaedgev1alpha1.HeaderMatchExact,
+					Value: "application/grpc",
+				},
+			},
+		})
+	}
+
+	// Translate backend refs
+	if len(gwRule.BackendRefs) == 0 {
+		return rule, fmt.Errorf("gRPC rule has no backend refs")
+	}
+
+	rule.BackendRefs = make([]novaedgev1alpha1.BackendRef, 0, len(gwRule.BackendRefs))
+	for _, gwBackendRef := range gwRule.BackendRefs {
+		backendNamespace := namespace
+		if gwBackendRef.Namespace != nil {
+			backendNamespace = string(*gwBackendRef.Namespace)
+		}
+
+		port := int32(80)
+		if gwBackendRef.Port != nil {
+			port = *gwBackendRef.Port
+		}
+
+		backendRef := novaedgev1alpha1.BackendRef{
+			Name:      GenerateProxyBackendName(string(gwBackendRef.Name), backendNamespace, port),
+			Namespace: &backendNamespace,
+		}
+
+		if gwBackendRef.Weight != nil {
+			backendRef.Weight = gwBackendRef.Weight
+		} else {
+			defaultWeight := int32(1)
+			backendRef.Weight = &defaultWeight
+		}
+
+		rule.BackendRefs = append(rule.BackendRefs, backendRef)
+	}
+
+	return rule, nil
+}

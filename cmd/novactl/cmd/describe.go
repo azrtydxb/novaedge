@@ -15,11 +15,14 @@ func newDescribeCommand() *cobra.Command {
 		Use:   "describe [resource-type] [name]",
 		Short: "Describe a NovaEdge resource",
 		Long:  `Show detailed information about a specific NovaEdge resource.`,
-		Example: `  # Describe a gateway
+		Example: `  # Describe a gateway (includes HTTP/3 status, SSE config)
   novactl describe gateway external-gateway
 
   # Describe a route in a specific namespace
-  novactl describe route api-route -n production`,
+  novactl describe route api-route -n production
+
+  # Describe a gRPC route
+  novactl describe grpcroute my-grpc-service`,
 		RunE: runDescribe,
 	}
 
@@ -51,6 +54,8 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 		rt = client.ResourceTCPRoute
 	case resourceAliasTLSRoutes, resourceAliasTLSRoute:
 		rt = client.ResourceTLSRoute
+	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
+		rt = client.ResourceGRPCRoute
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}

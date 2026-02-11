@@ -382,6 +382,18 @@ type ProxyGatewaySpec struct {
 	// RedirectScheme defines HTTP to HTTPS redirect configuration
 	// +optional
 	RedirectScheme *RedirectSchemeConfig `json:"redirectScheme,omitempty"`
+
+	// HTTP3 defines HTTP/3 (QUIC) protocol configuration
+	// +optional
+	HTTP3 *HTTP3Config `json:"http3,omitempty"`
+
+	// SSE defines Server-Sent Events configuration
+	// +optional
+	SSE *SSEConfig `json:"sse,omitempty"`
+
+	// GRPCRoute defines gRPC-specific routing configuration
+	// +optional
+	GRPCRoute *GRPCRouteConfig `json:"grpcRoute,omitempty"`
 }
 
 // GatewayCacheConfig configures HTTP response caching for the gateway

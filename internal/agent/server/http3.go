@@ -22,8 +22,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 	"github.com/quic-go/quic-go"
 	"github.com/quic-go/quic-go/http3"
@@ -43,6 +45,18 @@ type HTTP3Server struct {
 func NewHTTP3Server(logger *zap.Logger, port int32, tlsConfig *tls.Config, quicConfig *pb.QUICConfig, handler http.Handler) *HTTP3Server {
 	addr := fmt.Sprintf(":%d", port)
 
+	// Wrap handler with HTTP/3 metrics collection
+	metricsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		HTTP3ActiveRequests.Inc()
+		defer HTTP3ActiveRequests.Dec()
+
+		// Wrap the response writer to capture status code
+		rw := &http3ResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		handler.ServeHTTP(rw, r)
+
+		metrics.HTTP3RequestsTotal.WithLabelValues(r.Method, strconv.Itoa(rw.statusCode)).Inc()
+	})
+
 	return &HTTP3Server{
 		logger:  logger.With(zap.String("server", "http3"), zap.Int32("port", port)),
 		handler: handler,
@@ -50,7 +64,7 @@ func NewHTTP3Server(logger *zap.Logger, port int32, tlsConfig *tls.Config, quicC
 		config:  quicConfig,
 		server: &http3.Server{
 			Addr:      addr,
-			Handler:   handler,
+			Handler:   metricsHandler,
 			TLSConfig: tlsConfig,
 			QUICConfig: &quic.Config{
 				MaxIdleTimeout:                 parseTimeout(quicConfig.GetMaxIdleTimeout(), 30*time.Second),
@@ -66,6 +80,27 @@ func NewHTTP3Server(logger *zap.Logger, port int32, tlsConfig *tls.Config, quicC
 			},
 		},
 	}
+}
+
+// http3ResponseWriter wraps http.ResponseWriter to capture the status code for metrics
+type http3ResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *http3ResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *http3ResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (w *http3ResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 // Start starts the HTTP/3 server
@@ -133,6 +168,12 @@ func (s *HTTP3Server) Shutdown(ctx context.Context) error {
 		}
 		return ctx.Err()
 	}
+}
+
+// SetQuicHeaders configures the Alt-Svc header to advertise HTTP/3 support
+// This is called by the HTTP/1.1 and HTTP/2 handler to let clients know HTTP/3 is available
+func (s *HTTP3Server) SetQuicHeaders(hdr http.Header) error {
+	return s.server.SetQUICHeaders(hdr)
 }
 
 // parseTimeout parses a duration string or returns a default

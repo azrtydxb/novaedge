@@ -16,7 +16,7 @@ func newGetCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "get [resource-type]",
 		Short: "Get NovaEdge resources",
-		Long:  `Get and display NovaEdge resources like gateways, routes, backends, policies, and vips.`,
+		Long:  `Get and display NovaEdge resources like gateways, routes, backends, policies, vips, and grpcroutes.`,
 		Example: `  # List all gateways
   novactl get gateways
 
@@ -24,7 +24,10 @@ func newGetCommand() *cobra.Command {
   novactl get routes -n production
 
   # Get backends with JSON output
-  novactl get backends -o json`,
+  novactl get backends -o json
+
+  # List all gRPC routes
+  novactl get grpcroutes`,
 		RunE: runGet,
 	}
 
@@ -57,8 +60,10 @@ func runGet(cmd *cobra.Command, args []string) error {
 		rt = client.ResourceTCPRoute
 	case resourceAliasTLSRoutes, resourceAliasTLSRoute:
 		rt = client.ResourceTLSRoute
+	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
+		rt = client.ResourceGRPCRoute
 	default:
-		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes)", resourceType)
+		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes, grpcroutes)", resourceType)
 	}
 
 	ctx := context.Background()

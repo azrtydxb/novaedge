@@ -140,6 +140,12 @@ type ListenerConfig struct {
 	Port     int    `yaml:"port"`
 	Protocol string `yaml:"protocol"` // HTTP, HTTPS, TCP, TLS
 
+	// HTTP3 enables HTTP/3 (QUIC) support
+	HTTP3 *HTTP3ListenerConfig `yaml:"http3,omitempty"`
+
+	// SSE configures Server-Sent Events support
+	SSE *SSEListenerConfig `yaml:"sse,omitempty"`
+
 	// TLS configuration (for HTTPS/TLS)
 	TLS *TLSConfig `yaml:"tls,omitempty"`
 
@@ -325,6 +331,7 @@ type EndpointConfig struct {
 // HealthCheckConfig defines health checking
 type HealthCheckConfig struct {
 	Protocol string `yaml:"protocol"` // HTTP, TCP
+
 	Path     string `yaml:"path,omitempty"`
 	Port     int    `yaml:"port,omitempty"`
 	Interval string `yaml:"interval"`
@@ -848,4 +855,18 @@ func (r *RouteConfig) GetTimeout() time.Duration {
 		return 30 * time.Second
 	}
 	return d
+}
+
+// HTTP3ListenerConfig defines HTTP/3 QUIC configuration for standalone mode
+type HTTP3ListenerConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	ZeroRTT        bool   `yaml:"zeroRTT,omitempty"`
+	MaxIdleTimeout string `yaml:"maxIdleTimeout,omitempty"`
+}
+
+// SSEListenerConfig defines SSE configuration for standalone mode
+type SSEListenerConfig struct {
+	IdleTimeout       string `yaml:"idleTimeout,omitempty"`
+	HeartbeatInterval string `yaml:"heartbeatInterval,omitempty"`
+	MaxConnections    int    `yaml:"maxConnections,omitempty"`
 }

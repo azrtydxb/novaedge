@@ -126,3 +126,38 @@ func TestIsWebSocketUpgrade_NormalHTTPRequest(t *testing.T) {
 		t.Error("normal HTTP request should not be detected as WebSocket upgrade")
 	}
 }
+
+func TestIsSSERequest_WithAcceptHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+	req.Header.Set("Accept", "text/event-stream")
+
+	if !IsSSERequest(req) {
+		t.Error("expected SSE request to be detected with Accept: text/event-stream")
+	}
+}
+
+func TestIsSSERequest_WithWrongAcceptHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+	req.Header.Set("Accept", "application/json")
+
+	if IsSSERequest(req) {
+		t.Error("should not detect SSE with application/json Accept header")
+	}
+}
+
+func TestIsSSERequest_WithoutAcceptHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+
+	if IsSSERequest(req) {
+		t.Error("should not detect SSE without Accept header")
+	}
+}
+
+func TestIsSSERequest_NormalHTTPRequest(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/data", nil)
+	req.Header.Set("Content-Type", "application/json")
+
+	if IsSSERequest(req) {
+		t.Error("normal HTTP request should not be detected as SSE")
+	}
+}
