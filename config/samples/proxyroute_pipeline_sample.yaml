@@ -1,0 +1,64 @@
+# Example: Route with composable middleware pipeline and boolean expression
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: api-route
+  namespace: default
+spec:
+  hostnames:
+    - api.example.com
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: api-backend
+  # Composable middleware pipeline
+  pipeline:
+    middleware:
+      - type: builtin
+        name: rate-limit
+        priority: 10
+        config:
+          requests_per_second: "100"
+          burst: "50"
+      - type: builtin
+        name: cors
+        priority: 20
+      - type: wasm
+        name: custom-auth-wasm
+        priority: 30
+      - type: builtin
+        name: jwt
+        priority: 40
+  # Boolean routing expression (evaluated before rule matches)
+  expression: '(header:X-Env == "staging") AND (path prefix "/api" OR path prefix "/v2")'
+---
+# Example: Route with expression-only matching
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: staging-only-route
+  namespace: default
+spec:
+  hostnames:
+    - staging.example.com
+  rules:
+    - backendRefs:
+        - name: staging-backend
+  expression: 'header:X-Env == "staging" AND NOT source_ip in "10.0.0.0/8"'
+---
+# Example: Route with complex expression
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: advanced-route
+  namespace: default
+spec:
+  hostnames:
+    - app.example.com
+  rules:
+    - backendRefs:
+        - name: app-backend
+  expression: '(method == "GET" AND path prefix "/api") OR (method == "POST" AND header:Content-Type == "application/json")'

@@ -143,15 +143,15 @@ func (c *Converter) buildExtensions(cfg *Config) *agentconfig.SnapshotExtensions
 		if l.ClientAuth != nil && l.ClientAuth.Mode != "" && l.ClientAuth.Mode != "none" {
 			clientAuth := &pb.ClientAuthConfig{
 				Mode:               l.ClientAuth.Mode,
-				RequiredCNPatterns: l.ClientAuth.RequiredCNPatterns,
-				RequiredSANs:       l.ClientAuth.RequiredSANs,
+				RequiredCnPatterns: l.ClientAuth.RequiredCNPatterns,
+				RequiredSans:       l.ClientAuth.RequiredSANs,
 			}
 
 			// Load CA certificate from file
 			if l.ClientAuth.CAFile != "" {
 				caCert, err := os.ReadFile(filepath.Clean(l.ClientAuth.CAFile))
 				if err == nil {
-					clientAuth.CACert = caCert
+					clientAuth.CaCert = caCert
 				}
 			}
 
@@ -162,7 +162,7 @@ func (c *Converter) buildExtensions(cfg *Config) *agentconfig.SnapshotExtensions
 			listenerExt.ProxyProtocol = &pb.ProxyProtocolConfig{
 				Enabled:      true,
 				Version:      safeInt32(l.ProxyProtocol.Version),
-				TrustedCIDRs: l.ProxyProtocol.TrustedCIDRs,
+				TrustedCidrs: l.ProxyProtocol.TrustedCIDRs,
 			}
 		}
 
@@ -375,6 +375,26 @@ func (c *Converter) convertRoutes(routes []RouteConfig) []*pb.Route {
 		}
 
 		route.Rules = append(route.Rules, rule)
+
+		// Convert middleware pipeline
+		if r.Pipeline != nil && len(r.Pipeline.Middleware) > 0 {
+			pipeline := &pb.MiddlewarePipeline{
+				Middleware: make([]*pb.MiddlewareRef, 0, len(r.Pipeline.Middleware)),
+			}
+			for _, mw := range r.Pipeline.Middleware {
+				pipeline.Middleware = append(pipeline.Middleware, &pb.MiddlewareRef{
+					Type:     mw.Type,
+					Name:     mw.Name,
+					Priority: safeInt32(mw.Priority),
+					Config:   mw.Config,
+				})
+			}
+			route.Pipeline = pipeline
+		}
+
+		// Convert expression
+		route.Expression = r.Expression
+
 		result = append(result, route)
 	}
 
@@ -700,6 +720,15 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 					AnomalyThreshold: safeInt32(p.WAF.AnomalyThreshold),
 					RuleExclusions:   p.WAF.RuleExclusions,
 					CustomRules:      p.WAF.CustomRules,
+				}
+			}
+		case "WASMPlugin":
+			if p.WASMPlugin != nil {
+				policy.WasmPlugin = &pb.WASMPluginConfig{
+					Source:   p.WASMPlugin.Source,
+					Config:   p.WASMPlugin.Config,
+					Phase:    p.WASMPlugin.Phase,
+					Priority: safeInt32(p.WASMPlugin.Priority),
 				}
 			}
 		}

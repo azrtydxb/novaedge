@@ -164,6 +164,8 @@ func convertPolicyType(policyType novaedgev1alpha1.PolicyType) pb.PolicyType {
 		return pb.PolicyType_DISTRIBUTED_RATE_LIMIT
 	case novaedgev1alpha1.PolicyTypeWAF:
 		return pb.PolicyType_WAF
+	case novaedgev1alpha1.PolicyTypeWASMPlugin:
+		return pb.PolicyType_WASM_PLUGIN
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}
@@ -651,4 +653,27 @@ func convertRouteAccessLog(al *novaedgev1alpha1.RouteAccessLogConfig) *pb.Access
 		config.SampleRate = 1.0
 	}
 	return config
+}
+
+// convertMiddlewarePipeline converts a MiddlewarePipelineConfig to protobuf
+func convertMiddlewarePipeline(pipeline *novaedgev1alpha1.MiddlewarePipelineConfig) *pb.MiddlewarePipeline {
+	if pipeline == nil {
+		return nil
+	}
+
+	pbPipeline := &pb.MiddlewarePipeline{
+		Middleware: make([]*pb.MiddlewareRef, 0, len(pipeline.Middleware)),
+	}
+
+	for _, mw := range pipeline.Middleware {
+		pbRef := &pb.MiddlewareRef{
+			Type:     mw.Type,
+			Name:     mw.Name,
+			Priority: int32(mw.Priority),
+			Config:   mw.Config,
+		}
+		pbPipeline.Middleware = append(pbPipeline.Middleware, pbRef)
+	}
+
+	return pbPipeline
 }
