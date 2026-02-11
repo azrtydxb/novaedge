@@ -306,7 +306,7 @@ func main() {
 
 // applyL4Config converts snapshot L4 listeners to L4 manager config and applies it
 func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Snapshot, logger *zap.Logger) error {
-	if snapshot.L4Listeners == nil || len(snapshot.L4Listeners) == 0 {
+	if len(snapshot.L4Listeners) == 0 {
 		// No L4 listeners, clear any existing ones
 		return manager.ApplyConfig(ctx, nil)
 	}
