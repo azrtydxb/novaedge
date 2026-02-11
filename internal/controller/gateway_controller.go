@@ -73,6 +73,22 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return ctrl.Result{}, nil
 	}
 
+	// Verify the GatewayClass exists and is accepted
+	gatewayClass := &gatewayv1.GatewayClass{}
+	if err := r.Get(ctx, types.NamespacedName{Name: NovaEdgeGatewayClassName}, gatewayClass); err != nil {
+		if errors.IsNotFound(err) {
+			return r.updateGatewayStatus(ctx, gateway, metav1.Condition{
+				Type:               string(gatewayv1.GatewayConditionAccepted),
+				Status:             metav1.ConditionFalse,
+				Reason:             string(gatewayv1.GatewayReasonInvalid),
+				Message:            fmt.Sprintf("GatewayClass %s not found", NovaEdgeGatewayClassName),
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+		return ctrl.Result{}, err
+	}
+
 	logger.Info("Reconciling Gateway", "name", gateway.Name, "namespace", gateway.Namespace)
 
 	// Handle deletion
@@ -80,8 +96,10 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.handleDeletion(ctx, gateway)
 	}
 
+	// Validate listeners for conflicts
+	listenerStatuses, listenerErrors := r.validateListeners(gateway)
+
 	// Translate Gateway to ProxyGateway
-	// First, we need to find or create a ProxyVIP for this gateway
 	vipName := fmt.Sprintf("%s-vip", gateway.Name)
 	proxyGateway, err := TranslateGatewayToProxyGateway(gateway, vipName)
 	if err != nil {
@@ -89,7 +107,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.updateGatewayStatus(ctx, gateway, metav1.Condition{
 			Type:               string(gatewayv1.GatewayConditionAccepted),
 			Status:             metav1.ConditionFalse,
-			Reason:             "Invalid",
+			Reason:             string(gatewayv1.GatewayReasonInvalid),
 			Message:            fmt.Sprintf("Translation failed: %v", err),
 			ObservedGeneration: gateway.Generation,
 			LastTransitionTime: metav1.Now(),
@@ -137,7 +155,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// Update Gateway status to Accepted and Programmed
+	// Update Gateway status conditions
 	acceptedCondition := metav1.Condition{
 		Type:               string(gatewayv1.GatewayConditionAccepted),
 		Status:             metav1.ConditionTrue,
@@ -151,43 +169,23 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		Type:               string(gatewayv1.GatewayConditionProgrammed),
 		Status:             metav1.ConditionTrue,
 		Reason:             string(gatewayv1.GatewayReasonProgrammed),
-		Message:            "Gateway is programmed and ready",
+		Message:            "Gateway is programmed and ready to accept traffic",
 		ObservedGeneration: gateway.Generation,
 		LastTransitionTime: metav1.Now(),
 	}
 
-	// Update listener status
-	listenerStatuses := make([]gatewayv1.ListenerStatus, 0, len(gateway.Spec.Listeners))
-	for _, listener := range gateway.Spec.Listeners {
-		listenerStatus := gatewayv1.ListenerStatus{
-			Name: listener.Name,
-			SupportedKinds: []gatewayv1.RouteGroupKind{
-				{
-					Group: (*gatewayv1.Group)(&gatewayv1.GroupVersion.Group),
-					Kind:  "HTTPRoute",
-				},
-			},
-			Conditions: []metav1.Condition{
-				{
-					Type:               string(gatewayv1.ListenerConditionAccepted),
-					Status:             metav1.ConditionTrue,
-					Reason:             string(gatewayv1.ListenerReasonAccepted),
-					Message:            "Listener is accepted",
-					ObservedGeneration: gateway.Generation,
-					LastTransitionTime: metav1.Now(),
-				},
-				{
-					Type:               string(gatewayv1.ListenerConditionProgrammed),
-					Status:             metav1.ConditionTrue,
-					Reason:             string(gatewayv1.ListenerReasonProgrammed),
-					Message:            "Listener is programmed",
-					ObservedGeneration: gateway.Generation,
-					LastTransitionTime: metav1.Now(),
-				},
-			},
-			AttachedRoutes: r.countAttachedRoutes(ctx, gateway.Name, gateway.Namespace, string(listener.Name)),
-		}
-		listenerStatuses = append(listenerStatuses, listenerStatus)
+	// If any listeners have errors, mark programmed as false
+	if len(listenerErrors) > 0 {
+		programmedCondition.Status = metav1.ConditionFalse
+		programmedCondition.Reason = string(gatewayv1.GatewayReasonAddressNotAssigned)
+		programmedCondition.Message = "One or more listeners have errors"
+	}
+
+	// Finalize listener statuses with attached route counts
+	for i := range listenerStatuses {
+		listenerStatuses[i].AttachedRoutes = r.countAttachedRoutes(
+			ctx, gateway.Name, gateway.Namespace, string(listenerStatuses[i].Name),
+		)
 	}
 
 	gateway.Status.Listeners = listenerStatuses
@@ -204,6 +202,177 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	logger.Info("Successfully reconciled Gateway")
 	return ctrl.Result{}, nil
+}
+
+// validateListeners validates Gateway listeners and returns their statuses and any errors
+func (r *GatewayReconciler) validateListeners(gateway *gatewayv1.Gateway) ([]gatewayv1.ListenerStatus, map[string]string) {
+	listenerStatuses := make([]gatewayv1.ListenerStatus, 0, len(gateway.Spec.Listeners))
+	listenerErrors := make(map[string]string)
+
+	// Track ports for conflict detection
+	portProtocols := make(map[int32]map[gatewayv1.ProtocolType]bool)
+	portHostnames := make(map[int32]map[string]bool)
+
+	for _, listener := range gateway.Spec.Listeners {
+		status := gatewayv1.ListenerStatus{
+			Name:           listener.Name,
+			SupportedKinds: r.supportedKindsForProtocol(listener.Protocol),
+			Conditions:     make([]metav1.Condition, 0, 4),
+		}
+
+		// Check for port/protocol conflicts
+		hasConflict := false
+		port := int32(listener.Port)
+
+		if _, exists := portProtocols[port]; !exists {
+			portProtocols[port] = make(map[gatewayv1.ProtocolType]bool)
+			portHostnames[port] = make(map[string]bool)
+		}
+
+		// Detect protocol conflict on same port
+		if len(portProtocols[port]) > 0 && !portProtocols[port][listener.Protocol] {
+			hasConflict = true
+			listenerErrors[string(listener.Name)] = "protocol conflict on port"
+		}
+		portProtocols[port][listener.Protocol] = true
+
+		// Detect hostname conflict on same port
+		hostname := "*"
+		if listener.Hostname != nil {
+			hostname = string(*listener.Hostname)
+		}
+		if portHostnames[port][hostname] {
+			hasConflict = true
+			listenerErrors[string(listener.Name)] = "hostname conflict on port"
+		}
+		portHostnames[port][hostname] = true
+
+		// Validate protocol support
+		protocolSupported := isProtocolSupported(listener.Protocol)
+
+		// Set Accepted condition
+		if protocolSupported && !hasConflict {
+			status.Conditions = append(status.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.ListenerConditionAccepted),
+				Status:             metav1.ConditionTrue,
+				Reason:             string(gatewayv1.ListenerReasonAccepted),
+				Message:            "Listener is accepted",
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		} else if hasConflict {
+			status.Conditions = append(status.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.ListenerConditionConflicted),
+				Status:             metav1.ConditionTrue,
+				Reason:             string(gatewayv1.ListenerReasonHostnameConflict),
+				Message:            "Listener has a conflict with another listener",
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		} else {
+			status.Conditions = append(status.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.ListenerConditionAccepted),
+				Status:             metav1.ConditionFalse,
+				Reason:             string(gatewayv1.ListenerReasonUnsupportedProtocol),
+				Message:            fmt.Sprintf("Protocol %s is not supported", listener.Protocol),
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+
+		// Set Programmed condition
+		if protocolSupported && !hasConflict {
+			status.Conditions = append(status.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.ListenerConditionProgrammed),
+				Status:             metav1.ConditionTrue,
+				Reason:             string(gatewayv1.ListenerReasonProgrammed),
+				Message:            "Listener is programmed and ready",
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		} else {
+			status.Conditions = append(status.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.ListenerConditionProgrammed),
+				Status:             metav1.ConditionFalse,
+				Reason:             string(gatewayv1.ListenerReasonInvalid),
+				Message:            "Listener cannot be programmed",
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+
+		// Set ResolvedRefs condition
+		if listener.TLS != nil && len(listener.TLS.CertificateRefs) > 0 {
+			status.Conditions = append(status.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.ListenerConditionResolvedRefs),
+				Status:             metav1.ConditionTrue,
+				Reason:             string(gatewayv1.ListenerReasonResolvedRefs),
+				Message:            "All references are resolved",
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		} else {
+			status.Conditions = append(status.Conditions, metav1.Condition{
+				Type:               string(gatewayv1.ListenerConditionResolvedRefs),
+				Status:             metav1.ConditionTrue,
+				Reason:             string(gatewayv1.ListenerReasonResolvedRefs),
+				Message:            "No references to resolve",
+				ObservedGeneration: gateway.Generation,
+				LastTransitionTime: metav1.Now(),
+			})
+		}
+
+		listenerStatuses = append(listenerStatuses, status)
+	}
+
+	return listenerStatuses, listenerErrors
+}
+
+// supportedKindsForProtocol returns supported route kinds for a given protocol
+func (r *GatewayReconciler) supportedKindsForProtocol(protocol gatewayv1.ProtocolType) []gatewayv1.RouteGroupKind {
+	group := gatewayv1.Group(gatewayv1.GroupVersion.Group)
+
+	switch protocol {
+	case gatewayv1.HTTPProtocolType, gatewayv1.HTTPSProtocolType:
+		return []gatewayv1.RouteGroupKind{
+			{
+				Group: &group,
+				Kind:  "HTTPRoute",
+			},
+		}
+	case gatewayv1.TLSProtocolType:
+		return []gatewayv1.RouteGroupKind{
+			{
+				Group: &group,
+				Kind:  "TLSRoute",
+			},
+		}
+	case gatewayv1.TCPProtocolType:
+		return []gatewayv1.RouteGroupKind{
+			{
+				Group: &group,
+				Kind:  "TCPRoute",
+			},
+		}
+	default:
+		return []gatewayv1.RouteGroupKind{
+			{
+				Group: &group,
+				Kind:  "HTTPRoute",
+			},
+		}
+	}
+}
+
+// isProtocolSupported checks if a protocol is supported by NovaEdge
+func isProtocolSupported(protocol gatewayv1.ProtocolType) bool {
+	switch protocol {
+	case gatewayv1.HTTPProtocolType, gatewayv1.HTTPSProtocolType,
+		gatewayv1.TLSProtocolType, gatewayv1.TCPProtocolType:
+		return true
+	default:
+		return false
+	}
 }
 
 // handleDeletion handles cleanup when a Gateway is deleted

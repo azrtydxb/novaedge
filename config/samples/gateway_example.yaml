@@ -23,3 +23,10 @@ spec:
     allowedRoutes:
       namespaces:
         from: All
+  - name: http-alt
+    protocol: HTTP
+    port: 8080
+    hostname: "alt.example.com"
+    allowedRoutes:
+      namespaces:
+        from: Same

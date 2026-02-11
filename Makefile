@@ -71,6 +71,10 @@ test: fmt vet ## Run tests.
 test-coverage: test ## Run tests with coverage report.
 	go tool cover -html=cover.out -o coverage.html
 
+.PHONY: test-conformance
+test-conformance: ## Run Gateway API conformance tests (requires running cluster).
+	go test -v -tags conformance ./test/conformance/ -args -gateway-class=novaedge
+
 ##@ Build
 
 .PHONY: build-controller

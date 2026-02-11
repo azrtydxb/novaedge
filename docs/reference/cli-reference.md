@@ -821,3 +821,42 @@ You can use both tools interchangeably. `novactl` provides convenience shortcuts
 - [CRD Reference](crd-reference.md)
 - [Helm Values Reference](helm-values.md)
 - [kubectl Reference](https://kubernetes.io/docs/reference/kubectl/)
+
+## Gateway API Commands
+
+### novactl gateway-api
+
+Manage Gateway API resources (GatewayClass, Gateway, HTTPRoute).
+
+```bash
+# List GatewayClasses
+novactl gateway-api gatewayclasses
+novactl gateway-api gc
+
+# List Gateway API Gateways
+novactl gateway-api gateways
+novactl gateway-api gw
+
+# List HTTPRoutes
+novactl gateway-api httproutes
+novactl gateway-api hr
+
+# Describe a Gateway with full status details
+novactl gateway-api describe-gateway example-gateway
+novactl gateway-api describe-gateway example-gateway -n production
+```
+
+### novactl conformance
+
+Check Gateway API conformance status and report supported features.
+
+```bash
+# Show conformance status
+novactl conformance
+```
+
+This command displays:
+- GatewayClass acceptance status
+- Gateway status conditions
+- HTTPRoute status conditions
+- Supported conformance profiles and features
