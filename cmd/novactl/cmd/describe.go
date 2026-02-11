@@ -64,6 +64,9 @@ func runDescribe(cmd *cobra.Command, args []string) error {
 		rt = client.ResourceGRPCRoute
 	case resourceAliasIPPools, resourceAliasIPPool:
 		rt = client.ResourceIPPool
+	case resourceAliasWASMPlugins, resourceAliasWASMPlugin, resourceAliasWASM:
+		// WASM plugins are shown via policies
+		rt = client.ResourcePolicy
 	default:
 		return fmt.Errorf("unknown resource type: %s", resourceType)
 	}

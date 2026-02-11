@@ -66,7 +66,7 @@ func generateTestCert(cn string, dnsNames []string, ipAddresses []net.IP) (*x509
 func TestMTLSValidator_RequiredMode_ValidCert(t *testing.T) {
 	config := &pb.ClientAuthConfig{
 		Mode:               "require",
-		RequiredCNPatterns: []string{`^client\.example\.com$`},
+		RequiredCnPatterns: []string{`^client\.example\.com$`},
 	}
 
 	logger := zap.NewNop()
@@ -110,7 +110,7 @@ func TestMTLSValidator_RequiredMode_MissingCert(t *testing.T) {
 func TestMTLSValidator_RequiredMode_CNMismatch(t *testing.T) {
 	config := &pb.ClientAuthConfig{
 		Mode:               "require",
-		RequiredCNPatterns: []string{`^allowed\.example\.com$`},
+		RequiredCnPatterns: []string{`^allowed\.example\.com$`},
 	}
 
 	logger := zap.NewNop()
@@ -154,7 +154,7 @@ func TestMTLSValidator_OptionalMode_NoCert(t *testing.T) {
 func TestMTLSValidator_OptionalMode_ValidCert(t *testing.T) {
 	config := &pb.ClientAuthConfig{
 		Mode:               "optional",
-		RequiredCNPatterns: []string{`^client\.example\.com$`},
+		RequiredCnPatterns: []string{`^client\.example\.com$`},
 	}
 
 	logger := zap.NewNop()
@@ -178,7 +178,7 @@ func TestMTLSValidator_OptionalMode_ValidCert(t *testing.T) {
 func TestMTLSValidator_RequiredSANs(t *testing.T) {
 	config := &pb.ClientAuthConfig{
 		Mode:         "require",
-		RequiredSANs: []string{"service.example.com"},
+		RequiredSans: []string{"service.example.com"},
 	}
 
 	logger := zap.NewNop()

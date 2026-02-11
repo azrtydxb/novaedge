@@ -263,6 +263,12 @@ type RouteConfig struct {
 
 	// Retry configuration
 	Retry *RetryPolicyConfig `yaml:"retry,omitempty"`
+
+	// Pipeline defines a composable middleware pipeline
+	Pipeline *PipelineConfig `yaml:"pipeline,omitempty"`
+
+	// Expression is a boolean routing expression for advanced matching
+	Expression string `yaml:"expression,omitempty"`
 }
 
 // StandaloneRouteLimits defines per-route request limits for standalone mode
@@ -287,6 +293,19 @@ type RetryPolicyConfig struct {
 	RetryBudget   float64  `yaml:"retryBudget,omitempty"`
 	BackoffBase   string   `yaml:"backoffBase,omitempty"`
 	RetryMethods  []string `yaml:"retryMethods,omitempty"`
+}
+
+// PipelineConfig defines a middleware pipeline for standalone mode
+type PipelineConfig struct {
+	Middleware []MiddlewareRefConfig `yaml:"middleware,omitempty"`
+}
+
+// MiddlewareRefConfig references a middleware in the pipeline
+type MiddlewareRefConfig struct {
+	Type     string            `yaml:"type"` // builtin, wasm
+	Name     string            `yaml:"name"`
+	Priority int               `yaml:"priority,omitempty"`
+	Config   map[string]string `yaml:"config,omitempty"`
 }
 
 // RouteMatch defines matching conditions
@@ -520,7 +539,7 @@ type BFDStandaloneConfig struct {
 // PolicyConfig defines a policy (rate limit, CORS, etc.)
 type PolicyConfig struct {
 	Name string `yaml:"name"`
-	Type string `yaml:"type"` // RateLimit, CORS, IPFilter, JWT
+	Type string `yaml:"type"` // RateLimit, CORS, IPFilter, JWT, WASMPlugin
 
 	// Rate limiting
 	RateLimit *RateLimitPolicy `yaml:"rateLimit,omitempty"`
@@ -539,6 +558,9 @@ type PolicyConfig struct {
 
 	// WAF (Web Application Firewall)
 	WAF *WAFPolicy `yaml:"waf,omitempty"`
+
+	// WASM plugin
+	WASMPlugin *WASMPluginPolicy `yaml:"wasmPlugin,omitempty"`
 }
 
 // DistributedRateLimitPolicy defines distributed rate limiting
@@ -568,6 +590,18 @@ type WAFPolicy struct {
 	RulesFile        string   `yaml:"rulesFile,omitempty"`
 	RuleExclusions   []string `yaml:"ruleExclusions,omitempty"`
 	CustomRules      []string `yaml:"customRules,omitempty"`
+}
+
+// WASMPluginPolicy defines WASM plugin configuration for standalone mode
+type WASMPluginPolicy struct {
+	// Source is a file path to the WASM binary
+	Source string `yaml:"source"`
+	// Config is key-value configuration for the plugin
+	Config map[string]string `yaml:"config,omitempty"`
+	// Phase: request, response, both
+	Phase string `yaml:"phase,omitempty"`
+	// Priority determines execution order (lower = earlier)
+	Priority int `yaml:"priority,omitempty"`
 }
 
 // RateLimitPolicy defines rate limiting

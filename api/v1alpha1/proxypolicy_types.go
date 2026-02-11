@@ -21,7 +21,7 @@ import (
 )
 
 // PolicyType defines the type of policy
-// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders;DistributedRateLimit;WAF
+// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders;DistributedRateLimit;WAF;WASMPlugin
 type PolicyType string
 
 const (
@@ -41,6 +41,8 @@ const (
 	PolicyTypeDistributedRateLimit PolicyType = "DistributedRateLimit"
 	// PolicyTypeWAF applies Web Application Firewall protection
 	PolicyTypeWAF PolicyType = "WAF"
+	// PolicyTypeWASMPlugin applies a WASM plugin middleware
+	PolicyTypeWASMPlugin PolicyType = "WASMPlugin"
 )
 
 // RateLimitConfig defines rate limiting configuration
@@ -310,6 +312,32 @@ type TargetRef struct {
 	Namespace *string `json:"namespace,omitempty"`
 }
 
+// WASMPluginConfig defines WASM plugin configuration
+type WASMPluginConfig struct {
+	// Source is a reference to the WASM binary (ConfigMap name or URL)
+	// +kubebuilder:validation:Required
+	Source string `json:"source"`
+
+	// ConfigRef is an optional reference to a ConfigMap containing plugin configuration
+	// +optional
+	ConfigRef *LocalObjectReference `json:"configRef,omitempty"`
+
+	// Config is an inline key-value configuration map passed to the WASM plugin
+	// +optional
+	Config map[string]string `json:"config,omitempty"`
+
+	// Phase determines when the plugin executes: request, response, or both
+	// +optional
+	// +kubebuilder:default="request"
+	// +kubebuilder:validation:Enum=request;response;both
+	Phase string `json:"phase,omitempty"`
+
+	// Priority determines execution order within the middleware pipeline (lower = earlier)
+	// +optional
+	// +kubebuilder:default=100
+	Priority int `json:"priority,omitempty"`
+}
+
 // ProxyPolicySpec defines the desired state of ProxyPolicy
 type ProxyPolicySpec struct {
 	// Type is the type of policy
@@ -347,6 +375,10 @@ type ProxyPolicySpec struct {
 	// WAF configuration (for WAF type)
 	// +optional
 	WAF *WAFConfig `json:"waf,omitempty"`
+
+	// WASMPlugin configuration (for WASMPlugin type)
+	// +optional
+	WASMPlugin *WASMPluginConfig `json:"wasmPlugin,omitempty"`
 }
 
 // ProxyPolicyStatus defines the observed state of ProxyPolicy

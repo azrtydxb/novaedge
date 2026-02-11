@@ -64,8 +64,11 @@ func runGet(cmd *cobra.Command, args []string) error {
 		rt = client.ResourceGRPCRoute
 	case resourceAliasIPPools, resourceAliasIPPool:
 		rt = client.ResourceIPPool
+	case resourceAliasWASMPlugins, resourceAliasWASMPlugin, resourceAliasWASM:
+		// WASM plugins are shown via policies with type WASMPlugin
+		rt = client.ResourcePolicy
 	default:
-		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes, grpcroutes, ippools)", resourceType)
+		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes, grpcroutes, ippools, wasmplugins)", resourceType)
 	}
 
 	ctx := context.Background()

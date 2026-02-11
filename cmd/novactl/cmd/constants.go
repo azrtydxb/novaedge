@@ -23,6 +23,10 @@ const (
 	resourceAliasGRPCRoutes = "grpcroutes"
 	resourceAliasGRPCRoute  = "grpcroute"
 
+	resourceAliasWASMPlugins = "wasmplugins"
+	resourceAliasWASMPlugin  = "wasmplugin"
+	resourceAliasWASM        = "wasm"
+
 	statusYes     = "Yes"
 	statusNo      = "No"
 	statusUnknown = "Unknown"

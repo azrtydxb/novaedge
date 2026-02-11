@@ -161,6 +161,12 @@ message Route {
   repeated string hostnames = 3;
   repeated RouteRule rules = 4;
   AccessLogConfig access_log = 5;
+
+  // Pipeline defines a composable middleware pipeline for this route
+  MiddlewarePipeline pipeline = 6;
+
+  // Expression is a boolean routing expression for advanced matching
+  string expression = 7;
 }
 
 // MirrorConfig configures traffic mirroring for a route rule
@@ -425,6 +431,9 @@ message Policy {
   SecurityHeadersConfig security_headers = 9;
   DistributedRateLimitConfig distributed_rate_limit = 10;
   WAFConfig waf = 11;
+
+  // WASM plugin configuration (for WASM_PLUGIN type)
+  WASMPluginConfig wasm_plugin = 12;
 }
 
 enum PolicyType {
@@ -437,6 +446,7 @@ enum PolicyType {
   SECURITY_HEADERS = 6;
   DISTRIBUTED_RATE_LIMIT = 7;
   WAF = 8;
+  WASM_PLUGIN = 9;
 }
 
 // TargetRef identifies the resource a policy applies to
@@ -634,6 +644,39 @@ message WAFConfig {
   string rules_config_map_ref = 5; // Reference to ConfigMap containing rules
   repeated string rule_exclusions = 6; // Rule IDs to exclude
   repeated string custom_rules = 7; // Inline custom rules
+}
+
+// WASMPluginConfig defines WASM plugin settings in a policy
+message WASMPluginConfig {
+  // Source is a ConfigMap reference or URL for the WASM binary
+  string source = 1;
+  // ConfigRef is an optional ConfigMap name for plugin configuration
+  string config_ref = 2;
+  // Config is inline key-value configuration for the plugin
+  map<string, string> config = 3;
+  // Phase determines when the plugin executes: request, response, both
+  string phase = 4;
+  // Priority determines execution order (lower = earlier)
+  int32 priority = 5;
+  // WasmBytes is the raw WASM binary (loaded from ConfigMap by controller)
+  bytes wasm_bytes = 6;
+}
+
+// MiddlewarePipeline defines an ordered middleware pipeline for a route
+message MiddlewarePipeline {
+  repeated MiddlewareRef middleware = 1;
+}
+
+// MiddlewareRef references a middleware in the pipeline
+message MiddlewareRef {
+  // Type: builtin or wasm
+  string type = 1;
+  // Name identifies the middleware
+  string name = 2;
+  // Priority determines execution order (lower = earlier)
+  int32 priority = 3;
+  // Config holds optional key-value configuration
+  map<string, string> config = 4;
 }
 
 // ConfigService is the gRPC service for distributing config snapshots

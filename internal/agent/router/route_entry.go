@@ -38,6 +38,8 @@ type RouteEntry struct {
 	Limits         *pb.RouteLimitsConfig  // Per-route request limits and timeouts
 	Buffering      *pb.BufferingConfig    // Request/response buffering settings
 	MirrorConfig   *MirrorConfig          // Traffic mirroring configuration (optional)
+	Pipeline       *Pipeline              // Composable middleware pipeline
+	Expression     ExprNode               // Compiled boolean routing expression
 }
 
 // compileHeaderRegexes pre-compiles all header regex patterns for a route rule

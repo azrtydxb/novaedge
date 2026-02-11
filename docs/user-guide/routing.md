@@ -579,6 +579,64 @@ NovaEdge supports buffering request and response bodies at the per-route level. 
 
 ### Per-Route Buffering Configuration
 
+## Boolean Routing Expressions
+
+NovaEdge supports boolean routing expressions for advanced request matching. Expressions are compiled at config load time, ensuring zero per-request parsing overhead.
+
+### Syntax
+
+Expressions support the following operators and operands:
+
+**Operators:**
+- `AND` -- Both conditions must be true
+- `OR` -- At least one condition must be true
+- `NOT` -- Negates the condition
+- `( )` -- Grouping for precedence
+
+**Operands:**
+
+| Operand | Syntax | Example |
+|---------|--------|---------|
+| Header match | `header:Name == "value"` | `header:X-Env == "staging"` |
+| Header not equal | `header:Name != "value"` | `header:X-Debug != "true"` |
+| Path exact | `path exact "/path"` | `path exact "/health"` |
+| Path prefix | `path prefix "/prefix"` | `path prefix "/api"` |
+| Path contains | `path contains "/segment"` | `path contains "/v2"` |
+| Method match | `method == "METHOD"` | `method == "POST"` |
+| Query param | `query:key == "value"` | `query:env == "test"` |
+| Source IP | `source_ip in "CIDR"` | `source_ip in "10.0.0.0/8"` |
+
+### Examples
+
+**Simple header-based routing:**
+```yaml
+expression: 'header:X-Env == "staging"'
+```
+
+**Combined path and header:**
+```yaml
+expression: '(header:X-Env == "staging") AND (path prefix "/api" OR path prefix "/v2")'
+```
+
+**Method-based routing with negation:**
+```yaml
+expression: 'method == "GET" AND NOT path prefix "/admin"'
+```
+
+**Complex multi-condition:**
+```yaml
+expression: '(method == "GET" AND path prefix "/api") OR (method == "POST" AND header:Content-Type == "application/json")'
+```
+
+**IP-based access control:**
+```yaml
+expression: 'source_ip in "10.0.0.0/8" AND header:X-Internal == "true"'
+```
+
+### Integration with Rule Matches
+
+When both `expression` and `rules[].matches` are specified on a route, the expression is evaluated first. If the expression evaluates to false, the route does not match, regardless of rule matches. This allows expressions to act as a pre-filter.
+
 ```yaml
 apiVersion: novaedge.io/v1alpha1
 kind: ProxyRoute
@@ -803,3 +861,24 @@ exclusions:
   - /healthz           # Exact match: only /healthz
   - /.well-known/      # Prefix match: /.well-known/anything
 ```
+
+### Expression-Based Routing Example
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: staging-api
+spec:
+  hostnames: ["api.example.com"]
+  expression: 'header:X-Env == "staging"'
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: staging-backend
+```
+
+In this example, requests must have `X-Env: staging` AND match the `/api` prefix.
