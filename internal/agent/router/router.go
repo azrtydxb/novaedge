@@ -176,7 +176,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 		}
 
 		// Check if endpoints changed by computing hash
-		endpointHash := hashEndpointList(endpointList.Endpoints)
+		endpointHash := hashEndpointList(endpointList.Endpoints, cluster.LbPolicy)
 		previousHash, exists := r.endpointVersions[clusterKey]
 
 		// Only recreate load balancer if endpoints actually changed
