@@ -126,6 +126,59 @@ type QUICConfig struct {
 	Enable0RTT bool `json:"enable0RTT,omitempty"`
 }
 
+// ClientAuthMode defines the client certificate authentication mode
+// +kubebuilder:validation:Enum=none;optional;require
+type ClientAuthMode string
+
+const (
+	// ClientAuthModeNone disables client certificate authentication
+	ClientAuthModeNone ClientAuthMode = "none"
+	// ClientAuthModeOptional requests but does not require a client certificate
+	ClientAuthModeOptional ClientAuthMode = "optional"
+	// ClientAuthModeRequire requires a valid client certificate
+	ClientAuthModeRequire ClientAuthMode = "require"
+)
+
+// ClientAuthConfig defines mTLS client authentication settings for a listener
+type ClientAuthConfig struct {
+	// Mode defines the client certificate authentication mode
+	// +optional
+	// +kubebuilder:default="none"
+	Mode ClientAuthMode `json:"mode,omitempty"`
+
+	// CACertRef references a Kubernetes Secret containing the CA certificate bundle
+	// for verifying client certificates. The Secret should contain a "ca.crt" key.
+	// +optional
+	CACertRef *corev1.SecretReference `json:"caCertRef,omitempty"`
+
+	// RequiredCNPatterns are regex patterns that the client certificate Common Name must match
+	// +optional
+	RequiredCNPatterns []string `json:"requiredCNPatterns,omitempty"`
+
+	// RequiredSANs are Subject Alternative Names that the client certificate must contain
+	// +optional
+	RequiredSANs []string `json:"requiredSANs,omitempty"`
+}
+
+// ProxyProtocolConfig defines PROXY protocol configuration for a listener
+type ProxyProtocolConfig struct {
+	// Enabled enables PROXY protocol parsing on this listener
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
+
+	// Version is the PROXY protocol version to accept (1, 2, or 0 for both)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=2
+	// +kubebuilder:default=0
+	Version int32 `json:"version,omitempty"`
+
+	// TrustedCIDRs defines source CIDR ranges from which PROXY protocol headers are trusted.
+	// If empty, PROXY protocol is accepted from any source.
+	// +optional
+	TrustedCIDRs []string `json:"trustedCIDRs,omitempty"`
+}
+
 // Listener defines a port and protocol to listen on
 type Listener struct {
 	// Name is a unique name for this listener
@@ -170,6 +223,18 @@ type Listener struct {
 	// MaxRequestBodySize is the maximum allowed request body size in bytes (0 = unlimited)
 	// +optional
 	MaxRequestBodySize int64 `json:"maxRequestBodySize,omitempty"`
+
+	// ClientAuth configures mTLS client certificate authentication
+	// +optional
+	ClientAuth *ClientAuthConfig `json:"clientAuth,omitempty"`
+
+	// OCSPStapling enables OCSP stapling for TLS certificates on this listener
+	// +optional
+	OCSPStapling bool `json:"ocspStapling,omitempty"`
+
+	// ProxyProtocol configures PROXY protocol parsing on this listener
+	// +optional
+	ProxyProtocol *ProxyProtocolConfig `json:"proxyProtocol,omitempty"`
 
 	// AllowedSourceRanges is a list of CIDR ranges that are allowed to access this listener
 	// If empty, all sources are allowed
