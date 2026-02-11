@@ -19,6 +19,7 @@ package snapshot
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"sort"
@@ -855,7 +856,11 @@ func (b *Builder) loadWASMBinary(ctx context.Context, source, defaultNamespace s
 
 	// Fallback: check Data for base64-encoded WASM
 	if wasmStr, ok := configMap.Data["plugin.wasm"]; ok {
-		return []byte(wasmStr), nil
+		decoded, err := base64.StdEncoding.DecodeString(wasmStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode base64 WASM binary: %w", err)
+		}
+		return decoded, nil
 	}
 
 	return nil, fmt.Errorf("WASM binary not found in ConfigMap %s/%s (expected key: plugin.wasm)", namespace, name)

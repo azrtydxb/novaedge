@@ -113,6 +113,7 @@ func hostGetRequestHeader(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostGetRequestHeader"))
 		stack[0] = 0
 		return
 	}
@@ -135,10 +136,12 @@ func hostSetRequestHeader(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
 		return
 	}
 	valBytes, ok := mem.Read(valPtr, valLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
 		return
 	}
 	rc.Request.Header.Set(string(nameBytes), string(valBytes))
@@ -158,6 +161,7 @@ func hostGetResponseHeader(ctx context.Context, mod api.Module, stack []uint64) 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostGetResponseHeader"))
 		stack[0] = 0
 		return
 	}
@@ -180,10 +184,12 @@ func hostSetResponseHeader(ctx context.Context, mod api.Module, stack []uint64) 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetResponseHeader"))
 		return
 	}
 	valBytes, ok := mem.Read(valPtr, valLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetResponseHeader"))
 		return
 	}
 	if rc.ResponseHeaders == nil {
@@ -234,6 +240,7 @@ func hostGetConfigValue(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	keyBytes, ok := mem.Read(keyPtr, keyLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostGetConfigValue"))
 		stack[0] = 0
 		return
 	}
@@ -255,6 +262,7 @@ func hostLogMessage(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	msgBytes, ok := mem.Read(msgPtr, msgLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostLogMessage"))
 		return
 	}
 
@@ -286,6 +294,7 @@ func hostSendResponse(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	bodyBytes, ok := mem.Read(bodyPtr, bodyLen)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSendResponse"))
 		bodyBytes = []byte(fmt.Sprintf("WASM plugin error: could not read body from memory"))
 	}
 
@@ -306,6 +315,7 @@ func writeStringToMemory(mem api.Memory, ptr, cap uint32, value string) uint32 {
 		b = b[:cap]
 	}
 	if !mem.Write(ptr, b) {
+		zap.L().Debug("WASM host: memory write failed", zap.String("function", "writeStringToMemory"))
 		return 0
 	}
 	return uint32(len(b))
@@ -315,6 +325,7 @@ func writeStringToMemory(mem api.Memory, ptr, cap uint32, value string) uint32 {
 func readStringFromMemory(mem api.Memory, ptr, length uint32) (string, error) {
 	data, ok := mem.Read(ptr, length)
 	if !ok {
+		zap.L().Debug("WASM host: memory read failed", zap.String("function", "readStringFromMemory"))
 		return "", fmt.Errorf("failed to read %d bytes at offset %d", length, ptr)
 	}
 	return string(data), nil
@@ -343,6 +354,7 @@ func writeToGuestMemory(ctx context.Context, mod api.Module, data []byte) (uint3
 	}
 
 	if !mod.Memory().Write(ptr, data) {
+		zap.L().Debug("WASM host: memory write failed", zap.String("function", "writeToGuestMemory"))
 		return 0, 0, fmt.Errorf("failed to write %d bytes to guest memory at %d", len(data), ptr)
 	}
 

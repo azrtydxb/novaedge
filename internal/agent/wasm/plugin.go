@@ -170,7 +170,11 @@ func (p *Plugin) Middleware() func(http.Handler) http.Handler {
 						zap.Error(err),
 						zap.String("path", r.URL.Path),
 					)
-					// Continue to next handler on error (fail-open)
+					// Fail-closed: reject request if configured, otherwise fail-open
+					if p.config.FailClosed {
+						http.Error(w, "Security policy error", http.StatusServiceUnavailable)
+						return
+					}
 				}
 
 				// The guest may have modified request headers

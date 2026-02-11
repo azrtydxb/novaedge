@@ -86,6 +86,9 @@ type PluginConfig struct {
 	Priority int
 	// MaxMemoryPages caps the WASM linear memory in 64KiB pages (0 = default 256 = 16MB).
 	MaxMemoryPages uint32
+	// FailClosed causes the middleware to return 503 on WASM execution errors
+	// instead of failing open and forwarding the request to the next handler.
+	FailClosed bool
 }
 
 // RequestContext is an opaque handle passed through the WASM execution that
