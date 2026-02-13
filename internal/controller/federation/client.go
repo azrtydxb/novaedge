@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
+	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -82,13 +83,13 @@ func (c *PeerClient) Connect(ctx context.Context) error {
 		return nil // Already connected
 	}
 
-	opts := []grpc.DialOption{
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                10 * time.Second,
-			Timeout:             5 * time.Second,
-			PermitWithoutStream: true,
-		}),
-	}
+	// Start with shared message size limits and keepalive options
+	opts := grpclimits.ClientOptions()
+	opts = append(opts, grpc.WithKeepaliveParams(keepalive.ClientParameters{
+		Time:                10 * time.Second,
+		Timeout:             5 * time.Second,
+		PermitWithoutStream: true,
+	}))
 
 	// Configure TLS if enabled
 	if c.peer.TLSEnabled {

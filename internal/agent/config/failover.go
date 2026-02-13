@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
+	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -640,7 +641,8 @@ func (w *FailoverWatcher) connectAndStream(ctrl *ControllerEndpoint) error {
 
 // connect establishes a gRPC connection to a controller
 func (w *FailoverWatcher) connect(ctrl *ControllerEndpoint) (*grpc.ClientConn, error) {
-	var opts []grpc.DialOption
+	// Start with message size limits and keepalive options
+	opts := grpclimits.ClientOptions()
 
 	if w.tlsConfig != nil && w.tlsConfig.CertFile != "" {
 		creds, err := tlsutil.LoadClientTLSCredentials(
