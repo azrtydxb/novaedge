@@ -101,37 +101,6 @@ func (f *URLRewriteFilter) Apply(w http.ResponseWriter, r *http.Request) (*http.
 	return r, true
 }
 
-// applyFilters applies all filters to a request
-func applyFilters(filters []*pb.RouteFilter, w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
-	for _, pbFilter := range filters {
-		var filter Filter
-
-		// Create appropriate filter based on type
-		switch pbFilter.Type {
-		case pb.RouteFilterType_ADD_HEADER, pb.RouteFilterType_REMOVE_HEADER:
-			filter = NewHeaderModifierFilter(pbFilter)
-		case pb.RouteFilterType_REQUEST_REDIRECT:
-			filter = NewRedirectFilter(pbFilter)
-		case pb.RouteFilterType_URL_REWRITE:
-			filter = NewURLRewriteFilter(pbFilter)
-		default:
-			// Unknown filter type, skip
-			continue
-		}
-
-		// Apply filter
-		newReq, shouldContinue := filter.Apply(w, r)
-		r = newReq
-
-		// Stop processing if filter returned false
-		if !shouldContinue {
-			return r, false
-		}
-	}
-
-	return r, true
-}
-
 // buildFilters pre-builds filter instances at config time to avoid per-request allocations.
 // Filters are created once during ApplyConfig and stored on the RouteEntry.
 func buildFilters(pbFilters []*pb.RouteFilter) []Filter {
@@ -153,7 +122,7 @@ func buildFilters(pbFilters []*pb.RouteFilter) []Filter {
 }
 
 // applyPrebuiltFilters applies pre-built filters to a request, avoiding per-request
-// filter instantiation. This is the hot-path version of applyFilters.
+// filter instantiation.
 func applyPrebuiltFilters(filters []Filter, w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	for _, filter := range filters {
 		newReq, shouldContinue := filter.Apply(w, r)
