@@ -102,6 +102,26 @@ var (
 		[]string{"cluster", "endpoint", "from_state", "to_state"},
 	)
 
+	// Outlier Detection Metrics
+
+	// EndpointEjectionsTotal tracks total ejections by endpoint and reason.
+	EndpointEjectionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_endpoint_ejections_total",
+			Help: "Total number of endpoint ejections by outlier detection",
+		},
+		[]string{"cluster", "endpoint", "reason"}, // reason: success_rate, failure_percentage, consecutive_errors
+	)
+
+	// EndpointsEjected tracks the current number of ejected endpoints per cluster.
+	EndpointsEjected = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "novaedge_endpoints_ejected",
+			Help: "Current number of ejected endpoints per cluster",
+		},
+		[]string{"cluster"},
+	)
+
 	// Load Balancer Metrics
 
 	// LoadBalancerSelections tracks load balancer endpoint selections
@@ -202,6 +222,16 @@ func RecordCircuitBreakerTransition(cluster, endpoint, fromState, toState string
 	CircuitBreakerTransitions.WithLabelValues(cluster, endpoint, fromState, toState).Inc()
 }
 
+// RecordEndpointEjection records an outlier detection ejection event.
+func RecordEndpointEjection(cluster, endpoint, reason string) {
+	EndpointEjectionsTotal.WithLabelValues(cluster, endpoint, reason).Inc()
+}
+
+// SetEndpointsEjected sets the current number of ejected endpoints for a cluster.
+func SetEndpointsEjected(cluster string, count int) {
+	EndpointsEjected.WithLabelValues(cluster).Set(float64(count))
+}
+
 // RecordLoadBalancerSelection records a load balancer selection
 func RecordLoadBalancerSelection(cluster, algorithm, endpoint string) {
 	endpoint = resolveEndpointLabel(cluster, endpoint)
@@ -223,6 +253,7 @@ func CleanupClusterMetrics(cluster string) {
 	PoolActiveConnections.DeleteLabelValues(cluster)
 	PoolHitsTotal.DeleteLabelValues(cluster)
 	PoolMissesTotal.DeleteLabelValues(cluster)
+	EndpointsEjected.DeleteLabelValues(cluster)
 }
 
 // CleanupEndpointMetrics removes tracking for a single endpoint in a cluster.
