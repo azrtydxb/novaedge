@@ -43,10 +43,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		responseWriter = NewResponseHeaderWriter(w, entry.ResponseFilter)
 	}
 
-	// Inject pipeline state into context for inter-middleware communication
-	state := NewPipelineState()
-	ctx := WithPipelineState(req.Context(), state)
-	req = req.WithContext(ctx)
+	// Pipeline state is already injected into the context by ServeHTTP
 
 	// Create the final handler that forwards to backend (with optional retry)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -140,7 +137,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	}
 
 	// Apply route filters first (header modifications, redirects, rewrites)
-	modifiedReq, shouldContinue := applyFilters(entry.Rule.Filters, w, req)
+	modifiedReq, shouldContinue := applyPrebuiltFilters(entry.Filters, w, req)
 	if !shouldContinue {
 		// Filter handled the response (e.g., redirect)
 		backendSpan.AddEvent("filter_handled_response")

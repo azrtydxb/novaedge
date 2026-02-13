@@ -17,6 +17,9 @@ limitations under the License.
 package router
 
 import (
+	"bufio"
+	"fmt"
+	"net"
 	"net/http"
 	"sync"
 )
@@ -49,6 +52,26 @@ func (rw *responseWriterWithStatus) reset(w http.ResponseWriter) {
 	rw.ResponseWriter = w
 	rw.statusCode = http.StatusOK
 	rw.written = false
+}
+
+// Flush implements http.Flusher by delegating to the underlying ResponseWriter.
+func (rw *responseWriterWithStatus) Flush() {
+	if f, ok := rw.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// Hijack implements http.Hijacker for WebSocket upgrades and other connection takeovers.
+func (rw *responseWriterWithStatus) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if h, ok := rw.ResponseWriter.(http.Hijacker); ok {
+		return h.Hijack()
+	}
+	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+}
+
+// Unwrap returns the underlying ResponseWriter, required for http.ResponseController.
+func (rw *responseWriterWithStatus) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
 }
 
 // responseWriterPool is a sync.Pool for responseWriterWithStatus to reduce allocations

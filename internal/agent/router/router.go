@@ -207,6 +207,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 					ResponseFilter: collectResponseFilters(rule.Filters),
 					Limits:         rule.Limits,
 					Buffering:      rule.Buffering,
+					Filters:        buildFilters(rule.Filters),
 				}
 
 				// Build mirror config from rule if present
@@ -222,6 +223,13 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 				r.routes[hostname] = append(r.routes[hostname], entry)
 			}
 		}
+	}
+
+	// Sort routes by specificity so the most specific matches are tried first.
+	// This ensures exact matches beat prefix matches, longer prefixes beat shorter ones,
+	// and routes with more conditions (headers, methods) are preferred.
+	for hostname := range r.routes {
+		sortRoutesBySpecificity(r.routes[hostname])
 	}
 
 	// Create upstream pools for each cluster
@@ -390,17 +398,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		trace.WithSpanKind(trace.SpanKindServer),
 		trace.WithAttributes(
 			attribute.String("http.method", req.Method),
-			attribute.String("http.url", req.URL.String()),
 			attribute.String("http.host", req.Host),
 			attribute.String("http.scheme", req.URL.Scheme),
-			attribute.String("http.user_agent", req.UserAgent()),
 			attribute.String("http.target", req.URL.Path),
 			attribute.String("net.peer.ip", req.RemoteAddr),
 		),
 	)
 	defer span.End()
 
-	// Store context with span in the request
+	// Inject pipeline state into context so handleRoute does not need a second WithContext call
+	ctx = WithPipelineState(ctx, NewPipelineState())
+
+	// Store all context values (span + pipeline state) in the request with a single WithContext
 	req = req.WithContext(ctx)
 
 	// Determine request body size limit based on content type
@@ -427,7 +436,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Defer metrics and span status recording
 	defer func() {
 		duration := time.Since(startTime).Seconds()
-		statusCode := strconv.Itoa(wrappedWriter.statusCode)
+		statusCode := statusString(wrappedWriter.statusCode)
 
 		// Record span status based on HTTP status code
 		span.SetAttributes(
