@@ -30,8 +30,10 @@ import (
 // endpoint with the fewest active connections. When multiple endpoints have
 // the same number of connections, one is chosen at random to avoid bias.
 type LeastConn struct {
-	mu        sync.RWMutex
-	endpoints []*pb.Endpoint
+	mu               sync.RWMutex
+	endpoints        []*pb.Endpoint
+	healthyEndpoints []*pb.Endpoint          // cached healthy list
+	endpointKeys     map[*pb.Endpoint]string // cached keys
 	// activeConns tracks active connection count per endpoint key ("address:port")
 	activeConns map[string]*int64
 }
@@ -47,10 +49,13 @@ func NewLeastConn(endpoints []*pb.Endpoint) *LeastConn {
 		}
 	}
 
-	return &LeastConn{
+	lc := &LeastConn{
 		endpoints:   endpoints,
 		activeConns: activeConns,
 	}
+	lc.buildKeyCache()
+	lc.rebuildHealthy()
+	return lc
 }
 
 // Select chooses the endpoint with the fewest active connections.
@@ -72,7 +77,7 @@ func (lc *LeastConn) Select() *pb.Endpoint {
 	// Find the minimum active connection count
 	minConns := int64(math.MaxInt64)
 	for _, ep := range healthy {
-		key := endpointKey(ep)
+		key := lc.cachedKey(ep)
 		if counter, ok := lc.activeConns[key]; ok {
 			count := atomic.LoadInt64(counter)
 			if count < minConns {
@@ -84,7 +89,7 @@ func (lc *LeastConn) Select() *pb.Endpoint {
 	// Collect all endpoints with the minimum count
 	candidates := make([]*pb.Endpoint, 0, len(healthy))
 	for _, ep := range healthy {
-		key := endpointKey(ep)
+		key := lc.cachedKey(ep)
 		if counter, ok := lc.activeConns[key]; ok {
 			if atomic.LoadInt64(counter) == minConns {
 				candidates = append(candidates, ep)
@@ -125,6 +130,8 @@ func (lc *LeastConn) UpdateEndpoints(endpoints []*pb.Endpoint) {
 		}
 	}
 	lc.activeConns = newActiveConns
+	lc.buildKeyCache()
+	lc.rebuildHealthy()
 }
 
 // IncrementActive increments the active connection count for an endpoint.
@@ -133,8 +140,8 @@ func (lc *LeastConn) IncrementActive(endpoint *pb.Endpoint) {
 	if endpoint == nil {
 		return
 	}
-	key := endpointKey(endpoint)
 	lc.mu.RLock()
+	key := lc.cachedKey(endpoint)
 	counter := lc.activeConns[key]
 	lc.mu.RUnlock()
 	if counter != nil {
@@ -148,8 +155,8 @@ func (lc *LeastConn) DecrementActive(endpoint *pb.Endpoint) {
 	if endpoint == nil {
 		return
 	}
-	key := endpointKey(endpoint)
 	lc.mu.RLock()
+	key := lc.cachedKey(endpoint)
 	counter := lc.activeConns[key]
 	lc.mu.RUnlock()
 	if counter != nil {
@@ -162,8 +169,8 @@ func (lc *LeastConn) GetActiveCount(endpoint *pb.Endpoint) int64 {
 	if endpoint == nil {
 		return 0
 	}
-	key := endpointKey(endpoint)
 	lc.mu.RLock()
+	key := lc.cachedKey(endpoint)
 	counter := lc.activeConns[key]
 	lc.mu.RUnlock()
 	if counter != nil {
@@ -172,12 +179,36 @@ func (lc *LeastConn) GetActiveCount(endpoint *pb.Endpoint) int64 {
 	return 0
 }
 
-func (lc *LeastConn) getHealthyEndpoints() []*pb.Endpoint {
+// rebuildHealthy filters and caches the list of healthy endpoints.
+// Must be called with lc.mu held (write lock).
+func (lc *LeastConn) rebuildHealthy() {
 	healthy := make([]*pb.Endpoint, 0, len(lc.endpoints))
 	for _, ep := range lc.endpoints {
 		if ep.Ready {
 			healthy = append(healthy, ep)
 		}
 	}
-	return healthy
+	lc.healthyEndpoints = healthy
+}
+
+func (lc *LeastConn) getHealthyEndpoints() []*pb.Endpoint {
+	return lc.healthyEndpoints
+}
+
+// buildKeyCache pre-computes endpoint keys for all endpoints.
+// Must be called with lc.mu held (write lock).
+func (lc *LeastConn) buildKeyCache() {
+	lc.endpointKeys = make(map[*pb.Endpoint]string, len(lc.endpoints))
+	for _, ep := range lc.endpoints {
+		lc.endpointKeys[ep] = endpointKey(ep)
+	}
+}
+
+// cachedKey returns the cached key for an endpoint, falling back to computing it
+// if the pointer is not in the cache.
+func (lc *LeastConn) cachedKey(ep *pb.Endpoint) string {
+	if key, ok := lc.endpointKeys[ep]; ok {
+		return key
+	}
+	return endpointKey(ep)
 }

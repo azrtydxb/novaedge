@@ -28,10 +28,11 @@ import (
 // P2C implements Power of Two Choices load balancing
 // Selects the best of two randomly chosen endpoints based on active requests
 type P2C struct {
-	mu        sync.RWMutex
-	endpoints []*pb.Endpoint
-	// Track active requests per endpoint
-	activeRequests map[string]*int64
+	mu               sync.RWMutex
+	endpoints        []*pb.Endpoint
+	healthyEndpoints []*pb.Endpoint // cached healthy list
+	activeRequests   map[string]*int64
+	endpointKeys     map[*pb.Endpoint]string // cached keys
 }
 
 // NewP2C creates a new P2C load balancer
@@ -45,10 +46,13 @@ func NewP2C(endpoints []*pb.Endpoint) *P2C {
 		}
 	}
 
-	return &P2C{
+	p := &P2C{
 		endpoints:      endpoints,
 		activeRequests: activeRequests,
 	}
+	p.buildKeyCache()
+	p.rebuildHealthy()
+	return p
 }
 
 // Select chooses an endpoint using Power of Two Choices
@@ -78,8 +82,8 @@ func (p *P2C) Select() *pb.Endpoint {
 	ep2 := healthy[idx2]
 
 	// Choose the one with fewer active requests
-	count1 := atomic.LoadInt64(p.activeRequests[endpointKey(ep1)])
-	count2 := atomic.LoadInt64(p.activeRequests[endpointKey(ep2)])
+	count1 := atomic.LoadInt64(p.activeRequests[p.cachedKey(ep1)])
+	count2 := atomic.LoadInt64(p.activeRequests[p.cachedKey(ep2)])
 
 	if count1 <= count2 {
 		return ep1
@@ -109,6 +113,8 @@ func (p *P2C) UpdateEndpoints(endpoints []*pb.Endpoint) {
 		}
 	}
 	p.activeRequests = newActiveRequests
+	p.buildKeyCache()
+	p.rebuildHealthy()
 }
 
 // IncrementActive increments the active request count for an endpoint
@@ -116,8 +122,8 @@ func (p *P2C) IncrementActive(endpoint *pb.Endpoint) {
 	if endpoint == nil {
 		return
 	}
-	key := endpointKey(endpoint)
 	p.mu.RLock()
+	key := p.cachedKey(endpoint)
 	counter := p.activeRequests[key]
 	p.mu.RUnlock()
 	if counter != nil {
@@ -130,8 +136,8 @@ func (p *P2C) DecrementActive(endpoint *pb.Endpoint) {
 	if endpoint == nil {
 		return
 	}
-	key := endpointKey(endpoint)
 	p.mu.RLock()
+	key := p.cachedKey(endpoint)
 	counter := p.activeRequests[key]
 	p.mu.RUnlock()
 	if counter != nil {
@@ -144,8 +150,8 @@ func (p *P2C) GetActiveCount(endpoint *pb.Endpoint) int64 {
 	if endpoint == nil {
 		return 0
 	}
-	key := endpointKey(endpoint)
 	p.mu.RLock()
+	key := p.cachedKey(endpoint)
 	counter := p.activeRequests[key]
 	p.mu.RUnlock()
 	if counter != nil {
@@ -154,14 +160,38 @@ func (p *P2C) GetActiveCount(endpoint *pb.Endpoint) int64 {
 	return 0
 }
 
-func (p *P2C) getHealthyEndpoints() []*pb.Endpoint {
+// rebuildHealthy filters and caches the list of healthy endpoints.
+// Must be called with p.mu held (write lock).
+func (p *P2C) rebuildHealthy() {
 	healthy := make([]*pb.Endpoint, 0, len(p.endpoints))
 	for _, ep := range p.endpoints {
 		if ep.Ready {
 			healthy = append(healthy, ep)
 		}
 	}
-	return healthy
+	p.healthyEndpoints = healthy
+}
+
+func (p *P2C) getHealthyEndpoints() []*pb.Endpoint {
+	return p.healthyEndpoints
+}
+
+// buildKeyCache pre-computes endpoint keys for all endpoints.
+// Must be called with p.mu held (write lock).
+func (p *P2C) buildKeyCache() {
+	p.endpointKeys = make(map[*pb.Endpoint]string, len(p.endpoints))
+	for _, ep := range p.endpoints {
+		p.endpointKeys[ep] = endpointKey(ep)
+	}
+}
+
+// cachedKey returns the cached key for an endpoint, falling back to computing it
+// if the pointer is not in the cache.
+func (p *P2C) cachedKey(ep *pb.Endpoint) string {
+	if key, ok := p.endpointKeys[ep]; ok {
+		return key
+	}
+	return endpointKey(ep)
 }
 
 func endpointKey(ep *pb.Endpoint) string {
