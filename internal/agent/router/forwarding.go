@@ -110,7 +110,11 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	)
 	defer backendSpan.End()
 
-	// Update request context with the new span
+	// Update request context with the new span.
+	// NOTE (#129): This WithContext cannot be consolidated further because the
+	// backend span is created inside forwardToBackend, after ServeHTTP has
+	// already set its context. The span must be injected into the request so
+	// that trace propagation carries the per-backend child span to the upstream.
 	req = req.WithContext(ctx)
 
 	// Check if this is a gRPC request

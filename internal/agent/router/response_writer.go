@@ -31,6 +31,10 @@ type responseWriterWithStatus struct {
 	written    bool
 }
 
+// Compile-time interface assertions
+var _ http.Flusher = (*responseWriterWithStatus)(nil)
+var _ http.Hijacker = (*responseWriterWithStatus)(nil)
+
 func (rw *responseWriterWithStatus) WriteHeader(code int) {
 	if !rw.written {
 		rw.statusCode = code
@@ -67,6 +71,15 @@ func (rw *responseWriterWithStatus) Hijack() (net.Conn, *bufio.ReadWriter, error
 		return h.Hijack()
 	}
 	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+}
+
+// Push implements http.Pusher by delegating to the underlying ResponseWriter if it supports HTTP/2 server push.
+// Although http.Pusher is deprecated, forwarding is provided for backwards compatibility with HTTP/2 clients.
+func (rw *responseWriterWithStatus) Push(target string, opts *http.PushOptions) error {
+	if p, ok := rw.ResponseWriter.(http.Pusher); ok {
+		return p.Push(target, opts)
+	}
+	return http.ErrNotSupported
 }
 
 // Unwrap returns the underlying ResponseWriter, required for http.ResponseController.
