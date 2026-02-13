@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -326,6 +327,188 @@ func TestBuildWAFDirectives(t *testing.T) {
 	}
 	if !hasExclusion {
 		t.Error("expected rule exclusion directive for 1001")
+	}
+}
+
+func TestWAFEngine_BlockPathTraversal(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?file=../../../../etc/passwd", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("WAF processing error: %v", err)
+	}
+	if interruption == nil {
+		t.Error("expected WAF to detect path traversal")
+	}
+}
+
+func TestWAFEngine_BlockCommandInjection(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?cmd=;cat+/etc/passwd", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("WAF processing error: %v", err)
+	}
+	if interruption == nil {
+		t.Error("expected WAF to detect command injection")
+	}
+}
+
+func TestWAFEngine_ParanoiaLevel2_SQLFunctions(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    2,
+		AnomalyThreshold: 5,
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=concat(username,password)", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("WAF processing error: %v", err)
+	}
+	if interruption == nil {
+		t.Error("expected WAF PL2 to detect SQL function usage")
+	}
+}
+
+func TestWAFEngine_ParanoiaLevel3_TimeBased(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    3,
+		AnomalyThreshold: 5,
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?id=1+AND+sleep(5)", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("WAF processing error: %v", err)
+	}
+	if interruption == nil {
+		t.Error("expected WAF PL3 to detect time-based SQL injection")
+	}
+}
+
+func TestWAFEngine_RuleExclusion(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+		RuleExclusions:   []string{"942100", "942110", "942120", "942130"},
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	// SQL injection should pass since SQLi rules are excluded
+	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=SELECT+username+FROM+users", nil)
+	req.RemoteAddr = "192.168.1.1:12345"
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("WAF processing error: %v", err)
+	}
+	if interruption != nil {
+		t.Error("expected SQL injection to pass with excluded rules")
+	}
+}
+
+func TestWAFEngine_CleanRequestAllParanoiaLevels(t *testing.T) {
+	for _, pl := range []int32{1, 2, 3, 4} {
+		t.Run(fmt.Sprintf("PL%d", pl), func(t *testing.T) {
+			logger := zap.NewNop()
+			config := &pb.WAFConfig{
+				Enabled:          true,
+				Mode:             "prevention",
+				ParanoiaLevel:    pl,
+				AnomalyThreshold: 5,
+			}
+
+			engine, err := NewWAFEngine(config, logger)
+			if err != nil {
+				t.Fatalf("failed to create WAF engine: %v", err)
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "http://example.com/api/users?page=1&limit=10", nil)
+			req.RemoteAddr = "192.168.1.1:12345"
+
+			interruption, err := engine.ProcessRequest(req)
+			if err != nil {
+				t.Fatalf("WAF processing error: %v", err)
+			}
+			if interruption != nil {
+				t.Errorf("expected clean request to pass at PL%d, rule=%d", pl, interruption.RuleID)
+			}
+		})
+	}
+}
+
+func TestGetCRSRules_LevelCoverage(t *testing.T) {
+	pl1 := GetCRSRules(1)
+	pl2 := GetCRSRules(2)
+	pl3 := GetCRSRules(3)
+	pl4 := GetCRSRules(4)
+
+	if len(pl1) == 0 {
+		t.Error("PL1 should have rules")
+	}
+	if len(pl2) <= len(pl1) {
+		t.Error("PL2 should have more rules than PL1")
+	}
+	if len(pl3) <= len(pl2) {
+		t.Error("PL3 should have more rules than PL2")
+	}
+	if len(pl4) <= len(pl3) {
+		t.Error("PL4 should have more rules than PL3")
 	}
 }
 
