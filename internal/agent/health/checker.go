@@ -18,6 +18,7 @@ package health
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -39,7 +40,33 @@ const (
 	// HealthCheckGRPC performs a gRPC health check using the standard
 	// grpc.health.v1.Health protocol.
 	HealthCheckGRPC
+	// HealthCheckTCP performs a TCP health check by dialing the endpoint.
+	// The check succeeds if a TCP connection can be established.
+	HealthCheckTCP
+	// HealthCheckHTTPS performs an HTTPS health check with TLS.
+	HealthCheckHTTPS
 )
+
+// DefaultHealthCheckPath is the default HTTP(S) health check path used when
+// no path is configured in the cluster health check configuration.
+const DefaultHealthCheckPath = "/health"
+
+// DefaultHealthCheckInterval is the default interval between consecutive
+// health checks when no interval is configured.
+const DefaultHealthCheckInterval = 10 * time.Second
+
+// HealthCheckConfig holds configurable health check parameters extracted
+// from the cluster protobuf configuration with sensible defaults.
+type HealthCheckConfig struct {
+	// Path is the HTTP(S) path to check (default: "/health").
+	Path string
+
+	// Interval is the duration between consecutive health checks (default: 10s).
+	Interval time.Duration
+
+	// Mode is the type of health check to perform.
+	Mode HealthCheckMode
+}
 
 // HealthChecker performs active health checks on endpoints
 type HealthChecker struct {
@@ -61,11 +88,14 @@ type HealthChecker struct {
 	// HTTP client for health checks
 	httpClient *http.Client
 
-	// gRPC health checker (nil when mode is HTTP)
+	// HTTPS client for health checks (with TLS, skip verify)
+	httpsClient *http.Client
+
+	// gRPC health checker (nil when mode is not gRPC)
 	grpcChecker *GRPCHealthChecker
 
-	// Health check mode
-	mode HealthCheckMode
+	// Health check configuration
+	config HealthCheckConfig
 
 	// Stop channel
 	stopCh chan struct{}
@@ -86,6 +116,8 @@ type HealthResult struct {
 
 // NewHealthChecker creates a new health checker
 func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) *HealthChecker {
+	config := buildHealthCheckConfig(cluster)
+
 	hc := &HealthChecker{
 		logger:          logger,
 		cluster:         cluster,
@@ -101,7 +133,20 @@ func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap
 				}).DialContext,
 			},
 		},
-		mode:   HealthCheckHTTP,
+		httpsClient: &http.Client{
+			Timeout: DefaultHealthCheckTimeout,
+			Transport: &http.Transport{
+				DialContext: (&net.Dialer{
+					Timeout:   DefaultHealthCheckDialTimeout,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				TLSClientConfig: &tls.Config{
+					MinVersion:         tls.VersionTLS12,
+					InsecureSkipVerify: true, //nolint:gosec // Health checks use skip-verify for backend probing
+				},
+			},
+		},
+		config: config,
 		stopCh: make(chan struct{}),
 	}
 
@@ -113,7 +158,7 @@ func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap
 			timeout = time.Duration(hcConfig.GetTimeoutMs()) * time.Millisecond
 		}
 
-		hc.mode = HealthCheckGRPC
+		hc.config.Mode = HealthCheckGRPC
 		hc.grpcChecker = &GRPCHealthChecker{
 			ServiceName:        hcConfig.GetGrpcServiceName(),
 			Timeout:            timeout,
@@ -123,6 +168,45 @@ func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap
 	}
 
 	return hc
+}
+
+// buildHealthCheckConfig extracts health check configuration from the cluster
+// protobuf, falling back to defaults for any unset fields.
+func buildHealthCheckConfig(cluster *pb.Cluster) HealthCheckConfig {
+	config := HealthCheckConfig{
+		Path:     DefaultHealthCheckPath,
+		Interval: DefaultHealthCheckInterval,
+		Mode:     HealthCheckHTTP,
+	}
+
+	hcConfig := cluster.GetHealthCheck()
+	if hcConfig == nil {
+		return config
+	}
+
+	// Configure path from protobuf
+	if hcConfig.GetHttpPath() != "" {
+		config.Path = hcConfig.GetHttpPath()
+	}
+
+	// Configure interval from protobuf
+	if hcConfig.GetIntervalMs() > 0 {
+		config.Interval = time.Duration(hcConfig.GetIntervalMs()) * time.Millisecond
+	}
+
+	// Configure mode from protobuf type
+	switch hcConfig.GetType() {
+	case pb.HealthCheckType_HEALTH_CHECK_GRPC:
+		config.Mode = HealthCheckGRPC
+	case pb.HealthCheckType_HEALTH_CHECK_TCP:
+		config.Mode = HealthCheckTCP
+	case pb.HealthCheckType_HEALTH_CHECK_HTTPS:
+		config.Mode = HealthCheckHTTPS
+	default:
+		config.Mode = HealthCheckHTTP
+	}
+
+	return config
 }
 
 // Start starts the health checker
@@ -262,9 +346,7 @@ func (hc *HealthChecker) RecordFailure(endpoint *pb.Endpoint) {
 func (hc *HealthChecker) healthCheckLoop(ctx context.Context) {
 	defer hc.wg.Done()
 
-	// Default interval: 10 seconds
-	interval := 10 * time.Second
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(hc.config.Interval)
 	defer ticker.Stop()
 
 	for {
@@ -401,9 +483,13 @@ func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
 // performCheck dispatches to the appropriate health check implementation
 // based on the configured health check mode.
 func (hc *HealthChecker) performCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
-	switch hc.mode {
+	switch hc.config.Mode {
 	case HealthCheckGRPC:
 		return hc.performGRPCCheck(ctx, ep)
+	case HealthCheckTCP:
+		return hc.performTCPCheck(ep)
+	case HealthCheckHTTPS:
+		return hc.performHTTPSCheck(ctx, ep)
 	default:
 		return hc.performHTTPCheck(ctx, ep)
 	}
@@ -411,8 +497,8 @@ func (hc *HealthChecker) performCheck(ctx context.Context, ep *pb.Endpoint) (boo
 
 // performHTTPCheck performs an HTTP health check
 func (hc *HealthChecker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
-	// Build health check URL
-	checkURL := "http://" + net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port)) + "/health"
+	addr := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
+	checkURL := "http://" + addr + hc.config.Path
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checkURL, nil)
 	if err != nil {
@@ -431,6 +517,47 @@ func (hc *HealthChecker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) 
 	}
 
 	return false, fmt.Errorf("unhealthy status code: %d", resp.StatusCode)
+}
+
+// performHTTPSCheck performs an HTTPS health check with TLS.
+// TLS certificate verification is skipped by default since health checks
+// probe backend endpoints that may use self-signed certificates.
+func (hc *HealthChecker) performHTTPSCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
+	addr := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
+	checkURL := "https://" + addr + hc.config.Path
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checkURL, nil)
+	if err != nil {
+		return false, err
+	}
+
+	resp, err := hc.httpsClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	// Consider 200-299 as healthy
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return true, nil
+	}
+
+	return false, fmt.Errorf("unhealthy status code: %d", resp.StatusCode)
+}
+
+// performTCPCheck performs a TCP health check by dialing the endpoint.
+// The check succeeds if a TCP connection can be established within the
+// configured dial timeout.
+func (hc *HealthChecker) performTCPCheck(ep *pb.Endpoint) (bool, error) {
+	addr := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
+
+	conn, err := net.DialTimeout("tcp", addr, DefaultHealthCheckDialTimeout)
+	if err != nil {
+		return false, fmt.Errorf("tcp health check failed for %s: %w", addr, err)
+	}
+	_ = conn.Close()
+
+	return true, nil
 }
 
 // performGRPCCheck performs a gRPC health check using the standard
