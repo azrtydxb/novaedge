@@ -81,6 +81,9 @@ type Router struct {
 	// Routing table: hostname -> routes
 	routes map[string][]*RouteEntry
 
+	// Radix-tree indexes per hostname for O(log n) path lookup (built at config time)
+	routeIndexes map[string]*routeIndex
+
 	// Backend pools
 	pools map[string]*upstream.Pool
 
@@ -134,6 +137,7 @@ func NewRouterWithCache(logger *zap.Logger, cacheConfig CacheConfig) *Router {
 	r := &Router{
 		logger:              logger,
 		routes:              make(map[string][]*RouteEntry),
+		routeIndexes:        make(map[string]*routeIndex),
 		pools:               make(map[string]*upstream.Pool),
 		loadBalancers:       make(map[string]lb.LoadBalancer),
 		hashBasedLBs:        make(map[string]interface{}),
@@ -228,8 +232,11 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Sort routes by specificity so the most specific matches are tried first.
 	// This ensures exact matches beat prefix matches, longer prefixes beat shorter ones,
 	// and routes with more conditions (headers, methods) are preferred.
+	r.routeIndexes = make(map[string]*routeIndex, len(r.routes))
 	for hostname := range r.routes {
 		sortRoutesBySpecificity(r.routes[hostname])
+		// Build radix tree index for O(log n) path lookup instead of O(n) linear scan
+		r.routeIndexes[hostname] = newRouteIndex(r.routes[hostname])
 	}
 
 	// Create upstream pools for each cluster
@@ -392,19 +399,25 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	propagator := otel.GetTextMapPropagator()
 	ctx = propagator.Extract(ctx, propagation.HeaderCarrier(req.Header))
 
-	// Start the main request span
+	// Start the main request span. Attributes are set lazily below to avoid
+	// allocating attribute.String values when the span is not sampled (#131).
 	tracer := otel.Tracer(tracerName)
 	ctx, span := tracer.Start(ctx, "HTTP "+req.Method,
 		trace.WithSpanKind(trace.SpanKindServer),
-		trace.WithAttributes(
+	)
+	defer span.End()
+
+	// Only allocate and set span attributes when the trace is actually being recorded.
+	// With typical sampling ratios this skips the attribute allocations for most requests.
+	if span.IsRecording() {
+		span.SetAttributes(
 			attribute.String("http.method", req.Method),
 			attribute.String("http.host", req.Host),
 			attribute.String("http.scheme", req.URL.Scheme),
 			attribute.String("http.target", req.URL.Path),
 			attribute.String("net.peer.ip", req.RemoteAddr),
-		),
-	)
-	defer span.End()
+		)
+	}
 
 	// Inject pipeline state into context so handleRoute does not need a second WithContext call
 	ctx = WithPipelineState(ctx, NewPipelineState())
@@ -438,16 +451,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		duration := time.Since(startTime).Seconds()
 		statusCode := statusString(wrappedWriter.statusCode)
 
-		// Record span status based on HTTP status code
-		span.SetAttributes(
-			attribute.Int("http.status_code", wrappedWriter.statusCode),
-			attribute.Float64("http.duration_seconds", duration),
-		)
+		// Record span status based on HTTP status code (only if sampled)
+		if span.IsRecording() {
+			span.SetAttributes(
+				attribute.Int("http.status_code", wrappedWriter.statusCode),
+				attribute.Float64("http.duration_seconds", duration),
+			)
 
-		if wrappedWriter.statusCode >= 400 {
-			span.SetStatus(codes.Error, http.StatusText(wrappedWriter.statusCode))
-		} else {
-			span.SetStatus(codes.Ok, "")
+			if wrappedWriter.statusCode >= 400 {
+				span.SetStatus(codes.Error, http.StatusText(wrappedWriter.statusCode))
+			} else {
+				span.SetStatus(codes.Ok, "")
+			}
 		}
 
 		// We'll set cluster in handleRoute, for now use "unknown"
@@ -495,24 +510,29 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		hostname = hostname[:idx]
 	}
 
-	// Add hostname to span
-	span.SetAttributes(attribute.String("http.hostname", hostname))
+	// Add hostname to span (only if sampled)
+	recording := span.IsRecording()
+	if recording {
+		span.SetAttributes(attribute.String("http.hostname", hostname))
+	}
 
-	// Find matching route
-	routes, ok := r.routes[hostname]
+	// Find matching route using radix tree index for O(log n) path lookup
+	rIdx, ok := r.routeIndexes[hostname]
 	if !ok {
-		span.AddEvent("route_not_found", trace.WithAttributes(
-			attribute.String("hostname", hostname),
-		))
+		if recording {
+			span.AddEvent("route_not_found", trace.WithAttributes(
+				attribute.String("hostname", hostname),
+			))
+		}
 		r.logger.Warn("No route for hostname", zap.String("hostname", hostname))
 		http.Error(wrappedWriter, "No route found", http.StatusNotFound)
 		return
 	}
 
-	// Match against route rules
-	for _, entry := range routes {
-		if r.matchRoute(entry, req) {
-			// Add route matching info to span
+	// Radix tree lookup: walks the tree by path, checks match conditions at each node
+	entry := rIdx.lookup(req.URL.Path, req, r.matchRoute)
+	if entry != nil {
+		if recording {
 			span.AddEvent("route_matched", trace.WithAttributes(
 				attribute.String("route.name", entry.Route.Name),
 				attribute.String("route.namespace", entry.Route.Namespace),
@@ -521,16 +541,18 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				attribute.String("novaedge.route.name", entry.Route.Name),
 				attribute.String("novaedge.route.namespace", entry.Route.Namespace),
 			)
-			r.handleRoute(entry, wrappedWriter, req)
-			return
 		}
+		r.handleRoute(entry, wrappedWriter, req)
+		return
 	}
 
 	// No matching rule
-	span.AddEvent("no_matching_rule", trace.WithAttributes(
-		attribute.String("hostname", hostname),
-		attribute.String("path", req.URL.Path),
-	))
+	if recording {
+		span.AddEvent("no_matching_rule", trace.WithAttributes(
+			attribute.String("hostname", hostname),
+			attribute.String("path", req.URL.Path),
+		))
+	}
 	r.logger.Warn("No matching rule for request",
 		zap.String("hostname", hostname),
 		zap.String("path", req.URL.Path),
