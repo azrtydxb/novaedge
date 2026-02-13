@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -186,7 +187,8 @@ func (w *Watcher) connectWithRetry() (*grpc.ClientConn, error) {
 			zap.String("address", w.controllerAddr),
 			zap.Bool("tls_enabled", w.tlsEnabled))
 
-		var opts []grpc.DialOption
+		// Start with message size limits and keepalive options
+		opts := grpclimits.ClientOptions()
 		var creds credentials.TransportCredentials
 
 		if w.tlsEnabled {
