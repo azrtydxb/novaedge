@@ -44,6 +44,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/controller/certmanager"
 	"github.com/piwi3910/novaedge/internal/controller/snapshot"
 	vaultpkg "github.com/piwi3910/novaedge/internal/controller/vault"
+	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 )
 
@@ -266,7 +267,10 @@ func main() {
 	// Create and start gRPC server for config distribution
 	configServer := snapshot.NewServer(mgr.GetClient())
 
-	// Create gRPC server with optional mTLS
+	// Create gRPC server with message size limits and interceptors
+	grpcLogger, _ := uberzap.NewProduction()
+	serverOpts := grpclimits.ServerOptions(grpcLogger)
+
 	var grpcServer *grpc.Server
 	if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {
 		// Load TLS credentials for mTLS
@@ -275,13 +279,15 @@ func main() {
 			setupLog.Error(err, "failed to load gRPC TLS credentials")
 			os.Exit(1)
 		}
-		grpcServer = grpc.NewServer(grpc.Creds(creds))
+		grpcServer = grpc.NewServer(append(serverOpts, grpc.Creds(creds))...)
 		setupLog.Info("gRPC server configured with mTLS",
 			"cert", grpcTLSCert,
-			"ca", grpcTLSCA)
+			"ca", grpcTLSCA,
+			"max_recv_msg_size", grpclimits.DefaultMaxRecvMsgSize,
+			"max_send_msg_size", grpclimits.DefaultMaxSendMsgSize)
 	} else {
 		// Create insecure gRPC server (for development only)
-		grpcServer = grpc.NewServer()
+		grpcServer = grpc.NewServer(serverOpts...)
 		setupLog.Info("WARNING: gRPC server running without TLS (insecure)")
 	}
 
