@@ -18,7 +18,6 @@ package router
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -214,11 +213,21 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 					Filters:        buildFilters(rule.Filters),
 				}
 
+				// Pre-compute cluster keys for all backend refs to avoid
+				// per-request string concatenation in the forwarding hot path.
+				if len(rule.BackendRefs) > 0 {
+					entry.BackendClusterKeys = make(map[*pb.BackendRef]string, len(rule.BackendRefs))
+					for _, ref := range rule.BackendRefs {
+						entry.BackendClusterKeys[ref] = ref.Namespace + "/" + ref.Name
+					}
+				}
+
 				// Build mirror config from rule if present
 				if rule.MirrorBackend != nil {
 					entry.MirrorConfig = &MirrorConfig{
 						BackendRef: rule.MirrorBackend,
 						Percentage: rule.MirrorPercent,
+						ClusterKey: rule.MirrorBackend.Namespace + "/" + rule.MirrorBackend.Name,
 					}
 					if entry.MirrorConfig.Percentage == 0 {
 						entry.MirrorConfig.Percentage = 100
@@ -242,7 +251,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Create upstream pools for each cluster
 	newPools := make(map[string]*upstream.Pool)
 	for _, cluster := range snapshot.Clusters {
-		clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
+		clusterKey := cluster.Namespace + "/" + cluster.Name
 
 		// Get endpoints for this cluster
 		endpointList := snapshot.Endpoints[clusterKey]
@@ -345,7 +354,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Create sticky session wrappers for clusters with session affinity configured
 	newStickyWrappers := make(map[string]*lb.StickyWrapper)
 	for _, cluster := range snapshot.Clusters {
-		clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
+		clusterKey := cluster.Namespace + "/" + cluster.Name
 		sa := cluster.GetSessionAffinity()
 		if sa == nil || sa.GetType() == "" {
 			continue
@@ -420,7 +429,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Inject pipeline state into context so handleRoute does not need a second WithContext call
-	ctx = WithPipelineState(ctx, NewPipelineState())
+	state := GetPipelineStateFromPool()
+	defer PutPipelineStateToPool(state)
+	ctx = WithPipelineState(ctx, state)
 
 	// Store all context values (span + pipeline state) in the request with a single WithContext
 	req = req.WithContext(ctx)
