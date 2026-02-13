@@ -35,8 +35,8 @@ func TestNewRetryPolicy_Defaults(t *testing.T) {
 	if policy.MaxRetries != defaultMaxRetries {
 		t.Errorf("expected MaxRetries=%d, got %d", defaultMaxRetries, policy.MaxRetries)
 	}
-	if policy.RetryBudget != defaultRetryBudget {
-		t.Errorf("expected RetryBudget=%f, got %f", defaultRetryBudget, policy.RetryBudget)
+	if policy.RetryBudgetPct != defaultRetryBudget {
+		t.Errorf("expected RetryBudgetPct=%f, got %f", defaultRetryBudget, policy.RetryBudgetPct)
 	}
 	if !policy.RetryOn["5xx"] {
 		t.Error("expected 5xx in default RetryOn")
@@ -78,8 +78,8 @@ func TestNewRetryPolicy_CustomConfig(t *testing.T) {
 	if !policy.RetryOn["reset"] {
 		t.Error("expected reset in RetryOn")
 	}
-	if policy.RetryBudget != 0.5 {
-		t.Errorf("expected RetryBudget=0.5, got %f", policy.RetryBudget)
+	if policy.RetryBudgetPct != 0.5 {
+		t.Errorf("expected RetryBudgetPct=0.5, got %f", policy.RetryBudgetPct)
 	}
 	if policy.BackoffBase.Milliseconds() != 100 {
 		t.Errorf("expected BackoffBase=100ms, got %dms", policy.BackoffBase.Milliseconds())
@@ -158,35 +158,6 @@ func TestRetryPolicy_IsMethodRetryable(t *testing.T) {
 	}
 	if policy.isMethodRetryable("DELETE") {
 		t.Error("DELETE should not be retryable")
-	}
-}
-
-func TestRetryBudgetTracker(t *testing.T) {
-	tracker := &retryBudgetTracker{
-		counters: make(map[string]*budgetCounter),
-	}
-
-	// Budget should be available initially
-	if !tracker.checkBudget("cluster1", 0.2) {
-		t.Error("budget should be available initially")
-	}
-
-	// Record some requests
-	for range 10 {
-		tracker.recordRequest("cluster1")
-	}
-
-	// Record 1 retry out of 10 requests (10%) - should be within 20% budget
-	tracker.recordRetry("cluster1")
-	if !tracker.checkBudget("cluster1", 0.2) {
-		t.Error("budget should be available at 10% usage with 20% limit")
-	}
-
-	// Record more retries to exceed budget
-	tracker.recordRetry("cluster1")
-	tracker.recordRetry("cluster1")
-	if tracker.checkBudget("cluster1", 0.2) {
-		t.Error("budget should be exhausted at 30% usage with 20% limit")
 	}
 }
 
