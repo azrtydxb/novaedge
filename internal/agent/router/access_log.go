@@ -339,7 +339,9 @@ func (alm *AccessLogMiddleware) writeJSON(buf *bytes.Buffer, entry AccessLogEntr
 	encoder := json.NewEncoder(buf)
 	encoder.SetEscapeHTML(false)
 	if err := encoder.Encode(entry); err != nil {
-		alm.logger.Debug("Failed to encode access log entry", zap.Error(err))
+		if ce := alm.logger.Check(zap.DebugLevel, "Failed to encode access log entry"); ce != nil {
+			ce.Write(zap.Error(err))
+		}
 	}
 	// Remove trailing newline added by Encode (we add our own)
 	if buf.Len() > 0 && buf.Bytes()[buf.Len()-1] == '\n' {

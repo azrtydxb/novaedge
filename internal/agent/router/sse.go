@@ -211,10 +211,12 @@ func (p *SSEProxy) ProxySSE(w http.ResponseWriter, r *http.Request, backendURL s
 			n, readErr := backendResp.Body.Read(buf)
 			if n > 0 {
 				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-					p.logger.Debug("SSE client disconnected",
-						zap.String("remote_addr", r.RemoteAddr),
-						zap.Error(writeErr),
-					)
+					if ce := p.logger.Check(zap.DebugLevel, "SSE client disconnected"); ce != nil {
+						ce.Write(
+							zap.String("remote_addr", r.RemoteAddr),
+							zap.Error(writeErr),
+						)
+					}
 					return nil
 				}
 				flusher.Flush()
@@ -246,7 +248,9 @@ func (p *SSEProxy) sendHeartbeats(ctx context.Context, w http.ResponseWriter, fl
 			return
 		case <-ticker.C:
 			if _, err := fmt.Fprint(w, sseKeepaliveComment); err != nil {
-				p.logger.Debug("Failed to send SSE heartbeat (client likely disconnected)")
+				if ce := p.logger.Check(zap.DebugLevel, "Failed to send SSE heartbeat (client likely disconnected)"); ce != nil {
+					ce.Write()
+				}
 				return
 			}
 			flusher.Flush()
