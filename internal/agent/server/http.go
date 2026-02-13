@@ -43,6 +43,7 @@ type HTTPServer struct {
 	shuttingDown     atomic.Bool    // Flag to indicate shutdown in progress
 	ocspStapler      *OCSPStapler   // OCSP stapling manager
 	cachedAltSvc     atomic.Value   // stores string - cached Alt-Svc header value
+	drainManager     *DrainManager  // Manages graceful connection draining on config reload
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -54,6 +55,7 @@ func NewHTTPServer(logger *zap.Logger) *HTTPServer {
 		listeners:    make(map[int32]*ListenerInfo),
 		router:       router.NewRouter(logger),
 		ocspStapler:  NewOCSPStapler(logger),
+		drainManager: NewDrainManager(logger, DefaultDrainTimeout),
 	}
 }
 
@@ -64,8 +66,25 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 	return ctx.Err()
 }
 
-// ApplyConfig applies a new configuration snapshot
+// DrainManager returns the server's DrainManager instance for external use.
+func (s *HTTPServer) DrainManager() *DrainManager {
+	return s.drainManager
+}
+
+// ApplyConfig applies a new configuration snapshot. If there are active
+// connections, it initiates a graceful drain on the old configuration
+// before switching to the new one, allowing in-flight requests to complete.
 func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) error {
+	// Drain active connections from the previous configuration before
+	// acquiring the lock and swapping. This allows in-flight requests
+	// to finish while we prepare the new configuration.
+	if s.drainManager.ActiveConnections() > 0 {
+		s.logger.Info("Active connections detected, initiating graceful drain before config swap",
+			zap.Int64("active_connections", s.drainManager.ActiveConnections()),
+		)
+		s.drainManager.StartDrain(ctx)
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -217,9 +236,18 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Track in-flight request
+	// Track in-flight request for shutdown and drain awareness
 	s.inFlightRequests.Add(1)
 	defer s.inFlightRequests.Done()
+
+	s.drainManager.TrackConnection()
+	defer s.drainManager.ReleaseConnection()
+
+	// If draining, signal HTTP/1.x clients to close the connection after
+	// this response so subsequent requests use the new configuration.
+	if s.drainManager.IsDraining() && !r.ProtoAtLeast(2, 0) {
+		w.Header().Set("Connection", "close")
+	}
 
 	startTime := time.Now()
 
