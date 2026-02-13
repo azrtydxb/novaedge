@@ -638,10 +638,11 @@ type IPFilterPolicy struct {
 
 // JWTPolicy defines JWT validation
 type JWTPolicy struct {
-	Issuer    string   `yaml:"issuer"`
-	Audience  []string `yaml:"audience,omitempty"`
-	JWKSURI   string   `yaml:"jwksUri,omitempty"`
-	SecretKey string   `yaml:"secretKey,omitempty"`
+	Issuer            string   `yaml:"issuer"`
+	Audience          []string `yaml:"audience,omitempty"`
+	JWKSURI           string   `yaml:"jwksUri,omitempty"`
+	SecretKey         string   `yaml:"secretKey,omitempty"`
+	AllowedAlgorithms []string `yaml:"allowedAlgorithms,omitempty"`
 }
 
 // L4ListenerStandaloneConfig defines a Layer 4 listener in standalone mode

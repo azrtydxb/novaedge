@@ -690,9 +690,10 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 		case "JWT":
 			if p.JWT != nil {
 				policy.Jwt = &pb.JWTConfig{
-					Issuer:   p.JWT.Issuer,
-					Audience: p.JWT.Audience,
-					JwksUri:  p.JWT.JWKSURI,
+					Issuer:            p.JWT.Issuer,
+					Audience:          p.JWT.Audience,
+					JwksUri:           p.JWT.JWKSURI,
+					AllowedAlgorithms: p.JWT.AllowedAlgorithms,
 				}
 			}
 		case "DistributedRateLimit":
