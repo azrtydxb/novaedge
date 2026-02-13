@@ -170,7 +170,7 @@ func (api *RuntimeAPI) handleAddEndpoint(w http.ResponseWriter, r *http.Request,
 	)
 
 	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, map[string]string{"status": "added", "endpoint": key})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "added", "endpoint": key})
 }
 
 // handleRemoveEndpoint handles DELETE /api/v1/clusters/{cluster}/endpoints/{endpoint}.
@@ -190,7 +190,7 @@ func (api *RuntimeAPI) handleRemoveEndpoint(w http.ResponseWriter, _ *http.Reque
 		zap.String("endpoint", endpoint),
 	)
 
-	writeJSON(w, map[string]string{"status": "removed", "endpoint": endpoint})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "removed", "endpoint": endpoint})
 }
 
 // handleChangeWeight handles PUT /api/v1/clusters/{cluster}/endpoints/{endpoint}/weight.
@@ -222,7 +222,7 @@ func (api *RuntimeAPI) handleChangeWeight(w http.ResponseWriter, r *http.Request
 		zap.Int32("weight", req.Weight),
 	)
 
-	writeJSON(w, map[string]string{"status": "weight_updated", "endpoint": endpoint})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "weight_updated", "endpoint": endpoint})
 }
 
 // handleDrainEndpoint handles PUT /api/v1/clusters/{cluster}/endpoints/{endpoint}/drain.
@@ -238,7 +238,7 @@ func (api *RuntimeAPI) handleDrainEndpoint(w http.ResponseWriter, _ *http.Reques
 		zap.String("endpoint", endpoint),
 	)
 
-	writeJSON(w, map[string]string{"status": "draining", "endpoint": endpoint})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "draining", "endpoint": endpoint})
 }
 
 // overridesListResponse is the response for listing all overrides.
@@ -279,7 +279,7 @@ func (api *RuntimeAPI) handleListOverrides(w http.ResponseWriter) {
 		return true
 	})
 
-	writeJSON(w, resp)
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // handleClearOverrides handles DELETE /api/v1/overrides.
@@ -288,7 +288,7 @@ func (api *RuntimeAPI) handleClearOverrides(w http.ResponseWriter) {
 
 	api.logger.Info("Runtime API: all overrides cleared")
 
-	writeJSON(w, map[string]string{"status": "cleared"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
 
 // getOrCreateCluster returns existing or creates new ClusterOverrides for the cluster.
@@ -420,13 +420,5 @@ func (ro *RuntimeOverrides) ApplyOverrides(snapshot *config.Snapshot) *config.Sn
 	return &config.Snapshot{
 		Extensions:     snapshot.Extensions,
 		ConfigSnapshot: cloned,
-	}
-}
-
-// writeJSON encodes v as JSON and writes it to the response writer.
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
 	}
 }
