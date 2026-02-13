@@ -213,11 +213,21 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 					Filters:        buildFilters(rule.Filters),
 				}
 
+				// Pre-compute cluster keys for all backend refs to avoid
+				// per-request string concatenation in the forwarding hot path.
+				if len(rule.BackendRefs) > 0 {
+					entry.BackendClusterKeys = make(map[*pb.BackendRef]string, len(rule.BackendRefs))
+					for _, ref := range rule.BackendRefs {
+						entry.BackendClusterKeys[ref] = ref.Namespace + "/" + ref.Name
+					}
+				}
+
 				// Build mirror config from rule if present
 				if rule.MirrorBackend != nil {
 					entry.MirrorConfig = &MirrorConfig{
 						BackendRef: rule.MirrorBackend,
 						Percentage: rule.MirrorPercent,
+						ClusterKey: rule.MirrorBackend.Namespace + "/" + rule.MirrorBackend.Name,
 					}
 					if entry.MirrorConfig.Percentage == 0 {
 						entry.MirrorConfig.Percentage = 100

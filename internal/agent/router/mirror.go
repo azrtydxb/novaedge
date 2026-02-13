@@ -20,7 +20,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -39,6 +38,10 @@ type MirrorConfig struct {
 	BackendRef *pb.BackendRef
 	// Percentage is the percentage of requests to mirror (0-100).
 	Percentage int32
+	// ClusterKey is the pre-computed "namespace/name" key for the mirror
+	// backend. Computed once at config time to avoid per-request string
+	// formatting in the mirror hot path.
+	ClusterKey string
 }
 
 // mirrorMetrics holds Prometheus metrics for traffic mirroring.
@@ -118,7 +121,7 @@ func (r *Router) mirrorRequest(
 	}
 	mirrorReq.Header.Set("X-Mirror", "true")
 
-	clusterKey := fmt.Sprintf("%s/%s", mirrorCfg.BackendRef.Namespace, mirrorCfg.BackendRef.Name)
+	clusterKey := mirrorCfg.ClusterKey
 
 	// Look up the pool
 	pool, ok := pools[clusterKey]

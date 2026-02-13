@@ -167,7 +167,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		r.mirrorRequest(ctx, req, entry.MirrorConfig, r.pools, r.hashBasedLBs, standardLBs)
 	}
 
-	clusterKey := backendRef.Namespace + "/" + backendRef.Name
+	clusterKey := entry.BackendClusterKeys[backendRef]
 	backendSpan.SetAttributes(
 		attribute.String("novaedge.backend.cluster", clusterKey),
 		attribute.String("novaedge.backend.namespace", backendRef.Namespace),
