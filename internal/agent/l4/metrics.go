@@ -112,4 +112,32 @@ var (
 		},
 		[]string{"listener", "error_type"},
 	)
+
+	// RedisCommandsTotal tracks the total number of Redis commands processed by command type
+	RedisCommandsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_redis_commands_total",
+			Help: "Total number of Redis commands processed, labeled by command type",
+		},
+		[]string{"listener", "command"},
+	)
+
+	// RedisCommandDuration tracks the duration of Redis command processing
+	RedisCommandDuration = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "novaedge_redis_command_duration_seconds",
+			Help:    "Duration of Redis command round-trips in seconds",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+		[]string{"listener", "command"},
+	)
+
+	// RedisConnectionsActive tracks currently active Redis client connections
+	RedisConnectionsActive = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "novaedge_redis_connections_active",
+			Help: "Number of currently active Redis client connections",
+		},
+		[]string{"listener"},
+	)
 )
