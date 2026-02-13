@@ -327,6 +327,8 @@ message CircuitBreaker {
 enum HealthCheckType {
   HEALTH_CHECK_HTTP = 0;
   HEALTH_CHECK_GRPC = 1;
+  HEALTH_CHECK_TCP = 2;
+  HEALTH_CHECK_HTTPS = 3;
 }
 
 // HealthCheck defines active health check configuration

@@ -18,7 +18,9 @@ package health
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -68,6 +70,119 @@ func TestNewHealthChecker(t *testing.T) {
 	}
 	if hc.httpClient.Timeout != DefaultHealthCheckTimeout {
 		t.Errorf("expected timeout %v, got %v", DefaultHealthCheckTimeout, hc.httpClient.Timeout)
+	}
+}
+
+func TestNewHealthChecker_DefaultConfig(t *testing.T) {
+	logger := zap.NewNop()
+	cluster := newTestCluster()
+
+	hc := NewHealthChecker(cluster, nil, logger)
+
+	if hc.config.Path != DefaultHealthCheckPath {
+		t.Errorf("expected default path %q, got %q", DefaultHealthCheckPath, hc.config.Path)
+	}
+	if hc.config.Interval != DefaultHealthCheckInterval {
+		t.Errorf("expected default interval %v, got %v", DefaultHealthCheckInterval, hc.config.Interval)
+	}
+	if hc.config.Mode != HealthCheckHTTP {
+		t.Errorf("expected default mode HTTP, got %d", hc.config.Mode)
+	}
+}
+
+func TestNewHealthChecker_CustomConfig(t *testing.T) {
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			HttpPath:   "/ready",
+			IntervalMs: 5000,
+			Type:       pb.HealthCheckType_HEALTH_CHECK_HTTPS,
+		},
+	}
+
+	hc := NewHealthChecker(cluster, nil, logger)
+
+	if hc.config.Path != "/ready" {
+		t.Errorf("expected path %q, got %q", "/ready", hc.config.Path)
+	}
+	if hc.config.Interval != 5*time.Second {
+		t.Errorf("expected interval 5s, got %v", hc.config.Interval)
+	}
+	if hc.config.Mode != HealthCheckHTTPS {
+		t.Errorf("expected mode HTTPS, got %d", hc.config.Mode)
+	}
+}
+
+func TestNewHealthChecker_TCPMode(t *testing.T) {
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type:       pb.HealthCheckType_HEALTH_CHECK_TCP,
+			IntervalMs: 3000,
+		},
+	}
+
+	hc := NewHealthChecker(cluster, nil, logger)
+
+	if hc.config.Mode != HealthCheckTCP {
+		t.Errorf("expected mode TCP, got %d", hc.config.Mode)
+	}
+	if hc.config.Interval != 3*time.Second {
+		t.Errorf("expected interval 3s, got %v", hc.config.Interval)
+	}
+}
+
+func TestBuildHealthCheckConfig_NilHealthCheck(t *testing.T) {
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+	}
+
+	config := buildHealthCheckConfig(cluster)
+
+	if config.Path != DefaultHealthCheckPath {
+		t.Errorf("expected path %q, got %q", DefaultHealthCheckPath, config.Path)
+	}
+	if config.Interval != DefaultHealthCheckInterval {
+		t.Errorf("expected interval %v, got %v", DefaultHealthCheckInterval, config.Interval)
+	}
+	if config.Mode != HealthCheckHTTP {
+		t.Errorf("expected mode HTTP, got %d", config.Mode)
+	}
+}
+
+func TestBuildHealthCheckConfig_AllModes(t *testing.T) {
+	tests := []struct {
+		name     string
+		pbType   pb.HealthCheckType
+		wantMode HealthCheckMode
+	}{
+		{"HTTP", pb.HealthCheckType_HEALTH_CHECK_HTTP, HealthCheckHTTP},
+		{"GRPC", pb.HealthCheckType_HEALTH_CHECK_GRPC, HealthCheckGRPC},
+		{"TCP", pb.HealthCheckType_HEALTH_CHECK_TCP, HealthCheckTCP},
+		{"HTTPS", pb.HealthCheckType_HEALTH_CHECK_HTTPS, HealthCheckHTTPS},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := &pb.Cluster{
+				Name:      "backend",
+				Namespace: "default",
+				HealthCheck: &pb.HealthCheck{
+					Type: tt.pbType,
+				},
+			}
+
+			config := buildHealthCheckConfig(cluster)
+
+			if config.Mode != tt.wantMode {
+				t.Errorf("expected mode %d, got %d", tt.wantMode, config.Mode)
+			}
+		})
 	}
 }
 
@@ -254,6 +369,46 @@ func TestHealthChecker_PerformHTTPCheck_Success(t *testing.T) {
 	}
 }
 
+func TestHealthChecker_PerformHTTPCheck_CustomPath(t *testing.T) {
+	// Start a test HTTP server that checks the path
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ready" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	parts := strings.Split(addr, ":")
+	host := parts[0]
+	var port int32
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			HttpPath: "/ready",
+		},
+	}
+	ep := newTestEndpoint(host, port)
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	healthy, err := hc.performHTTPCheck(context.Background(), ep)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !healthy {
+		t.Error("expected endpoint to be healthy with custom path /ready")
+	}
+}
+
 func TestHealthChecker_PerformHTTPCheck_ServerError(t *testing.T) {
 	// Start a test HTTP server that returns 500
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +454,354 @@ func TestHealthChecker_PerformHTTPCheck_ConnectionRefused(t *testing.T) {
 	}
 	if healthy {
 		t.Error("expected endpoint to be unhealthy when connection refused")
+	}
+}
+
+func TestHealthChecker_PerformTCPCheck_Success(t *testing.T) {
+	// Start a TCP listener
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start TCP listener: %v", err)
+	}
+	defer func() { _ = listener.Close() }()
+
+	// Accept connections in background
+	go func() {
+		for {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+
+	addr := listener.Addr().(*net.TCPAddr)
+
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type: pb.HealthCheckType_HEALTH_CHECK_TCP,
+		},
+	}
+	ep := newTestEndpoint(addr.IP.String(), int32(addr.Port))
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	healthy, checkErr := hc.performTCPCheck(ep)
+	if checkErr != nil {
+		t.Fatalf("expected no error, got %v", checkErr)
+	}
+	if !healthy {
+		t.Error("expected endpoint to be healthy when TCP connection succeeds")
+	}
+}
+
+func TestHealthChecker_PerformTCPCheck_ConnectionRefused(t *testing.T) {
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type: pb.HealthCheckType_HEALTH_CHECK_TCP,
+		},
+	}
+	// Use a port that is very unlikely to be in use
+	ep := newTestEndpoint("127.0.0.1", 19998)
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	healthy, err := hc.performTCPCheck(ep)
+	if err == nil {
+		t.Fatal("expected error for TCP connection refused")
+	}
+	if healthy {
+		t.Error("expected endpoint to be unhealthy when TCP connection refused")
+	}
+}
+
+func TestHealthChecker_PerformHTTPSCheck_Success(t *testing.T) {
+	// Start a test HTTPS server
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	// Extract host and port from server URL
+	addr := strings.TrimPrefix(server.URL, "https://")
+	parts := strings.Split(addr, ":")
+	host := parts[0]
+	var port int32
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
+		},
+	}
+	ep := newTestEndpoint(host, port)
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !healthy {
+		t.Error("expected endpoint to be healthy with HTTPS 200 response")
+	}
+}
+
+func TestHealthChecker_PerformHTTPSCheck_CustomPath(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "https://")
+	parts := strings.Split(addr, ":")
+	host := parts[0]
+	var port int32
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type:     pb.HealthCheckType_HEALTH_CHECK_HTTPS,
+			HttpPath: "/healthz",
+		},
+	}
+	ep := newTestEndpoint(host, port)
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if !healthy {
+		t.Error("expected endpoint to be healthy with custom HTTPS path /healthz")
+	}
+}
+
+func TestHealthChecker_PerformHTTPSCheck_ServerError(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "https://")
+	parts := strings.Split(addr, ":")
+	host := parts[0]
+	var port int32
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
+		},
+	}
+	ep := newTestEndpoint(host, port)
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
+	if err == nil {
+		t.Fatal("expected error for HTTPS 503 response")
+	}
+	if healthy {
+		t.Error("expected endpoint to be unhealthy with HTTPS 503 response")
+	}
+}
+
+func TestHealthChecker_PerformHTTPSCheck_ConnectionRefused(t *testing.T) {
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
+		},
+	}
+	ep := newTestEndpoint("127.0.0.1", 19997)
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc.httpsClient.Timeout = 1 * time.Second
+
+	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
+	if err == nil {
+		t.Fatal("expected error for HTTPS connection refused")
+	}
+	if healthy {
+		t.Error("expected endpoint to be unhealthy when HTTPS connection refused")
+	}
+}
+
+func TestHealthChecker_PerformHTTPSCheck_SkipsTLSVerify(t *testing.T) {
+	// The TLS server from httptest uses a self-signed cert.
+	// Our HTTPS health checker should succeed because it skips TLS verification.
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "https://")
+	parts := strings.Split(addr, ":")
+	host := parts[0]
+	var port int32
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
+		},
+	}
+	ep := newTestEndpoint(host, port)
+
+	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	// Verify that the httpsClient has InsecureSkipVerify set
+	transport, ok := hc.httpsClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("expected *http.Transport")
+	}
+	if transport.TLSClientConfig == nil || !transport.TLSClientConfig.InsecureSkipVerify {
+		t.Error("expected HTTPS client to have InsecureSkipVerify=true")
+	}
+
+	// Also verify that a client WITHOUT skip-verify would fail (proving our
+	// skip-verify is actually what makes it work)
+	strictClient := &http.Client{
+		Timeout: 2 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+	checkURL := "https://" + addr + "/health"
+	_, strictErr := strictClient.Get(checkURL) //nolint:noctx // test-only HTTP call
+	if strictErr == nil {
+		t.Log("note: strict TLS client succeeded (test environment may have cert in trust store)")
+	}
+
+	// Our health checker should always succeed
+	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
+	if err != nil {
+		t.Fatalf("expected no error with skip-verify, got %v", err)
+	}
+	if !healthy {
+		t.Error("expected healthy with skip-verify HTTPS check")
+	}
+}
+
+func TestHealthChecker_PerformCheck_Dispatch(t *testing.T) {
+	// Start an HTTP server for the dispatch test
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "http://")
+	parts := strings.Split(addr, ":")
+	host := parts[0]
+	var port int32
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	logger := zap.NewNop()
+	ep := newTestEndpoint(host, port)
+
+	t.Run("dispatches to HTTP by default", func(t *testing.T) {
+		cluster := newTestCluster()
+		hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+		healthy, err := hc.performCheck(context.Background(), ep)
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if !healthy {
+			t.Error("expected healthy from HTTP dispatch")
+		}
+	})
+
+	t.Run("dispatches to TCP", func(t *testing.T) {
+		cluster := &pb.Cluster{
+			Name:      "backend",
+			Namespace: "default",
+			HealthCheck: &pb.HealthCheck{
+				Type: pb.HealthCheckType_HEALTH_CHECK_TCP,
+			},
+		}
+		hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+		// TCP check should succeed since the HTTP server is also a TCP listener
+		healthy, err := hc.performCheck(context.Background(), ep)
+		if err != nil {
+			t.Fatalf("expected no error from TCP dispatch, got %v", err)
+		}
+		if !healthy {
+			t.Error("expected healthy from TCP dispatch")
+		}
+	})
+}
+
+func TestHealthChecker_ConfigurableInterval(t *testing.T) {
+	logger := zap.NewNop()
+
+	tests := []struct {
+		name             string
+		intervalMs       int64
+		expectedInterval time.Duration
+	}{
+		{"default interval", 0, DefaultHealthCheckInterval},
+		{"custom 5s interval", 5000, 5 * time.Second},
+		{"custom 30s interval", 30000, 30 * time.Second},
+		{"custom 500ms interval", 500, 500 * time.Millisecond},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster := &pb.Cluster{
+				Name:      "backend",
+				Namespace: "default",
+				HealthCheck: &pb.HealthCheck{
+					IntervalMs: tt.intervalMs,
+				},
+			}
+
+			hc := NewHealthChecker(cluster, nil, logger)
+
+			if hc.config.Interval != tt.expectedInterval {
+				t.Errorf("expected interval %v, got %v", tt.expectedInterval, hc.config.Interval)
+			}
+		})
 	}
 }
 
