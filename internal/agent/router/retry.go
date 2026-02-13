@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -59,26 +58,9 @@ type RetryPolicy struct {
 	MaxRetries     int32
 	PerTryTimeout  time.Duration
 	RetryOn        map[string]bool
-	RetryBudget    float64
+	RetryBudgetPct float64
 	BackoffBase    time.Duration
 	RetryMethodSet map[string]bool
-}
-
-// retryBudgetTracker tracks retry budget per cluster
-type retryBudgetTracker struct {
-	mu       sync.RWMutex
-	counters map[string]*budgetCounter
-}
-
-// budgetCounter tracks request and retry counts over a sliding window
-type budgetCounter struct {
-	totalRequests int64
-	totalRetries  int64
-	lastReset     time.Time
-}
-
-var globalRetryBudget = &retryBudgetTracker{
-	counters: make(map[string]*budgetCounter),
 }
 
 // NewRetryPolicy creates a RetryPolicy from protobuf config
@@ -88,17 +70,17 @@ func NewRetryPolicy(cfg *pb.RetryConfig) *RetryPolicy {
 	}
 
 	policy := &RetryPolicy{
-		MaxRetries:  cfg.MaxRetries,
-		RetryBudget: cfg.RetryBudget,
-		BackoffBase: time.Duration(cfg.BackoffBaseMs) * time.Millisecond,
+		MaxRetries:     cfg.MaxRetries,
+		RetryBudgetPct: cfg.RetryBudget,
+		BackoffBase:    time.Duration(cfg.BackoffBaseMs) * time.Millisecond,
 	}
 
 	// Apply defaults
 	if policy.MaxRetries <= 0 {
 		policy.MaxRetries = defaultMaxRetries
 	}
-	if policy.RetryBudget <= 0 {
-		policy.RetryBudget = defaultRetryBudget
+	if policy.RetryBudgetPct <= 0 {
+		policy.RetryBudgetPct = defaultRetryBudget
 	}
 	if policy.BackoffBase <= 0 {
 		policy.BackoffBase = time.Duration(defaultBackoffBaseMs) * time.Millisecond
@@ -214,55 +196,6 @@ func (p *RetryPolicy) isMethodRetryable(method string) bool {
 	return p.RetryMethodSet[strings.ToUpper(method)]
 }
 
-// checkBudget checks if the retry budget allows another retry for this cluster
-func (t *retryBudgetTracker) checkBudget(clusterKey string, budget float64) bool {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	counter, ok := t.counters[clusterKey]
-	if !ok {
-		counter = &budgetCounter{lastReset: time.Now()}
-		t.counters[clusterKey] = counter
-	}
-
-	// Reset counters every 10 seconds for sliding window
-	if time.Since(counter.lastReset) > 10*time.Second {
-		counter.totalRequests = 0
-		counter.totalRetries = 0
-		counter.lastReset = time.Now()
-	}
-
-	if counter.totalRequests == 0 {
-		return true
-	}
-
-	retryRate := float64(counter.totalRetries) / float64(counter.totalRequests)
-	return retryRate < budget
-}
-
-// recordRequest records a request for budget tracking
-func (t *retryBudgetTracker) recordRequest(clusterKey string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	counter, ok := t.counters[clusterKey]
-	if !ok {
-		counter = &budgetCounter{lastReset: time.Now()}
-		t.counters[clusterKey] = counter
-	}
-	counter.totalRequests++
-}
-
-// recordRetry records a retry attempt for budget tracking
-func (t *retryBudgetTracker) recordRetry(clusterKey string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if counter, ok := t.counters[clusterKey]; ok {
-		counter.totalRetries++
-	}
-}
-
 // forwardWithRetry performs backend forwarding with automatic retry support
 func (r *Router) forwardWithRetry(
 	entry *RouteEntry,
@@ -276,8 +209,10 @@ func (r *Router) forwardWithRetry(
 	span trace.Span,
 	logger *zap.Logger,
 ) {
-	// Record request for budget tracking
-	globalRetryBudget.recordRequest(clusterKey)
+	// Get the per-cluster retry budget and track the active request
+	budget := getClusterRetryBudget(clusterKey)
+	budget.IncActiveRequests()
+	defer budget.DecActiveRequests()
 
 	// Check if method is retryable
 	methodRetryable := retryPolicy.isMethodRetryable(req.Method)
@@ -358,8 +293,13 @@ func (r *Router) forwardWithRetry(
 				return
 			}
 
-			if !globalRetryBudget.checkBudget(clusterKey, retryPolicy.RetryBudget) {
-				logger.Warn("Retry budget exhausted", zap.String("cluster", clusterKey))
+			if !budget.AllowRetry() {
+				logger.Warn("Retry budget exhausted",
+					zap.String("cluster", clusterKey),
+					zap.Int64("active_requests", budget.ActiveRequests()),
+					zap.Int64("active_retries", budget.ActiveRetries()),
+				)
+				metrics.RetryBudgetExhausted.Inc()
 				metrics.RetryExhausted.Inc()
 				http.Error(w, "Backend error", http.StatusBadGateway)
 				return
@@ -367,7 +307,8 @@ func (r *Router) forwardWithRetry(
 
 			// Backoff before retry
 			retryCount++
-			globalRetryBudget.recordRetry(clusterKey)
+			budget.IncActiveRetries()
+			defer budget.DecActiveRetries()
 			metrics.RetryCount.Inc()
 			backoff := retryPolicy.BackoffBase * time.Duration(math.Pow(2, float64(attempt)))
 			select {
@@ -388,15 +329,21 @@ func (r *Router) forwardWithRetry(
 			excludedEndpoints = append(excludedEndpoints, endpoint)
 			lastResponse = captureWriter
 
-			if !globalRetryBudget.checkBudget(clusterKey, retryPolicy.RetryBudget) {
-				logger.Warn("Retry budget exhausted", zap.String("cluster", clusterKey))
+			if !budget.AllowRetry() {
+				logger.Warn("Retry budget exhausted",
+					zap.String("cluster", clusterKey),
+					zap.Int64("active_requests", budget.ActiveRequests()),
+					zap.Int64("active_retries", budget.ActiveRetries()),
+				)
 				captureWriter.flushTo(w)
+				metrics.RetryBudgetExhausted.Inc()
 				metrics.RetryExhausted.Inc()
 				return
 			}
 
 			retryCount++
-			globalRetryBudget.recordRetry(clusterKey)
+			budget.IncActiveRetries()
+			defer budget.DecActiveRetries()
 			metrics.RetryCount.Inc()
 
 			logger.Warn("Retryable response, attempting retry",

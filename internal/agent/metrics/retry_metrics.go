@@ -47,4 +47,12 @@ var (
 			Help: "Total number of requests where all retries were exhausted",
 		},
 	)
+
+	// RetryBudgetExhausted tracks retries rejected because the retry budget was exceeded
+	RetryBudgetExhausted = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_retry_budget_exhausted_total",
+			Help: "Total number of retries rejected because the per-cluster retry budget was exceeded",
+		},
+	)
 )
