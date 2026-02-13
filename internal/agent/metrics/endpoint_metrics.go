@@ -188,6 +188,18 @@ var (
 		},
 		[]string{"cluster"},
 	)
+
+	// InsecureBackendConnectionsTotal tracks backend connections with InsecureSkipVerify enabled.
+	// This is a security audit metric to monitor backends bypassing TLS certificate verification.
+	InsecureBackendConnectionsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "novaedge",
+			Subsystem: "upstream",
+			Name:      "insecure_backend_connections_total",
+			Help:      "Total number of backend connections with InsecureSkipVerify enabled.",
+		},
+		[]string{"backend"},
+	)
 )
 
 // RecordBackendRequest records a backend request
@@ -268,6 +280,7 @@ func CleanupClusterMetrics(cluster string) {
 	PoolHitsTotal.DeleteLabelValues(cluster)
 	PoolMissesTotal.DeleteLabelValues(cluster)
 	EndpointsEjected.DeleteLabelValues(cluster)
+	InsecureBackendConnectionsTotal.DeleteLabelValues(cluster)
 }
 
 // CleanupEndpointMetrics removes tracking for a single endpoint in a cluster.
