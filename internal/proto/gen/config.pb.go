@@ -4647,6 +4647,7 @@ type WAFConfig struct {
 	RulesConfigMapRef string   `protobuf:"bytes,5,opt,name=rules_config_map_ref,json=rulesConfigMapRef,proto3" json:"rules_config_map_ref,omitempty"` // Reference to ConfigMap containing rules
 	RuleExclusions    []string `protobuf:"bytes,6,rep,name=rule_exclusions,json=ruleExclusions,proto3" json:"rule_exclusions,omitempty"`              // Rule IDs to exclude
 	CustomRules       []string `protobuf:"bytes,7,rep,name=custom_rules,json=customRules,proto3" json:"custom_rules,omitempty"`                       // Inline custom rules
+	FailMode          string   `protobuf:"bytes,8,opt,name=fail_mode,json=failMode,proto3" json:"fail_mode,omitempty"`                                // "closed" (default) or "open"
 }
 
 func (x *WAFConfig) Reset() {
@@ -4726,6 +4727,13 @@ func (x *WAFConfig) GetCustomRules() []string {
 		return x.CustomRules
 	}
 	return nil
+}
+
+func (x *WAFConfig) GetFailMode() string {
+	if x != nil {
+		return x.FailMode
+	}
+	return ""
 }
 
 // WASMPluginConfig defines WASM plugin settings in a policy

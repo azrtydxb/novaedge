@@ -48,4 +48,13 @@ var (
 			Buckets: []float64{1, 2, 3, 5, 10, 15, 25, 50, 100},
 		},
 	)
+
+	// WAFProcessingErrorsTotal tracks WAF processing errors with fail mode and action labels
+	WAFProcessingErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_waf_processing_errors_total",
+			Help: "Total number of WAF processing errors, labeled by fail mode and action taken",
+		},
+		[]string{"fail_mode", "action"},
+	)
 )
