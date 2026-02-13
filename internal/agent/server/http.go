@@ -42,6 +42,7 @@ type HTTPServer struct {
 	inFlightRequests sync.WaitGroup // Track in-flight requests for graceful shutdown
 	shuttingDown     atomic.Bool    // Flag to indicate shutdown in progress
 	ocspStapler      *OCSPStapler   // OCSP stapling manager
+	cachedAltSvc     atomic.Value   // stores string - cached Alt-Svc header value
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -182,6 +183,9 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 	}
 
 	s.listeners = newListeners
+
+	// Update cached Alt-Svc header value for lock-free reads
+	s.updateAltSvcCache()
 
 	s.logger.Info("HTTP server configuration applied successfully",
 		zap.Int("active_http_listeners", len(s.servers)),
@@ -340,6 +344,7 @@ func (s *HTTPServer) Shutdown(ctx context.Context) error {
 
 	s.servers = make(map[int32]*http.Server)
 	s.http3servers = make(map[int32]*HTTP3Server)
+	s.updateAltSvcCache()
 
 	if shutdownErr != nil {
 		return shutdownErr

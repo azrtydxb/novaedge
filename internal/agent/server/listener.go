@@ -172,21 +172,33 @@ func (s *HTTPServer) enableAltSvcAdvertising(_ int32) {
 	// The Alt-Svc header is added in the ServeHTTP method via addAltSvcHeader
 }
 
-// addAltSvcHeader adds the Alt-Svc header to advertise HTTP/3 availability
+// addAltSvcHeader adds the Alt-Svc header to advertise HTTP/3 availability.
+// Uses atomic.Value for lock-free reads on the hot path.
 func (s *HTTPServer) addAltSvcHeader(w http.ResponseWriter, _ *http.Request) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	// Check if there's an HTTP/3 server on any port
-	for port, h3srv := range s.http3servers {
-		// Use SetQuicHeaders if available for standard-compliant Alt-Svc
-		if err := h3srv.SetQuicHeaders(w.Header()); err != nil {
-			// Fallback to manual header
-			altSvc := fmt.Sprintf("h3=\":%d\"; ma=%d", port, HTTP3AltSvcMaxAge)
-			w.Header().Set("Alt-Svc", altSvc)
-		}
-		break // Only advertise one HTTP/3 endpoint for now
+	if altSvc, ok := s.cachedAltSvc.Load().(string); ok && altSvc != "" {
+		w.Header().Set("Alt-Svc", altSvc)
 	}
+}
+
+// updateAltSvcCache rebuilds the cached Alt-Svc header value from current HTTP/3 servers.
+// Must be called under s.mu lock whenever http3servers changes.
+func (s *HTTPServer) updateAltSvcCache() {
+	for port, h3srv := range s.http3servers {
+		// Try to get the header from the QUIC server
+		tempHeader := make(http.Header)
+		if err := h3srv.SetQuicHeaders(tempHeader); err == nil {
+			if altSvc := tempHeader.Get("Alt-Svc"); altSvc != "" {
+				s.cachedAltSvc.Store(altSvc)
+				return
+			}
+		}
+		// Fallback to manual header
+		altSvc := fmt.Sprintf("h3=\":%d\"; ma=%d", port, HTTP3AltSvcMaxAge)
+		s.cachedAltSvc.Store(altSvc)
+		return
+	}
+	// No HTTP/3 servers, clear cache
+	s.cachedAltSvc.Store("")
 }
 
 // startWithProxyProtocol starts a server with PROXY protocol listener wrapping
