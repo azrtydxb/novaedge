@@ -98,14 +98,17 @@ func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config,
 			metrics.TLSHandshakes.Inc()
 
 			serverName := clientHello.ServerName
-			s.logger.Debug("SNI certificate selection",
-				zap.String("server_name", serverName),
-				zap.Int("available_certs", len(certMap)))
+			if ce := s.logger.Check(zap.DebugLevel, "SNI certificate selection"); ce != nil {
+				ce.Write(
+					zap.String("server_name", serverName),
+					zap.Int("available_certs", len(certMap)))
+			}
 
 			// Look for exact match
 			if cert, ok := certMap[serverName]; ok {
-				s.logger.Debug("SNI certificate found",
-					zap.String("server_name", serverName))
+				if ce := s.logger.Check(zap.DebugLevel, "SNI certificate found"); ce != nil {
+					ce.Write(zap.String("server_name", serverName))
+				}
 				return cert, nil
 			}
 
@@ -115,17 +118,20 @@ func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config,
 				if len(labels) > 1 {
 					wildcardName := "*." + strings.Join(labels[1:], ".")
 					if cert, ok := certMap[wildcardName]; ok {
-						s.logger.Debug("SNI wildcard certificate found",
-							zap.String("server_name", serverName),
-							zap.String("wildcard", wildcardName))
+						if ce := s.logger.Check(zap.DebugLevel, "SNI wildcard certificate found"); ce != nil {
+							ce.Write(
+								zap.String("server_name", serverName),
+								zap.String("wildcard", wildcardName))
+						}
 						return cert, nil
 					}
 				}
 			}
 
 			// Return default certificate if no match
-			s.logger.Debug("SNI using default certificate",
-				zap.String("server_name", serverName))
+			if ce := s.logger.Check(zap.DebugLevel, "SNI using default certificate"); ce != nil {
+				ce.Write(zap.String("server_name", serverName))
+			}
 			return defaultCert, nil
 		}
 	}

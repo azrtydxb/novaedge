@@ -107,7 +107,9 @@ func (r *Router) mirrorRequest(
 		var err error
 		bodyBytes, err = io.ReadAll(req.Body)
 		if err != nil {
-			r.logger.Debug("Failed to read request body for mirroring", zap.Error(err))
+			if ce := r.logger.Check(zap.DebugLevel, "Failed to read request body for mirroring"); ce != nil {
+				ce.Write(zap.Error(err))
+			}
 			return
 		}
 		// Restore original body for the primary request
@@ -126,14 +128,18 @@ func (r *Router) mirrorRequest(
 	// Look up the pool
 	pool, ok := pools[clusterKey]
 	if !ok {
-		r.logger.Debug("No pool for mirror cluster", zap.String("cluster", clusterKey))
+		if ce := r.logger.Check(zap.DebugLevel, "No pool for mirror cluster"); ce != nil {
+			ce.Write(zap.String("cluster", clusterKey))
+		}
 		return
 	}
 
 	// Select an endpoint from the pool
 	endpoint := r.selectMirrorEndpoint(clusterKey, loadBalancers, standardLBs)
 	if endpoint == nil {
-		r.logger.Debug("No healthy endpoint for mirror", zap.String("cluster", clusterKey))
+		if ce := r.logger.Check(zap.DebugLevel, "No healthy endpoint for mirror"); ce != nil {
+			ce.Write(zap.String("cluster", clusterKey))
+		}
 		return
 	}
 
@@ -167,16 +173,20 @@ func (r *Router) mirrorRequest(
 			globalMirrorMetrics.errorsTotal++
 			globalMirrorMetrics.mu.Unlock()
 
-			r.logger.Debug("Mirror request failed",
-				zap.String("cluster", clusterKey),
-				zap.Error(err),
-				zap.Duration("duration", time.Since(mirrorStart)),
-			)
+			if ce := r.logger.Check(zap.DebugLevel, "Mirror request failed"); ce != nil {
+				ce.Write(
+					zap.String("cluster", clusterKey),
+					zap.Error(err),
+					zap.Duration("duration", time.Since(mirrorStart)),
+				)
+			}
 		} else {
-			r.logger.Debug("Mirror request succeeded",
-				zap.String("cluster", clusterKey),
-				zap.Duration("duration", time.Since(mirrorStart)),
-			)
+			if ce := r.logger.Check(zap.DebugLevel, "Mirror request succeeded"); ce != nil {
+				ce.Write(
+					zap.String("cluster", clusterKey),
+					zap.Duration("duration", time.Since(mirrorStart)),
+				)
+			}
 		}
 	}()
 }

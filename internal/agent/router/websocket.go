@@ -208,9 +208,9 @@ func (p *WebSocketProxy) copyWebSocketMessages(ctx context.Context, src, dst *we
 		// Check if context is cancelled (other goroutine finished)
 		select {
 		case <-ctx.Done():
-			p.logger.Debug("WebSocket copy cancelled by context",
-				zap.String("direction", direction),
-			)
+			if ce := p.logger.Check(zap.DebugLevel, "WebSocket copy cancelled by context"); ce != nil {
+				ce.Write(zap.String("direction", direction))
+			}
 			return ctx.Err()
 		default:
 		}
@@ -218,18 +218,18 @@ func (p *WebSocketProxy) copyWebSocketMessages(ctx context.Context, src, dst *we
 		messageType, message, err := src.ReadMessage()
 		if err != nil {
 			if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-				p.logger.Debug("WebSocket closed normally",
-					zap.String("direction", direction),
-				)
+				if ce := p.logger.Check(zap.DebugLevel, "WebSocket closed normally"); ce != nil {
+					ce.Write(zap.String("direction", direction))
+				}
 				// Forward close message
 				_ = dst.WriteMessage(websocket.CloseMessage,
 					websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 				return nil
 			}
 			if errors.Is(err, io.EOF) {
-				p.logger.Debug("WebSocket connection EOF",
-					zap.String("direction", direction),
-				)
+				if ce := p.logger.Check(zap.DebugLevel, "WebSocket connection EOF"); ce != nil {
+					ce.Write(zap.String("direction", direction))
+				}
 				return nil
 			}
 			p.logger.Error("Error reading WebSocket message",
