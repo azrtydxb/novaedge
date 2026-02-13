@@ -20,6 +20,7 @@ require (
 	github.com/quic-go/quic-go v0.57.0
 	github.com/redis/go-redis/v9 v9.17.3
 	github.com/spf13/cobra v1.10.1
+	github.com/spiffe/go-spiffe/v2 v2.5.0
 	github.com/tetratelabs/wazero v1.11.0
 	github.com/vishvananda/netlink v1.2.1
 	go.opentelemetry.io/otel v1.37.0
@@ -43,6 +44,7 @@ require (
 )
 
 require (
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -110,6 +112,7 @@ require (
 	github.com/valllabh/ocsf-schema-golang v1.0.3 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
+	github.com/zeebo/errs v1.4.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.34.0 // indirect
 	go.opentelemetry.io/otel/metric v1.37.0 // indirect
