@@ -175,7 +175,7 @@ var (
 			Name: "novaedge_http_requests_total",
 			Help: "Total number of HTTP requests",
 		},
-		[]string{"method", "status", "cluster"},
+		[]string{"method", "status_class", "cluster"},
 	)
 
 	// HTTPRequestDuration tracks HTTP request duration
@@ -197,9 +197,29 @@ var (
 	)
 )
 
+// StatusClass converts an HTTP status code to a bounded class label.
+// The returned values are "1xx", "2xx", "3xx", "4xx", or "5xx".
+// Unknown or out-of-range codes return "unknown".
+func StatusClass(code int) string {
+	switch {
+	case code >= 100 && code < 200:
+		return "1xx"
+	case code >= 200 && code < 300:
+		return "2xx"
+	case code >= 300 && code < 400:
+		return "3xx"
+	case code >= 400 && code < 500:
+		return "4xx"
+	case code >= 500 && code < 600:
+		return "5xx"
+	default:
+		return "unknown"
+	}
+}
+
 // RecordHTTPRequest records an HTTP request
-func RecordHTTPRequest(method, status, cluster string, duration float64) {
-	HTTPRequestsTotal.WithLabelValues(method, status, cluster).Inc()
+func RecordHTTPRequest(method, statusClass, cluster string, duration float64) {
+	HTTPRequestsTotal.WithLabelValues(method, statusClass, cluster).Inc()
 	HTTPRequestDuration.WithLabelValues(method, cluster).Observe(duration)
 }
 

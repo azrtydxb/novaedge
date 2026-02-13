@@ -130,14 +130,14 @@ func (e *OTelExporter) MeterProvider() *metric.MeterProvider {
 // RecordHTTPRequest records an HTTP request in the OTel metric instruments.
 // This should be called alongside the Prometheus RecordHTTPRequest function
 // so that both exporters receive the same data.
-func (e *OTelExporter) RecordHTTPRequest(ctx context.Context, method, status, cluster string, duration float64) {
+func (e *OTelExporter) RecordHTTPRequest(ctx context.Context, method, statusClass, cluster string, duration float64) {
 	if !e.started || e.shutdown {
 		return
 	}
 
 	attrs := otelmetric.WithAttributes(
 		attribute.String("method", method),
-		attribute.String("status", status),
+		attribute.String("status_class", statusClass),
 		attribute.String("cluster", cluster),
 	)
 	e.httpRequestsTotal.Add(ctx, 1, attrs)
