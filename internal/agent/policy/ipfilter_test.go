@@ -17,8 +17,10 @@ limitations under the License.
 package policy
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -497,6 +499,242 @@ func TestSetTrustedProxies(t *testing.T) {
 		err := filter.SetTrustedProxies([]string{"not-an-ip"})
 		if err == nil {
 			t.Error("Expected error for invalid IP")
+		}
+	})
+}
+
+func TestIsBogonIP(t *testing.T) {
+	tests := []struct {
+		name     string
+		ip       string
+		expected bool
+	}{
+		{"loopback IPv4", "127.0.0.1", true},
+		{"loopback IPv6", "::1", true},
+		{"private 10.x", "10.0.0.1", true},
+		{"private 172.16.x", "172.16.0.1", true},
+		{"private 192.168.x", "192.168.1.1", true},
+		{"link-local unicast", "169.254.1.1", true},
+		{"link-local multicast", "224.0.0.1", true},
+		{"public IP", "8.8.8.8", false},
+		{"public IP 2", "1.2.3.4", false},
+		{"public IPv6", "2001:db8::1", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ip := net.ParseIP(tt.ip)
+			if ip == nil {
+				t.Fatalf("Failed to parse test IP: %s", tt.ip)
+			}
+			result := isBogonIP(ip)
+			if result != tt.expected {
+				t.Errorf("isBogonIP(%s) = %v, want %v", tt.ip, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractClientIPBogonFiltering(t *testing.T) {
+	// Setup global trusted proxies
+	if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		trustedProxyCIDRs = nil
+	}()
+
+	t.Run("bogon IP in XFF is skipped", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", "1.2.3.4, 192.168.1.100")
+
+		ip := extractClientIP(req)
+		if ip != "1.2.3.4" {
+			t.Errorf("Expected 1.2.3.4 (skipping bogon 192.168.1.100), got %s", ip)
+		}
+	})
+
+	t.Run("all bogon IPs in XFF falls back to RemoteAddr", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", "192.168.1.1, 172.16.0.1")
+
+		ip := extractClientIP(req)
+		if ip != "10.0.0.1" {
+			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback), got %s", ip)
+		}
+	})
+
+	t.Run("loopback in XFF is skipped", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", "5.6.7.8, 127.0.0.1")
+
+		ip := extractClientIP(req)
+		if ip != "5.6.7.8" {
+			t.Errorf("Expected 5.6.7.8 (skipping loopback), got %s", ip)
+		}
+	})
+}
+
+func TestExtractClientIPValidation(t *testing.T) {
+	// Setup global trusted proxies
+	if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		trustedProxyCIDRs = nil
+	}()
+
+	t.Run("unparseable IP in XFF is skipped", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", "1.2.3.4, not-an-ip")
+
+		ip := extractClientIP(req)
+		if ip != "1.2.3.4" {
+			t.Errorf("Expected 1.2.3.4 (skipping invalid entry), got %s", ip)
+		}
+	})
+
+	t.Run("all unparseable IPs in XFF falls back to RemoteAddr", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", "garbage, not-an-ip, %%%")
+
+		ip := extractClientIP(req)
+		if ip != "10.0.0.1" {
+			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback), got %s", ip)
+		}
+	})
+
+	t.Run("unparseable X-Real-IP falls back to RemoteAddr", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Real-IP", "not-an-ip")
+
+		ip := extractClientIP(req)
+		if ip != "10.0.0.1" {
+			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback for invalid X-Real-IP), got %s", ip)
+		}
+	})
+}
+
+func TestExtractClientIPMaxDepth(t *testing.T) {
+	// Setup global trusted proxies
+	if err := SetGlobalTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		trustedProxyCIDRs = nil
+	}()
+
+	t.Run("XFF within depth limit is fully processed", func(t *testing.T) {
+		// Build an XFF with exactly defaultMaxXFFDepth entries
+		entries := make([]string, defaultMaxXFFDepth)
+		for i := range entries {
+			entries[i] = "10.0.0.2" // trusted proxy IPs
+		}
+		entries[0] = "5.6.7.8" // real client at leftmost position
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", strings.Join(entries, ", "))
+
+		ip := extractClientIP(req)
+		if ip != "5.6.7.8" {
+			t.Errorf("Expected 5.6.7.8 (client IP within depth limit), got %s", ip)
+		}
+	})
+
+	t.Run("XFF exceeding depth limit is truncated to rightmost entries", func(t *testing.T) {
+		// Build an XFF with more entries than the limit
+		entries := make([]string, defaultMaxXFFDepth+5)
+		for i := range entries {
+			entries[i] = "10.0.0.2" // trusted proxy IPs
+		}
+		// Place a public IP at position 0 (leftmost, will be truncated away)
+		entries[0] = "5.6.7.8"
+		// Place a public IP within the rightmost N entries
+		entries[len(entries)-3] = "9.8.7.6"
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", strings.Join(entries, ", "))
+
+		ip := extractClientIP(req)
+		if ip != "9.8.7.6" {
+			t.Errorf("Expected 9.8.7.6 (IP within truncated window), got %s", ip)
+		}
+	})
+
+	t.Run("truncated XFF loses leftmost client IP", func(t *testing.T) {
+		// Build an XFF that exceeds the limit where the only public IP is outside the window
+		entries := make([]string, defaultMaxXFFDepth+5)
+		entries[0] = "5.6.7.8" // real client - will be truncated
+		for i := 1; i < len(entries); i++ {
+			entries[i] = "10.0.0.2" // trusted proxy IPs
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", strings.Join(entries, ", "))
+
+		ip := extractClientIP(req)
+		// The real client IP was truncated, so it falls back to RemoteAddr
+		if ip != "10.0.0.1" {
+			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback after truncation), got %s", ip)
+		}
+	})
+}
+
+func TestIPFilterExtractClientIPBogonFiltering(t *testing.T) {
+	t.Run("bogon IP in XFF is skipped", func(t *testing.T) {
+		filter, _ := NewIPAllowListFilter([]string{"0.0.0.0/0"})
+		if err := filter.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", "1.2.3.4, 192.168.1.100")
+
+		ip := filter.extractClientIP(req)
+		if ip != "1.2.3.4" {
+			t.Errorf("Expected 1.2.3.4 (skipping bogon), got %s", ip)
+		}
+	})
+
+	t.Run("unparseable IP in XFF is skipped", func(t *testing.T) {
+		filter, _ := NewIPAllowListFilter([]string{"0.0.0.0/0"})
+		if err := filter.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Forwarded-For", "1.2.3.4, garbage-value")
+
+		ip := filter.extractClientIP(req)
+		if ip != "1.2.3.4" {
+			t.Errorf("Expected 1.2.3.4 (skipping invalid), got %s", ip)
+		}
+	})
+
+	t.Run("unparseable X-Real-IP falls back to RemoteAddr", func(t *testing.T) {
+		filter, _ := NewIPAllowListFilter([]string{"0.0.0.0/0"})
+		if err := filter.SetTrustedProxies([]string{"10.0.0.0/8"}); err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = testTrustedProxyAddr
+		req.Header.Set("X-Real-IP", "not-valid")
+
+		ip := filter.extractClientIP(req)
+		if ip != "10.0.0.1" {
+			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback), got %s", ip)
 		}
 	})
 }

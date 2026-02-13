@@ -21,8 +21,22 @@ import (
 	"net/http"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 )
+
+// defaultMaxXFFDepth is the default maximum number of X-Forwarded-For entries to process.
+// Headers with more entries than this limit are truncated to the rightmost N entries,
+// preventing header bloat attacks.
+const defaultMaxXFFDepth = 10
+
+// isBogonIP returns true if the IP is a private, loopback, or link-local address
+// (RFC 1918, RFC 4193, loopback, link-local). These IPs should not appear as
+// client IPs in X-Forwarded-For unless from trusted proxies.
+func isBogonIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
+}
 
 // Global list of trusted proxy IP ranges (can be configured at package level)
 var trustedProxyCIDRs []*net.IPNet
@@ -87,25 +101,57 @@ func extractClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff != "" {
-		// X-Forwarded-For format: client, proxy1, proxy2, ...
-		// We need to find the rightmost IP that is NOT a trusted proxy
-		// This is the real client IP
 		ips := strings.Split(xff, ",")
+
+		// Warn on suspiciously large XFF headers
+		if len(ips) > defaultMaxXFFDepth {
+			zap.L().Warn("X-Forwarded-For header exceeds max depth, truncating",
+				zap.Int("entries", len(ips)),
+				zap.Int("maxDepth", defaultMaxXFFDepth),
+				zap.String("remoteAddr", r.RemoteAddr),
+			)
+			// Only process the rightmost N entries (closest to us, most trustworthy)
+			ips = ips[len(ips)-defaultMaxXFFDepth:]
+		}
 
 		// Iterate from right to left, skipping trusted proxies
 		for i := len(ips) - 1; i >= 0; i-- {
-			ip := strings.TrimSpace(ips[i])
-			if !isGlobalTrustedProxy(ip) {
-				// Found the rightmost non-proxy IP
-				return ip
+			ipStr := strings.TrimSpace(ips[i])
+
+			// Validate IP format to prevent spoofed garbage values
+			parsed := net.ParseIP(ipStr)
+			if parsed == nil {
+				zap.L().Warn("unparseable IP in X-Forwarded-For header",
+					zap.String("value", ipStr),
+					zap.String("remoteAddr", r.RemoteAddr),
+				)
+				continue
 			}
+
+			if isGlobalTrustedProxy(ipStr) {
+				continue
+			}
+
+			// Skip bogon/private IPs unless they are from trusted proxies
+			if isBogonIP(parsed) {
+				continue
+			}
+
+			return ipStr
 		}
 	}
 
 	// Check X-Real-IP header as fallback
 	xri := r.Header.Get("X-Real-IP")
 	if xri != "" {
-		return xri
+		// Validate X-Real-IP format
+		if parsed := net.ParseIP(xri); parsed != nil {
+			return xri
+		}
+		zap.L().Warn("unparseable X-Real-IP header",
+			zap.String("value", xri),
+			zap.String("remoteAddr", r.RemoteAddr),
+		)
 	}
 
 	// Fall back to RemoteAddr
@@ -276,25 +322,57 @@ func (f *IPFilter) extractClientIP(r *http.Request) string {
 	// Check X-Forwarded-For header
 	xff := r.Header.Get("X-Forwarded-For")
 	if xff != "" {
-		// X-Forwarded-For format: client, proxy1, proxy2, ...
-		// We need to find the rightmost IP that is NOT a trusted proxy
-		// This is the real client IP
 		ips := strings.Split(xff, ",")
+
+		// Warn on suspiciously large XFF headers
+		if len(ips) > defaultMaxXFFDepth {
+			zap.L().Warn("X-Forwarded-For header exceeds max depth, truncating",
+				zap.Int("entries", len(ips)),
+				zap.Int("maxDepth", defaultMaxXFFDepth),
+				zap.String("remoteAddr", r.RemoteAddr),
+			)
+			// Only process the rightmost N entries (closest to us, most trustworthy)
+			ips = ips[len(ips)-defaultMaxXFFDepth:]
+		}
 
 		// Iterate from right to left, skipping trusted proxies
 		for i := len(ips) - 1; i >= 0; i-- {
-			ip := strings.TrimSpace(ips[i])
-			if !f.isTrustedProxy(ip) {
-				// Found the rightmost non-proxy IP
-				return ip
+			ipStr := strings.TrimSpace(ips[i])
+
+			// Validate IP format to prevent spoofed garbage values
+			parsed := net.ParseIP(ipStr)
+			if parsed == nil {
+				zap.L().Warn("unparseable IP in X-Forwarded-For header",
+					zap.String("value", ipStr),
+					zap.String("remoteAddr", r.RemoteAddr),
+				)
+				continue
 			}
+
+			if f.isTrustedProxy(ipStr) {
+				continue
+			}
+
+			// Skip bogon/private IPs unless they are from trusted proxies
+			if isBogonIP(parsed) {
+				continue
+			}
+
+			return ipStr
 		}
 	}
 
 	// Check X-Real-IP header as fallback
 	xri := r.Header.Get("X-Real-IP")
 	if xri != "" {
-		return xri
+		// Validate X-Real-IP format
+		if parsed := net.ParseIP(xri); parsed != nil {
+			return xri
+		}
+		zap.L().Warn("unparseable X-Real-IP header",
+			zap.String("value", xri),
+			zap.String("remoteAddr", r.RemoteAddr),
+		)
 	}
 
 	// Fall back to RemoteAddr
