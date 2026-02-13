@@ -1,0 +1,72 @@
+{{- if and .Values.controller.enabled (.Values.controller.networkPolicy).enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "novaedge.fullname" . }}-controller
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.controller.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "novaedge.controller.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow gRPC from agents
+  - from:
+    - podSelector:
+        matchLabels:
+          {{- include "novaedge.agent.selectorLabels" . | nindent 10 }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.controller.grpc.port }}
+  # Allow metrics scraping from Prometheus
+  {{- if .Values.controller.metrics.enabled }}
+  - from:
+    {{- if (.Values.controller.networkPolicy).prometheusSelector }}
+    - podSelector:
+        matchLabels:
+          {{- toYaml .Values.controller.networkPolicy.prometheusSelector | nindent 10 }}
+    {{- if (.Values.controller.networkPolicy).prometheusNamespaceSelector }}
+      namespaceSelector:
+        matchLabels:
+          {{- toYaml .Values.controller.networkPolicy.prometheusNamespaceSelector | nindent 10 }}
+    {{- end }}
+    {{- else }}
+    - podSelector: {}
+    {{- end }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.controller.metrics.port }}
+  {{- end }}
+  # Allow health probes from kubelet
+  - ports:
+    - protocol: TCP
+      port: {{ .Values.controller.healthProbe.port }}
+  {{- with (.Values.controller.networkPolicy).extraIngress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+  egress:
+  # Allow DNS resolution
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow communication with kube-apiserver
+  - ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 6443
+  # Allow gRPC responses to agents (established connections)
+  - to:
+    - podSelector:
+        matchLabels:
+          {{- include "novaedge.agent.selectorLabels" . | nindent 10 }}
+  {{- with (.Values.controller.networkPolicy).extraEgress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}

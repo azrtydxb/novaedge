@@ -61,6 +61,20 @@ controller:
     enabled: true
     minAvailable: 1
 
+  # Network policy
+  networkPolicy:
+    enabled: false
+    # Pod selector labels for Prometheus (if empty, allows all pods in namespace)
+    # prometheusSelector:
+    #   app.kubernetes.io/name: prometheus
+    # Namespace selector for Prometheus
+    # prometheusNamespaceSelector:
+    #   kubernetes.io/metadata.name: monitoring
+    # Extra ingress rules
+    # extraIngress: []
+    # Extra egress rules
+    # extraEgress: []
+
   # Horizontal pod autoscaler
   autoscaling:
     enabled: false
@@ -127,6 +141,16 @@ agent:
     rollingUpdate:
       maxUnavailable: 1
 
+  # Network policy
+  networkPolicy:
+    enabled: false
+    # prometheusSelector:
+    #   app.kubernetes.io/name: prometheus
+    # prometheusNamespaceSelector:
+    #   kubernetes.io/metadata.name: monitoring
+    # extraIngress: []
+    # extraEgress: []
+
   # Pod disruption budget
   podDisruptionBudget:
     enabled: true
@@ -180,6 +204,12 @@ webui:
     requests:
       cpu: 50m
       memory: 64Mi
+
+  # Network policy
+  networkPolicy:
+    enabled: false
+    # extraIngress: []
+    # extraEgress: []
 
   nodeSelector: {}
   tolerations: []
