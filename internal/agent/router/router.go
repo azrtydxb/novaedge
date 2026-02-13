@@ -480,7 +480,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Defer metrics and span status recording
 	defer func() {
 		duration := time.Since(startTime).Seconds()
-		statusCode := statusString(wrappedWriter.statusCode)
+		statusClass := metrics.StatusClass(wrappedWriter.statusCode)
 
 		// Record span status based on HTTP status code (only if sampled)
 		if span.IsRecording() {
@@ -497,7 +497,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// We'll set cluster in handleRoute, for now use "unknown"
-		metrics.RecordHTTPRequest(req.Method, statusCode, "unknown", duration)
+		metrics.RecordHTTPRequest(req.Method, statusClass, "unknown", duration)
 
 		// Record access log entry if access logging is enabled
 		if r.accessLog != nil && r.accessLog.IsEnabled() {

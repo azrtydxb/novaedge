@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
@@ -54,7 +53,7 @@ func NewHTTP3Server(logger *zap.Logger, port int32, tlsConfig *tls.Config, quicC
 		rw := &http3ResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		handler.ServeHTTP(rw, r)
 
-		metrics.HTTP3RequestsTotal.WithLabelValues(r.Method, strconv.Itoa(rw.statusCode)).Inc()
+		metrics.HTTP3RequestsTotal.WithLabelValues(r.Method, metrics.StatusClass(rw.statusCode)).Inc()
 	})
 
 	return &HTTP3Server{
