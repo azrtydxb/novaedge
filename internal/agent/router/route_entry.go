@@ -37,6 +37,7 @@ type RouteEntry struct {
 	ResponseFilter *ResponseFilter        // Response header modifications
 	Limits         *pb.RouteLimitsConfig  // Per-route request limits and timeouts
 	Buffering      *pb.BufferingConfig    // Request/response buffering settings
+	Filters        []Filter               // Pre-built request filters (avoids per-request allocation)
 	MirrorConfig   *MirrorConfig          // Traffic mirroring configuration (optional)
 	Pipeline       *Pipeline              // Composable middleware pipeline
 	Expression     ExprNode               // Compiled boolean routing expression
