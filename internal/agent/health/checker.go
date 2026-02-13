@@ -30,6 +30,17 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// HealthCheckMode represents the type of health check to perform.
+type HealthCheckMode int
+
+const (
+	// HealthCheckHTTP performs an HTTP health check.
+	HealthCheckHTTP HealthCheckMode = iota
+	// HealthCheckGRPC performs a gRPC health check using the standard
+	// grpc.health.v1.Health protocol.
+	HealthCheckGRPC
+)
+
 // HealthChecker performs active health checks on endpoints
 type HealthChecker struct {
 	mu     sync.RWMutex
@@ -50,6 +61,12 @@ type HealthChecker struct {
 	// HTTP client for health checks
 	httpClient *http.Client
 
+	// gRPC health checker (nil when mode is HTTP)
+	grpcChecker *GRPCHealthChecker
+
+	// Health check mode
+	mode HealthCheckMode
+
 	// Stop channel
 	stopCh chan struct{}
 	wg     sync.WaitGroup
@@ -69,7 +86,7 @@ type HealthResult struct {
 
 // NewHealthChecker creates a new health checker
 func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) *HealthChecker {
-	return &HealthChecker{
+	hc := &HealthChecker{
 		logger:          logger,
 		cluster:         cluster,
 		endpoints:       endpoints,
@@ -84,8 +101,28 @@ func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap
 				}).DialContext,
 			},
 		},
+		mode:   HealthCheckHTTP,
 		stopCh: make(chan struct{}),
 	}
+
+	// Configure gRPC health checking if the cluster specifies it
+	if hcConfig := cluster.GetHealthCheck(); hcConfig != nil &&
+		hcConfig.GetType() == pb.HealthCheckType_HEALTH_CHECK_GRPC {
+		timeout := DefaultHealthCheckTimeout
+		if hcConfig.GetTimeoutMs() > 0 {
+			timeout = time.Duration(hcConfig.GetTimeoutMs()) * time.Millisecond
+		}
+
+		hc.mode = HealthCheckGRPC
+		hc.grpcChecker = &GRPCHealthChecker{
+			ServiceName:        hcConfig.GetGrpcServiceName(),
+			Timeout:            timeout,
+			UnhealthyThreshold: int(hcConfig.GetUnhealthyThreshold()),
+			HealthyThreshold:   int(hcConfig.GetHealthyThreshold()),
+		}
+	}
+
+	return hc
 }
 
 // Start starts the health checker
@@ -295,8 +332,8 @@ func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
 	// Track health check timing
 	checkStart := time.Now()
 
-	// Perform HTTP health check with circuit breaker protection
-	healthy, err := hc.performHTTPCheck(ctx, ep)
+	// Dispatch to the appropriate health check implementation
+	healthy, err := hc.performCheck(ctx, ep)
 
 	// Record health check metrics
 	checkDuration := time.Since(checkStart).Seconds()
@@ -361,6 +398,17 @@ func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
 	}
 }
 
+// performCheck dispatches to the appropriate health check implementation
+// based on the configured health check mode.
+func (hc *HealthChecker) performCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
+	switch hc.mode {
+	case HealthCheckGRPC:
+		return hc.performGRPCCheck(ctx, ep)
+	default:
+		return hc.performHTTPCheck(ctx, ep)
+	}
+}
+
 // performHTTPCheck performs an HTTP health check
 func (hc *HealthChecker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
 	// Build health check URL
@@ -383,6 +431,13 @@ func (hc *HealthChecker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) 
 	}
 
 	return false, fmt.Errorf("unhealthy status code: %d", resp.StatusCode)
+}
+
+// performGRPCCheck performs a gRPC health check using the standard
+// grpc.health.v1.Health/Check protocol.
+func (hc *HealthChecker) performGRPCCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
+	address := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
+	return hc.grpcChecker.Check(ctx, address)
 }
 
 // GetHealthyEndpoints returns only healthy endpoints

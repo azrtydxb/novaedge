@@ -323,6 +323,12 @@ message CircuitBreaker {
   int32 max_retries = 4;
 }
 
+// HealthCheckType defines the type of health check to perform
+enum HealthCheckType {
+  HEALTH_CHECK_HTTP = 0;
+  HEALTH_CHECK_GRPC = 1;
+}
+
 // HealthCheck defines active health check configuration
 message HealthCheck {
   int64 interval_ms = 1;
@@ -330,6 +336,8 @@ message HealthCheck {
   int32 healthy_threshold = 3;
   int32 unhealthy_threshold = 4;
   string http_path = 5;
+  HealthCheckType type = 6;
+  string grpc_service_name = 7;
 }
 
 // BackendTLS defines TLS settings for backend connections
