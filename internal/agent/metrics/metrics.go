@@ -17,6 +17,8 @@ limitations under the License.
 package metrics
 
 import (
+	"context"
+	"fmt"
 	"hash/fnv"
 	"sync"
 	"time"
@@ -204,4 +206,27 @@ func RecordHTTPRequest(method, status, cluster string, duration float64) {
 // ConfigureMetrics updates the metrics configuration
 func ConfigureMetrics(config MetricsConfig) {
 	defaultConfig = config
+}
+
+// InitOTelExporter creates and starts an OTelExporter if the supplied
+// configuration has Enabled set to true. It returns nil without error when
+// OTel export is disabled. This function is intended to be called at agent
+// startup alongside the existing Prometheus metrics setup so that both
+// exporters can run simultaneously.
+func InitOTelExporter(config OTelConfig) (*OTelExporter, error) {
+	if !config.Enabled {
+		return nil, nil
+	}
+
+	exporter, err := NewOTelExporter(config)
+	if err != nil {
+		return nil, fmt.Errorf("creating OTel exporter: %w", err)
+	}
+
+	ctx := context.Background()
+	if err := exporter.Start(ctx); err != nil {
+		return nil, fmt.Errorf("starting OTel exporter: %w", err)
+	}
+
+	return exporter, nil
 }
