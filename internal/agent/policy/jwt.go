@@ -40,10 +40,11 @@ type jwtClaimsKey struct{}
 
 // JWTValidator implements JWT validation
 type JWTValidator struct {
-	config *pb.JWTConfig
-	mu     sync.RWMutex
-	keys   map[string]interface{} // kid -> key
-	jwks   *JWKS
+	config    *pb.JWTConfig
+	mu        sync.RWMutex
+	keys      map[string]interface{} // kid -> key
+	jwks      *JWKS
+	blacklist *TokenBlacklist
 }
 
 // JWKS represents a JSON Web Key Set
@@ -65,8 +66,9 @@ type JWK struct {
 // NewJWTValidator creates a new JWT validator
 func NewJWTValidator(ctx context.Context, config *pb.JWTConfig) (*JWTValidator, error) {
 	v := &JWTValidator{
-		config: config,
-		keys:   make(map[string]interface{}),
+		config:    config,
+		keys:      make(map[string]interface{}),
+		blacklist: NewTokenBlacklist(),
 	}
 
 	// If JWKS URI is provided, fetch keys
@@ -181,6 +183,14 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 		return nil, fmt.Errorf("invalid claims type")
 	}
 
+	// Check blacklist using the jti (JWT ID) claim
+	if jti, jtiOK := claims["jti"].(string); jtiOK && jti != "" {
+		if v.blacklist.IsBlacklisted(jti) {
+			metrics.JWTBlockedTotal.Inc()
+			return nil, fmt.Errorf("token has been revoked")
+		}
+	}
+
 	// Validate issuer
 	if v.config.Issuer != "" {
 		iss, ok := claims["iss"].(string)
@@ -210,6 +220,17 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 	}
 
 	return token, nil
+}
+
+// Revoke adds a token to the blacklist by its jti claim. The token will be
+// rejected by Validate until the given expiry time has passed.
+func (v *JWTValidator) Revoke(jti string, expiry time.Time) {
+	v.blacklist.Add(jti, expiry)
+}
+
+// Blacklist returns the token blacklist associated with this validator.
+func (v *JWTValidator) Blacklist() *TokenBlacklist {
+	return v.blacklist
 }
 
 // HandleJWT is HTTP middleware for JWT validation
