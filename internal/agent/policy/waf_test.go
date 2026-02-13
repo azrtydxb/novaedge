@@ -512,6 +512,105 @@ func TestGetCRSRules_LevelCoverage(t *testing.T) {
 	}
 }
 
+func TestNewWAFEngine_DefaultFailMode(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	if engine.GetFailMode() != WAFFailClosed {
+		t.Errorf("expected default fail mode to be closed, got %s", engine.GetFailMode())
+	}
+}
+
+func TestNewWAFEngine_FailClosedExplicit(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+		FailMode:         "closed",
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	if engine.GetFailMode() != WAFFailClosed {
+		t.Errorf("expected fail mode closed, got %s", engine.GetFailMode())
+	}
+}
+
+func TestNewWAFEngine_FailOpen(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+		FailMode:         "open",
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	if engine.GetFailMode() != WAFFailOpen {
+		t.Errorf("expected fail mode open, got %s", engine.GetFailMode())
+	}
+}
+
+func TestNewWAFEngine_FailOpenCaseInsensitive(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+		FailMode:         "Open",
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	if engine.GetFailMode() != WAFFailOpen {
+		t.Errorf("expected fail mode open (case insensitive), got %s", engine.GetFailMode())
+	}
+}
+
+func TestNewWAFEngine_UnknownFailModeDefaultsClosed(t *testing.T) {
+	logger := zap.NewNop()
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+		FailMode:         "unknown",
+	}
+
+	engine, err := NewWAFEngine(config, logger)
+	if err != nil {
+		t.Fatalf("failed to create WAF engine: %v", err)
+	}
+
+	if engine.GetFailMode() != WAFFailClosed {
+		t.Errorf("expected unknown fail mode to default to closed, got %s", engine.GetFailMode())
+	}
+}
+
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsString(s, substr))
 }

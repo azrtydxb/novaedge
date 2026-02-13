@@ -33,12 +33,23 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// WAFFailMode represents how the WAF behaves when processing errors occur
+type WAFFailMode string
+
+const (
+	// WAFFailClosed blocks requests when WAF processing errors occur (security-first default)
+	WAFFailClosed WAFFailMode = "closed"
+	// WAFFailOpen allows requests through when WAF processing errors occur
+	WAFFailOpen WAFFailMode = "open"
+)
+
 // WAFEngine wraps the Coraza WAF engine with NovaEdge-specific configuration
 type WAFEngine struct {
-	waf    coraza.WAF
-	config *pb.WAFConfig
-	logger *zap.Logger
-	mu     sync.RWMutex
+	waf      coraza.WAF
+	config   *pb.WAFConfig
+	failMode WAFFailMode
+	logger   *zap.Logger
+	mu       sync.RWMutex
 }
 
 // NewWAFEngine creates a new WAF engine from protobuf configuration
@@ -66,10 +77,17 @@ func NewWAFEngine(config *pb.WAFConfig, logger *zap.Logger) (*WAFEngine, error) 
 		return nil, fmt.Errorf("failed to create WAF engine: %w", err)
 	}
 
+	// Determine fail mode: default to fail-closed (security-first)
+	failMode := WAFFailClosed
+	if strings.EqualFold(config.GetFailMode(), "open") {
+		failMode = WAFFailOpen
+	}
+
 	return &WAFEngine{
-		waf:    waf,
-		config: config,
-		logger: logger,
+		waf:      waf,
+		config:   config,
+		failMode: failMode,
+		logger:   logger,
 	}, nil
 }
 
@@ -217,6 +235,11 @@ func (w *WAFEngine) logInterruption(interruption *types.Interruption, r *http.Re
 	)
 }
 
+// GetFailMode returns the configured fail mode for the WAF engine
+func (w *WAFEngine) GetFailMode() WAFFailMode {
+	return w.failMode
+}
+
 // HandleWAF is HTTP middleware for WAF protection
 func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -228,8 +251,27 @@ func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 
 			interruption, err := engine.ProcessRequest(r)
 			if err != nil {
-				engine.logger.Error("WAF processing error", zap.Error(err))
-				// Allow request through on WAF error (fail open)
+				failMode := string(engine.failMode)
+				if engine.failMode == WAFFailClosed {
+					// Fail-closed: block the request on WAF processing error
+					metrics.WAFProcessingErrorsTotal.WithLabelValues(failMode, "blocked").Inc()
+					engine.logger.Error("WAF processing error, blocking request (fail-closed)",
+						zap.Error(err),
+						zap.String("method", r.Method),
+						zap.String("path", r.URL.Path),
+						zap.String("remote_addr", r.RemoteAddr),
+					)
+					http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				// Fail-open: allow request through but log a warning
+				metrics.WAFProcessingErrorsTotal.WithLabelValues(failMode, "allowed").Inc()
+				engine.logger.Warn("WAF processing error, allowing request (fail-open)",
+					zap.Error(err),
+					zap.String("method", r.Method),
+					zap.String("path", r.URL.Path),
+					zap.String("remote_addr", r.RemoteAddr),
+				)
 				next.ServeHTTP(w, r)
 				return
 			}
