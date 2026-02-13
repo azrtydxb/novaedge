@@ -31,6 +31,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/lb"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	"github.com/piwi3910/novaedge/internal/agent/protocol"
+	"github.com/piwi3910/novaedge/internal/agent/upstream"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -93,6 +94,19 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		handler = r.errorPages.Wrap(handler)
 	}
 	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> error pages -> pipeline -> backend
+	// In detailed trace mode, wrap the middleware chain in a child span.
+	if DefaultTraceVerbosity.ShouldTraceDetailed() {
+		ctx := req.Context()
+		if trace.SpanFromContext(ctx).IsRecording() {
+			tracer := otel.Tracer(tracerName)
+			var mwSpan trace.Span
+			ctx, mwSpan = tracer.Start(ctx, "filter_middleware_execution")
+			req = req.WithContext(ctx)
+			handler.ServeHTTP(responseWriter, req)
+			mwSpan.End()
+			return
+		}
+	}
 	handler.ServeHTTP(responseWriter, req)
 }
 
@@ -176,18 +190,41 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		attribute.String("novaedge.backend.name", backendRef.Name),
 	)
 
-	// Get pool
-	pool, ok := r.pools[clusterKey]
-	if !ok {
+	detailed := DefaultTraceVerbosity.ShouldTraceDetailed() && backendSpan.IsRecording()
+
+	// Get pool.  In detailed mode, wrap the lookup in a child span.
+	var pool *upstream.Pool
+	var poolFound bool
+	if detailed {
+		var poolSpan trace.Span
+		_, poolSpan = tracer.Start(ctx, "pool_acquisition",
+			trace.WithAttributes(attribute.String("novaedge.backend.cluster", clusterKey)))
+		pool, poolFound = r.pools[clusterKey]
+		if poolFound {
+			poolSpan.SetStatus(codes.Ok, "")
+		} else {
+			poolSpan.SetStatus(codes.Error, "pool not found")
+		}
+		poolSpan.End()
+	} else {
+		pool, poolFound = r.pools[clusterKey]
+	}
+	if !poolFound {
 		backendSpan.SetStatus(codes.Error, "No pool for cluster")
 		r.logger.Error("No pool for cluster", zap.String("cluster", clusterKey))
 		http.Error(w, "Backend not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	// Select endpoint using appropriate load balancer
+	// Select endpoint using appropriate load balancer.
+	// In detailed mode, wrap the selection in a child span.
 	var endpoint *pb.Endpoint
 	var lbType string
+	var selSpan trace.Span
+	if detailed {
+		_, selSpan = tracer.Start(ctx, "backend_selection",
+			trace.WithAttributes(attribute.String("novaedge.backend.cluster", clusterKey)))
+	}
 
 	// Check if this cluster uses hash-based load balancing
 	if hashLB, ok := r.hashBasedLBs[clusterKey]; ok {
@@ -230,6 +267,20 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	}
 
 	backendSpan.SetAttributes(attribute.String("novaedge.lb.type", lbType))
+
+	// End the detailed backend_selection span if we started one
+	if selSpan != nil {
+		if endpoint != nil {
+			selSpan.SetAttributes(
+				attribute.String("novaedge.lb.type", lbType),
+				attribute.String("novaedge.endpoint", endpoint.Address),
+			)
+			selSpan.SetStatus(codes.Ok, "")
+		} else {
+			selSpan.SetStatus(codes.Error, "no healthy endpoint")
+		}
+		selSpan.End()
+	}
 
 	if endpoint == nil {
 		backendSpan.SetStatus(codes.Error, "No healthy endpoint available")
