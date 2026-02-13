@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"sort"
+	"sync"
 
 	"go.uber.org/zap"
 )
@@ -188,6 +189,41 @@ func NewPipelineState() *PipelineState {
 	return &PipelineState{
 		Values: make(map[string]interface{}),
 	}
+}
+
+// pipelineStatePool reduces GC pressure by reusing PipelineState allocations.
+// Each request needs a PipelineState, so pooling avoids per-request heap allocation.
+var pipelineStatePool = sync.Pool{
+	New: func() interface{} {
+		return &PipelineState{
+			Values: make(map[string]interface{}, 4), // Pre-size for typical usage
+		}
+	},
+}
+
+// GetPipelineStateFromPool gets a PipelineState from the pool.
+func GetPipelineStateFromPool() *PipelineState {
+	ps, ok := pipelineStatePool.Get().(*PipelineState)
+	if !ok {
+		return NewPipelineState()
+	}
+	// Clear previous values
+	for k := range ps.Values {
+		delete(ps.Values, k)
+	}
+	return ps
+}
+
+// PutPipelineStateToPool returns a PipelineState to the pool.
+func PutPipelineStateToPool(ps *PipelineState) {
+	if ps == nil {
+		return
+	}
+	// Clear references to allow GC of stored values
+	for k := range ps.Values {
+		delete(ps.Values, k)
+	}
+	pipelineStatePool.Put(ps)
 }
 
 // Set stores a value in the pipeline state.

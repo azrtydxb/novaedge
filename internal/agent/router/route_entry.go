@@ -41,6 +41,12 @@ type RouteEntry struct {
 	MirrorConfig   *MirrorConfig          // Traffic mirroring configuration (optional)
 	Pipeline       *Pipeline              // Composable middleware pipeline
 	Expression     ExprNode               // Compiled boolean routing expression
+
+	// BackendClusterKeys maps each BackendRef pointer to its pre-computed
+	// cluster key ("namespace/name"). Computed once at config time in
+	// ApplyConfig to avoid per-request string concatenation in the
+	// forwarding hot path.
+	BackendClusterKeys map[*pb.BackendRef]string
 }
 
 // compileHeaderRegexes pre-compiles all header regex patterns for a route rule
