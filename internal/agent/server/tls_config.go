@@ -82,13 +82,16 @@ func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config,
 
 	config := &tls.Config{
 		Certificates: []tls.Certificate{*defaultCert},
-		MinVersion:   tls.VersionTLS12,
+		MinVersion:   tls.VersionTLS13,
 		CipherSuites: s.parseCipherSuites(cipherSuites),
 	}
 
-	// Upgrade TLS minimum version if configured higher
-	if parsed := s.parseTLSVersion(minVersion); parsed > tls.VersionTLS12 {
-		config.MinVersion = parsed
+	// Allow TLS 1.2 only when explicitly configured (legacy compatibility)
+	parsed := s.parseTLSVersion(minVersion)
+	if parsed == tls.VersionTLS12 && minVersion == "TLS1.2" {
+		s.logger.Warn("TLS 1.2 enabled for legacy compatibility, TLS 1.3 recommended")
+		config.MinVersion = tls.VersionTLS12
+		config.CipherSuites = aeadOnlyCipherSuites()
 	}
 
 	// Enable SNI certificate selection
@@ -178,6 +181,19 @@ func (s *HTTPServer) parseCipherSuites(suites []string) []uint16 {
 	}
 
 	return result
+}
+
+// aeadOnlyCipherSuites returns the hardened set of AEAD-only cipher suites
+// permitted when TLS 1.2 legacy mode is explicitly enabled.
+func aeadOnlyCipherSuites() []uint16 {
+	return []uint16{
+		tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+		tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+		tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,
+		tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
+	}
 }
 
 // createTLSConfigWithMTLS creates a TLS config with SNI and optional mTLS support
