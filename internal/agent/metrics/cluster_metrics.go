@@ -217,6 +217,30 @@ var (
 		[]string{"result"}, // success, failure
 	)
 
+	// JWTBlacklistSize tracks the current number of entries in the JWT token blacklist
+	JWTBlacklistSize = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "novaedge_jwt_blacklist_size",
+			Help: "Current number of entries in the JWT token blacklist",
+		},
+	)
+
+	// JWTRevocationsTotal tracks total number of JWT token revocations
+	JWTRevocationsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_jwt_revocations_total",
+			Help: "Total number of JWT tokens revoked",
+		},
+	)
+
+	// JWTBlockedTotal tracks total number of requests blocked by the JWT blacklist
+	JWTBlockedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_jwt_blocked_total",
+			Help: "Total number of requests blocked due to revoked JWT tokens",
+		},
+	)
+
 	// SecurityHeadersAppliedTotal tracks security headers applied
 	SecurityHeadersAppliedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
