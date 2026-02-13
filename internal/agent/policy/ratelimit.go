@@ -30,6 +30,12 @@ import (
 )
 
 const (
+	// RateLimitKeySourceIP is the rate limit key that extracts the source IP.
+	RateLimitKeySourceIP = "source-ip"
+
+	// RateLimitKeyDefault is the fallback key used when no header value is found.
+	RateLimitKeyDefault = "default"
+
 	// DefaultCleanupInterval is the default interval between cleanup cycles.
 	DefaultCleanupInterval = 5 * time.Minute
 
@@ -118,7 +124,7 @@ func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 // extractKey extracts the rate limiting key from the request
 func (rl *RateLimiter) extractKey(r *http.Request) string {
 	switch rl.config.Key {
-	case "source-ip", "":
+	case RateLimitKeySourceIP, "":
 		// Extract source IP
 		return extractClientIP(r)
 
@@ -126,7 +132,7 @@ func (rl *RateLimiter) extractKey(r *http.Request) string {
 		// Try to extract from header
 		value := r.Header.Get(rl.config.Key)
 		if value == "" {
-			return "default"
+			return RateLimitKeyDefault
 		}
 		return value
 	}

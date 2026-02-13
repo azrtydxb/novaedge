@@ -32,10 +32,29 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const (
+	testRedisOK    = "+OK\r\n"
+	testRedisPING  = "PING"
+	testRedisSET   = "SET"
+	testRedisAddr2 = "10.0.0.2"
+	testRedisAddr3 = "10.0.0.3"
+)
+
+// parseBackendPort parses a port string and returns it as int32 with validation.
+func parseBackendPort(t *testing.T, portStr string) int32 {
+	t.Helper()
+	port := 0
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	if port < 0 || port > 65535 {
+		t.Fatalf("Port %d out of valid range", port)
+	}
+	return int32(port) //nolint:gosec // port validated above
+}
+
 // --- RESP Protocol Parsing Tests ---
 
 func TestRESPReader_SimpleString(t *testing.T) {
-	input := "+OK\r\n"
+	input := testRedisOK
 	reader := NewRESPReader(strings.NewReader(input))
 
 	val, err := reader.ReadValue()
@@ -49,7 +68,7 @@ func TestRESPReader_SimpleString(t *testing.T) {
 	if val.Str != "OK" {
 		t.Errorf("Expected 'OK', got %q", val.Str)
 	}
-	if !bytes.Equal(val.RawData, []byte("+OK\r\n")) {
+	if !bytes.Equal(val.RawData, []byte(testRedisOK)) {
 		t.Errorf("Raw data mismatch: %q", val.RawData)
 	}
 }
@@ -227,7 +246,7 @@ func TestRESPReader_ReadCommand_Inline(t *testing.T) {
 		t.Fatalf("Failed to read inline command: %v", err)
 	}
 
-	if len(parts) != 1 || parts[0] != "PING" {
+	if len(parts) != 1 || parts[0] != testRedisPING {
 		t.Errorf("Expected [PING], got %v", parts)
 	}
 	if len(raw) == 0 {
@@ -247,7 +266,7 @@ func TestRESPReader_ReadCommand_InlineMultiArg(t *testing.T) {
 	if len(parts) != 3 {
 		t.Fatalf("Expected 3 parts, got %d: %v", len(parts), parts)
 	}
-	if parts[0] != "SET" || parts[1] != "mykey" || parts[2] != "myvalue" {
+	if parts[0] != testRedisSET || parts[1] != "mykey" || parts[2] != "myvalue" {
 		t.Errorf("Expected [SET mykey myvalue], got %v", parts)
 	}
 }
@@ -261,7 +280,7 @@ func TestRESPReader_ReadCommand_RESP(t *testing.T) {
 		t.Fatalf("Failed to read RESP command: %v", err)
 	}
 
-	if len(parts) != 2 || parts[0] != "PING" || parts[1] != "hello" {
+	if len(parts) != 2 || parts[0] != testRedisPING || parts[1] != "hello" {
 		t.Errorf("Expected [PING hello], got %v", parts)
 	}
 	if !bytes.Equal(raw, []byte(input)) {
@@ -278,7 +297,7 @@ func TestRESPReader_ReadCommand_MultipleCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read first command: %v", err)
 	}
-	if len(parts1) != 1 || parts1[0] != "PING" {
+	if len(parts1) != 1 || parts1[0] != testRedisPING {
 		t.Errorf("First command: expected [PING], got %v", parts1)
 	}
 
@@ -287,7 +306,7 @@ func TestRESPReader_ReadCommand_MultipleCommands(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to read second command: %v", err)
 	}
-	if len(parts2) != 3 || parts2[0] != "SET" {
+	if len(parts2) != 3 || parts2[0] != testRedisSET {
 		t.Errorf("Second command: expected [SET a b], got %v", parts2)
 	}
 }
@@ -305,7 +324,7 @@ func TestRESPWriter_SimpleString(t *testing.T) {
 		t.Fatalf("Flush failed: %v", err)
 	}
 
-	if buf.String() != "+OK\r\n" {
+	if buf.String() != testRedisOK {
 		t.Errorf("Expected '+OK\\r\\n', got %q", buf.String())
 	}
 }
@@ -482,7 +501,7 @@ func TestRESP_Roundtrip_WriteAndRead(t *testing.T) {
 	if val.Type != RESPTypeArray || len(val.Array) != 3 {
 		t.Fatalf("Expected 3-element array, got type=%c len=%d", byte(val.Type), len(val.Array))
 	}
-	if val.Array[0].Str != "SET" || val.Array[1].Str != "key" || val.Array[2].Str != "value" {
+	if val.Array[0].Str != testRedisSET || val.Array[1].Str != "key" || val.Array[2].Str != "value" {
 		t.Errorf("Unexpected values: %v", val.Array)
 	}
 }
@@ -523,8 +542,8 @@ func TestRedisProxy_PickBackend_RoundRobin(t *testing.T) {
 
 	backends := []*pb.Endpoint{
 		{Address: "10.0.0.1", Port: 6379, Ready: true},
-		{Address: "10.0.0.2", Port: 6379, Ready: true},
-		{Address: "10.0.0.3", Port: 6379, Ready: true},
+		{Address: testRedisAddr2, Port: 6379, Ready: true},
+		{Address: testRedisAddr3, Port: 6379, Ready: true},
 	}
 
 	proxy := NewRedisProxy(RedisProxyConfig{
@@ -557,7 +576,7 @@ func TestRedisProxy_PickBackend_NoReady(t *testing.T) {
 
 	backends := []*pb.Endpoint{
 		{Address: "10.0.0.1", Port: 6379, Ready: false},
-		{Address: "10.0.0.2", Port: 6379, Ready: false},
+		{Address: testRedisAddr2, Port: 6379, Ready: false},
 	}
 
 	proxy := NewRedisProxy(RedisProxyConfig{
@@ -592,8 +611,8 @@ func TestRedisProxy_UpdateBackends(t *testing.T) {
 
 	// Update backends
 	newBackends := []*pb.Endpoint{
-		{Address: "10.0.0.2", Port: 6379, Ready: true},
-		{Address: "10.0.0.3", Port: 6379, Ready: true},
+		{Address: testRedisAddr2, Port: 6379, Ready: true},
+		{Address: testRedisAddr3, Port: 6379, Ready: true},
 	}
 	proxy.UpdateBackends(newBackends)
 
@@ -602,15 +621,15 @@ func TestRedisProxy_UpdateBackends(t *testing.T) {
 	if ep == nil {
 		t.Fatal("Expected backend after update")
 	}
-	if ep.Address != "10.0.0.2" && ep.Address != "10.0.0.3" {
+	if ep.Address != testRedisAddr2 && ep.Address != testRedisAddr3 {
 		t.Errorf("Expected updated backend, got %s", ep.Address)
 	}
 
 	// Verify pools were created for new backends
-	if _, exists := proxy.pools["10.0.0.2:6379"]; !exists {
+	if _, exists := proxy.pools[testRedisAddr2+":6379"]; !exists {
 		t.Error("Expected pool for 10.0.0.2:6379")
 	}
-	if _, exists := proxy.pools["10.0.0.3:6379"]; !exists {
+	if _, exists := proxy.pools[testRedisAddr3+":6379"]; !exists {
 		t.Error("Expected pool for 10.0.0.3:6379")
 	}
 }
@@ -640,7 +659,8 @@ func TestRedisProxy_Drain(t *testing.T) {
 // mockRedisBackend simulates a Redis server for testing
 func mockRedisBackend(t *testing.T) (net.Listener, string) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to start mock Redis backend: %v", err)
 	}
@@ -679,7 +699,7 @@ func handleMockRedisConn(conn net.Conn) {
 		case "PING":
 			if len(parts) > 1 {
 				// PING with message returns the message as bulk string
-				_, _ = conn.Write([]byte(fmt.Sprintf("$%d\r\n%s\r\n", len(parts[1]), parts[1])))
+				_, _ = fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(parts[1]), parts[1])
 			} else {
 				_, _ = conn.Write(EncodeSimpleString("PONG"))
 			}
@@ -708,11 +728,10 @@ func TestRedisProxy_HandleConnection_PingPong(t *testing.T) {
 	defer func() { _ = backendListener.Close() }()
 
 	host, portStr, _ := net.SplitHostPort(backendAddr)
-	port := 0
-	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	port := parseBackendPort(t, portStr)
 
 	backends := []*pb.Endpoint{
-		{Address: host, Port: int32(port), Ready: true},
+		{Address: host, Port: port, Ready: true},
 	}
 
 	proxy := NewRedisProxy(RedisProxyConfig{
@@ -771,11 +790,10 @@ func TestRedisProxy_HandleConnection_SetGet(t *testing.T) {
 	defer func() { _ = backendListener.Close() }()
 
 	host, portStr, _ := net.SplitHostPort(backendAddr)
-	port := 0
-	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	port := parseBackendPort(t, portStr)
 
 	backends := []*pb.Endpoint{
-		{Address: host, Port: int32(port), Ready: true},
+		{Address: host, Port: port, Ready: true},
 	}
 
 	proxy := NewRedisProxy(RedisProxyConfig{
@@ -815,7 +833,7 @@ func TestRedisProxy_HandleConnection_SetGet(t *testing.T) {
 		t.Fatalf("Failed to read SET response: %v", err)
 	}
 
-	if string(buf[:n]) != "+OK\r\n" {
+	if string(buf[:n]) != testRedisOK {
 		t.Errorf("Expected '+OK\\r\\n', got %q", string(buf[:n]))
 	}
 
@@ -850,11 +868,10 @@ func TestRedisProxy_HandleConnection_ErrorResponse(t *testing.T) {
 	defer func() { _ = backendListener.Close() }()
 
 	host, portStr, _ := net.SplitHostPort(backendAddr)
-	port := 0
-	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	port := parseBackendPort(t, portStr)
 
 	backends := []*pb.Endpoint{
-		{Address: host, Port: int32(port), Ready: true},
+		{Address: host, Port: port, Ready: true},
 	}
 
 	proxy := NewRedisProxy(RedisProxyConfig{
@@ -954,11 +971,10 @@ func TestRedisProxy_HandleConnection_Quit(t *testing.T) {
 	defer func() { _ = backendListener.Close() }()
 
 	host, portStr, _ := net.SplitHostPort(backendAddr)
-	port := 0
-	_, _ = fmt.Sscanf(portStr, "%d", &port)
+	port := parseBackendPort(t, portStr)
 
 	backends := []*pb.Endpoint{
-		{Address: host, Port: int32(port), Ready: true},
+		{Address: host, Port: port, Ready: true},
 	}
 
 	proxy := NewRedisProxy(RedisProxyConfig{
@@ -998,7 +1014,7 @@ func TestRedisProxy_HandleConnection_Quit(t *testing.T) {
 		t.Fatalf("Failed to read QUIT response: %v", err)
 	}
 
-	if string(buf[:n]) != "+OK\r\n" {
+	if string(buf[:n]) != testRedisOK {
 		t.Errorf("Expected '+OK\\r\\n', got %q", string(buf[:n]))
 	}
 
@@ -1108,7 +1124,7 @@ func TestRedisHealthChecker_UpdateBackends(t *testing.T) {
 
 	backends := []*pb.Endpoint{
 		{Address: "10.0.0.1", Port: 6379, Ready: true},
-		{Address: "10.0.0.2", Port: 6379, Ready: true},
+		{Address: testRedisAddr2, Port: 6379, Ready: true},
 	}
 	checker.UpdateBackends(backends)
 

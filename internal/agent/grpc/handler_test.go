@@ -26,9 +26,9 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestNewGRPCHandler(t *testing.T) {
+func TestNewHandler(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	if h == nil {
 		t.Fatal("expected non-nil handler")
@@ -37,7 +37,7 @@ func TestNewGRPCHandler(t *testing.T) {
 
 func TestPrepareGRPCRequest_PreservesHeaders(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodPost, "http://backend/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
@@ -65,7 +65,7 @@ func TestPrepareGRPCRequest_PreservesHeaders(t *testing.T) {
 
 func TestPrepareGRPCRequest_ClonesRequest(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodPost, "http://backend/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
@@ -80,7 +80,7 @@ func TestPrepareGRPCRequest_ClonesRequest(t *testing.T) {
 
 func TestHandleGRPCResponse_CopiesHeaders(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	recorder := httptest.NewRecorder()
 
@@ -112,7 +112,7 @@ func TestHandleGRPCResponse_CopiesHeaders(t *testing.T) {
 
 func TestHandleGRPCResponse_CopiesTrailers(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	recorder := httptest.NewRecorder()
 
@@ -134,7 +134,7 @@ func TestHandleGRPCResponse_CopiesTrailers(t *testing.T) {
 
 func TestValidateGRPCRequest_ValidPOST(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
@@ -147,7 +147,7 @@ func TestValidateGRPCRequest_ValidPOST(t *testing.T) {
 
 func TestValidateGRPCRequest_NonPOST_NoError(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodGet, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
@@ -161,7 +161,7 @@ func TestValidateGRPCRequest_NonPOST_NoError(t *testing.T) {
 
 func TestGetGRPCMetadata(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
@@ -183,7 +183,7 @@ func TestGetGRPCMetadata(t *testing.T) {
 
 func TestIsGRPCStreaming_Chunked(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/StreamMethod", nil)
 	req.Header.Set("Transfer-Encoding", "chunked")
@@ -195,7 +195,7 @@ func TestIsGRPCStreaming_Chunked(t *testing.T) {
 
 func TestIsGRPCStreaming_NoContentLength(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/StreamMethod", nil)
 	// No Content-Length and no Transfer-Encoding
@@ -207,7 +207,7 @@ func TestIsGRPCStreaming_NoContentLength(t *testing.T) {
 
 func TestIsGRPCStreaming_WithContentLength(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/UnaryMethod", nil)
 	req.Header.Set("Content-Length", "100")
@@ -260,54 +260,54 @@ func TestExtractGRPCServiceMethod_Invalid(t *testing.T) {
 	}
 }
 
-func TestHTTPStatusToGRPCCode(t *testing.T) {
+func TestHTTPStatusToCode(t *testing.T) {
 	tests := []struct {
 		httpStatus   int
-		expectedCode GRPCCode
+		expectedCode Code
 	}{
-		{http.StatusOK, GRPCCodeOK},
-		{http.StatusBadRequest, GRPCCodeInvalidArgument},
-		{http.StatusUnauthorized, GRPCCodeUnauthenticated},
-		{http.StatusForbidden, GRPCCodePermissionDenied},
-		{http.StatusNotFound, GRPCCodeNotFound},
-		{http.StatusConflict, GRPCCodeAlreadyExists},
-		{http.StatusTooManyRequests, GRPCCodeResourceExhausted},
-		{http.StatusInternalServerError, GRPCCodeInternal},
-		{http.StatusNotImplemented, GRPCCodeUnimplemented},
-		{http.StatusServiceUnavailable, GRPCCodeUnavailable},
-		{http.StatusGatewayTimeout, GRPCCodeDeadlineExceeded},
-		{http.StatusTeapot, GRPCCodeUnknown}, // Unknown mapping
+		{http.StatusOK, CodeOK},
+		{http.StatusBadRequest, CodeInvalidArgument},
+		{http.StatusUnauthorized, CodeUnauthenticated},
+		{http.StatusForbidden, CodePermissionDenied},
+		{http.StatusNotFound, CodeNotFound},
+		{http.StatusConflict, CodeAlreadyExists},
+		{http.StatusTooManyRequests, CodeResourceExhausted},
+		{http.StatusInternalServerError, CodeInternal},
+		{http.StatusNotImplemented, CodeUnimplemented},
+		{http.StatusServiceUnavailable, CodeUnavailable},
+		{http.StatusGatewayTimeout, CodeDeadlineExceeded},
+		{http.StatusTeapot, CodeUnknown}, // Unknown mapping
 	}
 
 	for _, tt := range tests {
-		code := HTTPStatusToGRPCCode(tt.httpStatus)
+		code := HTTPStatusToCode(tt.httpStatus)
 		if code != tt.expectedCode {
 			t.Errorf("HTTP %d: expected gRPC code %d, got %d", tt.httpStatus, tt.expectedCode, code)
 		}
 	}
 }
 
-func TestGRPCCodeToHTTPStatus(t *testing.T) {
+func TestCodeToHTTPStatus(t *testing.T) {
 	tests := []struct {
-		grpcCode       GRPCCode
+		grpcCode       Code
 		expectedStatus int
 	}{
-		{GRPCCodeOK, http.StatusOK},
-		{GRPCCodeInvalidArgument, http.StatusBadRequest},
-		{GRPCCodeUnauthenticated, http.StatusUnauthorized},
-		{GRPCCodePermissionDenied, http.StatusForbidden},
-		{GRPCCodeNotFound, http.StatusNotFound},
-		{GRPCCodeAlreadyExists, http.StatusConflict},
-		{GRPCCodeResourceExhausted, http.StatusTooManyRequests},
-		{GRPCCodeInternal, http.StatusInternalServerError},
-		{GRPCCodeUnimplemented, http.StatusNotImplemented},
-		{GRPCCodeUnavailable, http.StatusServiceUnavailable},
-		{GRPCCodeDeadlineExceeded, http.StatusGatewayTimeout},
-		{GRPCCodeCancelled, 499},
+		{CodeOK, http.StatusOK},
+		{CodeInvalidArgument, http.StatusBadRequest},
+		{CodeUnauthenticated, http.StatusUnauthorized},
+		{CodePermissionDenied, http.StatusForbidden},
+		{CodeNotFound, http.StatusNotFound},
+		{CodeAlreadyExists, http.StatusConflict},
+		{CodeResourceExhausted, http.StatusTooManyRequests},
+		{CodeInternal, http.StatusInternalServerError},
+		{CodeUnimplemented, http.StatusNotImplemented},
+		{CodeUnavailable, http.StatusServiceUnavailable},
+		{CodeDeadlineExceeded, http.StatusGatewayTimeout},
+		{CodeCancelled, 499},
 	}
 
 	for _, tt := range tests {
-		status := GRPCCodeToHTTPStatus(tt.grpcCode)
+		status := CodeToHTTPStatus(tt.grpcCode)
 		if status != tt.expectedStatus {
 			t.Errorf("gRPC code %d: expected HTTP %d, got %d", tt.grpcCode, tt.expectedStatus, status)
 		}
@@ -410,32 +410,32 @@ func TestForwardGRPCMetadata(t *testing.T) {
 	}
 }
 
-func TestGRPCCodeName(t *testing.T) {
+func TestCodeName(t *testing.T) {
 	tests := []struct {
-		code     GRPCCode
+		code     Code
 		expected string
 	}{
-		{GRPCCodeOK, "OK"},
-		{GRPCCodeCancelled, "CANCELLED"},
-		{GRPCCodeInternal, "INTERNAL"},
-		{GRPCCodeUnavailable, "UNAVAILABLE"},
-		{GRPCCode(99), "CODE_99"},
+		{CodeOK, "OK"},
+		{CodeCancelled, "CANCELLED"},
+		{CodeInternal, "INTERNAL"},
+		{CodeUnavailable, "UNAVAILABLE"},
+		{Code(99), "CODE_99"},
 	}
 
 	for _, tt := range tests {
-		result := GRPCCodeName(tt.code)
+		result := CodeName(tt.code)
 		if result != tt.expected {
-			t.Errorf("GRPCCodeName(%d) = %q, expected %q", tt.code, result, tt.expected)
+			t.Errorf("CodeName(%d) = %q, expected %q", tt.code, result, tt.expected)
 		}
 	}
 }
 
 func TestWriteGRPCError(t *testing.T) {
 	logger := zap.NewNop()
-	h := NewGRPCHandler(logger)
+	h := NewHandler(logger)
 
 	recorder := httptest.NewRecorder()
-	h.WriteGRPCError(recorder, GRPCCodeNotFound, "Resource not found")
+	h.WriteGRPCError(recorder, CodeNotFound, "Resource not found")
 
 	result := recorder.Result()
 	defer func() { _ = result.Body.Close() }()

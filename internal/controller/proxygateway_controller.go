@@ -124,7 +124,7 @@ func (r *ProxyGatewayReconciler) ensureVaultCertificates(ctx context.Context, ga
 		}
 
 		vaultRef := listener.TLS.VaultCertRef
-		commonName := ""
+		var commonName string
 		if len(listener.Hostnames) > 0 {
 			commonName = listener.Hostnames[0]
 		} else {
@@ -174,17 +174,18 @@ func (r *ProxyGatewayReconciler) ensureVaultCertificates(ctx context.Context, ga
 
 		existing := &corev1.Secret{}
 		err = r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: gateway.Namespace}, existing)
-		if errors.IsNotFound(err) {
+		switch {
+		case errors.IsNotFound(err):
 			if createErr := r.Create(ctx, secret); createErr != nil {
 				errs = append(errs, fmt.Sprintf("listener %s: failed to create secret: %v", listener.Name, createErr))
 				continue
 			}
 			logger.Info("Created Vault PKI certificate secret",
 				"secret", secretName, "listener", listener.Name, "commonName", commonName)
-		} else if err != nil {
+		case err != nil:
 			errs = append(errs, fmt.Sprintf("listener %s: failed to get secret: %v", listener.Name, err))
 			continue
-		} else {
+		default:
 			existing.Data = secret.Data
 			if updateErr := r.Update(ctx, existing); updateErr != nil {
 				errs = append(errs, fmt.Sprintf("listener %s: failed to update secret: %v", listener.Name, updateErr))

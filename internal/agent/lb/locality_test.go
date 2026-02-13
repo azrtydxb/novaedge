@@ -22,11 +22,16 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const (
+	testAddrRemote1 = "10.0.1.1"
+	testAddrRemote2 = "10.0.1.2"
+)
+
 // helper to create an endpoint with a zone label
-func endpointWithZone(address string, port int32, ready bool, zone string) *pb.Endpoint {
+func endpointWithZone(address string, _ int32, ready bool, zone string) *pb.Endpoint {
 	ep := &pb.Endpoint{
 		Address: address,
-		Port:    port,
+		Port:    8080,
 		Ready:   ready,
 	}
 	if zone != "" {
@@ -39,8 +44,8 @@ func endpointWithZone(address string, port int32, ready bool, zone string) *pb.E
 
 func TestLocalityLBLocalZonePreferred(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		endpointWithZone("10.0.0.2", 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrLC2, 8080, true, "us-east-1a"),
 		endpointWithZone("10.0.0.3", 8080, true, "us-east-1a"),
 		endpointWithZone("10.0.0.4", 8080, true, "us-east-1b"),
 		endpointWithZone("10.0.0.5", 8080, true, "us-east-1b"),
@@ -68,7 +73,7 @@ func TestLocalityLBLocalZonePreferred(t *testing.T) {
 
 	// Only us-east-1a endpoints should be selected
 	for addr := range selections {
-		if addr != "10.0.0.1" && addr != "10.0.0.2" && addr != "10.0.0.3" {
+		if addr != testAddrEWMA && addr != testAddrLC2 && addr != "10.0.0.3" {
 			t.Errorf("Non-local endpoint %s was selected when local zone is healthy", addr)
 		}
 	}
@@ -80,8 +85,8 @@ func TestLocalityLBLocalZonePreferred(t *testing.T) {
 
 func TestLocalityLBFallbackWhenLocalZoneUnhealthy(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		endpointWithZone("10.0.0.2", 8080, false, "us-east-1a"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrLC2, 8080, false, "us-east-1a"),
 		endpointWithZone("10.0.0.3", 8080, false, "us-east-1a"),
 		endpointWithZone("10.0.0.4", 8080, false, "us-east-1a"),
 		endpointWithZone("10.0.0.5", 8080, true, "us-east-1b"),
@@ -123,8 +128,8 @@ func TestLocalityLBFallbackWhenLocalZoneUnhealthy(t *testing.T) {
 
 func TestLocalityLBDisabled(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		endpointWithZone("10.0.0.2", 8080, true, "us-east-1b"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrLC2, 8080, true, "us-east-1b"),
 		endpointWithZone("10.0.0.3", 8080, true, "us-east-1c"),
 	}
 
@@ -155,8 +160,8 @@ func TestLocalityLBDisabled(t *testing.T) {
 
 func TestLocalityLBEndpointsWithoutZoneMetadata(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		{Address: "10.0.0.2", Port: 8080, Ready: true},                              // no labels at all
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		{Address: testAddrLC2, Port: 8080, Ready: true},                             // no labels at all
 		{Address: "10.0.0.3", Port: 8080, Ready: true, Labels: nil},                 // nil labels
 		{Address: "10.0.0.4", Port: 8080, Ready: true, Labels: map[string]string{}}, // empty labels
 	}
@@ -181,7 +186,7 @@ func TestLocalityLBEndpointsWithoutZoneMetadata(t *testing.T) {
 		selections[ep.Address]++
 	}
 
-	if selections["10.0.0.1"] != 100 {
+	if selections[testAddrEWMA] != 100 {
 		t.Errorf("Expected only local zone endpoint, but got selections: %v", selections)
 	}
 }
@@ -199,13 +204,13 @@ func TestEndpointZone(t *testing.T) {
 		},
 		{
 			name:     "no labels",
-			endpoint: &pb.Endpoint{Address: "10.0.0.1", Port: 8080},
+			endpoint: &pb.Endpoint{Address: testAddrEWMA, Port: 8080},
 			want:     "unknown",
 		},
 		{
 			name: "empty labels",
 			endpoint: &pb.Endpoint{
-				Address: "10.0.0.1",
+				Address: testAddrEWMA,
 				Port:    8080,
 				Labels:  map[string]string{},
 			},
@@ -214,7 +219,7 @@ func TestEndpointZone(t *testing.T) {
 		{
 			name: "zone label present",
 			endpoint: &pb.Endpoint{
-				Address: "10.0.0.1",
+				Address: testAddrEWMA,
 				Port:    8080,
 				Labels: map[string]string{
 					ZoneTopologyLabel: "eu-west-1a",
@@ -225,7 +230,7 @@ func TestEndpointZone(t *testing.T) {
 		{
 			name: "empty zone label value",
 			endpoint: &pb.Endpoint{
-				Address: "10.0.0.1",
+				Address: testAddrEWMA,
 				Port:    8080,
 				Labels: map[string]string{
 					ZoneTopologyLabel: "",
@@ -236,7 +241,7 @@ func TestEndpointZone(t *testing.T) {
 		{
 			name: "other labels but no zone",
 			endpoint: &pb.Endpoint{
-				Address: "10.0.0.1",
+				Address: testAddrEWMA,
 				Port:    8080,
 				Labels: map[string]string{
 					"app": "web",
@@ -259,17 +264,19 @@ func TestEndpointZone(t *testing.T) {
 func TestLocalityLBMinHealthyPercentThreshold(t *testing.T) {
 	// 5 local endpoints: 3 healthy, 2 unhealthy = 60% healthy
 	localEndpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		endpointWithZone("10.0.0.2", 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrLC2, 8080, true, "us-east-1a"),
 		endpointWithZone("10.0.0.3", 8080, true, "us-east-1a"),
 		endpointWithZone("10.0.0.4", 8080, false, "us-east-1a"),
 		endpointWithZone("10.0.0.5", 8080, false, "us-east-1a"),
 	}
 	remoteEndpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.1.1", 8080, true, "us-east-1b"),
-		endpointWithZone("10.0.1.2", 8080, true, "us-east-1b"),
+		endpointWithZone(testAddrRemote1, 8080, true, "us-east-1b"),
+		endpointWithZone(testAddrRemote2, 8080, true, "us-east-1b"),
 	}
-	allEndpoints := append(localEndpoints, remoteEndpoints...)
+	allEndpoints := make([]*pb.Endpoint, 0, len(localEndpoints)+len(remoteEndpoints))
+	allEndpoints = append(allEndpoints, localEndpoints...)
+	allEndpoints = append(allEndpoints, remoteEndpoints...)
 
 	// Test with threshold at 70%: 60% healthy < 70% -> should fall back
 	t.Run("below threshold falls back", func(t *testing.T) {
@@ -293,7 +300,7 @@ func TestLocalityLBMinHealthyPercentThreshold(t *testing.T) {
 
 		hasRemote := false
 		for addr := range selections {
-			if addr == "10.0.1.1" || addr == "10.0.1.2" {
+			if addr == testAddrRemote1 || addr == testAddrRemote2 {
 				hasRemote = true
 				break
 			}
@@ -324,7 +331,7 @@ func TestLocalityLBMinHealthyPercentThreshold(t *testing.T) {
 		}
 
 		for addr := range selections {
-			if addr == "10.0.1.1" || addr == "10.0.1.2" {
+			if addr == testAddrRemote1 || addr == testAddrRemote2 {
 				t.Errorf("Remote endpoint %s should not be selected when local zone is above threshold", addr)
 			}
 		}
@@ -351,7 +358,7 @@ func TestLocalityLBMinHealthyPercentThreshold(t *testing.T) {
 		}
 
 		for addr := range selections {
-			if addr == "10.0.1.1" || addr == "10.0.1.2" {
+			if addr == testAddrRemote1 || addr == testAddrRemote2 {
 				t.Errorf("Remote endpoint %s should not be selected when local zone meets threshold exactly", addr)
 			}
 		}
@@ -360,8 +367,8 @@ func TestLocalityLBMinHealthyPercentThreshold(t *testing.T) {
 
 func TestLocalityLBNoLocalZoneEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1b"),
-		endpointWithZone("10.0.0.2", 8080, true, "us-east-1c"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1b"),
+		endpointWithZone(testAddrLC2, 8080, true, "us-east-1c"),
 	}
 
 	config := LocalityConfig{
@@ -390,8 +397,8 @@ func TestLocalityLBNoLocalZoneEndpoints(t *testing.T) {
 
 func TestLocalityLBUpdateEndpoints(t *testing.T) {
 	initialEndpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		endpointWithZone("10.0.0.2", 8080, true, "us-east-1b"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrLC2, 8080, true, "us-east-1b"),
 	}
 
 	config := LocalityConfig{
@@ -409,7 +416,7 @@ func TestLocalityLBUpdateEndpoints(t *testing.T) {
 	if ep == nil {
 		t.Fatal("Select returned nil")
 	}
-	if ep.Address != "10.0.0.1" {
+	if ep.Address != testAddrEWMA {
 		t.Errorf("Expected local endpoint 10.0.0.1, got %s", ep.Address)
 	}
 
@@ -430,7 +437,7 @@ func TestLocalityLBUpdateEndpoints(t *testing.T) {
 		selections[ep.Address]++
 	}
 
-	if selections["10.0.0.1"] > 0 || selections["10.0.0.2"] > 0 {
+	if selections[testAddrEWMA] > 0 || selections[testAddrLC2] > 0 {
 		t.Error("Old endpoints should not be selected after update")
 	}
 	if selections["10.0.0.3"] == 0 || selections["10.0.0.4"] == 0 {
@@ -440,8 +447,8 @@ func TestLocalityLBUpdateEndpoints(t *testing.T) {
 
 func TestLocalityLBEmptyLocalZone(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		endpointWithZone("10.0.0.2", 8080, true, "us-east-1b"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrLC2, 8080, true, "us-east-1b"),
 	}
 
 	config := LocalityConfig{
@@ -484,8 +491,8 @@ func TestDefaultLocalityConfig(t *testing.T) {
 
 func TestGroupByZone(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		endpointWithZone("10.0.0.1", 8080, true, "us-east-1a"),
-		endpointWithZone("10.0.0.2", 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrEWMA, 8080, true, "us-east-1a"),
+		endpointWithZone(testAddrLC2, 8080, true, "us-east-1a"),
 		endpointWithZone("10.0.0.3", 8080, true, "us-east-1b"),
 		{Address: "10.0.0.4", Port: 8080, Ready: true}, // no zone
 	}

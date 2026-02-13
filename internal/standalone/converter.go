@@ -54,6 +54,18 @@ func safeInt32(v int) int32 {
 	return int32(v)
 }
 
+// safeUint32 converts an int to uint32, clamping to math.MaxUint32 on overflow
+// and to 0 on negative values.
+func safeUint32(v int) uint32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(v)
+}
+
 // ToSnapshot converts a standalone Config to a ConfigSnapshot
 func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot, error) {
 	snapshot := &pb.ConfigSnapshot{
@@ -252,7 +264,7 @@ func (c *Converter) parseProtocol(protocol string) pb.Protocol {
 		return pb.Protocol_HTTP3
 	case "TCP":
 		return pb.Protocol_TCP
-	case "TLS":
+	case protocolTLS:
 		return pb.Protocol_TLS
 	case "UDP":
 		return pb.Protocol_UDP
@@ -607,9 +619,9 @@ func (c *Converter) convertVIPs(vips []VIPConfig) ([]*pb.VIPAssignment, error) {
 			assignment.OspfConfig = &pb.OSPFConfig{
 				RouterId:        v.OSPF.RouterID,
 				AreaId:          areaID,
-				Cost:            uint32(v.OSPF.Cost),
-				HelloInterval:   uint32(v.OSPF.HelloInterval),
-				DeadInterval:    uint32(v.OSPF.DeadInterval),
+				Cost:            safeUint32(v.OSPF.Cost),
+				HelloInterval:   safeUint32(v.OSPF.HelloInterval),
+				DeadInterval:    safeUint32(v.OSPF.DeadInterval),
 				AuthType:        v.OSPF.AuthType,
 				AuthKey:         v.OSPF.AuthKey,
 				GracefulRestart: v.OSPF.GracefulRestart,
@@ -770,7 +782,7 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 	return result
 }
 
-func (c *Converter) convertCompression(comp *StandaloneCompressionConfig) *pb.CompressionConfig {
+func (c *Converter) convertCompression(comp *CompressionConfig) *pb.CompressionConfig {
 	if comp == nil {
 		return nil
 	}
@@ -793,7 +805,7 @@ func (c *Converter) convertCompression(comp *StandaloneCompressionConfig) *pb.Co
 	}
 }
 
-func (c *Converter) convertRouteLimits(limits *StandaloneRouteLimits) *pb.RouteLimitsConfig {
+func (c *Converter) convertRouteLimits(limits *RouteLimits) *pb.RouteLimitsConfig {
 	if limits == nil {
 		return nil
 	}
@@ -828,7 +840,7 @@ func (c *Converter) convertRouteLimits(limits *StandaloneRouteLimits) *pb.RouteL
 	return result
 }
 
-func (c *Converter) convertRouteBuffering(buf *StandaloneBufferingConfig) *pb.BufferingConfig {
+func (c *Converter) convertRouteBuffering(buf *BufferingConfig) *pb.BufferingConfig {
 	if buf == nil {
 		return nil
 	}
@@ -920,7 +932,7 @@ func (c *Converter) convertL4Listeners(configs []L4ListenerStandaloneConfig, end
 				}
 			}
 
-		case "TLS":
+		case protocolTLS:
 			var tlsRoutes []*pb.L4TLSRoute
 			for _, route := range cfg.TLSRoutes {
 				clusterKey := fmt.Sprintf("default/%s", route.Backend)
@@ -1027,8 +1039,6 @@ func (c *Converter) convertErrorPages(ep *ErrorPagesConfig) *pb.ErrorPageConfig 
 
 // buildHtpasswdFromConfig builds htpasswd content from standalone BasicAuth config.
 func buildHtpasswdFromConfig(config *BasicAuthPolicy) string {
-	var lines []string
-
 	// Load from htpasswd file if specified
 	if config.HtpasswdFile != "" {
 		data, err := os.ReadFile(filepath.Clean(config.HtpasswdFile))
@@ -1038,6 +1048,7 @@ func buildHtpasswdFromConfig(config *BasicAuthPolicy) string {
 	}
 
 	// Build from inline users map
+	lines := make([]string, 0, len(config.Users))
 	for username, hash := range config.Users {
 		lines = append(lines, username+":"+hash)
 	}

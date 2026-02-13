@@ -152,7 +152,7 @@ type FailoverWatcher struct {
 	clusterConfig *ClusterConfig
 
 	// Config persistence for autonomous mode
-	persistence *ConfigPersistence
+	persistence *Persistence
 
 	// Callbacks
 	onStateChange func(FailoverState, *ControllerEndpoint)
@@ -227,7 +227,7 @@ func NewFailoverWatcher(
 
 	// Initialize config persistence if path is configured
 	if config.ConfigPersistPath != "" {
-		persistence, err := NewConfigPersistence(config.ConfigPersistPath, logger)
+		persistence, err := NewPersistence(config.ConfigPersistPath, logger)
 		if err != nil {
 			logger.Warn("Failed to initialize config persistence, autonomous mode may not work",
 				zap.Error(err),
@@ -951,7 +951,7 @@ func (w *FailoverWatcher) GetVectorClock() map[string]int64 {
 }
 
 // GetPersistence returns the config persistence handler
-func (w *FailoverWatcher) GetPersistence() *ConfigPersistence {
+func (w *FailoverWatcher) GetPersistence() *Persistence {
 	return w.persistence
 }
 

@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package controller implements the NovaEdge operator controllers that manage
+// the lifecycle of NovaEdgeCluster, NovaEdgeFederation, and NovaEdgeRemoteCluster
+// resources via Kubernetes reconciliation loops.
 package controller
 
 import (
@@ -41,12 +44,16 @@ import (
 const (
 	novaEdgeClusterFinalizer = "novaedge.io/finalizer"
 
-	// Condition types
-	ConditionTypeReady        = "Ready"
+	// ConditionTypeReady indicates the overall readiness of the cluster.
+	ConditionTypeReady = "Ready"
+	// ConditionTypeControllerOK indicates the controller component is ready.
 	ConditionTypeControllerOK = "ControllerReady"
-	ConditionTypeAgentOK      = "AgentReady"
-	ConditionTypeWebUIOK      = "WebUIReady"
-	ConditionTypeDegraded     = "Degraded"
+	// ConditionTypeAgentOK indicates the agent component is ready.
+	ConditionTypeAgentOK = "AgentReady"
+	// ConditionTypeWebUIOK indicates the web UI component is ready.
+	ConditionTypeWebUIOK = "WebUIReady"
+	// ConditionTypeDegraded indicates the cluster is in a degraded state.
+	ConditionTypeDegraded = "Degraded"
 )
 
 // NovaEdgeClusterReconciler reconciles a NovaEdgeCluster object

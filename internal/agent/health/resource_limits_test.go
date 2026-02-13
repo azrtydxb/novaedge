@@ -255,11 +255,9 @@ func TestResourceLimits_OverflowCountingAccurate(t *testing.T) {
 }
 
 func TestResourceLimits_ConcurrentAccess(t *testing.T) {
-	const (
-		maxConns   int64 = 10
-		goroutines       = 50
-		iterations       = 100
-	)
+	const maxConns int64 = 10
+	const goroutines = 50
+	const iterations = 100
 
 	rl := NewResourceLimits(ResourceLimitsConfig{
 		MaxConnections:     maxConns,

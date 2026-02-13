@@ -32,7 +32,7 @@ import (
 // Manager orchestrates federation between controllers
 type Manager struct {
 	// Configuration
-	config *FederationConfig
+	config *Config
 
 	// Server handles incoming connections from peers
 	server *Server
@@ -57,7 +57,7 @@ type Manager struct {
 }
 
 // NewManager creates a new federation manager
-func NewManager(config *FederationConfig, logger *zap.Logger) *Manager {
+func NewManager(config *Config, logger *zap.Logger) *Manager {
 	return &Manager{
 		config:  config,
 		clients: make(map[string]*PeerClient),
@@ -99,9 +99,9 @@ func NewManagerFromCRDWithCreds(federation *novaedgev1alpha1.NovaEdgeFederation,
 	return NewManager(config, logger), nil
 }
 
-// crdToConfig converts a NovaEdgeFederation CRD to a FederationConfig
-func crdToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *FederationConfig {
-	config := DefaultFederationConfig()
+// crdToConfig converts a NovaEdgeFederation CRD to a Config
+func crdToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *Config {
+	config := DefaultConfig()
 	config.FederationID = fed.Spec.FederationID
 
 	// Local member
@@ -285,7 +285,7 @@ func (m *Manager) OnResourceChange(fn func(key ResourceKey, changeType ChangeTyp
 }
 
 // GetPhase returns the current federation phase
-func (m *Manager) GetPhase() FederationPhase {
+func (m *Manager) GetPhase() Phase {
 	if m.server != nil {
 		return m.server.getPhase()
 	}
@@ -521,12 +521,4 @@ func (m *Manager) IsHealthy() bool {
 func (m *Manager) IsDegraded() bool {
 	phase := m.GetPhase()
 	return phase == PhaseDegraded || phase == PhasePartitioned
-}
-
-// min returns the minimum of two durations
-func min(a, b time.Duration) time.Duration {
-	if a < b {
-		return a
-	}
-	return b
 }

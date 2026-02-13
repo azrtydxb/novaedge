@@ -42,6 +42,7 @@ func NewClient(config *rest.Config) (*Client, error) {
 // ResourceType represents a NovaEdge resource type
 type ResourceType string
 
+// NovaEdge resource type constants.
 const (
 	ResourceGateway     ResourceType = "gateways"
 	ResourceRoute       ResourceType = "routes"

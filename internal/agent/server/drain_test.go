@@ -27,6 +27,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const testProtoHTTP11 = "HTTP/1.1"
+
 func newTestDrainManager(timeout time.Duration) *DrainManager {
 	logger, _ := zap.NewDevelopment()
 	return NewDrainManager(logger, timeout)
@@ -57,7 +59,7 @@ func TestDrainMiddleware_NotDraining(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	// Simulate HTTP/1.1
-	req.Proto = "HTTP/1.1"
+	req.Proto = testProtoHTTP11
 	req.ProtoMajor = 1
 	req.ProtoMinor = 1
 
@@ -87,7 +89,7 @@ func TestDrainMiddleware_DrainingHTTP11(t *testing.T) {
 	handler := dm.DrainMiddleware(innerHandler)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	req.Proto = "HTTP/1.1"
+	req.Proto = testProtoHTTP11
 	req.ProtoMajor = 1
 	req.ProtoMinor = 1
 
@@ -255,7 +257,7 @@ func TestConcurrentDrainWithTraffic(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			req := httptest.NewRequest(http.MethodGet, "/test", nil)
-			req.Proto = "HTTP/1.1"
+			req.Proto = testProtoHTTP11
 			req.ProtoMajor = 1
 			req.ProtoMinor = 1
 			rr := httptest.NewRecorder()

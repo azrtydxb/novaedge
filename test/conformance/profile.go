@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package conformance implements Gateway API conformance testing for NovaEdge.
 package conformance
 
 import (

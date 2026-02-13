@@ -20,7 +20,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net"
 	"net/http"
@@ -120,9 +119,9 @@ type grpcExtProcClient struct {
 	conn *grpc.ClientConn
 }
 
-// ExternalProcessor_ServiceDesc is the gRPC service descriptor for the
+// ExternalProcessorServiceDesc is the gRPC service descriptor for the
 // ExternalProcessor service, defined manually to avoid proto code generation.
-var ExternalProcessor_ServiceDesc = grpc.ServiceDesc{
+var ExternalProcessorServiceDesc = grpc.ServiceDesc{
 	ServiceName: "novaedge.extproc.ExternalProcessor",
 	Methods: []grpc.MethodDesc{
 		{
@@ -161,25 +160,6 @@ func (c *grpcExtProcClient) ProcessRequest(ctx context.Context, req *ProcessingR
 // Close closes the underlying gRPC connection.
 func (c *grpcExtProcClient) Close() error {
 	return c.conn.Close()
-}
-
-// jsonCodec is a gRPC codec that uses JSON encoding. It is registered globally
-// so that the ExtProc gRPC calls encode/decode using JSON rather than protobuf.
-type jsonCodec struct{}
-
-// Marshal encodes v as JSON bytes.
-func (jsonCodec) Marshal(v interface{}) ([]byte, error) {
-	return json.Marshal(v)
-}
-
-// Unmarshal decodes JSON data into v.
-func (jsonCodec) Unmarshal(data []byte, v interface{}) error {
-	return json.Unmarshal(data, v)
-}
-
-// Name returns the codec name registered with gRPC.
-func (jsonCodec) Name() string {
-	return "json"
 }
 
 // ExtProcMiddleware is an HTTP middleware that sends request/response data

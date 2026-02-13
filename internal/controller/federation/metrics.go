@@ -46,7 +46,7 @@ var (
 		Help:      "Number of connected federation peers",
 	})
 
-	// FederationPhase tracks the current federation phase
+	// FederationPhaseGauge tracks the current federation phase.
 	FederationPhaseGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",

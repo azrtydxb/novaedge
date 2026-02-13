@@ -36,7 +36,7 @@ import (
 // PeerClient manages the connection to a federation peer
 type PeerClient struct {
 	peer   *PeerInfo
-	config *FederationConfig
+	config *Config
 	logger *zap.Logger
 
 	// Connection management
@@ -65,7 +65,7 @@ type PeerClient struct {
 }
 
 // NewPeerClient creates a new peer client
-func NewPeerClient(peer *PeerInfo, config *FederationConfig, logger *zap.Logger) *PeerClient {
+func NewPeerClient(peer *PeerInfo, config *Config, logger *zap.Logger) *PeerClient {
 	return &PeerClient{
 		peer:   peer,
 		config: config,
@@ -468,7 +468,7 @@ type PeerClientWithCerts struct {
 }
 
 // NewPeerClientWithCerts creates a peer client with TLS certificates
-func NewPeerClientWithCerts(peer *PeerInfo, config *FederationConfig, logger *zap.Logger, caCert, clientCert, clientKey []byte) *PeerClientWithCerts {
+func NewPeerClientWithCerts(peer *PeerInfo, config *Config, logger *zap.Logger, caCert, clientCert, clientKey []byte) *PeerClientWithCerts {
 	return &PeerClientWithCerts{
 		PeerClient: NewPeerClient(peer, config, logger),
 		caCert:     caCert,

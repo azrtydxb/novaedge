@@ -26,6 +26,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// protocolTLS is the TLS protocol identifier used in listener and L4 configuration.
+const protocolTLS = "TLS"
+
 // Config represents the complete standalone configuration
 type Config struct {
 	// Version of the config format
@@ -83,14 +86,14 @@ type GlobalConfig struct {
 	Tracing TracingConfig `yaml:"tracing"`
 
 	// Compression settings for response compression
-	Compression *StandaloneCompressionConfig `yaml:"compression,omitempty"`
+	Compression *CompressionConfig `yaml:"compression,omitempty"`
 
 	// Cache configures response caching
 	Cache *CacheConfigStandalone `yaml:"cache,omitempty"`
 }
 
-// StandaloneCompressionConfig defines response compression for standalone mode
-type StandaloneCompressionConfig struct {
+// CompressionConfig defines response compression for standalone mode
+type CompressionConfig struct {
 	Enabled      bool     `yaml:"enabled"`
 	MinSize      string   `yaml:"minSize,omitempty"`      // e.g., "1024"
 	Level        int      `yaml:"level,omitempty"`        // Compression level
@@ -256,10 +259,10 @@ type RouteConfig struct {
 	Policies []string `yaml:"policies,omitempty"`
 
 	// Limits defines per-route request size limits and timeouts
-	Limits *StandaloneRouteLimits `yaml:"limits,omitempty"`
+	Limits *RouteLimits `yaml:"limits,omitempty"`
 
 	// Buffering defines request/response buffering settings
-	Buffering *StandaloneBufferingConfig `yaml:"buffering,omitempty"`
+	Buffering *BufferingConfig `yaml:"buffering,omitempty"`
 
 	// Retry configuration
 	Retry *RetryPolicyConfig `yaml:"retry,omitempty"`
@@ -271,15 +274,15 @@ type RouteConfig struct {
 	Expression string `yaml:"expression,omitempty"`
 }
 
-// StandaloneRouteLimits defines per-route request limits for standalone mode
-type StandaloneRouteLimits struct {
+// RouteLimits defines per-route request limits for standalone mode
+type RouteLimits struct {
 	MaxRequestBodySize string `yaml:"maxRequestBodySize,omitempty"` // e.g., "10Mi"
 	RequestTimeout     string `yaml:"requestTimeout,omitempty"`     // e.g., "30s"
 	IdleTimeout        string `yaml:"idleTimeout,omitempty"`        // e.g., "60s"
 }
 
-// StandaloneBufferingConfig defines buffering settings for standalone mode
-type StandaloneBufferingConfig struct {
+// BufferingConfig defines buffering settings for standalone mode
+type BufferingConfig struct {
 	Request  bool   `yaml:"request,omitempty"`
 	Response bool   `yaml:"response,omitempty"`
 	MaxSize  string `yaml:"maxSize,omitempty"` // e.g., "50Mi"
@@ -1023,7 +1026,7 @@ func (c *Config) Validate() error {
 		if l.Protocol == "" {
 			return fmt.Errorf("listener[%d]: protocol is required", i)
 		}
-		if l.Protocol == "HTTPS" || l.Protocol == "TLS" {
+		if l.Protocol == "HTTPS" || l.Protocol == protocolTLS {
 			if l.TLS == nil {
 				return fmt.Errorf("listener[%d]: TLS configuration required for %s", i, l.Protocol)
 			}

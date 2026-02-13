@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main implements the novaedge-operator binary, which manages the
+// NovaEdge lifecycle via the NovaEdgeCluster CRD.
 package main
 
 import (

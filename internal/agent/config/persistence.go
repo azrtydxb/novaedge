@@ -49,8 +49,8 @@ const (
 	MaxChangeQueueSize = 1000
 )
 
-// ConfigPersistence handles saving and loading config for autonomous mode
-type ConfigPersistence struct {
+// Persistence handles saving and loading config for autonomous mode
+type Persistence struct {
 	basePath string
 	logger   *zap.Logger
 	mu       sync.RWMutex
@@ -109,14 +109,14 @@ type LocalChange struct {
 	Data []byte `json:"data"`
 }
 
-// NewConfigPersistence creates a new config persistence handler
-func NewConfigPersistence(basePath string, logger *zap.Logger) (*ConfigPersistence, error) {
+// NewPersistence creates a new config persistence handler
+func NewPersistence(basePath string, logger *zap.Logger) (*Persistence, error) {
 	basePath = filepath.Clean(basePath)
 	if err := os.MkdirAll(basePath, 0750); err != nil {
 		return nil, fmt.Errorf("failed to create persistence directory: %w", err)
 	}
 
-	cp := &ConfigPersistence{
+	cp := &Persistence{
 		basePath:    basePath,
 		logger:      logger.Named("persistence"),
 		changeQueue: make([]*LocalChange, 0),
@@ -142,7 +142,7 @@ func NewConfigPersistence(basePath string, logger *zap.Logger) (*ConfigPersisten
 }
 
 // SaveSnapshot persists a config snapshot
-func (cp *ConfigPersistence) SaveSnapshot(snapshot *pb.ConfigSnapshot) error {
+func (cp *Persistence) SaveSnapshot(snapshot *pb.ConfigSnapshot) error {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 
@@ -204,7 +204,7 @@ func (cp *ConfigPersistence) SaveSnapshot(snapshot *pb.ConfigSnapshot) error {
 }
 
 // LoadSnapshot loads a persisted config snapshot
-func (cp *ConfigPersistence) LoadSnapshot() (*pb.ConfigSnapshot, error) {
+func (cp *Persistence) LoadSnapshot() (*pb.ConfigSnapshot, error) {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
 
@@ -237,14 +237,14 @@ func (cp *ConfigPersistence) LoadSnapshot() (*pb.ConfigSnapshot, error) {
 }
 
 // GetMetadata returns the persistence metadata
-func (cp *ConfigPersistence) GetMetadata() *PersistenceMetadata {
+func (cp *Persistence) GetMetadata() *PersistenceMetadata {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
 	return cp.metadata
 }
 
 // GetVectorClock returns the persisted vector clock
-func (cp *ConfigPersistence) GetVectorClock() map[string]int64 {
+func (cp *Persistence) GetVectorClock() map[string]int64 {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
 	result := make(map[string]int64)
@@ -255,7 +255,7 @@ func (cp *ConfigPersistence) GetVectorClock() map[string]int64 {
 }
 
 // QueueLocalChange queues a change made in autonomous mode
-func (cp *ConfigPersistence) QueueLocalChange(change *LocalChange) error {
+func (cp *Persistence) QueueLocalChange(change *LocalChange) error {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 
@@ -270,7 +270,7 @@ func (cp *ConfigPersistence) QueueLocalChange(change *LocalChange) error {
 }
 
 // GetPendingChanges returns queued changes for sync
-func (cp *ConfigPersistence) GetPendingChanges() []*LocalChange {
+func (cp *Persistence) GetPendingChanges() []*LocalChange {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
 
@@ -280,7 +280,7 @@ func (cp *ConfigPersistence) GetPendingChanges() []*LocalChange {
 }
 
 // ClearPendingChanges removes synced changes from the queue
-func (cp *ConfigPersistence) ClearPendingChanges(ids []string) error {
+func (cp *Persistence) ClearPendingChanges(ids []string) error {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 
@@ -301,14 +301,14 @@ func (cp *ConfigPersistence) ClearPendingChanges(ids []string) error {
 }
 
 // HasCachedConfig returns true if there's a cached config
-func (cp *ConfigPersistence) HasCachedConfig() bool {
+func (cp *Persistence) HasCachedConfig() bool {
 	snapshotPath := filepath.Join(cp.basePath, ConfigCacheFile)
 	_, err := os.Stat(snapshotPath)
 	return err == nil
 }
 
 // ConfigAge returns how old the cached config is
-func (cp *ConfigPersistence) ConfigAge() time.Duration {
+func (cp *Persistence) ConfigAge() time.Duration {
 	cp.mu.RLock()
 	defer cp.mu.RUnlock()
 
@@ -319,7 +319,7 @@ func (cp *ConfigPersistence) ConfigAge() time.Duration {
 }
 
 // saveMetadata saves metadata to disk
-func (cp *ConfigPersistence) saveMetadata() error {
+func (cp *Persistence) saveMetadata() error {
 	data, err := json.MarshalIndent(cp.metadata, "", "  ")
 	if err != nil {
 		return err
@@ -330,7 +330,7 @@ func (cp *ConfigPersistence) saveMetadata() error {
 }
 
 // loadMetadata loads metadata from disk
-func (cp *ConfigPersistence) loadMetadata() error {
+func (cp *Persistence) loadMetadata() error {
 	metadataPath := filepath.Join(cp.basePath, MetadataFile)
 	data, err := os.ReadFile(filepath.Clean(metadataPath))
 	if err != nil {
@@ -342,7 +342,7 @@ func (cp *ConfigPersistence) loadMetadata() error {
 }
 
 // saveVectorClock saves vector clock to disk
-func (cp *ConfigPersistence) saveVectorClock() error {
+func (cp *Persistence) saveVectorClock() error {
 	data, err := json.MarshalIndent(cp.vectorClock, "", "  ")
 	if err != nil {
 		return err
@@ -353,7 +353,7 @@ func (cp *ConfigPersistence) saveVectorClock() error {
 }
 
 // loadVectorClock loads vector clock from disk
-func (cp *ConfigPersistence) loadVectorClock() error {
+func (cp *Persistence) loadVectorClock() error {
 	vcPath := filepath.Join(cp.basePath, VectorClockFile)
 	data, err := os.ReadFile(filepath.Clean(vcPath))
 	if err != nil {
@@ -365,7 +365,7 @@ func (cp *ConfigPersistence) loadVectorClock() error {
 }
 
 // saveChangeQueue saves change queue to disk
-func (cp *ConfigPersistence) saveChangeQueue() error {
+func (cp *Persistence) saveChangeQueue() error {
 	data, err := json.MarshalIndent(cp.changeQueue, "", "  ")
 	if err != nil {
 		return err
@@ -376,7 +376,7 @@ func (cp *ConfigPersistence) saveChangeQueue() error {
 }
 
 // loadChangeQueue loads change queue from disk
-func (cp *ConfigPersistence) loadChangeQueue() error {
+func (cp *Persistence) loadChangeQueue() error {
 	queuePath := filepath.Join(cp.basePath, ChangeQueueFile)
 	data, err := os.ReadFile(filepath.Clean(queuePath))
 	if err != nil {
@@ -388,7 +388,7 @@ func (cp *ConfigPersistence) loadChangeQueue() error {
 }
 
 // Cleanup removes all persisted data
-func (cp *ConfigPersistence) Cleanup() error {
+func (cp *Persistence) Cleanup() error {
 	cp.mu.Lock()
 	defer cp.mu.Unlock()
 

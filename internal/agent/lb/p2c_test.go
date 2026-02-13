@@ -26,7 +26,7 @@ import (
 
 func TestNewP2C(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -48,7 +48,7 @@ func TestNewP2C(t *testing.T) {
 
 func TestP2CSelect(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -73,7 +73,7 @@ func TestP2CSelect(t *testing.T) {
 
 	t.Run("select single endpoint", func(t *testing.T) {
 		singleEndpoint := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: true},
+			{Address: testAddrEWMA, Port: 8080, Ready: true},
 		}
 
 		p2c := NewP2C(singleEndpoint)
@@ -83,14 +83,14 @@ func TestP2CSelect(t *testing.T) {
 			t.Fatal("Expected endpoint to be selected")
 		}
 
-		if ep.Address != "10.0.0.1" {
+		if ep.Address != testAddrEWMA {
 			t.Errorf("Expected 10.0.0.1, got %s", ep.Address)
 		}
 	})
 
 	t.Run("return nil when no healthy endpoints", func(t *testing.T) {
 		unhealthyEndpoints := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: false},
+			{Address: testAddrEWMA, Port: 8080, Ready: false},
 			{Address: "10.0.0.2", Port: 8080, Ready: false},
 		}
 
@@ -105,7 +105,7 @@ func TestP2CSelect(t *testing.T) {
 
 func TestP2CChoosesLeastLoaded(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -131,7 +131,7 @@ func TestP2CChoosesLeastLoaded(t *testing.T) {
 		}
 
 		// Endpoint 2 should be selected significantly more
-		if selections["10.0.0.2"] <= selections["10.0.0.1"] {
+		if selections["10.0.0.2"] <= selections[testAddrEWMA] {
 			t.Logf("Expected endpoint 2 to be selected more, got selections: %v", selections)
 		}
 	})
@@ -152,12 +152,12 @@ func TestP2CChoosesLeastLoaded(t *testing.T) {
 
 		// After incrementing, distribution should be relatively balanced
 		// (P2C doesn't guarantee perfect balance, but prevents extreme skew)
-		maxLoad := selections["10.0.0.1"]
+		maxLoad := selections[testAddrEWMA]
 		if selections["10.0.0.2"] > maxLoad {
 			maxLoad = selections["10.0.0.2"]
 		}
 
-		minLoad := selections["10.0.0.1"]
+		minLoad := selections[testAddrEWMA]
 		if selections["10.0.0.2"] < minLoad {
 			minLoad = selections["10.0.0.2"]
 		}
@@ -169,7 +169,7 @@ func TestP2CChoosesLeastLoaded(t *testing.T) {
 
 func TestP2CActiveRequestTracking(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -230,7 +230,7 @@ func TestP2CActiveRequestTracking(t *testing.T) {
 
 func TestP2CUpdateEndpoints(t *testing.T) {
 	initialEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -243,7 +243,7 @@ func TestP2CUpdateEndpoints(t *testing.T) {
 
 	t.Run("update with new endpoints", func(t *testing.T) {
 		newEndpoints := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: true},
+			{Address: testAddrEWMA, Port: 8080, Ready: true},
 			{Address: "10.0.0.3", Port: 8080, Ready: true},
 			{Address: "10.0.0.4", Port: 8080, Ready: true},
 		}
@@ -275,7 +275,7 @@ func TestP2CUpdateEndpoints(t *testing.T) {
 		p2c := NewP2C(initialEndpoints)
 
 		newEndpoints := []*pb.Endpoint{
-			{Address: "10.0.0.1", Port: 8080, Ready: true},
+			{Address: testAddrEWMA, Port: 8080, Ready: true},
 		}
 
 		p2c.UpdateEndpoints(newEndpoints)
@@ -288,7 +288,7 @@ func TestP2CUpdateEndpoints(t *testing.T) {
 
 func TestP2CConcurrentOperations(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -398,7 +398,7 @@ func TestP2CConcurrentOperations(t *testing.T) {
 
 func TestP2CAtomicCounters(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	p2c := NewP2C(endpoints)
@@ -431,7 +431,7 @@ func TestP2CAtomicCounters(t *testing.T) {
 
 func TestP2CUnhealthyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: false},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -460,7 +460,7 @@ func TestP2CUnhealthyEndpoints(t *testing.T) {
 
 func TestP2CNilEndpoint(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	p2c := NewP2C(endpoints)
@@ -480,7 +480,7 @@ func TestP2CNilEndpoint(t *testing.T) {
 
 func TestP2CDistribution(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}

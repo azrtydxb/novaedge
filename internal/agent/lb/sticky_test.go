@@ -27,7 +27,7 @@ import (
 
 func TestStickyWrapperFirstRequestSetsCookie(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -69,7 +69,7 @@ func TestStickyWrapperFirstRequestSetsCookie(t *testing.T) {
 
 func TestStickyWrapperSubsequentRequestUsesExistingCookie(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -103,7 +103,7 @@ func TestStickyWrapperSubsequentRequestUsesExistingCookie(t *testing.T) {
 
 func TestStickyWrapperFallbackWhenEndpointGone(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -125,7 +125,7 @@ func TestStickyWrapperFallbackWhenEndpointGone(t *testing.T) {
 	}
 
 	// Should fall back to one of the available endpoints
-	if ep.Address != "10.0.0.1" && ep.Address != "10.0.0.2" {
+	if ep.Address != testAddrEWMA && ep.Address != "10.0.0.2" {
 		t.Errorf("Expected fallback to available endpoint, got %s", ep.Address)
 	}
 
@@ -147,7 +147,7 @@ func TestStickyWrapperFallbackWhenEndpointGone(t *testing.T) {
 
 func TestStickyWrapperFallbackWhenEndpointUnhealthy(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: false}, // Unhealthy
 	}
 
@@ -169,14 +169,14 @@ func TestStickyWrapperFallbackWhenEndpointUnhealthy(t *testing.T) {
 	}
 
 	// Should fall back to healthy endpoint
-	if ep.Address != "10.0.0.1" {
+	if ep.Address != testAddrEWMA {
 		t.Errorf("Expected fallback to healthy endpoint 10.0.0.1, got %s", ep.Address)
 	}
 }
 
 func TestStickyWrapperCookieTTL(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	inner := NewRoundRobin(endpoints)
@@ -220,7 +220,7 @@ func TestStickyWrapperCookieTTL(t *testing.T) {
 
 func TestStickyWrapperUpdateEndpoints(t *testing.T) {
 	initialEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -256,7 +256,7 @@ func TestStickyWrapperUpdateEndpoints(t *testing.T) {
 
 func TestStickyWrapperNoCookieNilRequest(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	inner := NewRoundRobin(endpoints)
@@ -271,14 +271,14 @@ func TestStickyWrapperNoCookieNilRequest(t *testing.T) {
 	if ep == nil {
 		t.Fatal("SelectWithAffinity returned nil")
 	}
-	if ep.Address != "10.0.0.1" {
+	if ep.Address != testAddrEWMA {
 		t.Errorf("Expected 10.0.0.1, got %s", ep.Address)
 	}
 }
 
 func TestStickyWrapperGetInner(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	inner := NewRoundRobin(endpoints)

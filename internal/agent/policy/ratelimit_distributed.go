@@ -19,6 +19,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -113,7 +114,7 @@ func (d *DistributedRateLimiter) fixedWindow(ctx context.Context, key string, li
 		return allowed, limit, 0, now.Add(windowDuration)
 	}
 
-	count := int32(incrCmd.Val())
+	count := clampInt64ToInt32(incrCmd.Val())
 	effectiveLimit := burst
 	if effectiveLimit < limit {
 		effectiveLimit = limit
@@ -184,7 +185,7 @@ func (d *DistributedRateLimiter) slidingWindow(ctx context.Context, key string, 
 		if remaining < 0 {
 			remaining = 0
 		}
-		return false, limit, int32(remaining), currentWindow.Add(windowDuration)
+		return false, limit, clampInt64ToInt32(remaining), currentWindow.Add(windowDuration)
 	}
 
 	// Increment current window
@@ -203,7 +204,7 @@ func (d *DistributedRateLimiter) slidingWindow(ctx context.Context, key string, 
 	}
 
 	metrics.DistributedRateLimitAllowed.Inc()
-	return true, limit, int32(remaining), currentWindow.Add(windowDuration)
+	return true, limit, clampInt64ToInt32(remaining), currentWindow.Add(windowDuration)
 }
 
 // tokenBucket implements token bucket rate limiting via Redis
@@ -257,7 +258,7 @@ func (d *DistributedRateLimiter) tokenBucket(ctx context.Context, key string, li
 	}
 
 	allowed := result[0] == 1
-	remaining := int32(result[1])
+	remaining := clampInt64ToInt32(result[1])
 
 	if allowed {
 		metrics.DistributedRateLimitAllowed.Inc()
@@ -272,17 +273,17 @@ func (d *DistributedRateLimiter) tokenBucket(ctx context.Context, key string, li
 func (d *DistributedRateLimiter) extractKey(r *http.Request) string {
 	keyConfig := d.config.Key
 	if keyConfig == "" {
-		keyConfig = "source-ip"
+		keyConfig = RateLimitKeySourceIP
 	}
 
 	switch {
-	case keyConfig == "source-ip":
+	case keyConfig == RateLimitKeySourceIP:
 		return extractClientIP(r)
 	case strings.HasPrefix(keyConfig, "header:"):
 		headerName := strings.TrimPrefix(keyConfig, "header:")
 		value := r.Header.Get(headerName)
 		if value == "" {
-			return "default"
+			return RateLimitKeyDefault
 		}
 		return value
 	case strings.HasPrefix(keyConfig, "jwt:"):
@@ -314,4 +315,16 @@ func HandleDistributedRateLimit(limiter *DistributedRateLimiter) func(http.Handl
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// clampInt64ToInt32 safely converts an int64 to int32, clamping to
+// [math.MinInt32, math.MaxInt32] to avoid integer overflow (gosec G115).
+func clampInt64ToInt32(v int64) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
 }

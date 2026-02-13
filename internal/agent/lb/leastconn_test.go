@@ -23,11 +23,16 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const (
+	testAddrLC1 = "10.0.0.1"
+	testAddrLC2 = "10.0.0.2"
+)
+
 func TestLeastConnSelect(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+		{Address: testAddrLC2, Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	lc := NewLeastConn(endpoints)
@@ -52,22 +57,27 @@ func TestLeastConnSelect(t *testing.T) {
 
 func TestLeastConnSelectsFewestConnections(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+		{Address: testAddrLC2, Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
+
+	if len(endpoints) < 3 {
+		t.Fatal("test requires at least 3 endpoints")
+	}
+	ep0, ep1, ep2 := endpoints[0], endpoints[1], endpoints[2]
 
 	lc := NewLeastConn(endpoints)
 
 	// Add connections: ep1=5, ep2=2, ep3=8
 	for i := 0; i < 5; i++ {
-		lc.IncrementActive(endpoints[0])
+		lc.IncrementActive(ep0)
 	}
 	for i := 0; i < 2; i++ {
-		lc.IncrementActive(endpoints[1])
+		lc.IncrementActive(ep1)
 	}
 	for i := 0; i < 8; i++ {
-		lc.IncrementActive(endpoints[2])
+		lc.IncrementActive(ep2)
 	}
 
 	// Should always select endpoint with fewest connections (10.0.0.2)
@@ -76,15 +86,18 @@ func TestLeastConnSelectsFewestConnections(t *testing.T) {
 		if ep == nil {
 			t.Fatal("Select returned nil")
 		}
-		if ep.Address != "10.0.0.2" {
-			t.Errorf("Expected 10.0.0.2 (2 conns), got %s", ep.Address)
+		if ep.Address != testAddrLC2 {
+			t.Errorf("Expected %s (2 conns), got %s", testAddrLC2, ep.Address)
 		}
 	}
 }
 
 func TestLeastConnIncrementDecrement(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+	}
+	if len(endpoints) < 1 {
+		t.Fatal("test requires at least 1 endpoint")
 	}
 
 	lc := NewLeastConn(endpoints)
@@ -109,9 +122,9 @@ func TestLeastConnIncrementDecrement(t *testing.T) {
 
 func TestLeastConnWithUnhealthyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.2", Port: 8080, Ready: false},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+		{Address: testAddrLC2, Port: 8080, Ready: false},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	lc := NewLeastConn(endpoints)
@@ -122,7 +135,7 @@ func TestLeastConnWithUnhealthyEndpoints(t *testing.T) {
 		if ep == nil {
 			t.Fatal("Select returned nil")
 		}
-		if ep.Address == "10.0.0.2" {
+		if ep.Address == testAddrLC2 {
 			t.Error("Selected unhealthy endpoint")
 		}
 	}
@@ -130,8 +143,8 @@ func TestLeastConnWithUnhealthyEndpoints(t *testing.T) {
 
 func TestLeastConnNoHealthyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: false},
-		{Address: "10.0.0.2", Port: 8080, Ready: false},
+		{Address: testAddrLC1, Port: 8080, Ready: false},
+		{Address: testAddrLC2, Port: 8080, Ready: false},
 	}
 
 	lc := NewLeastConn(endpoints)
@@ -144,8 +157,8 @@ func TestLeastConnNoHealthyEndpoints(t *testing.T) {
 
 func TestLeastConnUpdateEndpoints(t *testing.T) {
 	initialEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.2", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+		{Address: testAddrLC2, Port: 8080, Ready: true},
 	}
 
 	lc := NewLeastConn(initialEndpoints)
@@ -156,11 +169,14 @@ func TestLeastConnUpdateEndpoints(t *testing.T) {
 
 	// Update endpoints - ep1 remains, ep2 is removed, ep3 is added
 	newEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	lc.UpdateEndpoints(newEndpoints)
+	if len(newEndpoints) < 2 {
+		t.Fatal("test requires at least 2 new endpoints")
+	}
 
 	// ep1 should still have its connection count preserved
 	count := lc.GetActiveCount(newEndpoints[0])
@@ -180,17 +196,17 @@ func TestLeastConnUpdateEndpoints(t *testing.T) {
 		if ep == nil {
 			t.Fatal("Select returned nil")
 		}
-		if ep.Address != "10.0.0.3" {
-			t.Errorf("Expected 10.0.0.3 (0 conns), got %s", ep.Address)
+		if ep.Address != testAddrEWMA3 {
+			t.Errorf("Expected %s (0 conns), got %s", testAddrEWMA3, ep.Address)
 		}
 	}
 }
 
 func TestLeastConnConcurrentAccess(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+		{Address: testAddrLC2, Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	lc := NewLeastConn(endpoints)
@@ -228,7 +244,7 @@ func TestLeastConnConcurrentAccess(t *testing.T) {
 
 func TestLeastConnNilEndpoint(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
 	}
 
 	lc := NewLeastConn(endpoints)
@@ -245,7 +261,7 @@ func TestLeastConnNilEndpoint(t *testing.T) {
 
 func TestLeastConnSingleEndpoint(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
 	}
 
 	lc := NewLeastConn(endpoints)
@@ -256,17 +272,17 @@ func TestLeastConnSingleEndpoint(t *testing.T) {
 		if ep == nil {
 			t.Fatal("Select returned nil")
 		}
-		if ep.Address != "10.0.0.1" {
-			t.Errorf("Expected 10.0.0.1, got %s", ep.Address)
+		if ep.Address != testAddrLC1 {
+			t.Errorf("Expected %s, got %s", testAddrLC1, ep.Address)
 		}
 	}
 }
 
 func TestLeastConnFairDistribution(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrLC1, Port: 8080, Ready: true},
+		{Address: testAddrLC2, Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	lc := NewLeastConn(endpoints)

@@ -14,19 +14,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package errors
+package apperrors_test
 
 import (
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
+
+	novaerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
 )
 
 // --- NetworkError Tests ---
 
 func TestNewNetworkError(t *testing.T) {
-	err := NewNetworkError("connection timeout")
+	err := novaerrors.NewNetworkError("connection timeout")
 	if err == nil {
 		t.Fatal("expected non-nil error")
 	}
@@ -39,14 +41,14 @@ func TestNewNetworkError(t *testing.T) {
 }
 
 func TestNetworkError_Error_MessageOnly(t *testing.T) {
-	err := NewNetworkError("connection timeout")
+	err := novaerrors.NewNetworkError("connection timeout")
 	if err.Error() != "connection timeout" {
 		t.Errorf("expected 'connection timeout', got %q", err.Error())
 	}
 }
 
 func TestNetworkError_Error_WithOpAndHost(t *testing.T) {
-	err := &NetworkError{
+	err := &novaerrors.NetworkError{
 		Op:      "dial",
 		Host:    "backend.example.com",
 		Port:    8080,
@@ -65,7 +67,7 @@ func TestNetworkError_Error_WithOpAndHost(t *testing.T) {
 }
 
 func TestNetworkError_Error_HostWithoutPort(t *testing.T) {
-	err := &NetworkError{
+	err := &novaerrors.NetworkError{
 		Host:    "backend.example.com",
 		Message: "DNS failure",
 	}
@@ -77,7 +79,7 @@ func TestNetworkError_Error_HostWithoutPort(t *testing.T) {
 
 func TestNetworkError_Unwrap(t *testing.T) {
 	inner := fmt.Errorf("inner error")
-	err := &NetworkError{
+	err := &novaerrors.NetworkError{
 		Message: "outer",
 		Err:     inner,
 	}
@@ -88,7 +90,7 @@ func TestNetworkError_Unwrap(t *testing.T) {
 }
 
 func TestNetworkError_WithField(t *testing.T) {
-	err := NewNetworkError("timeout").
+	err := novaerrors.NewNetworkError("timeout").
 		WithField("host", "10.0.0.1").
 		WithField("port", 8080)
 
@@ -101,7 +103,7 @@ func TestNetworkError_WithField(t *testing.T) {
 }
 
 func TestNetworkError_WithFields(t *testing.T) {
-	err := NewNetworkError("timeout").
+	err := novaerrors.NewNetworkError("timeout").
 		WithFields(map[string]interface{}{
 			"host":    "10.0.0.1",
 			"port":    8080,
@@ -116,7 +118,7 @@ func TestNetworkError_WithFields(t *testing.T) {
 // --- ConfigError Tests ---
 
 func TestNewConfigError(t *testing.T) {
-	err := NewConfigError("invalid configuration")
+	err := novaerrors.NewConfigError("invalid configuration")
 	if err == nil {
 		t.Fatal("expected non-nil error")
 	}
@@ -126,7 +128,7 @@ func TestNewConfigError(t *testing.T) {
 }
 
 func TestConfigError_Error_WithFieldAndValue(t *testing.T) {
-	err := &ConfigError{
+	err := &novaerrors.ConfigError{
 		Field:   "maxRetries",
 		Value:   -1,
 		Message: "must be positive",
@@ -145,7 +147,7 @@ func TestConfigError_Error_WithFieldAndValue(t *testing.T) {
 
 func TestConfigError_Unwrap(t *testing.T) {
 	inner := fmt.Errorf("parse error")
-	err := &ConfigError{
+	err := &novaerrors.ConfigError{
 		Message: "config",
 		Err:     inner,
 	}
@@ -156,7 +158,7 @@ func TestConfigError_Unwrap(t *testing.T) {
 }
 
 func TestConfigError_WithField(t *testing.T) {
-	err := NewConfigError("bad config").
+	err := novaerrors.NewConfigError("bad config").
 		WithField("file", "config.yaml")
 
 	if err.Fields["file"] != "config.yaml" {
@@ -165,7 +167,7 @@ func TestConfigError_WithField(t *testing.T) {
 }
 
 func TestConfigError_WithFields(t *testing.T) {
-	err := NewConfigError("bad config").
+	err := novaerrors.NewConfigError("bad config").
 		WithFields(map[string]interface{}{
 			"file": "config.yaml",
 			"line": 42,
@@ -179,7 +181,7 @@ func TestConfigError_WithFields(t *testing.T) {
 // --- ValidationError Tests ---
 
 func TestNewValidationError(t *testing.T) {
-	err := NewValidationError("validation failed")
+	err := novaerrors.NewValidationError("validation failed")
 	if err == nil {
 		t.Fatal("expected non-nil error")
 	}
@@ -192,7 +194,7 @@ func TestNewValidationError(t *testing.T) {
 }
 
 func TestValidationError_Error_WithFieldAndRule(t *testing.T) {
-	err := &ValidationError{
+	err := &novaerrors.ValidationError{
 		Field:   "email",
 		Rule:    "required",
 		Message: "field is required",
@@ -207,9 +209,9 @@ func TestValidationError_Error_WithFieldAndRule(t *testing.T) {
 }
 
 func TestValidationError_AddChild(t *testing.T) {
-	parent := NewValidationError("parent error")
-	child1 := NewValidationError("child 1")
-	child2 := NewValidationError("child 2")
+	parent := novaerrors.NewValidationError("parent error")
+	child1 := novaerrors.NewValidationError("child 1")
+	child2 := novaerrors.NewValidationError("child 2")
 
 	_ = parent.AddChild(child1).AddChild(child2)
 
@@ -229,7 +231,7 @@ func TestValidationError_AddChild(t *testing.T) {
 
 func TestValidationError_Unwrap(t *testing.T) {
 	inner := fmt.Errorf("format error")
-	err := &ValidationError{
+	err := &novaerrors.ValidationError{
 		Message: "validation",
 		Err:     inner,
 	}
@@ -240,7 +242,7 @@ func TestValidationError_Unwrap(t *testing.T) {
 }
 
 func TestValidationError_WithField(t *testing.T) {
-	err := NewValidationError("bad input").
+	err := novaerrors.NewValidationError("bad input").
 		WithField("field", "username")
 
 	if err.Fields["field"] != "username" {
@@ -249,7 +251,7 @@ func TestValidationError_WithField(t *testing.T) {
 }
 
 func TestValidationError_WithFields(t *testing.T) {
-	err := NewValidationError("bad input").
+	err := novaerrors.NewValidationError("bad input").
 		WithFields(map[string]interface{}{
 			"field": "username",
 			"rule":  "min_length",
@@ -263,7 +265,7 @@ func TestValidationError_WithFields(t *testing.T) {
 // --- TLSError Tests ---
 
 func TestNewTLSError(t *testing.T) {
-	err := NewTLSError("handshake failed")
+	err := novaerrors.NewTLSError("handshake failed")
 	if err == nil {
 		t.Fatal("expected non-nil error")
 	}
@@ -273,7 +275,7 @@ func TestNewTLSError(t *testing.T) {
 }
 
 func TestTLSError_Error_WithOpAndHost(t *testing.T) {
-	err := &TLSError{
+	err := &novaerrors.TLSError{
 		Op:      "handshake",
 		Host:    "secure.example.com",
 		Message: "certificate expired",
@@ -292,7 +294,7 @@ func TestTLSError_Error_WithOpAndHost(t *testing.T) {
 
 func TestTLSError_Unwrap(t *testing.T) {
 	inner := fmt.Errorf("x509: certificate signed by unknown authority")
-	err := &TLSError{
+	err := &novaerrors.TLSError{
 		Message: "TLS error",
 		Err:     inner,
 	}
@@ -303,7 +305,7 @@ func TestTLSError_Unwrap(t *testing.T) {
 }
 
 func TestTLSError_WithField(t *testing.T) {
-	err := NewTLSError("bad cert").
+	err := novaerrors.NewTLSError("bad cert").
 		WithField("sni", "example.com")
 
 	if err.Fields["sni"] != "example.com" {
@@ -312,7 +314,7 @@ func TestTLSError_WithField(t *testing.T) {
 }
 
 func TestTLSError_WithFields(t *testing.T) {
-	err := NewTLSError("bad cert").
+	err := novaerrors.NewTLSError("bad cert").
 		WithFields(map[string]interface{}{
 			"sni":    "example.com",
 			"cipher": "TLS_AES_128_GCM_SHA256",
@@ -331,27 +333,27 @@ func TestStandardErrorVariables(t *testing.T) {
 		name string
 		err  error
 	}{
-		{"ErrInvalidConfig", ErrInvalidConfig},
-		{"ErrMissingConfig", ErrMissingConfig},
-		{"ErrConfigParse", ErrConfigParse},
-		{"ErrConfigValidation", ErrConfigValidation},
-		{"ErrConnectionFailed", ErrConnectionFailed},
-		{"ErrConnectionTimeout", ErrConnectionTimeout},
-		{"ErrConnectionRefused", ErrConnectionRefused},
-		{"ErrDNSResolution", ErrDNSResolution},
-		{"ErrNetworkUnreachable", ErrNetworkUnreachable},
-		{"ErrTLSHandshake", ErrTLSHandshake},
-		{"ErrTLSCertificate", ErrTLSCertificate},
-		{"ErrTLSVerification", ErrTLSVerification},
-		{"ErrInvalidCipherSuite", ErrInvalidCipherSuite},
-		{"ErrValidationFailed", ErrValidationFailed},
-		{"ErrInvalidInput", ErrInvalidInput},
-		{"ErrInvalidFormat", ErrInvalidFormat},
-		{"ErrMissingField", ErrMissingField},
-		{"ErrNotFound", ErrNotFound},
-		{"ErrAlreadyExists", ErrAlreadyExists},
-		{"ErrTimeout", ErrTimeout},
-		{"ErrCancelled", ErrCancelled},
+		{"ErrInvalidConfig", novaerrors.ErrInvalidConfig},
+		{"ErrMissingConfig", novaerrors.ErrMissingConfig},
+		{"ErrConfigParse", novaerrors.ErrConfigParse},
+		{"ErrConfigValidation", novaerrors.ErrConfigValidation},
+		{"ErrConnectionFailed", novaerrors.ErrConnectionFailed},
+		{"ErrConnectionTimeout", novaerrors.ErrConnectionTimeout},
+		{"ErrConnectionRefused", novaerrors.ErrConnectionRefused},
+		{"ErrDNSResolution", novaerrors.ErrDNSResolution},
+		{"ErrNetworkUnreachable", novaerrors.ErrNetworkUnreachable},
+		{"ErrTLSHandshake", novaerrors.ErrTLSHandshake},
+		{"ErrTLSCertificate", novaerrors.ErrTLSCertificate},
+		{"ErrTLSVerification", novaerrors.ErrTLSVerification},
+		{"ErrInvalidCipherSuite", novaerrors.ErrInvalidCipherSuite},
+		{"ErrValidationFailed", novaerrors.ErrValidationFailed},
+		{"ErrInvalidInput", novaerrors.ErrInvalidInput},
+		{"ErrInvalidFormat", novaerrors.ErrInvalidFormat},
+		{"ErrMissingField", novaerrors.ErrMissingField},
+		{"ErrNotFound", novaerrors.ErrNotFound},
+		{"ErrAlreadyExists", novaerrors.ErrAlreadyExists},
+		{"ErrTimeout", novaerrors.ErrTimeout},
+		{"ErrCancelled", novaerrors.ErrCancelled},
 	}
 
 	for _, tt := range standardErrors {
@@ -366,26 +368,26 @@ func TestStandardErrorVariables(t *testing.T) {
 
 func TestErrorTypeAssertion(t *testing.T) {
 	// Test that errors.As works with our custom types
-	var netErr *NetworkError
-	err := &NetworkError{Message: "connection failed"}
+	var netErr *novaerrors.NetworkError
+	err := &novaerrors.NetworkError{Message: "connection failed"}
 	if !errors.As(err, &netErr) {
 		t.Error("errors.As should work with NetworkError")
 	}
 
-	var cfgErr *ConfigError
-	err2 := &ConfigError{Message: "bad config"}
+	var cfgErr *novaerrors.ConfigError
+	err2 := &novaerrors.ConfigError{Message: "bad config"}
 	if !errors.As(err2, &cfgErr) {
 		t.Error("errors.As should work with ConfigError")
 	}
 
-	var valErr *ValidationError
-	err3 := &ValidationError{Message: "invalid"}
+	var valErr *novaerrors.ValidationError
+	err3 := &novaerrors.ValidationError{Message: "invalid"}
 	if !errors.As(err3, &valErr) {
 		t.Error("errors.As should work with ValidationError")
 	}
 
-	var tlsErr *TLSError
-	err4 := &TLSError{Message: "TLS failure"}
+	var tlsErr *novaerrors.TLSError
+	err4 := &novaerrors.TLSError{Message: "TLS failure"}
 	if !errors.As(err4, &tlsErr) {
 		t.Error("errors.As should work with TLSError")
 	}
@@ -393,9 +395,9 @@ func TestErrorTypeAssertion(t *testing.T) {
 
 func TestWrappedErrorChain(t *testing.T) {
 	// Test error wrapping chain
-	base := ErrConnectionTimeout
+	base := novaerrors.ErrConnectionTimeout
 	wrapped := fmt.Errorf("failed to connect: %w", base)
-	netErr := &NetworkError{
+	netErr := &novaerrors.NetworkError{
 		Message: "upstream failed",
 		Err:     wrapped,
 	}

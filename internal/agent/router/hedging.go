@@ -148,6 +148,10 @@ func (h *HedgingHandler) Execute(
 			defer legCancel()
 
 			resp, doErr := doRequest(legCtx, ep, req)
+			if doErr != nil && resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+				resp = nil
+			}
 			resultCh <- hedgingResult{resp: resp, err: doErr, isHedge: isHedge}
 		}()
 
@@ -223,8 +227,10 @@ func (h *HedgingHandler) Execute(
 
 			// Drain remaining results in the background so goroutines can exit.
 			go func() {
-				for range resultCh {
-					// discard
+				for remaining := range resultCh {
+					if remaining.resp != nil && remaining.resp.Body != nil {
+						_ = remaining.resp.Body.Close()
+					}
 				}
 			}()
 			go func() {

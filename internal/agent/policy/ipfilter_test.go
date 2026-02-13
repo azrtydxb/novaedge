@@ -25,10 +25,13 @@ import (
 )
 
 const (
-	testClientIP         = "1.2.3.4"
-	testTrustedProxyAddr = "10.0.0.1:12345"
-	testUntrustedAddr    = "8.8.8.8:12345"
-	testInternalAddr     = "10.1.2.3:12345"
+	testClientIP           = "1.2.3.4"
+	testTrustedProxyAddr   = "10.0.0.1:12345"
+	testTrustedProxyIP     = "10.0.0.1"
+	testSecondTrustedProxy = "10.0.0.2"
+	testUntrustedAddr      = "8.8.8.8:12345"
+	testInternalAddr       = "10.1.2.3:12345"
+	testAltClientIP        = "5.6.7.8"
 )
 
 func TestSetGlobalTrustedProxies(t *testing.T) {
@@ -139,7 +142,7 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "1.2.3.4:12345"
-		req.Header.Set("X-Forwarded-For", "5.6.7.8")
+		req.Header.Set("X-Forwarded-For", testAltClientIP)
 
 		ip := extractClientIP(req)
 		if ip != testClientIP {
@@ -405,7 +408,7 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "1.2.3.4:12345"
-		req.Header.Set("X-Forwarded-For", "5.6.7.8")
+		req.Header.Set("X-Forwarded-For", testAltClientIP)
 
 		ip := filter.extractClientIP(req)
 		if ip != testClientIP {
@@ -473,7 +476,7 @@ func TestIPFilterExtractClientIP(t *testing.T) {
 
 		ip := filter.extractClientIP(req)
 		// When all IPs in XFF are trusted proxies, should fall back to RemoteAddr
-		if ip != "10.0.0.1" {
+		if ip != testTrustedProxyIP {
 			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback), got %s", ip)
 		}
 	})
@@ -511,13 +514,13 @@ func TestIsBogonIP(t *testing.T) {
 	}{
 		{"loopback IPv4", "127.0.0.1", true},
 		{"loopback IPv6", "::1", true},
-		{"private 10.x", "10.0.0.1", true},
+		{"private 10.x", testTrustedProxyIP, true},
 		{"private 172.16.x", "172.16.0.1", true},
 		{"private 192.168.x", "192.168.1.1", true},
 		{"link-local unicast", "169.254.1.1", true},
 		{"link-local multicast", "224.0.0.1", true},
 		{"public IP", "8.8.8.8", false},
-		{"public IP 2", "1.2.3.4", false},
+		{"public IP 2", testClientIP, false},
 		{"public IPv6", "2001:db8::1", false},
 	}
 
@@ -550,7 +553,7 @@ func TestExtractClientIPBogonFiltering(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "1.2.3.4, 192.168.1.100")
 
 		ip := extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (skipping bogon 192.168.1.100), got %s", ip)
 		}
 	})
@@ -561,7 +564,7 @@ func TestExtractClientIPBogonFiltering(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "192.168.1.1, 172.16.0.1")
 
 		ip := extractClientIP(req)
-		if ip != "10.0.0.1" {
+		if ip != testTrustedProxyIP {
 			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback), got %s", ip)
 		}
 	})
@@ -572,7 +575,7 @@ func TestExtractClientIPBogonFiltering(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "5.6.7.8, 127.0.0.1")
 
 		ip := extractClientIP(req)
-		if ip != "5.6.7.8" {
+		if ip != testAltClientIP {
 			t.Errorf("Expected 5.6.7.8 (skipping loopback), got %s", ip)
 		}
 	})
@@ -593,7 +596,7 @@ func TestExtractClientIPValidation(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "1.2.3.4, not-an-ip")
 
 		ip := extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (skipping invalid entry), got %s", ip)
 		}
 	})
@@ -604,7 +607,7 @@ func TestExtractClientIPValidation(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "garbage, not-an-ip, %%%")
 
 		ip := extractClientIP(req)
-		if ip != "10.0.0.1" {
+		if ip != testTrustedProxyIP {
 			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback), got %s", ip)
 		}
 	})
@@ -615,7 +618,7 @@ func TestExtractClientIPValidation(t *testing.T) {
 		req.Header.Set("X-Real-IP", "not-an-ip")
 
 		ip := extractClientIP(req)
-		if ip != "10.0.0.1" {
+		if ip != testTrustedProxyIP {
 			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback for invalid X-Real-IP), got %s", ip)
 		}
 	})
@@ -634,16 +637,16 @@ func TestExtractClientIPMaxDepth(t *testing.T) {
 		// Build an XFF with exactly defaultMaxXFFDepth entries
 		entries := make([]string, defaultMaxXFFDepth)
 		for i := range entries {
-			entries[i] = "10.0.0.2" // trusted proxy IPs
+			entries[i] = testSecondTrustedProxy // trusted proxy IPs
 		}
-		entries[0] = "5.6.7.8" // real client at leftmost position
+		entries[0] = testAltClientIP // real client at leftmost position
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = testTrustedProxyAddr
 		req.Header.Set("X-Forwarded-For", strings.Join(entries, ", "))
 
 		ip := extractClientIP(req)
-		if ip != "5.6.7.8" {
+		if ip != testAltClientIP {
 			t.Errorf("Expected 5.6.7.8 (client IP within depth limit), got %s", ip)
 		}
 	})
@@ -652,10 +655,10 @@ func TestExtractClientIPMaxDepth(t *testing.T) {
 		// Build an XFF with more entries than the limit
 		entries := make([]string, defaultMaxXFFDepth+5)
 		for i := range entries {
-			entries[i] = "10.0.0.2" // trusted proxy IPs
+			entries[i] = testSecondTrustedProxy // trusted proxy IPs
 		}
 		// Place a public IP at position 0 (leftmost, will be truncated away)
-		entries[0] = "5.6.7.8"
+		entries[0] = testAltClientIP
 		// Place a public IP within the rightmost N entries
 		entries[len(entries)-3] = "9.8.7.6"
 
@@ -672,9 +675,9 @@ func TestExtractClientIPMaxDepth(t *testing.T) {
 	t.Run("truncated XFF loses leftmost client IP", func(t *testing.T) {
 		// Build an XFF that exceeds the limit where the only public IP is outside the window
 		entries := make([]string, defaultMaxXFFDepth+5)
-		entries[0] = "5.6.7.8" // real client - will be truncated
+		entries[0] = testAltClientIP // real client - will be truncated
 		for i := 1; i < len(entries); i++ {
-			entries[i] = "10.0.0.2" // trusted proxy IPs
+			entries[i] = testSecondTrustedProxy // trusted proxy IPs
 		}
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -683,7 +686,7 @@ func TestExtractClientIPMaxDepth(t *testing.T) {
 
 		ip := extractClientIP(req)
 		// The real client IP was truncated, so it falls back to RemoteAddr
-		if ip != "10.0.0.1" {
+		if ip != testTrustedProxyIP {
 			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback after truncation), got %s", ip)
 		}
 	})
@@ -701,7 +704,7 @@ func TestIPFilterExtractClientIPBogonFiltering(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "1.2.3.4, 192.168.1.100")
 
 		ip := filter.extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (skipping bogon), got %s", ip)
 		}
 	})
@@ -717,7 +720,7 @@ func TestIPFilterExtractClientIPBogonFiltering(t *testing.T) {
 		req.Header.Set("X-Forwarded-For", "1.2.3.4, garbage-value")
 
 		ip := filter.extractClientIP(req)
-		if ip != "1.2.3.4" {
+		if ip != testClientIP {
 			t.Errorf("Expected 1.2.3.4 (skipping invalid), got %s", ip)
 		}
 	})
@@ -733,7 +736,7 @@ func TestIPFilterExtractClientIPBogonFiltering(t *testing.T) {
 		req.Header.Set("X-Real-IP", "not-valid")
 
 		ip := filter.extractClientIP(req)
-		if ip != "10.0.0.1" {
+		if ip != testTrustedProxyIP {
 			t.Errorf("Expected 10.0.0.1 (RemoteAddr fallback), got %s", ip)
 		}
 	})

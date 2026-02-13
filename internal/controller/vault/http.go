@@ -36,8 +36,8 @@ const (
 	maxResponseSize    = 10 * 1024 * 1024 // 10MB
 )
 
-// VaultResponse represents a response from the Vault HTTP API.
-type VaultResponse struct {
+// Response represents a response from the Vault HTTP API.
+type Response struct {
 	// Auth contains authentication info (for login responses)
 	Auth map[string]interface{} `json:"auth,omitempty"`
 
@@ -58,7 +58,7 @@ type VaultResponse struct {
 }
 
 // Read reads from the Vault API (GET request).
-func (c *vaultHTTPClient) Read(ctx context.Context, path string) (*VaultResponse, error) {
+func (c *vaultHTTPClient) Read(ctx context.Context, path string) (*Response, error) {
 	url := c.buildURL(path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -70,7 +70,7 @@ func (c *vaultHTTPClient) Read(ctx context.Context, path string) (*VaultResponse
 }
 
 // Write writes to the Vault API (POST/PUT request).
-func (c *vaultHTTPClient) Write(ctx context.Context, path string, data map[string]interface{}) (*VaultResponse, error) {
+func (c *vaultHTTPClient) Write(ctx context.Context, path string, data map[string]interface{}) (*Response, error) {
 	url := c.buildURL(path)
 
 	var body io.Reader
@@ -95,7 +95,7 @@ func (c *vaultHTTPClient) Write(ctx context.Context, path string, data map[strin
 }
 
 // Delete sends a DELETE request to the Vault API.
-func (c *vaultHTTPClient) Delete(ctx context.Context, path string) (*VaultResponse, error) {
+func (c *vaultHTTPClient) Delete(ctx context.Context, path string) (*Response, error) {
 	url := c.buildURL(path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
@@ -115,7 +115,7 @@ func (c *vaultHTTPClient) buildURL(path string) string {
 }
 
 // doRequest executes an HTTP request against the Vault API.
-func (c *vaultHTTPClient) doRequest(req *http.Request) (*VaultResponse, error) {
+func (c *vaultHTTPClient) doRequest(req *http.Request) (*Response, error) {
 	// Set Vault token header
 	if c.token != "" {
 		req.Header.Set("X-Vault-Token", c.token)
@@ -148,7 +148,7 @@ func (c *vaultHTTPClient) doRequest(req *http.Request) (*VaultResponse, error) {
 	}
 
 	// Parse response
-	var vaultResp VaultResponse
+	var vaultResp Response
 	if len(body) > 0 {
 		if err := json.Unmarshal(body, &vaultResp); err != nil {
 			return nil, fmt.Errorf("failed to parse vault response: %w", err)

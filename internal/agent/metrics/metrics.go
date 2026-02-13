@@ -37,8 +37,8 @@ const (
 	AggregateByCluster
 )
 
-// MetricsConfig holds configuration for metrics collection
-type MetricsConfig struct {
+// Config holds configuration for metrics collection.
+type Config struct {
 	// EnableSampling enables sampling for high-frequency metrics
 	EnableSampling bool
 	// SampleRate is the percentage of metrics to sample (0-100)
@@ -51,7 +51,7 @@ type MetricsConfig struct {
 
 var (
 	// Default configuration
-	defaultConfig = MetricsConfig{
+	defaultConfig = Config{
 		EnableSampling:         false,
 		SampleRate:             10,
 		MaxEndpointCardinality: 100,
@@ -224,7 +224,7 @@ func RecordHTTPRequest(method, statusClass, cluster string, duration float64) {
 }
 
 // ConfigureMetrics updates the metrics configuration
-func ConfigureMetrics(config MetricsConfig) {
+func ConfigureMetrics(config Config) {
 	defaultConfig = config
 }
 

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"math"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,8 +92,14 @@ func (r *ProxyIPPoolReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// Get pool stats
 		allocated, available, statsErr := r.Allocator.GetPoolStats(pool.Name)
 		if statsErr == nil {
-			pool.Status.Allocated = int32(allocated)
-			pool.Status.Available = int32(available)
+			if allocated > math.MaxInt32 {
+				allocated = math.MaxInt32
+			}
+			if available > math.MaxInt32 {
+				available = math.MaxInt32
+			}
+			pool.Status.Allocated = int32(allocated) //nolint:gosec // bounds-checked above
+			pool.Status.Available = int32(available) //nolint:gosec // bounds-checked above
 		}
 
 		// Get allocations

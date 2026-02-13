@@ -26,6 +26,20 @@ import (
 // hostModuleName is the WASM module name that exposes host functions.
 const hostModuleName = "novaedge"
 
+// maxUint32 is the maximum value for uint32, used for safe conversion checks.
+const maxUint32 = 1<<32 - 1
+
+// safeU32 safely converts a uint64 stack value to uint32.
+// WASM i32 values are stored as uint64 on the Go side but are guaranteed
+// by the WASM runtime to fit in 32 bits when the function signature
+// declares ValueTypeI32.
+func safeU32(v uint64) uint32 {
+	if v > maxUint32 {
+		return 0
+	}
+	return uint32(v)
+}
+
 // contextKey is an unexported type to avoid collisions in context.WithValue.
 type contextKey int
 
@@ -103,10 +117,10 @@ func hostGetRequestHeader(ctx context.Context, mod api.Module, stack []uint64) {
 		stack[0] = 0
 		return
 	}
-	namePtr := uint32(stack[0])
-	nameLen := uint32(stack[1])
-	valPtr := uint32(stack[2])
-	valCap := uint32(stack[3])
+	namePtr := safeU32(stack[0])
+	nameLen := safeU32(stack[1])
+	valPtr := safeU32(stack[2])
+	valCap := safeU32(stack[3])
 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
@@ -126,10 +140,10 @@ func hostSetRequestHeader(ctx context.Context, mod api.Module, stack []uint64) {
 	if !ok || rc.Request == nil {
 		return
 	}
-	namePtr := uint32(stack[0])
-	nameLen := uint32(stack[1])
-	valPtr := uint32(stack[2])
-	valLen := uint32(stack[3])
+	namePtr := safeU32(stack[0])
+	nameLen := safeU32(stack[1])
+	valPtr := safeU32(stack[2])
+	valLen := safeU32(stack[3])
 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
@@ -151,10 +165,10 @@ func hostGetResponseHeader(ctx context.Context, mod api.Module, stack []uint64) 
 		stack[0] = 0
 		return
 	}
-	namePtr := uint32(stack[0])
-	nameLen := uint32(stack[1])
-	valPtr := uint32(stack[2])
-	valCap := uint32(stack[3])
+	namePtr := safeU32(stack[0])
+	nameLen := safeU32(stack[1])
+	valPtr := safeU32(stack[2])
+	valCap := safeU32(stack[3])
 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
@@ -174,10 +188,10 @@ func hostSetResponseHeader(ctx context.Context, mod api.Module, stack []uint64) 
 	if !ok {
 		return
 	}
-	namePtr := uint32(stack[0])
-	nameLen := uint32(stack[1])
-	valPtr := uint32(stack[2])
-	valLen := uint32(stack[3])
+	namePtr := safeU32(stack[0])
+	nameLen := safeU32(stack[1])
+	valPtr := safeU32(stack[2])
+	valLen := safeU32(stack[3])
 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
@@ -202,8 +216,8 @@ func hostGetMethod(ctx context.Context, mod api.Module, stack []uint64) {
 		stack[0] = 0
 		return
 	}
-	bufPtr := uint32(stack[0])
-	bufCap := uint32(stack[1])
+	bufPtr := safeU32(stack[0])
+	bufCap := safeU32(stack[1])
 
 	mem := mod.Memory()
 	written := writeStringToMemory(mem, bufPtr, bufCap, rc.Request.Method)
@@ -216,8 +230,8 @@ func hostGetPath(ctx context.Context, mod api.Module, stack []uint64) {
 		stack[0] = 0
 		return
 	}
-	bufPtr := uint32(stack[0])
-	bufCap := uint32(stack[1])
+	bufPtr := safeU32(stack[0])
+	bufCap := safeU32(stack[1])
 
 	mem := mod.Memory()
 	written := writeStringToMemory(mem, bufPtr, bufCap, rc.Request.URL.Path)
@@ -230,10 +244,10 @@ func hostGetConfigValue(ctx context.Context, mod api.Module, stack []uint64) {
 		stack[0] = 0
 		return
 	}
-	keyPtr := uint32(stack[0])
-	keyLen := uint32(stack[1])
-	valPtr := uint32(stack[2])
-	valCap := uint32(stack[3])
+	keyPtr := safeU32(stack[0])
+	keyLen := safeU32(stack[1])
+	valPtr := safeU32(stack[2])
+	valCap := safeU32(stack[3])
 
 	mem := mod.Memory()
 	keyBytes, ok := mem.Read(keyPtr, keyLen)
@@ -253,9 +267,9 @@ func hostGetConfigValue(ctx context.Context, mod api.Module, stack []uint64) {
 }
 
 func hostLogMessage(ctx context.Context, mod api.Module, stack []uint64) {
-	level := uint32(stack[0])
-	msgPtr := uint32(stack[1])
-	msgLen := uint32(stack[2])
+	level := safeU32(stack[0])
+	msgPtr := safeU32(stack[1])
+	msgLen := safeU32(stack[2])
 
 	mem := mod.Memory()
 	msgBytes, ok := mem.Read(msgPtr, msgLen)
@@ -285,9 +299,9 @@ func hostSendResponse(ctx context.Context, mod api.Module, stack []uint64) {
 	if !ok || rc.ResponseWriter == nil {
 		return
 	}
-	statusCode := uint32(stack[0])
-	bodyPtr := uint32(stack[1])
-	bodyLen := uint32(stack[2])
+	statusCode := safeU32(stack[0])
+	bodyPtr := safeU32(stack[1])
+	bodyLen := safeU32(stack[2])
 
 	mem := mod.Memory()
 	bodyBytes, ok := mem.Read(bodyPtr, bodyLen)
@@ -304,17 +318,20 @@ func hostSendResponse(ctx context.Context, mod api.Module, stack []uint64) {
 // writeStringToMemory copies a Go string into WASM linear memory, returning
 // the number of bytes written (capped at bufCap). If the value is larger than
 // bufCap it is truncated. Returns 0 on failure.
-func writeStringToMemory(mem api.Memory, ptr, cap uint32, value string) uint32 {
-	if cap == 0 || value == "" {
+func writeStringToMemory(mem api.Memory, ptr, bufCap uint32, value string) uint32 {
+	if bufCap == 0 || value == "" {
 		return 0
 	}
 	b := []byte(value)
-	if uint32(len(b)) > cap {
-		b = b[:cap]
+	if len(b) > int(bufCap) {
+		b = b[:bufCap]
 	}
 	if !mem.Write(ptr, b) {
 		zap.L().Debug("WASM host: memory write failed", zap.String("function", "writeStringToMemory"))
 		return 0
 	}
-	return uint32(len(b))
+	if len(b) > int(maxUint32) {
+		return 0
+	}
+	return uint32(len(b)) //nolint:gosec // length is bounded by bufCap which is uint32
 }

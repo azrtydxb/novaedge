@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
 	"runtime"
 	"sync"
@@ -211,7 +212,7 @@ func (om *OverloadManager) check() {
 	if om.config.MemoryThresholdBytes > 0 {
 		var memStats runtime.MemStats
 		om.reader.ReadMemStats(&memStats)
-		heapAlloc := int64(memStats.HeapAlloc)
+		heapAlloc := safeUint64ToInt64(memStats.HeapAlloc)
 		threshold := om.config.MemoryThresholdBytes
 
 		if heapAlloc > threshold {
@@ -271,7 +272,8 @@ func (om *OverloadManager) check() {
 	}
 
 	// Update action atomically
-	oldAction := OverloadAction(om.action.Swap(int32(newAction)))
+	swapVal := safeIntToInt32(int(newAction))
+	oldAction := OverloadAction(om.action.Swap(swapVal))
 
 	// Log state transitions
 	if oldAction != newAction {
@@ -302,4 +304,23 @@ func OverloadMiddleware(om *OverloadManager) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// safeUint64ToInt64 safely converts a uint64 to int64 with clamping.
+func safeUint64ToInt64(v uint64) int64 {
+	if v > uint64(math.MaxInt64) {
+		return math.MaxInt64
+	}
+	return int64(v)
+}
+
+// safeIntToInt32 safely converts an int to int32 with clamping.
+func safeIntToInt32(v int) int32 {
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(v)
 }

@@ -103,7 +103,8 @@ func (p *Route53Provider) WaitForPropagation(ctx context.Context, fqdn, value st
 		case <-timeout:
 			return fmt.Errorf("DNS propagation timeout for %s after %s", fqdn, p.config.PropagationTimeout)
 		case <-ticker.C:
-			records, err := net.LookupTXT(strings.TrimSuffix(fqdn, "."))
+			resolver := &net.Resolver{}
+			records, err := resolver.LookupTXT(ctx, strings.TrimSuffix(fqdn, "."))
 			if err != nil {
 				p.logger.Debug("DNS lookup not yet propagated",
 					zap.String("fqdn", fqdn),

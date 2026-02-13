@@ -34,7 +34,7 @@ func TestExtractKeycloakRoles_RealmRoles(t *testing.T) {
 
 	claims := map[string]interface{}{
 		"realm_access": map[string]interface{}{
-			"roles": []interface{}{"admin", "user", "offline_access"},
+			"roles": []interface{}{testAdminUser, "user", "offline_access"},
 		},
 	}
 
@@ -46,7 +46,7 @@ func TestExtractKeycloakRoles_RealmRoles(t *testing.T) {
 
 	found := false
 	for _, r := range roles {
-		if r == "admin" {
+		if r == testAdminUser {
 			found = true
 			break
 		}
@@ -138,7 +138,7 @@ func TestForwardKeycloakInfo(t *testing.T) {
 
 	claims := map[string]interface{}{
 		"realm_access": map[string]interface{}{
-			"roles": []interface{}{"admin", "user"},
+			"roles": []interface{}{testAdminUser, "user"},
 		},
 		"groups":             []interface{}{"/engineering"},
 		"preferred_username": "jdoe",
@@ -175,7 +175,7 @@ func TestCheckAuthorization_KeycloakRealmRoles(t *testing.T) {
 			RoleClaim: "realm_access.roles",
 		},
 		Authorization: &pb.AuthorizationConfig{
-			RequiredRoles: []string{"admin"},
+			RequiredRoles: []string{testAdminUser},
 			Mode:          "any",
 		},
 	}
@@ -183,7 +183,7 @@ func TestCheckAuthorization_KeycloakRealmRoles(t *testing.T) {
 	// User with admin role
 	claims := map[string]interface{}{
 		"realm_access": map[string]interface{}{
-			"roles": []interface{}{"admin", "user"},
+			"roles": []interface{}{testAdminUser, "user"},
 		},
 	}
 
@@ -211,7 +211,7 @@ func TestCheckAuthorization_KeycloakAllMode(t *testing.T) {
 			GroupClaim: "groups",
 		},
 		Authorization: &pb.AuthorizationConfig{
-			RequiredRoles:  []string{"admin"},
+			RequiredRoles:  []string{testAdminUser},
 			RequiredGroups: []string{"/engineering"},
 			Mode:           "all",
 		},
@@ -220,7 +220,7 @@ func TestCheckAuthorization_KeycloakAllMode(t *testing.T) {
 	// User with both role and group
 	claims := map[string]interface{}{
 		"realm_access": map[string]interface{}{
-			"roles": []interface{}{"admin"},
+			"roles": []interface{}{testAdminUser},
 		},
 		"groups": []interface{}{"/engineering"},
 	}
@@ -232,7 +232,7 @@ func TestCheckAuthorization_KeycloakAllMode(t *testing.T) {
 	// User with only role
 	claims = map[string]interface{}{
 		"realm_access": map[string]interface{}{
-			"roles": []interface{}{"admin"},
+			"roles": []interface{}{testAdminUser},
 		},
 		"groups": []interface{}{"/marketing"},
 	}

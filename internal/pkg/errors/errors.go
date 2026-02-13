@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package errors provides standardized error types and error handling utilities
+// Package apperrors provides standardized error types and error handling utilities
 // for NovaEdge components.
 //
 // # Error Handling Guidelines
@@ -53,7 +53,7 @@ limitations under the License.
 //   - WARN: Recoverable failures, degraded functionality
 //   - INFO: Expected errors as part of normal operation (e.g., validation failures)
 //   - DEBUG: Detailed error context for troubleshooting
-package errors
+package apperrors
 
 import (
 	"errors"

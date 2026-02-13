@@ -25,6 +25,11 @@ import (
 	"go.uber.org/zap"
 )
 
+const (
+	testCacheHost   = "example.com"
+	testCacheHitVal = "HIT"
+)
+
 func TestBuildCacheKey(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -37,14 +42,14 @@ func TestBuildCacheKey(t *testing.T) {
 		{
 			name:     "simple GET",
 			method:   "GET",
-			host:     "example.com",
+			host:     testCacheHost,
 			path:     "/api/v1/users",
 			expected: "GET|example.com|/api/v1/users",
 		},
 		{
 			name:     "GET with query",
 			method:   "GET",
-			host:     "example.com",
+			host:     testCacheHost,
 			path:     "/api/v1/users",
 			query:    "page=1",
 			expected: "GET|example.com|/api/v1/users?page=1",
@@ -52,7 +57,7 @@ func TestBuildCacheKey(t *testing.T) {
 		{
 			name:     "HEAD request",
 			method:   "HEAD",
-			host:     "example.com",
+			host:     testCacheHost,
 			path:     "/",
 			expected: "HEAD|example.com|/",
 		},
@@ -143,7 +148,7 @@ func TestResponseCacheHitMiss(t *testing.T) {
 
 	// First request: MISS
 	req1 := httptest.NewRequest(http.MethodGet, "http://example.com/api/data", nil)
-	req1.Host = "example.com"
+	req1.Host = testCacheHost
 	rec1 := httptest.NewRecorder()
 	handler.ServeHTTP(rec1, req1)
 
@@ -153,14 +158,14 @@ func TestResponseCacheHitMiss(t *testing.T) {
 
 	// Second request: HIT
 	req2 := httptest.NewRequest(http.MethodGet, "http://example.com/api/data", nil)
-	req2.Host = "example.com"
+	req2.Host = testCacheHost
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
 
 	if rec2.Code != http.StatusOK {
 		t.Errorf("second request status = %d, want %d", rec2.Code, http.StatusOK)
 	}
-	if rec2.Header().Get("X-Cache") != "HIT" {
+	if rec2.Header().Get("X-Cache") != testCacheHitVal {
 		t.Errorf("second request X-Cache = %q, want %q", rec2.Header().Get("X-Cache"), "HIT")
 	}
 }
@@ -188,7 +193,7 @@ func TestResponseCacheSkipNonGET(t *testing.T) {
 
 	// POST should not be cached
 	req := httptest.NewRequest(http.MethodPost, "http://example.com/api/data", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -229,7 +234,7 @@ func TestResponseCacheRespectNoStore(t *testing.T) {
 
 	// First request
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/secret", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -266,7 +271,7 @@ func TestResponseCacheSkipSetCookie(t *testing.T) {
 
 	// First request
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/login", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -301,13 +306,13 @@ func TestResponseCacheConditionalETag(t *testing.T) {
 
 	// First request to populate cache
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/data", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	// Second request with If-None-Match matching the ETag
 	req2 := httptest.NewRequest(http.MethodGet, "http://example.com/data", nil)
-	req2.Host = "example.com"
+	req2.Host = testCacheHost
 	req2.Header.Set("If-None-Match", `"abc123"`)
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req2)
@@ -383,14 +388,14 @@ func TestResponseCachePurge(t *testing.T) {
 
 	// Populate cache
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/data", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
 	// Verify cache hit
 	rec2 := httptest.NewRecorder()
 	handler.ServeHTTP(rec2, req)
-	if rec2.Header().Get("X-Cache") != "HIT" {
+	if rec2.Header().Get("X-Cache") != testCacheHitVal {
 		t.Error("expected cache hit before purge")
 	}
 
@@ -403,7 +408,7 @@ func TestResponseCachePurge(t *testing.T) {
 	// Verify cache miss after purge
 	rec3 := httptest.NewRecorder()
 	handler.ServeHTTP(rec3, req)
-	if rec3.Header().Get("X-Cache") == "HIT" {
+	if rec3.Header().Get("X-Cache") == testCacheHitVal {
 		t.Error("expected cache miss after purge, got HIT")
 	}
 }
@@ -427,7 +432,7 @@ func TestResponseCacheDisabled(t *testing.T) {
 
 	// Both requests should hit backend
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/data", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 	handler.ServeHTTP(httptest.NewRecorder(), req)
 

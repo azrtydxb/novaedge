@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -445,8 +446,8 @@ func BuildProxyProtocolV2Header(clientAddr, localAddr net.Addr) []byte {
 		addrData = make([]byte, 12)
 		copy(addrData[0:4], srcIP)
 		copy(addrData[4:8], dstIP)
-		binary.BigEndian.PutUint16(addrData[8:10], uint16(clientTCP.Port))
-		binary.BigEndian.PutUint16(addrData[10:12], uint16(localTCP.Port))
+		binary.BigEndian.PutUint16(addrData[8:10], safePortToUint16(clientTCP.Port))
+		binary.BigEndian.PutUint16(addrData[10:12], safePortToUint16(localTCP.Port))
 	} else {
 		// IPv6
 		family = proxyProtoV2FamilyTCPv6
@@ -458,8 +459,8 @@ func BuildProxyProtocolV2Header(clientAddr, localAddr net.Addr) []byte {
 		addrData = make([]byte, 36)
 		copy(addrData[0:16], srcIP)
 		copy(addrData[16:32], dstIP)
-		binary.BigEndian.PutUint16(addrData[32:34], uint16(clientTCP.Port))
-		binary.BigEndian.PutUint16(addrData[34:36], uint16(localTCP.Port))
+		binary.BigEndian.PutUint16(addrData[32:34], safePortToUint16(clientTCP.Port))
+		binary.BigEndian.PutUint16(addrData[34:36], safePortToUint16(localTCP.Port))
 	}
 
 	// Build header: signature + version/command + family + length + address
@@ -468,9 +469,20 @@ func BuildProxyProtocolV2Header(clientAddr, localAddr net.Addr) []byte {
 	header = append(header, proxyProtoV2CommandProxy) // version 2, PROXY command
 	header = append(header, family)
 	lenBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(lenBytes, uint16(len(addrData)))
+	binary.BigEndian.PutUint16(lenBytes, safePortToUint16(len(addrData)))
 	header = append(header, lenBytes...)
 	header = append(header, addrData...)
 
 	return header
+}
+
+// safePortToUint16 converts a TCP port number (int) to uint16 with bounds clamping.
+func safePortToUint16(port int) uint16 {
+	if port < 0 {
+		return 0
+	}
+	if port > math.MaxUint16 {
+		return math.MaxUint16
+	}
+	return uint16(port)
 }

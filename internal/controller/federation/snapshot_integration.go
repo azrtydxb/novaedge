@@ -126,15 +126,15 @@ func (e *SnapshotEnhancer) EnhanceSnapshot(snapshot *pb.ConfigSnapshot, fromFede
 func (e *SnapshotEnhancer) calculateContentHash(snapshot *pb.ConfigSnapshot) string {
 	// Create a copy without metadata for hashing
 	cloned := proto.Clone(snapshot)
-	copy, ok := cloned.(*pb.ConfigSnapshot)
+	snapshotCopy, ok := cloned.(*pb.ConfigSnapshot)
 	if !ok {
 		return ""
 	}
-	copy.FederationMetadata = nil
-	copy.AvailableControllers = nil
-	copy.Version = ""
+	snapshotCopy.FederationMetadata = nil
+	snapshotCopy.AvailableControllers = nil
+	snapshotCopy.Version = ""
 
-	data, err := proto.Marshal(copy)
+	data, err := proto.Marshal(snapshotCopy)
 	if err != nil {
 		return ""
 	}

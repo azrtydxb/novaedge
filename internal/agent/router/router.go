@@ -97,7 +97,7 @@ type Router struct {
 	stickyWrappers map[string]*lb.StickyWrapper
 
 	// gRPC handler for gRPC-specific request processing
-	grpcHandler *grpchandler.GRPCHandler
+	grpcHandler *grpchandler.Handler
 
 	// LB state caching: track endpoint versions to avoid unnecessary LB recreation
 	endpointVersions map[string]uint64 // clusterKey -> hash of endpoint list
@@ -141,7 +141,7 @@ func NewRouterWithCache(logger *zap.Logger, cacheConfig CacheConfig) *Router {
 		loadBalancers:       make(map[string]lb.LoadBalancer),
 		hashBasedLBs:        make(map[string]interface{}),
 		stickyWrappers:      make(map[string]*lb.StickyWrapper),
-		grpcHandler:         grpchandler.NewGRPCHandler(logger),
+		grpcHandler:         grpchandler.NewHandler(logger),
 		endpointVersions:    make(map[string]uint64),
 		maxRequestBodyBytes: 10 * 1024 * 1024,  // Default: 10MB
 		maxUploadBodyBytes:  100 * 1024 * 1024, // Default: 100MB
