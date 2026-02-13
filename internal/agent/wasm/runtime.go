@@ -37,7 +37,8 @@ type Runtime struct {
 // NewRuntime creates a new WASM runtime.
 func NewRuntime(ctx context.Context, logger *zap.Logger) (*Runtime, error) {
 	cfg := wazero.NewRuntimeConfig().
-		WithCloseOnContextDone(true)
+		WithCloseOnContextDone(true).
+		WithMemoryLimitPages(512) // 32MB max per module (512 * 64KB)
 
 	rt := wazero.NewRuntimeWithConfig(ctx, cfg)
 
