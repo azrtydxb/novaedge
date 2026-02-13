@@ -488,6 +488,7 @@ message JWTConfig {
   string jwks_uri = 3;
   string header_name = 4;
   string header_prefix = 5;
+  repeated string allowed_algorithms = 6;
 }
 
 // IPListConfig defines IP allow/deny list
