@@ -31,8 +31,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/propagation"
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/health"
@@ -49,9 +47,11 @@ type Pool struct {
 	// HTTP transport with connection pooling
 	transport *http.Transport
 
-	// Reverse proxies per endpoint
-	mu      sync.RWMutex
-	proxies map[string]*httputil.ReverseProxy
+	// Reverse proxies per endpoint - atomic for lock-free reads in Forward()
+	proxies atomic.Pointer[map[string]*httputil.ReverseProxy]
+
+	// Mutex only needed for endpoint updates (write path)
+	mu sync.Mutex
 
 	// Health checker for endpoints
 	healthChecker *health.HealthChecker
@@ -76,8 +76,8 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	poolConfig := cluster.ConnectionPool
 	if poolConfig == nil {
 		poolConfig = &pb.ConnectionPool{
-			MaxIdleConns:            100,
-			MaxIdleConnsPerHost:     10,
+			MaxIdleConns:            1000,
+			MaxIdleConnsPerHost:     100,
 			MaxConnsPerHost:         0,
 			IdleConnTimeoutMs:       90000,
 			ResponseHeaderTimeoutMs: 10000,
@@ -87,11 +87,11 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	// Apply defaults if values are zero
 	maxIdleConns := int(poolConfig.MaxIdleConns)
 	if maxIdleConns <= 0 {
-		maxIdleConns = 100
+		maxIdleConns = 1000
 	}
 	maxIdleConnsPerHost := int(poolConfig.MaxIdleConnsPerHost)
 	if maxIdleConnsPerHost <= 0 {
-		maxIdleConnsPerHost = 10
+		maxIdleConnsPerHost = 100
 	}
 	idleConnTimeout := time.Duration(poolConfig.IdleConnTimeoutMs) * time.Millisecond
 	if idleConnTimeout <= 0 {
@@ -100,6 +100,14 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	responseHeaderTimeout := time.Duration(poolConfig.ResponseHeaderTimeoutMs) * time.Millisecond
 	if responseHeaderTimeout <= 0 {
 		responseHeaderTimeout = 10 * time.Second
+	}
+	writeBufferSize := int(poolConfig.WriteBufferSize)
+	if writeBufferSize <= 0 {
+		writeBufferSize = 32 * 1024 // Default: 32KB
+	}
+	readBufferSize := int(poolConfig.ReadBufferSize)
+	if readBufferSize <= 0 {
+		readBufferSize = 32 * 1024 // Default: 32KB
 	}
 
 	// Create HTTP transport with connection pooling
@@ -120,6 +128,8 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 		DisableKeepAlives:      poolConfig.DisableKeepAlives,
 		MaxResponseHeaderBytes: int64(poolConfig.MaxResponseHeaderBytes),
 		ForceAttemptHTTP2:      true,
+		WriteBufferSize:        writeBufferSize,
+		ReadBufferSize:         readBufferSize,
 	}
 
 	// Configure backend TLS if enabled
@@ -137,11 +147,13 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 		cluster:    cluster,
 		endpoints:  endpoints,
 		transport:  transport,
-		proxies:    make(map[string]*httputil.ReverseProxy),
 		ctx:        poolCtx,
 		cancel:     cancel,
 		clusterKey: clusterKey,
 	}
+	// Initialize atomic proxies
+	emptyProxies := make(map[string]*httputil.ReverseProxy)
+	pool.proxies.Store(&emptyProxies)
 
 	// Create and start health checker
 	pool.healthChecker = health.NewHealthChecker(cluster, endpoints, logger)
@@ -202,10 +214,11 @@ func (p *Pool) updateMetrics() {
 			hits := atomic.LoadInt64(&p.poolHits)
 			misses := atomic.LoadInt64(&p.poolMisses)
 
-			p.mu.RLock()
+			p.mu.Lock()
 			endpointCount := len(p.endpoints)
-			proxyCount := len(p.proxies)
-			p.mu.RUnlock()
+			p.mu.Unlock()
+			proxies := *p.proxies.Load()
+			proxyCount := len(proxies)
 
 			// Report pool connection metrics to Prometheus
 			metrics.PoolConnectionsTotal.WithLabelValues(p.clusterKey).Set(float64(proxyCount))
@@ -233,6 +246,9 @@ func (p *Pool) updateMetrics() {
 func (p *Pool) createProxies() {
 	newProxies := make(map[string]*httputil.ReverseProxy)
 
+	// Load current proxies for reuse
+	currentProxies := *p.proxies.Load()
+
 	for _, ep := range p.endpoints {
 		if !ep.Ready {
 			continue
@@ -241,7 +257,7 @@ func (p *Pool) createProxies() {
 		key := endpointKey(ep)
 
 		// Reuse existing proxy if available (pool hit)
-		if proxy, ok := p.proxies[key]; ok {
+		if proxy, ok := currentProxies[key]; ok {
 			newProxies[key] = proxy
 			atomic.AddInt64(&p.poolHits, 1)
 			continue
@@ -277,39 +293,32 @@ func (p *Pool) createProxies() {
 			w.WriteHeader(http.StatusBadGateway)
 		}
 
-		// Custom director to preserve headers for gRPC and inject trace context
+		// Custom director to preserve headers for gRPC
 		originalDirector := proxy.Director
 		proxy.Director = func(req *http.Request) {
 			originalDirector(req)
-
-			// Inject OpenTelemetry trace context into outgoing request headers
-			// This propagates the trace to the backend service
-			otel.GetTextMapPropagator().Inject(req.Context(), propagation.HeaderCarrier(req.Header))
+			// Trace context is already injected by the forwarding layer (forwarding.go)
+			// so no need to inject it again here.
 
 			// Preserve gRPC-specific headers
 			if isGRPCRequest(req) {
-				// Ensure Content-Type is preserved
 				if ct := req.Header.Get("Content-Type"); ct != "" {
 					req.Header.Set("Content-Type", ct)
 				}
-				// Note: grpc-* headers are already preserved by the default director,
-				// so no additional action is needed for them.
 			}
 		}
 
 		newProxies[key] = proxy
 	}
 
-	p.proxies = newProxies
+	p.proxies.Store(&newProxies)
 }
 
 // Forward forwards an HTTP request to the specified endpoint
 func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.ResponseWriter) error {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
 	key := endpointKey(endpoint)
-	proxy, ok := p.proxies[key]
+	proxies := *p.proxies.Load()
+	proxy, ok := proxies[key]
 	if !ok {
 		return fmt.Errorf("no proxy for endpoint %s", key)
 	}
@@ -355,7 +364,8 @@ func (p *Pool) Close() {
 	}
 
 	p.transport.CloseIdleConnections()
-	p.proxies = make(map[string]*httputil.ReverseProxy)
+	emptyProxies := make(map[string]*httputil.ReverseProxy)
+	p.proxies.Store(&emptyProxies)
 }
 
 // RecordSuccess records a successful request to an endpoint
@@ -378,19 +388,21 @@ func (p *Pool) GetHealthyEndpoints() []*pb.Endpoint {
 		return p.healthChecker.GetHealthyEndpoints()
 	}
 	// Fallback to all endpoints if no health checker
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	return p.endpoints
 }
 
 // GetStats returns pool statistics
 func (p *Pool) GetStats() map[string]interface{} {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
+	p.mu.Lock()
+	endpointCount := len(p.endpoints)
+	p.mu.Unlock()
+	proxies := *p.proxies.Load()
 
 	return map[string]interface{}{
-		"total_endpoints":   len(p.endpoints),
-		"healthy_endpoints": len(p.proxies),
+		"total_endpoints":   endpointCount,
+		"healthy_endpoints": len(proxies),
 		"cluster":           p.clusterKey,
 		"active_conns":      atomic.LoadInt64(&p.activeConns),
 		"total_conns":       atomic.LoadInt64(&p.totalConns),

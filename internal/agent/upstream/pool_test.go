@@ -105,9 +105,8 @@ func TestCreateProxies(t *testing.T) {
 
 		pool := NewPool(context.Background(), cluster, endpoints, logger)
 		defer pool.Close()
-		pool.mu.RLock()
-		proxyCount := len(pool.proxies)
-		pool.mu.RUnlock()
+		proxies := *pool.proxies.Load()
+		proxyCount := len(proxies)
 
 		if proxyCount != 2 {
 			t.Errorf("Expected 2 proxies, got %d", proxyCount)
@@ -122,9 +121,8 @@ func TestCreateProxies(t *testing.T) {
 
 		pool := NewPool(context.Background(), cluster, endpoints, logger)
 		defer pool.Close()
-		pool.mu.RLock()
-		proxyCount := len(pool.proxies)
-		pool.mu.RUnlock()
+		proxies := *pool.proxies.Load()
+		proxyCount := len(proxies)
 
 		if proxyCount != 1 {
 			t.Errorf("Expected 1 proxy (only ready endpoint), got %d", proxyCount)
