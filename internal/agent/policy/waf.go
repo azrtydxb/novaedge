@@ -110,34 +110,17 @@ func buildWAFDirectives(config *pb.WAFConfig) []string {
 		fmt.Sprintf(`SecAction "id:900000,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=%d"`, paranoia),
 	)
 
-	// Add rule exclusions
+	// OWASP CRS-compatible rules at the configured paranoia level
+	directives = append(directives, GetCRSRules(paranoia)...)
+
+	// Add rule exclusions (must come after rules are defined)
 	for _, exclusion := range config.RuleExclusions {
 		directives = append(directives,
 			fmt.Sprintf(`SecRuleRemoveById %s`, exclusion),
 		)
 	}
 
-	// Basic OWASP-compatible rules for SQL injection and XSS
-	directives = append(directives, getBaseRules()...)
-
 	return directives
-}
-
-// getBaseRules returns essential WAF rules for common attack patterns
-func getBaseRules() []string {
-	return []string{
-		// SQL Injection detection
-		`SecRule REQUEST_URI|ARGS|ARGS_NAMES|REQUEST_BODY "@rx (?i)(\b(select|insert|update|delete|drop|union|alter|create|exec|execute)\b.*\b(from|into|table|database|where|set|values)\b|(\b(or|and)\b\s+\d+\s*=\s*\d+)|('(\s*)(or|and)(\s*)('|1|true))|(--\s*$)|(/\*.*\*/)|(\bwaitfor\b\s+\bdelay\b))" "id:1001,phase:2,deny,status:403,log,msg:'SQL Injection detected',tag:'attack-sqli',severity:CRITICAL"`,
-
-		// XSS detection
-		`SecRule REQUEST_URI|ARGS|ARGS_NAMES|REQUEST_BODY "@rx (?i)(<script[^>]*>|javascript:|on(load|error|click|mouseover|submit|focus|blur)\s*=|<iframe|<object|<embed|<applet|eval\s*\(|expression\s*\(|url\s*\(|document\.(cookie|write|location)|window\.(location|open))" "id:1002,phase:2,deny,status:403,log,msg:'XSS Attack detected',tag:'attack-xss',severity:CRITICAL"`,
-
-		// Path traversal detection
-		`SecRule REQUEST_URI|ARGS|REQUEST_BODY "@rx (?i)(\.\./|\.\.\\|%2e%2e%2f|%2e%2e/|\.%2e/|%2e\.)" "id:1003,phase:2,deny,status:403,log,msg:'Path Traversal detected',tag:'attack-lfi',severity:CRITICAL"`,
-
-		// Command injection detection
-		`SecRule REQUEST_URI|ARGS|REQUEST_BODY "@rx (?i)(;|\||&&|\$\(|\x60)(\s*)(\b(cat|ls|id|whoami|pwd|uname|wget|curl|nc|netcat|bash|sh|cmd|powershell)\b)" "id:1004,phase:2,deny,status:403,log,msg:'Command Injection detected',tag:'attack-rce',severity:CRITICAL"`,
-	}
 }
 
 // ProcessRequest processes an HTTP request through the WAF engine
