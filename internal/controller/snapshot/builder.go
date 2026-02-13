@@ -615,11 +615,12 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 
 		if p.Spec.JWT != nil {
 			policy.Jwt = &pb.JWTConfig{
-				Issuer:       p.Spec.JWT.Issuer,
-				Audience:     p.Spec.JWT.Audience,
-				JwksUri:      p.Spec.JWT.JWKSUri,
-				HeaderName:   p.Spec.JWT.HeaderName,
-				HeaderPrefix: p.Spec.JWT.HeaderPrefix,
+				Issuer:            p.Spec.JWT.Issuer,
+				Audience:          p.Spec.JWT.Audience,
+				JwksUri:           p.Spec.JWT.JWKSUri,
+				HeaderName:        p.Spec.JWT.HeaderName,
+				HeaderPrefix:      p.Spec.JWT.HeaderPrefix,
+				AllowedAlgorithms: p.Spec.JWT.AllowedAlgorithms,
 			}
 		}
 

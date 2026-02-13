@@ -18,12 +18,17 @@ package policy
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"sync"
@@ -38,13 +43,25 @@ import (
 // jwtClaimsKey is a typed context key for storing JWT claims, avoiding SA1029.
 type jwtClaimsKey struct{}
 
+// supportedAlgorithms lists all JWT signing algorithms the validator supports.
+var supportedAlgorithms = map[string]bool{
+	"RS256": true,
+	"RS384": true,
+	"RS512": true,
+	"ES256": true,
+	"ES384": true,
+	"ES512": true,
+	"EdDSA": true,
+}
+
 // JWTValidator implements JWT validation
 type JWTValidator struct {
-	config    *pb.JWTConfig
-	mu        sync.RWMutex
-	keys      map[string]interface{} // kid -> key
-	jwks      *JWKS
-	blacklist *TokenBlacklist
+	config            *pb.JWTConfig
+	mu                sync.RWMutex
+	keys              map[string]interface{} // kid -> key
+	jwks              *JWKS
+	blacklist         *TokenBlacklist
+	allowedAlgorithms map[string]bool // set of allowed algorithm names
 }
 
 // JWKS represents a JSON Web Key Set
@@ -61,6 +78,11 @@ type JWK struct {
 	N   string   `json:"n"`
 	E   string   `json:"e"`
 	X5c []string `json:"x5c"`
+	// EC key fields
+	Crv string `json:"crv"`
+	X   string `json:"x"`
+	Y   string `json:"y"`
+	// OKP (Ed25519) key fields - X is reused from EC fields above
 }
 
 // NewJWTValidator creates a new JWT validator
@@ -70,6 +92,9 @@ func NewJWTValidator(ctx context.Context, config *pb.JWTConfig) (*JWTValidator, 
 		keys:      make(map[string]interface{}),
 		blacklist: NewTokenBlacklist(),
 	}
+
+	// Build allowed algorithms set
+	v.allowedAlgorithms = buildAllowedAlgorithms(config.GetAllowedAlgorithms())
 
 	// If JWKS URI is provided, fetch keys
 	if config.JwksUri != "" {
@@ -82,6 +107,27 @@ func NewJWTValidator(ctx context.Context, config *pb.JWTConfig) (*JWTValidator, 
 	}
 
 	return v, nil
+}
+
+// buildAllowedAlgorithms constructs a set of allowed algorithm names.
+// If the input slice is empty, all supported algorithms are allowed.
+func buildAllowedAlgorithms(algorithms []string) map[string]bool {
+	if len(algorithms) == 0 {
+		// Allow all supported algorithms
+		result := make(map[string]bool, len(supportedAlgorithms))
+		for alg := range supportedAlgorithms {
+			result[alg] = true
+		}
+		return result
+	}
+
+	result := make(map[string]bool, len(algorithms))
+	for _, alg := range algorithms {
+		if supportedAlgorithms[alg] {
+			result[alg] = true
+		}
+	}
+	return result
 }
 
 // fetchJWKS fetches and parses JWKS from the configured URL
@@ -119,15 +165,13 @@ func (v *JWTValidator) fetchJWKS(ctx context.Context) error {
 
 	v.jwks = &jwks
 
-	// Parse and store keys
+	// Parse and store keys based on key type
 	for _, key := range jwks.Keys {
-		if key.Kty == "RSA" {
-			pubKey, err := parseRSAPublicKey(key)
-			if err != nil {
-				continue
-			}
-			v.keys[key.Kid] = pubKey
+		parsedKey, parseErr := parseJWKPublicKey(key)
+		if parseErr != nil {
+			continue
 		}
+		v.keys[key.Kid] = parsedKey
 	}
 
 	return nil
@@ -146,13 +190,39 @@ func (v *JWTValidator) refreshJWKS(ctx context.Context) {
 	}
 }
 
+// isAlgorithmAllowed checks whether the given algorithm is in the allowed set.
+func (v *JWTValidator) isAlgorithmAllowed(alg string) bool {
+	return v.allowedAlgorithms[alg]
+}
+
+// isSupportedSigningMethod checks whether the token's signing method is one of
+// the supported types (RSA, ECDSA, or EdDSA).
+func isSupportedSigningMethod(method jwt.SigningMethod) bool {
+	switch method.(type) {
+	case *jwt.SigningMethodRSA:
+		return true
+	case *jwt.SigningMethodECDSA:
+		return true
+	case *jwt.SigningMethodEd25519:
+		return true
+	default:
+		return false
+	}
+}
+
 // Validate validates a JWT token
 func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 	// Parse token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		// Verify signing method
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+		// Verify the signing method is a supported type
+		if !isSupportedSigningMethod(token.Method) {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		// Check against the configured allowed algorithms
+		alg := token.Method.Alg()
+		if !v.isAlgorithmAllowed(alg) {
+			return nil, fmt.Errorf("algorithm %s is not allowed", alg)
 		}
 
 		// Get key ID from token header
@@ -276,6 +346,20 @@ func HandleJWT(validator *JWTValidator) func(http.Handler) http.Handler {
 	}
 }
 
+// parseJWKPublicKey parses a public key from a JWK, supporting RSA, EC, and OKP key types.
+func parseJWKPublicKey(key JWK) (interface{}, error) {
+	switch key.Kty {
+	case "RSA":
+		return parseRSAPublicKey(key)
+	case "EC":
+		return parseECPublicKey(key)
+	case "OKP":
+		return parseOKPPublicKey(key)
+	default:
+		return nil, fmt.Errorf("unsupported key type: %s", key.Kty)
+	}
+}
+
 // parseRSAPublicKey parses an RSA public key from a JWK
 func parseRSAPublicKey(key JWK) (*rsa.PublicKey, error) {
 	// If x5c (certificate chain) is present, use it
@@ -299,6 +383,86 @@ func parseRSAPublicKey(key JWK) (*rsa.PublicKey, error) {
 		return rsaKey, nil
 	}
 
-	// Otherwise, construct from n and e (not implemented in this basic version)
-	return nil, fmt.Errorf("JWK without x5c not supported")
+	// Construct from n and e parameters
+	if key.N == "" || key.E == "" {
+		return nil, fmt.Errorf("RSA JWK missing n or e parameter")
+	}
+
+	nBytes, err := base64.RawURLEncoding.DecodeString(key.N)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode RSA n parameter: %w", err)
+	}
+
+	eBytes, err := base64.RawURLEncoding.DecodeString(key.E)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode RSA e parameter: %w", err)
+	}
+
+	n := new(big.Int).SetBytes(nBytes)
+	e := new(big.Int).SetBytes(eBytes)
+
+	return &rsa.PublicKey{
+		N: n,
+		E: int(e.Int64()),
+	}, nil
+}
+
+// parseECPublicKey parses an ECDSA public key from a JWK
+func parseECPublicKey(key JWK) (*ecdsa.PublicKey, error) {
+	if key.Crv == "" || key.X == "" || key.Y == "" {
+		return nil, fmt.Errorf("EC JWK missing crv, x, or y parameter")
+	}
+
+	var curve elliptic.Curve
+	switch key.Crv {
+	case "P-256":
+		curve = elliptic.P256()
+	case "P-384":
+		curve = elliptic.P384()
+	case "P-521":
+		curve = elliptic.P521()
+	default:
+		return nil, fmt.Errorf("unsupported EC curve: %s", key.Crv)
+	}
+
+	xBytes, err := base64.RawURLEncoding.DecodeString(key.X)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode EC x parameter: %w", err)
+	}
+
+	yBytes, err := base64.RawURLEncoding.DecodeString(key.Y)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode EC y parameter: %w", err)
+	}
+
+	x := new(big.Int).SetBytes(xBytes)
+	y := new(big.Int).SetBytes(yBytes)
+
+	return &ecdsa.PublicKey{
+		Curve: curve,
+		X:     x,
+		Y:     y,
+	}, nil
+}
+
+// parseOKPPublicKey parses an Ed25519 public key from a JWK with key type "OKP"
+func parseOKPPublicKey(key JWK) (ed25519.PublicKey, error) {
+	if key.Crv != "Ed25519" {
+		return nil, fmt.Errorf("unsupported OKP curve: %s (only Ed25519 is supported)", key.Crv)
+	}
+
+	if key.X == "" {
+		return nil, fmt.Errorf("OKP JWK missing x parameter")
+	}
+
+	xBytes, err := base64.RawURLEncoding.DecodeString(key.X)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode OKP x parameter: %w", err)
+	}
+
+	if len(xBytes) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid Ed25519 public key size: got %d, want %d", len(xBytes), ed25519.PublicKeySize)
+	}
+
+	return ed25519.PublicKey(xBytes), nil
 }

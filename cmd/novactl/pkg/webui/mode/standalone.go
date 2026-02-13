@@ -776,10 +776,11 @@ func (s *StandaloneBackend) ListPolicies(ctx context.Context, namespace string) 
 
 		if p.JWT != nil {
 			policy.JWT = &models.JWTConfig{
-				Issuer:    p.JWT.Issuer,
-				Audience:  p.JWT.Audience,
-				JWKSURI:   p.JWT.JWKSURI,
-				SecretKey: p.JWT.SecretKey,
+				Issuer:            p.JWT.Issuer,
+				Audience:          p.JWT.Audience,
+				JWKSURI:           p.JWT.JWKSURI,
+				SecretKey:         p.JWT.SecretKey,
+				AllowedAlgorithms: p.JWT.AllowedAlgorithms,
 			}
 		}
 
@@ -1143,10 +1144,11 @@ func (s *StandaloneBackend) modelPolicyToStandalone(policy *models.Policy) *stan
 
 	if policy.JWT != nil {
 		p.JWT = &standalone.JWTPolicy{
-			Issuer:    policy.JWT.Issuer,
-			Audience:  policy.JWT.Audience,
-			JWKSURI:   policy.JWT.JWKSURI,
-			SecretKey: policy.JWT.SecretKey,
+			Issuer:            policy.JWT.Issuer,
+			Audience:          policy.JWT.Audience,
+			JWKSURI:           policy.JWT.JWKSURI,
+			SecretKey:         policy.JWT.SecretKey,
+			AllowedAlgorithms: policy.JWT.AllowedAlgorithms,
 		}
 	}
 

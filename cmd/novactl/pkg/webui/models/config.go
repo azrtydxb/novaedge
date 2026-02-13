@@ -383,10 +383,11 @@ type IPFilterConfig struct {
 
 // JWTConfig defines JWT validation
 type JWTConfig struct {
-	Issuer    string   `json:"issuer"`
-	Audience  []string `json:"audience,omitempty"`
-	JWKSURI   string   `json:"jwksUri,omitempty"`
-	SecretKey string   `json:"secretKey,omitempty"`
+	Issuer            string   `json:"issuer"`
+	Audience          []string `json:"audience,omitempty"`
+	JWKSURI           string   `json:"jwksUri,omitempty"`
+	SecretKey         string   `json:"secretKey,omitempty"`
+	AllowedAlgorithms []string `json:"allowedAlgorithms,omitempty"`
 }
 
 // ImportResult represents the result of an import operation

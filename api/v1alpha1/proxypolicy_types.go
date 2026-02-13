@@ -92,6 +92,12 @@ type JWTConfig struct {
 	// +kubebuilder:default="Bearer "
 	HeaderPrefix string `json:"headerPrefix,omitempty"`
 
+	// AllowedAlgorithms restricts accepted JWT signing algorithms.
+	// Supported values: RS256, RS384, RS512, ES256, ES384, ES512, EdDSA.
+	// If empty, all supported algorithms are allowed.
+	// +optional
+	AllowedAlgorithms []string `json:"allowedAlgorithms,omitempty"`
+
 	// VaultSecretRef optionally references credentials stored in HashiCorp Vault
 	// +optional
 	VaultSecretRef *VaultSecretReference `json:"vaultSecretRef,omitempty"`
