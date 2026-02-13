@@ -28,8 +28,10 @@ import (
 // EWMA implements Exponentially Weighted Moving Average load balancing
 // Selects endpoints based on weighted average response times
 type EWMA struct {
-	mu        sync.RWMutex
-	endpoints []*pb.Endpoint
+	mu               sync.RWMutex
+	endpoints        []*pb.Endpoint
+	healthyEndpoints []*pb.Endpoint          // cached healthy list
+	endpointKeys     map[*pb.Endpoint]string // cached keys
 
 	// EWMA scores per endpoint (lower is better)
 	scores map[string]*int64 // Stored as nanoseconds * 1000 for precision
@@ -66,12 +68,15 @@ func NewEWMA(endpoints []*pb.Endpoint) *EWMA {
 		}
 	}
 
-	return &EWMA{
+	e := &EWMA{
 		endpoints:      endpoints,
 		scores:         scores,
 		activeRequests: activeRequests,
 		decay:          0.9, // 90% weight to historical data
 	}
+	e.buildKeyCache()
+	e.rebuildHealthy()
+	return e
 }
 
 // Select chooses an endpoint with the lowest EWMA score
@@ -94,7 +99,7 @@ func (e *EWMA) Select() *pb.Endpoint {
 	bestScore := int64(math.MaxInt64)
 
 	for _, ep := range healthy {
-		key := endpointKey(ep)
+		key := e.cachedKey(ep)
 		ewmaScore := atomic.LoadInt64(e.scores[key])
 		activeCount := atomic.LoadInt64(e.activeRequests[key])
 
@@ -144,6 +149,8 @@ func (e *EWMA) UpdateEndpoints(endpoints []*pb.Endpoint) {
 
 	e.scores = newScores
 	e.activeRequests = newActiveRequests
+	e.buildKeyCache()
+	e.rebuildHealthy()
 }
 
 // RecordLatency updates the EWMA score for an endpoint based on observed latency
@@ -152,8 +159,8 @@ func (e *EWMA) RecordLatency(endpoint *pb.Endpoint, latency time.Duration) {
 		return
 	}
 
-	key := endpointKey(endpoint)
 	e.mu.RLock()
+	key := e.cachedKey(endpoint)
 	scorePtr := e.scores[key]
 	e.mu.RUnlock()
 
@@ -180,8 +187,8 @@ func (e *EWMA) IncrementActive(endpoint *pb.Endpoint) {
 	if endpoint == nil {
 		return
 	}
-	key := endpointKey(endpoint)
 	e.mu.RLock()
+	key := e.cachedKey(endpoint)
 	counter := e.activeRequests[key]
 	e.mu.RUnlock()
 	if counter != nil {
@@ -194,8 +201,8 @@ func (e *EWMA) DecrementActive(endpoint *pb.Endpoint) {
 	if endpoint == nil {
 		return
 	}
-	key := endpointKey(endpoint)
 	e.mu.RLock()
+	key := e.cachedKey(endpoint)
 	counter := e.activeRequests[key]
 	e.mu.RUnlock()
 	if counter != nil {
@@ -208,8 +215,8 @@ func (e *EWMA) GetScore(endpoint *pb.Endpoint) float64 {
 	if endpoint == nil {
 		return 0
 	}
-	key := endpointKey(endpoint)
 	e.mu.RLock()
+	key := e.cachedKey(endpoint)
 	scorePtr := e.scores[key]
 	e.mu.RUnlock()
 	if scorePtr != nil {
@@ -219,12 +226,36 @@ func (e *EWMA) GetScore(endpoint *pb.Endpoint) float64 {
 	return 0
 }
 
-func (e *EWMA) getHealthyEndpoints() []*pb.Endpoint {
+// rebuildHealthy filters and caches the list of healthy endpoints.
+// Must be called with e.mu held (write lock).
+func (e *EWMA) rebuildHealthy() {
 	healthy := make([]*pb.Endpoint, 0, len(e.endpoints))
 	for _, ep := range e.endpoints {
 		if ep.Ready {
 			healthy = append(healthy, ep)
 		}
 	}
-	return healthy
+	e.healthyEndpoints = healthy
+}
+
+func (e *EWMA) getHealthyEndpoints() []*pb.Endpoint {
+	return e.healthyEndpoints
+}
+
+// buildKeyCache pre-computes endpoint keys for all endpoints.
+// Must be called with e.mu held (write lock).
+func (e *EWMA) buildKeyCache() {
+	e.endpointKeys = make(map[*pb.Endpoint]string, len(e.endpoints))
+	for _, ep := range e.endpoints {
+		e.endpointKeys[ep] = endpointKey(ep)
+	}
+}
+
+// cachedKey returns the cached key for an endpoint, falling back to computing it
+// if the pointer is not in the cache.
+func (e *EWMA) cachedKey(ep *pb.Endpoint) string {
+	if key, ok := e.endpointKeys[ep]; ok {
+		return key
+	}
+	return endpointKey(ep)
 }
