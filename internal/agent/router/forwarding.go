@@ -17,7 +17,6 @@ limitations under the License.
 package router
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -168,7 +167,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		r.mirrorRequest(ctx, req, entry.MirrorConfig, r.pools, r.hashBasedLBs, standardLBs)
 	}
 
-	clusterKey := fmt.Sprintf("%s/%s", backendRef.Namespace, backendRef.Name)
+	clusterKey := backendRef.Namespace + "/" + backendRef.Name
 	backendSpan.SetAttributes(
 		attribute.String("novaedge.backend.cluster", clusterKey),
 		attribute.String("novaedge.backend.namespace", backendRef.Namespace),
