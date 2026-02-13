@@ -19,6 +19,7 @@ package wasm
 import (
 	"context"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -366,6 +367,116 @@ func TestPlugin_ExecuteRequestPhase_NoExport(t *testing.T) {
 		Action: ActionContinue,
 	}
 
+	action, err := plugin.ExecuteRequestPhase(ctx, reqCtx)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if action != ActionContinue {
+		t.Errorf("expected ActionContinue, got %v", action)
+	}
+}
+
+func TestRuntime_MemoryLimitPages(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+
+	rt, err := NewRuntime(ctx, logger)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer func() { _ = rt.Close(ctx) }()
+
+	// Runtime should have been created with memory limits
+	// Verify by loading a minimal module (no memory section, so won't hit limit)
+	err = rt.LoadPlugin(ctx, &PluginConfig{
+		Name:      "memlimit",
+		WASMBytes: minimalWASM,
+		Phase:     PhaseRequest,
+	})
+	if err != nil {
+		t.Fatalf("failed to load plugin with memory limits: %v", err)
+	}
+}
+
+func TestPlugin_ExecutionTimeout_Default(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+
+	rt, err := NewRuntime(ctx, logger)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer func() { _ = rt.Close(ctx) }()
+
+	err = rt.LoadPlugin(ctx, &PluginConfig{
+		Name:      "timeout-test",
+		WASMBytes: minimalWASM,
+		Phase:     PhaseRequest,
+	})
+	if err != nil {
+		t.Fatalf("failed to load plugin: %v", err)
+	}
+
+	plugin, _ := rt.GetPlugin("timeout-test")
+
+	// Default timeout should be 5 seconds
+	timeout := plugin.executionTimeout()
+	if timeout != 5*time.Second {
+		t.Errorf("expected default timeout 5s, got %v", timeout)
+	}
+}
+
+func TestPlugin_ExecutionTimeout_Custom(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+
+	rt, err := NewRuntime(ctx, logger)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer func() { _ = rt.Close(ctx) }()
+
+	err = rt.LoadPlugin(ctx, &PluginConfig{
+		Name:             "custom-timeout",
+		WASMBytes:        minimalWASM,
+		Phase:            PhaseRequest,
+		ExecutionTimeout: 2 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("failed to load plugin: %v", err)
+	}
+
+	plugin, _ := rt.GetPlugin("custom-timeout")
+	timeout := plugin.executionTimeout()
+	if timeout != 2*time.Second {
+		t.Errorf("expected custom timeout 2s, got %v", timeout)
+	}
+}
+
+func TestPlugin_ExecuteWithTimeout_NoExport(t *testing.T) {
+	ctx := context.Background()
+	logger := zap.NewNop()
+
+	rt, err := NewRuntime(ctx, logger)
+	if err != nil {
+		t.Fatalf("failed to create runtime: %v", err)
+	}
+	defer func() { _ = rt.Close(ctx) }()
+
+	err = rt.LoadPlugin(ctx, &PluginConfig{
+		Name:             "timeout-noop",
+		WASMBytes:        minimalWASM,
+		Phase:            PhaseRequest,
+		ExecutionTimeout: 1 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("failed to load plugin: %v", err)
+	}
+
+	plugin, _ := rt.GetPlugin("timeout-noop")
+	reqCtx := &RequestContext{Action: ActionContinue}
+
+	// Should complete quickly since no export exists
 	action, err := plugin.ExecuteRequestPhase(ctx, reqCtx)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

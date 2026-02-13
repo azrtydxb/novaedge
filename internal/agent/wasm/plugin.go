@@ -81,13 +81,22 @@ func (p *Plugin) ExecuteRequestPhase(ctx context.Context, reqCtx *RequestContext
 		return ActionContinue, nil
 	}
 
+	// Enforce execution timeout
+	timeout := p.executionTimeout()
+	execCtx, cancel := context.WithTimeout(wasmCtx, timeout)
+	defer cancel()
+
 	// Call the guest function. The guest communicates back via host functions.
-	_, err = fn.Call(wasmCtx)
+	_, err = fn.Call(execCtx)
 
 	duration := time.Since(start)
 	RecordPluginExecution(p.config.Name, "request", duration, err)
 
 	if err != nil {
+		if execCtx.Err() == context.DeadlineExceeded {
+			RecordPluginTimeout(p.config.Name, "request")
+			return ActionContinue, fmt.Errorf("wasm on_request_headers timed out after %s: %w", timeout, err)
+		}
 		return ActionContinue, fmt.Errorf("wasm on_request_headers failed: %w", err)
 	}
 
@@ -113,12 +122,21 @@ func (p *Plugin) ExecuteResponsePhase(ctx context.Context, reqCtx *RequestContex
 		return ActionContinue, nil
 	}
 
-	_, err = fn.Call(wasmCtx)
+	// Enforce execution timeout
+	timeout := p.executionTimeout()
+	execCtx, cancel := context.WithTimeout(wasmCtx, timeout)
+	defer cancel()
+
+	_, err = fn.Call(execCtx)
 
 	duration := time.Since(start)
 	RecordPluginExecution(p.config.Name, "response", duration, err)
 
 	if err != nil {
+		if execCtx.Err() == context.DeadlineExceeded {
+			RecordPluginTimeout(p.config.Name, "response")
+			return ActionContinue, fmt.Errorf("wasm on_response_headers timed out after %s: %w", timeout, err)
+		}
 		return ActionContinue, fmt.Errorf("wasm on_response_headers failed: %w", err)
 	}
 
@@ -134,6 +152,16 @@ func (p *Plugin) Close(ctx context.Context) {
 		_ = p.compiled.Close(ctx)
 	}
 	p.logger.Info("Plugin closed")
+}
+
+const defaultExecutionTimeout = 5 * time.Second
+
+// executionTimeout returns the configured execution timeout or the default.
+func (p *Plugin) executionTimeout() time.Duration {
+	if p.config.ExecutionTimeout > 0 {
+		return p.config.ExecutionTimeout
+	}
+	return defaultExecutionTimeout
 }
 
 // instantiate creates a new WASM module instance from the compiled module.
