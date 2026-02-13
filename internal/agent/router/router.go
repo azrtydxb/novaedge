@@ -213,6 +213,26 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 					Filters:        buildFilters(rule.Filters),
 				}
 
+				// Pre-compile boolean routing expression at config time
+				// to avoid per-request parsing overhead (same pattern as
+				// compileHeaderRegexes and createPathMatcher above).
+				if expr := route.GetExpression(); expr != "" {
+					compiled, err := CompileExpression(expr)
+					if err != nil {
+						r.logger.Error("Failed to compile route expression, skipping",
+							zap.String("route", route.Name),
+							zap.String("expression", expr),
+							zap.Error(err),
+						)
+					} else {
+						entry.Expression = compiled
+						r.logger.Debug("Compiled route expression",
+							zap.String("route", route.Name),
+							zap.String("expression", expr),
+						)
+					}
+				}
+
 				// Pre-compute cluster keys for all backend refs to avoid
 				// per-request string concatenation in the forwarding hot path.
 				if len(rule.BackendRefs) > 0 {

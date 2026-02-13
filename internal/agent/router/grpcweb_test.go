@@ -25,14 +25,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"go.uber.org/zap"
 )
-
-func testLogger() *zap.Logger {
-	logger, _ := zap.NewDevelopment()
-	return logger
-}
 
 // TestIsGRPCWebRequest_DetectsContentTypes verifies that all four gRPC-Web
 // content types are correctly identified as gRPC-Web requests.
