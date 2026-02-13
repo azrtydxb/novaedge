@@ -122,6 +122,15 @@ var (
 		[]string{"cluster"},
 	)
 
+	// CircuitBreakerOverflowTotal tracks circuit breaker resource limit overflows
+	CircuitBreakerOverflowTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_circuit_breaker_overflow_total",
+			Help: "Total number of circuit breaker resource limit overflows",
+		},
+		[]string{"cluster", "type"}, // type: connections, pending, requests, retries
+	)
+
 	// Load Balancer Metrics
 
 	// LoadBalancerSelections tracks load balancer endpoint selections
@@ -230,6 +239,11 @@ func RecordEndpointEjection(cluster, endpoint, reason string) {
 // SetEndpointsEjected sets the current number of ejected endpoints for a cluster.
 func SetEndpointsEjected(cluster string, count int) {
 	EndpointsEjected.WithLabelValues(cluster).Set(float64(count))
+}
+
+// RecordCircuitBreakerOverflow records a circuit breaker resource limit overflow event.
+func RecordCircuitBreakerOverflow(cluster, limitType string) {
+	CircuitBreakerOverflowTotal.WithLabelValues(cluster, limitType).Inc()
 }
 
 // RecordLoadBalancerSelection records a load balancer selection
