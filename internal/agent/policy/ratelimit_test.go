@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -49,6 +50,10 @@ func TestNewRateLimiter(t *testing.T) {
 
 	if limiter.limiters == nil {
 		t.Error("Expected limiters map to be initialized")
+	}
+
+	if limiter.lastUsed == nil {
+		t.Error("Expected lastUsed map to be initialized")
 	}
 }
 
@@ -198,6 +203,29 @@ func TestGetLimiter(t *testing.T) {
 			t.Errorf("Expected burst of 5 requests, got %d", allowed)
 		}
 	})
+
+	t.Run("getLimiter sets lastUsed timestamp", func(t *testing.T) {
+		config := &pb.RateLimitConfig{
+			RequestsPerSecond: 10,
+			Burst:             20,
+		}
+		rl := NewRateLimiter(config)
+
+		before := time.Now()
+		rl.getLimiter("ts-key")
+		after := time.Now()
+
+		rl.mu.RLock()
+		ts, ok := rl.lastUsed["ts-key"]
+		rl.mu.RUnlock()
+
+		if !ok {
+			t.Fatal("Expected lastUsed entry for ts-key")
+		}
+		if ts.Before(before) || ts.After(after) {
+			t.Errorf("Expected lastUsed between %v and %v, got %v", before, after, ts)
+		}
+	})
 }
 
 func TestAllow(t *testing.T) {
@@ -304,6 +332,33 @@ func TestAllow(t *testing.T) {
 
 		if allowedCount != 3 {
 			t.Errorf("Expected 3 requests to be allowed (burst), got %d", allowedCount)
+		}
+	})
+
+	t.Run("Allow updates lastUsed timestamp", func(t *testing.T) {
+		config := &pb.RateLimitConfig{
+			RequestsPerSecond: 100,
+			Burst:             100,
+			Key:               "source-ip",
+		}
+		limiter := NewRateLimiter(config)
+
+		req := httptest.NewRequest(http.MethodGet, "/test", nil)
+		req.RemoteAddr = "9.8.7.6:12345"
+
+		before := time.Now()
+		limiter.Allow(req)
+		after := time.Now()
+
+		limiter.mu.RLock()
+		ts, ok := limiter.lastUsed["9.8.7.6"]
+		limiter.mu.RUnlock()
+
+		if !ok {
+			t.Fatal("Expected lastUsed entry for 9.8.7.6")
+		}
+		if ts.Before(before) || ts.After(after) {
+			t.Errorf("Expected lastUsed between %v and %v, got %v", before, after, ts)
 		}
 	})
 }
@@ -474,22 +529,187 @@ func TestCleanup(t *testing.T) {
 		RequestsPerSecond: 10,
 		Burst:             20,
 	}
-	limiter := NewRateLimiter(config)
 
-	// Create some limiters
-	limiter.getLimiter("key1")
-	limiter.getLimiter("key2")
-	limiter.getLimiter("key3")
+	t.Run("removes inactive limiters", func(t *testing.T) {
+		limiter := NewRateLimiter(config)
 
-	if len(limiter.limiters) != 3 {
-		t.Errorf("Expected 3 limiters, got %d", len(limiter.limiters))
+		// Create limiters and manually backdate their lastUsed timestamps
+		limiter.getLimiter("key1")
+		limiter.getLimiter("key2")
+		limiter.getLimiter("key3")
+
+		if limiter.ActiveCount() != 3 {
+			t.Fatalf("Expected 3 limiters, got %d", limiter.ActiveCount())
+		}
+
+		// Backdate key1 and key2 to 2 hours ago
+		twoHoursAgo := time.Now().Add(-2 * time.Hour)
+		limiter.mu.Lock()
+		limiter.lastUsed["key1"] = twoHoursAgo
+		limiter.lastUsed["key2"] = twoHoursAgo
+		limiter.mu.Unlock()
+
+		// Cleanup with 1 hour max age should remove key1 and key2
+		limiter.Cleanup(1 * time.Hour)
+
+		if limiter.ActiveCount() != 1 {
+			t.Errorf("Expected 1 limiter after cleanup, got %d", limiter.ActiveCount())
+		}
+
+		// key3 should still exist
+		limiter.mu.RLock()
+		_, key3Exists := limiter.limiters["key3"]
+		_, key1Exists := limiter.limiters["key1"]
+		_, key2Exists := limiter.limiters["key2"]
+		limiter.mu.RUnlock()
+
+		if !key3Exists {
+			t.Error("Expected key3 to still exist after cleanup")
+		}
+		if key1Exists {
+			t.Error("Expected key1 to be removed after cleanup")
+		}
+		if key2Exists {
+			t.Error("Expected key2 to be removed after cleanup")
+		}
+	})
+
+	t.Run("keeps recently used limiters", func(t *testing.T) {
+		limiter := NewRateLimiter(config)
+
+		limiter.getLimiter("active-key")
+
+		// Cleanup with 1 hour max age should keep the limiter (it was just created)
+		limiter.Cleanup(1 * time.Hour)
+
+		if limiter.ActiveCount() != 1 {
+			t.Errorf("Expected 1 limiter after cleanup, got %d", limiter.ActiveCount())
+		}
+	})
+
+	t.Run("cleanup removes from both maps", func(t *testing.T) {
+		limiter := NewRateLimiter(config)
+
+		limiter.getLimiter("stale-key")
+
+		// Backdate to 2 hours ago
+		limiter.mu.Lock()
+		limiter.lastUsed["stale-key"] = time.Now().Add(-2 * time.Hour)
+		limiter.mu.Unlock()
+
+		limiter.Cleanup(1 * time.Hour)
+
+		limiter.mu.RLock()
+		_, limiterExists := limiter.limiters["stale-key"]
+		_, lastUsedExists := limiter.lastUsed["stale-key"]
+		limiter.mu.RUnlock()
+
+		if limiterExists {
+			t.Error("Expected limiter entry to be removed")
+		}
+		if lastUsedExists {
+			t.Error("Expected lastUsed entry to be removed")
+		}
+	})
+
+	t.Run("cleanup with empty map is safe", func(t *testing.T) {
+		limiter := NewRateLimiter(config)
+
+		// Should not panic
+		limiter.Cleanup(1 * time.Hour)
+
+		if limiter.ActiveCount() != 0 {
+			t.Errorf("Expected 0 limiters, got %d", limiter.ActiveCount())
+		}
+	})
+}
+
+func TestStartCleanup(t *testing.T) {
+	config := &pb.RateLimitConfig{
+		RequestsPerSecond: 10,
+		Burst:             20,
 	}
 
-	// Call cleanup (currently a no-op, but tests the function exists and doesn't error)
-	limiter.Cleanup(1 * time.Hour)
+	t.Run("periodic cleanup removes stale entries", func(t *testing.T) {
+		limiter := NewRateLimiter(config)
 
-	// Limiters should still exist (cleanup is not implemented yet)
-	if len(limiter.limiters) != 3 {
-		t.Errorf("Expected 3 limiters after cleanup, got %d", len(limiter.limiters))
+		// Create a limiter and backdate it
+		limiter.getLimiter("periodic-key")
+		limiter.mu.Lock()
+		limiter.lastUsed["periodic-key"] = time.Now().Add(-2 * time.Hour)
+		limiter.mu.Unlock()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Start cleanup with a very short interval for testing
+		limiter.StartCleanup(ctx, 50*time.Millisecond, 1*time.Hour)
+
+		// Wait for at least one cleanup cycle
+		time.Sleep(150 * time.Millisecond)
+
+		if limiter.ActiveCount() != 0 {
+			t.Errorf("Expected 0 limiters after periodic cleanup, got %d", limiter.ActiveCount())
+		}
+	})
+
+	t.Run("context cancellation stops cleanup", func(t *testing.T) {
+		limiter := NewRateLimiter(config)
+
+		ctx, cancel := context.WithCancel(context.Background())
+
+		limiter.StartCleanup(ctx, 50*time.Millisecond, 1*time.Hour)
+
+		// Cancel context immediately
+		cancel()
+
+		// Wait to ensure goroutine had time to exit
+		time.Sleep(100 * time.Millisecond)
+
+		// Add a stale entry after cancellation
+		limiter.getLimiter("after-cancel")
+		limiter.mu.Lock()
+		limiter.lastUsed["after-cancel"] = time.Now().Add(-2 * time.Hour)
+		limiter.mu.Unlock()
+
+		// Wait - cleanup should NOT run since context was cancelled
+		time.Sleep(150 * time.Millisecond)
+
+		if limiter.ActiveCount() != 1 {
+			t.Errorf("Expected 1 limiter (cleanup should have stopped), got %d", limiter.ActiveCount())
+		}
+	})
+}
+
+func TestActiveCount(t *testing.T) {
+	config := &pb.RateLimitConfig{
+		RequestsPerSecond: 10,
+		Burst:             20,
+	}
+	limiter := NewRateLimiter(config)
+
+	if limiter.ActiveCount() != 0 {
+		t.Errorf("Expected 0 active limiters, got %d", limiter.ActiveCount())
+	}
+
+	limiter.getLimiter("key1")
+	if limiter.ActiveCount() != 1 {
+		t.Errorf("Expected 1 active limiter, got %d", limiter.ActiveCount())
+	}
+
+	limiter.getLimiter("key2")
+	limiter.getLimiter("key3")
+	if limiter.ActiveCount() != 3 {
+		t.Errorf("Expected 3 active limiters, got %d", limiter.ActiveCount())
+	}
+}
+
+func TestDefaultConstants(t *testing.T) {
+	if DefaultCleanupInterval != 5*time.Minute {
+		t.Errorf("Expected DefaultCleanupInterval to be 5m, got %v", DefaultCleanupInterval)
+	}
+
+	if DefaultCleanupMaxAge != 1*time.Hour {
+		t.Errorf("Expected DefaultCleanupMaxAge to be 1h, got %v", DefaultCleanupMaxAge)
 	}
 }
