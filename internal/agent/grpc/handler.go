@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package grpc provides gRPC-specific request handling, status code mapping,
+// and metadata forwarding for the reverse proxy.
 package grpc
 
 import (
@@ -44,65 +46,65 @@ const (
 	grpcUserAgentHeader      = "grpc-user-agent"
 )
 
-// GRPCCode represents standard gRPC status codes
-type GRPCCode int
+// Code represents standard gRPC status codes
+type Code int
 
 const (
-	// GRPCCodeOK indicates the operation was successful
-	GRPCCodeOK GRPCCode = 0
-	// GRPCCodeCancelled indicates the operation was cancelled
-	GRPCCodeCancelled GRPCCode = 1
-	// GRPCCodeUnknown indicates an unknown error
-	GRPCCodeUnknown GRPCCode = 2
-	// GRPCCodeInvalidArgument indicates invalid arguments
-	GRPCCodeInvalidArgument GRPCCode = 3
-	// GRPCCodeDeadlineExceeded indicates deadline exceeded
-	GRPCCodeDeadlineExceeded GRPCCode = 4
-	// GRPCCodeNotFound indicates the requested entity was not found
-	GRPCCodeNotFound GRPCCode = 5
-	// GRPCCodeAlreadyExists indicates the entity already exists
-	GRPCCodeAlreadyExists GRPCCode = 6
-	// GRPCCodePermissionDenied indicates permission was denied
-	GRPCCodePermissionDenied GRPCCode = 7
-	// GRPCCodeResourceExhausted indicates resources are exhausted
-	GRPCCodeResourceExhausted GRPCCode = 8
-	// GRPCCodeFailedPrecondition indicates a failed precondition
-	GRPCCodeFailedPrecondition GRPCCode = 9
-	// GRPCCodeAborted indicates the operation was aborted
-	GRPCCodeAborted GRPCCode = 10
-	// GRPCCodeOutOfRange indicates an out of range value
-	GRPCCodeOutOfRange GRPCCode = 11
-	// GRPCCodeUnimplemented indicates the operation is not implemented
-	GRPCCodeUnimplemented GRPCCode = 12
-	// GRPCCodeInternal indicates an internal error
-	GRPCCodeInternal GRPCCode = 13
-	// GRPCCodeUnavailable indicates the service is unavailable
-	GRPCCodeUnavailable GRPCCode = 14
-	// GRPCCodeDataLoss indicates data loss
-	GRPCCodeDataLoss GRPCCode = 15
-	// GRPCCodeUnauthenticated indicates the caller is not authenticated
-	GRPCCodeUnauthenticated GRPCCode = 16
+	// CodeOK indicates the operation was successful
+	CodeOK Code = 0
+	// CodeCancelled indicates the operation was cancelled
+	CodeCancelled Code = 1
+	// CodeUnknown indicates an unknown error
+	CodeUnknown Code = 2
+	// CodeInvalidArgument indicates invalid arguments
+	CodeInvalidArgument Code = 3
+	// CodeDeadlineExceeded indicates deadline exceeded
+	CodeDeadlineExceeded Code = 4
+	// CodeNotFound indicates the requested entity was not found
+	CodeNotFound Code = 5
+	// CodeAlreadyExists indicates the entity already exists
+	CodeAlreadyExists Code = 6
+	// CodePermissionDenied indicates permission was denied
+	CodePermissionDenied Code = 7
+	// CodeResourceExhausted indicates resources are exhausted
+	CodeResourceExhausted Code = 8
+	// CodeFailedPrecondition indicates a failed precondition
+	CodeFailedPrecondition Code = 9
+	// CodeAborted indicates the operation was aborted
+	CodeAborted Code = 10
+	// CodeOutOfRange indicates an out of range value
+	CodeOutOfRange Code = 11
+	// CodeUnimplemented indicates the operation is not implemented
+	CodeUnimplemented Code = 12
+	// CodeInternal indicates an internal error
+	CodeInternal Code = 13
+	// CodeUnavailable indicates the service is unavailable
+	CodeUnavailable Code = 14
+	// CodeDataLoss indicates data loss
+	CodeDataLoss Code = 15
+	// CodeUnauthenticated indicates the caller is not authenticated
+	CodeUnauthenticated Code = 16
 )
 
 // IsGRPCRequest checks if an HTTP request is a gRPC request
 // Delegates to protocol package for consistency
 var IsGRPCRequest = protocol.IsGRPCRequest
 
-// GRPCHandler handles gRPC-specific request/response proxying
-type GRPCHandler struct {
+// Handler handles gRPC-specific request/response proxying
+type Handler struct {
 	logger *zap.Logger
 }
 
-// NewGRPCHandler creates a new gRPC handler
-func NewGRPCHandler(logger *zap.Logger) *GRPCHandler {
-	return &GRPCHandler{
+// NewHandler creates a new gRPC handler
+func NewHandler(logger *zap.Logger) *Handler {
+	return &Handler{
 		logger: logger,
 	}
 }
 
 // PrepareGRPCRequest prepares a gRPC request for proxying to backend
 // This ensures all gRPC-specific headers and metadata are properly forwarded
-func (h *GRPCHandler) PrepareGRPCRequest(r *http.Request) *http.Request {
+func (h *Handler) PrepareGRPCRequest(r *http.Request) *http.Request {
 	// gRPC headers that should be forwarded
 	grpcHeaders := []string{
 		grpcEncodingHeader,
@@ -148,7 +150,7 @@ func (h *GRPCHandler) PrepareGRPCRequest(r *http.Request) *http.Request {
 
 // HandleGRPCResponse handles gRPC-specific response processing
 // This ensures gRPC status codes, trailers, and metadata are properly forwarded
-func (h *GRPCHandler) HandleGRPCResponse(w http.ResponseWriter, backendResp *http.Response) error {
+func (h *Handler) HandleGRPCResponse(w http.ResponseWriter, backendResp *http.Response) error {
 	// Copy all headers from backend response
 	for key, values := range backendResp.Header {
 		for _, value := range values {
@@ -193,7 +195,7 @@ func (h *GRPCHandler) HandleGRPCResponse(w http.ResponseWriter, backendResp *htt
 }
 
 // ValidateGRPCRequest performs gRPC-specific request validation
-func (h *GRPCHandler) ValidateGRPCRequest(r *http.Request) error {
+func (h *Handler) ValidateGRPCRequest(r *http.Request) error {
 	// gRPC requires POST method
 	if r.Method != http.MethodPost {
 		h.logger.Warn("gRPC request with invalid method",
@@ -218,7 +220,7 @@ func (h *GRPCHandler) ValidateGRPCRequest(r *http.Request) error {
 }
 
 // GetGRPCMetadata extracts gRPC metadata from request headers
-func (h *GRPCHandler) GetGRPCMetadata(r *http.Request) map[string][]string {
+func (h *Handler) GetGRPCMetadata(r *http.Request) map[string][]string {
 	metadata := make(map[string][]string)
 
 	// Extract all headers that are considered gRPC metadata
@@ -239,7 +241,7 @@ func (h *GRPCHandler) GetGRPCMetadata(r *http.Request) map[string][]string {
 // IsGRPCStreaming determines if the request is a streaming gRPC call
 // Note: This is a heuristic as we can't fully determine this without
 // inspecting the protobuf service definition
-func (h *GRPCHandler) IsGRPCStreaming(r *http.Request) bool {
+func (h *Handler) IsGRPCStreaming(r *http.Request) bool {
 	// gRPC streaming always uses chunked transfer encoding
 	// or doesn't specify Content-Length
 	contentLength := r.Header.Get("Content-Length")
@@ -280,70 +282,70 @@ func ExtractGRPCServiceMethod(path string) (service string, method string, ok bo
 	return service, method, true
 }
 
-// HTTPStatusToGRPCCode maps HTTP status codes to gRPC status codes
-func HTTPStatusToGRPCCode(httpStatus int) GRPCCode {
+// HTTPStatusToCode maps HTTP status codes to gRPC status codes
+func HTTPStatusToCode(httpStatus int) Code {
 	switch httpStatus {
 	case http.StatusOK:
-		return GRPCCodeOK
+		return CodeOK
 	case http.StatusBadRequest:
-		return GRPCCodeInvalidArgument
+		return CodeInvalidArgument
 	case http.StatusUnauthorized:
-		return GRPCCodeUnauthenticated
+		return CodeUnauthenticated
 	case http.StatusForbidden:
-		return GRPCCodePermissionDenied
+		return CodePermissionDenied
 	case http.StatusNotFound:
-		return GRPCCodeNotFound
+		return CodeNotFound
 	case http.StatusConflict:
-		return GRPCCodeAlreadyExists
+		return CodeAlreadyExists
 	case http.StatusTooManyRequests:
-		return GRPCCodeResourceExhausted
+		return CodeResourceExhausted
 	case http.StatusInternalServerError:
-		return GRPCCodeInternal
+		return CodeInternal
 	case http.StatusNotImplemented:
-		return GRPCCodeUnimplemented
+		return CodeUnimplemented
 	case http.StatusServiceUnavailable:
-		return GRPCCodeUnavailable
+		return CodeUnavailable
 	case http.StatusGatewayTimeout:
-		return GRPCCodeDeadlineExceeded
+		return CodeDeadlineExceeded
 	default:
-		return GRPCCodeUnknown
+		return CodeUnknown
 	}
 }
 
-// GRPCCodeToHTTPStatus maps gRPC status codes to HTTP status codes
-func GRPCCodeToHTTPStatus(code GRPCCode) int {
+// CodeToHTTPStatus maps gRPC status codes to HTTP status codes
+func CodeToHTTPStatus(code Code) int {
 	switch code {
-	case GRPCCodeOK:
+	case CodeOK:
 		return http.StatusOK
-	case GRPCCodeCancelled:
+	case CodeCancelled:
 		return 499 // Client Closed Request
-	case GRPCCodeInvalidArgument:
+	case CodeInvalidArgument:
 		return http.StatusBadRequest
-	case GRPCCodeDeadlineExceeded:
+	case CodeDeadlineExceeded:
 		return http.StatusGatewayTimeout
-	case GRPCCodeNotFound:
+	case CodeNotFound:
 		return http.StatusNotFound
-	case GRPCCodeAlreadyExists:
+	case CodeAlreadyExists:
 		return http.StatusConflict
-	case GRPCCodePermissionDenied:
+	case CodePermissionDenied:
 		return http.StatusForbidden
-	case GRPCCodeResourceExhausted:
+	case CodeResourceExhausted:
 		return http.StatusTooManyRequests
-	case GRPCCodeFailedPrecondition:
+	case CodeFailedPrecondition:
 		return http.StatusBadRequest
-	case GRPCCodeAborted:
+	case CodeAborted:
 		return http.StatusConflict
-	case GRPCCodeOutOfRange:
+	case CodeOutOfRange:
 		return http.StatusBadRequest
-	case GRPCCodeUnimplemented:
+	case CodeUnimplemented:
 		return http.StatusNotImplemented
-	case GRPCCodeInternal:
+	case CodeInternal:
 		return http.StatusInternalServerError
-	case GRPCCodeUnavailable:
+	case CodeUnavailable:
 		return http.StatusServiceUnavailable
-	case GRPCCodeDataLoss:
+	case CodeDataLoss:
 		return http.StatusInternalServerError
-	case GRPCCodeUnauthenticated:
+	case CodeUnauthenticated:
 		return http.StatusUnauthorized
 	default:
 		return http.StatusInternalServerError
@@ -351,7 +353,7 @@ func GRPCCodeToHTTPStatus(code GRPCCode) int {
 }
 
 // WriteGRPCError writes a gRPC error response with proper trailers
-func (h *GRPCHandler) WriteGRPCError(w http.ResponseWriter, code GRPCCode, message string) {
+func (h *Handler) WriteGRPCError(w http.ResponseWriter, code Code, message string) {
 	w.Header().Set("Content-Type", grpcContentType)
 	w.Header().Set(grpcStatusHeader, strconv.Itoa(int(code)))
 	w.Header().Set(grpcMessageHeader, message)
@@ -403,26 +405,26 @@ func ForwardGRPCMetadata(src, dst http.Header) {
 	}
 }
 
-// GRPCCodeName returns the string name of a gRPC status code
-func GRPCCodeName(code GRPCCode) string {
-	names := map[GRPCCode]string{
-		GRPCCodeOK:                 "OK",
-		GRPCCodeCancelled:          "CANCELLED",
-		GRPCCodeUnknown:            "UNKNOWN",
-		GRPCCodeInvalidArgument:    "INVALID_ARGUMENT",
-		GRPCCodeDeadlineExceeded:   "DEADLINE_EXCEEDED",
-		GRPCCodeNotFound:           "NOT_FOUND",
-		GRPCCodeAlreadyExists:      "ALREADY_EXISTS",
-		GRPCCodePermissionDenied:   "PERMISSION_DENIED",
-		GRPCCodeResourceExhausted:  "RESOURCE_EXHAUSTED",
-		GRPCCodeFailedPrecondition: "FAILED_PRECONDITION",
-		GRPCCodeAborted:            "ABORTED",
-		GRPCCodeOutOfRange:         "OUT_OF_RANGE",
-		GRPCCodeUnimplemented:      "UNIMPLEMENTED",
-		GRPCCodeInternal:           "INTERNAL",
-		GRPCCodeUnavailable:        "UNAVAILABLE",
-		GRPCCodeDataLoss:           "DATA_LOSS",
-		GRPCCodeUnauthenticated:    "UNAUTHENTICATED",
+// CodeName returns the string name of a gRPC status code
+func CodeName(code Code) string {
+	names := map[Code]string{
+		CodeOK:                 "OK",
+		CodeCancelled:          "CANCELLED",
+		CodeUnknown:            "UNKNOWN",
+		CodeInvalidArgument:    "INVALID_ARGUMENT",
+		CodeDeadlineExceeded:   "DEADLINE_EXCEEDED",
+		CodeNotFound:           "NOT_FOUND",
+		CodeAlreadyExists:      "ALREADY_EXISTS",
+		CodePermissionDenied:   "PERMISSION_DENIED",
+		CodeResourceExhausted:  "RESOURCE_EXHAUSTED",
+		CodeFailedPrecondition: "FAILED_PRECONDITION",
+		CodeAborted:            "ABORTED",
+		CodeOutOfRange:         "OUT_OF_RANGE",
+		CodeUnimplemented:      "UNIMPLEMENTED",
+		CodeInternal:           "INTERNAL",
+		CodeUnavailable:        "UNAVAILABLE",
+		CodeDataLoss:           "DATA_LOSS",
+		CodeUnauthenticated:    "UNAUTHENTICATED",
 	}
 	if name, ok := names[code]; ok {
 		return name

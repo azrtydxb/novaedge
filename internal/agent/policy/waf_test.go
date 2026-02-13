@@ -79,7 +79,7 @@ func TestWAFEngine_BlockSQLInjection(t *testing.T) {
 
 	// Create SQL injection request
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?id=1'+OR+'1'='1", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -107,7 +107,7 @@ func TestWAFEngine_BlockXSS(t *testing.T) {
 
 	// Create XSS request
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?name=<script>alert('xss')</script>", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -135,7 +135,7 @@ func TestWAFEngine_AllowCleanRequest(t *testing.T) {
 
 	// Create clean request
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/users?page=1&limit=10", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestHandleWAF_PreventionMode(t *testing.T) {
 
 	// SQL injection should be blocked
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=SELECT+*+FROM+users+WHERE+1=1", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 	w := httptest.NewRecorder()
 	wrapped.ServeHTTP(w, req)
 
@@ -200,7 +200,7 @@ func TestHandleWAF_DetectionMode(t *testing.T) {
 
 	// SQL injection should be logged but allowed in detection mode
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=SELECT+*+FROM+users+WHERE+1=1", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 	w := httptest.NewRecorder()
 	wrapped.ServeHTTP(w, req)
 
@@ -229,7 +229,7 @@ func TestHandleWAF_Disabled(t *testing.T) {
 
 	// Even SQL injection should pass when WAF is disabled
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=SELECT+*+FROM+users", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 	w := httptest.NewRecorder()
 	wrapped.ServeHTTP(w, req)
 
@@ -247,7 +247,7 @@ func TestHandleWAF_NilEngine(t *testing.T) {
 
 	// Nil engine should pass all requests
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=SELECT+*+FROM+users", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 	w := httptest.NewRecorder()
 	wrapped.ServeHTTP(w, req)
 
@@ -276,7 +276,7 @@ func TestWAFEngine_CustomRules(t *testing.T) {
 	// Request with the custom bad header should be blocked
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)
 	req.Header.Set("X-Bad-Header", "evil-value")
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -345,7 +345,7 @@ func TestWAFEngine_BlockPathTraversal(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?file=../../../../etc/passwd", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -371,7 +371,7 @@ func TestWAFEngine_BlockCommandInjection(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?cmd=;cat+/etc/passwd", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -397,7 +397,7 @@ func TestWAFEngine_ParanoiaLevel2_SQLFunctions(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=concat(username,password)", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -423,7 +423,7 @@ func TestWAFEngine_ParanoiaLevel3_TimeBased(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?id=1+AND+sleep(5)", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -451,7 +451,7 @@ func TestWAFEngine_RuleExclusion(t *testing.T) {
 
 	// SQL injection should pass since SQLi rules are excluded
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api?q=SELECT+username+FROM+users", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	interruption, err := engine.ProcessRequest(req)
 	if err != nil {
@@ -479,7 +479,7 @@ func TestWAFEngine_CleanRequestAllParanoiaLevels(t *testing.T) {
 			}
 
 			req := httptest.NewRequest(http.MethodGet, "http://example.com/api/users?page=1&limit=10", nil)
-			req.RemoteAddr = "192.168.1.1:12345"
+			req.RemoteAddr = testRemoteAddr
 
 			interruption, err := engine.ProcessRequest(req)
 			if err != nil {

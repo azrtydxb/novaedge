@@ -93,8 +93,8 @@ func (l *WAFRuleLoader) LoadInline(rules []string) []string {
 
 // parseRules parses a multi-line rules string into individual rule directives
 func parseRules(content string) []string {
-	var rules []string
 	lines := strings.Split(content, "\n")
+	rules := make([]string, 0, len(lines))
 
 	var currentRule strings.Builder
 	for _, line := range lines {

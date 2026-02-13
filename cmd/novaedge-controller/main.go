@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main implements the novaedge-controller binary, which watches CRDs
+// and Gateway API resources, builds routing configuration, and pushes
+// ConfigSnapshots to node agents via gRPC.
 package main
 
 import (
@@ -211,9 +214,10 @@ func main() {
 		setupLog.Error(detectErr, "unable to create cert-manager detector")
 	} else {
 		certMgrEnabled, shouldEnableErr := detector.ShouldEnable(context.Background(), certMgrMode)
-		if shouldEnableErr != nil {
+		switch {
+		case shouldEnableErr != nil:
 			setupLog.Error(shouldEnableErr, "cert-manager detection failed")
-		} else if certMgrEnabled {
+		case certMgrEnabled:
 			dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
 			if dynErr != nil {
 				setupLog.Error(dynErr, "failed to create dynamic client for cert-manager")
@@ -221,7 +225,7 @@ func main() {
 				proxyGatewayReconciler.CertManager = certmanager.NewCertificateManager(dynClient)
 				setupLog.Info("cert-manager integration enabled and wired into ProxyGateway reconciler")
 			}
-		} else {
+		default:
 			setupLog.Info("cert-manager integration disabled")
 		}
 	}
@@ -240,12 +244,13 @@ func main() {
 		}
 		zapLogger, _ := uberzap.NewProduction()
 		vaultEnabled, vaultErr := vaultpkg.ShouldEnable(context.Background(), vaultConfig, vaultMode, zapLogger)
-		if vaultErr != nil {
+		switch {
+		case vaultErr != nil:
 			setupLog.Error(vaultErr, "Vault initialization failed")
 			if vaultMode == vaultpkg.EnableModeTrue {
 				os.Exit(1)
 			}
-		} else if vaultEnabled {
+		case vaultEnabled:
 			vaultClient, clientErr := vaultpkg.NewClient(vaultConfig, zapLogger)
 			if clientErr != nil {
 				setupLog.Error(clientErr, "failed to create Vault client for PKI")
@@ -253,7 +258,7 @@ func main() {
 				proxyGatewayReconciler.VaultPKI = vaultpkg.NewPKIManager(vaultClient, zapLogger)
 				setupLog.Info("Vault integration enabled and wired into ProxyGateway reconciler", "address", vaultAddr)
 			}
-		} else {
+		default:
 			setupLog.Info("Vault integration disabled")
 		}
 	}

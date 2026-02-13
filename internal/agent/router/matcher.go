@@ -33,6 +33,7 @@ type ExactMatcher struct {
 	Path string
 }
 
+// Match returns true if path equals the exact target path.
 func (m *ExactMatcher) Match(path string) bool {
 	return path == m.Path
 }
@@ -42,6 +43,7 @@ type PrefixMatcher struct {
 	Prefix string
 }
 
+// Match returns true if path starts with the configured prefix.
 func (m *PrefixMatcher) Match(path string) bool {
 	return strings.HasPrefix(path, m.Prefix)
 }
@@ -51,6 +53,7 @@ type RegexMatcher struct {
 	Pattern *regexp.Regexp
 }
 
+// Match returns true if path matches the compiled regular expression.
 func (m *RegexMatcher) Match(path string) bool {
 	return m.Pattern.MatchString(path)
 }

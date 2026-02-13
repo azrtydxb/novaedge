@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package upstream provides HTTP connection pooling and reverse proxy transport
+// configuration for the NovaEdge data plane agent.
 package upstream
 
 const (

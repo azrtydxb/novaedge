@@ -153,14 +153,14 @@ func TestGRPCWebMiddleware_ConvertsContentType(t *testing.T) {
 		w.Header().Set("Grpc-Message", "OK")
 		w.WriteHeader(http.StatusOK)
 		// Write a minimal gRPC frame: flag(1) + length(4) + payload.
-		frame := buildGRPCFrame(0x00, []byte("response-payload"))
+		frame := buildGRPCFrame([]byte("response-payload"))
 		_, _ = w.Write(frame)
 	})
 
 	handler := mw.Wrap(backend)
 
 	// Build a minimal gRPC-Web request body (flag + length + payload).
-	reqBody := buildGRPCFrame(0x00, []byte("request-payload"))
+	reqBody := buildGRPCFrame([]byte("request-payload"))
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", bytes.NewReader(reqBody))
 	req.Header.Set("Content-Type", ContentTypeGRPCWeb)
@@ -207,14 +207,14 @@ func TestGRPCWebMiddleware_TextVariantBase64(t *testing.T) {
 		}
 		w.Header().Set("Grpc-Status", "0")
 		w.WriteHeader(http.StatusOK)
-		frame := buildGRPCFrame(0x00, responsePayload)
+		frame := buildGRPCFrame(responsePayload)
 		_, _ = w.Write(frame)
 	})
 
 	handler := mw.Wrap(backend)
 
 	// Build the request: gRPC frame then base64-encode it.
-	reqFrame := buildGRPCFrame(0x00, requestPayload)
+	reqFrame := buildGRPCFrame(requestPayload)
 	b64Body := base64.StdEncoding.EncodeToString(reqFrame)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/TextMethod",
@@ -228,7 +228,7 @@ func TestGRPCWebMiddleware_TextVariantBase64(t *testing.T) {
 	defer func() { _ = result.Body.Close() }()
 
 	// Verify the backend received decoded binary gRPC frame.
-	expectedFrame := buildGRPCFrame(0x00, requestPayload)
+	expectedFrame := buildGRPCFrame(requestPayload)
 	if !bytes.Equal(capturedBody, expectedFrame) {
 		t.Errorf("backend received unexpected body:\n  got:  %x\n  want: %x", capturedBody, expectedFrame)
 	}
@@ -247,7 +247,7 @@ func TestGRPCWebMiddleware_TextVariantBase64(t *testing.T) {
 	}
 
 	// The decoded body should start with the response frame.
-	expectedRespFrame := buildGRPCFrame(0x00, responsePayload)
+	expectedRespFrame := buildGRPCFrame(responsePayload)
 	if !bytes.HasPrefix(decoded, expectedRespFrame) {
 		t.Errorf("decoded response does not start with expected frame:\n  got:  %x\n  want prefix: %x",
 			decoded, expectedRespFrame)
@@ -415,14 +415,14 @@ func TestGRPCWebMiddleware_TrailerFrame(t *testing.T) {
 		w.Header().Set("Grpc-Status", "0")
 		w.Header().Set("Grpc-Message", "OK")
 		w.WriteHeader(http.StatusOK)
-		frame := buildGRPCFrame(0x00, []byte("data"))
+		frame := buildGRPCFrame([]byte("data"))
 		_, _ = w.Write(frame)
 	})
 
 	handler := mw.Wrap(backend)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method",
-		bytes.NewReader(buildGRPCFrame(0x00, []byte("req"))))
+		bytes.NewReader(buildGRPCFrame([]byte("req"))))
 	req.Header.Set("Content-Type", ContentTypeGRPCWeb)
 	rec := httptest.NewRecorder()
 
@@ -435,7 +435,7 @@ func TestGRPCWebMiddleware_TrailerFrame(t *testing.T) {
 
 	// The body should contain the data frame followed by a trailer frame.
 	// Data frame: flag=0x00 + 4-byte length + "data"
-	dataFrame := buildGRPCFrame(0x00, []byte("data"))
+	dataFrame := buildGRPCFrame([]byte("data"))
 	if !bytes.HasPrefix(body, dataFrame) {
 		t.Errorf("response body should start with data frame, got %x", body[:min(len(body), 20)])
 	}
@@ -508,7 +508,7 @@ func TestGRPCWebMiddleware_GRPCWebProtoContentType(t *testing.T) {
 	handler := mw.Wrap(backend)
 
 	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method",
-		bytes.NewReader(buildGRPCFrame(0x00, []byte("proto-data"))))
+		bytes.NewReader(buildGRPCFrame([]byte("proto-data"))))
 	req.Header.Set("Content-Type", ContentTypeGRPCWebProto)
 	rec := httptest.NewRecorder()
 
@@ -568,10 +568,10 @@ func TestGRPCWebMiddleware_DefaultConfig(t *testing.T) {
 
 // buildGRPCFrame constructs a gRPC length-prefixed frame:
 // 1-byte flag + 4-byte big-endian length + payload.
-func buildGRPCFrame(flag byte, payload []byte) []byte {
+func buildGRPCFrame(payload []byte) []byte {
 	frame := make([]byte, 5+len(payload))
-	frame[0] = flag
-	binary.BigEndian.PutUint32(frame[1:5], uint32(len(payload)))
+	frame[0] = 0x00
+	binary.BigEndian.PutUint32(frame[1:5], safeIntToUint32(len(payload)))
 	copy(frame[5:], payload)
 	return frame
 }

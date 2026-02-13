@@ -52,7 +52,8 @@ func (f *fakeHealthServer) Check(
 func startFakeHealthServer(t *testing.T, srv *fakeHealthServer) (string, func()) {
 	t.Helper()
 
-	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	lis, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
 	}

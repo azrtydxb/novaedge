@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package config handles configuration snapshot management, persistence,
+// failover, and file-watching for the NovaEdge node agent.
 package config
 
 import (

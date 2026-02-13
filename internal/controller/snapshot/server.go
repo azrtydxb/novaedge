@@ -59,8 +59,11 @@ type AgentStatusInfo struct {
 // ConnectionStatus represents the connection state of an agent
 type ConnectionStatus string
 
+// Connection status values for agent tracking.
 const (
-	ConnectionStatusConnected    ConnectionStatus = "connected"
+	// ConnectionStatusConnected indicates an agent is connected.
+	ConnectionStatusConnected ConnectionStatus = "connected"
+	// ConnectionStatusDisconnected indicates an agent is disconnected.
 	ConnectionStatusDisconnected ConnectionStatus = "disconnected"
 )
 
@@ -70,7 +73,7 @@ type Server struct {
 
 	client  client.Client
 	builder *Builder
-	cache   *SnapshotCache
+	cache   *Cache
 
 	// Channels for notifying clients of updates
 	updateNotifier chan string
@@ -94,7 +97,7 @@ func NewServer(client client.Client) *Server {
 	s := &Server{
 		client:             client,
 		builder:            NewBuilder(client),
-		cache:              NewSnapshotCache(),
+		cache:              NewCache(),
 		updateNotifier:     make(chan string, 100),
 		remoteAgentTracker: NewRemoteAgentTracker(),
 		shutdownCh:         make(chan struct{}),
@@ -469,23 +472,23 @@ func (s *Server) Shutdown() {
 	close(s.shutdownCh)
 }
 
-// SnapshotCache caches config snapshots and manages update notifications
-type SnapshotCache struct {
+// Cache caches config snapshots and manages update notifications
+type Cache struct {
 	mu          sync.RWMutex
 	snapshots   map[string]*pb.ConfigSnapshot
 	subscribers map[string][]chan string
 }
 
-// NewSnapshotCache creates a new snapshot cache
-func NewSnapshotCache() *SnapshotCache {
-	return &SnapshotCache{
+// NewCache creates a new snapshot cache
+func NewCache() *Cache {
+	return &Cache{
 		snapshots:   make(map[string]*pb.ConfigSnapshot),
 		subscribers: make(map[string][]chan string),
 	}
 }
 
 // Get retrieves a cached snapshot for a node
-func (c *SnapshotCache) Get(nodeName string) (*pb.ConfigSnapshot, bool) {
+func (c *Cache) Get(nodeName string) (*pb.ConfigSnapshot, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	snapshot, ok := c.snapshots[nodeName]
@@ -493,21 +496,21 @@ func (c *SnapshotCache) Get(nodeName string) (*pb.ConfigSnapshot, bool) {
 }
 
 // Set caches a snapshot for a node
-func (c *SnapshotCache) Set(nodeName string, snapshot *pb.ConfigSnapshot) {
+func (c *Cache) Set(nodeName string, snapshot *pb.ConfigSnapshot) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.snapshots[nodeName] = snapshot
 }
 
 // Subscribe registers a channel to receive update notifications for a node
-func (c *SnapshotCache) Subscribe(nodeName string, ch chan string) {
+func (c *Cache) Subscribe(nodeName string, ch chan string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.subscribers[nodeName] = append(c.subscribers[nodeName], ch)
 }
 
 // Unsubscribe removes a channel from update notifications
-func (c *SnapshotCache) Unsubscribe(nodeName string, ch chan string) {
+func (c *Cache) Unsubscribe(nodeName string, ch chan string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -522,7 +525,7 @@ func (c *SnapshotCache) Unsubscribe(nodeName string, ch chan string) {
 }
 
 // Notify sends an update notification to subscribers of a specific node
-func (c *SnapshotCache) Notify(nodeName string) {
+func (c *Cache) Notify(nodeName string) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -536,7 +539,7 @@ func (c *SnapshotCache) Notify(nodeName string) {
 }
 
 // NotifyAll sends an update notification to all subscribers
-func (c *SnapshotCache) NotifyAll() {
+func (c *Cache) NotifyAll() {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -552,21 +555,21 @@ func (c *SnapshotCache) NotifyAll() {
 }
 
 // Clear removes all cached snapshots
-func (c *SnapshotCache) Clear() {
+func (c *Cache) Clear() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.snapshots = make(map[string]*pb.ConfigSnapshot)
 }
 
 // GetCacheSize returns the number of cached snapshots
-func (c *SnapshotCache) GetCacheSize() int {
+func (c *Cache) GetCacheSize() int {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return len(c.snapshots)
 }
 
 // GetVersion returns the version of a cached snapshot
-func (c *SnapshotCache) GetVersion(nodeName string) string {
+func (c *Cache) GetVersion(nodeName string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -577,10 +580,10 @@ func (c *SnapshotCache) GetVersion(nodeName string) string {
 }
 
 // String returns a human-readable representation of the cache
-func (c *SnapshotCache) String() string {
+func (c *Cache) String() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	return fmt.Sprintf("SnapshotCache{snapshots=%d, subscribers=%d}",
+	return fmt.Sprintf("Cache{snapshots=%d, subscribers=%d}",
 		len(c.snapshots), len(c.subscribers))
 }

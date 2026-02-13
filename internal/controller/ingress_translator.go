@@ -156,7 +156,7 @@ const (
 	// AnnotationUseRegex enables regex path matching
 	AnnotationUseRegex = "novaedge.io/use-regex"
 
-	// Default VIP reference if not specified
+	// DefaultVIPRef is the VIP reference used when none is explicitly specified.
 	DefaultVIPRef = "default-vip"
 
 	// affinityCookie is the session affinity cookie type value

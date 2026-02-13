@@ -25,6 +25,8 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const nilName = "<nil>"
+
 // alwaysMatch is a match function that always returns true (for testing tree structure)
 func alwaysMatch(entry *RouteEntry, _ *http.Request) bool {
 	return entry != nil
@@ -113,11 +115,11 @@ func TestRadixTreePrefixMatch(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 		got := idx.lookup(tt.path, req, alwaysMatch)
 		if got != tt.want {
-			name := "<nil>"
+			name := nilName
 			if got != nil {
 				name = got.Route.Name
 			}
-			wantName := "<nil>"
+			wantName := nilName
 			if tt.want != nil {
 				wantName = tt.want.Route.Name
 			}
@@ -251,7 +253,7 @@ func TestRadixTreeNestedPrefixes(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/users", nil)
 	got := idx.lookup("/api/v1/users", req, matchFn)
 	if got != longPrefix {
-		name := "<nil>"
+		name := nilName
 		if got != nil {
 			name = got.Route.Name
 		}
@@ -261,7 +263,7 @@ func TestRadixTreeNestedPrefixes(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/v2/users", nil)
 	got = idx.lookup("/api/v2/users", req, matchFn)
 	if got != shortPrefix {
-		name := "<nil>"
+		name := nilName
 		if got != nil {
 			name = got.Route.Name
 		}

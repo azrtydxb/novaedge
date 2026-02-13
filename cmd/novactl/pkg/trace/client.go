@@ -11,15 +11,15 @@ import (
 	"time"
 )
 
-// TraceClient provides methods for querying distributed traces
-type TraceClient struct {
+// Client provides methods for querying distributed traces.
+type Client struct {
 	endpoint   string
 	httpClient *http.Client
 }
 
-// NewTraceClient creates a new trace client
-func NewTraceClient(endpoint string) *TraceClient {
-	return &TraceClient{
+// NewClient creates a new trace query client.
+func NewClient(endpoint string) *Client {
+	return &Client{
 		endpoint: endpoint,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -56,8 +56,8 @@ type Log struct {
 	Fields    map[string]string `json:"fields"`
 }
 
-// TraceSearchParams defines parameters for searching traces
-type TraceSearchParams struct {
+// SearchParams defines parameters for searching traces.
+type SearchParams struct {
 	ServiceName   string
 	OperationName string
 	StartTime     time.Time
@@ -69,7 +69,7 @@ type TraceSearchParams struct {
 }
 
 // ListTraces retrieves recent traces
-func (c *TraceClient) ListTraces(ctx context.Context, limit int, lookback time.Duration) ([]Trace, error) {
+func (c *Client) ListTraces(ctx context.Context, limit int, lookback time.Duration) ([]Trace, error) {
 	// This is a simplified implementation
 	// Actual implementation depends on the tracing backend (Jaeger, Tempo, etc.)
 
@@ -114,7 +114,7 @@ func (c *TraceClient) ListTraces(ctx context.Context, limit int, lookback time.D
 }
 
 // GetTrace retrieves a specific trace by ID
-func (c *TraceClient) GetTrace(ctx context.Context, traceID string) (*Trace, error) {
+func (c *Client) GetTrace(ctx context.Context, traceID string) (*Trace, error) {
 	// For Jaeger API:
 	// GET /api/traces/{traceID}
 
@@ -156,7 +156,7 @@ func (c *TraceClient) GetTrace(ctx context.Context, traceID string) (*Trace, err
 }
 
 // SearchTraces searches for traces matching the given parameters
-func (c *TraceClient) SearchTraces(ctx context.Context, params TraceSearchParams) ([]Trace, error) {
+func (c *Client) SearchTraces(ctx context.Context, params SearchParams) ([]Trace, error) {
 	// For Jaeger API:
 	// GET /api/traces?service={service}&operation={operation}&tags={tags}&start={start}&end={end}&limit={limit}
 
@@ -232,7 +232,7 @@ func (c *TraceClient) SearchTraces(ctx context.Context, params TraceSearchParams
 }
 
 // GetServices retrieves the list of services that have sent traces
-func (c *TraceClient) GetServices(ctx context.Context) ([]string, error) {
+func (c *Client) GetServices(ctx context.Context) ([]string, error) {
 	// For Jaeger API:
 	// GET /api/services
 
@@ -266,7 +266,7 @@ func (c *TraceClient) GetServices(ctx context.Context) ([]string, error) {
 }
 
 // GetOperations retrieves the list of operations for a service
-func (c *TraceClient) GetOperations(ctx context.Context, serviceName string) ([]string, error) {
+func (c *Client) GetOperations(ctx context.Context, serviceName string) ([]string, error) {
 	// For Jaeger API:
 	// GET /api/services/{service}/operations
 

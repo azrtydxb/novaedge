@@ -129,8 +129,8 @@ func runGetGatewayClasses(_ *cobra.Command, _ []string) error {
 					if cond, ok := c.(map[string]interface{}); ok {
 						condType, _ := cond["type"].(string)
 						condStatus, _ := cond["status"].(string)
-						if condType == "Accepted" {
-							if condStatus == "True" {
+						if condType == conditionAccepted {
+							if condStatus == conditionTrue {
 								accepted = statusYes
 							} else {
 								accepted = statusNo
@@ -195,14 +195,14 @@ func runGetGatewayAPIGateways(_ *cobra.Command, _ []string) error {
 						condType, _ := cond["type"].(string)
 						condStatus, _ := cond["status"].(string)
 						switch condType {
-						case "Accepted":
-							if condStatus == "True" {
+						case conditionAccepted:
+							if condStatus == conditionTrue {
 								accepted = statusYes
 							} else {
 								accepted = statusNo
 							}
 						case "Programmed":
-							if condStatus == "True" {
+							if condStatus == conditionTrue {
 								programmed = statusYes
 							} else {
 								programmed = statusNo
@@ -275,8 +275,8 @@ func runGetHTTPRoutes(_ *cobra.Command, _ []string) error {
 							if cond, ok := c.(map[string]interface{}); ok {
 								condType, _ := cond["type"].(string)
 								condStatus, _ := cond["status"].(string)
-								if condType == "Accepted" {
-									if condStatus == "True" {
+								if condType == conditionAccepted {
+									if condStatus == conditionTrue {
 										accepted = statusYes
 									} else {
 										accepted = statusNo

@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package server provides HTTP/HTTPS/HTTP3 server implementations, TLS configuration,
+// PROXY protocol support, OCSP stapling, and overload management for the NovaEdge agent.
 package server
 
 import (

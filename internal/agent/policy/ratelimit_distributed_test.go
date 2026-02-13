@@ -26,6 +26,8 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testRemoteAddr = "192.168.1.1:12345"
+
 func TestDistributedRateLimiter_FallbackToLocal(t *testing.T) {
 	logger := zap.NewNop()
 	config := &pb.DistributedRateLimitConfig{
@@ -39,7 +41,7 @@ func TestDistributedRateLimiter_FallbackToLocal(t *testing.T) {
 	limiter := NewDistributedRateLimiter(config, nil, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	// Should succeed with local limiter
 	allowed, limit, _, _ := limiter.Allow(req)
@@ -60,7 +62,7 @@ func TestDistributedRateLimiter_ExtractKey_SourceIP(t *testing.T) {
 	limiter := NewDistributedRateLimiter(config, nil, logger)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 
 	key := limiter.extractKey(req)
 	if key != "192.168.1.1" {
@@ -119,7 +121,7 @@ func TestHandleDistributedRateLimit_RateLimitHeaders(t *testing.T) {
 	wrapped := handler(next)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)
-	req.RemoteAddr = "192.168.1.1:12345"
+	req.RemoteAddr = testRemoteAddr
 	w := httptest.NewRecorder()
 
 	wrapped.ServeHTTP(w, req)

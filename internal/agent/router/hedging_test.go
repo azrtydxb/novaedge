@@ -113,6 +113,9 @@ func TestHedging_DisabledForwardsDirect(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
@@ -146,6 +149,9 @@ func TestHedging_NoHedgeWhenInitialSucceedsQuickly(t *testing.T) {
 	resp, err := handler.Execute(context.Background(), req, eps, doReq)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -192,6 +198,9 @@ func TestHedging_HedgedRequestSentAfterTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
@@ -236,6 +245,9 @@ func TestHedging_FirstResponseWinsOtherCancelled(t *testing.T) {
 	resp, err := handler.Execute(context.Background(), req, eps, doReq)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
 	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
@@ -293,6 +305,9 @@ func TestHedging_MaxConcurrentRespected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	if resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status = %d, want 200", resp.StatusCode)
 	}
@@ -324,7 +339,10 @@ func TestHedging_AllRequestsFail(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/fail", nil)
-	_, err := handler.Execute(context.Background(), req, eps, doReq)
+	resp, err := handler.Execute(context.Background(), req, eps, doReq)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err == nil {
 		t.Fatal("expected error when all requests fail")
 	}
@@ -357,7 +375,10 @@ func TestHedging_ContextCancellation(t *testing.T) {
 	defer cancel()
 
 	req := httptest.NewRequest(http.MethodGet, "/cancel", nil)
-	_, err := handler.Execute(ctx, req, eps, doReq)
+	resp, err := handler.Execute(ctx, req, eps, doReq)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if err == nil {
 		t.Fatal("expected error on context cancellation")
 	}
@@ -382,7 +403,10 @@ func TestHedging_SelectEndpointError(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/noep", nil)
-	_, err := handler.Execute(context.Background(), req, selectEP, doReq)
+	resp, err := handler.Execute(context.Background(), req, selectEP, doReq)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
 	if !errors.Is(err, epErr) {
 		t.Errorf("error = %v, want %v", err, epErr)
 	}

@@ -198,7 +198,7 @@ func (p *RetryPolicy) isMethodRetryable(method string) bool {
 
 // forwardWithRetry performs backend forwarding with automatic retry support
 func (r *Router) forwardWithRetry(
-	entry *RouteEntry,
+	_ *RouteEntry,
 	w http.ResponseWriter,
 	req *http.Request,
 	retryPolicy *RetryPolicy,
@@ -391,7 +391,7 @@ func selectEndpointExcluding(
 	loadBalancer lb.LoadBalancer,
 	hashLB interface{},
 	req *http.Request,
-	clusterKey string,
+	_ string,
 	excluded []*pb.Endpoint,
 ) *pb.Endpoint {
 	// Try up to 10 times to find a non-excluded endpoint

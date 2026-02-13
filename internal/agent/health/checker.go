@@ -31,20 +31,20 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// HealthCheckMode represents the type of health check to perform.
-type HealthCheckMode int
+// CheckMode represents the type of health check to perform.
+type CheckMode int
 
 const (
-	// HealthCheckHTTP performs an HTTP health check.
-	HealthCheckHTTP HealthCheckMode = iota
-	// HealthCheckGRPC performs a gRPC health check using the standard
+	// CheckHTTP performs an HTTP health check.
+	CheckHTTP CheckMode = iota
+	// CheckGRPC performs a gRPC health check using the standard
 	// grpc.health.v1.Health protocol.
-	HealthCheckGRPC
-	// HealthCheckTCP performs a TCP health check by dialing the endpoint.
+	CheckGRPC
+	// CheckTCP performs a TCP health check by dialing the endpoint.
 	// The check succeeds if a TCP connection can be established.
-	HealthCheckTCP
-	// HealthCheckHTTPS performs an HTTPS health check with TLS.
-	HealthCheckHTTPS
+	CheckTCP
+	// CheckHTTPS performs an HTTPS health check with TLS.
+	CheckHTTPS
 )
 
 // DefaultHealthCheckPath is the default HTTP(S) health check path used when
@@ -55,9 +55,9 @@ const DefaultHealthCheckPath = "/health"
 // health checks when no interval is configured.
 const DefaultHealthCheckInterval = 10 * time.Second
 
-// HealthCheckConfig holds configurable health check parameters extracted
+// CheckConfig holds configurable health check parameters extracted
 // from the cluster protobuf configuration with sensible defaults.
-type HealthCheckConfig struct {
+type CheckConfig struct {
 	// Path is the HTTP(S) path to check (default: "/health").
 	Path string
 
@@ -65,11 +65,11 @@ type HealthCheckConfig struct {
 	Interval time.Duration
 
 	// Mode is the type of health check to perform.
-	Mode HealthCheckMode
+	Mode CheckMode
 }
 
-// HealthChecker performs active health checks on endpoints
-type HealthChecker struct {
+// Checker performs active health checks on endpoints
+type Checker struct {
 	mu     sync.RWMutex
 	logger *zap.Logger
 
@@ -80,7 +80,7 @@ type HealthChecker struct {
 	endpoints []*pb.Endpoint
 
 	// Health check results
-	results map[string]*HealthResult
+	results map[string]*Result
 
 	// Circuit breakers per endpoint
 	circuitBreakers map[string]*CircuitBreaker
@@ -95,15 +95,15 @@ type HealthChecker struct {
 	grpcChecker *GRPCHealthChecker
 
 	// Health check configuration
-	config HealthCheckConfig
+	config CheckConfig
 
 	// Stop channel
 	stopCh chan struct{}
 	wg     sync.WaitGroup
 }
 
-// HealthResult stores the result of a health check
-type HealthResult struct {
+// Result stores the result of a health check
+type Result struct {
 	Endpoint  *pb.Endpoint
 	Healthy   bool
 	LastCheck time.Time
@@ -114,15 +114,15 @@ type HealthResult struct {
 	ConsecutiveFailures  uint32
 }
 
-// NewHealthChecker creates a new health checker
-func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) *HealthChecker {
-	config := buildHealthCheckConfig(cluster)
+// NewChecker creates a new health checker
+func NewChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logger) *Checker {
+	config := buildCheckConfig(cluster)
 
-	hc := &HealthChecker{
+	hc := &Checker{
 		logger:          logger,
 		cluster:         cluster,
 		endpoints:       endpoints,
-		results:         make(map[string]*HealthResult),
+		results:         make(map[string]*Result),
 		circuitBreakers: make(map[string]*CircuitBreaker),
 		httpClient: &http.Client{
 			Timeout: DefaultHealthCheckTimeout,
@@ -158,7 +158,7 @@ func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap
 			timeout = time.Duration(hcConfig.GetTimeoutMs()) * time.Millisecond
 		}
 
-		hc.config.Mode = HealthCheckGRPC
+		hc.config.Mode = CheckGRPC
 		hc.grpcChecker = &GRPCHealthChecker{
 			ServiceName:        hcConfig.GetGrpcServiceName(),
 			Timeout:            timeout,
@@ -170,13 +170,13 @@ func NewHealthChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap
 	return hc
 }
 
-// buildHealthCheckConfig extracts health check configuration from the cluster
+// buildCheckConfig extracts health check configuration from the cluster
 // protobuf, falling back to defaults for any unset fields.
-func buildHealthCheckConfig(cluster *pb.Cluster) HealthCheckConfig {
-	config := HealthCheckConfig{
+func buildCheckConfig(cluster *pb.Cluster) CheckConfig {
+	config := CheckConfig{
 		Path:     DefaultHealthCheckPath,
 		Interval: DefaultHealthCheckInterval,
-		Mode:     HealthCheckHTTP,
+		Mode:     CheckHTTP,
 	}
 
 	hcConfig := cluster.GetHealthCheck()
@@ -197,20 +197,20 @@ func buildHealthCheckConfig(cluster *pb.Cluster) HealthCheckConfig {
 	// Configure mode from protobuf type
 	switch hcConfig.GetType() {
 	case pb.HealthCheckType_HEALTH_CHECK_GRPC:
-		config.Mode = HealthCheckGRPC
+		config.Mode = CheckGRPC
 	case pb.HealthCheckType_HEALTH_CHECK_TCP:
-		config.Mode = HealthCheckTCP
+		config.Mode = CheckTCP
 	case pb.HealthCheckType_HEALTH_CHECK_HTTPS:
-		config.Mode = HealthCheckHTTPS
+		config.Mode = CheckHTTPS
 	default:
-		config.Mode = HealthCheckHTTP
+		config.Mode = CheckHTTP
 	}
 
 	return config
 }
 
 // Start starts the health checker
-func (hc *HealthChecker) Start(ctx context.Context) {
+func (hc *Checker) Start(ctx context.Context) {
 	hc.logger.Info("Starting health checker",
 		zap.String("cluster", fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)),
 		zap.Int("endpoints", len(hc.endpoints)),
@@ -221,7 +221,7 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 	hc.mu.Lock()
 	for _, ep := range hc.endpoints {
 		key := endpointKey(ep)
-		hc.results[key] = &HealthResult{
+		hc.results[key] = &Result{
 			Endpoint:  ep,
 			Healthy:   true, // Optimistically assume healthy initially
 			LastCheck: time.Now(),
@@ -242,14 +242,14 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 }
 
 // Stop stops the health checker
-func (hc *HealthChecker) Stop() {
+func (hc *Checker) Stop() {
 	close(hc.stopCh)
 	hc.wg.Wait()
 	hc.logger.Info("Health checker stopped")
 }
 
 // UpdateEndpoints updates the list of endpoints to check
-func (hc *HealthChecker) UpdateEndpoints(endpoints []*pb.Endpoint) {
+func (hc *Checker) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 
@@ -260,7 +260,7 @@ func (hc *HealthChecker) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	for _, ep := range endpoints {
 		key := endpointKey(ep)
 		if _, exists := hc.results[key]; !exists {
-			hc.results[key] = &HealthResult{
+			hc.results[key] = &Result{
 				Endpoint:  ep,
 				Healthy:   true,
 				LastCheck: time.Now(),
@@ -290,7 +290,7 @@ func (hc *HealthChecker) UpdateEndpoints(endpoints []*pb.Endpoint) {
 }
 
 // IsHealthy returns true if an endpoint is healthy
-func (hc *HealthChecker) IsHealthy(endpoint *pb.Endpoint) bool {
+func (hc *Checker) IsHealthy(endpoint *pb.Endpoint) bool {
 	hc.mu.RLock()
 	defer hc.mu.RUnlock()
 
@@ -310,7 +310,7 @@ func (hc *HealthChecker) IsHealthy(endpoint *pb.Endpoint) bool {
 }
 
 // RecordSuccess records a successful request (for passive health checking)
-func (hc *HealthChecker) RecordSuccess(endpoint *pb.Endpoint) {
+func (hc *Checker) RecordSuccess(endpoint *pb.Endpoint) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 
@@ -321,7 +321,7 @@ func (hc *HealthChecker) RecordSuccess(endpoint *pb.Endpoint) {
 }
 
 // RecordFailure records a failed request (for passive health checking)
-func (hc *HealthChecker) RecordFailure(endpoint *pb.Endpoint) {
+func (hc *Checker) RecordFailure(endpoint *pb.Endpoint) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 
@@ -343,7 +343,7 @@ func (hc *HealthChecker) RecordFailure(endpoint *pb.Endpoint) {
 }
 
 // healthCheckLoop runs the active health check loop
-func (hc *HealthChecker) healthCheckLoop(ctx context.Context) {
+func (hc *Checker) healthCheckLoop(ctx context.Context) {
 	defer hc.wg.Done()
 
 	ticker := time.NewTicker(hc.config.Interval)
@@ -362,7 +362,7 @@ func (hc *HealthChecker) healthCheckLoop(ctx context.Context) {
 }
 
 // performHealthChecks performs health checks on all endpoints
-func (hc *HealthChecker) performHealthChecks(ctx context.Context) {
+func (hc *Checker) performHealthChecks(ctx context.Context) {
 	hc.mu.RLock()
 	endpoints := make([]*pb.Endpoint, len(hc.endpoints))
 	copy(endpoints, hc.endpoints)
@@ -384,7 +384,7 @@ func (hc *HealthChecker) performHealthChecks(ctx context.Context) {
 }
 
 // checkEndpoint performs a health check on a single endpoint
-func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
+func (hc *Checker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
 	key := endpointKey(ep)
 	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
 
@@ -482,13 +482,13 @@ func (hc *HealthChecker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
 
 // performCheck dispatches to the appropriate health check implementation
 // based on the configured health check mode.
-func (hc *HealthChecker) performCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
+func (hc *Checker) performCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
 	switch hc.config.Mode {
-	case HealthCheckGRPC:
+	case CheckGRPC:
 		return hc.performGRPCCheck(ctx, ep)
-	case HealthCheckTCP:
-		return hc.performTCPCheck(ep)
-	case HealthCheckHTTPS:
+	case CheckTCP:
+		return hc.performTCPCheck(ctx, ep)
+	case CheckHTTPS:
 		return hc.performHTTPSCheck(ctx, ep)
 	default:
 		return hc.performHTTPCheck(ctx, ep)
@@ -496,7 +496,7 @@ func (hc *HealthChecker) performCheck(ctx context.Context, ep *pb.Endpoint) (boo
 }
 
 // performHTTPCheck performs an HTTP health check
-func (hc *HealthChecker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
+func (hc *Checker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
 	addr := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
 	checkURL := "http://" + addr + hc.config.Path
 
@@ -522,7 +522,7 @@ func (hc *HealthChecker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) 
 // performHTTPSCheck performs an HTTPS health check with TLS.
 // TLS certificate verification is skipped by default since health checks
 // probe backend endpoints that may use self-signed certificates.
-func (hc *HealthChecker) performHTTPSCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
+func (hc *Checker) performHTTPSCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
 	addr := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
 	checkURL := "https://" + addr + hc.config.Path
 
@@ -548,10 +548,11 @@ func (hc *HealthChecker) performHTTPSCheck(ctx context.Context, ep *pb.Endpoint)
 // performTCPCheck performs a TCP health check by dialing the endpoint.
 // The check succeeds if a TCP connection can be established within the
 // configured dial timeout.
-func (hc *HealthChecker) performTCPCheck(ep *pb.Endpoint) (bool, error) {
+func (hc *Checker) performTCPCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
 	addr := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
 
-	conn, err := net.DialTimeout("tcp", addr, DefaultHealthCheckDialTimeout)
+	dialer := &net.Dialer{Timeout: DefaultHealthCheckDialTimeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return false, fmt.Errorf("tcp health check failed for %s: %w", addr, err)
 	}
@@ -562,13 +563,13 @@ func (hc *HealthChecker) performTCPCheck(ep *pb.Endpoint) (bool, error) {
 
 // performGRPCCheck performs a gRPC health check using the standard
 // grpc.health.v1.Health/Check protocol.
-func (hc *HealthChecker) performGRPCCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
+func (hc *Checker) performGRPCCheck(ctx context.Context, ep *pb.Endpoint) (bool, error) {
 	address := net.JoinHostPort(ep.Address, fmt.Sprint(ep.Port))
 	return hc.grpcChecker.Check(ctx, address)
 }
 
 // GetHealthyEndpoints returns only healthy endpoints
-func (hc *HealthChecker) GetHealthyEndpoints() []*pb.Endpoint {
+func (hc *Checker) GetHealthyEndpoints() []*pb.Endpoint {
 	hc.mu.RLock()
 	defer hc.mu.RUnlock()
 

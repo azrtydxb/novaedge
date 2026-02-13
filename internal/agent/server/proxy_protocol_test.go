@@ -109,7 +109,9 @@ func TestParseProxyProtocolV2_TCP4(t *testing.T) {
 	}
 
 	// Append some request data
-	data := append(header, []byte("GET / HTTP/1.1\r\n")...)
+	data := make([]byte, 0, len(header)+len("GET / HTTP/1.1\r\n"))
+	data = append(data, header...)
+	data = append(data, []byte("GET / HTTP/1.1\r\n")...)
 
 	remoteAddr := &net.TCPAddr{IP: net.ParseIP("10.0.0.2"), Port: 9999}
 	conn := newMockConn(data, remoteAddr)
@@ -140,7 +142,9 @@ func TestParseProxyProtocolV2_TCP6(t *testing.T) {
 		t.Fatal("Failed to build v2 header")
 	}
 
-	data := append(header, []byte("GET / HTTP/1.1\r\n")...)
+	data := make([]byte, 0, len(header)+len("GET / HTTP/1.1\r\n"))
+	data = append(data, header...)
+	data = append(data, []byte("GET / HTTP/1.1\r\n")...)
 
 	remoteAddr := &net.TCPAddr{IP: net.ParseIP("::1"), Port: 9999}
 	conn := newMockConn(data, remoteAddr)
@@ -218,7 +222,9 @@ func TestBuildProxyProtocolV2Header_Roundtrip(t *testing.T) {
 	}
 
 	// Parse it back
-	data := append(header, []byte("test data")...)
+	data := make([]byte, 0, len(header)+len("test data"))
+	data = append(data, header...)
+	data = append(data, []byte("test data")...)
 	conn := newMockConn(data, &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 1234})
 	ppConn := newProxyProtocolConn(conn, 2, zap.NewNop())
 

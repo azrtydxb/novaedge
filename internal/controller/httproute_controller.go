@@ -80,12 +80,12 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 
 		// Per Gateway API spec, Kind defaults to "Gateway" when nil
-		kind := "Gateway"
+		kind := kindGateway
 		if parentRef.Kind != nil {
 			kind = string(*parentRef.Kind)
 		}
 
-		if kind != "Gateway" {
+		if kind != kindGateway {
 			parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
 				Type:               string(gatewayv1.RouteConditionAccepted),
 				Status:             metav1.ConditionFalse,
@@ -294,7 +294,7 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 
 				port := int32(80)
 				if backendRef.Port != nil {
-					port = int32(*backendRef.Port)
+					port = *backendRef.Port
 				}
 
 				key := GenerateProxyBackendName(string(backendRef.Name), namespace, port)
@@ -312,7 +312,7 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 
 		port := int32(80)
 		if backendRef.Port != nil {
-			port = int32(*backendRef.Port)
+			port = *backendRef.Port
 		}
 
 		// Verify Service exists

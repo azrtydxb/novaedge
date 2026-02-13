@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package policy implements security and access control policies including
+// rate limiting, authentication, JWT validation, CORS, IP filtering, WAF,
+// mTLS enforcement, and security headers.
 package policy
 
 import (
@@ -32,6 +35,8 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+const hashTypeBcrypt = "bcrypt"
 
 // htpasswdEntry represents a parsed htpasswd credential line.
 type htpasswdEntry struct {
@@ -101,13 +106,13 @@ func (v *BasicAuthValidator) parseHtpasswd(htpasswd string) error {
 func detectHashType(hash string) string {
 	switch {
 	case strings.HasPrefix(hash, "$2y$") || strings.HasPrefix(hash, "$2a$") || strings.HasPrefix(hash, "$2b$"):
-		return "bcrypt"
+		return hashTypeBcrypt
 	case strings.HasPrefix(hash, "{SHA256}"):
 		return "sha256"
 	case strings.HasPrefix(hash, "$apr1$"):
 		return "md5"
 	default:
-		return "bcrypt" // default fallback
+		return hashTypeBcrypt // default fallback
 	}
 }
 
@@ -122,7 +127,7 @@ func (v *BasicAuthValidator) Validate(username, password string) bool {
 	}
 
 	switch entry.hashType {
-	case "bcrypt":
+	case hashTypeBcrypt:
 		return bcrypt.CompareHashAndPassword([]byte(entry.hash), []byte(password)) == nil
 	case "sha256":
 		return verifySHA256(password, entry.hash)

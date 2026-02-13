@@ -82,7 +82,7 @@ func runTraceList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create trace client
-	client := trace.NewTraceClient(traceEndpoint)
+	client := trace.NewClient(traceEndpoint)
 
 	// List traces
 	traces, err := client.ListTraces(ctx, traceLimit, lookback)
@@ -140,7 +140,7 @@ func runTraceGet(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// Create trace client
-	client := trace.NewTraceClient(traceEndpoint)
+	client := trace.NewClient(traceEndpoint)
 
 	// Get trace
 	t, err := client.GetTrace(ctx, traceID)
@@ -203,7 +203,7 @@ func runTraceSearch(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// Build search parameters
-	params := trace.TraceSearchParams{
+	params := trace.SearchParams{
 		ServiceName:   traceService,
 		OperationName: traceOp,
 		Limit:         traceLimit,
@@ -256,7 +256,7 @@ func runTraceSearch(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create trace client
-	client := trace.NewTraceClient(traceEndpoint)
+	client := trace.NewClient(traceEndpoint)
 
 	// Search traces
 	traces, err := client.SearchTraces(ctx, params)
@@ -309,7 +309,7 @@ func runTraceServices(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	// Create trace client
-	client := trace.NewTraceClient(traceEndpoint)
+	client := trace.NewClient(traceEndpoint)
 
 	// Get services
 	services, err := client.GetServices(ctx)

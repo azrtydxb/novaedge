@@ -290,7 +290,7 @@ func CalculateStats(results []Result) []MetricStats {
 			continue
 		}
 
-		var sum, min, max, latest float64
+		var sum, minVal, maxVal, latest float64
 		count := 0
 		first := true
 
@@ -310,15 +310,15 @@ func CalculateStats(results []Result) []MetricStats {
 			}
 
 			if first {
-				min = v
-				max = v
+				minVal = v
+				maxVal = v
 				first = false
 			} else {
-				if v < min {
-					min = v
+				if v < minVal {
+					minVal = v
 				}
-				if v > max {
-					max = v
+				if v > maxVal {
+					maxVal = v
 				}
 			}
 
@@ -330,8 +330,8 @@ func CalculateStats(results []Result) []MetricStats {
 		if count > 0 {
 			stats = append(stats, MetricStats{
 				Labels: result.Metric,
-				Min:    min,
-				Max:    max,
+				Min:    minVal,
+				Max:    maxVal,
 				Avg:    sum / float64(count),
 				Latest: latest,
 				Count:  count,

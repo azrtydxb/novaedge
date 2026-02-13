@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package snapshot builds and distributes versioned ConfigSnapshot objects
+// to NovaEdge node agents, containing gateways, routes, backends, policies,
+// VIP assignments, TLS certificates, and L4 configurations.
 package snapshot
 
 import (
@@ -22,6 +25,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -675,11 +679,17 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 
 		// Add WASM plugin configuration
 		if p.Spec.WASMPlugin != nil {
+			wasmPriority := p.Spec.WASMPlugin.Priority
+			if wasmPriority > math.MaxInt32 {
+				wasmPriority = math.MaxInt32
+			} else if wasmPriority < math.MinInt32 {
+				wasmPriority = math.MinInt32
+			}
 			wasmConfig := &pb.WASMPluginConfig{
 				Source:   p.Spec.WASMPlugin.Source,
 				Config:   p.Spec.WASMPlugin.Config,
 				Phase:    p.Spec.WASMPlugin.Phase,
-				Priority: int32(p.Spec.WASMPlugin.Priority),
+				Priority: int32(wasmPriority), //nolint:gosec // bounds-checked above
 			}
 			if p.Spec.WASMPlugin.ConfigRef != nil {
 				wasmConfig.ConfigRef = p.Spec.WASMPlugin.ConfigRef.Name
@@ -752,8 +762,8 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 			targetPortName = sp.Name
 			// TargetPort can be a string (port name) or int (port number).
 			// When it is numeric, use it for direct matching against EndpointSlice ports.
-			if sp.TargetPort.IntValue() > 0 {
-				targetPortNumber = int32(sp.TargetPort.IntValue())
+			if tpVal := sp.TargetPort.IntValue(); tpVal > 0 && tpVal <= math.MaxInt32 {
+				targetPortNumber = int32(tpVal) //nolint:gosec // bounds-checked above
 			}
 			break
 		}

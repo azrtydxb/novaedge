@@ -55,6 +55,7 @@ const (
 // +kubebuilder:validation:Enum=RSA2048;RSA4096;EC256;EC384
 type CertificateKeyType string
 
+// Certificate key type constants.
 const (
 	CertificateKeyTypeRSA2048 CertificateKeyType = "RSA2048"
 	CertificateKeyTypeRSA4096 CertificateKeyType = "RSA4096"
@@ -66,6 +67,7 @@ const (
 // +kubebuilder:validation:Enum=Pending;Requesting;Ready;Renewing;Failed
 type CertificateState string
 
+// Certificate state constants.
 const (
 	CertificateStatePending    CertificateState = "Pending"
 	CertificateStateRequesting CertificateState = "Requesting"

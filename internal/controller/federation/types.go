@@ -209,24 +209,24 @@ type SyncStats struct {
 	IncrementalSyncs int64
 }
 
-// FederationPhase represents the current phase of the federation
-type FederationPhase string
+// Phase represents the current phase of the federation.
+type Phase string
 
 const (
 	// PhaseInitializing - federation is starting up
-	PhaseInitializing FederationPhase = "Initializing"
+	PhaseInitializing Phase = "Initializing"
 
 	// PhaseSyncing - initial sync is in progress
-	PhaseSyncing FederationPhase = "Syncing"
+	PhaseSyncing Phase = "Syncing"
 
 	// PhaseHealthy - all members are healthy and in sync
-	PhaseHealthy FederationPhase = "Healthy"
+	PhaseHealthy Phase = "Healthy"
 
 	// PhaseDegraded - some members are unhealthy or out of sync
-	PhaseDegraded FederationPhase = "Degraded"
+	PhaseDegraded Phase = "Degraded"
 
 	// PhasePartitioned - local member is partitioned from peers
-	PhasePartitioned FederationPhase = "Partitioned"
+	PhasePartitioned Phase = "Partitioned"
 )
 
 // ChangeEntry represents a change to be propagated
@@ -270,8 +270,8 @@ const (
 	ChangeTypeDeleted ChangeType = "Deleted"
 )
 
-// FederationConfig holds the runtime configuration for federation
-type FederationConfig struct {
+// Config holds the runtime configuration for federation
+type Config struct {
 	// FederationID is the unique identifier for this federation
 	FederationID string
 
@@ -321,9 +321,9 @@ type FederationConfig struct {
 	SuccessThreshold int32
 }
 
-// DefaultFederationConfig returns a FederationConfig with sensible defaults
-func DefaultFederationConfig() *FederationConfig {
-	return &FederationConfig{
+// DefaultConfig returns a Config with sensible defaults
+func DefaultConfig() *Config {
+	return &Config{
 		SyncInterval:               5 * time.Second,
 		SyncTimeout:                30 * time.Second,
 		BatchSize:                  100,

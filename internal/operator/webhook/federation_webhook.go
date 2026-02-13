@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package webhook provides admission webhooks for validating NovaEdge
+// federation resources before they are persisted in the API server.
 package webhook
 
 import (

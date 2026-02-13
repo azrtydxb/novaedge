@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package federation implements multi-cluster federation with hub-spoke topology,
+// providing cross-cluster configuration synchronization, anti-entropy repair,
+// split-brain detection, and vector clock-based conflict resolution.
 package federation
 
 import (

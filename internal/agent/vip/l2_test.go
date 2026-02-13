@@ -28,7 +28,7 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-func TestVIPState(t *testing.T) {
+func TestState(t *testing.T) {
 	assignment := &pb.VIPAssignment{
 		VipName: "test-vip",
 		Address: "192.168.1.100/24",
@@ -37,14 +37,14 @@ func TestVIPState(t *testing.T) {
 	ip := net.ParseIP("192.168.1.100")
 	now := time.Now()
 
-	state := &VIPState{
+	state := &State{
 		Assignment: assignment,
 		IP:         ip,
 		AddedAt:    now,
 	}
 
 	if state.Assignment != assignment {
-		t.Error("VIPState assignment does not match")
+		t.Error("State assignment does not match")
 	}
 
 	if !state.IP.Equal(ip) {
@@ -52,11 +52,11 @@ func TestVIPState(t *testing.T) {
 	}
 
 	if state.AddedAt != now {
-		t.Error("VIPState AddedAt does not match")
+		t.Error("State AddedAt does not match")
 	}
 }
 
-func TestVIPState_IPv6(t *testing.T) {
+func TestState_IPv6(t *testing.T) {
 	assignment := &pb.VIPAssignment{
 		VipName: "test-vip-v6",
 		Address: "2001:db8::100/128",
@@ -65,7 +65,7 @@ func TestVIPState_IPv6(t *testing.T) {
 	ip := net.ParseIP("2001:db8::100")
 	now := time.Now()
 
-	state := &VIPState{
+	state := &State{
 		Assignment: assignment,
 		IP:         ip,
 		AddedAt:    now,
@@ -73,7 +73,7 @@ func TestVIPState_IPv6(t *testing.T) {
 	}
 
 	if !state.IsIPv6 {
-		t.Error("Expected VIPState to be marked as IPv6")
+		t.Error("Expected State to be marked as IPv6")
 	}
 
 	if !state.IP.Equal(ip) {
@@ -85,7 +85,7 @@ func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
 		logger:        logger,
-		activeVIPs:    make(map[string]*VIPState),
+		activeVIPs:    make(map[string]*State),
 		interfaceName: "eth0",
 	}
 
@@ -98,12 +98,12 @@ func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 
 	t.Run("after adding VIPs to state", func(t *testing.T) {
 		handler.mu.Lock()
-		handler.activeVIPs["vip1"] = &VIPState{
+		handler.activeVIPs["vip1"] = &State{
 			Assignment: &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/24"},
 			IP:         net.ParseIP("192.168.1.100"),
 			AddedAt:    time.Now(),
 		}
-		handler.activeVIPs["vip2"] = &VIPState{
+		handler.activeVIPs["vip2"] = &State{
 			Assignment: &pb.VIPAssignment{VipName: "vip2", Address: "192.168.1.101/24"},
 			IP:         net.ParseIP("192.168.1.101"),
 			AddedAt:    time.Now(),
@@ -118,7 +118,7 @@ func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 
 	t.Run("with IPv6 VIPs", func(t *testing.T) {
 		handler.mu.Lock()
-		handler.activeVIPs["vip3"] = &VIPState{
+		handler.activeVIPs["vip3"] = &State{
 			Assignment: &pb.VIPAssignment{VipName: "vip3", Address: "2001:db8::1/128"},
 			IP:         net.ParseIP("2001:db8::1"),
 			AddedAt:    time.Now(),
@@ -152,7 +152,7 @@ func TestL2Handler_StateManagement(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
 		logger:        logger,
-		activeVIPs:    make(map[string]*VIPState),
+		activeVIPs:    make(map[string]*State),
 		interfaceName: "eth0",
 	}
 
@@ -166,7 +166,7 @@ func TestL2Handler_StateManagement(t *testing.T) {
 		startTime := time.Now()
 
 		handler.mu.Lock()
-		handler.activeVIPs[assignment.VipName] = &VIPState{
+		handler.activeVIPs[assignment.VipName] = &State{
 			Assignment: assignment,
 			IP:         ip,
 			AddedAt:    startTime,
@@ -201,13 +201,13 @@ func TestL2Handler_StateManagement(t *testing.T) {
 		}
 
 		handler.mu.Lock()
-		handler.activeVIPs[v4Assignment.VipName] = &VIPState{
+		handler.activeVIPs[v4Assignment.VipName] = &State{
 			Assignment: v4Assignment,
 			IP:         net.ParseIP("192.168.1.200"),
 			AddedAt:    time.Now(),
 			IsIPv6:     false,
 		}
-		handler.activeVIPs[v6Assignment.VipName] = &VIPState{
+		handler.activeVIPs[v6Assignment.VipName] = &State{
 			Assignment: v6Assignment,
 			IP:         net.ParseIP("2001:db8::200"),
 			AddedAt:    time.Now(),
@@ -239,7 +239,7 @@ func TestL2Handler_StateManagement(t *testing.T) {
 		}
 
 		handler.mu.Lock()
-		handler.activeVIPs[assignment.VipName] = &VIPState{
+		handler.activeVIPs[assignment.VipName] = &State{
 			Assignment: assignment,
 			IP:         net.ParseIP("192.168.1.200"),
 			AddedAt:    time.Now(),
@@ -264,7 +264,7 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
 		logger:        logger,
-		activeVIPs:    make(map[string]*VIPState),
+		activeVIPs:    make(map[string]*State),
 		interfaceName: "eth0",
 	}
 
@@ -283,7 +283,7 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 				}
 
 				handler.mu.Lock()
-				handler.activeVIPs[assignment.VipName] = &VIPState{
+				handler.activeVIPs[assignment.VipName] = &State{
 					Assignment: assignment,
 					IP:         net.ParseIP("192.168.1." + string(rune('0'+id))),
 					AddedAt:    time.Now(),
@@ -308,7 +308,7 @@ func TestL2Handler_AnnouncementLoop(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
 		logger:        logger,
-		activeVIPs:    make(map[string]*VIPState),
+		activeVIPs:    make(map[string]*State),
 		interfaceName: "eth0",
 	}
 
@@ -337,7 +337,7 @@ func TestL2Handler_AnnounceActiveVIPs(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
 		logger:        logger,
-		activeVIPs:    make(map[string]*VIPState),
+		activeVIPs:    make(map[string]*State),
 		interfaceName: "eth0",
 	}
 
@@ -347,13 +347,13 @@ func TestL2Handler_AnnounceActiveVIPs(t *testing.T) {
 
 	t.Run("with active VIPs including IPv6", func(t *testing.T) {
 		handler.mu.Lock()
-		handler.activeVIPs["vip1"] = &VIPState{
+		handler.activeVIPs["vip1"] = &State{
 			Assignment: &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/24"},
 			IP:         net.ParseIP("192.168.1.100"),
 			AddedAt:    time.Now(),
 			IsIPv6:     false,
 		}
-		handler.activeVIPs["vip2"] = &VIPState{
+		handler.activeVIPs["vip2"] = &State{
 			Assignment: &pb.VIPAssignment{VipName: "vip2", Address: "2001:db8::1/64"},
 			IP:         net.ParseIP("2001:db8::1"),
 			AddedAt:    time.Now(),

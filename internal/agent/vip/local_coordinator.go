@@ -37,8 +37,8 @@ const (
 	// ElectionTimeout is how long to wait before assuming leadership
 	ElectionTimeout = 3 * time.Second
 
-	// Priority is used for election (lower wins)
-	// In production, this would be derived from node name hash
+	// DefaultPriority is the default election priority (lower wins).
+	// In production, this would be derived from node name hash.
 	DefaultPriority = 100
 )
 

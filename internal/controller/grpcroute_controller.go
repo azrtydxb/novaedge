@@ -70,11 +70,11 @@ func (r *GRPCRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Check if any parent refs point to our Gateway
 	hasNovaEdgeGateway := false
 	for _, parentRef := range grpcRoute.Spec.ParentRefs {
-		kind := "Gateway"
+		kind := kindGateway
 		if parentRef.Kind != nil {
 			kind = string(*parentRef.Kind)
 		}
-		if kind == "Gateway" {
+		if kind == kindGateway {
 			gatewayNamespace := grpcRoute.Namespace
 			if parentRef.Namespace != nil {
 				gatewayNamespace = string(*parentRef.Namespace)

@@ -29,6 +29,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const testContentTypeJSON = "application/json"
+
 // mockExtProcClient is a test double for extProcClient that allows
 // controlling responses and simulating failures.
 type mockExtProcClient struct {
@@ -63,7 +65,7 @@ func TestExtProcMiddleware_RequestHeaderProcessing(t *testing.T) {
 	mock := newMockExtProcClient()
 	mock.responses[PhaseRequestHeaders] = &ProcessingResponse{
 		HeadersToAdd: map[string]string{
-			"X-Enriched":   "true",
+			"X-Enriched":   headerValueTrue,
 			"X-Request-Id": "ext-123",
 		},
 		HeadersToRemove: []string{"X-Internal"},
@@ -86,7 +88,7 @@ func TestExtProcMiddleware_RequestHeaderProcessing(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/test", nil)
 	req.Header.Set("X-Internal", "secret")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", testContentTypeJSON)
 
 	rec := httptest.NewRecorder()
 	m.ServeHTTP(rec, req)
@@ -95,7 +97,7 @@ func TestExtProcMiddleware_RequestHeaderProcessing(t *testing.T) {
 		t.Errorf("expected status 200, got %d", rec.Code)
 	}
 
-	if capturedHeaders.Get("X-Enriched") != "true" {
+	if capturedHeaders.Get("X-Enriched") != headerValueTrue {
 		t.Errorf("expected X-Enriched header to be 'true', got %q", capturedHeaders.Get("X-Enriched"))
 	}
 	if capturedHeaders.Get("X-Request-Id") != "ext-123" {
@@ -105,7 +107,7 @@ func TestExtProcMiddleware_RequestHeaderProcessing(t *testing.T) {
 		t.Errorf("expected X-Internal header to be removed, got %q", capturedHeaders.Get("X-Internal"))
 	}
 	// Original headers should still be present
-	if capturedHeaders.Get("Accept") != "application/json" {
+	if capturedHeaders.Get("Accept") != testContentTypeJSON {
 		t.Errorf("expected Accept header preserved, got %q", capturedHeaders.Get("Accept"))
 	}
 
@@ -326,7 +328,7 @@ func TestExtProcMiddleware_RequestBodyProcessing(t *testing.T) {
 	mock.responses[PhaseRequestHeaders] = &ProcessingResponse{}
 	mock.responses[PhaseRequestBody] = &ProcessingResponse{
 		HeadersToAdd: map[string]string{
-			"X-Body-Inspected": "true",
+			"X-Body-Inspected": headerValueTrue,
 		},
 	}
 

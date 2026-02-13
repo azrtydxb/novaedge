@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package l4 provides L4 (TCP/UDP) load balancing, proxying, and TLS passthrough
+// capabilities for the NovaEdge data plane agent.
 package l4
 
 import (
@@ -28,26 +30,26 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// L4ListenerType represents the type of L4 listener
-type L4ListenerType string
+// ListenerType represents the type of L4 listener
+type ListenerType string
 
 const (
 	// ListenerTypeTCP is a plain TCP listener
-	ListenerTypeTCP L4ListenerType = "TCP"
+	ListenerTypeTCP ListenerType = "TCP"
 	// ListenerTypeUDP is a plain UDP listener
-	ListenerTypeUDP L4ListenerType = "UDP"
+	ListenerTypeUDP ListenerType = "UDP"
 	// ListenerTypeTLSPassthrough is a TLS passthrough (non-terminating) listener
-	ListenerTypeTLSPassthrough L4ListenerType = "TLS"
+	ListenerTypeTLSPassthrough ListenerType = "TLS"
 )
 
-// L4ListenerConfig configures a single L4 listener
-type L4ListenerConfig struct {
+// ListenerConfig configures a single L4 listener.
+type ListenerConfig struct {
 	// Name identifies this listener
 	Name string
 	// Port is the port to listen on
 	Port int32
 	// Type is the listener type (TCP, UDP, TLS passthrough)
-	Type L4ListenerType
+	Type ListenerType
 	// BackendName is the name of the backend cluster
 	BackendName string
 	// Backends is the list of backend endpoints
@@ -62,7 +64,7 @@ type L4ListenerConfig struct {
 
 // activeListener tracks a running L4 listener
 type activeListener struct {
-	config      L4ListenerConfig
+	config      ListenerConfig
 	tcpListener net.Listener
 	udpConn     *net.UDPConn
 	tcpProxy    *TCPProxy
@@ -88,12 +90,12 @@ func NewManager(logger *zap.Logger) *Manager {
 
 // ApplyConfig applies a new set of L4 listener configurations
 // It starts new listeners, updates existing ones, and stops removed ones
-func (m *Manager) ApplyConfig(ctx context.Context, configs []L4ListenerConfig) error {
+func (m *Manager) ApplyConfig(ctx context.Context, configs []ListenerConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	// Build map of desired listeners
-	desired := make(map[string]L4ListenerConfig)
+	desired := make(map[string]ListenerConfig)
 	for _, cfg := range configs {
 		key := listenerKey(cfg.Name, cfg.Port)
 		desired[key] = cfg
@@ -137,7 +139,7 @@ func (m *Manager) ApplyConfig(ctx context.Context, configs []L4ListenerConfig) e
 }
 
 // startListenerLocked starts a new L4 listener (must be called with mu held)
-func (m *Manager) startListenerLocked(parentCtx context.Context, cfg L4ListenerConfig) error {
+func (m *Manager) startListenerLocked(parentCtx context.Context, cfg ListenerConfig) error {
 	key := listenerKey(cfg.Name, cfg.Port)
 	listenerCtx, cancel := context.WithCancel(parentCtx)
 
@@ -181,7 +183,8 @@ func (m *Manager) startTCPListener(ctx context.Context, active *activeListener) 
 	cfg := active.config
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
-	tcpListener, err := net.Listen("tcp", addr)
+	lc := net.ListenConfig{}
+	tcpListener, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on TCP %s: %w", addr, err)
 	}
@@ -320,7 +323,8 @@ func (m *Manager) startTLSPassthroughListener(ctx context.Context, active *activ
 	cfg := active.config
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
-	tcpListener, err := net.Listen("tcp", addr)
+	lc := net.ListenConfig{}
+	tcpListener, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on TCP %s for TLS passthrough: %w", addr, err)
 	}
@@ -366,7 +370,7 @@ func (m *Manager) acceptTLSPassthroughConnections(ctx context.Context, listener 
 }
 
 // updateListenerLocked updates an existing listener's backends (must be called with mu held)
-func (m *Manager) updateListenerLocked(active *activeListener, cfg L4ListenerConfig) {
+func (m *Manager) updateListenerLocked(active *activeListener, cfg ListenerConfig) {
 	active.config = cfg
 
 	switch cfg.Type {

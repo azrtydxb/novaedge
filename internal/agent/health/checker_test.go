@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -46,7 +47,7 @@ func newTestEndpoint(address string, port int32) *pb.Endpoint {
 	}
 }
 
-func TestNewHealthChecker(t *testing.T) {
+func TestNewChecker(t *testing.T) {
 	logger := zap.NewNop()
 	cluster := newTestCluster()
 	endpoints := []*pb.Endpoint{
@@ -54,7 +55,7 @@ func TestNewHealthChecker(t *testing.T) {
 		newTestEndpoint("10.0.0.2", 8080),
 	}
 
-	hc := NewHealthChecker(cluster, endpoints, logger)
+	hc := NewChecker(cluster, endpoints, logger)
 
 	if hc == nil {
 		t.Fatal("expected non-nil health checker")
@@ -73,11 +74,11 @@ func TestNewHealthChecker(t *testing.T) {
 	}
 }
 
-func TestNewHealthChecker_DefaultConfig(t *testing.T) {
+func TestNewChecker_DefaultConfig(t *testing.T) {
 	logger := zap.NewNop()
 	cluster := newTestCluster()
 
-	hc := NewHealthChecker(cluster, nil, logger)
+	hc := NewChecker(cluster, nil, logger)
 
 	if hc.config.Path != DefaultHealthCheckPath {
 		t.Errorf("expected default path %q, got %q", DefaultHealthCheckPath, hc.config.Path)
@@ -85,12 +86,12 @@ func TestNewHealthChecker_DefaultConfig(t *testing.T) {
 	if hc.config.Interval != DefaultHealthCheckInterval {
 		t.Errorf("expected default interval %v, got %v", DefaultHealthCheckInterval, hc.config.Interval)
 	}
-	if hc.config.Mode != HealthCheckHTTP {
+	if hc.config.Mode != CheckHTTP {
 		t.Errorf("expected default mode HTTP, got %d", hc.config.Mode)
 	}
 }
 
-func TestNewHealthChecker_CustomConfig(t *testing.T) {
+func TestNewChecker_CustomConfig(t *testing.T) {
 	logger := zap.NewNop()
 	cluster := &pb.Cluster{
 		Name:      "backend",
@@ -102,7 +103,7 @@ func TestNewHealthChecker_CustomConfig(t *testing.T) {
 		},
 	}
 
-	hc := NewHealthChecker(cluster, nil, logger)
+	hc := NewChecker(cluster, nil, logger)
 
 	if hc.config.Path != "/ready" {
 		t.Errorf("expected path %q, got %q", "/ready", hc.config.Path)
@@ -110,12 +111,12 @@ func TestNewHealthChecker_CustomConfig(t *testing.T) {
 	if hc.config.Interval != 5*time.Second {
 		t.Errorf("expected interval 5s, got %v", hc.config.Interval)
 	}
-	if hc.config.Mode != HealthCheckHTTPS {
+	if hc.config.Mode != CheckHTTPS {
 		t.Errorf("expected mode HTTPS, got %d", hc.config.Mode)
 	}
 }
 
-func TestNewHealthChecker_TCPMode(t *testing.T) {
+func TestNewChecker_TCPMode(t *testing.T) {
 	logger := zap.NewNop()
 	cluster := &pb.Cluster{
 		Name:      "backend",
@@ -126,9 +127,9 @@ func TestNewHealthChecker_TCPMode(t *testing.T) {
 		},
 	}
 
-	hc := NewHealthChecker(cluster, nil, logger)
+	hc := NewChecker(cluster, nil, logger)
 
-	if hc.config.Mode != HealthCheckTCP {
+	if hc.config.Mode != CheckTCP {
 		t.Errorf("expected mode TCP, got %d", hc.config.Mode)
 	}
 	if hc.config.Interval != 3*time.Second {
@@ -142,7 +143,7 @@ func TestBuildHealthCheckConfig_NilHealthCheck(t *testing.T) {
 		Namespace: "default",
 	}
 
-	config := buildHealthCheckConfig(cluster)
+	config := buildCheckConfig(cluster)
 
 	if config.Path != DefaultHealthCheckPath {
 		t.Errorf("expected path %q, got %q", DefaultHealthCheckPath, config.Path)
@@ -150,7 +151,7 @@ func TestBuildHealthCheckConfig_NilHealthCheck(t *testing.T) {
 	if config.Interval != DefaultHealthCheckInterval {
 		t.Errorf("expected interval %v, got %v", DefaultHealthCheckInterval, config.Interval)
 	}
-	if config.Mode != HealthCheckHTTP {
+	if config.Mode != CheckHTTP {
 		t.Errorf("expected mode HTTP, got %d", config.Mode)
 	}
 }
@@ -159,12 +160,12 @@ func TestBuildHealthCheckConfig_AllModes(t *testing.T) {
 	tests := []struct {
 		name     string
 		pbType   pb.HealthCheckType
-		wantMode HealthCheckMode
+		wantMode CheckMode
 	}{
-		{"HTTP", pb.HealthCheckType_HEALTH_CHECK_HTTP, HealthCheckHTTP},
-		{"GRPC", pb.HealthCheckType_HEALTH_CHECK_GRPC, HealthCheckGRPC},
-		{"TCP", pb.HealthCheckType_HEALTH_CHECK_TCP, HealthCheckTCP},
-		{"HTTPS", pb.HealthCheckType_HEALTH_CHECK_HTTPS, HealthCheckHTTPS},
+		{"HTTP", pb.HealthCheckType_HEALTH_CHECK_HTTP, CheckHTTP},
+		{"GRPC", pb.HealthCheckType_HEALTH_CHECK_GRPC, CheckGRPC},
+		{"TCP", pb.HealthCheckType_HEALTH_CHECK_TCP, CheckTCP},
+		{"HTTPS", pb.HealthCheckType_HEALTH_CHECK_HTTPS, CheckHTTPS},
 	}
 
 	for _, tt := range tests {
@@ -177,7 +178,7 @@ func TestBuildHealthCheckConfig_AllModes(t *testing.T) {
 				},
 			}
 
-			config := buildHealthCheckConfig(cluster)
+			config := buildCheckConfig(cluster)
 
 			if config.Mode != tt.wantMode {
 				t.Errorf("expected mode %d, got %d", tt.wantMode, config.Mode)
@@ -191,7 +192,7 @@ func TestHealthChecker_IsHealthy_UnknownEndpoint(t *testing.T) {
 	cluster := newTestCluster()
 	endpoints := []*pb.Endpoint{}
 
-	hc := NewHealthChecker(cluster, endpoints, logger)
+	hc := NewChecker(cluster, endpoints, logger)
 
 	unknownEp := newTestEndpoint("10.0.0.99", 9090)
 	if !hc.IsHealthy(unknownEp) {
@@ -205,12 +206,12 @@ func TestHealthChecker_RecordFailure_ThresholdBehavior(t *testing.T) {
 	ep := newTestEndpoint("10.0.0.1", 8080)
 	endpoints := []*pb.Endpoint{ep}
 
-	hc := NewHealthChecker(cluster, endpoints, logger)
+	hc := NewChecker(cluster, endpoints, logger)
 
 	// Manually initialize results (simulating Start behavior without the goroutine)
 	key := endpointKey(ep)
 	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
-	hc.results[key] = &HealthResult{
+	hc.results[key] = &Result{
 		Endpoint: ep,
 		Healthy:  true,
 	}
@@ -247,11 +248,11 @@ func TestHealthChecker_RecordSuccess_ResetsFailures(t *testing.T) {
 	ep := newTestEndpoint("10.0.0.1", 8080)
 	endpoints := []*pb.Endpoint{ep}
 
-	hc := NewHealthChecker(cluster, endpoints, logger)
+	hc := NewChecker(cluster, endpoints, logger)
 
 	key := endpointKey(ep)
 	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
-	hc.results[key] = &HealthResult{
+	hc.results[key] = &Result{
 		Endpoint: ep,
 		Healthy:  true,
 	}
@@ -277,12 +278,12 @@ func TestHealthChecker_UpdateEndpoints_AddsNew(t *testing.T) {
 	ep1 := newTestEndpoint("10.0.0.1", 8080)
 	endpoints := []*pb.Endpoint{ep1}
 
-	hc := NewHealthChecker(cluster, endpoints, logger)
+	hc := NewChecker(cluster, endpoints, logger)
 
 	// Initialize ep1
 	key1 := endpointKey(ep1)
 	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
-	hc.results[key1] = &HealthResult{
+	hc.results[key1] = &Result{
 		Endpoint: ep1,
 		Healthy:  true,
 	}
@@ -314,13 +315,13 @@ func TestHealthChecker_UpdateEndpoints_RemovesOld(t *testing.T) {
 	ep2 := newTestEndpoint("10.0.0.2", 8080)
 	endpoints := []*pb.Endpoint{ep1, ep2}
 
-	hc := NewHealthChecker(cluster, endpoints, logger)
+	hc := NewChecker(cluster, endpoints, logger)
 
 	// Initialize both endpoints
 	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
 	for _, ep := range endpoints {
 		key := endpointKey(ep)
-		hc.results[key] = &HealthResult{Endpoint: ep, Healthy: true}
+		hc.results[key] = &Result{Endpoint: ep, Healthy: true}
 		cb := NewCircuitBreaker(key, DefaultCircuitBreakerConfig(), logger)
 		cb.SetCluster(clusterKey)
 		hc.circuitBreakers[key] = cb
@@ -358,7 +359,7 @@ func TestHealthChecker_PerformHTTPCheck_Success(t *testing.T) {
 	cluster := newTestCluster()
 	ep := newTestEndpoint(host, port)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 	healthy, err := hc.performHTTPCheck(context.Background(), ep)
 	if err != nil {
@@ -398,7 +399,7 @@ func TestHealthChecker_PerformHTTPCheck_CustomPath(t *testing.T) {
 	}
 	ep := newTestEndpoint(host, port)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 	healthy, err := hc.performHTTPCheck(context.Background(), ep)
 	if err != nil {
@@ -428,7 +429,7 @@ func TestHealthChecker_PerformHTTPCheck_ServerError(t *testing.T) {
 	cluster := newTestCluster()
 	ep := newTestEndpoint(host, port)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 	healthy, err := hc.performHTTPCheck(context.Background(), ep)
 	if err == nil {
@@ -445,7 +446,7 @@ func TestHealthChecker_PerformHTTPCheck_ConnectionRefused(t *testing.T) {
 	// Use a port that is very unlikely to be in use
 	ep := newTestEndpoint("127.0.0.1", 19999)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 	hc.httpClient.Timeout = 1 * time.Second
 
 	healthy, err := hc.performHTTPCheck(context.Background(), ep)
@@ -459,7 +460,8 @@ func TestHealthChecker_PerformHTTPCheck_ConnectionRefused(t *testing.T) {
 
 func TestHealthChecker_PerformTCPCheck_Success(t *testing.T) {
 	// Start a TCP listener
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to start TCP listener: %v", err)
 	}
@@ -476,7 +478,10 @@ func TestHealthChecker_PerformTCPCheck_Success(t *testing.T) {
 		}
 	}()
 
-	addr := listener.Addr().(*net.TCPAddr)
+	addr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatal("expected *net.TCPAddr from listener")
+	}
 
 	logger := zap.NewNop()
 	cluster := &pb.Cluster{
@@ -486,11 +491,15 @@ func TestHealthChecker_PerformTCPCheck_Success(t *testing.T) {
 			Type: pb.HealthCheckType_HEALTH_CHECK_TCP,
 		},
 	}
-	ep := newTestEndpoint(addr.IP.String(), int32(addr.Port))
+	port := addr.Port
+	if port < 0 || port > math.MaxInt32 {
+		t.Fatalf("port %d out of int32 range", port)
+	}
+	ep := newTestEndpoint(addr.IP.String(), int32(port))
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
-	healthy, checkErr := hc.performTCPCheck(ep)
+	healthy, checkErr := hc.performTCPCheck(context.Background(), ep)
 	if checkErr != nil {
 		t.Fatalf("expected no error, got %v", checkErr)
 	}
@@ -511,9 +520,9 @@ func TestHealthChecker_PerformTCPCheck_ConnectionRefused(t *testing.T) {
 	// Use a port that is very unlikely to be in use
 	ep := newTestEndpoint("127.0.0.1", 19998)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
-	healthy, err := hc.performTCPCheck(ep)
+	healthy, err := hc.performTCPCheck(context.Background(), ep)
 	if err == nil {
 		t.Fatal("expected error for TCP connection refused")
 	}
@@ -548,7 +557,7 @@ func TestHealthChecker_PerformHTTPSCheck_Success(t *testing.T) {
 	}
 	ep := newTestEndpoint(host, port)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
 	if err != nil {
@@ -588,7 +597,7 @@ func TestHealthChecker_PerformHTTPSCheck_CustomPath(t *testing.T) {
 	}
 	ep := newTestEndpoint(host, port)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
 	if err != nil {
@@ -623,7 +632,7 @@ func TestHealthChecker_PerformHTTPSCheck_ServerError(t *testing.T) {
 	}
 	ep := newTestEndpoint(host, port)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
 	if err == nil {
@@ -645,7 +654,7 @@ func TestHealthChecker_PerformHTTPSCheck_ConnectionRefused(t *testing.T) {
 	}
 	ep := newTestEndpoint("127.0.0.1", 19997)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 	hc.httpsClient.Timeout = 1 * time.Second
 
 	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
@@ -683,7 +692,7 @@ func TestHealthChecker_PerformHTTPSCheck_SkipsTLSVerify(t *testing.T) {
 	}
 	ep := newTestEndpoint(host, port)
 
-	hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 	// Verify that the httpsClient has InsecureSkipVerify set
 	transport, ok := hc.httpsClient.Transport.(*http.Transport)
@@ -705,8 +714,13 @@ func TestHealthChecker_PerformHTTPSCheck_SkipsTLSVerify(t *testing.T) {
 		},
 	}
 	checkURL := "https://" + addr + "/health"
-	_, strictErr := strictClient.Get(checkURL) //nolint:noctx // test-only HTTP call
+	strictReq, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, checkURL, nil)
+	if reqErr != nil {
+		t.Fatalf("failed to create request: %v", reqErr)
+	}
+	strictResp, strictErr := strictClient.Do(strictReq)
 	if strictErr == nil {
+		_ = strictResp.Body.Close()
 		t.Log("note: strict TLS client succeeded (test environment may have cert in trust store)")
 	}
 
@@ -740,7 +754,7 @@ func TestHealthChecker_PerformCheck_Dispatch(t *testing.T) {
 
 	t.Run("dispatches to HTTP by default", func(t *testing.T) {
 		cluster := newTestCluster()
-		hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+		hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 		healthy, err := hc.performCheck(context.Background(), ep)
 		if err != nil {
@@ -759,7 +773,7 @@ func TestHealthChecker_PerformCheck_Dispatch(t *testing.T) {
 				Type: pb.HealthCheckType_HEALTH_CHECK_TCP,
 			},
 		}
-		hc := NewHealthChecker(cluster, []*pb.Endpoint{ep}, logger)
+		hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
 
 		// TCP check should succeed since the HTTP server is also a TCP listener
 		healthy, err := hc.performCheck(context.Background(), ep)
@@ -796,7 +810,7 @@ func TestHealthChecker_ConfigurableInterval(t *testing.T) {
 				},
 			}
 
-			hc := NewHealthChecker(cluster, nil, logger)
+			hc := NewChecker(cluster, nil, logger)
 
 			if hc.config.Interval != tt.expectedInterval {
 				t.Errorf("expected interval %v, got %v", tt.expectedInterval, hc.config.Interval)

@@ -23,11 +23,11 @@ import (
 )
 
 // helper to create an endpoint with a priority label.
-func epWithPriority(addr string, port int32, ready bool, priority string) *pb.Endpoint {
+func epWithPriority(addr string, _ int32, ready bool, priority string) *pb.Endpoint {
 	labels := map[string]string{PriorityLabelKey: priority}
 	return &pb.Endpoint{
 		Address: addr,
-		Port:    port,
+		Port:    8080,
 		Ready:   ready,
 		Labels:  labels,
 	}

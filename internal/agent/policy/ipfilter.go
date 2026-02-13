@@ -274,15 +274,15 @@ func (f *IPFilter) Allow(r *http.Request) bool {
 			}
 		}
 		return false
-	} else {
-		// Deny list mode: deny IPs in the list
-		for _, ipNet := range f.denyList {
-			if ipNet.Contains(ip) {
-				return false
-			}
-		}
-		return true
 	}
+
+	// Deny list mode: deny IPs in the list
+	for _, ipNet := range f.denyList {
+		if ipNet.Contains(ip) {
+			return false
+		}
+	}
+	return true
 }
 
 // HandleIPFilter is HTTP middleware for IP filtering

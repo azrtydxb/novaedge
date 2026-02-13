@@ -37,10 +37,13 @@ import (
 const (
 	remoteClusterFinalizer = "novaedge.io/remote-cluster-finalizer"
 
-	// Remote cluster condition types
-	ConditionTypeRemoteReady      = "Ready"
-	ConditionTypeRemoteConnected  = "Connected"
-	ConditionTypeRemoteHealthy    = "Healthy"
+	// ConditionTypeRemoteReady indicates the overall readiness of the remote cluster.
+	ConditionTypeRemoteReady = "Ready"
+	// ConditionTypeRemoteConnected indicates connectivity to the remote cluster.
+	ConditionTypeRemoteConnected = "Connected"
+	// ConditionTypeRemoteHealthy indicates the health of the remote cluster.
+	ConditionTypeRemoteHealthy = "Healthy"
+	// ConditionTypeRemoteConfigured indicates the remote cluster configuration is applied.
 	ConditionTypeRemoteConfigured = "Configured"
 )
 

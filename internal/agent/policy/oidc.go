@@ -615,6 +615,8 @@ func handleOIDCLogout(handler *OIDCHandler, w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+const authzModeAll = "all"
+
 // checkAuthorization verifies the user has required roles/groups.
 func checkAuthorization(config *pb.OIDCConfig, claims map[string]interface{}) bool {
 	authz := config.Authorization
@@ -628,7 +630,7 @@ func checkAuthorization(config *pb.OIDCConfig, claims map[string]interface{}) bo
 	// Check roles
 	if len(authz.RequiredRoles) > 0 {
 		userRoles := extractRoles(config, claims)
-		if authz.Mode == "all" {
+		if authz.Mode == authzModeAll {
 			hasRoles = containsAll(userRoles, authz.RequiredRoles)
 		} else {
 			hasRoles = containsAny(userRoles, authz.RequiredRoles)
@@ -638,7 +640,7 @@ func checkAuthorization(config *pb.OIDCConfig, claims map[string]interface{}) bo
 	// Check groups
 	if len(authz.RequiredGroups) > 0 {
 		userGroups := extractGroups(config, claims)
-		if authz.Mode == "all" {
+		if authz.Mode == authzModeAll {
 			hasGroups = containsAll(userGroups, authz.RequiredGroups)
 		} else {
 			hasGroups = containsAny(userGroups, authz.RequiredGroups)
@@ -647,7 +649,7 @@ func checkAuthorization(config *pb.OIDCConfig, claims map[string]interface{}) bo
 
 	// In "all" mode, both roles AND groups must be satisfied
 	// In "any" mode, either roles OR groups satisfies the check
-	if authz.Mode == "all" {
+	if authz.Mode == authzModeAll {
 		return hasRoles && hasGroups
 	}
 
