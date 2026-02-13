@@ -43,10 +43,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 		responseWriter = NewResponseHeaderWriter(w, entry.ResponseFilter)
 	}
 
-	// Inject pipeline state into context for inter-middleware communication
-	state := NewPipelineState()
-	ctx := WithPipelineState(req.Context(), state)
-	req = req.WithContext(ctx)
+	// Pipeline state is already injected into the context by ServeHTTP
 
 	// Create the final handler that forwards to backend (with optional retry)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
@@ -113,7 +110,11 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	)
 	defer backendSpan.End()
 
-	// Update request context with the new span
+	// Update request context with the new span.
+	// NOTE (#129): This WithContext cannot be consolidated further because the
+	// backend span is created inside forwardToBackend, after ServeHTTP has
+	// already set its context. The span must be injected into the request so
+	// that trace propagation carries the per-backend child span to the upstream.
 	req = req.WithContext(ctx)
 
 	// Check if this is a gRPC request
@@ -140,7 +141,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	}
 
 	// Apply route filters first (header modifications, redirects, rewrites)
-	modifiedReq, shouldContinue := applyFilters(entry.Rule.Filters, w, req)
+	modifiedReq, shouldContinue := applyPrebuiltFilters(entry.Filters, w, req)
 	if !shouldContinue {
 		// Filter handled the response (e.g., redirect)
 		backendSpan.AddEvent("filter_handled_response")

@@ -16,6 +16,8 @@ limitations under the License.
 
 package router
 
+import "strconv"
+
 const (
 	// WebSocket buffer sizes
 
@@ -36,3 +38,23 @@ const (
 	// Can be overridden per-gateway via policy configuration in the future.
 	DefaultMaxRequestBodySize = 10 * 1024 * 1024 // 10MB
 )
+
+// statusText provides pre-computed status code strings to avoid strconv.Itoa allocations
+// in the hot path. HTTP status codes are in the range 100-599, so a 600-element array
+// covers all standard codes with direct index access.
+var statusText [600]string
+
+func init() {
+	for i := range statusText {
+		statusText[i] = strconv.Itoa(i)
+	}
+}
+
+// statusString returns a pre-computed string for HTTP status codes in the range [0, 600).
+// For out-of-range codes it falls back to strconv.Itoa.
+func statusString(code int) string {
+	if code >= 0 && code < len(statusText) {
+		return statusText[code]
+	}
+	return strconv.Itoa(code)
+}
