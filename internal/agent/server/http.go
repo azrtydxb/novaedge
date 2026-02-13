@@ -225,12 +225,14 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Inject client certificate headers if mTLS is active
 	injectClientCertHeaders(r)
 
-	s.logger.Debug("Incoming request",
-		zap.String("method", r.Method),
-		zap.String("host", r.Host),
-		zap.String("path", r.URL.Path),
-		zap.String("remote_addr", r.RemoteAddr),
-	)
+	if ce := s.logger.Check(zap.DebugLevel, "Incoming request"); ce != nil {
+		ce.Write(
+			zap.String("method", r.Method),
+			zap.String("host", r.Host),
+			zap.String("path", r.URL.Path),
+			zap.String("remote_addr", r.RemoteAddr),
+		)
+	}
 
 	// Route the request
 	s.router.ServeHTTP(w, r)

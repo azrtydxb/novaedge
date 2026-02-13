@@ -214,15 +214,17 @@ func (p *Pool) updateMetrics() {
 			metrics.PoolHitsTotal.WithLabelValues(p.clusterKey).Set(float64(hits))
 			metrics.PoolMissesTotal.WithLabelValues(p.clusterKey).Set(float64(misses))
 
-			p.logger.Debug("Pool metrics",
-				zap.String("cluster", p.clusterKey),
-				zap.Int("endpoints", endpointCount),
-				zap.Int("proxies", proxyCount),
-				zap.Int64("active_conns", activeConns),
-				zap.Int64("total_conns", totalConns),
-				zap.Int64("pool_hits", hits),
-				zap.Int64("pool_misses", misses),
-			)
+			if ce := p.logger.Check(zap.DebugLevel, "Pool metrics"); ce != nil {
+				ce.Write(
+					zap.String("cluster", p.clusterKey),
+					zap.Int("endpoints", endpointCount),
+					zap.Int("proxies", proxyCount),
+					zap.Int64("active_conns", activeConns),
+					zap.Int64("total_conns", totalConns),
+					zap.Int64("pool_hits", hits),
+					zap.Int64("pool_misses", misses),
+				)
+			}
 		}
 	}
 }

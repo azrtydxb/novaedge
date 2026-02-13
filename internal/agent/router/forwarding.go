@@ -122,10 +122,12 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	if isGRPC {
 		backendSpan.SetAttributes(attribute.Bool("rpc.system", true))
 		backendSpan.AddEvent("grpc_request_detected")
-		r.logger.Debug("Detected gRPC request",
-			zap.String("path", req.URL.Path),
-			zap.String("content-type", req.Header.Get("Content-Type")),
-		)
+		if ce := r.logger.Check(zap.DebugLevel, "Detected gRPC request"); ce != nil {
+			ce.Write(
+				zap.String("path", req.URL.Path),
+				zap.String("content-type", req.Header.Get("Content-Type")),
+			)
+		}
 
 		// Validate gRPC request
 		if err := r.grpcHandler.ValidateGRPCRequest(req); err != nil {
@@ -316,11 +318,13 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 			)
 
 			if isGRPC {
-				r.logger.Debug("Successfully forwarded gRPC request",
-					zap.String("cluster", clusterKey),
-					zap.String("endpoint", endpointKey),
-					zap.Duration("duration", time.Since(backendStart)),
-				)
+				if ce := r.logger.Check(zap.DebugLevel, "Successfully forwarded gRPC request"); ce != nil {
+					ce.Write(
+						zap.String("cluster", clusterKey),
+						zap.String("endpoint", endpointKey),
+						zap.Duration("duration", time.Since(backendStart)),
+					)
+				}
 			}
 		}
 	}

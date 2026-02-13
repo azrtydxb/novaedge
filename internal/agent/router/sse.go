@@ -211,10 +211,12 @@ func (p *SSEProxy) ProxySSE(w http.ResponseWriter, r *http.Request, backendURL s
 			n, readErr := backendResp.Body.Read(buf)
 			if n > 0 {
 				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
-					p.logger.Debug("SSE client disconnected",
-						zap.String("remote_addr", r.RemoteAddr),
-						zap.Error(writeErr),
-					)
+					if ce := p.logger.Check(zap.DebugLevel, "SSE client disconnected"); ce != nil {
+						ce.Write(
+							zap.String("remote_addr", r.RemoteAddr),
+							zap.Error(writeErr),
+						)
+					}
 					return nil
 				}
 				flusher.Flush()
