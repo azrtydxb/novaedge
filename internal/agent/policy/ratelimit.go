@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -28,10 +29,20 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const (
+	// DefaultCleanupInterval is the default interval between cleanup cycles.
+	DefaultCleanupInterval = 5 * time.Minute
+
+	// DefaultCleanupMaxAge is the default maximum age for inactive limiters
+	// before they are eligible for removal.
+	DefaultCleanupMaxAge = 1 * time.Hour
+)
+
 // RateLimiter implements token bucket rate limiting
 type RateLimiter struct {
 	config   *pb.RateLimitConfig
 	limiters map[string]*rate.Limiter
+	lastUsed map[string]time.Time
 	mu       sync.RWMutex
 }
 
@@ -40,6 +51,7 @@ func NewRateLimiter(config *pb.RateLimitConfig) *RateLimiter {
 	return &RateLimiter{
 		config:   config,
 		limiters: make(map[string]*rate.Limiter),
+		lastUsed: make(map[string]time.Time),
 	}
 }
 
@@ -53,6 +65,12 @@ func (rl *RateLimiter) Allow(r *http.Request) bool {
 
 	// Check if request is allowed
 	allowed := limiter.Allow()
+
+	// Update last used timestamp on every access
+	now := time.Now()
+	rl.mu.Lock()
+	rl.lastUsed[key] = now
+	rl.mu.Unlock()
 
 	// Record metrics
 	if allowed {
@@ -92,6 +110,7 @@ func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 
 	limiter = rate.NewLimiter(rps, burst)
 	rl.limiters[key] = limiter
+	rl.lastUsed[key] = time.Now()
 
 	return limiter
 }
@@ -133,12 +152,50 @@ func HandleRateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 	}
 }
 
-// Cleanup removes inactive limiters (called periodically)
-func (rl *RateLimiter) Cleanup(_ time.Duration) {
+// Cleanup removes inactive limiters that haven't been accessed within maxAge.
+func (rl *RateLimiter) Cleanup(maxAge time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	// In a production system, you'd track last access time
-	// and remove limiters that haven't been used recently
-	// For simplicity, we keep all limiters for now
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+
+	for key, lastAccess := range rl.lastUsed {
+		if lastAccess.Before(cutoff) {
+			delete(rl.limiters, key)
+			delete(rl.lastUsed, key)
+			removed++
+		}
+	}
+
+	if removed > 0 {
+		metrics.RateLimiterCleanupsTotal.Add(float64(removed))
+	}
+	metrics.RateLimiterActiveCount.Set(float64(len(rl.limiters)))
+}
+
+// StartCleanup runs periodic cleanup in a background goroutine. It removes
+// inactive limiters every interval that have not been used within maxAge.
+// The goroutine exits when the provided context is cancelled.
+func (rl *RateLimiter) StartCleanup(ctx context.Context, interval, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				rl.Cleanup(maxAge)
+			}
+		}
+	}()
+}
+
+// ActiveCount returns the current number of active rate limiters.
+func (rl *RateLimiter) ActiveCount() int {
+	rl.mu.RLock()
+	defer rl.mu.RUnlock()
+	return len(rl.limiters)
 }
