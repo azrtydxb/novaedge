@@ -291,6 +291,8 @@ message ConnectionPool {
   int64 response_header_timeout_ms = 5;  // Response header timeout in milliseconds (default: 10000)
   bool disable_keep_alives = 6;          // Disable keep-alives (default: false)
   int32 max_response_header_bytes = 7;   // Max response header bytes (0 = 10MB default)
+  int32 write_buffer_size = 8;           // Per-connection write buffer size in bytes (default: 32768 = 32KB)
+  int32 read_buffer_size = 9;            // Per-connection read buffer size in bytes (default: 32768 = 32KB)
 }
 
 // SessionAffinityConfig defines session affinity (sticky sessions) configuration

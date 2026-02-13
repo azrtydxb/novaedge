@@ -101,6 +101,14 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	if responseHeaderTimeout <= 0 {
 		responseHeaderTimeout = 10 * time.Second
 	}
+	writeBufferSize := int(poolConfig.WriteBufferSize)
+	if writeBufferSize <= 0 {
+		writeBufferSize = 32 * 1024 // Default: 32KB
+	}
+	readBufferSize := int(poolConfig.ReadBufferSize)
+	if readBufferSize <= 0 {
+		readBufferSize = 32 * 1024 // Default: 32KB
+	}
 
 	// Create HTTP transport with connection pooling
 	// This transport supports both HTTP/1.1, HTTP/2, and gRPC
@@ -120,8 +128,8 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 		DisableKeepAlives:      poolConfig.DisableKeepAlives,
 		MaxResponseHeaderBytes: int64(poolConfig.MaxResponseHeaderBytes),
 		ForceAttemptHTTP2:      true,
-		WriteBufferSize:        32 * 1024, // 32KB write buffer
-		ReadBufferSize:         32 * 1024, // 32KB read buffer
+		WriteBufferSize:        writeBufferSize,
+		ReadBufferSize:         readBufferSize,
 	}
 
 	// Configure backend TLS if enabled
