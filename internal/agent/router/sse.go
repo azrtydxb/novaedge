@@ -248,7 +248,9 @@ func (p *SSEProxy) sendHeartbeats(ctx context.Context, w http.ResponseWriter, fl
 			return
 		case <-ticker.C:
 			if _, err := fmt.Fprint(w, sseKeepaliveComment); err != nil {
-				p.logger.Debug("Failed to send SSE heartbeat (client likely disconnected)")
+				if ce := p.logger.Check(zap.DebugLevel, "Failed to send SSE heartbeat (client likely disconnected)"); ce != nil {
+					ce.Write()
+				}
 				return
 			}
 			flusher.Flush()

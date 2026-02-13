@@ -106,9 +106,9 @@ func (l *ProxyProtocolListener) Accept() (net.Conn, error) {
 
 	// Check if the source is trusted
 	if !l.isTrusted(conn.RemoteAddr()) {
-		l.logger.Debug("Connection from untrusted source, skipping PROXY protocol",
-			zap.String("remote_addr", conn.RemoteAddr().String()),
-		)
+		if ce := l.logger.Check(zap.DebugLevel, "Connection from untrusted source, skipping PROXY protocol"); ce != nil {
+			ce.Write(zap.String("remote_addr", conn.RemoteAddr().String()))
+		}
 		return conn, nil
 	}
 
@@ -187,12 +187,16 @@ func (c *proxyProtocolConn) Read(b []byte) (int, error) {
 func (c *proxyProtocolConn) parseHeader() {
 	// Set a read deadline for the PROXY header
 	if err := c.SetReadDeadline(time.Now().Add(proxyProtoReadTimeout)); err != nil {
-		c.logger.Debug("Failed to set PROXY protocol read deadline", zap.Error(err))
+		if ce := c.logger.Check(zap.DebugLevel, "Failed to set PROXY protocol read deadline"); ce != nil {
+			ce.Write(zap.Error(err))
+		}
 	}
 	defer func() {
 		// Reset the deadline
 		if err := c.SetReadDeadline(time.Time{}); err != nil {
-			c.logger.Debug("Failed to reset read deadline", zap.Error(err))
+			if ce := c.logger.Check(zap.DebugLevel, "Failed to reset read deadline"); ce != nil {
+				ce.Write(zap.Error(err))
+			}
 		}
 	}()
 
@@ -260,7 +264,9 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 
 	// Handle UNKNOWN protocol
 	if parts[1] == "UNKNOWN" {
-		c.logger.Debug("PROXY v1 UNKNOWN protocol, using connection address")
+		if ce := c.logger.Check(zap.DebugLevel, "PROXY v1 UNKNOWN protocol, using connection address"); ce != nil {
+			ce.Write()
+		}
 		// Buffer any extra data after the header
 		c.bufferReaderRemaining(reader)
 		return
@@ -292,10 +298,12 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 		Port: srcPort,
 	}
 
-	c.logger.Debug("PROXY v1 header parsed",
-		zap.String("src_addr", c.realAddr.String()),
-		zap.String("protocol", parts[1]),
-	)
+	if ce := c.logger.Check(zap.DebugLevel, "PROXY v1 header parsed"); ce != nil {
+		ce.Write(
+			zap.String("src_addr", c.realAddr.String()),
+			zap.String("protocol", parts[1]),
+		)
+	}
 
 	// Buffer any remaining data in the reader
 	c.bufferReaderRemaining(reader)
@@ -322,7 +330,9 @@ func (c *proxyProtocolConn) parseV2Header(headerBuf []byte) {
 	switch verCmd {
 	case proxyProtoV2CommandLocal:
 		// LOCAL command - no address info
-		c.logger.Debug("PROXY v2 LOCAL command, using connection address")
+		if ce := c.logger.Check(zap.DebugLevel, "PROXY v2 LOCAL command, using connection address"); ce != nil {
+			ce.Write()
+		}
 		// Read and discard the remaining address bytes
 		if addrLen > 0 {
 			discard := make([]byte, addrLen)
@@ -378,9 +388,9 @@ func (c *proxyProtocolConn) parseV2Header(headerBuf []byte) {
 		return
 	}
 
-	c.logger.Debug("PROXY v2 header parsed",
-		zap.String("src_addr", c.realAddr.String()),
-	)
+	if ce := c.logger.Check(zap.DebugLevel, "PROXY v2 header parsed"); ce != nil {
+		ce.Write(zap.String("src_addr", c.realAddr.String()))
+	}
 }
 
 // BuildProxyProtocolV1Header generates a PROXY protocol v1 header for forwarding to backends

@@ -111,7 +111,9 @@ func (h *HealthServer) Start(ctx context.Context) error {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			if _, err := w.Write(resp); err != nil {
-				h.logger.Debug("Failed to write response", zap.Error(err))
+				if ce := h.logger.Check(zap.DebugLevel, "Failed to write response"); ce != nil {
+					ce.Write(zap.Error(err))
+				}
 			}
 			h.logger.Info("Cache purged", zap.String("pattern", pattern), zap.Int("count", count))
 			return
@@ -132,7 +134,9 @@ func (h *HealthServer) Start(ctx context.Context) error {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			if _, err := w.Write(resp); err != nil {
-				h.logger.Debug("Failed to write response", zap.Error(err))
+				if ce := h.logger.Check(zap.DebugLevel, "Failed to write response"); ce != nil {
+					ce.Write(zap.Error(err))
+				}
 			}
 			return
 		}
