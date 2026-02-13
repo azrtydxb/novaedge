@@ -129,6 +129,21 @@ crds:
   # -- Keep CRDs on chart uninstall (prevents data loss)
   keep: true
 
+# -- Network policy configuration
+networkPolicy:
+  # -- Enable NetworkPolicy for the operator
+  enabled: false
+  # -- Pod selector labels for Prometheus (if empty, allows all pods in namespace)
+  # prometheusSelector:
+  #   app.kubernetes.io/name: prometheus
+  # -- Namespace selector for Prometheus
+  # prometheusNamespaceSelector:
+  #   kubernetes.io/metadata.name: monitoring
+  # -- Extra ingress rules
+  # extraIngress: []
+  # -- Extra egress rules
+  # extraEgress: []
+
 # -- RBAC configuration
 rbac:
   # -- Create RBAC resources

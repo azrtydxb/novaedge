@@ -1,0 +1,72 @@
+{{- if and .Values.agent.enabled (.Values.agent.networkPolicy).enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "novaedge.fullname" . }}-agent
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.agent.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "novaedge.agent.selectorLabels" . | nindent 6 }}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  # Allow external HTTP/HTTPS traffic (load balancer / proxy traffic)
+  - ports:
+    - protocol: TCP
+      port: {{ .Values.agent.ports.http }}
+    - protocol: TCP
+      port: {{ .Values.agent.ports.https }}
+  # Allow metrics scraping from Prometheus
+  {{- if .Values.agent.metrics.enabled }}
+  - from:
+    {{- if (.Values.agent.networkPolicy).prometheusSelector }}
+    - podSelector:
+        matchLabels:
+          {{- toYaml .Values.agent.networkPolicy.prometheusSelector | nindent 10 }}
+    {{- if (.Values.agent.networkPolicy).prometheusNamespaceSelector }}
+      namespaceSelector:
+        matchLabels:
+          {{- toYaml .Values.agent.networkPolicy.prometheusNamespaceSelector | nindent 10 }}
+    {{- end }}
+    {{- else }}
+    - podSelector: {}
+    {{- end }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.agent.metrics.port }}
+  {{- end }}
+  # Allow health probes from kubelet
+  - ports:
+    - protocol: TCP
+      port: {{ .Values.agent.healthProbe.port }}
+  {{- with (.Values.agent.networkPolicy).extraIngress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+  egress:
+  # Allow DNS resolution
+  - ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  # Allow gRPC to controller
+  - to:
+    - podSelector:
+        matchLabels:
+          {{- include "novaedge.controller.selectorLabels" . | nindent 10 }}
+    ports:
+    - protocol: TCP
+      port: {{ .Values.controller.grpc.port }}
+  # Allow traffic to upstream backends (all pods in all namespaces)
+  - to:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+  {{- with (.Values.agent.networkPolicy).extraEgress }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+{{- end }}
