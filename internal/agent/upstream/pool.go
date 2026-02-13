@@ -133,14 +133,13 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	}
 
 	// Configure backend TLS if enabled
+	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
 	if cluster.Tls != nil && cluster.Tls.Enabled {
-		transport.TLSClientConfig = createBackendTLSConfig(cluster.Tls, logger)
+		transport.TLSClientConfig = createBackendTLSConfig(cluster.Tls, clusterKey, logger)
 	}
 
 	// Create context for health checker derived from parent
 	poolCtx, cancel := context.WithCancel(ctx)
-
-	clusterKey := fmt.Sprintf("%s/%s", cluster.Namespace, cluster.Name)
 
 	pool := &Pool{
 		logger:     logger,
@@ -164,6 +163,15 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 
 	// Start metrics collection goroutine
 	go pool.updateMetrics()
+
+	// Log startup audit message for backends with InsecureSkipVerify
+	if cluster.Tls != nil && cluster.Tls.Enabled && cluster.Tls.InsecureSkipVerify {
+		logger.Error("SECURITY AUDIT: Pool started for backend with InsecureSkipVerify enabled — "+
+			"TLS certificate verification is disabled for all connections to this backend",
+			zap.String("backend", clusterKey),
+			zap.Int("endpoint_count", len(endpoints)),
+		)
+	}
 
 	return pool
 }
@@ -426,16 +434,22 @@ func (p *Pool) GetClusterKey() string {
 }
 
 // createBackendTLSConfig creates a TLS config for backend connections
-func createBackendTLSConfig(backendTLS *pb.BackendTLS, logger *zap.Logger) *tls.Config {
+func createBackendTLSConfig(backendTLS *pb.BackendTLS, clusterKey string, logger *zap.Logger) *tls.Config {
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,
 	}
 
 	// InsecureSkipVerify is an explicit user configuration for backend connections
-	// where the backend may use self-signed certificates
+	// where the backend may use self-signed certificates.
+	// This is a security risk: certificate verification is completely disabled,
+	// making the connection vulnerable to man-in-the-middle attacks.
 	if backendTLS.InsecureSkipVerify {
 		tlsConfig.InsecureSkipVerify = true
-		logger.Warn("Backend TLS configured with InsecureSkipVerify=true, certificate verification disabled")
+		logger.Error("SECURITY AUDIT: Backend TLS configured with InsecureSkipVerify=true, "+
+			"certificate verification disabled — connection is vulnerable to MITM attacks",
+			zap.String("backend", clusterKey),
+		)
+		metrics.InsecureBackendConnectionsTotal.WithLabelValues(clusterKey).Inc()
 	}
 
 	// Load CA certificate if provided
