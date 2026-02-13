@@ -660,6 +660,7 @@ message WAFConfig {
   string rules_config_map_ref = 5; // Reference to ConfigMap containing rules
   repeated string rule_exclusions = 6; // Rule IDs to exclude
   repeated string custom_rules = 7; // Inline custom rules
+  string fail_mode = 8; // "closed" (default) or "open" - behavior on WAF processing errors
 }
 
 // WASMPluginConfig defines WASM plugin settings in a policy
