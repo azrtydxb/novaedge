@@ -191,15 +191,12 @@ func TestJWTValidatorBlacklistInitialized(t *testing.T) {
 }
 
 // createTestTokenWithJTI creates a test JWT token with a jti claim
-func createTestTokenWithJTI(privateKey interface{}, kid, issuer, jti string, audience []string, expired bool) (string, error) {
+func createTestTokenWithJTI(privateKey interface{}, jti string, audience []string) (string, error) {
 	now := time.Now()
 	exp := now.Add(1 * time.Hour)
-	if expired {
-		exp = now.Add(-1 * time.Hour)
-	}
 
 	claims := jwt.MapClaims{
-		"iss": issuer,
+		"iss": "test-issuer",
 		"exp": exp.Unix(),
 		"iat": now.Unix(),
 	}
@@ -213,7 +210,7 @@ func createTestTokenWithJTI(privateKey interface{}, kid, issuer, jti string, aud
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-	token.Header["kid"] = kid
+	token.Header["kid"] = "test-key"
 
 	return token.SignedString(privateKey)
 }
@@ -252,7 +249,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 		}
 
 		jti := "unique-token-id-123"
-		tokenString, err := createTestTokenWithJTI(privateKey, "test-key", "test-issuer", jti, []string{"test-audience"}, false)
+		tokenString, err := createTestTokenWithJTI(privateKey, jti, []string{"test-audience"})
 		if err != nil {
 			t.Fatalf("Failed to create token: %v", err)
 		}
@@ -292,7 +289,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 		}
 
 		// Create token without jti
-		tokenString, err := createTestTokenWithJTI(privateKey, "test-key", "test-issuer", "", []string{"test-audience"}, false)
+		tokenString, err := createTestTokenWithJTI(privateKey, "", []string{"test-audience"})
 		if err != nil {
 			t.Fatalf("Failed to create token: %v", err)
 		}
@@ -323,7 +320,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 		}
 
 		jti := "token-with-expired-blacklist"
-		tokenString, err := createTestTokenWithJTI(privateKey, "test-key", "test-issuer", jti, []string{"test-audience"}, false)
+		tokenString, err := createTestTokenWithJTI(privateKey, jti, []string{"test-audience"})
 		if err != nil {
 			t.Fatalf("Failed to create token: %v", err)
 		}
@@ -354,7 +351,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 		}
 
 		jti := "different-token-id"
-		tokenString, err := createTestTokenWithJTI(privateKey, "test-key", "test-issuer", jti, []string{"test-audience"}, false)
+		tokenString, err := createTestTokenWithJTI(privateKey, jti, []string{"test-audience"})
 		if err != nil {
 			t.Fatalf("Failed to create token: %v", err)
 		}
@@ -418,7 +415,7 @@ func TestHandleJWTWithBlacklist(t *testing.T) {
 	t.Run("blacklisted token rejected by middleware", func(t *testing.T) {
 		nextCalled = false
 		jti := "middleware-revoked-token"
-		tokenString, err := createTestTokenWithJTI(privateKey, "test-key", "test-issuer", jti, []string{"test-audience"}, false)
+		tokenString, err := createTestTokenWithJTI(privateKey, jti, []string{"test-audience"})
 		if err != nil {
 			t.Fatalf("Failed to create token: %v", err)
 		}

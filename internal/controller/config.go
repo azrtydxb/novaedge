@@ -14,6 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package controller implements the Kubernetes control-plane logic for NovaEdge,
+// watching CRDs, Ingress, and Gateway API resources to build and distribute
+// routing configuration to node agents.
 package controller
 
 import (
@@ -29,6 +32,9 @@ const (
 	// ConditionReasonValidationFailed indicates the resource configuration failed validation
 	ConditionReasonValidationFailed = "ValidationFailed"
 )
+
+// kindGateway is the Gateway API Kind string for Gateway resources.
+const kindGateway = "Gateway"
 
 var (
 	configServer   *snapshot.Server

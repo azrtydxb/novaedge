@@ -342,6 +342,9 @@ func extractSNI(conn net.Conn) (string, []byte, error) {
 	}
 
 	// Verify this is a TLS handshake record
+	if len(header) < TLSRecordHeaderLen {
+		return "", header, fmt.Errorf("TLS record header too short: %d bytes", len(header))
+	}
 	if header[0] != TLSHandshakeType {
 		return "", header, fmt.Errorf("not a TLS handshake record: content type %d", header[0])
 	}
@@ -358,7 +361,9 @@ func extractSNI(conn net.Conn) (string, []byte, error) {
 		return "", append(header, record...), fmt.Errorf("failed to read TLS record: %w", err)
 	}
 
-	bufferedData := append(header, record...)
+	bufferedData := make([]byte, 0, len(header)+len(record))
+	bufferedData = append(bufferedData, header...)
+	bufferedData = append(bufferedData, record...)
 
 	// Parse ClientHello to find SNI
 	sni, err := parseClientHelloSNI(record)
@@ -455,8 +460,8 @@ func parseSNIExtension(data []byte) (string, error) {
 
 	pos := 2
 	end := pos + listLen
-	for pos+3 <= end {
-		nameType := data[pos]
+	for pos+3 <= end && pos+3 <= len(data) {
+		nameType := data[pos] //nolint:gosec // pos+3 <= len(data) guarantees pos is in bounds
 		nameLen := int(data[pos+1])<<8 | int(data[pos+2])
 		pos += 3
 

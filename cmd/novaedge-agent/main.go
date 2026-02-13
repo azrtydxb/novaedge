@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package main implements the novaedge-agent binary, which runs as a DaemonSet
+// on each node to handle L4/L7 load balancing, VIP management, and policy enforcement.
 package main
 
 import (
@@ -311,9 +313,9 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 		return manager.ApplyConfig(ctx, nil)
 	}
 
-	var configs []l4.L4ListenerConfig
+	configs := make([]l4.ListenerConfig, 0, len(snapshot.L4Listeners))
 	for _, l4Listener := range snapshot.L4Listeners {
-		cfg := l4.L4ListenerConfig{
+		cfg := l4.ListenerConfig{
 			Name:        l4Listener.Name,
 			Port:        l4Listener.Port,
 			BackendName: l4Listener.BackendName,

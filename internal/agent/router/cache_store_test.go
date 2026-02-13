@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+const testCacheBody = "hello"
+
 func TestCacheStoreGetPut(t *testing.T) {
 	config := CacheStoreConfig{
 		MaxEntries:      100,
@@ -34,7 +36,7 @@ func TestCacheStoreGetPut(t *testing.T) {
 
 	entry := &CacheEntry{
 		Key:       "test-key",
-		Body:      []byte("hello"),
+		Body:      []byte(testCacheBody),
 		ExpiresAt: time.Now().Add(5 * time.Minute),
 		SizeBytes: 5,
 	}
@@ -45,8 +47,8 @@ func TestCacheStoreGetPut(t *testing.T) {
 	if got == nil {
 		t.Fatal("Get returned nil for existing key")
 	}
-	if string(got.Body) != "hello" {
-		t.Errorf("Get body = %q, want %q", string(got.Body), "hello")
+	if string(got.Body) != testCacheBody {
+		t.Errorf("Get body = %q, want %q", string(got.Body), testCacheBody)
 	}
 }
 
@@ -259,7 +261,7 @@ func TestCacheStoreStats(t *testing.T) {
 
 	store.Put(&CacheEntry{
 		Key:       "a",
-		Body:      []byte("hello"),
+		Body:      []byte(testCacheBody),
 		ExpiresAt: time.Now().Add(5 * time.Minute),
 		SizeBytes: 5,
 	})

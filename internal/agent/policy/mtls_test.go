@@ -24,7 +24,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"math/big"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -35,7 +34,7 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-func generateTestCert(cn string, dnsNames []string, ipAddresses []net.IP) (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
+func generateTestCert(cn string, dnsNames []string) (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		panic(err)
@@ -47,7 +46,6 @@ func generateTestCert(cn string, dnsNames []string, ipAddresses []net.IP) (*x509
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().Add(1 * time.Hour),
 		DNSNames:     dnsNames,
-		IPAddresses:  ipAddresses,
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
@@ -75,7 +73,7 @@ func TestMTLSValidator_RequiredMode_ValidCert(t *testing.T) {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
 
-	cert, _, _ := generateTestCert("client.example.com", nil, nil)
+	cert, _, _ := generateTestCert("client.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.TLS = &tls.ConnectionState{
@@ -119,7 +117,7 @@ func TestMTLSValidator_RequiredMode_CNMismatch(t *testing.T) {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
 
-	cert, _, _ := generateTestCert("wrong.example.com", nil, nil)
+	cert, _, _ := generateTestCert("wrong.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.TLS = &tls.ConnectionState{
@@ -163,7 +161,7 @@ func TestMTLSValidator_OptionalMode_ValidCert(t *testing.T) {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
 
-	cert, _, _ := generateTestCert("client.example.com", nil, nil)
+	cert, _, _ := generateTestCert("client.example.com", nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.TLS = &tls.ConnectionState{
@@ -188,7 +186,7 @@ func TestMTLSValidator_RequiredSANs(t *testing.T) {
 	}
 
 	// Cert with matching SAN
-	cert, _, _ := generateTestCert("client", []string{"service.example.com"}, nil)
+	cert, _, _ := generateTestCert("client", []string{"service.example.com"})
 	req := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req.TLS = &tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{cert},
@@ -199,7 +197,7 @@ func TestMTLSValidator_RequiredSANs(t *testing.T) {
 	}
 
 	// Cert without matching SAN
-	cert2, _, _ := generateTestCert("client", []string{"other.example.com"}, nil)
+	cert2, _, _ := generateTestCert("client", []string{"other.example.com"})
 	req2 := httptest.NewRequest(http.MethodGet, "/test", nil)
 	req2.TLS = &tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{cert2},

@@ -220,7 +220,10 @@ func expandCIDR(ipNet *net.IPNet) []net.IP {
 
 	// Calculate the number of addresses
 	hostBits := bits - ones
-	numAddresses := new(big.Int).Lsh(big.NewInt(1), uint(hostBits))
+	if hostBits < 0 {
+		hostBits = 0
+	}
+	numAddresses := new(big.Int).Lsh(big.NewInt(1), uint(hostBits)) //nolint:gosec // hostBits is bounds-checked above
 
 	// Limit expansion to prevent memory issues (max 65536 addresses per CIDR)
 	maxExpansion := big.NewInt(65536)

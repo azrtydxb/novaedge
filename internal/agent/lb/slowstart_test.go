@@ -603,6 +603,9 @@ func TestSlowStartManagerWithP2C(t *testing.T) {
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
 	sm.UpdateEndpoints(newEndpoints)
+	if len(newEndpoints) < 3 {
+		t.Fatal("test requires at least 3 new endpoints")
+	}
 
 	// New endpoint should be in slow start
 	if !sm.IsInSlowStart(newEndpoints[2]) {

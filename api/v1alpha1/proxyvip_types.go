@@ -25,7 +25,7 @@ import (
 type VIPMode string
 
 const (
-	// L2ARP mode uses ARP to announce the VIP (active-passive)
+	// VIPModeL2ARP uses ARP to announce the VIP (active-passive).
 	VIPModeL2ARP VIPMode = "L2ARP"
 	// VIPModeBGP mode uses BGP to announce the VIP (active-active ECMP)
 	VIPModeBGP VIPMode = "BGP"

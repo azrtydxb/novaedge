@@ -25,7 +25,10 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-const testAddrEWMA = "10.0.0.1"
+const (
+	testAddrEWMA  = "10.0.0.1"
+	testAddrEWMA3 = "10.0.0.3"
+)
 
 func TestNewEWMA(t *testing.T) {
 	endpoints := []*pb.Endpoint{
@@ -56,7 +59,7 @@ func TestEWMASelect(t *testing.T) {
 	endpoints := []*pb.Endpoint{
 		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	ewma := NewEWMA(endpoints)
@@ -244,7 +247,7 @@ func TestEWMAUpdateEndpoints(t *testing.T) {
 	t.Run("update with new endpoints", func(t *testing.T) {
 		newEndpoints := []*pb.Endpoint{
 			{Address: testAddrEWMA, Port: 8080, Ready: true},
-			{Address: "10.0.0.3", Port: 8080, Ready: true},
+			{Address: testAddrEWMA3, Port: 8080, Ready: true},
 			{Address: "10.0.0.4", Port: 8080, Ready: true},
 		}
 
@@ -292,7 +295,7 @@ func TestEWMAConcurrentOperations(t *testing.T) {
 	endpoints := []*pb.Endpoint{
 		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	ewma := NewEWMA(endpoints)
@@ -428,7 +431,7 @@ func TestEWMAUnhealthyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
 		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: false},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrEWMA3, Port: 8080, Ready: true},
 	}
 
 	ewma := NewEWMA(endpoints)
@@ -444,7 +447,7 @@ func TestEWMAUnhealthyEndpoints(t *testing.T) {
 					t.Errorf("Selected unhealthy endpoint: %s", ep.Address)
 				}
 				// Verify it's one of the healthy endpoints
-				if ep.Address != testAddrEWMA && ep.Address != "10.0.0.3" {
+				if ep.Address != testAddrEWMA && ep.Address != testAddrEWMA3 {
 					t.Errorf("Selected unexpected endpoint: %s", ep.Address)
 				}
 			}

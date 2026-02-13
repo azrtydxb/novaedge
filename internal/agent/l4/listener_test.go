@@ -38,7 +38,7 @@ func TestManager_ApplyConfig_StartTCPListener(t *testing.T) {
 	// Find a free port
 	port := findFreePort(t)
 
-	configs := []L4ListenerConfig{
+	configs := []ListenerConfig{
 		{
 			Name:        "tcp-test",
 			Port:        port,
@@ -60,7 +60,8 @@ func TestManager_ApplyConfig_StartTCPListener(t *testing.T) {
 	}
 
 	// Verify we can connect to the listener
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err != nil {
 		t.Fatalf("Failed to connect to TCP listener: %v", err)
 	}
@@ -87,7 +88,7 @@ func TestManager_ApplyConfig_StopRemovedListener(t *testing.T) {
 	port := findFreePort(t)
 
 	// Start with one listener
-	configs := []L4ListenerConfig{
+	configs := []ListenerConfig{
 		{
 			Name:        "tcp-to-remove",
 			Port:        port,
@@ -120,7 +121,8 @@ func TestManager_ApplyConfig_StopRemovedListener(t *testing.T) {
 
 	// Verify the port is released (should fail to connect)
 	time.Sleep(100 * time.Millisecond) // Give time for listener to close
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 500*time.Millisecond)
+	dialer := &net.Dialer{Timeout: 500 * time.Millisecond}
+	conn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	if err == nil {
 		_ = conn.Close()
 		t.Error("Expected connection to fail after listener removal")
@@ -136,7 +138,7 @@ func TestManager_ApplyConfig_UpdateBackends(t *testing.T) {
 
 	port := findFreePort(t)
 
-	configs := []L4ListenerConfig{
+	configs := []ListenerConfig{
 		{
 			Name:        "tcp-update",
 			Port:        port,
@@ -181,7 +183,7 @@ func TestManager_ApplyConfig_UDPListener(t *testing.T) {
 
 	port := findFreePort(t)
 
-	configs := []L4ListenerConfig{
+	configs := []ListenerConfig{
 		{
 			Name:        "udp-test",
 			Port:        port,
@@ -214,7 +216,7 @@ func TestManager_ApplyConfig_TLSPassthrough(t *testing.T) {
 
 	port := findFreePort(t)
 
-	configs := []L4ListenerConfig{
+	configs := []ListenerConfig{
 		{
 			Name: "tls-test",
 			Port: port,
@@ -253,11 +255,19 @@ func TestListenerKey(t *testing.T) {
 // findFreePort finds a free TCP port for testing
 func findFreePort(t *testing.T) int32 {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to find free port: %v", err)
 	}
-	port := listener.Addr().(*net.TCPAddr).Port
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatal("Failed to get TCP address from listener")
+	}
+	port := tcpAddr.Port
 	_ = listener.Close()
+	if port < 0 || port > 65535 {
+		t.Fatalf("Port %d out of valid range", port)
+	}
 	return int32(port)
 }

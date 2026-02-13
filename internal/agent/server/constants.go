@@ -19,8 +19,7 @@ package server
 import "time"
 
 const (
-	// HTTP server timeouts
-	// ServerReadTimeout is the maximum duration for reading the entire request, including the body
+	// ServerReadTimeout is the maximum duration for reading the entire request, including the body.
 	ServerReadTimeout = 30 * time.Second
 
 	// ServerWriteTimeout is the maximum duration before timing out writes of the response
@@ -38,8 +37,7 @@ const (
 	// GracefulShutdownTimeout is the timeout for gracefully shutting down listeners
 	GracefulShutdownTimeout = 5 * time.Second
 
-	// Metrics and health server timeouts
-	// MetricsServerReadTimeout is the read timeout for the metrics endpoint
+	// MetricsServerReadTimeout is the read timeout for the metrics endpoint.
 	MetricsServerReadTimeout = 10 * time.Second
 
 	// MetricsServerWriteTimeout is the write timeout for the metrics endpoint
@@ -48,8 +46,7 @@ const (
 	// MetricsServerIdleTimeout is the idle timeout for the metrics endpoint
 	MetricsServerIdleTimeout = 60 * time.Second
 
-	// HTTP/3 QUIC defaults
-	// HTTP3DefaultMaxIdleTimeout is the default maximum idle timeout for QUIC connections
+	// HTTP3DefaultMaxIdleTimeout is the default maximum idle timeout for QUIC connections.
 	HTTP3DefaultMaxIdleTimeout = 30 * time.Second
 
 	// HTTP3DefaultMaxBiStreams is the default maximum number of bidirectional streams

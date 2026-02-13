@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strings"
@@ -327,7 +328,7 @@ func buildTrailerFrame(trailers http.Header) []byte {
 	payload := trailerBuf.Bytes()
 	frame := make([]byte, 5+len(payload))
 	frame[0] = grpcWebTrailerFlag
-	binary.BigEndian.PutUint32(frame[1:5], uint32(len(payload)))
+	binary.BigEndian.PutUint32(frame[1:5], safeIntToUint32(len(payload)))
 	copy(frame[5:], payload)
 	return frame
 }
@@ -338,7 +339,7 @@ func buildTrailerFrame(trailers http.Header) []byte {
 func (gw *grpcWebResponseWriter) collectTrailers() http.Header {
 	trailers := make(http.Header)
 
-	for key, values := range gw.ResponseWriter.Header() {
+	for key, values := range gw.Header() {
 		lower := strings.ToLower(key)
 		if strings.HasPrefix(lower, "trailer:") {
 			trailerKey := strings.TrimPrefix(lower, "trailer:")
@@ -355,4 +356,15 @@ func (gw *grpcWebResponseWriter) collectTrailers() http.Header {
 	}
 
 	return trailers
+}
+
+// safeIntToUint32 safely converts an int to uint32 with clamping.
+func safeIntToUint32(v int) uint32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(v)
 }

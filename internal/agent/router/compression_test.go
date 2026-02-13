@@ -34,7 +34,7 @@ func TestCompressionMiddleware_GzipResponse(t *testing.T) {
 		Enabled:    true,
 		MinSize:    10, // Small threshold for testing
 		Level:      6,
-		Algorithms: []string{"gzip", "br"},
+		Algorithms: []string{encodingGzip, "br"},
 	}
 	cm := NewCompressionMiddleware(config)
 
@@ -45,7 +45,7 @@ func TestCompressionMiddleware_GzipResponse(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", encodingGzip)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -53,7 +53,7 @@ func TestCompressionMiddleware_GzipResponse(t *testing.T) {
 	result := rec.Result()
 	defer func() { _ = result.Body.Close() }()
 
-	if result.Header.Get("Content-Encoding") != "gzip" {
+	if result.Header.Get("Content-Encoding") != encodingGzip {
 		t.Errorf("expected Content-Encoding: gzip, got %s", result.Header.Get("Content-Encoding"))
 	}
 
@@ -83,7 +83,7 @@ func TestCompressionMiddleware_BrotliResponse(t *testing.T) {
 		Enabled:    true,
 		MinSize:    10,
 		Level:      4,
-		Algorithms: []string{"br", "gzip"},
+		Algorithms: []string{"br", encodingGzip},
 	}
 	cm := NewCompressionMiddleware(config)
 
@@ -122,7 +122,7 @@ func TestCompressionMiddleware_SkipAlreadyCompressed(t *testing.T) {
 	config := &pb.CompressionConfig{
 		Enabled:    true,
 		MinSize:    10,
-		Algorithms: []string{"gzip"},
+		Algorithms: []string{encodingGzip},
 	}
 	cm := NewCompressionMiddleware(config)
 
@@ -134,7 +134,7 @@ func TestCompressionMiddleware_SkipAlreadyCompressed(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", encodingGzip)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -158,7 +158,7 @@ func TestCompressionMiddleware_SkipExcludedContentType(t *testing.T) {
 	config := &pb.CompressionConfig{
 		Enabled:      true,
 		MinSize:      10,
-		Algorithms:   []string{"gzip"},
+		Algorithms:   []string{encodingGzip},
 		ExcludeTypes: []string{"image/*", "video/*"},
 	}
 	cm := NewCompressionMiddleware(config)
@@ -170,7 +170,7 @@ func TestCompressionMiddleware_SkipExcludedContentType(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/image.png", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", encodingGzip)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -178,7 +178,7 @@ func TestCompressionMiddleware_SkipExcludedContentType(t *testing.T) {
 	result := rec.Result()
 	defer func() { _ = result.Body.Close() }()
 
-	if result.Header.Get("Content-Encoding") == "gzip" {
+	if result.Header.Get("Content-Encoding") == encodingGzip {
 		t.Error("expected no compression for image/* content type")
 	}
 
@@ -192,7 +192,7 @@ func TestCompressionMiddleware_MinimumSize(t *testing.T) {
 	config := &pb.CompressionConfig{
 		Enabled:    true,
 		MinSize:    1024, // 1KB minimum
-		Algorithms: []string{"gzip"},
+		Algorithms: []string{encodingGzip},
 	}
 	cm := NewCompressionMiddleware(config)
 
@@ -204,7 +204,7 @@ func TestCompressionMiddleware_MinimumSize(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", encodingGzip)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -213,7 +213,7 @@ func TestCompressionMiddleware_MinimumSize(t *testing.T) {
 	defer func() { _ = result.Body.Close() }()
 
 	// Should NOT be compressed (too small)
-	if result.Header.Get("Content-Encoding") == "gzip" {
+	if result.Header.Get("Content-Encoding") == encodingGzip {
 		t.Error("expected no compression for body smaller than minSize")
 	}
 
@@ -232,32 +232,32 @@ func TestCompressionMiddleware_AcceptEncodingNegotiation(t *testing.T) {
 	}{
 		{
 			name:           "client accepts gzip only",
-			acceptEncoding: "gzip",
-			algorithms:     []string{"gzip", "br"},
-			wantEncoding:   "gzip",
+			acceptEncoding: encodingGzip,
+			algorithms:     []string{encodingGzip, "br"},
+			wantEncoding:   encodingGzip,
 		},
 		{
 			name:           "client accepts brotli only",
 			acceptEncoding: "br",
-			algorithms:     []string{"gzip", "br"},
+			algorithms:     []string{encodingGzip, "br"},
 			wantEncoding:   "br",
 		},
 		{
 			name:           "client accepts both, server prefers br",
 			acceptEncoding: "gzip, br",
-			algorithms:     []string{"br", "gzip"},
+			algorithms:     []string{"br", encodingGzip},
 			wantEncoding:   "br",
 		},
 		{
 			name:           "client accepts none we support",
 			acceptEncoding: "deflate",
-			algorithms:     []string{"gzip", "br"},
+			algorithms:     []string{encodingGzip, "br"},
 			wantEncoding:   "",
 		},
 		{
 			name:           "no Accept-Encoding header",
 			acceptEncoding: "",
-			algorithms:     []string{"gzip"},
+			algorithms:     []string{encodingGzip},
 			wantEncoding:   "",
 		},
 	}
@@ -305,7 +305,7 @@ func TestCompressionMiddleware_Disabled(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", encodingGzip)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -313,7 +313,7 @@ func TestCompressionMiddleware_Disabled(t *testing.T) {
 	result := rec.Result()
 	defer func() { _ = result.Body.Close() }()
 
-	if result.Header.Get("Content-Encoding") == "gzip" {
+	if result.Header.Get("Content-Encoding") == encodingGzip {
 		t.Error("expected no compression when config is nil")
 	}
 
@@ -330,7 +330,7 @@ func TestCompressionMiddleware_Disabled(t *testing.T) {
 	result2 := rec2.Result()
 	defer func() { _ = result2.Body.Close() }()
 
-	if result2.Header.Get("Content-Encoding") == "gzip" {
+	if result2.Header.Get("Content-Encoding") == encodingGzip {
 		t.Error("expected no compression when disabled")
 	}
 }
@@ -339,7 +339,7 @@ func TestCompressResponseWriter_NoContent(t *testing.T) {
 	config := &pb.CompressionConfig{
 		Enabled:    true,
 		MinSize:    10,
-		Algorithms: []string{"gzip"},
+		Algorithms: []string{encodingGzip},
 	}
 	cm := NewCompressionMiddleware(config)
 
@@ -348,7 +348,7 @@ func TestCompressResponseWriter_NoContent(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", encodingGzip)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -360,7 +360,7 @@ func TestCompressResponseWriter_NoContent(t *testing.T) {
 		t.Errorf("expected status 204, got %d", result.StatusCode)
 	}
 
-	if result.Header.Get("Content-Encoding") == "gzip" {
+	if result.Header.Get("Content-Encoding") == encodingGzip {
 		t.Error("expected no compression for 204 No Content")
 	}
 }

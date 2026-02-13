@@ -93,7 +93,7 @@ func NewWAFEngine(config *pb.WAFConfig, logger *zap.Logger) (*WAFEngine, error) 
 
 // buildWAFDirectives constructs Coraza directives from WAF configuration
 func buildWAFDirectives(config *pb.WAFConfig) []string {
-	var directives []string
+	directives := make([]string, 0, 8+len(config.RuleExclusions))
 
 	// Enable SecRule Engine based on mode
 	switch config.Mode {

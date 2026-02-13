@@ -95,7 +95,7 @@ func generateSPIFFETestCA(t *testing.T) (*x509.Certificate, *ecdsa.PrivateKey) {
 }
 
 // generateSPIFFESVID creates a test X509-SVID with a SPIFFE ID URI SAN.
-func generateSPIFFESVID(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, spiffeIDStr string) (*x509svid.SVID, *ecdsa.PrivateKey) {
+func generateSPIFFESVID(t *testing.T, ca *x509.Certificate, caKey *ecdsa.PrivateKey, spiffeIDStr string) *x509svid.SVID {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -137,7 +137,7 @@ func generateSPIFFESVID(t *testing.T, ca *x509.Certificate, caKey *ecdsa.Private
 		ID:           id,
 		Certificates: []*x509.Certificate{cert, ca},
 		PrivateKey:   key,
-	}, key
+	}
 }
 
 func mockSourceFactory(source X509SVIDSource) X509SourceFactory {
@@ -224,7 +224,7 @@ func TestNewSPIFFEProvider_InvalidConfig(t *testing.T) {
 func TestSPIFFEProvider_StartAndStop(t *testing.T) {
 	logger := zap.NewNop()
 	ca, caKey := generateSPIFFETestCA(t)
-	svid, _ := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
+	svid := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
 	td := spiffeid.RequireTrustDomainFromString("example.org")
 	bundle := x509bundle.FromX509Authorities(td, []*x509.Certificate{ca})
 
@@ -258,7 +258,7 @@ func TestSPIFFEProvider_StartAndStop(t *testing.T) {
 func TestSPIFFEProvider_GetTLSConfig(t *testing.T) {
 	logger := zap.NewNop()
 	ca, caKey := generateSPIFFETestCA(t)
-	svid, _ := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
+	svid := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
 	td := spiffeid.RequireTrustDomainFromString("example.org")
 	bundle := x509bundle.FromX509Authorities(td, []*x509.Certificate{ca})
 
@@ -335,7 +335,7 @@ func TestSPIFFEProvider_GetTLSConfig_NotStarted(t *testing.T) {
 func TestSPIFFEProvider_GetClientCertificate(t *testing.T) {
 	logger := zap.NewNop()
 	ca, caKey := generateSPIFFETestCA(t)
-	svid, _ := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
+	svid := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
 	td := spiffeid.RequireTrustDomainFromString("example.org")
 	bundle := x509bundle.FromX509Authorities(td, []*x509.Certificate{ca})
 
@@ -445,7 +445,7 @@ func TestSPIFFEProvider_IsAllowedSPIFFEID(t *testing.T) {
 func TestSPIFFEProvider_VerifyPeerCertificate_Allowed(t *testing.T) {
 	logger := zap.NewNop()
 	ca, caKey := generateSPIFFETestCA(t)
-	svid, _ := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
+	svid := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
 	td := spiffeid.RequireTrustDomainFromString("example.org")
 	bundle := x509bundle.FromX509Authorities(td, []*x509.Certificate{ca})
 
@@ -482,7 +482,7 @@ func TestSPIFFEProvider_VerifyPeerCertificate_Allowed(t *testing.T) {
 func TestSPIFFEProvider_VerifyPeerCertificate_Denied(t *testing.T) {
 	logger := zap.NewNop()
 	ca, caKey := generateSPIFFETestCA(t)
-	svid, _ := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/other")
+	svid := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/other")
 	td := spiffeid.RequireTrustDomainFromString("example.org")
 	bundle := x509bundle.FromX509Authorities(td, []*x509.Certificate{ca})
 
@@ -575,7 +575,7 @@ func TestSPIFFEProvider_VerifyPeerCertificate_NoURISAN(t *testing.T) {
 func TestSPIFFEProvider_GetTrustBundle(t *testing.T) {
 	logger := zap.NewNop()
 	ca, caKey := generateSPIFFETestCA(t)
-	svid, _ := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
+	svid := generateSPIFFESVID(t, ca, caKey, "spiffe://example.org/workload/test")
 	td := spiffeid.RequireTrustDomainFromString("example.org")
 	bundle := x509bundle.FromX509Authorities(td, []*x509.Certificate{ca})
 

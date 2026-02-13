@@ -62,7 +62,7 @@ func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) 
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion: gatewayv1.GroupVersion.String(),
-					Kind:       "Gateway",
+					Kind:       kindGateway,
 					Name:       gateway.Name,
 					UID:        gateway.UID,
 					Controller: boolPtr(true),
@@ -82,7 +82,7 @@ func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) 
 func translateListener(gwListener gatewayv1.Listener, namespace string) (novaedgev1alpha1.Listener, error) {
 	listener := novaedgev1alpha1.Listener{
 		Name: string(gwListener.Name),
-		Port: int32(gwListener.Port),
+		Port: gwListener.Port,
 	}
 
 	// Translate protocol
@@ -474,7 +474,7 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 		}
 
 		if gwFilter.RequestMirror.Percent != nil {
-			percent := int32(*gwFilter.RequestMirror.Percent)
+			percent := *gwFilter.RequestMirror.Percent
 			filter.MirrorPercent = &percent
 		}
 

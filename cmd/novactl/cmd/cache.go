@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -74,7 +75,7 @@ func runCachePurge(agentAddr, pattern string) error {
 	q.Set("pattern", pattern)
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequest(http.MethodDelete, u.String(), nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -111,7 +112,12 @@ func runCacheStats(agentAddr string) error {
 		Path:   "/_novaedge/cache",
 	}
 
-	resp, err := http.Get(u.String())
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
 	}

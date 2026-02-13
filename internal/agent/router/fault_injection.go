@@ -17,9 +17,10 @@ limitations under the License.
 package router
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"math/rand/v2"
 	"net/http"
 	"time"
 
@@ -79,9 +80,15 @@ func NewFaultInjectionMiddleware(config *FaultInjectionConfig, logger *zap.Logge
 		logger = zap.NewNop()
 	}
 	return &FaultInjectionMiddleware{
-		config:    config,
-		logger:    logger,
-		randFloat: func() float64 { return rand.Float64() * 100 },
+		config: config,
+		logger: logger,
+		randFloat: func() float64 {
+			var buf [8]byte
+			if _, err := rand.Read(buf[:]); err != nil {
+				return 0
+			}
+			return float64(binary.LittleEndian.Uint64(buf[:])) / float64(^uint64(0)) * 100
+		},
 	}
 }
 

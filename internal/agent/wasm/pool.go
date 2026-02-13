@@ -27,8 +27,8 @@ import (
 
 const poolDefaultSize = 4
 
-// instance wraps a single instantiated WASM module.
-type instance struct {
+// Instance wraps a single instantiated WASM module.
+type Instance struct {
 	module api.Module
 }
 
@@ -37,7 +37,7 @@ type instance struct {
 type InstancePool struct {
 	mu     sync.Mutex
 	plugin *Plugin
-	pool   chan *instance
+	pool   chan *Instance
 	size   int
 	closed bool
 }
@@ -49,13 +49,13 @@ func NewInstancePool(plugin *Plugin, size int) *InstancePool {
 	}
 	return &InstancePool{
 		plugin: plugin,
-		pool:   make(chan *instance, size),
+		pool:   make(chan *Instance, size),
 		size:   size,
 	}
 }
 
 // Get returns an instance from the pool, creating one if the pool is empty.
-func (p *InstancePool) Get(ctx context.Context) (*instance, error) {
+func (p *InstancePool) Get(ctx context.Context) (*Instance, error) {
 	// Try to get an existing instance without blocking
 	select {
 	case inst := <-p.pool:
@@ -68,7 +68,7 @@ func (p *InstancePool) Get(ctx context.Context) (*instance, error) {
 }
 
 // Put returns an instance to the pool.
-func (p *InstancePool) Put(inst *instance) {
+func (p *InstancePool) Put(inst *Instance) {
 	if inst == nil {
 		return
 	}
@@ -117,7 +117,7 @@ func (p *InstancePool) Size() int {
 }
 
 // createInstance instantiates a new WASM module from the plugin's compiled module.
-func (p *InstancePool) createInstance(ctx context.Context) (*instance, error) {
+func (p *InstancePool) createInstance(ctx context.Context) (*Instance, error) {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
@@ -134,5 +134,5 @@ func (p *InstancePool) createInstance(ctx context.Context) (*instance, error) {
 		zap.String("plugin", p.plugin.config.Name),
 	)
 
-	return &instance{module: mod}, nil
+	return &Instance{module: mod}, nil
 }

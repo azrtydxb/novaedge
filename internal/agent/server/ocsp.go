@@ -335,7 +335,12 @@ func (s *OCSPStapler) fetchOCSPResponse(entry *ocspCertEntry, leaf *x509.Certifi
 	responderURL := leaf.OCSPServer[0]
 	httpClient := &http.Client{Timeout: ocspHTTPTimeout}
 
-	httpResp, err := httpClient.Post(responderURL, "application/ocsp-request", bytes.NewReader(ocspReq))
+	ocspHTTPReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, responderURL, bytes.NewReader(ocspReq))
+	if err != nil {
+		return fmt.Errorf("failed to create OCSP HTTP request: %w", err)
+	}
+	ocspHTTPReq.Header.Set("Content-Type", "application/ocsp-request")
+	httpResp, err := httpClient.Do(ocspHTTPReq)
 	if err != nil {
 		return fmt.Errorf("OCSP request failed: %w", err)
 	}

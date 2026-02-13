@@ -197,7 +197,7 @@ func TestConvertProtocol(t *testing.T) {
 }
 
 func TestSnapshotCacheOperations(t *testing.T) {
-	cache := NewSnapshotCache()
+	cache := NewCache()
 
 	// Test Set and Get
 	snapshot := &pb.ConfigSnapshot{

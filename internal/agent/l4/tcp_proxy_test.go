@@ -30,17 +30,27 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const (
+	testAddrTCP1 = "10.0.0.1"
+	testAddrTCP2 = "10.0.0.2"
+	testAddrTCP3 = "10.0.0.3"
+)
+
 func TestTCPProxy_HandleConnection(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Create a test backend server
-	backendListener, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	backendListener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to create backend listener: %v", err)
 	}
 	defer func() { _ = backendListener.Close() }()
 
-	backendAddr := backendListener.Addr().(*net.TCPAddr)
+	backendAddr, ok := backendListener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatal("Failed to get TCP address from backend listener")
+	}
 
 	// Backend echoes back what it receives
 	go func() {
@@ -61,10 +71,13 @@ func TestTCPProxy_HandleConnection(t *testing.T) {
 		}
 	}()
 
+	if backendAddr.Port < 0 || backendAddr.Port > 65535 {
+		t.Fatalf("Backend port %d out of valid range", backendAddr.Port)
+	}
 	backends := []*pb.Endpoint{
 		{
 			Address: backendAddr.IP.String(),
-			Port:    int32(backendAddr.Port),
+			Port:    int32(backendAddr.Port), //nolint:gosec // port validated above
 			Ready:   true,
 		},
 	}
@@ -106,9 +119,9 @@ func TestTCPProxy_PickBackend_RoundRobin(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	backends := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
-		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrTCP1, Port: 8080, Ready: true},
+		{Address: testAddrTCP2, Port: 8080, Ready: true},
+		{Address: testAddrTCP3, Port: 8080, Ready: true},
 	}
 
 	proxy := NewTCPProxy(TCPProxyConfig{
@@ -140,8 +153,8 @@ func TestTCPProxy_PickBackend_NoReady(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	backends := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: false},
-		{Address: "10.0.0.2", Port: 8080, Ready: false},
+		{Address: testAddrTCP1, Port: 8080, Ready: false},
+		{Address: testAddrTCP2, Port: 8080, Ready: false},
 	}
 
 	proxy := NewTCPProxy(TCPProxyConfig{
@@ -160,7 +173,7 @@ func TestTCPProxy_UpdateBackends(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	initialBackends := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrTCP1, Port: 8080, Ready: true},
 	}
 
 	proxy := NewTCPProxy(TCPProxyConfig{
@@ -170,14 +183,14 @@ func TestTCPProxy_UpdateBackends(t *testing.T) {
 	}, logger)
 
 	ep := proxy.pickBackend()
-	if ep == nil || ep.Address != "10.0.0.1" {
+	if ep == nil || ep.Address != testAddrTCP1 {
 		t.Fatal("Expected initial backend")
 	}
 
 	// Update backends
 	newBackends := []*pb.Endpoint{
-		{Address: "10.0.0.2", Port: 8080, Ready: true},
-		{Address: "10.0.0.3", Port: 8080, Ready: true},
+		{Address: testAddrTCP2, Port: 8080, Ready: true},
+		{Address: testAddrTCP3, Port: 8080, Ready: true},
 	}
 	proxy.UpdateBackends(newBackends)
 
@@ -186,7 +199,7 @@ func TestTCPProxy_UpdateBackends(t *testing.T) {
 	if ep == nil {
 		t.Fatal("Expected backend after update")
 	}
-	if ep.Address != "10.0.0.2" && ep.Address != "10.0.0.3" {
+	if ep.Address != testAddrTCP2 && ep.Address != testAddrTCP3 {
 		t.Errorf("Expected updated backend, got %s", ep.Address)
 	}
 }
@@ -196,7 +209,7 @@ func TestTCPProxy_Drain(t *testing.T) {
 
 	proxy := NewTCPProxy(TCPProxyConfig{
 		ListenerName: "test-drain",
-		Backends:     []*pb.Endpoint{{Address: "10.0.0.1", Port: 8080, Ready: true}},
+		Backends:     []*pb.Endpoint{{Address: testAddrTCP1, Port: 8080, Ready: true}},
 		BackendName:  "test",
 	}, logger)
 
@@ -215,13 +228,17 @@ func TestTCPProxy_ConnectionForwarding(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Start a TCP echo server as backend
-	backendListener, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	backendListener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to start backend: %v", err)
 	}
 	defer func() { _ = backendListener.Close() }()
 
-	backendAddr := backendListener.Addr().(*net.TCPAddr)
+	backendAddr, ok := backendListener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatal("Failed to get TCP address from backend listener")
+	}
 
 	go func() {
 		for {
@@ -237,18 +254,24 @@ func TestTCPProxy_ConnectionForwarding(t *testing.T) {
 	}()
 
 	// Start a TCP proxy listener
-	proxyListener, err := net.Listen("tcp", "127.0.0.1:0")
+	proxyListener, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to start proxy listener: %v", err)
 	}
 	defer func() { _ = proxyListener.Close() }()
 
-	proxyAddr := proxyListener.Addr().(*net.TCPAddr)
+	proxyAddr, ok := proxyListener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatal("Failed to get TCP address from proxy listener")
+	}
 
+	if backendAddr.Port < 0 || backendAddr.Port > 65535 {
+		t.Fatalf("Backend port %d out of valid range", backendAddr.Port)
+	}
 	backends := []*pb.Endpoint{
 		{
 			Address: backendAddr.IP.String(),
-			Port:    int32(backendAddr.Port),
+			Port:    int32(backendAddr.Port), //nolint:gosec // port validated above
 			Ready:   true,
 		},
 	}
@@ -275,7 +298,8 @@ func TestTCPProxy_ConnectionForwarding(t *testing.T) {
 	}()
 
 	// Connect to proxy and send data
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", proxyAddr.Port), 2*time.Second)
+	dialer := &net.Dialer{Timeout: 2 * time.Second}
+	conn, err := dialer.DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", proxyAddr.Port))
 	if err != nil {
 		t.Fatalf("Failed to connect to proxy: %v", err)
 	}

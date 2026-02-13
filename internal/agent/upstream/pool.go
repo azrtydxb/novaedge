@@ -54,7 +54,7 @@ type Pool struct {
 	mu sync.Mutex
 
 	// Health checker for endpoints
-	healthChecker *health.HealthChecker
+	healthChecker *health.Checker
 
 	// Context for health checker
 	ctx    context.Context
@@ -155,7 +155,7 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	pool.proxies.Store(&emptyProxies)
 
 	// Create and start health checker
-	pool.healthChecker = health.NewHealthChecker(cluster, endpoints, logger)
+	pool.healthChecker = health.NewChecker(cluster, endpoints, logger)
 	pool.healthChecker.Start(poolCtx)
 
 	// Create reverse proxies for each endpoint

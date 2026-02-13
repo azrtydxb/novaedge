@@ -50,7 +50,7 @@ type Server struct {
 	pb.UnimplementedFederationServiceServer
 
 	// config holds the federation configuration
-	config *FederationConfig
+	config *Config
 
 	// vectorClock is this controller's vector clock
 	vectorClock *VectorClock
@@ -93,9 +93,9 @@ type Server struct {
 }
 
 // NewServer creates a new federation server
-func NewServer(config *FederationConfig, logger *zap.Logger) *Server {
+func NewServer(config *Config, logger *zap.Logger) *Server {
 	if config == nil {
-		config = DefaultFederationConfig()
+		config = DefaultConfig()
 	}
 
 	s := &Server{
@@ -942,7 +942,7 @@ func (s *Server) updatePeerState(peerName string, updateFn func(*PeerState)) {
 }
 
 // getPhase returns the current federation phase
-func (s *Server) getPhase() FederationPhase {
+func (s *Server) getPhase() Phase {
 	healthyCount := 0
 	connectedCount := 0
 	totalPeers := len(s.config.Peers)

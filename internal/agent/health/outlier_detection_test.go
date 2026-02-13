@@ -92,12 +92,12 @@ func TestOutlierDetector_RecordSuccessAndFailure(t *testing.T) {
 	cfg.ConsecutiveErrors = 100 // High threshold to avoid ejection in this test
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	od.RecordSuccess("10.0.0.1:8080")
-	od.RecordSuccess("10.0.0.1:8080")
-	od.RecordFailure("10.0.0.1:8080")
+	od.RecordSuccess(testEndpointAddr)
+	od.RecordSuccess(testEndpointAddr)
+	od.RecordFailure(testEndpointAddr)
 
 	od.mu.RLock()
-	s := od.stats["10.0.0.1:8080"]
+	s := od.stats[testEndpointAddr]
 	if s.requests != 3 {
 		t.Errorf("expected 3 requests, got %d", s.requests)
 	}
@@ -117,17 +117,17 @@ func TestOutlierDetector_ConsecutiveErrorDetection(t *testing.T) {
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
 	// Ensure endpoint is tracked in stats to satisfy max ejection percent check.
-	od.RecordFailure("10.0.0.1:8080")
-	od.RecordFailure("10.0.0.1:8080")
+	od.RecordFailure(testEndpointAddr)
+	od.RecordFailure(testEndpointAddr)
 
-	if od.IsEjected("10.0.0.1:8080") {
+	if od.IsEjected(testEndpointAddr) {
 		t.Error("should not be ejected below threshold")
 	}
 
 	// Third failure should trigger ejection.
-	od.RecordFailure("10.0.0.1:8080")
+	od.RecordFailure(testEndpointAddr)
 
-	if !od.IsEjected("10.0.0.1:8080") {
+	if !od.IsEjected(testEndpointAddr) {
 		t.Error("should be ejected after consecutive errors threshold")
 	}
 }
@@ -138,14 +138,14 @@ func TestOutlierDetector_ConsecutiveErrorsResetOnSuccess(t *testing.T) {
 	cfg.ConsecutiveErrors = 3
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	od.RecordFailure("10.0.0.1:8080")
-	od.RecordFailure("10.0.0.1:8080")
+	od.RecordFailure(testEndpointAddr)
+	od.RecordFailure(testEndpointAddr)
 	// A success resets the consecutive error counter.
-	od.RecordSuccess("10.0.0.1:8080")
-	od.RecordFailure("10.0.0.1:8080")
-	od.RecordFailure("10.0.0.1:8080")
+	od.RecordSuccess(testEndpointAddr)
+	od.RecordFailure(testEndpointAddr)
+	od.RecordFailure(testEndpointAddr)
 
-	if od.IsEjected("10.0.0.1:8080") {
+	if od.IsEjected(testEndpointAddr) {
 		t.Error("should not be ejected; success reset the consecutive error counter")
 	}
 }
@@ -162,7 +162,7 @@ func TestOutlierDetector_SuccessRateOutlierDetection(t *testing.T) {
 
 	// Create 5 good endpoints with 90% success rate.
 	goodEndpoints := []string{
-		"10.0.0.1:8080",
+		testEndpointAddr,
 		"10.0.0.2:8080",
 		"10.0.0.3:8080",
 		"10.0.0.4:8080",
@@ -206,7 +206,7 @@ func TestOutlierDetector_FailurePercentageThreshold(t *testing.T) {
 	cfg.ConsecutiveErrors = 1000 // Disable consecutive error detection.
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	ep := "10.0.0.1:8080"
+	ep := testEndpointAddr
 
 	// 85% failure rate (above 80% threshold).
 	for i := 0; i < 15; i++ {
@@ -233,7 +233,7 @@ func TestOutlierDetector_FailurePercentageBelowThreshold(t *testing.T) {
 	cfg.ConsecutiveErrors = 1000 // Disable consecutive error detection.
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	ep := "10.0.0.1:8080"
+	ep := testEndpointAddr
 
 	// 50% failure rate (below 80% threshold).
 	for i := 0; i < 50; i++ {
@@ -260,7 +260,7 @@ func TestOutlierDetector_MaxEjectionPercentRespected(t *testing.T) {
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
 	endpoints := []string{
-		"10.0.0.1:8080",
+		testEndpointAddr,
 		"10.0.0.2:8080",
 		"10.0.0.3:8080",
 		"10.0.0.4:8080",
@@ -300,7 +300,7 @@ func TestOutlierDetector_AutoUnejectionAfterPeriod(t *testing.T) {
 	cfg.ConsecutiveErrors = 2
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	ep := "10.0.0.1:8080"
+	ep := testEndpointAddr
 	od.RecordFailure(ep)
 	od.RecordFailure(ep)
 
@@ -328,7 +328,7 @@ func TestOutlierDetector_EjectionBackoff(t *testing.T) {
 	cfg.ConsecutiveErrors = 2
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	ep := "10.0.0.1:8080"
+	ep := testEndpointAddr
 
 	// First ejection.
 	od.RecordFailure(ep)
@@ -413,7 +413,7 @@ func TestOutlierDetector_StartStop(t *testing.T) {
 	od.Start(ctx)
 
 	// Record failures to trigger ejection.
-	ep := "10.0.0.1:8080"
+	ep := testEndpointAddr
 	od.RecordFailure(ep)
 	od.RecordFailure(ep)
 
@@ -463,7 +463,7 @@ func TestOutlierDetector_ResetStatsClearsCounters(t *testing.T) {
 	cfg.ConsecutiveErrors = 1000 // Disable consecutive error ejection.
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	ep := "10.0.0.1:8080"
+	ep := testEndpointAddr
 	od.RecordSuccess(ep)
 	od.RecordSuccess(ep)
 	od.RecordFailure(ep)
@@ -495,8 +495,8 @@ func TestOutlierDetector_SuccessRateSkippedWithTooFewHosts(t *testing.T) {
 
 	// Only 2 endpoints (below minimum of 5).
 	for i := 0; i < 10; i++ {
-		od.RecordFailure("10.0.0.1:8080") // 0% success
-		od.RecordSuccess("10.0.0.2:8080") // 100% success
+		od.RecordFailure(testEndpointAddr) // 0% success
+		od.RecordSuccess("10.0.0.2:8080")  // 100% success
 	}
 
 	od.mu.Lock()
@@ -504,7 +504,7 @@ func TestOutlierDetector_SuccessRateSkippedWithTooFewHosts(t *testing.T) {
 	od.mu.Unlock()
 
 	// Neither should be ejected because we have fewer hosts than the minimum.
-	if od.IsEjected("10.0.0.1:8080") {
+	if od.IsEjected(testEndpointAddr) {
 		t.Error("should not eject when below SuccessRateMinHosts")
 	}
 }
@@ -515,7 +515,7 @@ func TestOutlierDetector_AlreadyEjectedNotDoubleEjected(t *testing.T) {
 	cfg.ConsecutiveErrors = 2
 	od := NewOutlierDetector("default/backend", cfg, logger)
 
-	ep := "10.0.0.1:8080"
+	ep := testEndpointAddr
 	od.RecordFailure(ep)
 	od.RecordFailure(ep)
 

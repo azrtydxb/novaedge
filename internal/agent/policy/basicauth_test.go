@@ -24,6 +24,8 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testAdminUser = "admin"
+
 func TestBasicAuthValidator_ValidBcrypt(t *testing.T) {
 	// Generate a bcrypt hash for testing
 	hash, err := GenerateBcryptHash("secret123")
@@ -44,7 +46,7 @@ func TestBasicAuthValidator_ValidBcrypt(t *testing.T) {
 		t.Fatalf("failed to create validator: %v", err)
 	}
 
-	if !validator.Validate("admin", "secret123") {
+	if !validator.Validate(testAdminUser, "secret123") {
 		t.Error("expected valid credentials to pass")
 	}
 }
@@ -67,7 +69,7 @@ func TestBasicAuthValidator_InvalidPassword(t *testing.T) {
 		t.Fatalf("failed to create validator: %v", err)
 	}
 
-	if validator.Validate("admin", "wrongpassword") {
+	if validator.Validate(testAdminUser, "wrongpassword") {
 		t.Error("expected invalid password to fail")
 	}
 }
@@ -203,7 +205,7 @@ func TestHandleBasicAuth_ValidCredentials(t *testing.T) {
 			t.Error("expected Authorization header to be stripped")
 		}
 		// Verify X-Auth-User header is set
-		if user := r.Header.Get("X-Auth-User"); user != "admin" {
+		if user := r.Header.Get("X-Auth-User"); user != testAdminUser {
 			t.Errorf("expected X-Auth-User=admin, got %s", user)
 		}
 	})
@@ -211,7 +213,7 @@ func TestHandleBasicAuth_ValidCredentials(t *testing.T) {
 	handler := HandleBasicAuth(validator)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.SetBasicAuth("admin", "secret")
+	req.SetBasicAuth(testAdminUser, "secret")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -245,7 +247,7 @@ func TestHandleBasicAuth_InvalidCredentials(t *testing.T) {
 	handler := HandleBasicAuth(validator)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.SetBasicAuth("admin", "wrong")
+	req.SetBasicAuth(testAdminUser, "wrong")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -323,7 +325,7 @@ func TestHandleBasicAuth_StripAuthDisabled(t *testing.T) {
 	handler := HandleBasicAuth(validator)(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.SetBasicAuth("admin", "secret")
+	req.SetBasicAuth(testAdminUser, "secret")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

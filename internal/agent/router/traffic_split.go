@@ -22,10 +22,15 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// CanaryHeaderName is the HTTP header used to force canary backend selection.
-// When a request carries this header with value "true", traffic is routed to
-// the backend with the lowest weight (i.e. the canary backend).
-const CanaryHeaderName = "X-Canary"
+const (
+	// CanaryHeaderName is the HTTP header used to force canary backend selection.
+	// When a request carries this header with value "true", traffic is routed to
+	// the backend with the lowest weight (i.e. the canary backend).
+	CanaryHeaderName = "X-Canary"
+
+	// headerValueTrue is the constant for the boolean "true" header value.
+	headerValueTrue = "true"
+)
 
 // selectBackendForRequest picks a BackendRef considering both canary header
 // routing and weighted random selection.
@@ -44,7 +49,7 @@ func selectBackendForRequest(backends []*pb.BackendRef, req *http.Request) *pb.B
 	}
 
 	// Check for canary header override
-	if req.Header.Get(CanaryHeaderName) == "true" {
+	if req.Header.Get(CanaryHeaderName) == headerValueTrue {
 		return selectCanaryBackend(backends)
 	}
 

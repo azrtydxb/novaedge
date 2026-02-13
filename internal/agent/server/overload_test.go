@@ -35,7 +35,10 @@ type mockResourceReader struct {
 }
 
 func (m *mockResourceReader) ReadMemStats(stats *runtime.MemStats) {
-	stats.HeapAlloc = uint64(m.heapAlloc.Load())
+	v := m.heapAlloc.Load()
+	if v >= 0 {
+		stats.HeapAlloc = uint64(v)
+	}
 }
 
 func (m *mockResourceReader) NumGoroutine() int {

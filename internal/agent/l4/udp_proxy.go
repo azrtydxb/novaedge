@@ -263,7 +263,11 @@ func (p *UDPProxy) pickBackendBySourceIP(sourceIP string) *pb.Endpoint {
 
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(sourceIP))
-	idx := h.Sum32() % uint32(len(backends))
+	backendCount := len(backends)
+	if backendCount <= 0 {
+		return nil
+	}
+	idx := h.Sum32() % uint32(backendCount) //nolint:gosec // len(backends) is guaranteed positive here
 	return backends[idx]
 }
 

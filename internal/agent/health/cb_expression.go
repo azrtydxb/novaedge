@@ -14,6 +14,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package health provides active and passive health checking, circuit breaking,
+// outlier detection, and resource limit enforcement for upstream endpoints.
 package health
 
 import (

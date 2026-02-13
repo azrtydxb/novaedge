@@ -102,7 +102,7 @@ func TestPKICertificate_CertToPEM_NoCA(t *testing.T) {
 	if string(certPEM) != "-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----" {
 		t.Errorf("unexpected cert PEM: %s", string(certPEM))
 	}
-	if string(keyPEM) != "-----BEGIN RSA PRIVATE KEY-----\ntest-key\n-----END RSA PRIVATE KEY-----" {
+	if string(keyPEM) != "-----BEGIN RSA PRIVATE KEY-----\ntest-key\n-----END RSA PRIVATE KEY-----" { //nolint:gosec // G101: test data, not actual credentials
 		t.Errorf("unexpected key PEM: %s", string(keyPEM))
 	}
 }

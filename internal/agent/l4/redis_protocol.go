@@ -117,11 +117,7 @@ func (r *RESPReader) readRESPCommand() ([]string, []byte, error) {
 
 	parts := make([]string, 0, len(val.Array))
 	for i := range val.Array {
-		if val.Array[i].Type == RESPTypeBulkString {
-			parts = append(parts, val.Array[i].Str)
-		} else {
-			parts = append(parts, val.Array[i].Str)
-		}
+		parts = append(parts, val.Array[i].Str)
 	}
 
 	return parts, val.RawData, nil
@@ -445,7 +441,12 @@ func (w *RESPWriter) Flush() error {
 
 // EncodeCommand encodes a Redis command as a RESP array of bulk strings
 func EncodeCommand(args ...string) []byte {
-	var buf []byte
+	// Estimate size: header + per-arg overhead + arg data
+	estimatedSize := 16
+	for _, arg := range args {
+		estimatedSize += len(arg) + 16
+	}
+	buf := make([]byte, 0, estimatedSize)
 	buf = append(buf, '*')
 	buf = append(buf, []byte(strconv.Itoa(len(args)))...)
 	buf = append(buf, '\r', '\n')

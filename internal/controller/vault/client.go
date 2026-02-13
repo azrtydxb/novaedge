@@ -201,12 +201,12 @@ func (c *Client) authenticateKubernetes(ctx context.Context) error {
 		mountPath = "kubernetes"
 	}
 
-	tokenPath := config.ServiceAccountTokenPath
-	if tokenPath == "" {
-		tokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+	saPath := config.ServiceAccountTokenPath
+	if saPath == "" {
+		saPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // G101: not a credential, standard Kubernetes service account path
 	}
 
-	jwt, err := os.ReadFile(filepath.Clean(tokenPath))
+	jwt, err := os.ReadFile(filepath.Clean(saPath))
 	if err != nil {
 		return fmt.Errorf("failed to read service account token: %w", err)
 	}
@@ -317,14 +317,14 @@ func (c *Client) IsTokenExpiring(within time.Duration) bool {
 }
 
 // Read reads a secret from Vault.
-func (c *Client) Read(ctx context.Context, path string) (*VaultResponse, error) {
+func (c *Client) Read(ctx context.Context, path string) (*Response, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.httpClient.Read(ctx, path)
 }
 
 // Write writes data to Vault.
-func (c *Client) Write(ctx context.Context, path string, data map[string]interface{}) (*VaultResponse, error) {
+func (c *Client) Write(ctx context.Context, path string, data map[string]interface{}) (*Response, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.httpClient.Write(ctx, path, data)

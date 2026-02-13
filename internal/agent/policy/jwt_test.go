@@ -203,7 +203,7 @@ func createTestToken(privateKey *rsa.PrivateKey, kid, issuer string, audience []
 }
 
 // createTestECToken creates a test JWT token signed with an ECDSA key
-func createTestECToken(privateKey *ecdsa.PrivateKey, method jwt.SigningMethod, kid, issuer string, audience []string, expired bool) (string, error) {
+func createTestECToken(privateKey *ecdsa.PrivateKey, method jwt.SigningMethod, kid string, audience []string, expired bool) (string, error) {
 	now := time.Now()
 	exp := now.Add(1 * time.Hour)
 	if expired {
@@ -211,7 +211,7 @@ func createTestECToken(privateKey *ecdsa.PrivateKey, method jwt.SigningMethod, k
 	}
 
 	claims := jwt.MapClaims{
-		"iss": issuer,
+		"iss": "test-issuer",
 		"exp": exp.Unix(),
 		"iat": now.Unix(),
 	}
@@ -227,7 +227,7 @@ func createTestECToken(privateKey *ecdsa.PrivateKey, method jwt.SigningMethod, k
 }
 
 // createTestEdDSAToken creates a test JWT token signed with an Ed25519 key
-func createTestEdDSAToken(privateKey ed25519.PrivateKey, kid, issuer string, audience []string, expired bool) (string, error) {
+func createTestEdDSAToken(privateKey ed25519.PrivateKey, kid string, audience []string, expired bool) (string, error) {
 	now := time.Now()
 	exp := now.Add(1 * time.Hour)
 	if expired {
@@ -235,7 +235,7 @@ func createTestEdDSAToken(privateKey ed25519.PrivateKey, kid, issuer string, aud
 	}
 
 	claims := jwt.MapClaims{
-		"iss": issuer,
+		"iss": "test-issuer",
 		"exp": exp.Unix(),
 		"iat": now.Unix(),
 	}
@@ -289,8 +289,8 @@ func TestParseRSAPublicKey(t *testing.T) {
 			t.Fatalf("Failed to generate key pair: %v", err)
 		}
 
-		n := base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.N.Bytes())
-		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(privateKey.PublicKey.E)).Bytes())
+		n := base64.RawURLEncoding.EncodeToString(privateKey.N.Bytes())
+		e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(privateKey.E)).Bytes())
 
 		jwk := JWK{
 			Kid: "test-key",
@@ -347,8 +347,8 @@ func TestParseECPublicKey(t *testing.T) {
 			t.Fatalf("Failed to generate EC key pair: %v", err)
 		}
 
-		x := base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.X.Bytes())
-		y := base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.Y.Bytes())
+		x := base64.RawURLEncoding.EncodeToString(privateKey.X.Bytes())
+		y := base64.RawURLEncoding.EncodeToString(privateKey.Y.Bytes())
 
 		jwk := JWK{
 			Kid: "ec-key",
@@ -378,8 +378,8 @@ func TestParseECPublicKey(t *testing.T) {
 			t.Fatalf("Failed to generate EC key pair: %v", err)
 		}
 
-		x := base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.X.Bytes())
-		y := base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.Y.Bytes())
+		x := base64.RawURLEncoding.EncodeToString(privateKey.X.Bytes())
+		y := base64.RawURLEncoding.EncodeToString(privateKey.Y.Bytes())
 
 		jwk := JWK{
 			Kid: "ec-key",
@@ -409,8 +409,8 @@ func TestParseECPublicKey(t *testing.T) {
 			t.Fatalf("Failed to generate EC key pair: %v", err)
 		}
 
-		x := base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.X.Bytes())
-		y := base64.RawURLEncoding.EncodeToString(privateKey.PublicKey.Y.Bytes())
+		x := base64.RawURLEncoding.EncodeToString(privateKey.X.Bytes())
+		y := base64.RawURLEncoding.EncodeToString(privateKey.Y.Bytes())
 
 		jwk := JWK{
 			Kid: "ec-key",
@@ -884,7 +884,7 @@ func TestValidateECDSA(t *testing.T) {
 				t.Fatalf("Failed to create validator: %v", err)
 			}
 
-			tokenString, err := createTestECToken(privateKey, tt.method, "ec-test-key", "test-issuer", []string{"test-audience"}, false)
+			tokenString, err := createTestECToken(privateKey, tt.method, "ec-test-key", []string{"test-audience"}, false)
 			if err != nil {
 				t.Fatalf("Failed to create EC token: %v", err)
 			}
@@ -925,7 +925,7 @@ func TestValidateECDSA(t *testing.T) {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
 
-		tokenString, err := createTestECToken(privateKey, jwt.SigningMethodES256, "ec-test-key", "test-issuer", []string{"test-audience"}, true)
+		tokenString, err := createTestECToken(privateKey, jwt.SigningMethodES256, "ec-test-key", []string{"test-audience"}, true)
 		if err != nil {
 			t.Fatalf("Failed to create EC token: %v", err)
 		}
@@ -963,7 +963,7 @@ func TestValidateEdDSA(t *testing.T) {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
 
-		tokenString, err := createTestEdDSAToken(privKey, "ed-test-key", "test-issuer", []string{"test-audience"}, false)
+		tokenString, err := createTestEdDSAToken(privKey, "ed-test-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EdDSA token: %v", err)
 		}
@@ -1003,7 +1003,7 @@ func TestValidateEdDSA(t *testing.T) {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
 
-		tokenString, err := createTestEdDSAToken(privKey, "ed-test-key", "test-issuer", []string{"test-audience"}, true)
+		tokenString, err := createTestEdDSAToken(privKey, "ed-test-key", []string{"test-audience"}, true)
 		if err != nil {
 			t.Fatalf("Failed to create EdDSA token: %v", err)
 		}
@@ -1071,7 +1071,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 		}
 
 		// ECDSA token should be rejected
-		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", "test-issuer", []string{"test-audience"}, false)
+		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EC token: %v", err)
 		}
@@ -1095,7 +1095,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 		}
 
 		// ECDSA token should succeed
-		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", "test-issuer", []string{"test-audience"}, false)
+		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EC token: %v", err)
 		}
@@ -1132,7 +1132,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 		}
 
 		// EdDSA token should succeed
-		edToken, err := createTestEdDSAToken(edPriv, "ed-key", "test-issuer", []string{"test-audience"}, false)
+		edToken, err := createTestEdDSAToken(edPriv, "ed-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EdDSA token: %v", err)
 		}
@@ -1177,7 +1177,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			t.Errorf("Expected RSA token to be valid, got error: %v", err)
 		}
 
-		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", "test-issuer", []string{"test-audience"}, false)
+		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EC token: %v", err)
 		}
@@ -1185,7 +1185,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			t.Errorf("Expected EC token to be valid, got error: %v", err)
 		}
 
-		edToken, err := createTestEdDSAToken(edPriv, "ed-key", "test-issuer", []string{"test-audience"}, false)
+		edToken, err := createTestEdDSAToken(edPriv, "ed-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EdDSA token: %v", err)
 		}
@@ -1215,7 +1215,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			t.Errorf("Expected RSA token to be valid, got error: %v", err)
 		}
 
-		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", "test-issuer", []string{"test-audience"}, false)
+		ecToken, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EC token: %v", err)
 		}
@@ -1223,7 +1223,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			t.Errorf("Expected EC token to be valid, got error: %v", err)
 		}
 
-		edToken, err := createTestEdDSAToken(edPriv, "ed-key", "test-issuer", []string{"test-audience"}, false)
+		edToken, err := createTestEdDSAToken(edPriv, "ed-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EdDSA token: %v", err)
 		}
@@ -1289,7 +1289,7 @@ func TestValidateMixedKeyTypes(t *testing.T) {
 	})
 
 	t.Run("ECDSA token with mixed JWKS", func(t *testing.T) {
-		tokenString, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", "test-issuer", []string{"test-audience"}, false)
+		tokenString, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EC token: %v", err)
 		}
@@ -1304,7 +1304,7 @@ func TestValidateMixedKeyTypes(t *testing.T) {
 	})
 
 	t.Run("EdDSA token with mixed JWKS", func(t *testing.T) {
-		tokenString, err := createTestEdDSAToken(edPriv, "ed-key", "test-issuer", []string{"test-audience"}, false)
+		tokenString, err := createTestEdDSAToken(edPriv, "ed-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EdDSA token: %v", err)
 		}
@@ -1494,7 +1494,7 @@ func TestHandleJWTWithECDSA(t *testing.T) {
 
 	t.Run("valid ECDSA token via middleware", func(t *testing.T) {
 		nextCalled = false
-		tokenString, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-test-key", "test-issuer", []string{"test-audience"}, false)
+		tokenString, err := createTestECToken(ecKey, jwt.SigningMethodES256, "ec-test-key", []string{"test-audience"}, false)
 		if err != nil {
 			t.Fatalf("Failed to create EC token: %v", err)
 		}

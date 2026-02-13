@@ -26,6 +26,8 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testBody = "test body"
+
 func TestRequestBufferingMiddleware_BuffersRequestBody(t *testing.T) {
 	config := &pb.BufferingConfig{
 		RequestBuffering: true,
@@ -92,7 +94,7 @@ func TestRequestBufferingMiddleware_Disabled(t *testing.T) {
 	}
 	m := NewRequestBufferingMiddleware(config)
 
-	body := "test body"
+	body := testBody
 	var capturedBody string
 
 	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,7 +115,7 @@ func TestRequestBufferingMiddleware_Disabled(t *testing.T) {
 func TestRequestBufferingMiddleware_NilConfig(t *testing.T) {
 	m := NewRequestBufferingMiddleware(nil)
 
-	body := "test body"
+	body := testBody
 	var called bool
 
 	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

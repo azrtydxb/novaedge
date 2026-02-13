@@ -368,17 +368,6 @@ func (p *RedisProxy) getBackendConn(ctx context.Context, addr string) (net.Conn,
 	return conn, nil
 }
 
-// returnBackendConn returns a connection to the pool
-func (p *RedisProxy) returnBackendConn(addr string, conn net.Conn) {
-	p.mu.RLock()
-	pool, exists := p.pools[addr]
-	p.mu.RUnlock()
-
-	if !exists || !pool.put(conn, addr) {
-		_ = conn.Close()
-	}
-}
-
 // get retrieves a connection from the pool
 func (pool *redisConnPool) get() net.Conn {
 	pool.mu.Lock()
@@ -402,6 +391,8 @@ func (pool *redisConnPool) get() net.Conn {
 }
 
 // put returns a connection to the pool. Returns false if pool is full.
+//
+//nolint:unparam // addr varies in production use; test callers happen to use a single address
 func (pool *redisConnPool) put(conn net.Conn, addr string) bool {
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -477,20 +468,20 @@ func (p *RedisProxy) Drain(timeout time.Duration) {
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
 
+drainLoop:
 	for {
 		if p.activeConns.Load() <= 0 {
 			p.logger.Info("All Redis connections drained")
-			break
+			break drainLoop
 		}
 		select {
 		case <-deadline:
 			p.logger.Warn("Redis drain timeout reached, some connections may be interrupted",
 				zap.Duration("timeout", timeout))
-			break
+			break drainLoop
 		case <-ticker.C:
 			continue
 		}
-		break
 	}
 
 	// Close all connection pools

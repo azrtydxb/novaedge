@@ -222,7 +222,7 @@ func (r *GatewayReconciler) validateListeners(gateway *gatewayv1.Gateway) ([]gat
 
 		// Check for port/protocol conflicts
 		hasConflict := false
-		port := int32(listener.Port)
+		port := listener.Port
 
 		if _, exists := portProtocols[port]; !exists {
 			portProtocols[port] = make(map[gatewayv1.ProtocolType]bool)
@@ -251,7 +251,8 @@ func (r *GatewayReconciler) validateListeners(gateway *gatewayv1.Gateway) ([]gat
 		protocolSupported := isProtocolSupported(listener.Protocol)
 
 		// Set Accepted condition
-		if protocolSupported && !hasConflict {
+		switch {
+		case protocolSupported && !hasConflict:
 			status.Conditions = append(status.Conditions, metav1.Condition{
 				Type:               string(gatewayv1.ListenerConditionAccepted),
 				Status:             metav1.ConditionTrue,
@@ -260,7 +261,7 @@ func (r *GatewayReconciler) validateListeners(gateway *gatewayv1.Gateway) ([]gat
 				ObservedGeneration: gateway.Generation,
 				LastTransitionTime: metav1.Now(),
 			})
-		} else if hasConflict {
+		case hasConflict:
 			status.Conditions = append(status.Conditions, metav1.Condition{
 				Type:               string(gatewayv1.ListenerConditionConflicted),
 				Status:             metav1.ConditionTrue,
@@ -269,7 +270,7 @@ func (r *GatewayReconciler) validateListeners(gateway *gatewayv1.Gateway) ([]gat
 				ObservedGeneration: gateway.Generation,
 				LastTransitionTime: metav1.Now(),
 			})
-		} else {
+		default:
 			status.Conditions = append(status.Conditions, metav1.Condition{
 				Type:               string(gatewayv1.ListenerConditionAccepted),
 				Status:             metav1.ConditionFalse,

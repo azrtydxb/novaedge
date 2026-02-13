@@ -35,4 +35,7 @@ const (
 	statusYes     = "Yes"
 	statusNo      = "No"
 	statusUnknown = "Unknown"
+
+	conditionAccepted = "Accepted"
+	conditionTrue     = "True"
 )

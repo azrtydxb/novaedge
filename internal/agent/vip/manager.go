@@ -43,8 +43,8 @@ type Manager interface {
 	Start(ctx context.Context) error
 }
 
-// VIPManager manages VIP lifecycle with dual-stack support
-type VIPManager struct {
+// DefaultManager manages VIP lifecycle with dual-stack support
+type DefaultManager struct {
 	logger *zap.Logger
 	mu     sync.RWMutex
 
@@ -58,7 +58,7 @@ type VIPManager struct {
 }
 
 // NewManager creates a new VIP manager
-func NewManager(logger *zap.Logger) (*VIPManager, error) {
+func NewManager(logger *zap.Logger) (*DefaultManager, error) {
 	l2Handler, err := NewL2Handler(logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create L2 handler: %w", err)
@@ -74,7 +74,7 @@ func NewManager(logger *zap.Logger) (*VIPManager, error) {
 		return nil, fmt.Errorf("failed to create OSPF handler: %w", err)
 	}
 
-	return &VIPManager{
+	return &DefaultManager{
 		logger:      logger,
 		assignments: make(map[string]*pb.VIPAssignment),
 		l2Handler:   l2Handler,
@@ -84,7 +84,7 @@ func NewManager(logger *zap.Logger) (*VIPManager, error) {
 }
 
 // Start starts the VIP manager
-func (m *VIPManager) Start(ctx context.Context) error {
+func (m *DefaultManager) Start(ctx context.Context) error {
 	m.logger.Info("Starting VIP manager")
 
 	if err := m.l2Handler.Start(ctx); err != nil {
@@ -103,7 +103,7 @@ func (m *VIPManager) Start(ctx context.Context) error {
 }
 
 // ApplyVIPs applies new VIP assignments
-func (m *VIPManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAssignment) error {
+func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAssignment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -186,7 +186,7 @@ func cloneAssignmentWithAddress(orig *pb.VIPAssignment, address string) *pb.VIPA
 }
 
 // applyVIP applies a single VIP assignment
-func (m *VIPManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
+func (m *DefaultManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	if !assignment.IsActive {
 		metrics.SetVIPStatus(assignment.VipName, assignment.Address, assignment.Mode.String(), false)
 		return nil
@@ -226,7 +226,7 @@ func (m *VIPManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignment)
 }
 
 // releaseVIP releases a single VIP
-func (m *VIPManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
+func (m *DefaultManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	var err error
 	switch assignment.Mode {
 	case pb.VIPMode_L2_ARP:
@@ -269,7 +269,7 @@ func (m *VIPManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssignmen
 }
 
 // Release releases all VIPs
-func (m *VIPManager) Release() error {
+func (m *DefaultManager) Release() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -292,7 +292,7 @@ func (m *VIPManager) Release() error {
 }
 
 // GetActiveVIPs returns currently active VIPs
-func (m *VIPManager) GetActiveVIPs() []string {
+func (m *DefaultManager) GetActiveVIPs() []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

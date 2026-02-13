@@ -59,7 +59,7 @@ func generateTestCACert() (*x509.Certificate, *ecdsa.PrivateKey, []byte) {
 	return cert, key, certDER
 }
 
-func generateTestLeafCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, ocspServer []string) (*tls.Certificate, []byte) {
+func generateTestLeafCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, ocspServer []string) *tls.Certificate {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		panic(err)
@@ -82,7 +82,7 @@ func generateTestLeafCert(ca *x509.Certificate, caKey *ecdsa.PrivateKey, ocspSer
 	return &tls.Certificate{
 		Certificate: [][]byte{certDER, ca.Raw},
 		PrivateKey:  key,
-	}, certDER
+	}
 }
 
 func TestOCSPStapler_NewAndStop(t *testing.T) {
@@ -103,7 +103,7 @@ func TestOCSPStapler_AddCertificateNoOCSPServer(t *testing.T) {
 	stapler := NewOCSPStapler(logger)
 
 	ca, caKey, _ := generateTestCACert()
-	cert, _ := generateTestLeafCert(ca, caKey, nil) // No OCSP server
+	cert := generateTestLeafCert(ca, caKey, nil) // No OCSP server
 
 	// Should not error but also not add the cert for stapling
 	err := stapler.AddCertificate("test.example.com", cert, nil)
@@ -157,7 +157,7 @@ func TestOCSPStapler_GracefulFailure(t *testing.T) {
 
 	ca, caKey, _ := generateTestCACert()
 	// Use an unreachable OCSP server
-	cert, _ := generateTestLeafCert(ca, caKey, []string{"http://192.0.2.1:9999/ocsp"})
+	cert := generateTestLeafCert(ca, caKey, []string{"http://192.0.2.1:9999/ocsp"})
 
 	// Should not error even though OCSP fetch fails
 	err := stapler.AddCertificate("test.example.com", cert, nil)

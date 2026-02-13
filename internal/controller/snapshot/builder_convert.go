@@ -18,6 +18,7 @@ package snapshot
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -373,7 +374,7 @@ func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.Sess
 	case "SourceIP":
 		affinityType = "source_ip"
 	default:
-		log.Log.Info("Unknown session affinity type, defaulting to cookie", "type", string(sa.Type))
+		log.Log.Info("Unknown session affinity type, defaulting to cookie", "type", sa.Type)
 	}
 
 	cookieName := sa.CookieName
@@ -672,10 +673,16 @@ func convertMiddlewarePipeline(pipeline *novaedgev1alpha1.MiddlewarePipelineConf
 	}
 
 	for _, mw := range pipeline.Middleware {
+		mwPriority := mw.Priority
+		if mwPriority > math.MaxInt32 {
+			mwPriority = math.MaxInt32
+		} else if mwPriority < math.MinInt32 {
+			mwPriority = math.MinInt32
+		}
 		pbRef := &pb.MiddlewareRef{
 			Type:     mw.Type,
 			Name:     mw.Name,
-			Priority: int32(mw.Priority),
+			Priority: int32(mwPriority), //nolint:gosec // bounds-checked above
 			Config:   mw.Config,
 		}
 		pbPipeline.Middleware = append(pbPipeline.Middleware, pbRef)

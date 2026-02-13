@@ -98,11 +98,12 @@ func runConformance(_ *cobra.Command, _ []string) error {
 	}
 
 	gwList, err := dynamicClient.Resource(gwGVR).Namespace("").List(ctx, metav1.ListOptions{})
-	if err != nil {
+	switch {
+	case err != nil:
 		fmt.Printf("  ERROR: Failed to list Gateways: %v\n", err)
-	} else if len(gwList.Items) == 0 {
+	case len(gwList.Items) == 0:
 		fmt.Println("  No Gateways found")
-	} else {
+	default:
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 		_, _ = fmt.Fprintln(w, "  NAME\tNAMESPACE\tCLASS\tACCEPTED\tPROGRAMMED")
 		for _, gw := range gwList.Items {
@@ -146,11 +147,12 @@ func runConformance(_ *cobra.Command, _ []string) error {
 	}
 
 	hrList, err := dynamicClient.Resource(hrGVR).Namespace("").List(ctx, metav1.ListOptions{})
-	if err != nil {
+	switch {
+	case err != nil:
 		fmt.Printf("  ERROR: Failed to list HTTPRoutes: %v\n", err)
-	} else if len(hrList.Items) == 0 {
+	case len(hrList.Items) == 0:
 		fmt.Println("  No HTTPRoutes found")
-	} else {
+	default:
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
 		_, _ = fmt.Fprintln(w, "  NAME\tNAMESPACE\tACCEPTED\tRESOLVED_REFS")
 		for _, hr := range hrList.Items {

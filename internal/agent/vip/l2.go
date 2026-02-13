@@ -40,14 +40,14 @@ type L2Handler struct {
 	mu     sync.RWMutex
 
 	// Active VIPs
-	activeVIPs map[string]*VIPState
+	activeVIPs map[string]*State
 
 	// Network interface to use
 	interfaceName string
 }
 
-// VIPState tracks the state of a VIP
-type VIPState struct {
+// State tracks the state of a VIP
+type State struct {
 	Assignment *pb.VIPAssignment
 	IP         net.IP
 	AddedAt    time.Time
@@ -66,7 +66,7 @@ func NewL2Handler(logger *zap.Logger) (*L2Handler, error) {
 
 	return &L2Handler{
 		logger:        logger,
-		activeVIPs:    make(map[string]*VIPState),
+		activeVIPs:    make(map[string]*State),
 		interfaceName: iface,
 	}, nil
 }
@@ -130,7 +130,7 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 	}
 
 	// Track VIP state
-	h.activeVIPs[assignment.VipName] = &VIPState{
+	h.activeVIPs[assignment.VipName] = &State{
 		Assignment: assignment,
 		IP:         ip,
 		AddedAt:    time.Now(),

@@ -55,7 +55,7 @@ func TestRedirectScheme_HTTPToHTTPS(t *testing.T) {
 
 	wrapped := middleware.Wrap(handler)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/v1/users?page=1", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 
@@ -86,7 +86,7 @@ func TestRedirectScheme_PreservePath(t *testing.T) {
 
 	wrapped := middleware.Wrap(handler)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/path/to/resource?key=value&other=123", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 
@@ -132,7 +132,7 @@ func TestRedirectScheme_SkipExclusions(t *testing.T) {
 
 	for _, tt := range tests {
 		req := httptest.NewRequest(http.MethodGet, "http://example.com"+tt.path, nil)
-		req.Host = "example.com"
+		req.Host = testCacheHost
 		rec := httptest.NewRecorder()
 		wrapped.ServeHTTP(rec, req)
 
@@ -176,7 +176,7 @@ func TestRedirectScheme_301vs302(t *testing.T) {
 
 		wrapped := middleware.Wrap(handler)
 		req := httptest.NewRequest(http.MethodGet, "http://example.com/", nil)
-		req.Host = "example.com"
+		req.Host = testCacheHost
 		rec := httptest.NewRecorder()
 		wrapped.ServeHTTP(rec, req)
 
@@ -205,7 +205,7 @@ func TestRedirectScheme_AlreadyHTTPS(t *testing.T) {
 
 	// Request with X-Forwarded-Proto: https should not be redirected
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	req.Header.Set("X-Forwarded-Proto", "https")
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
@@ -231,7 +231,7 @@ func TestRedirectScheme_NonDefaultPort(t *testing.T) {
 
 	wrapped := middleware.Wrap(handler)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api", nil)
-	req.Host = "example.com"
+	req.Host = testCacheHost
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 

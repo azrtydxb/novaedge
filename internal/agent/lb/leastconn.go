@@ -17,8 +17,9 @@ limitations under the License.
 package lb
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"math"
-	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 
@@ -99,14 +100,14 @@ func (lc *LeastConn) Select() *pb.Endpoint {
 
 	// Fallback if atomic counters changed between two passes (concurrent access)
 	if len(candidates) == 0 {
-		return healthy[rand.IntN(len(healthy))]
+		return healthy[cryptoRandIntn(len(healthy))]
 	}
 
 	// Random selection among tied candidates to prevent bias
 	if len(candidates) == 1 {
 		return candidates[0]
 	}
-	return candidates[rand.IntN(len(candidates))]
+	return candidates[cryptoRandIntn(len(candidates))]
 }
 
 // UpdateEndpoints updates the endpoint list, preserving active connection
@@ -211,4 +212,20 @@ func (lc *LeastConn) cachedKey(ep *pb.Endpoint) string {
 		return key
 	}
 	return endpointKey(ep)
+}
+
+// cryptoRandIntn returns a random int in [0, n) using crypto/rand.
+func cryptoRandIntn(n int) int {
+	if n <= 1 {
+		return 0
+	}
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return 0
+	}
+	result := binary.LittleEndian.Uint64(buf[:]) % uint64(n)
+	if result > uint64(math.MaxInt) {
+		return 0
+	}
+	return int(result)
 }

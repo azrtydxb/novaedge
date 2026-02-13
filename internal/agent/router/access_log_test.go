@@ -218,7 +218,7 @@ func TestAccessLog_FileOutput(t *testing.T) {
 	wrapped.ServeHTTP(rec, req)
 
 	// Read the log file
-	data, err := os.ReadFile(logPath)
+	data, err := os.ReadFile(filepath.Clean(logPath))
 	if err != nil {
 		t.Fatalf("Failed to read log file: %v", err)
 	}
