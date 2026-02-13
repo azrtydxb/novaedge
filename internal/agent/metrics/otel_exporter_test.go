@@ -226,7 +226,7 @@ func TestOTelExporterStartAndShutdownGRPC(t *testing.T) {
 	}
 
 	// Record some metrics to ensure instruments work without panic.
-	exporter.RecordHTTPRequest(ctx, "GET", "200", "test-cluster", 0.05)
+	exporter.RecordHTTPRequest(ctx, "GET", "2xx", "test-cluster", 0.05)
 	exporter.RecordInFlightChange(ctx, 1)
 	exporter.RecordInFlightChange(ctx, -1)
 	exporter.RecordUpstreamDuration(ctx, "test-cluster", "10.0.0.1:8080", 0.03)
@@ -261,7 +261,7 @@ func TestOTelExporterStartAndShutdownHTTP(t *testing.T) {
 	}
 
 	// Record some metrics.
-	exporter.RecordHTTPRequest(ctx, "POST", "201", "api-cluster", 0.12)
+	exporter.RecordHTTPRequest(ctx, "POST", "2xx", "api-cluster", 0.12)
 	exporter.RecordUpstreamDuration(ctx, "api-cluster", "10.0.0.2:9090", 0.08)
 
 	// Shutdown may return a connection error when no collector is running;
@@ -362,7 +362,7 @@ func TestOTelExporterRecordWithoutStart(t *testing.T) {
 
 	// These should not panic even though the exporter has not been started.
 	ctx := context.Background()
-	exporter.RecordHTTPRequest(ctx, "GET", "200", "test", 0.01)
+	exporter.RecordHTTPRequest(ctx, "GET", "2xx", "test", 0.01)
 	exporter.RecordInFlightChange(ctx, 1)
 	exporter.RecordUpstreamDuration(ctx, "test", "10.0.0.1:80", 0.05)
 }

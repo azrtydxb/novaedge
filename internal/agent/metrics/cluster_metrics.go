@@ -120,7 +120,7 @@ var (
 			Name: "novaedge_http3_requests_total",
 			Help: "Total number of HTTP/3 requests",
 		},
-		[]string{"method", "status"},
+		[]string{"method", "status_class"},
 	)
 
 	// QUICStreamsActive tracks active QUIC streams
