@@ -73,6 +73,16 @@ var (
 		},
 		[]string{"plugin"},
 	)
+
+	wasmPluginTimeoutsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "novaedge",
+			Subsystem: "wasm",
+			Name:      "plugin_timeouts_total",
+			Help:      "Total number of WASM plugin execution timeouts.",
+		},
+		[]string{"plugin", "phase"},
+	)
 )
 
 // RecordPluginExecution records a WASM plugin execution metric.
@@ -99,4 +109,9 @@ func SetPluginsLoaded(count int) {
 // SetInstancePoolSize sets the gauge for instance pool size.
 func SetInstancePoolSize(plugin string, size int) {
 	wasmInstancePoolSize.WithLabelValues(plugin).Set(float64(size))
+}
+
+// RecordPluginTimeout records a WASM plugin execution timeout.
+func RecordPluginTimeout(plugin, phase string) {
+	wasmPluginTimeoutsTotal.WithLabelValues(plugin, phase).Inc()
 }

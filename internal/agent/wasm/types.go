@@ -17,7 +17,10 @@ limitations under the License.
 // Package wasm provides a sandboxed WASM plugin runtime for custom middleware.
 package wasm
 
-import "net/http"
+import (
+	"net/http"
+	"time"
+)
 
 // Phase indicates at which point in the request lifecycle a plugin executes.
 type Phase int
@@ -89,6 +92,9 @@ type PluginConfig struct {
 	// FailClosed causes the middleware to return 503 on WASM execution errors
 	// instead of failing open and forwarding the request to the next handler.
 	FailClosed bool
+	// ExecutionTimeout is the maximum time a single plugin invocation may run.
+	// Zero means use the default timeout (5 seconds).
+	ExecutionTimeout time.Duration
 }
 
 // RequestContext is an opaque handle passed through the WASM execution that
