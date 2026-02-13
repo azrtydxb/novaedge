@@ -540,8 +540,24 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Radix tree lookup: walks the tree by path, checks match conditions at each node
-	entry := rIdx.lookup(req.URL.Path, req, r.matchRoute)
+	// Radix tree lookup: walks the tree by path, checks match conditions at each node.
+	// In detailed trace mode, wrap the lookup in a child span for visibility.
+	var entry *RouteEntry
+	if DefaultTraceVerbosity.ShouldTraceDetailed() && recording {
+		var matchSpan trace.Span
+		_, matchSpan = tracer.Start(req.Context(), "route_matching")
+		entry = rIdx.lookup(req.URL.Path, req, r.matchRoute)
+		if entry != nil {
+			matchSpan.SetAttributes(
+				attribute.String("novaedge.route.name", entry.Route.Name),
+				attribute.String("novaedge.route.namespace", entry.Route.Namespace),
+			)
+		}
+		matchSpan.End()
+	} else {
+		entry = rIdx.lookup(req.URL.Path, req, r.matchRoute)
+	}
+
 	if entry != nil {
 		if recording {
 			span.AddEvent("route_matched", trace.WithAttributes(
