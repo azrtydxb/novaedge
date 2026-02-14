@@ -75,14 +75,8 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 			logger.Info("Referenced ProxyIPPool not found", "pool", vip.Spec.PoolRef.Name)
 		} else {
 			// Register pool with allocator (idempotent - updates if exists)
-			cidrs := make([]string, 0, len(pool.Spec.CIDRs))
-			for _, cidr := range pool.Spec.CIDRs {
-				cidrs = append(cidrs, cidr)
-			}
-			addresses := make([]string, 0, len(pool.Spec.Addresses))
-			for _, addr := range pool.Spec.Addresses {
-				addresses = append(addresses, addr)
-			}
+			cidrs := append([]string{}, pool.Spec.CIDRs...)
+			addresses := append([]string{}, pool.Spec.Addresses...)
 			if err := r.Allocator.AddPool(pool.Name, cidrs, addresses); err != nil {
 				logger.Error(err, "Failed to register IP pool", "pool", pool.Name)
 				return ctrl.Result{}, err
