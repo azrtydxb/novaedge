@@ -95,6 +95,9 @@ type OSPFVIPState struct {
 	AddedAt    time.Time
 	Announced  bool
 	IsIPv6     bool
+	// ospfConfig stores the OSPF config that was applied when this VIP was added,
+	// so we can diff against new config during reconfiguration.
+	ospfConfig *pb.OSPFConfig
 }
 
 // OSPFServer represents the OSPF server implementation
@@ -174,14 +177,19 @@ func (h *OSPFHandler) Start(ctx context.Context) error {
 	return nil
 }
 
-// AddVIP adds a VIP with OSPF announcement
+// AddVIP adds a VIP with OSPF announcement.
+// If the VIP already exists, it performs in-place reconfiguration of changed
+// OSPF parameters without releasing the VIP address.
 func (h *OSPFHandler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if _, exists := h.activeVIPs[assignment.VipName]; exists {
-		h.logger.Debug(msgVIPAlreadyActive, zap.String("vip", assignment.VipName))
-		return nil
+	// Check if already active — reconfigure in place
+	if existingState, exists := h.activeVIPs[assignment.VipName]; exists {
+		h.logger.Info("VIP already active, reconfiguring OSPF",
+			zap.String("vip", assignment.VipName),
+		)
+		return h.reconfigureVIP(existingState, assignment)
 	}
 
 	ip, _, err := net.ParseCIDR(assignment.Address)
@@ -232,6 +240,7 @@ func (h *OSPFHandler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) er
 		AddedAt:    time.Now(),
 		Announced:  true,
 		IsIPv6:     isIPv6,
+		ospfConfig: assignment.OspfConfig,
 	}
 
 	metrics.OSPFAnnouncedRoutes.Set(float64(len(h.activeVIPs)))
@@ -335,6 +344,190 @@ func (h *OSPFHandler) removeLoopbackAddress(cidr string) error {
 
 	h.logger.Info("Removed VIP address from loopback", zap.String("address", cidr))
 	return nil
+}
+
+// reconfigureVIP handles in-place reconfiguration of an existing OSPF VIP.
+// It diffs the old and new OSPF config and applies only the changes needed.
+// Called with h.mu held.
+func (h *OSPFHandler) reconfigureVIP(state *OSPFVIPState, assignment *pb.VIPAssignment) error {
+	oldCfg := state.ospfConfig
+	newCfg := assignment.OspfConfig
+
+	if newCfg == nil {
+		return fmt.Errorf("OSPF config is required for OSPF mode VIPs")
+	}
+
+	// Check if RouterID or AreaID changed — requires full OSPF server restart
+	if oldCfg != nil && (oldCfg.RouterId != newCfg.RouterId || oldCfg.AreaId != newCfg.AreaId) {
+		h.logger.Info("OSPF RouterID or AreaID changed, restarting OSPF server",
+			zap.String("old_router_id", oldCfg.RouterId),
+			zap.String("new_router_id", newCfg.RouterId),
+			zap.Uint32("old_area_id", oldCfg.AreaId),
+			zap.Uint32("new_area_id", newCfg.AreaId),
+		)
+		if err := h.restartOSPFServer(newCfg); err != nil {
+			return fmt.Errorf("failed to restart OSPF server: %w", err)
+		}
+		// Re-announce all active VIPs after restart
+		for _, vipState := range h.activeVIPs {
+			if vipState.Announced {
+				if err := h.announceLSA(vipState.IP, newCfg, vipState.IsIPv6); err != nil {
+					h.logger.Error("Failed to re-announce LSA after OSPF restart",
+						zap.String("vip", vipState.Assignment.VipName),
+						zap.Error(err),
+					)
+				}
+			}
+		}
+	} else if h.ospfServer != nil && oldCfg != nil {
+		// Apply incremental changes
+
+		// Update cost
+		if oldCfg.Cost != newCfg.Cost {
+			newCost := uint32(ospfDefaultCost)
+			if newCfg.Cost > 0 {
+				newCost = newCfg.Cost
+			}
+			h.logger.Info("OSPF cost changed",
+				zap.Uint32("old_cost", h.ospfServer.cost),
+				zap.Uint32("new_cost", newCost),
+			)
+			h.ospfServer.mu.Lock()
+			h.ospfServer.cost = newCost
+			// Refresh all LSAs with new metric
+			for key, lsa := range h.ospfServer.lsdb {
+				lsa.Metric = newCost
+				lsa.Sequence++
+				lsa.Age = 0
+				lsa.CreatedAt = time.Now()
+				h.logger.Debug("Refreshed LSA with new cost",
+					zap.String("prefix", key),
+					zap.Uint32("metric", newCost),
+				)
+			}
+			h.ospfServer.mu.Unlock()
+		}
+
+		// Update timers (hello/dead interval) — these take effect on next tick
+		if oldCfg.HelloInterval != newCfg.HelloInterval || oldCfg.DeadInterval != newCfg.DeadInterval {
+			h.logger.Info("OSPF timer intervals changed",
+				zap.Uint32("old_hello", oldCfg.HelloInterval),
+				zap.Uint32("new_hello", newCfg.HelloInterval),
+				zap.Uint32("old_dead", oldCfg.DeadInterval),
+				zap.Uint32("new_dead", newCfg.DeadInterval),
+			)
+			h.ospfServer.mu.Lock()
+			h.ospfServer.config = newCfg
+			h.ospfServer.mu.Unlock()
+		}
+
+		// Update authentication
+		if oldCfg.AuthType != newCfg.AuthType || oldCfg.AuthKey != newCfg.AuthKey {
+			h.logger.Info("OSPF authentication changed",
+				zap.String("old_auth_type", oldCfg.AuthType),
+				zap.String("new_auth_type", newCfg.AuthType),
+			)
+			h.ospfServer.mu.Lock()
+			h.ospfServer.authType = newCfg.AuthType
+			h.ospfServer.authKey = newCfg.AuthKey
+			h.ospfServer.mu.Unlock()
+		}
+
+		// Diff neighbors
+		h.diffAndApplyNeighbors(oldCfg.Neighbors, newCfg.Neighbors)
+	}
+
+	// Update stored state
+	state.Assignment = assignment
+	state.ospfConfig = newCfg
+
+	h.logger.Info("VIP reconfigured via OSPF successfully",
+		zap.String("vip", assignment.VipName),
+	)
+
+	return nil
+}
+
+// restartOSPFServer stops the running OSPF server goroutines and starts a new one.
+// Called with h.mu held.
+func (h *OSPFHandler) restartOSPFServer(config *pb.OSPFConfig) error {
+	if h.ospfServer != nil {
+		// Cancel background goroutines
+		if h.cancel != nil {
+			h.cancel()
+		}
+		h.wg.Wait()
+
+		h.ospfServer.mu.Lock()
+		h.ospfServer.running = false
+		h.ospfServer.mu.Unlock()
+		h.ospfServer = nil
+
+		// Create new context for the restarted server
+		h.ctx, h.cancel = context.WithCancel(context.Background())
+	}
+
+	return h.startOSPFServer(config)
+}
+
+// diffAndApplyNeighbors compares old and new neighbor lists and applies changes.
+// Called with h.mu held.
+func (h *OSPFHandler) diffAndApplyNeighbors(oldNeighbors, newNeighbors []*pb.OSPFNeighbor) {
+	if h.ospfServer == nil {
+		return
+	}
+
+	oldMap := make(map[string]*pb.OSPFNeighbor, len(oldNeighbors))
+	for _, n := range oldNeighbors {
+		oldMap[n.Address] = n
+	}
+	newMap := make(map[string]*pb.OSPFNeighbor, len(newNeighbors))
+	for _, n := range newNeighbors {
+		newMap[n.Address] = n
+	}
+
+	h.ospfServer.mu.Lock()
+	defer h.ospfServer.mu.Unlock()
+
+	// Remove neighbors no longer in config
+	for addr := range oldMap {
+		if _, exists := newMap[addr]; !exists {
+			h.logger.Info("Removing OSPF neighbor", zap.String("address", addr))
+			delete(h.ospfServer.neighbors, addr)
+			metrics.SetOSPFNeighborStatus(addr, fmt.Sprintf("%d", h.ospfServer.areaID), false)
+		}
+	}
+
+	// Add new neighbors or update changed ones
+	for addr, newNeighbor := range newMap {
+		oldNeighbor, exists := oldMap[addr]
+		if !exists {
+			// New neighbor
+			neighborIP := net.ParseIP(addr)
+			isIPv6 := neighborIP != nil && neighborIP.To4() == nil
+			h.logger.Info("Adding OSPF neighbor",
+				zap.String("address", addr),
+				zap.Uint32("priority", newNeighbor.Priority),
+			)
+			h.ospfServer.neighbors[addr] = &OSPFNeighbor{
+				Address:  addr,
+				Priority: newNeighbor.Priority,
+				State:    ospfNeighborDown,
+				IsIPv6:   isIPv6,
+			}
+			metrics.SetOSPFNeighborStatus(addr, fmt.Sprintf("%d", h.ospfServer.areaID), false)
+		} else if oldNeighbor.Priority != newNeighbor.Priority {
+			// Priority changed
+			h.logger.Info("Updating OSPF neighbor priority",
+				zap.String("address", addr),
+				zap.Uint32("old_priority", oldNeighbor.Priority),
+				zap.Uint32("new_priority", newNeighbor.Priority),
+			)
+			if n, ok := h.ospfServer.neighbors[addr]; ok {
+				n.Priority = newNeighbor.Priority
+			}
+		}
+	}
 }
 
 // startOSPFServer initializes and starts the OSPF server

@@ -22,6 +22,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -116,8 +117,12 @@ func main() {
 	}
 
 	// Initialize logger
-	logger := initLogger(logLevel)
+	logger, atomicLevel := initLogger(logLevel)
 	defer func() { _ = logger.Sync() }()
+
+	// Expose dynamic log level endpoint on the health probe port.
+	// PUT /debug/loglevel with body like "debug" or "info" to change at runtime.
+	http.Handle("/debug/loglevel", atomicLevel)
 
 	logger.Info("Starting NovaEdge agent",
 		zap.String("node", nodeName),
@@ -502,16 +507,18 @@ func runControlPlaneVIPMode(logger *zap.Logger) {
 	logger.Info("Agent stopped (control-plane VIP mode)")
 }
 
-func initLogger(level string) *zap.Logger {
+func initLogger(level string) (*zap.Logger, zap.AtomicLevel) {
 	// Parse log level
 	var zapLevel zapcore.Level
 	if err := zapLevel.UnmarshalText([]byte(level)); err != nil {
 		zapLevel = zapcore.InfoLevel
 	}
 
+	atomicLevel := zap.NewAtomicLevelAt(zapLevel)
+
 	// Create logger config
 	config := zap.Config{
-		Level:            zap.NewAtomicLevelAt(zapLevel),
+		Level:            atomicLevel,
 		Development:      false,
 		Encoding:         "json",
 		EncoderConfig:    zap.NewProductionEncoderConfig(),
@@ -524,5 +531,5 @@ func initLogger(level string) *zap.Logger {
 		panic(fmt.Sprintf("Failed to initialize logger: %v", err))
 	}
 
-	return logger
+	return logger, atomicLevel
 }
