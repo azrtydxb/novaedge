@@ -874,7 +874,7 @@ func TestOSPFHandler_ReconfigureVIP(t *testing.T) {
 
 func TestBFDManager_UpdateSession(t *testing.T) {
 	logger := zap.NewNop()
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.2")
 
@@ -928,7 +928,7 @@ func TestBFDManager_UpdateSession(t *testing.T) {
 
 func TestBFDManager_UpdateSession_NonExistent(t *testing.T) {
 	logger := zap.NewNop()
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.2")
 
@@ -950,7 +950,7 @@ func TestBFDManager_UpdateSession_NonExistent(t *testing.T) {
 
 func TestBFDManager_RemoveSession(t *testing.T) {
 	logger := zap.NewNop()
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.2")
 
