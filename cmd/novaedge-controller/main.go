@@ -130,9 +130,14 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create shared IPAM allocator for IP pool management
+	ipamLogger, _ := uberzap.NewProduction()
+	allocator := ipam.NewAllocator(ipamLogger)
+
 	if err = (&controller.ProxyVIPReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Allocator: allocator,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ProxyVIP")
 		os.Exit(1)
@@ -213,10 +218,6 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "GatewayClass")
 		os.Exit(1)
 	}
-
-	// Create shared IPAM allocator for IP pool management
-	ipamLogger, _ := uberzap.NewProduction()
-	allocator := ipam.NewAllocator(ipamLogger)
 
 	// Register ProxyIPPool reconciler with the shared IPAM allocator
 	if err = (&controller.ProxyIPPoolReconciler{
