@@ -48,7 +48,7 @@ func TestBFDSessionState_String(t *testing.T) {
 
 func TestBFDManager_AddRemoveSession(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.1")
 	config := BFDConfig{
@@ -104,7 +104,7 @@ func TestBFDManager_StateMachine(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	t.Run("Down -> Init -> Up", func(t *testing.T) {
-		manager := NewBFDManager(logger, nil)
+		manager := NewBFDManager(logger, nil, nil)
 		peerIP := net.ParseIP("10.0.0.1")
 		config := BFDConfig{DetectMultiplier: 3}
 
@@ -135,7 +135,7 @@ func TestBFDManager_StateMachine(t *testing.T) {
 			mu.Lock()
 			neighborDownCalled = true
 			mu.Unlock()
-		})
+		}, nil)
 
 		peerIP := net.ParseIP("10.0.0.2")
 		config := BFDConfig{DetectMultiplier: 3}
@@ -171,7 +171,7 @@ func TestBFDManager_StateMachine(t *testing.T) {
 	})
 
 	t.Run("session flap counting", func(t *testing.T) {
-		manager := NewBFDManager(logger, nil)
+		manager := NewBFDManager(logger, nil, nil)
 		peerIP := net.ParseIP("10.0.0.3")
 		config := BFDConfig{DetectMultiplier: 3}
 
@@ -199,7 +199,7 @@ func TestBFDManager_StateMachine(t *testing.T) {
 
 func TestBFDManager_DetectionTimeout(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.1")
 	config := BFDConfig{
@@ -234,7 +234,7 @@ func TestBFDManager_DetectionTimeout(t *testing.T) {
 
 func TestBFDManager_StartStop(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 	// Use port 0 so the OS assigns an ephemeral port
 	manager.ListenPort = 0
 
@@ -255,7 +255,7 @@ func TestBFDManager_StartStop(t *testing.T) {
 
 func TestBFDManager_GetAllSessionStates(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 	config := BFDConfig{DetectMultiplier: 3}
 
 	peers := []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}
@@ -280,7 +280,7 @@ func TestBFDManager_GetAllSessionStates(t *testing.T) {
 
 func TestBFDManager_DefaultConfig(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.1")
 	// Pass zero-value config to verify defaults are applied
@@ -308,7 +308,7 @@ func TestBFDManager_DefaultConfig(t *testing.T) {
 
 func TestBFDManager_ConcurrentAccess(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 	config := BFDConfig{DetectMultiplier: 3}
 
 	var wg sync.WaitGroup
@@ -333,7 +333,7 @@ func TestBFDManager_ConcurrentAccess(t *testing.T) {
 
 func TestBFDTransport_StartStop(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	transport := newBFDTransport(logger, manager, 0)
 
@@ -358,7 +358,7 @@ func TestBFDTransport_SendReceive(t *testing.T) {
 
 	// Create a manager and transport that receives packets
 	receivedCh := make(chan struct{}, 1)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 
 	// Add a session so ProcessPacket actually processes incoming data
 	peerIP := net.IPv4(127, 0, 0, 1)
@@ -453,10 +453,10 @@ func TestBFDManager_TwoPeersIntegration(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Create two BFD managers simulating two peers on localhost
-	manager1 := NewBFDManager(logger.Named("peer1"), nil)
+	manager1 := NewBFDManager(logger.Named("peer1"), nil, nil)
 	manager1.ListenPort = 0
 
-	manager2 := NewBFDManager(logger.Named("peer2"), nil)
+	manager2 := NewBFDManager(logger.Named("peer2"), nil, nil)
 	manager2.ListenPort = 0
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -538,7 +538,7 @@ func TestBFDManager_TwoPeersIntegration(t *testing.T) {
 
 func TestBFDManager_NilTransportSkipsSending(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil)
+	manager := NewBFDManager(logger, nil, nil)
 	// transport is nil by default (no Start called)
 
 	peerIP := net.ParseIP("10.0.0.1")
@@ -563,5 +563,131 @@ func TestBFDManager_NilTransportSkipsSending(t *testing.T) {
 	}
 	if tx != 1 {
 		t.Errorf("Expected 1 packet TX (metrics-only), got %d", tx)
+	}
+}
+
+func TestBFDManager_NeighborUpCallback(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	var mu sync.Mutex
+	neighborUpCalled := false
+	var upPeerIP net.IP
+
+	manager := NewBFDManager(logger, nil, func(peerIP net.IP) {
+		mu.Lock()
+		neighborUpCalled = true
+		upPeerIP = peerIP
+		mu.Unlock()
+	})
+
+	peerIP := net.ParseIP("10.0.0.5")
+	config := BFDConfig{DetectMultiplier: 3}
+
+	err := manager.AddSession(peerIP, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Transition Down -> Init -> Up
+	manager.ProcessPacket(peerIP, BFDStateDown, 500)
+	state := manager.GetSessionState(peerIP)
+	if state != BFDStateInit {
+		t.Fatalf("Expected Init, got %s", state.String())
+	}
+
+	manager.ProcessPacket(peerIP, BFDStateInit, 500)
+	state = manager.GetSessionState(peerIP)
+	if state != BFDStateUp {
+		t.Fatalf("Expected Up, got %s", state.String())
+	}
+
+	// Verify onNeighborUp was called
+	mu.Lock()
+	if !neighborUpCalled {
+		t.Error("Expected onNeighborUp callback to be called when session transitions to Up")
+	}
+	if !upPeerIP.Equal(peerIP) {
+		t.Errorf("Expected callback with peer %s, got %s", peerIP.String(), upPeerIP.String())
+	}
+	mu.Unlock()
+}
+
+func TestBFDManager_FullRecoveryCycle(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	var mu sync.Mutex
+	downCount := 0
+	upCount := 0
+
+	manager := NewBFDManager(logger,
+		func(peerIP net.IP) {
+			mu.Lock()
+			downCount++
+			mu.Unlock()
+		},
+		func(peerIP net.IP) {
+			mu.Lock()
+			upCount++
+			mu.Unlock()
+		},
+	)
+
+	peerIP := net.ParseIP("10.0.0.6")
+	config := BFDConfig{DetectMultiplier: 3}
+
+	err := manager.AddSession(peerIP, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Bring session Up: Down -> Init -> Up
+	manager.ProcessPacket(peerIP, BFDStateDown, 600)
+	manager.ProcessPacket(peerIP, BFDStateInit, 600)
+
+	state := manager.GetSessionState(peerIP)
+	if state != BFDStateUp {
+		t.Fatalf("Expected Up, got %s", state.String())
+	}
+
+	// 2. Peer goes Down: Up -> Down (triggers onNeighborDown)
+	manager.ProcessPacket(peerIP, BFDStateDown, 600)
+
+	state = manager.GetSessionState(peerIP)
+	if state != BFDStateDown {
+		t.Fatalf("Expected Down, got %s", state.String())
+	}
+
+	// Wait for async callback
+	time.Sleep(50 * time.Millisecond)
+
+	mu.Lock()
+	if downCount != 1 {
+		t.Errorf("Expected 1 onNeighborDown call, got %d", downCount)
+	}
+	mu.Unlock()
+
+	// 3. Peer recovers: Down -> Init -> Up (triggers onNeighborUp)
+	manager.ProcessPacket(peerIP, BFDStateDown, 600) // Both Down -> Init
+	manager.ProcessPacket(peerIP, BFDStateInit, 600) // Init -> Up
+
+	state = manager.GetSessionState(peerIP)
+	if state != BFDStateUp {
+		t.Fatalf("Expected Up after recovery, got %s", state.String())
+	}
+
+	mu.Lock()
+	if upCount != 2 {
+		// upCount is 2: once for initial Up, once for recovery Up
+		t.Errorf("Expected 2 onNeighborUp calls (initial + recovery), got %d", upCount)
+	}
+	mu.Unlock()
+
+	// 4. Verify flap count
+	_, _, flaps, ok := manager.GetSessionStats(peerIP)
+	if !ok {
+		t.Fatal("Session should exist")
+	}
+	if flaps != 1 {
+		t.Errorf("Expected 1 flap, got %d", flaps)
 	}
 }
