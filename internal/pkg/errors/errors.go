@@ -253,7 +253,7 @@ func (e *ValidationError) Error() string {
 
 	// Include child errors
 	if len(e.Children) > 0 {
-		var childMsgs []string
+		childMsgs := make([]string, 0, len(e.Children))
 		for _, child := range e.Children {
 			childMsgs = append(childMsgs, child.Error())
 		}

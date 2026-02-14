@@ -65,7 +65,7 @@ func (l *WAFRuleLoader) LoadFromFile(path string) ([]string, error) {
 
 // LoadFromConfigMapData loads WAF rules from ConfigMap data
 func (l *WAFRuleLoader) LoadFromConfigMapData(data map[string]string) []string {
-	var allRules []string
+	allRules := make([]string, 0, len(data))
 
 	for key, content := range data {
 		rules := parseRules(content)
