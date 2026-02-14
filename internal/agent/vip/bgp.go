@@ -18,13 +18,16 @@ package vip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
+	"syscall"
 	"time"
 
 	api "github.com/osrg/gobgp/v3/api"
 	"github.com/osrg/gobgp/v3/pkg/server"
+	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/anypb"
 
@@ -132,6 +135,14 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 		}
 	}
 
+	// Bind VIP address to loopback so the node can accept traffic
+	if err := h.addLoopbackAddress(assignment.Address); err != nil {
+		h.logger.Warn("Failed to bind VIP to loopback",
+			zap.String("vip", assignment.VipName),
+			zap.Error(err),
+		)
+	}
+
 	// Announce route
 	if err := h.announceRoute(ctx, ip, assignment.BgpConfig, isIPv6); err != nil {
 		h.logger.Warn("Failed to announce BGP route",
@@ -201,6 +212,14 @@ func (h *BGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment
 		}
 	}
 
+	// Remove VIP address from loopback
+	if err := h.removeLoopbackAddress(assignment.Address); err != nil {
+		h.logger.Warn("Failed to remove VIP from loopback",
+			zap.String("vip", assignment.VipName),
+			zap.Error(err),
+		)
+	}
+
 	delete(h.activeVIPs, assignment.VipName)
 
 	// Update metrics
@@ -211,6 +230,55 @@ func (h *BGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment
 		zap.Duration("duration", time.Since(state.AddedAt)),
 	)
 
+	return nil
+}
+
+// addLoopbackAddress binds a VIP address to the loopback interface so the
+// node can receive traffic for announced BGP routes.
+func (h *BGPHandler) addLoopbackAddress(cidr string) error {
+	link, err := netlink.LinkByName("lo")
+	if err != nil {
+		return fmt.Errorf("failed to get loopback interface: %w", err)
+	}
+
+	addr, err := netlink.ParseAddr(cidr)
+	if err != nil {
+		return fmt.Errorf("failed to parse address %s: %w", cidr, err)
+	}
+
+	if err := netlink.AddrAdd(link, addr); err != nil {
+		if errors.Is(err, syscall.EEXIST) {
+			h.logger.Debug("Loopback address already exists", zap.String("address", cidr))
+			return nil
+		}
+		return fmt.Errorf("failed to add loopback address: %w", err)
+	}
+
+	h.logger.Info("Bound VIP address to loopback", zap.String("address", cidr))
+	return nil
+}
+
+// removeLoopbackAddress removes a VIP address from the loopback interface.
+func (h *BGPHandler) removeLoopbackAddress(cidr string) error {
+	link, err := netlink.LinkByName("lo")
+	if err != nil {
+		return fmt.Errorf("failed to get loopback interface: %w", err)
+	}
+
+	addr, err := netlink.ParseAddr(cidr)
+	if err != nil {
+		return fmt.Errorf("failed to parse address %s: %w", cidr, err)
+	}
+
+	if err := netlink.AddrDel(link, addr); err != nil {
+		if errors.Is(err, syscall.EADDRNOTAVAIL) {
+			h.logger.Debug("Loopback address doesn't exist", zap.String("address", cidr))
+			return nil
+		}
+		return fmt.Errorf("failed to remove loopback address: %w", err)
+	}
+
+	h.logger.Info("Removed VIP address from loopback", zap.String("address", cidr))
 	return nil
 }
 
