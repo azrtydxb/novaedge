@@ -260,6 +260,20 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 		return nil, err
 	}
 
+	// Look up node's InternalIP for per-node RouterID override
+	node := &corev1.Node{}
+	nodeIP := ""
+	if err := b.client.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to get node for RouterID lookup", "node", nodeName)
+	} else {
+		for _, addr := range node.Status.Addresses {
+			if addr.Type == corev1.NodeInternalIP {
+				nodeIP = addr.Address
+				break
+			}
+		}
+	}
+
 	var assignments []*pb.VIPAssignment
 	for _, vip := range vipList.Items {
 		// Check if this node should handle this VIP
@@ -321,11 +335,19 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 			// Add BGP config for BGP mode VIPs
 			if vip.Spec.Mode == novaedgev1alpha1.VIPModeBGP && vip.Spec.BGPConfig != nil {
 				assignment.BgpConfig = convertBGPConfig(vip.Spec.BGPConfig)
+				// Override RouterID with node's InternalIP for per-node uniqueness
+				if nodeIP != "" && assignment.BgpConfig != nil {
+					assignment.BgpConfig.RouterId = nodeIP
+				}
 			}
 
 			// Add OSPF config for OSPF mode VIPs
 			if vip.Spec.Mode == novaedgev1alpha1.VIPModeOSPF && vip.Spec.OSPFConfig != nil {
 				assignment.OspfConfig = convertOSPFConfig(vip.Spec.OSPFConfig)
+				// Override RouterID with node's InternalIP for per-node uniqueness
+				if nodeIP != "" && assignment.OspfConfig != nil {
+					assignment.OspfConfig.RouterId = nodeIP
+				}
 			}
 
 			// Add BFD config if enabled
