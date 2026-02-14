@@ -42,6 +42,7 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller"
 	"github.com/piwi3910/novaedge/internal/controller/certmanager"
+	"github.com/piwi3910/novaedge/internal/controller/ipam"
 	"github.com/piwi3910/novaedge/internal/controller/snapshot"
 	vaultpkg "github.com/piwi3910/novaedge/internal/controller/vault"
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
@@ -78,11 +79,15 @@ func main() {
 	flag.StringVar(&controllerClass, "controller-class", "novaedge.io/proxy",
 		"The loadBalancerClass this controller handles. Only gateways matching this class will be reconciled.")
 
+	var enableServiceLB bool
+
 	var enableCertManager string
 	var enableVault string
 	var vaultAddr string
 	var vaultAuthMethod string
 	var vaultRole string
+	flag.BoolVar(&enableServiceLB, "enable-service-lb", false,
+		"Enable ServiceLB controller that watches type:LoadBalancer Services and creates ProxyVIP resources with IPAM allocation.")
 	flag.StringVar(&enableCertManager, "enable-cert-manager", "auto", "Enable cert-manager integration (auto|true|false)")
 	flag.StringVar(&enableVault, "enable-vault", "false", "Enable HashiCorp Vault integration (auto|true|false)")
 	flag.StringVar(&vaultAddr, "vault-addr", "", "HashiCorp Vault server address")
@@ -197,6 +202,35 @@ func main() {
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "GatewayClass")
 		os.Exit(1)
+	}
+
+	// Create shared IPAM allocator for IP pool management
+	ipamLogger, _ := uberzap.NewProduction()
+	allocator := ipam.NewAllocator(ipamLogger)
+
+	// Register ProxyIPPool reconciler with the shared IPAM allocator
+	if err = (&controller.ProxyIPPoolReconciler{
+		Client:    mgr.GetClient(),
+		Scheme:    mgr.GetScheme(),
+		Allocator: allocator,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ProxyIPPool")
+		os.Exit(1)
+	}
+
+	// Conditionally register ServiceLB controller
+	if enableServiceLB {
+		if err = (&controller.ServiceReconciler{
+			Client:          mgr.GetClient(),
+			Scheme:          mgr.GetScheme(),
+			Allocator:       allocator,
+			Recorder:        mgr.GetEventRecorderFor("service-lb-controller"),
+			EnableServiceLB: true,
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "ServiceLB")
+			os.Exit(1)
+		}
+		setupLog.Info("ServiceLB controller enabled")
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

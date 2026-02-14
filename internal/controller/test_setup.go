@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -80,6 +81,7 @@ func setupTestEnv(t *testing.T) *testEnv {
 			&novaedgev1alpha1.ProxyRoute{},
 			&novaedgev1alpha1.ProxyVIP{},
 			&novaedgev1alpha1.ProxyPolicy{},
+			&corev1.Service{},
 			&gatewayv1.Gateway{},
 			&gatewayv1.GatewayClass{},
 			&gatewayv1.HTTPRoute{},
