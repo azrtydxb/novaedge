@@ -76,4 +76,7 @@ func init() {
 	// Gateway API commands
 	rootCmd.AddCommand(newGatewayAPICommand())
 	rootCmd.AddCommand(newConformanceCommand())
+
+	// Generation commands
+	rootCmd.AddCommand(newGenerateCommand())
 }
