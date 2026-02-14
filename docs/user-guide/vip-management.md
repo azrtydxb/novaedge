@@ -655,6 +655,7 @@ show ip ospf database external
 
 ## Next Steps
 
+- [K3s Control Plane HA](k3s-control-plane-ha.md) - Deploy NovaEdge as kube-vip replacement on K3s
 - [IP Address Pools](ip-pools.md) - Dynamic VIP address management
 - [Routing](routing.md) - Configure routes
 - [Load Balancing](load-balancing.md) - LB algorithms
