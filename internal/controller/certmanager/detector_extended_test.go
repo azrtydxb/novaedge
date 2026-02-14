@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 	fakediscovery "k8s.io/client-go/discovery/fake"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestDetector_IsCertManagerInstalled_EmptyResources(t *testing.T) {

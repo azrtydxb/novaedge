@@ -24,7 +24,7 @@ import (
 
 func TestNewRingHash(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -59,7 +59,7 @@ func TestNewRingHash_EmptyEndpoints(t *testing.T) {
 
 func TestRingHash_Select(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -98,7 +98,7 @@ func TestRingHash_Select_EmptyEndpoints(t *testing.T) {
 
 func TestRingHash_Select_Consistency(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -119,7 +119,7 @@ func TestRingHash_Select_Consistency(t *testing.T) {
 
 func TestRingHash_SelectDefault(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -133,7 +133,7 @@ func TestRingHash_SelectDefault(t *testing.T) {
 
 func TestRingHash_SelectDefault_NoReadyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: false},
+		{Address: testAddrEWMA, Port: 8080, Ready: false},
 		{Address: "10.0.0.2", Port: 8080, Ready: false},
 	}
 
@@ -156,7 +156,7 @@ func TestRingHash_SelectDefault_EmptyEndpoints(t *testing.T) {
 
 func TestRingHash_UpdateEndpoints(t *testing.T) {
 	initialEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -187,7 +187,7 @@ func TestRingHash_UpdateEndpoints(t *testing.T) {
 
 func TestRingHash_GetRingSize(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -202,7 +202,7 @@ func TestRingHash_GetRingSize(t *testing.T) {
 
 func TestRingHash_Distribution(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -240,7 +240,7 @@ func TestRingHash_Distribution(t *testing.T) {
 func TestRingHash_MinimalChange(t *testing.T) {
 	// When an endpoint is added/removed, minimal keys should remap
 	initialEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -258,7 +258,7 @@ func TestRingHash_MinimalChange(t *testing.T) {
 
 	// Add a new endpoint
 	newEndpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}
@@ -282,7 +282,7 @@ func TestRingHash_MinimalChange(t *testing.T) {
 
 func TestRingHash_ConcurrentAccess(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
 	}
 
@@ -305,7 +305,7 @@ func TestRingHash_ConcurrentAccess(t *testing.T) {
 	go func() {
 		for i := 0; i < 10; i++ {
 			newEndpoints := []*pb.Endpoint{
-				{Address: "10.0.0.1", Port: 8080, Ready: true},
+				{Address: testAddrEWMA, Port: 8080, Ready: true},
 			}
 			rh.UpdateEndpoints(newEndpoints)
 		}
@@ -320,7 +320,7 @@ func TestRingHash_ConcurrentAccess(t *testing.T) {
 
 func TestRingHash_SingleEndpoint(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 	}
 
 	rh := NewRingHash(endpoints)
@@ -330,7 +330,7 @@ func TestRingHash_SingleEndpoint(t *testing.T) {
 		ep := rh.Select(string(rune(i)))
 		if ep == nil {
 			t.Error("Select() returned nil")
-		} else if ep.Address != "10.0.0.1" {
+		} else if ep.Address != testAddrEWMA {
 			t.Errorf("Select() returned wrong endpoint: %s", ep.Address)
 		}
 	}
@@ -338,7 +338,7 @@ func TestRingHash_SingleEndpoint(t *testing.T) {
 
 func TestRingHash_UnreadyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: false},
+		{Address: testAddrEWMA, Port: 8080, Ready: false},
 		{Address: "10.0.0.2", Port: 8080, Ready: false},
 	}
 
@@ -358,7 +358,7 @@ func TestRingHash_UnreadyEndpoints(t *testing.T) {
 
 func TestRingHash_MixedReadyEndpoints(t *testing.T) {
 	endpoints := []*pb.Endpoint{
-		{Address: "10.0.0.1", Port: 8080, Ready: true},
+		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: false},
 		{Address: "10.0.0.3", Port: 8080, Ready: true},
 	}

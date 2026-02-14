@@ -25,10 +25,12 @@ import (
 	"go.uber.org/zap"
 )
 
+const testHealthPath = "/v1/sys/health"
+
 func TestHealthStatus_IsHealthy(t *testing.T) {
 	tests := []struct {
-		name       string
-		status     HealthStatus
+		name        string
+		status      HealthStatus
 		wantHealthy bool
 	}{
 		{
@@ -118,7 +120,7 @@ func TestNewHealthChecker(t *testing.T) {
 func TestHealthChecker_Check_Healthy(t *testing.T) {
 	// Create a test server that returns healthy status
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sys/health" {
+		if r.URL.Path == testHealthPath {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
@@ -154,7 +156,7 @@ func TestHealthChecker_Check_Healthy(t *testing.T) {
 func TestHealthChecker_Check_Sealed(t *testing.T) {
 	// Create a test server that returns sealed status
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sys/health" {
+		if r.URL.Path == testHealthPath {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{
@@ -189,7 +191,7 @@ func TestHealthChecker_Check_NotInitialized(t *testing.T) {
 	// Create a test server that returns not initialized status
 	// Note: sealed must be false so we hit the !Initialized check first
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sys/health" {
+		if r.URL.Path == testHealthPath {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{
@@ -223,7 +225,7 @@ func TestHealthChecker_Check_NotInitialized(t *testing.T) {
 func TestHealthChecker_Check_Standby(t *testing.T) {
 	// Create a test server that returns standby status
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sys/health" {
+		if r.URL.Path == testHealthPath {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{
@@ -256,7 +258,7 @@ func TestHealthChecker_Check_Standby(t *testing.T) {
 
 func TestHealthChecker_Handler_Healthy(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sys/health" {
+		if r.URL.Path == testHealthPath {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"initialized": true, "sealed": false, "standby": false}`))
@@ -291,7 +293,7 @@ func TestHealthChecker_Handler_Healthy(t *testing.T) {
 
 func TestHealthChecker_Handler_Unhealthy(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sys/health" {
+		if r.URL.Path == testHealthPath {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"initialized": true, "sealed": true, "standby": false}`))
@@ -323,7 +325,7 @@ func TestHealthChecker_Handler_Unhealthy(t *testing.T) {
 
 func TestHealthChecker_CheckerFunc(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/v1/sys/health" {
+		if r.URL.Path == testHealthPath {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{"initialized": true, "sealed": false, "standby": false}`))

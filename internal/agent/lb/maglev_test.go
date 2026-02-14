@@ -279,7 +279,7 @@ func TestMaglev_SingleEndpoint(t *testing.T) {
 		ep := m.Select(string(rune(i)))
 		if ep == nil {
 			t.Error("Select() returned nil")
-		} else if ep.Address != "10.0.0.1" {
+		} else if ep.Address != testAddrEWMA {
 			t.Errorf("Select() returned wrong endpoint: %s", ep.Address)
 		}
 	}
@@ -311,7 +311,7 @@ func TestMaglev_Failover(t *testing.T) {
 	// Should still get a valid endpoint
 	newSelection := m.Select(key)
 	if newSelection == nil {
-		t.Error("Select() returned nil after endpoint removal")
+		t.Fatal("Select() returned nil after endpoint removal")
 	}
 	if newSelection.Address == initial.Address {
 		t.Error("Select() returned removed endpoint")

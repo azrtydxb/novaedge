@@ -235,10 +235,10 @@ func TestCertificate_ShouldRenew(t *testing.T) {
 func TestCertificate_ExpiresIn(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
-		name      string
-		notAfter  time.Time
-		minDur    time.Duration
-		maxDur    time.Duration
+		name     string
+		notAfter time.Time
+		minDur   time.Duration
+		maxDur   time.Duration
 	}{
 		{
 			name:     "1 hour from now",

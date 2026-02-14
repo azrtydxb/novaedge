@@ -70,7 +70,7 @@ func TestConfig_WithCustomValues(t *testing.T) {
 	// Modify config
 	cfg.FederationID = "test-federation"
 	cfg.LocalMember = &PeerInfo{
-		Name:     "local",
+		Name:     testLocalMember,
 		Endpoint: "localhost:8080",
 	}
 	cfg.Peers = []*PeerInfo{
@@ -118,8 +118,8 @@ func TestTrackedResource_Creation(t *testing.T) {
 		ResourceVersion: "12345",
 		Hash:            "abc123",
 		Data:            []byte(`{"kind":"ProxyGateway"}`),
-		VectorClock:     map[string]int64{"local": 1, "peer1": 2},
-		OriginMember:    "local",
+		VectorClock:     map[string]int64{testLocalMember: 1, "peer1": 2},
+		OriginMember:    testLocalMember,
 		LastModified:    now,
 		Labels:          map[string]string{"env": "test"},
 	}
@@ -137,11 +137,11 @@ func TestTrackedResource_Creation(t *testing.T) {
 	if string(tr.Data) != `{"kind":"ProxyGateway"}` {
 		t.Errorf("Data = %s, want %s", string(tr.Data), `{"kind":"ProxyGateway"}`)
 	}
-	if tr.VectorClock["local"] != 1 {
-		t.Errorf("VectorClock[local] = %d, want 1", tr.VectorClock["local"])
+	if tr.VectorClock[testLocalMember] != 1 {
+		t.Errorf("VectorClock[local] = %d, want 1", tr.VectorClock[testLocalMember])
 	}
-	if tr.OriginMember != "local" {
-		t.Errorf("OriginMember = %q, want %q", tr.OriginMember, "local")
+	if tr.OriginMember != testLocalMember {
+		t.Errorf("OriginMember = %q, want %q", tr.OriginMember, testLocalMember)
 	}
 	if tr.LastModified != now {
 		t.Errorf("LastModified = %v, want %v", tr.LastModified, now)
@@ -161,8 +161,8 @@ func TestTombstone_Creation(t *testing.T) {
 			Name:      "deleted-route",
 		},
 		DeletionTime: now,
-		VectorClock:  map[string]int64{"local": 5},
-		OriginMember: "local",
+		VectorClock:  map[string]int64{testLocalMember: 5},
+		OriginMember: testLocalMember,
 	}
 
 	// Verify fields
@@ -172,11 +172,11 @@ func TestTombstone_Creation(t *testing.T) {
 	if ts.DeletionTime != now {
 		t.Errorf("DeletionTime = %v, want %v", ts.DeletionTime, now)
 	}
-	if ts.VectorClock["local"] != 5 {
-		t.Errorf("VectorClock[local] = %d, want 5", ts.VectorClock["local"])
+	if ts.VectorClock[testLocalMember] != 5 {
+		t.Errorf("VectorClock[local] = %d, want 5", ts.VectorClock[testLocalMember])
 	}
-	if ts.OriginMember != "local" {
-		t.Errorf("OriginMember = %q, want %q", ts.OriginMember, "local")
+	if ts.OriginMember != testLocalMember {
+		t.Errorf("OriginMember = %q, want %q", ts.OriginMember, testLocalMember)
 	}
 }
 
@@ -184,14 +184,14 @@ func TestConflictInfo_Creation(t *testing.T) {
 	now := time.Now()
 
 	local := &TrackedResource{
-		Key:           ResourceKey{Kind: "ProxyGateway", Namespace: "default", Name: "gw"},
-		OriginMember:  "local",
-		LastModified:  now.Add(-time.Minute),
+		Key:          ResourceKey{Kind: "ProxyGateway", Namespace: "default", Name: "gw"},
+		OriginMember: testLocalMember,
+		LastModified: now.Add(-time.Minute),
 	}
 	remote := &TrackedResource{
-		Key:           ResourceKey{Kind: "ProxyGateway", Namespace: "default", Name: "gw"},
-		OriginMember:  "peer1",
-		LastModified:  now,
+		Key:          ResourceKey{Kind: "ProxyGateway", Namespace: "default", Name: "gw"},
+		OriginMember: "peer1",
+		LastModified: now,
 	}
 
 	ci := &ConflictInfo{
@@ -207,8 +207,8 @@ func TestConflictInfo_Creation(t *testing.T) {
 	if ci.Key.Name != "gw" {
 		t.Errorf("Key.Name = %q, want %q", ci.Key.Name, "gw")
 	}
-	if ci.LocalVersion.OriginMember != "local" {
-		t.Errorf("LocalVersion.OriginMember = %q, want %q", ci.LocalVersion.OriginMember, "local")
+	if ci.LocalVersion.OriginMember != testLocalMember {
+		t.Errorf("LocalVersion.OriginMember = %q, want %q", ci.LocalVersion.OriginMember, testLocalMember)
 	}
 	if ci.RemoteVersion.OriginMember != "peer1" {
 		t.Errorf("RemoteVersion.OriginMember = %q, want %q", ci.RemoteVersion.OriginMember, "peer1")
@@ -315,14 +315,14 @@ func TestChangeEntry_Creation(t *testing.T) {
 		Type: ChangeTypeCreated,
 		Resource: &TrackedResource{
 			Key:          ResourceKey{Kind: "ProxyGateway", Namespace: "default", Name: "test-gateway"},
-			OriginMember: "local",
+			OriginMember: testLocalMember,
 		},
 		Tombstone:   nil,
-		VectorClock: map[string]int64{"local": 1},
+		VectorClock: map[string]int64{testLocalMember: 1},
 		Timestamp:   now,
 		Acknowledged: map[string]bool{
-			"local": true,
-			"peer1": false,
+			testLocalMember: true,
+			"peer1":         false,
 		},
 	}
 
@@ -342,7 +342,7 @@ func TestChangeEntry_Creation(t *testing.T) {
 	if ce.Timestamp != now {
 		t.Errorf("Timestamp = %v, want %v", ce.Timestamp, now)
 	}
-	if !ce.Acknowledged["local"] {
+	if !ce.Acknowledged[testLocalMember] {
 		t.Error("local should have acknowledged")
 	}
 	if ce.Acknowledged["peer1"] {
@@ -363,11 +363,11 @@ func TestChangeEntry_DeleteChange(t *testing.T) {
 		Type:     ChangeTypeDeleted,
 		Resource: nil,
 		Tombstone: &Tombstone{
-			Key:           ResourceKey{Kind: "ProxyRoute", Namespace: "default", Name: "deleted-route"},
-			DeletionTime:  now,
-			OriginMember:  "local",
+			Key:          ResourceKey{Kind: "ProxyRoute", Namespace: "default", Name: "deleted-route"},
+			DeletionTime: now,
+			OriginMember: testLocalMember,
 		},
-		VectorClock:  map[string]int64{"local": 5},
+		VectorClock:  map[string]int64{testLocalMember: 5},
 		Timestamp:    now,
 		Acknowledged: map[string]bool{},
 	}
@@ -406,9 +406,9 @@ func TestChangeType_Constants(t *testing.T) {
 
 func TestPeerInfo_TLSEnabled(t *testing.T) {
 	tests := []struct {
-		name     string
-		peer     *PeerInfo
-		wantTLS  bool
+		name    string
+		peer    *PeerInfo
+		wantTLS bool
 	}{
 		{
 			name: "TLS enabled",
@@ -423,8 +423,8 @@ func TestPeerInfo_TLSEnabled(t *testing.T) {
 		{
 			name: "TLS disabled",
 			peer: &PeerInfo{
-				Name:      "peer2",
-				Endpoint:  "peer2:8080",
+				Name:       "peer2",
+				Endpoint:   "peer2:8080",
 				TLSEnabled: false,
 			},
 			wantTLS: false,
@@ -468,9 +468,9 @@ func TestPeerState_Updates(t *testing.T) {
 			Name:     "peer1",
 			Endpoint: "peer1:8080",
 		},
-		VectorClock:  NewVectorClock(),
-		Healthy:      true,
-		Connected:    true,
+		VectorClock: NewVectorClock(),
+		Healthy:     true,
+		Connected:   true,
 	}
 
 	// Simulate connection loss
@@ -529,9 +529,9 @@ func TestResourceKey_Equality(t *testing.T) {
 
 func TestConfig_Validation(t *testing.T) {
 	tests := []struct {
-		name    string
-		modify  func(*Config)
-		valid   bool
+		name   string
+		modify func(*Config)
+		valid  bool
 	}{
 		{
 			name:   "default config is valid",
@@ -576,7 +576,7 @@ func TestConfig_Validation(t *testing.T) {
 		{
 			name: "with local member",
 			modify: func(c *Config) {
-				c.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:8080"}
+				c.LocalMember = &PeerInfo{Name: testLocalMember, Endpoint: "localhost:8080"}
 			},
 			valid: true,
 		},
@@ -649,7 +649,7 @@ func TestChangeEntry_AcknowledgmentTracking(t *testing.T) {
 	}
 
 	// Add acknowledgments
-	ce.Acknowledged["local"] = true
+	ce.Acknowledged[testLocalMember] = true
 	ce.Acknowledged["peer1"] = true
 	ce.Acknowledged["peer2"] = false
 

@@ -23,10 +23,10 @@ import (
 func TestRecordSnapshotBuild(t *testing.T) {
 	// This test verifies the function doesn't panic
 	resourceCounts := map[string]int{
-		"routes":    10,
-		"backends":  5,
-		"policies":  3,
-		"gateways":  2,
+		"routes":   10,
+		"backends": 5,
+		"policies": 3,
+		"gateways": 2,
 	}
 
 	RecordSnapshotBuild("test-node", 0.001, 1024, resourceCounts)
