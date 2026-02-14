@@ -54,7 +54,7 @@ type State struct {
 	IsIPv6     bool
 }
 
-// NewL2Handler creates a new L2 ARP/NDP handler
+// NewL2Handler creates a new L2 ARP/NDP handler with auto-detected interface
 func NewL2Handler(logger *zap.Logger) (*L2Handler, error) {
 	// Detect primary network interface
 	iface, err := detectPrimaryInterface()
@@ -68,6 +68,27 @@ func NewL2Handler(logger *zap.Logger) (*L2Handler, error) {
 		logger:        logger,
 		activeVIPs:    make(map[string]*State),
 		interfaceName: iface,
+	}, nil
+}
+
+// NewL2HandlerWithInterface creates a new L2 ARP/NDP handler using the specified
+// network interface. If interfaceName is empty, the primary interface is auto-detected.
+func NewL2HandlerWithInterface(logger *zap.Logger, interfaceName string) (*L2Handler, error) {
+	if interfaceName == "" {
+		return NewL2Handler(logger)
+	}
+
+	// Validate that the interface exists
+	if _, err := net.InterfaceByName(interfaceName); err != nil {
+		return nil, fmt.Errorf("invalid network interface %q: %w", interfaceName, err)
+	}
+
+	logger.Info("Using specified network interface for VIPs", zap.String("interface", interfaceName))
+
+	return &L2Handler{
+		logger:        logger,
+		activeVIPs:    make(map[string]*State),
+		interfaceName: interfaceName,
 	}, nil
 }
 
