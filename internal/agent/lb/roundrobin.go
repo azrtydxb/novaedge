@@ -30,35 +30,37 @@ type LoadBalancer interface {
 
 // RoundRobin implements round-robin load balancing
 type RoundRobin struct {
-	endpoints []*pb.Endpoint
+	endpoints atomic.Pointer[[]*pb.Endpoint]
 	counter   uint64
 }
 
 // NewRoundRobin creates a new round-robin load balancer
 func NewRoundRobin(endpoints []*pb.Endpoint) *RoundRobin {
-	return &RoundRobin{
-		endpoints: filterHealthy(endpoints),
-		counter:   0,
-	}
+	rr := &RoundRobin{}
+	healthy := filterHealthy(endpoints)
+	rr.endpoints.Store(&healthy)
+	return rr
 }
 
 // Select selects the next endpoint using round-robin
 func (rr *RoundRobin) Select() *pb.Endpoint {
-	if len(rr.endpoints) == 0 {
+	eps := *rr.endpoints.Load()
+	if len(eps) == 0 {
 		return nil
 	}
 
 	// Atomically increment and get current value
 	current := atomic.AddUint64(&rr.counter, 1) - 1
-	n := uint64(len(rr.endpoints))
+	n := uint64(len(eps))
 	idx := current % n
 
-	return rr.endpoints[idx]
+	return eps[idx]
 }
 
 // UpdateEndpoints updates the list of endpoints
 func (rr *RoundRobin) UpdateEndpoints(endpoints []*pb.Endpoint) {
-	rr.endpoints = filterHealthy(endpoints)
+	healthy := filterHealthy(endpoints)
+	rr.endpoints.Store(&healthy)
 	// Reset counter when endpoints change
 	atomic.StoreUint64(&rr.counter, 0)
 }

@@ -204,9 +204,8 @@ func (e *OTelExporter) buildGRPCExporter(ctx context.Context) (metric.Exporter, 
 // buildResource creates the OTel resource with service identification and any
 // user-supplied attributes.
 func (e *OTelExporter) buildResource(ctx context.Context) (*resource.Resource, error) {
-	attrs := []attribute.KeyValue{
-		semconv.ServiceName("novaedge-agent"),
-	}
+	attrs := make([]attribute.KeyValue, 0, 1+len(e.config.ResourceAttributes))
+	attrs = append(attrs, semconv.ServiceName("novaedge-agent"))
 	for k, v := range e.config.ResourceAttributes {
 		attrs = append(attrs, attribute.String(k, v))
 	}

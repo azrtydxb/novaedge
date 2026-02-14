@@ -933,7 +933,7 @@ func (c *Converter) convertL4Listeners(configs []L4ListenerStandaloneConfig, end
 			}
 
 		case protocolTLS:
-			var tlsRoutes []*pb.L4TLSRoute
+			tlsRoutes := make([]*pb.L4TLSRoute, 0, len(cfg.TLSRoutes))
 			for _, route := range cfg.TLSRoutes {
 				clusterKey := fmt.Sprintf("default/%s", route.Backend)
 				var backends []*pb.Endpoint

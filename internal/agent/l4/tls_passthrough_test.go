@@ -45,11 +45,12 @@ func TestExtractSNI_ParseSNIExtension(t *testing.T) {
 	hostname := "test.example.com"
 	// Build SNI extension data
 	// Server Name List: type(1) + length(2) + hostname
-	sniData := []byte{
-		0x00, byte(len(hostname) + 3), // list length
+	sniData := make([]byte, 0, 5+len(hostname))
+	sniData = append(sniData,
+		0x00, byte(len(hostname)+3), // list length
 		0x00,                      // host name type
 		0x00, byte(len(hostname)), // hostname length
-	}
+	)
 	sniData = append(sniData, []byte(hostname)...)
 
 	result, err := parseSNIExtension(sniData)
@@ -303,29 +304,34 @@ func TestGetReadyEndpoints(t *testing.T) {
 // buildTestClientHello constructs a minimal TLS ClientHello handshake message with SNI
 func buildTestClientHello(hostname string) []byte {
 	// SNI extension data
-	sniExtData := []byte{
-		0x00, byte(len(hostname) + 3), // list length
+	sniExtData := make([]byte, 0, 5+len(hostname))
+	sniExtData = append(sniExtData,
+		0x00, byte(len(hostname)+3), // list length
 		0x00,                      // host name type
 		0x00, byte(len(hostname)), // hostname length
-	}
+	)
 	sniExtData = append(sniExtData, []byte(hostname)...)
 
 	// Extensions: SNI extension (type 0x0000)
-	extensions := []byte{
+	extensions := make([]byte, 0, 4+len(sniExtData))
+	extensions = append(extensions,
 		0x00, 0x00, // Extension type: SNI
 		0x00, byte(len(sniExtData)), // Extension length
-	}
+	)
 	extensions = append(extensions, sniExtData...)
 
 	// Extensions length
 	extensionsLen := len(extensions)
 
-	// Build ClientHello body
-	body := []byte{
-		0x03, 0x03, // Client version: TLS 1.2
-	}
 	// 32 bytes random
 	random := make([]byte, 32)
+
+	// Build ClientHello body
+	// 2 (version) + 32 (random) + 1 (session ID len) + 4 (cipher suites) + 2 (compression) + 2 (extensions len) + extensions
+	body := make([]byte, 0, 2+len(random)+1+4+2+2+len(extensions))
+	body = append(body,
+		0x03, 0x03, // Client version: TLS 1.2
+	)
 	body = append(body, random...)
 
 	// Session ID (empty)
@@ -343,12 +349,13 @@ func buildTestClientHello(hostname string) []byte {
 
 	// Build handshake message
 	handshakeLen := len(body)
-	handshake := []byte{
-		TLSClientHelloType,        // Handshake type: ClientHello
-		0x00,                      // Length high byte
-		byte(handshakeLen >> 8),   // Length mid byte
-		byte(handshakeLen & 0xff), // Length low byte
-	}
+	handshake := make([]byte, 0, 4+len(body))
+	handshake = append(handshake,
+		TLSClientHelloType,      // Handshake type: ClientHello
+		0x00,                    // Length high byte
+		byte(handshakeLen>>8),   // Length mid byte
+		byte(handshakeLen&0xff), // Length low byte
+	)
 	handshake = append(handshake, body...)
 
 	return handshake

@@ -324,7 +324,11 @@ func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) *nov
 // Supports multiple TLS certificates via SNI when multiple TLS entries are present
 func (t *IngressTranslator) createHTTPSListener(ingress *networkingv1.Ingress) novaedgev1alpha1.Listener {
 	// Collect all TLS hostnames
-	tlsHostnames := make([]string, 0)
+	totalHosts := 0
+	for _, tls := range ingress.Spec.TLS {
+		totalHosts += len(tls.Hosts)
+	}
+	tlsHostnames := make([]string, 0, totalHosts)
 	for _, tls := range ingress.Spec.TLS {
 		tlsHostnames = append(tlsHostnames, tls.Hosts...)
 	}
