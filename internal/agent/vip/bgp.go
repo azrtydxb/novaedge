@@ -550,7 +550,8 @@ func (h *BGPHandler) addBGPPeer(ctx context.Context, peer *pb.BGPPeer) {
 				PeerAsn:         peer.As,
 			},
 			Transport: &api.Transport{
-				RemotePort: port,
+				RemotePort:  port,
+				PassiveMode: true,
 			},
 			AfiSafis: afiSafis,
 		},
@@ -875,7 +876,8 @@ func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) e
 			Peer: &api.Peer{
 				Conf: peerConf,
 				Transport: &api.Transport{
-					RemotePort: port,
+					RemotePort:  port,
+					PassiveMode: true,
 				},
 				AfiSafis: afiSafis,
 			},
