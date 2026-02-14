@@ -39,10 +39,16 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// Build-time variables set via ldflags.
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 var (
 	nodeName        string
 	controllerAddr  string
-	agentVersion    = "0.1.0"
 	logLevel        string
 	healthProbePort int
 	metricsPort     int
@@ -115,7 +121,9 @@ func main() {
 
 	logger.Info("Starting NovaEdge agent",
 		zap.String("node", nodeName),
-		zap.String("version", agentVersion),
+		zap.String("version", version),
+		zap.String("commit", commit),
+		zap.String("date", date),
 		zap.String("controller", controllerAddr),
 	)
 
@@ -136,7 +144,7 @@ func main() {
 		Endpoint:       tracingEndpoint,
 		SampleRate:     tracingSampleRate,
 		ServiceName:    "novaedge-agent",
-		ServiceVersion: agentVersion,
+		ServiceVersion: version,
 	}, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize tracing", zap.Error(err))
@@ -161,7 +169,7 @@ func main() {
 				zap.String("cluster", clusterName))
 		}
 		// Create remote watcher with mTLS and cluster identification
-		watcher, err = config.NewRemoteWatcher(ctx, nodeName, agentVersion, controllerAddr,
+		watcher, err = config.NewRemoteWatcher(ctx, nodeName, version, controllerAddr,
 			&config.TLSConfig{
 				CertFile: grpcTLSCert,
 				KeyFile:  grpcTLSKey,
@@ -183,7 +191,7 @@ func main() {
 			zap.String("ca", grpcTLSCA))
 	case grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "":
 		// Local agent with mTLS enabled
-		watcher, err = config.NewWatcherWithTLS(ctx, nodeName, agentVersion, controllerAddr,
+		watcher, err = config.NewWatcherWithTLS(ctx, nodeName, version, controllerAddr,
 			&config.TLSConfig{
 				CertFile: grpcTLSCert,
 				KeyFile:  grpcTLSKey,
@@ -197,7 +205,7 @@ func main() {
 			zap.String("ca", grpcTLSCA))
 	default:
 		// Local agent without TLS (insecure, development only)
-		watcher, err = config.NewWatcher(ctx, nodeName, agentVersion, controllerAddr, logger)
+		watcher, err = config.NewWatcher(ctx, nodeName, version, controllerAddr, logger)
 		if err != nil {
 			logger.Fatal("Failed to create config watcher", zap.Error(err))
 		}
