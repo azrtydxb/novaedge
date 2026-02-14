@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -51,8 +53,17 @@ const (
 	// cpVIPName is the internal name used for the control-plane VIP assignment.
 	cpVIPName = "control-plane-vip"
 
-	// healthzPath is the kube-apiserver health check endpoint.
-	healthzPath = "/healthz"
+	// livezPath is the kube-apiserver liveness endpoint (replaces deprecated /healthz).
+	livezPath = "/livez"
+
+	// defaultSATokenPath is the default path for the ServiceAccount token
+	// mounted in Kubernetes pods.
+	defaultSATokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // not a credential, just a file path constant
+
+	// tokenRefreshInterval controls how often the SA token is re-read from disk.
+	// Kubernetes rotates projected SA tokens periodically (default ~1h), so we
+	// refresh well within that window.
+	tokenRefreshInterval = 5 * time.Minute
 )
 
 // Config holds the configuration for the control-plane VIP manager.
@@ -75,6 +86,11 @@ type Config struct {
 
 	// FailThreshold is the number of consecutive failures before releasing the VIP (default: 3).
 	FailThreshold int
+
+	// SATokenPath is the path to the ServiceAccount token file for
+	// authenticating health check requests. Defaults to the standard
+	// Kubernetes projected token path. Set to empty string to disable.
+	SATokenPath string
 }
 
 // Validate checks that the configuration is valid.
@@ -121,6 +137,9 @@ func (c *Config) applyDefaults() {
 	if c.FailThreshold == 0 {
 		c.FailThreshold = DefaultFailThreshold
 	}
+	if c.SATokenPath == "" {
+		c.SATokenPath = defaultSATokenPath
+	}
 }
 
 // Manager manages a single control-plane VIP based on kube-apiserver health.
@@ -135,6 +154,11 @@ type Manager struct {
 	mu        sync.Mutex
 	vipActive bool
 	failCount int
+
+	// tokenMu protects the cached SA token fields.
+	tokenMu       sync.RWMutex
+	cachedToken   string
+	tokenLoadedAt time.Time
 }
 
 // NewManager creates a new control-plane VIP manager.
@@ -253,14 +277,25 @@ func (m *Manager) healthCheckTick(ctx context.Context) {
 	}
 }
 
-// checkAPIServerHealth performs an HTTP GET to the apiserver /healthz endpoint.
+// checkAPIServerHealth performs an HTTP GET to the apiserver /livez endpoint.
+// When a ServiceAccount token is available, it sends an authenticated request
+// and treats 200 as healthy. When no token is available (pre-bootstrap), it
+// falls back to treating both 200 and 401 as healthy (any HTTP response means
+// the API server is accepting connections).
 func (m *Manager) checkAPIServerHealth(ctx context.Context) bool {
-	url := fmt.Sprintf("https://localhost:%d%s", m.config.APIPort, healthzPath)
+	url := fmt.Sprintf("https://localhost:%d%s", m.config.APIPort, livezPath)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		m.logger.Error("Failed to create health check request", zap.Error(err))
 		return false
+	}
+
+	// Attach Bearer token if available
+	token := m.getSAToken()
+	hasToken := token != ""
+	if hasToken {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := m.httpClient.Do(req)
@@ -270,7 +305,67 @@ func (m *Manager) checkAPIServerHealth(ctx context.Context) bool {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	return resp.StatusCode == http.StatusOK
+	if resp.StatusCode == http.StatusOK {
+		return true
+	}
+
+	// When no token is available, treat 401 as healthy: the API server is
+	// running and accepting connections, we just can't authenticate yet
+	// (pre-bootstrap or SA token not mounted).
+	if !hasToken && resp.StatusCode == http.StatusUnauthorized {
+		m.logger.Debug("API server returned 401 without token, treating as healthy (pre-bootstrap)")
+		return true
+	}
+
+	return false
+}
+
+// getSAToken returns the cached ServiceAccount token, refreshing from disk
+// if the cache has expired. Returns empty string if the token file is not
+// available (e.g., running outside a pod or during pre-bootstrap).
+func (m *Manager) getSAToken() string {
+	m.tokenMu.RLock()
+	token := m.cachedToken
+	loadedAt := m.tokenLoadedAt
+	m.tokenMu.RUnlock()
+
+	// Return cached token if still fresh
+	if token != "" && time.Since(loadedAt) < tokenRefreshInterval {
+		return token
+	}
+
+	// Refresh token from disk
+	return m.refreshSAToken()
+}
+
+// refreshSAToken reads the SA token from disk and updates the cache.
+func (m *Manager) refreshSAToken() string {
+	tokenPath := filepath.Clean(m.config.SATokenPath)
+
+	data, err := os.ReadFile(tokenPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			m.logger.Debug("Failed to read SA token file",
+				zap.String("path", tokenPath),
+				zap.Error(err),
+			)
+		}
+		// Clear cached token so we fall back to unauthenticated mode
+		m.tokenMu.Lock()
+		m.cachedToken = ""
+		m.tokenLoadedAt = time.Now()
+		m.tokenMu.Unlock()
+		return ""
+	}
+
+	token := string(data)
+
+	m.tokenMu.Lock()
+	m.cachedToken = token
+	m.tokenLoadedAt = time.Now()
+	m.tokenMu.Unlock()
+
+	return token
 }
 
 // buildVIPAssignment creates a protobuf VIPAssignment for the control-plane VIP.
