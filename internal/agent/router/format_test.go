@@ -49,11 +49,11 @@ func TestFormatEndpointKey(t *testing.T) {
 func TestFormatEndpointKey_Concurrent(t *testing.T) {
 	done := make(chan bool)
 
-	for i := 0; i < 100; i++ {
-		go func(id int) {
-			for j := 0; j < 100; j++ {
+	for i := int32(0); i < 100; i++ {
+		go func(id int32) {
+			for j := int32(0); j < 100; j++ {
 				address := "10.0.0.1"
-				port := int32(id*100 + j)
+				port := id*100 + j
 				result := formatEndpointKey(address, port)
 				if result == "" {
 					t.Error("formatEndpointKey returned empty string")

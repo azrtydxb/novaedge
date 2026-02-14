@@ -22,6 +22,8 @@ import (
 	"testing"
 )
 
+const testMessage = "message"
+
 func TestReconcileError_Error(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -101,7 +103,7 @@ func TestReconcileError_Unwrap(t *testing.T) {
 
 func TestNewReconcileError(t *testing.T) {
 	underlying := errors.New("underlying")
-	err := NewReconcileError("ProxyGateway", "default", "test", "init", "message", underlying)
+	err := NewReconcileError("ProxyGateway", "default", "test", "init", testMessage, underlying)
 
 	if err.Resource != "ProxyGateway" {
 		t.Errorf("Resource = %q, want %q", err.Resource, "ProxyGateway")
@@ -115,8 +117,8 @@ func TestNewReconcileError(t *testing.T) {
 	if err.Phase != "init" {
 		t.Errorf("Phase = %q, want %q", err.Phase, "init")
 	}
-	if err.Message != "message" {
-		t.Errorf("Message = %q, want %q", err.Message, "message")
+	if err.Message != testMessage {
+		t.Errorf("Message = %q, want %q", err.Message, testMessage)
 	}
 	if err.Err != underlying {
 		t.Error("Err should be underlying error")
@@ -192,7 +194,7 @@ func TestTranslationError_Unwrap(t *testing.T) {
 
 func TestNewTranslationError(t *testing.T) {
 	underlying := errors.New("underlying")
-	err := NewTranslationError("Ingress", "ProxyRoute", "default", "test", "message", underlying)
+	err := NewTranslationError("Ingress", "ProxyRoute", "default", "test", testMessage, underlying)
 
 	if err.SourceKind != "Ingress" {
 		t.Errorf("SourceKind = %q, want %q", err.SourceKind, "Ingress")
@@ -206,8 +208,8 @@ func TestNewTranslationError(t *testing.T) {
 	if err.Name != "test" {
 		t.Errorf("Name = %q, want %q", err.Name, "test")
 	}
-	if err.Message != "message" {
-		t.Errorf("Message = %q, want %q", err.Message, "message")
+	if err.Message != testMessage {
+		t.Errorf("Message = %q, want %q", err.Message, testMessage)
 	}
 	if err.Err != underlying {
 		t.Error("Err should be underlying error")
@@ -277,7 +279,7 @@ func TestSnapshotError_Unwrap(t *testing.T) {
 
 func TestNewSnapshotError(t *testing.T) {
 	underlying := errors.New("underlying")
-	err := NewSnapshotError("node-1", "v1.0.0", "message", underlying)
+	err := NewSnapshotError("node-1", "v1.0.0", testMessage, underlying)
 
 	if err.Node != "node-1" {
 		t.Errorf("Node = %q, want %q", err.Node, "node-1")
@@ -285,8 +287,8 @@ func TestNewSnapshotError(t *testing.T) {
 	if err.Version != "v1.0.0" {
 		t.Errorf("Version = %q, want %q", err.Version, "v1.0.0")
 	}
-	if err.Message != "message" {
-		t.Errorf("Message = %q, want %q", err.Message, "message")
+	if err.Message != testMessage {
+		t.Errorf("Message = %q, want %q", err.Message, testMessage)
 	}
 	if err.Err != underlying {
 		t.Error("Err should be underlying error")

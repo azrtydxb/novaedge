@@ -27,17 +27,22 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
+const (
+	testFederationID = "test-federation"
+	testLocalMember  = "local"
+)
+
 func TestNewManager(t *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultConfig()
-	config.FederationID = "test-federation"
+	config.FederationID = testFederationID
 
 	manager := NewManager(config, logger)
 	if manager == nil {
 		t.Fatal("expected manager, got nil")
 	}
 
-	if manager.config.FederationID != "test-federation" {
+	if manager.config.FederationID != testFederationID {
 		t.Errorf("FederationID = %v, want test-federation", manager.config.FederationID)
 	}
 
@@ -51,13 +56,13 @@ func TestNewManagerFromCRD(t *testing.T) {
 
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 				Region:   "us-east-1",
 				Zone:     "us-east-1a",
@@ -114,7 +119,7 @@ func TestNewManagerFromCRD(t *testing.T) {
 		t.Errorf("FederationID = %v, want fed-123", manager.config.FederationID)
 	}
 
-	if manager.config.LocalMember.Name != "local" {
+	if manager.config.LocalMember.Name != testLocalMember {
 		t.Errorf("LocalMember.Name = %v, want local", manager.config.LocalMember.Name)
 	}
 
@@ -163,13 +168,13 @@ func TestNewManagerFromCRDWithCreds(t *testing.T) {
 
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 			},
 			Members: []novaedgev1alpha1.FederationPeer{
@@ -220,13 +225,13 @@ func TestNewManagerFromCRDWithCreds_NilCreds(t *testing.T) {
 
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 			},
 			Members: []novaedgev1alpha1.FederationPeer{
@@ -348,13 +353,13 @@ func TestManagerOnResourceChange(t *testing.T) {
 func TestCrdToConfig_EmptyMembers(t *testing.T) {
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 			},
 			Members: []novaedgev1alpha1.FederationPeer{},
@@ -375,13 +380,13 @@ func TestCrdToConfig_EmptyMembers(t *testing.T) {
 func TestCrdToConfig_NilSync(t *testing.T) {
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 			},
 			Sync: nil, // No sync config
@@ -399,13 +404,13 @@ func TestCrdToConfig_NilSync(t *testing.T) {
 func TestCrdToConfig_TLSDisabled(t *testing.T) {
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 			},
 			Members: []novaedgev1alpha1.FederationPeer{
@@ -434,13 +439,13 @@ func TestCrdToConfig_TLSDisabled(t *testing.T) {
 func TestCrdToConfig_TLSNil(t *testing.T) {
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 			},
 			Members: []novaedgev1alpha1.FederationPeer{
@@ -468,13 +473,13 @@ func TestCrdToConfig_TLSNil(t *testing.T) {
 func TestCrdToConfig_Labels(t *testing.T) {
 	federation := &novaedgev1alpha1.NovaEdgeFederation{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-federation",
+			Name:      testFederationID,
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
 			FederationID: "fed-123",
 			LocalMember: novaedgev1alpha1.FederationMember{
-				Name:     "local",
+				Name:     testLocalMember,
 				Endpoint: "localhost:50051",
 				Labels:   map[string]string{"env": "prod", "team": "platform"},
 			},

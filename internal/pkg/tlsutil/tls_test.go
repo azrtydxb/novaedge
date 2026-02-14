@@ -75,10 +75,11 @@ func generateTestCertificate(t *testing.T, commonName string, isCA bool) ([]byte
 }
 
 // generateTestCertificates creates CA, server, and client certificates for testing
-func generateTestCertificates(t *testing.T) (caCert, caKey, serverCert, serverKey, clientCert, clientKey []byte) {
+func generateTestCertificates(t *testing.T) (caCert, serverCert, serverKey, clientCert, clientKey []byte) {
 	t.Helper()
 
 	// Generate CA certificate
+	var caKey []byte
 	caCert, caKey = generateTestCertificate(t, "Test CA", true)
 
 	// Parse CA for signing
@@ -256,8 +257,7 @@ func TestCreateServerTLSConfig_InvalidCert(t *testing.T) {
 }
 
 func TestCreateServerTLSConfigWithMTLS(t *testing.T) {
-	caCert, caKey, serverCert, serverKey, _, _ := generateTestCertificates(t)
-	_ = caKey // Not used in this test
+	caCert, serverCert, serverKey, _, _ := generateTestCertificates(t)
 
 	config, err := CreateServerTLSConfigWithMTLS(serverCert, serverKey, caCert)
 	if err != nil {
@@ -315,7 +315,7 @@ func TestCreateClientTLSConfig(t *testing.T) {
 }
 
 func TestCreateClientTLSConfigWithMTLS(t *testing.T) {
-	caCert, _, _, _, clientCert, clientKey := generateTestCertificates(t)
+	caCert, _, _, clientCert, clientKey := generateTestCertificates(t)
 
 	config, err := CreateClientTLSConfigWithMTLS(clientCert, clientKey, caCert, "server.example.com")
 	if err != nil {
@@ -343,7 +343,7 @@ func TestCreateClientTLSConfigWithMTLS(t *testing.T) {
 }
 
 func TestCreateClientTLSConfigWithMTLS_InvalidCert(t *testing.T) {
-	caCert, _, _, _, _, _ := generateTestCertificates(t)
+	caCert, _, _, _, _ := generateTestCertificates(t)
 
 	_, err := CreateClientTLSConfigWithMTLS([]byte("invalid"), []byte("invalid"), caCert, "server.example.com")
 	if err == nil {
@@ -352,7 +352,7 @@ func TestCreateClientTLSConfigWithMTLS_InvalidCert(t *testing.T) {
 }
 
 func TestCreateClientTLSConfigWithMTLS_InvalidCA(t *testing.T) {
-	_, _, _, _, clientCert, clientKey := generateTestCertificates(t)
+	_, _, _, clientCert, clientKey := generateTestCertificates(t)
 
 	_, err := CreateClientTLSConfigWithMTLS(clientCert, clientKey, []byte("invalid-ca"), "server.example.com")
 	if err == nil {
@@ -361,47 +361,47 @@ func TestCreateClientTLSConfigWithMTLS_InvalidCA(t *testing.T) {
 }
 
 func TestCreateBackendTLSConfig(t *testing.T) {
-	caCert, _, _, _, _, _ := generateTestCertificates(t)
+	caCert, _, _, _, _ := generateTestCertificates(t)
 
 	tests := []struct {
-		name              string
-		caCertPEM         []byte
-		serverName        string
+		name               string
+		caCertPEM          []byte
+		serverName         string
 		insecureSkipVerify bool
-		wantInsecure      bool
-		wantRootCAs       bool
+		wantInsecure       bool
+		wantRootCAs        bool
 	}{
 		{
-			name:              "with CA cert",
-			caCertPEM:         caCert,
-			serverName:        "backend.example.com",
+			name:               "with CA cert",
+			caCertPEM:          caCert,
+			serverName:         "backend.example.com",
 			insecureSkipVerify: false,
-			wantInsecure:      false,
-			wantRootCAs:       true,
+			wantInsecure:       false,
+			wantRootCAs:        true,
 		},
 		{
-			name:              "without CA cert",
-			caCertPEM:         nil,
-			serverName:        "backend.example.com",
+			name:               "without CA cert",
+			caCertPEM:          nil,
+			serverName:         "backend.example.com",
 			insecureSkipVerify: false,
-			wantInsecure:      false,
-			wantRootCAs:       false,
+			wantInsecure:       false,
+			wantRootCAs:        false,
 		},
 		{
-			name:              "insecure skip verify",
-			caCertPEM:         nil,
-			serverName:        "backend.example.com",
+			name:               "insecure skip verify",
+			caCertPEM:          nil,
+			serverName:         "backend.example.com",
 			insecureSkipVerify: true,
-			wantInsecure:      true,
-			wantRootCAs:       false,
+			wantInsecure:       true,
+			wantRootCAs:        false,
 		},
 		{
-			name:              "insecure with CA cert",
-			caCertPEM:         caCert,
-			serverName:        "backend.example.com",
+			name:               "insecure with CA cert",
+			caCertPEM:          caCert,
+			serverName:         "backend.example.com",
 			insecureSkipVerify: true,
-			wantInsecure:      true,
-			wantRootCAs:       true,
+			wantInsecure:       true,
+			wantRootCAs:        true,
 		},
 	}
 
@@ -514,7 +514,7 @@ func TestCreateServerTLSConfigWithSNI_Wildcard(t *testing.T) {
 
 	// Test wildcard matching
 	tests := []struct {
-		serverName string
+		serverName  string
 		wantDefault bool
 	}{
 		{"www.example.com", false}, // Should match wildcard
@@ -568,17 +568,17 @@ func TestLoadServerTLSCredentials(t *testing.T) {
 	// Create temp directory for test files
 	tmpDir := t.TempDir()
 
-	caCert, _, serverCert, serverKey, _, _ := generateTestCertificates(t)
+	caCert, serverCert, serverKey, _, _ := generateTestCertificates(t)
 
 	// Write test files
 	caFile := filepath.Join(tmpDir, "ca.crt")
 	certFile := filepath.Join(tmpDir, "server.crt")
 	keyFile := filepath.Join(tmpDir, "server.key")
 
-	if err := os.WriteFile(caFile, caCert, 0644); err != nil {
+	if err := os.WriteFile(caFile, caCert, 0600); err != nil {
 		t.Fatalf("Failed to write CA file: %v", err)
 	}
-	if err := os.WriteFile(certFile, serverCert, 0644); err != nil {
+	if err := os.WriteFile(certFile, serverCert, 0600); err != nil {
 		t.Fatalf("Failed to write cert file: %v", err)
 	}
 	if err := os.WriteFile(keyFile, serverKey, 0600); err != nil {
@@ -598,10 +598,10 @@ func TestLoadServerTLSCredentials(t *testing.T) {
 func TestLoadServerTLSCredentials_MissingCert(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	caCert, _, _, _, _, _ := generateTestCertificates(t)
+	caCert, _, _, _, _ := generateTestCertificates(t)
 
 	caFile := filepath.Join(tmpDir, "ca.crt")
-	if err := os.WriteFile(caFile, caCert, 0644); err != nil {
+	if err := os.WriteFile(caFile, caCert, 0600); err != nil {
 		t.Fatalf("Failed to write CA file: %v", err)
 	}
 
@@ -614,12 +614,12 @@ func TestLoadServerTLSCredentials_MissingCert(t *testing.T) {
 func TestLoadServerTLSCredentials_MissingCA(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	_, _, serverCert, serverKey, _, _ := generateTestCertificates(t)
+	_, serverCert, serverKey, _, _ := generateTestCertificates(t)
 
 	certFile := filepath.Join(tmpDir, "server.crt")
 	keyFile := filepath.Join(tmpDir, "server.key")
 
-	if err := os.WriteFile(certFile, serverCert, 0644); err != nil {
+	if err := os.WriteFile(certFile, serverCert, 0600); err != nil {
 		t.Fatalf("Failed to write cert file: %v", err)
 	}
 	if err := os.WriteFile(keyFile, serverKey, 0600); err != nil {
@@ -635,16 +635,16 @@ func TestLoadServerTLSCredentials_MissingCA(t *testing.T) {
 func TestLoadClientTLSCredentials(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	caCert, _, _, _, clientCert, clientKey := generateTestCertificates(t)
+	caCert, _, _, clientCert, clientKey := generateTestCertificates(t)
 
 	caFile := filepath.Join(tmpDir, "ca.crt")
 	certFile := filepath.Join(tmpDir, "client.crt")
 	keyFile := filepath.Join(tmpDir, "client.key")
 
-	if err := os.WriteFile(caFile, caCert, 0644); err != nil {
+	if err := os.WriteFile(caFile, caCert, 0600); err != nil {
 		t.Fatalf("Failed to write CA file: %v", err)
 	}
-	if err := os.WriteFile(certFile, clientCert, 0644); err != nil {
+	if err := os.WriteFile(certFile, clientCert, 0600); err != nil {
 		t.Fatalf("Failed to write cert file: %v", err)
 	}
 	if err := os.WriteFile(keyFile, clientKey, 0600); err != nil {
@@ -664,10 +664,10 @@ func TestLoadClientTLSCredentials(t *testing.T) {
 func TestLoadClientTLSCredentials_MissingCert(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	caCert, _, _, _, _, _ := generateTestCertificates(t)
+	caCert, _, _, _, _ := generateTestCertificates(t)
 
 	caFile := filepath.Join(tmpDir, "ca.crt")
-	if err := os.WriteFile(caFile, caCert, 0644); err != nil {
+	if err := os.WriteFile(caFile, caCert, 0600); err != nil {
 		t.Fatalf("Failed to write CA file: %v", err)
 	}
 
@@ -678,7 +678,7 @@ func TestLoadClientTLSCredentials_MissingCert(t *testing.T) {
 }
 
 func TestLoadServerTLSCredentialsFromMemory(t *testing.T) {
-	caCert, _, serverCert, serverKey, _, _ := generateTestCertificates(t)
+	caCert, serverCert, serverKey, _, _ := generateTestCertificates(t)
 
 	creds, err := LoadServerTLSCredentialsFromMemory(serverCert, serverKey, caCert)
 	if err != nil {
@@ -691,7 +691,7 @@ func TestLoadServerTLSCredentialsFromMemory(t *testing.T) {
 }
 
 func TestLoadServerTLSCredentialsFromMemory_InvalidCert(t *testing.T) {
-	caCert, _, _, _, _, _ := generateTestCertificates(t)
+	caCert, _, _, _, _ := generateTestCertificates(t)
 
 	_, err := LoadServerTLSCredentialsFromMemory([]byte("invalid"), []byte("invalid"), caCert)
 	if err == nil {
@@ -700,7 +700,7 @@ func TestLoadServerTLSCredentialsFromMemory_InvalidCert(t *testing.T) {
 }
 
 func TestLoadServerTLSCredentialsFromMemory_InvalidCA(t *testing.T) {
-	_, _, serverCert, serverKey, _, _ := generateTestCertificates(t)
+	_, serverCert, serverKey, _, _ := generateTestCertificates(t)
 
 	_, err := LoadServerTLSCredentialsFromMemory(serverCert, serverKey, []byte("invalid-ca"))
 	if err == nil {
@@ -709,7 +709,7 @@ func TestLoadServerTLSCredentialsFromMemory_InvalidCA(t *testing.T) {
 }
 
 func TestLoadClientTLSCredentialsFromMemory(t *testing.T) {
-	caCert, _, _, _, clientCert, clientKey := generateTestCertificates(t)
+	caCert, _, _, clientCert, clientKey := generateTestCertificates(t)
 
 	creds, err := LoadClientTLSCredentialsFromMemory(clientCert, clientKey, caCert, "server.example.com")
 	if err != nil {
@@ -722,7 +722,7 @@ func TestLoadClientTLSCredentialsFromMemory(t *testing.T) {
 }
 
 func TestLoadClientTLSCredentialsFromMemory_InvalidCert(t *testing.T) {
-	caCert, _, _, _, _, _ := generateTestCertificates(t)
+	caCert, _, _, _, _ := generateTestCertificates(t)
 
 	_, err := LoadClientTLSCredentialsFromMemory([]byte("invalid"), []byte("invalid"), caCert, "server.example.com")
 	if err == nil {
@@ -731,7 +731,7 @@ func TestLoadClientTLSCredentialsFromMemory_InvalidCert(t *testing.T) {
 }
 
 func TestLoadClientTLSCredentialsFromMemory_InvalidCA(t *testing.T) {
-	_, _, _, _, clientCert, clientKey := generateTestCertificates(t)
+	_, _, _, clientCert, clientKey := generateTestCertificates(t)
 
 	_, err := LoadClientTLSCredentialsFromMemory(clientCert, clientKey, []byte("invalid-ca"), "server.example.com")
 	if err == nil {
@@ -776,8 +776,8 @@ func TestSNIConfig_DefaultFallback(t *testing.T) {
 	// When Certificates map is empty, GetCertificate is not set
 	// The default cert is in config.Certificates[0] instead
 	sniConfig := &SNIConfig{
-		DefaultCert:   defaultCert,
-		Certificates:  map[string]tls.Certificate{},
+		DefaultCert:  defaultCert,
+		Certificates: map[string]tls.Certificate{},
 	}
 
 	config, err := CreateServerTLSConfigWithSNI(sniConfig)
@@ -818,9 +818,9 @@ func TestParseTLSVersion(t *testing.T) {
 
 func TestParseCipherSuites(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    []string
-		wantLen  int // > 0 means we expect specific suites
+		name    string
+		input   []string
+		wantLen int // > 0 means we expect specific suites
 	}{
 		{
 			name:    "empty returns defaults",

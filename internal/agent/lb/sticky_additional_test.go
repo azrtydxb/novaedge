@@ -45,7 +45,6 @@ func TestDefaultStickyConfig(t *testing.T) {
 	}
 }
 
-
 func TestNewStickyWrapper(t *testing.T) {
 	endpoints := []*pb.Endpoint{
 		{Address: "10.0.0.1", Port: 8080, Ready: true},
@@ -357,14 +356,14 @@ func TestStickyWrapper_ConcurrentAccess(t *testing.T) {
 
 	// Concurrent SelectWithAffinity
 	for i := 0; i < 10; i++ {
-		go func(id int) {
+		go func() {
 			for j := 0; j < 100; j++ {
 				req := httptest.NewRequest("GET", "/test", nil)
 				rec := httptest.NewRecorder()
 				_ = sw.SelectWithAffinity(req, rec)
 			}
 			done <- true
-		}(i)
+		}()
 	}
 
 	// Concurrent UpdateEndpoints
