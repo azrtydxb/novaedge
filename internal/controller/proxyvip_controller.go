@@ -29,12 +29,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	"github.com/piwi3910/novaedge/internal/controller/ipam"
 )
 
 // ProxyVIPReconciler reconciles a ProxyVIP object
 type ProxyVIPReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme    *runtime.Scheme
+	Allocator *ipam.Allocator
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxyvips,verbs=get;list;watch;create;update;patch;delete
@@ -60,6 +62,75 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	}
 
 	logger.Info("Reconciling ProxyVIP", "name", vip.Name, "mode", vip.Spec.Mode, "address", vip.Spec.Address)
+
+	// Handle IPAM allocation if poolRef is set and no address allocated yet
+	if vip.Spec.PoolRef != nil && vip.Status.AllocatedAddress == "" && r.Allocator != nil {
+		// First, ensure the pool is loaded
+		pool := &novaedgev1alpha1.ProxyIPPool{}
+		if err := r.Get(ctx, client.ObjectKey{Name: vip.Spec.PoolRef.Name}, pool); err != nil {
+			if !errors.IsNotFound(err) {
+				logger.Error(err, "Failed to get ProxyIPPool", "pool", vip.Spec.PoolRef.Name)
+				return ctrl.Result{}, err
+			}
+			logger.Info("Referenced ProxyIPPool not found", "pool", vip.Spec.PoolRef.Name)
+		} else {
+			// Register pool with allocator (idempotent - updates if exists)
+			cidrs := make([]string, 0, len(pool.Spec.CIDRs))
+			for _, cidr := range pool.Spec.CIDRs {
+				cidrs = append(cidrs, cidr)
+			}
+			addresses := make([]string, 0, len(pool.Spec.Addresses))
+			for _, addr := range pool.Spec.Addresses {
+				addresses = append(addresses, addr)
+			}
+			if err := r.Allocator.AddPool(pool.Name, cidrs, addresses); err != nil {
+				logger.Error(err, "Failed to register IP pool", "pool", pool.Name)
+				return ctrl.Result{}, err
+			}
+
+			// Allocate address from pool
+			allocated, err := r.Allocator.Allocate(pool.Name, vip.Name)
+			if err != nil {
+				logger.Error(err, "Failed to allocate IP from pool", "pool", pool.Name)
+				return ctrl.Result{}, err
+			}
+
+			// Update VIP status with allocated address
+			vip.Status.AllocatedAddress = allocated
+			if err := r.Status().Update(ctx, vip); err != nil {
+				logger.Error(err, "Failed to update VIP status with allocated address")
+				// Release the allocation since we couldn't persist it
+				r.Allocator.Release(pool.Name, vip.Name)
+				return ctrl.Result{}, err
+			}
+
+			logger.Info("Allocated IP from pool",
+				"pool", pool.Name,
+				"address", allocated,
+				"vip", vip.Name,
+			)
+		}
+	}
+
+	// Handle IPAM release if VIP had allocation but poolRef was removed
+	if vip.Spec.PoolRef == nil && vip.Status.AllocatedAddress != "" && r.Allocator != nil {
+		// Clear the allocated address
+		vip.Status.AllocatedAddress = ""
+		vip.Status.AllocatedIPv6Address = ""
+		if err := r.Status().Update(ctx, vip); err != nil {
+			logger.Error(err, "Failed to clear allocated address from VIP status")
+			return ctrl.Result{}, err
+		}
+		logger.Info("Cleared allocated address (poolRef removed)", "vip", vip.Name)
+	}
+
+	// Use allocated address if spec.address is empty
+	if vip.Spec.Address == "" && vip.Status.AllocatedAddress != "" {
+		logger.Info("Using allocated address from pool",
+			"vip", vip.Name,
+			"address", vip.Status.AllocatedAddress,
+		)
+	}
 
 	// Get candidate nodes based on NodeSelector
 	candidateNodes, err := r.getCandidateNodes(ctx, vip.Spec.NodeSelector)
