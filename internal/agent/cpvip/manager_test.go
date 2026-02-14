@@ -20,6 +20,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -239,7 +241,7 @@ func TestCheckAPIServerHealth_Healthy(t *testing.T) {
 	// context that targets the test server.
 	// Since checkAPIServerHealth hardcodes "localhost", we need to create our
 	// own test approach: call the test server directly.
-	healthy := checkHealthAgainstURL(m, ts.URL+healthzPath)
+	healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
 	if !healthy {
 		t.Error("expected healthy response from test server")
 	}
@@ -260,7 +262,7 @@ func TestCheckAPIServerHealth_Unhealthy(t *testing.T) {
 		httpClient: ts.Client(),
 	}
 
-	healthy := checkHealthAgainstURL(m, ts.URL+healthzPath)
+	healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
 	if healthy {
 		t.Error("expected unhealthy response from test server")
 	}
@@ -310,7 +312,7 @@ func TestHealthCheckTick_HealthyBindsVIP(t *testing.T) {
 
 	// Verify state transitions by testing the internal logic
 	// (bindVIPLocked would fail without root, so we test the decision logic)
-	healthy := checkHealthAgainstURL(m, ts.URL+healthzPath)
+	healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
 	if !healthy {
 		t.Fatal("expected healthy check to succeed")
 	}
@@ -342,7 +344,7 @@ func TestHealthCheckTick_FailThresholdReached(t *testing.T) {
 
 	// Simulate consecutive unhealthy checks
 	for i := 0; i < 3; i++ {
-		healthy := checkHealthAgainstURL(m, ts.URL+healthzPath)
+		healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
 		if healthy {
 			t.Fatal("expected unhealthy check")
 		}
@@ -391,7 +393,7 @@ func TestHealthCheckTick_RecoveryAfterFailure(t *testing.T) {
 	// Simulate failures below threshold
 	healthy = false
 	for i := 0; i < 2; i++ {
-		result := checkHealthAgainstURL(m, ts.URL+healthzPath)
+		result := checkHealthAgainstURL(m, ts.URL+livezPath)
 		if result {
 			t.Fatal("expected unhealthy check")
 		}
@@ -408,7 +410,7 @@ func TestHealthCheckTick_RecoveryAfterFailure(t *testing.T) {
 
 	// Recovery: apiserver becomes healthy again
 	healthy = true
-	result := checkHealthAgainstURL(m, ts.URL+healthzPath)
+	result := checkHealthAgainstURL(m, ts.URL+livezPath)
 	if !result {
 		t.Fatal("expected healthy check after recovery")
 	}
@@ -580,14 +582,218 @@ func TestStartContextCancellation(t *testing.T) {
 	_ = m // avoid unused variable
 }
 
+// --- SA Token and Auth Tests ---
+
+func TestCheckAPIServerHealth_AuthenticatedWithToken(t *testing.T) {
+	// Create a temp token file
+	tokenDir := t.TempDir()
+	tokenFile := filepath.Join(tokenDir, "token")
+	if err := os.WriteFile(tokenFile, []byte("test-bearer-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Server that validates the Bearer token
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		if auth == "Bearer test-bearer-token" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("ok"))
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer ts.Close()
+
+	m := &Manager{
+		config: Config{
+			APIPort:     extractPort(t, ts.URL),
+			SATokenPath: tokenFile,
+		},
+		logger:     newTestLogger().Named("cpvip"),
+		httpClient: ts.Client(),
+	}
+
+	healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
+	if !healthy {
+		t.Error("expected healthy response with valid Bearer token")
+	}
+}
+
+func TestCheckAPIServerHealth_401WithoutToken(t *testing.T) {
+	// Server that always returns 401
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer ts.Close()
+
+	m := &Manager{
+		config: Config{
+			APIPort:     extractPort(t, ts.URL),
+			SATokenPath: "/nonexistent/path/token",
+		},
+		logger:     newTestLogger().Named("cpvip"),
+		httpClient: ts.Client(),
+	}
+
+	// Without token, 401 should be treated as healthy (pre-bootstrap fallback)
+	healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
+	if !healthy {
+		t.Error("expected 401 to be treated as healthy when no SA token is available")
+	}
+}
+
+func TestCheckAPIServerHealth_401WithToken(t *testing.T) {
+	// Create a temp token file with an invalid token
+	tokenDir := t.TempDir()
+	tokenFile := filepath.Join(tokenDir, "token")
+	if err := os.WriteFile(tokenFile, []byte("invalid-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Server that rejects the token
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer ts.Close()
+
+	m := &Manager{
+		config: Config{
+			APIPort:     extractPort(t, ts.URL),
+			SATokenPath: tokenFile,
+		},
+		logger:     newTestLogger().Named("cpvip"),
+		httpClient: ts.Client(),
+	}
+
+	// With a token present but invalid, 401 should NOT be treated as healthy
+	healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
+	if healthy {
+		t.Error("expected 401 to be treated as unhealthy when SA token is present but rejected")
+	}
+}
+
+func TestCheckAPIServerHealth_503WithoutToken(t *testing.T) {
+	// Server that returns 503
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer ts.Close()
+
+	m := &Manager{
+		config: Config{
+			APIPort:     extractPort(t, ts.URL),
+			SATokenPath: "/nonexistent/path/token",
+		},
+		logger:     newTestLogger().Named("cpvip"),
+		httpClient: ts.Client(),
+	}
+
+	// 503 should always be unhealthy, even without token
+	healthy := checkHealthAgainstURL(m, ts.URL+livezPath)
+	if healthy {
+		t.Error("expected 503 to be treated as unhealthy")
+	}
+}
+
+func TestGetSAToken_CachesToken(t *testing.T) {
+	tokenDir := t.TempDir()
+	tokenFile := filepath.Join(tokenDir, "token")
+	if err := os.WriteFile(tokenFile, []byte("cached-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manager{
+		config: Config{
+			SATokenPath: tokenFile,
+		},
+		logger: newTestLogger().Named("cpvip"),
+	}
+
+	// First call reads from disk
+	token1 := m.getSAToken()
+	if token1 != "cached-token" {
+		t.Errorf("expected 'cached-token', got %q", token1)
+	}
+
+	// Write a different token to disk
+	if err := os.WriteFile(tokenFile, []byte("new-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Second call should return cached token (within refresh interval)
+	token2 := m.getSAToken()
+	if token2 != "cached-token" {
+		t.Errorf("expected cached 'cached-token', got %q", token2)
+	}
+}
+
+func TestGetSAToken_RefreshesExpiredCache(t *testing.T) {
+	tokenDir := t.TempDir()
+	tokenFile := filepath.Join(tokenDir, "token")
+	if err := os.WriteFile(tokenFile, []byte("original-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	m := &Manager{
+		config: Config{
+			SATokenPath: tokenFile,
+		},
+		logger: newTestLogger().Named("cpvip"),
+	}
+
+	// Load initial token
+	token1 := m.getSAToken()
+	if token1 != "original-token" {
+		t.Fatalf("expected 'original-token', got %q", token1)
+	}
+
+	// Simulate cache expiry by backdating tokenLoadedAt
+	m.tokenMu.Lock()
+	m.tokenLoadedAt = time.Now().Add(-tokenRefreshInterval - time.Second)
+	m.tokenMu.Unlock()
+
+	// Write new token
+	if err := os.WriteFile(tokenFile, []byte("rotated-token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Should pick up the new token
+	token2 := m.getSAToken()
+	if token2 != "rotated-token" {
+		t.Errorf("expected 'rotated-token' after cache expiry, got %q", token2)
+	}
+}
+
+func TestGetSAToken_MissingFile(t *testing.T) {
+	m := &Manager{
+		config: Config{
+			SATokenPath: "/nonexistent/path/to/token",
+		},
+		logger: newTestLogger().Named("cpvip"),
+	}
+
+	token := m.getSAToken()
+	if token != "" {
+		t.Errorf("expected empty token for missing file, got %q", token)
+	}
+}
+
 // --- Helper Functions ---
 
 // checkHealthAgainstURL performs a health check against a specific URL instead of localhost.
 // This allows testing the health check logic against a httptest.Server.
+// It mirrors the logic in checkAPIServerHealth: attach token if available,
+// accept 200 always, accept 401 only when no token is present.
 func checkHealthAgainstURL(m *Manager, url string) bool {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if err != nil {
 		return false
+	}
+
+	token := m.getSAToken()
+	hasToken := token != ""
+	if hasToken {
+		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := m.httpClient.Do(req)
@@ -596,7 +802,13 @@ func checkHealthAgainstURL(m *Manager, url string) bool {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	return resp.StatusCode == http.StatusOK
+	if resp.StatusCode == http.StatusOK {
+		return true
+	}
+	if !hasToken && resp.StatusCode == http.StatusUnauthorized {
+		return true
+	}
+	return false
 }
 
 // extractPort extracts the port number from a URL string like "https://127.0.0.1:12345".
