@@ -235,6 +235,8 @@ func TestBFDManager_DetectionTimeout(t *testing.T) {
 func TestBFDManager_StartStop(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	manager := NewBFDManager(logger, nil)
+	// Use port 0 so the OS assigns an ephemeral port
+	manager.ListenPort = 0
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -325,4 +327,241 @@ func TestBFDManager_ConcurrentAccess(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+// Transport tests
+
+func TestBFDTransport_StartStop(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil)
+
+	transport := newBFDTransport(logger, manager, 0)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err := transport.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start transport: %v", err)
+	}
+
+	port := transport.LocalPort()
+	if port == 0 {
+		t.Fatal("Expected non-zero local port after start")
+	}
+
+	transport.Stop()
+}
+
+func TestBFDTransport_SendReceive(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	// Create a manager and transport that receives packets
+	receivedCh := make(chan struct{}, 1)
+	manager := NewBFDManager(logger, nil)
+
+	// Add a session so ProcessPacket actually processes incoming data
+	peerIP := net.IPv4(127, 0, 0, 1)
+	err := manager.AddSession(peerIP, BFDConfig{DetectMultiplier: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wrap onStateChange to signal receipt
+	manager.mu.Lock()
+	session := manager.sessions[peerIP.String()]
+	origOnStateChange := session.onStateChange
+	session.onStateChange = func(peer net.IP, oldState, newState BFDSessionState) {
+		if origOnStateChange != nil {
+			origOnStateChange(peer, oldState, newState)
+		}
+		select {
+		case receivedCh <- struct{}{}:
+		default:
+		}
+	}
+	manager.mu.Unlock()
+
+	// Start receiving transport
+	rxTransport := newBFDTransport(logger, manager, 0)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	err = rxTransport.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start rx transport: %v", err)
+	}
+	defer rxTransport.Stop()
+
+	rxPort := rxTransport.LocalPort()
+
+	// Start sending transport
+	txTransport := newBFDTransport(logger, nil, 0)
+	err = txTransport.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start tx transport: %v", err)
+	}
+	defer txTransport.Stop()
+
+	// Send a BFD Down packet (triggers Down -> Init transition)
+	pkt := &bfdControlPacket{
+		Version:               bfdVersion,
+		State:                 BFDStateDown,
+		DetectMult:            3,
+		MyDiscriminator:       999,
+		DesiredMinTxInterval:  300000,
+		RequiredMinRxInterval: 300000,
+	}
+
+	err = txTransport.Send(net.IPv4(127, 0, 0, 1), rxPort, pkt)
+	if err != nil {
+		t.Fatalf("Send failed: %v", err)
+	}
+
+	// Wait for the packet to be received and processed
+	select {
+	case <-receivedCh:
+		// Packet received, state should have changed
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for packet receipt")
+	}
+
+	// Verify the session transitioned from Down to Init
+	state := manager.GetSessionState(peerIP)
+	if state != BFDStateInit {
+		t.Errorf("Expected Init after receiving Down packet, got %s", state.String())
+	}
+}
+
+func TestBFDTransport_SendWithoutStart(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	transport := newBFDTransport(logger, nil, 0)
+
+	pkt := &bfdControlPacket{
+		Version:    bfdVersion,
+		State:      BFDStateDown,
+		DetectMult: 3,
+	}
+
+	err := transport.Send(net.IPv4(127, 0, 0, 1), 3784, pkt)
+	if err == nil {
+		t.Fatal("Expected error when sending without starting transport")
+	}
+}
+
+func TestBFDManager_TwoPeersIntegration(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	// Create two BFD managers simulating two peers on localhost
+	manager1 := NewBFDManager(logger.Named("peer1"), nil)
+	manager1.ListenPort = 0
+
+	manager2 := NewBFDManager(logger.Named("peer2"), nil)
+	manager2.ListenPort = 0
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start both managers
+	err := manager1.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start manager1: %v", err)
+	}
+	defer manager1.Stop()
+
+	err = manager2.Start(ctx)
+	if err != nil {
+		t.Fatalf("Failed to start manager2: %v", err)
+	}
+	defer manager2.Stop()
+
+	// Get the actual ports each manager is listening on
+	manager1.mu.RLock()
+	port1 := manager1.transport.LocalPort()
+	manager1.mu.RUnlock()
+
+	manager2.mu.RLock()
+	port2 := manager2.transport.LocalPort()
+	manager2.mu.RUnlock()
+
+	// Configure each manager to send to the other's port
+	manager1.mu.Lock()
+	manager1.PeerPort = port2
+	manager1.mu.Unlock()
+
+	manager2.mu.Lock()
+	manager2.PeerPort = port1
+	manager2.mu.Unlock()
+
+	loopback := net.IPv4(127, 0, 0, 1)
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  50 * time.Millisecond,
+		RequiredMinRxInterval: 50 * time.Millisecond,
+	}
+
+	err = manager1.AddSession(loopback, config)
+	if err != nil {
+		t.Fatalf("Failed to add session to manager1: %v", err)
+	}
+
+	err = manager2.AddSession(loopback, config)
+	if err != nil {
+		t.Fatalf("Failed to add session to manager2: %v", err)
+	}
+
+	// Both sessions start in Down state. The BFD state machine should
+	// transition: Down -> Init (on receiving Down from peer) -> Up (on
+	// receiving Init from peer). Wait for both to reach Up.
+	deadline := time.After(5 * time.Second)
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-deadline:
+			state1 := manager1.GetSessionState(loopback)
+			state2 := manager2.GetSessionState(loopback)
+			t.Fatalf("Timed out waiting for sessions to reach Up: manager1=%s, manager2=%s",
+				state1.String(), state2.String())
+		case <-ticker.C:
+			state1 := manager1.GetSessionState(loopback)
+			state2 := manager2.GetSessionState(loopback)
+			if state1 == BFDStateUp && state2 == BFDStateUp {
+				// Both peers are Up
+				t.Logf("Both BFD sessions reached Up state")
+				return
+			}
+		}
+	}
+}
+
+func TestBFDManager_NilTransportSkipsSending(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil)
+	// transport is nil by default (no Start called)
+
+	peerIP := net.ParseIP("10.0.0.1")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  50 * time.Millisecond,
+		RequiredMinRxInterval: 50 * time.Millisecond,
+	}
+
+	err := manager.AddSession(peerIP, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Call sendControlPackets directly - should not panic with nil transport
+	manager.sendControlPackets()
+
+	// Verify metrics were still updated
+	_, tx, _, ok := manager.GetSessionStats(peerIP)
+	if !ok {
+		t.Fatal("Session should exist")
+	}
+	if tx != 1 {
+		t.Errorf("Expected 1 packet TX (metrics-only), got %d", tx)
+	}
 }

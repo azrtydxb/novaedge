@@ -19,6 +19,7 @@ package vip
 import (
 	"context"
 	"fmt"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -135,8 +136,17 @@ type BFDManager struct {
 	// Callback when BFD detects a neighbor is down
 	onNeighborDown func(peerIP net.IP)
 
-	// One-time warning for unimplemented packet transmission
-	txWarningOnce sync.Once
+	// UDP transport for BFD control packets
+	transport *bfdTransport
+
+	// ListenPort is the UDP port to listen on for BFD control packets.
+	// Defaults to bfdControlPort (3784). Set to 0 for OS-assigned port in tests.
+	ListenPort int
+
+	// PeerPort is the destination UDP port for sending BFD control packets.
+	// Defaults to bfdControlPort (3784). Override for testing with multiple
+	// managers on localhost.
+	PeerPort int
 }
 
 // BFD Prometheus metrics
@@ -184,6 +194,8 @@ func NewBFDManager(logger *zap.Logger, onNeighborDown func(peerIP net.IP)) *BFDM
 		ctx:               ctx,
 		cancel:            cancel,
 		onNeighborDown:    onNeighborDown,
+		ListenPort:        bfdControlPort,
+		PeerPort:          bfdControlPort,
 	}
 }
 
@@ -194,6 +206,18 @@ func (m *BFDManager) Start(ctx context.Context) error {
 	m.mu.Unlock()
 
 	m.logger.Info("Starting BFD manager")
+
+	// Start the UDP transport for BFD control packets
+	transport := newBFDTransport(m.logger, m, m.ListenPort)
+	if err := transport.Start(m.ctx); err != nil {
+		m.logger.Warn("Failed to start BFD transport, running without UDP",
+			zap.Error(err),
+		)
+	} else {
+		m.mu.Lock()
+		m.transport = transport
+		m.mu.Unlock()
+	}
 
 	// Start the detection timer loop
 	go m.detectionLoop()
@@ -208,6 +232,11 @@ func (m *BFDManager) Start(ctx context.Context) error {
 func (m *BFDManager) Stop() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	if m.transport != nil {
+		m.transport.Stop()
+		m.transport = nil
+	}
 
 	if m.cancel != nil {
 		m.cancel()
@@ -476,12 +505,14 @@ func (m *BFDManager) transmitLoop() {
 	}
 }
 
-// sendControlPackets sends BFD control packets for all active sessions.
-// TODO: Implement actual UDP packet transmission per RFC 5880 Section 4.1.
+// sendControlPackets sends BFD control packets for all active sessions via
+// the UDP transport. If the transport is nil (e.g., in unit tests that don't
+// require UDP), the method updates metrics and timestamps without sending.
 func (m *BFDManager) sendControlPackets() {
-	m.txWarningOnce.Do(func() {
-		m.logger.Warn("BFD control packet transmission not yet implemented - using BGP hold timer for failover detection")
-	})
+	m.mu.RLock()
+	transport := m.transport
+	peerPort := m.PeerPort
+	m.mu.RUnlock()
 
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -497,20 +528,42 @@ func (m *BFDManager) sendControlPackets() {
 		}
 
 		// Check if it's time to send a packet
-		if session.lastPacketSent.IsZero() || now.Sub(session.lastPacketSent) >= session.desiredMinTxInterval {
-			// In a production implementation, this would send actual BFD
-			// control packets over UDP port 3784. The packet format is defined
-			// in RFC 5880 Section 4.1. For now, we log and update metrics.
-			session.lastPacketSent = now
-			session.packetsTx++
-
-			bfdPacketTx.WithLabelValues(peerKey).Inc()
-
-			session.logger.Debug("BFD control packet sent",
-				zap.String("state", session.state.String()),
-				zap.Uint32("local_discr", session.localDiscriminator),
-			)
+		if !session.lastPacketSent.IsZero() && now.Sub(session.lastPacketSent) < session.desiredMinTxInterval {
+			session.mu.Unlock()
+			continue
 		}
+
+		// Build BFD control packet from session state
+		pkt := &bfdControlPacket{
+			Version:               bfdVersion,
+			Diagnostic:            bfdDiagNone,
+			State:                 session.state,
+			DetectMult:            clampInt32ToUint8(session.detectMultiplier),
+			MyDiscriminator:       session.localDiscriminator,
+			YourDiscriminator:     session.remoteDiscriminator,
+			DesiredMinTxInterval:  clampDurationToMicroseconds(session.desiredMinTxInterval),
+			RequiredMinRxInterval: clampDurationToMicroseconds(session.requiredMinRxInterval),
+		}
+
+		// Send via transport if available
+		if transport != nil {
+			if err := transport.Send(session.peerAddress, peerPort, pkt); err != nil {
+				session.logger.Debug("Failed to send BFD control packet",
+					zap.Error(err),
+				)
+				session.mu.Unlock()
+				continue
+			}
+		}
+
+		session.lastPacketSent = now
+		session.packetsTx++
+		bfdPacketTx.WithLabelValues(peerKey).Inc()
+
+		session.logger.Debug("BFD control packet sent",
+			zap.String("state", session.state.String()),
+			zap.Uint32("local_discr", session.localDiscriminator),
+		)
 
 		session.mu.Unlock()
 	}
@@ -542,4 +595,17 @@ func (m *BFDManager) GetSessionStats(peerIP net.IP) (packetsRx, packetsTx, flaps
 		return session.packetsRx, session.packetsTx, session.sessionFlaps, true
 	}
 	return 0, 0, 0, false
+}
+
+// clampDurationToMicroseconds safely converts a time.Duration to microseconds
+// as uint32, clamping to [0, math.MaxUint32] to avoid overflow (gosec G115).
+func clampDurationToMicroseconds(d time.Duration) uint32 {
+	us := int64(d / time.Microsecond)
+	if us < 0 {
+		return 0
+	}
+	if us > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(us)
 }
