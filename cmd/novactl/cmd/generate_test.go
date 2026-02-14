@@ -262,3 +262,128 @@ func TestGenerateSystemdUnitMissingVIPAddress(t *testing.T) {
 		t.Errorf("error should mention vip-address flag, got: %v", err)
 	}
 }
+
+// --- BGP/BFD Generate Tests ---
+
+func TestGenerateStaticPodBGPMode(t *testing.T) {
+	output, err := executeGenerateCommand(t, []string{
+		"static-pod",
+		"--vip-address", "192.168.100.10/32",
+		"--image", "ghcr.io/piwi3910/novaedge-agent:latest",
+		"--node-name", "master-11",
+		"--vip-mode", "bgp",
+		"--bgp-local-as", "65000",
+		"--bgp-router-id", "192.168.100.11",
+		"--bgp-peer", "192.168.100.2:65000:179,192.168.100.3:65000:179",
+		"--bfd-enabled",
+		"--bfd-detect-mult", "3",
+		"--bfd-tx-interval", "300ms",
+		"--bfd-rx-interval", "300ms",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedStrings := []string{
+		"--cp-vip-mode=bgp",
+		"--cp-bgp-local-as=65000",
+		"--cp-bgp-router-id=192.168.100.11",
+		"--cp-bgp-peer=192.168.100.2:65000:179",
+		"--cp-bgp-peer=192.168.100.3:65000:179",
+		"--cp-bfd-enabled=true",
+		"--cp-bfd-detect-mult=3",
+		"--cp-bfd-tx-interval=300ms",
+		"--cp-bfd-rx-interval=300ms",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(output, expected) {
+			t.Errorf("static pod BGP output missing expected content %q\nOutput:\n%s", expected, output)
+		}
+	}
+}
+
+func TestGenerateStaticPodL2ModeNoBGPFlags(t *testing.T) {
+	output, err := executeGenerateCommand(t, []string{
+		"static-pod",
+		"--vip-address", "10.0.0.100/32",
+		"--image", "ghcr.io/piwi3910/novaedge-agent:latest",
+		"--node-name", "master-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// L2 mode (default) should NOT contain BGP/BFD flags
+	bgpStrings := []string{
+		"--cp-vip-mode=",
+		"--cp-bgp-local-as=",
+		"--cp-bgp-peer=",
+		"--cp-bfd-enabled=",
+	}
+
+	for _, notExpected := range bgpStrings {
+		if strings.Contains(output, notExpected) {
+			t.Errorf("L2 mode static pod should not contain %q\nOutput:\n%s", notExpected, output)
+		}
+	}
+}
+
+func TestGenerateSystemdUnitBGPMode(t *testing.T) {
+	output, err := executeGenerateCommand(t, []string{
+		"systemd-unit",
+		"--vip-address", "192.168.100.10/32",
+		"--node-name", "master-11",
+		"--vip-mode", "bgp",
+		"--bgp-local-as", "65000",
+		"--bgp-router-id", "192.168.100.11",
+		"--bgp-peer", "192.168.100.2:65000:179,192.168.100.3:65000:179",
+		"--bfd-enabled",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedStrings := []string{
+		"--cp-vip-mode=bgp",
+		"--cp-bgp-local-as=65000",
+		"--cp-bgp-router-id=192.168.100.11",
+		"--cp-bgp-peer=192.168.100.2:65000:179",
+		"--cp-bgp-peer=192.168.100.3:65000:179",
+		"--cp-bfd-enabled=true",
+		"--cp-bfd-detect-mult=3",
+		"--cp-bfd-tx-interval=300ms",
+		"--cp-bfd-rx-interval=300ms",
+	}
+
+	for _, expected := range expectedStrings {
+		if !strings.Contains(output, expected) {
+			t.Errorf("systemd unit BGP output missing expected content %q\nOutput:\n%s", expected, output)
+		}
+	}
+}
+
+func TestGenerateSystemdUnitL2ModeNoBGPFlags(t *testing.T) {
+	output, err := executeGenerateCommand(t, []string{
+		"systemd-unit",
+		"--vip-address", "10.0.0.100/32",
+		"--node-name", "master-1",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// L2 mode (default) should NOT contain BGP/BFD flags
+	bgpStrings := []string{
+		"--cp-vip-mode=",
+		"--cp-bgp-local-as=",
+		"--cp-bgp-peer=",
+		"--cp-bfd-enabled=",
+	}
+
+	for _, notExpected := range bgpStrings {
+		if strings.Contains(output, notExpected) {
+			t.Errorf("L2 mode systemd unit should not contain %q\nOutput:\n%s", notExpected, output)
+		}
+	}
+}

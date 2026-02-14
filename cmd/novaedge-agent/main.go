@@ -22,9 +22,13 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"math"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -39,6 +43,15 @@ import (
 	"github.com/piwi3910/novaedge/internal/observability"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// stringSlice implements flag.Value for repeatable string flags.
+type stringSlice []string
+
+func (s *stringSlice) String() string { return strings.Join(*s, ",") }
+func (s *stringSlice) Set(val string) error {
+	*s = append(*s, val)
+	return nil
+}
 
 // Build-time variables set via ldflags.
 var (
@@ -76,6 +89,16 @@ var (
 	cpAPIPort        int
 	cpHealthInterval time.Duration
 	cpHealthTimeout  time.Duration
+
+	// Control-plane VIP BGP/BFD configuration
+	cpVIPMode       string
+	cpBGPLocalAS    uint
+	cpBGPRouterID   string
+	cpBGPPeers      stringSlice
+	cpBFDEnabled    bool
+	cpBFDDetectMult int
+	cpBFDTxInterval string
+	cpBFDRxInterval string
 )
 
 func main() {
@@ -107,6 +130,16 @@ func main() {
 	flag.IntVar(&cpAPIPort, "cp-api-port", 6443, "Kube-apiserver port for health checks")
 	flag.DurationVar(&cpHealthInterval, "cp-health-interval", time.Second, "Health check interval for control-plane VIP")
 	flag.DurationVar(&cpHealthTimeout, "cp-health-timeout", 3*time.Second, "Health check timeout for control-plane VIP")
+
+	// Control-plane VIP BGP/BFD flags
+	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
+	flag.UintVar(&cpBGPLocalAS, "cp-bgp-local-as", 0, "Local BGP AS number for CP VIP (required for bgp mode)")
+	flag.StringVar(&cpBGPRouterID, "cp-bgp-router-id", "", "BGP router ID for CP VIP (default: auto from node IP)")
+	flag.Var(&cpBGPPeers, "cp-bgp-peer", "BGP peer in format IP:AS[:PORT] (repeatable)")
+	flag.BoolVar(&cpBFDEnabled, "cp-bfd-enabled", false, "Enable BFD for CP VIP")
+	flag.IntVar(&cpBFDDetectMult, "cp-bfd-detect-mult", 3, "BFD detect multiplier for CP VIP")
+	flag.StringVar(&cpBFDTxInterval, "cp-bfd-tx-interval", "300ms", "BFD minimum TX interval for CP VIP")
+	flag.StringVar(&cpBFDRxInterval, "cp-bfd-rx-interval", "300ms", "BFD minimum RX interval for CP VIP")
 
 	flag.Parse()
 
@@ -414,12 +447,45 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 	return manager.ApplyConfig(ctx, configs)
 }
 
+// parseBGPPeer parses a peer string in the format "IP:AS[:PORT]" into a BGPPeerConfig.
+func parseBGPPeer(peerStr string) (cpvip.BGPPeerConfig, error) {
+	parts := strings.Split(peerStr, ":")
+	if len(parts) < 2 || len(parts) > 3 {
+		return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer format %q: expected IP:AS[:PORT]", peerStr)
+	}
+
+	if net.ParseIP(parts[0]) == nil {
+		return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer IP %q", parts[0])
+	}
+
+	peerAS, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer AS %q: %w", parts[1], err)
+	}
+
+	var port uint16 = 179
+	if len(parts) == 3 {
+		p, err := strconv.ParseUint(parts[2], 10, 16)
+		if err != nil {
+			return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer port %q: %w", parts[2], err)
+		}
+		port = uint16(p)
+	}
+
+	return cpvip.BGPPeerConfig{
+		Address: parts[0],
+		AS:      uint32(peerAS),
+		Port:    port,
+	}, nil
+}
+
 // runControlPlaneVIPMode runs the agent in control-plane VIP mode.
 // This mode manages a single VIP for kube-apiserver HA without requiring
 // the NovaEdge controller, making it suitable for pre-bootstrap scenarios.
 func runControlPlaneVIPMode(logger *zap.Logger) {
 	logger.Info("Running in control-plane VIP mode",
 		zap.String("vip", cpVIPAddress),
+		zap.String("mode", cpVIPMode),
 		zap.String("interface", cpVIPInterface),
 		zap.Int("api_port", cpAPIPort),
 	)
@@ -429,9 +495,27 @@ func runControlPlaneVIPMode(logger *zap.Logger) {
 		logger.Fatal("--cp-vip-address is required when --control-plane-vip is enabled")
 	}
 
+	// Parse BGP peers
+	bgpPeers := make([]cpvip.BGPPeerConfig, 0, len(cpBGPPeers))
+	for _, peerStr := range cpBGPPeers {
+		peer, err := parseBGPPeer(peerStr)
+		if err != nil {
+			logger.Fatal("Failed to parse BGP peer", zap.String("peer", peerStr), zap.Error(err))
+		}
+		bgpPeers = append(bgpPeers, peer)
+	}
+
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Validate integer bounds before narrowing conversions
+	if cpBGPLocalAS > math.MaxUint32 {
+		logger.Fatal("--cp-bgp-local-as exceeds maximum uint32 value", zap.Uint("value", cpBGPLocalAS))
+	}
+	if cpBFDDetectMult < 0 || cpBFDDetectMult > math.MaxInt32 {
+		logger.Fatal("--cp-bfd-detect-mult out of int32 range", zap.Int("value", cpBFDDetectMult))
+	}
 
 	// Create CP VIP manager
 	cpManager, err := cpvip.NewManager(cpvip.Config{
@@ -440,6 +524,14 @@ func runControlPlaneVIPMode(logger *zap.Logger) {
 		APIPort:        cpAPIPort,
 		HealthInterval: cpHealthInterval,
 		HealthTimeout:  cpHealthTimeout,
+		Mode:           cpVIPMode,
+		BGPLocalAS:     uint32(cpBGPLocalAS), //nolint:gosec // bounds checked above
+		BGPRouterID:    cpBGPRouterID,
+		BGPPeers:       bgpPeers,
+		BFDEnabled:     cpBFDEnabled,
+		BFDDetectMult:  int32(cpBFDDetectMult), //nolint:gosec // bounds checked above
+		BFDTxInterval:  cpBFDTxInterval,
+		BFDRxInterval:  cpBFDRxInterval,
 	}, logger)
 	if err != nil {
 		logger.Fatal("Failed to create control-plane VIP manager", zap.Error(err))

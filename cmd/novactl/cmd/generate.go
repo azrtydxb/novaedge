@@ -50,6 +50,22 @@ spec:
     - "--cp-api-port={{ .APIPort }}"
     - "--cp-health-interval={{ .HealthInterval }}"
     - "--cp-health-timeout={{ .HealthTimeout }}"
+{{- if eq .VIPMode "bgp" }}
+    - "--cp-vip-mode=bgp"
+    - "--cp-bgp-local-as={{ .BGPLocalAS }}"
+{{- if .BGPRouterID }}
+    - "--cp-bgp-router-id={{ .BGPRouterID }}"
+{{- end }}
+{{- range .BGPPeers }}
+    - "--cp-bgp-peer={{ . }}"
+{{- end }}
+{{- if .BFDEnabled }}
+    - "--cp-bfd-enabled=true"
+    - "--cp-bfd-detect-mult={{ .BFDDetectMult }}"
+    - "--cp-bfd-tx-interval={{ .BFDTxInterval }}"
+    - "--cp-bfd-rx-interval={{ .BFDRxInterval }}"
+{{- end }}
+{{- end }}
     securityContext:
       capabilities:
         add:
@@ -89,7 +105,15 @@ ExecStart={{ .BinaryPath }} \
   --control-plane-vip \
   --cp-vip-address={{ .VIPAddress }} \
   --node-name={{ .NodeName }}{{ if .Interface }} \
-  --interface={{ .Interface }}{{ end }} \
+  --interface={{ .Interface }}{{ end }}{{ if eq .VIPMode "bgp" }} \
+  --cp-vip-mode=bgp \
+  --cp-bgp-local-as={{ .BGPLocalAS }}{{ if .BGPRouterID }} \
+  --cp-bgp-router-id={{ .BGPRouterID }}{{ end }}{{ range .BGPPeers }} \
+  --cp-bgp-peer={{ . }}{{ end }}{{ if .BFDEnabled }} \
+  --cp-bfd-enabled=true \
+  --cp-bfd-detect-mult={{ .BFDDetectMult }} \
+  --cp-bfd-tx-interval={{ .BFDTxInterval }} \
+  --cp-bfd-rx-interval={{ .BFDRxInterval }}{{ end }}{{ end }} \
   --cp-api-port={{ .APIPort }} \
   --cp-health-interval={{ .HealthInterval }} \
   --cp-health-timeout={{ .HealthTimeout }}
@@ -102,26 +126,31 @@ LimitNPROC=4096
 WantedBy=multi-user.target
 `
 
-// staticPodData holds the template data for static pod generation.
-type staticPodData struct {
-	Image          string
+// generateData holds the template data for both static pod and systemd unit generation.
+type generateData struct {
+	// Common fields
 	VIPAddress     string
 	NodeName       string
 	Interface      string
 	APIPort        int
 	HealthInterval string
 	HealthTimeout  string
-}
 
-// systemdUnitData holds the template data for systemd unit generation.
-type systemdUnitData struct {
-	BinaryPath     string
-	VIPAddress     string
-	NodeName       string
-	Interface      string
-	APIPort        int
-	HealthInterval string
-	HealthTimeout  string
+	// Static pod specific
+	Image string
+
+	// Systemd unit specific
+	BinaryPath string
+
+	// BGP/BFD fields
+	VIPMode       string
+	BGPLocalAS    uint
+	BGPRouterID   string
+	BGPPeers      []string
+	BFDEnabled    bool
+	BFDDetectMult int
+	BFDTxInterval string
+	BFDRxInterval string
 }
 
 func newGenerateCommand() *cobra.Command {
@@ -141,6 +170,17 @@ func newGenerateCommand() *cobra.Command {
 	return cmd
 }
 
+func addBGPFlags(cmd *cobra.Command, vipMode *string, bgpLocalAS *uint, bgpRouterID *string, bgpPeers *[]string, bfdEnabled *bool, bfdDetectMult *int, bfdTxInterval, bfdRxInterval *string) {
+	cmd.Flags().StringVar(vipMode, "vip-mode", "l2", "VIP mode: l2 or bgp")
+	cmd.Flags().UintVar(bgpLocalAS, "bgp-local-as", 0, "Local BGP AS number (required for bgp mode)")
+	cmd.Flags().StringVar(bgpRouterID, "bgp-router-id", "", "BGP router ID")
+	cmd.Flags().StringSliceVar(bgpPeers, "bgp-peer", nil, "BGP peer in format IP:AS[:PORT] (repeatable, comma-separated)")
+	cmd.Flags().BoolVar(bfdEnabled, "bfd-enabled", false, "Enable BFD")
+	cmd.Flags().IntVar(bfdDetectMult, "bfd-detect-mult", 3, "BFD detect multiplier")
+	cmd.Flags().StringVar(bfdTxInterval, "bfd-tx-interval", "300ms", "BFD minimum TX interval")
+	cmd.Flags().StringVar(bfdRxInterval, "bfd-rx-interval", "300ms", "BFD minimum RX interval")
+}
+
 func newGenerateStaticPodCommand() *cobra.Command {
 	var (
 		vipAddress     string
@@ -150,6 +190,15 @@ func newGenerateStaticPodCommand() *cobra.Command {
 		healthInterval string
 		healthTimeout  string
 		nodeName       string
+
+		vipMode       string
+		bgpLocalAS    uint
+		bgpRouterID   string
+		bgpPeers      []string
+		bfdEnabled    bool
+		bfdDetectMult int
+		bfdTxInterval string
+		bfdRxInterval string
 	)
 
 	cmd := &cobra.Command{
@@ -158,22 +207,22 @@ func newGenerateStaticPodCommand() *cobra.Command {
 		Long: `Generate a Kubernetes static pod manifest for running the novaedge-agent
 in control-plane VIP mode. The manifest is written to stdout so it can be
 redirected to a file (e.g., /etc/kubernetes/manifests/novaedge-cpvip.yaml).`,
-		Example: `  # Generate a static pod manifest
+		Example: `  # Generate a static pod manifest (L2 mode)
   novactl generate static-pod \
     --vip-address 10.0.0.100/32 \
     --image ghcr.io/piwi3910/novaedge-agent:latest
 
-  # Generate with all options
+  # Generate with BGP+BFD mode
   novactl generate static-pod \
     --vip-address 10.0.0.100/32 \
     --image ghcr.io/piwi3910/novaedge-agent:latest \
-    --interface eth0 \
-    --api-port 6443 \
-    --health-interval 2s \
-    --health-timeout 5s \
-    --node-name cp-node-1`,
+    --vip-mode bgp \
+    --bgp-local-as 65000 \
+    --bgp-peer 10.0.0.2:65000:179,10.0.0.3:65000:179 \
+    --bfd-enabled`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return runGenerateStaticPod(vipAddress, image, iface, apiPort, healthInterval, healthTimeout, nodeName)
+			return runGenerateStaticPod(vipAddress, image, iface, apiPort, healthInterval, healthTimeout, nodeName,
+				vipMode, bgpLocalAS, bgpRouterID, bgpPeers, bfdEnabled, bfdDetectMult, bfdTxInterval, bfdRxInterval)
 		},
 	}
 
@@ -184,6 +233,8 @@ redirected to a file (e.g., /etc/kubernetes/manifests/novaedge-cpvip.yaml).`,
 	cmd.Flags().StringVar(&healthInterval, "health-interval", "1s", "Health check interval")
 	cmd.Flags().StringVar(&healthTimeout, "health-timeout", "3s", "Health check timeout")
 	cmd.Flags().StringVar(&nodeName, "node-name", "", "Node name (defaults to hostname)")
+
+	addBGPFlags(cmd, &vipMode, &bgpLocalAS, &bgpRouterID, &bgpPeers, &bfdEnabled, &bfdDetectMult, &bfdTxInterval, &bfdRxInterval)
 
 	_ = cmd.MarkFlagRequired("vip-address")
 	_ = cmd.MarkFlagRequired("image")
@@ -200,6 +251,15 @@ func newGenerateSystemdUnitCommand() *cobra.Command {
 		healthInterval string
 		healthTimeout  string
 		nodeName       string
+
+		vipMode       string
+		bgpLocalAS    uint
+		bgpRouterID   string
+		bgpPeers      []string
+		bfdEnabled    bool
+		bfdDetectMult int
+		bfdTxInterval string
+		bfdRxInterval string
 	)
 
 	cmd := &cobra.Command{
@@ -208,21 +268,20 @@ func newGenerateSystemdUnitCommand() *cobra.Command {
 		Long: `Generate a systemd unit file for running the novaedge-agent in control-plane
 VIP mode. The unit file is written to stdout so it can be redirected to a file
 (e.g., /etc/systemd/system/novaedge-cpvip.service).`,
-		Example: `  # Generate a systemd unit file
+		Example: `  # Generate a systemd unit file (L2 mode)
   novactl generate systemd-unit \
     --vip-address 10.0.0.100/32
 
-  # Generate with custom binary path and all options
+  # Generate with BGP+BFD mode
   novactl generate systemd-unit \
     --vip-address 10.0.0.100/32 \
-    --binary-path /opt/novaedge/bin/novaedge-agent \
-    --interface eth0 \
-    --api-port 6443 \
-    --health-interval 2s \
-    --health-timeout 5s \
-    --node-name cp-node-1`,
+    --vip-mode bgp \
+    --bgp-local-as 65000 \
+    --bgp-peer 10.0.0.2:65000:179,10.0.0.3:65000:179 \
+    --bfd-enabled`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return runGenerateSystemdUnit(vipAddress, binaryPath, iface, apiPort, healthInterval, healthTimeout, nodeName)
+			return runGenerateSystemdUnit(vipAddress, binaryPath, iface, apiPort, healthInterval, healthTimeout, nodeName,
+				vipMode, bgpLocalAS, bgpRouterID, bgpPeers, bfdEnabled, bfdDetectMult, bfdTxInterval, bfdRxInterval)
 		},
 	}
 
@@ -234,12 +293,15 @@ VIP mode. The unit file is written to stdout so it can be redirected to a file
 	cmd.Flags().StringVar(&healthTimeout, "health-timeout", "3s", "Health check timeout")
 	cmd.Flags().StringVar(&nodeName, "node-name", "", "Node name (defaults to hostname)")
 
+	addBGPFlags(cmd, &vipMode, &bgpLocalAS, &bgpRouterID, &bgpPeers, &bfdEnabled, &bfdDetectMult, &bfdTxInterval, &bfdRxInterval)
+
 	_ = cmd.MarkFlagRequired("vip-address")
 
 	return cmd
 }
 
-func runGenerateStaticPod(vipAddress, image, iface string, apiPort int, healthInterval, healthTimeout, nodeName string) error {
+func runGenerateStaticPod(vipAddress, image, iface string, apiPort int, healthInterval, healthTimeout, nodeName string,
+	vipMode string, bgpLocalAS uint, bgpRouterID string, bgpPeers []string, bfdEnabled bool, bfdDetectMult int, bfdTxInterval, bfdRxInterval string) error {
 	if nodeName == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -248,7 +310,7 @@ func runGenerateStaticPod(vipAddress, image, iface string, apiPort int, healthIn
 		nodeName = hostname
 	}
 
-	data := staticPodData{
+	data := generateData{
 		Image:          image,
 		VIPAddress:     vipAddress,
 		NodeName:       nodeName,
@@ -256,12 +318,21 @@ func runGenerateStaticPod(vipAddress, image, iface string, apiPort int, healthIn
 		APIPort:        apiPort,
 		HealthInterval: healthInterval,
 		HealthTimeout:  healthTimeout,
+		VIPMode:        vipMode,
+		BGPLocalAS:     bgpLocalAS,
+		BGPRouterID:    bgpRouterID,
+		BGPPeers:       bgpPeers,
+		BFDEnabled:     bfdEnabled,
+		BFDDetectMult:  bfdDetectMult,
+		BFDTxInterval:  bfdTxInterval,
+		BFDRxInterval:  bfdRxInterval,
 	}
 
 	return renderTemplate(staticPodTemplate, "static-pod", data)
 }
 
-func runGenerateSystemdUnit(vipAddress, binaryPath, iface string, apiPort int, healthInterval, healthTimeout, nodeName string) error {
+func runGenerateSystemdUnit(vipAddress, binaryPath, iface string, apiPort int, healthInterval, healthTimeout, nodeName string,
+	vipMode string, bgpLocalAS uint, bgpRouterID string, bgpPeers []string, bfdEnabled bool, bfdDetectMult int, bfdTxInterval, bfdRxInterval string) error {
 	if nodeName == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
@@ -270,7 +341,7 @@ func runGenerateSystemdUnit(vipAddress, binaryPath, iface string, apiPort int, h
 		nodeName = hostname
 	}
 
-	data := systemdUnitData{
+	data := generateData{
 		BinaryPath:     binaryPath,
 		VIPAddress:     vipAddress,
 		NodeName:       nodeName,
@@ -278,6 +349,14 @@ func runGenerateSystemdUnit(vipAddress, binaryPath, iface string, apiPort int, h
 		APIPort:        apiPort,
 		HealthInterval: healthInterval,
 		HealthTimeout:  healthTimeout,
+		VIPMode:        vipMode,
+		BGPLocalAS:     bgpLocalAS,
+		BGPRouterID:    bgpRouterID,
+		BGPPeers:       bgpPeers,
+		BFDEnabled:     bfdEnabled,
+		BFDDetectMult:  bfdDetectMult,
+		BFDTxInterval:  bfdTxInterval,
+		BFDRxInterval:  bfdRxInterval,
 	}
 
 	return renderTemplate(systemdUnitTemplate, "systemd-unit", data)
