@@ -23,6 +23,7 @@ import (
 	"context"
 	"flag"
 	"net"
+	"net/http"
 	"os"
 
 	uberzap "go.uber.org/zap"
@@ -112,6 +113,11 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	// Expose dynamic log level endpoint on default mux.
+	// PUT /debug/loglevel with body like "debug" or "info" to change at runtime.
+	controllerAtomicLevel := uberzap.NewAtomicLevelAt(uberzap.InfoLevel)
+	http.Handle("/debug/loglevel", controllerAtomicLevel)
 
 	setupLog.Info("Starting NovaEdge controller",
 		"version", version, "commit", commit, "date", date)

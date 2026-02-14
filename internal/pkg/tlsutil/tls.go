@@ -52,11 +52,12 @@ import (
 	pkgerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
 )
 
-// LoadServerTLSCredentials loads TLS credentials for gRPC server with mTLS
+// LoadServerTLSCredentials loads TLS credentials for gRPC server with mTLS.
+// It uses GetCertificate/GetConfigForClient callbacks so that certificate files
+// are re-read from disk on each new TLS handshake, enabling rotation without restart.
 func LoadServerTLSCredentials(certFile, keyFile, caFile string) (credentials.TransportCredentials, error) {
-	// Load server certificate and key
-	serverCert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
+	// Verify the certificate files are readable at startup
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
 		return nil, fmt.Errorf("failed to load server certificate: %w", err)
 	}
 
@@ -71,22 +72,32 @@ func LoadServerTLSCredentials(certFile, keyFile, caFile string) (credentials.Tra
 		return nil, fmt.Errorf("failed to add CA certificate to pool")
 	}
 
-	// Create TLS configuration with mutual TLS
+	cleanCertFile := filepath.Clean(certFile)
+	cleanKeyFile := filepath.Clean(keyFile)
+
+	// Create TLS configuration with dynamic certificate loading
 	config := &tls.Config{
-		Certificates: []tls.Certificate{serverCert},
-		ClientAuth:   tls.RequireAndVerifyClientCert,
-		ClientCAs:    certPool,
-		MinVersion:   tls.VersionTLS13,
+		GetCertificate: func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(cleanCertFile, cleanKeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to reload server certificate: %w", err)
+			}
+			return &cert, nil
+		},
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		ClientCAs:  certPool,
+		MinVersion: tls.VersionTLS13,
 	}
 
 	return credentials.NewTLS(config), nil
 }
 
-// LoadClientTLSCredentials loads TLS credentials for gRPC client with mTLS
+// LoadClientTLSCredentials loads TLS credentials for gRPC client with mTLS.
+// It uses GetClientCertificate callback so that certificate files are re-read
+// from disk on each new TLS handshake, enabling rotation without restart.
 func LoadClientTLSCredentials(certFile, keyFile, caFile, serverName string) (credentials.TransportCredentials, error) {
-	// Load client certificate and key
-	clientCert, err := tls.LoadX509KeyPair(certFile, keyFile)
-	if err != nil {
+	// Verify the certificate files are readable at startup
+	if _, err := tls.LoadX509KeyPair(certFile, keyFile); err != nil {
 		return nil, fmt.Errorf("failed to load client certificate: %w", err)
 	}
 
@@ -101,12 +112,21 @@ func LoadClientTLSCredentials(certFile, keyFile, caFile, serverName string) (cre
 		return nil, fmt.Errorf("failed to add CA certificate to pool")
 	}
 
-	// Create TLS configuration with mutual TLS
+	cleanCertFile := filepath.Clean(certFile)
+	cleanKeyFile := filepath.Clean(keyFile)
+
+	// Create TLS configuration with dynamic certificate loading
 	config := &tls.Config{
-		Certificates: []tls.Certificate{clientCert},
-		RootCAs:      certPool,
-		ServerName:   serverName,
-		MinVersion:   tls.VersionTLS13,
+		GetClientCertificate: func(_ *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			cert, err := tls.LoadX509KeyPair(cleanCertFile, cleanKeyFile)
+			if err != nil {
+				return nil, fmt.Errorf("failed to reload client certificate: %w", err)
+			}
+			return &cert, nil
+		},
+		RootCAs:    certPool,
+		ServerName: serverName,
+		MinVersion: tls.VersionTLS13,
 	}
 
 	return credentials.NewTLS(config), nil

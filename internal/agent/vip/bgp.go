@@ -29,6 +29,7 @@ import (
 	"github.com/osrg/gobgp/v3/pkg/server"
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
@@ -60,6 +61,11 @@ type BGPVIPState struct {
 	AddedAt    time.Time
 	Announced  bool
 	IsIPv6     bool
+	// bgpConfig stores the BGP config that was applied when this VIP was added,
+	// so we can diff against new config during reconfiguration.
+	bgpConfig *pb.BGPConfig
+	// bfdConfig stores the BFD config that was applied when this VIP was added.
+	bfdConfig *pb.BFDConfig
 }
 
 // NewBGPHandler creates a new BGP handler
@@ -97,15 +103,19 @@ func (h *BGPHandler) Start(ctx context.Context) error {
 	return nil
 }
 
-// AddVIP adds a VIP with BGP announcement (IPv4 or IPv6)
+// AddVIP adds a VIP with BGP announcement (IPv4 or IPv6).
+// If the VIP already exists, it performs in-place reconfiguration of changed
+// BGP/BFD parameters without releasing the VIP address.
 func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Check if already active
-	if _, exists := h.activeVIPs[assignment.VipName]; exists {
-		h.logger.Debug(msgVIPAlreadyActive, zap.String("vip", assignment.VipName))
-		return nil
+	// Check if already active — reconfigure in place
+	if existingState, exists := h.activeVIPs[assignment.VipName]; exists {
+		h.logger.Info("VIP already active, reconfiguring BGP",
+			zap.String("vip", assignment.VipName),
+		)
+		return h.reconfigureVIP(ctx, existingState, assignment)
 	}
 
 	// Parse IP address
@@ -158,6 +168,8 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 		AddedAt:    time.Now(),
 		Announced:  true,
 		IsIPv6:     isIPv6,
+		bgpConfig:  assignment.BgpConfig,
+		bfdConfig:  assignment.BfdConfig,
 	}
 
 	// Setup BFD sessions for peers if BFD is configured
@@ -329,6 +341,307 @@ func (h *BGPHandler) setupBFDSessions(assignment *pb.VIPAssignment) {
 			)
 		}
 	}
+}
+
+// reconfigureVIP handles in-place reconfiguration of an existing BGP VIP.
+// It diffs the old and new BGP/BFD config and applies only the changes needed.
+// Called with h.mu held.
+func (h *BGPHandler) reconfigureVIP(ctx context.Context, state *BGPVIPState, assignment *pb.VIPAssignment) error {
+	oldBGP := state.bgpConfig
+	newBGP := assignment.BgpConfig
+
+	if newBGP == nil {
+		return fmt.Errorf("BGP config is required for BGP mode VIPs")
+	}
+
+	// Check if ASN or RouterID changed — requires full BGP server restart
+	if oldBGP != nil && (oldBGP.LocalAs != newBGP.LocalAs || oldBGP.RouterId != newBGP.RouterId) {
+		h.logger.Info("BGP ASN or RouterID changed, restarting BGP server",
+			zap.Uint32("old_as", oldBGP.LocalAs),
+			zap.Uint32("new_as", newBGP.LocalAs),
+			zap.String("old_router_id", oldBGP.RouterId),
+			zap.String("new_router_id", newBGP.RouterId),
+		)
+		if err := h.restartBGPServer(ctx, newBGP); err != nil {
+			return fmt.Errorf("failed to restart BGP server: %w", err)
+		}
+		// After server restart, re-announce all active VIPs
+		for _, vipState := range h.activeVIPs {
+			if vipState.Announced {
+				if err := h.announceRoute(ctx, vipState.IP, newBGP, vipState.IsIPv6); err != nil {
+					h.logger.Error("Failed to re-announce route after BGP restart",
+						zap.String("vip", vipState.Assignment.VipName),
+						zap.Error(err),
+					)
+				}
+			}
+		}
+	} else if oldBGP != nil {
+		// Diff peers and apply changes
+		h.diffAndApplyPeers(ctx, oldBGP.Peers, newBGP.Peers)
+	}
+
+	// Check if route attributes changed (communities, local_preference)
+	if oldBGP != nil && (oldBGP.LocalPreference != newBGP.LocalPreference || !communitiesEqual(oldBGP.Communities, newBGP.Communities)) {
+		h.logger.Info("BGP route attributes changed, re-announcing route",
+			zap.String("vip", assignment.VipName),
+		)
+		// Withdraw and re-announce with new attributes
+		if state.Announced && h.bgpServer != nil {
+			if err := h.withdrawRoute(ctx, state.IP, oldBGP, state.IsIPv6); err != nil {
+				h.logger.Warn("Failed to withdraw route during reconfig",
+					zap.String("vip", assignment.VipName),
+					zap.Error(err),
+				)
+			}
+			if err := h.announceRoute(ctx, state.IP, newBGP, state.IsIPv6); err != nil {
+				h.logger.Error("Failed to re-announce route with new attributes",
+					zap.String("vip", assignment.VipName),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+
+	// Handle BFD config changes
+	oldBFD := state.bfdConfig
+	newBFD := assignment.BfdConfig
+	if !proto.Equal(oldBFD, newBFD) {
+		h.reconfigureBFD(oldBFD, newBFD, oldBGP, newBGP)
+	}
+
+	// Update stored state
+	state.Assignment = assignment
+	state.bgpConfig = newBGP
+	state.bfdConfig = newBFD
+
+	h.logger.Info("VIP reconfigured successfully",
+		zap.String("vip", assignment.VipName),
+	)
+
+	return nil
+}
+
+// restartBGPServer stops and restarts the BGP server with new global config.
+// Called with h.mu held.
+func (h *BGPHandler) restartBGPServer(ctx context.Context, config *pb.BGPConfig) error {
+	if h.bgpServer != nil {
+		// Withdraw all routes before stopping
+		for _, state := range h.activeVIPs {
+			if state.Announced {
+				_ = h.withdrawRoute(ctx, state.IP, state.bgpConfig, state.IsIPv6)
+				state.Announced = false
+			}
+		}
+
+		h.bgpServer.Stop()
+		h.bgpServer = nil
+	}
+
+	return h.startBGPServer(ctx, config)
+}
+
+// diffAndApplyPeers compares old and new peer lists and applies changes.
+// Called with h.mu held.
+func (h *BGPHandler) diffAndApplyPeers(ctx context.Context, oldPeers, newPeers []*pb.BGPPeer) {
+	oldMap := make(map[string]*pb.BGPPeer, len(oldPeers))
+	for _, p := range oldPeers {
+		oldMap[p.Address] = p
+	}
+	newMap := make(map[string]*pb.BGPPeer, len(newPeers))
+	for _, p := range newPeers {
+		newMap[p.Address] = p
+	}
+
+	// Remove peers that are no longer in the config
+	for addr := range oldMap {
+		if _, exists := newMap[addr]; !exists {
+			h.logger.Info("Removing BGP peer", zap.String("address", addr))
+			if h.bgpServer != nil {
+				if err := h.bgpServer.DeletePeer(ctx, &api.DeletePeerRequest{
+					Address: addr,
+				}); err != nil {
+					h.logger.Error("Failed to delete BGP peer",
+						zap.String("address", addr),
+						zap.Error(err),
+					)
+				}
+			}
+		}
+	}
+
+	// Add new peers or update changed peers
+	for addr, newPeer := range newMap {
+		oldPeer, exists := oldMap[addr]
+		if !exists {
+			// New peer — add it
+			h.addBGPPeer(ctx, newPeer)
+		} else if oldPeer.As != newPeer.As || oldPeer.Port != newPeer.Port {
+			// Peer changed — delete and re-add
+			h.logger.Info("Updating BGP peer (AS or port changed)",
+				zap.String("address", addr),
+				zap.Uint32("old_as", oldPeer.As),
+				zap.Uint32("new_as", newPeer.As),
+			)
+			if h.bgpServer != nil {
+				if err := h.bgpServer.DeletePeer(ctx, &api.DeletePeerRequest{
+					Address: addr,
+				}); err != nil {
+					h.logger.Error("Failed to delete BGP peer for update",
+						zap.String("address", addr),
+						zap.Error(err),
+					)
+				}
+			}
+			h.addBGPPeer(ctx, newPeer)
+		}
+	}
+}
+
+// addBGPPeer adds a single BGP peer to the running server.
+// Called with h.mu held.
+func (h *BGPHandler) addBGPPeer(ctx context.Context, peer *pb.BGPPeer) {
+	if h.bgpServer == nil {
+		return
+	}
+
+	port := peer.Port
+	if port == 0 {
+		port = 179
+	}
+
+	peerIP := net.ParseIP(peer.Address)
+	isIPv6Peer := peerIP != nil && peerIP.To4() == nil
+
+	h.logger.Info("Adding BGP peer",
+		zap.String("address", peer.Address),
+		zap.Uint32("as", peer.As),
+		zap.Uint32("port", port),
+		zap.Bool("ipv6", isIPv6Peer),
+	)
+
+	afiSafis := []*api.AfiSafi{}
+	if isIPv6Peer {
+		afiSafis = append(afiSafis, &api.AfiSafi{
+			Config: &api.AfiSafiConfig{
+				Family: &api.Family{
+					Afi:  api.Family_AFI_IP6,
+					Safi: api.Family_SAFI_UNICAST,
+				},
+				Enabled: true,
+			},
+		})
+	} else {
+		afiSafis = append(afiSafis, &api.AfiSafi{
+			Config: &api.AfiSafiConfig{
+				Family: &api.Family{
+					Afi:  api.Family_AFI_IP,
+					Safi: api.Family_SAFI_UNICAST,
+				},
+				Enabled: true,
+			},
+		})
+	}
+
+	peerConfig := &api.AddPeerRequest{
+		Peer: &api.Peer{
+			Conf: &api.PeerConf{
+				NeighborAddress: peer.Address,
+				PeerAsn:         peer.As,
+			},
+			Transport: &api.Transport{
+				RemotePort: port,
+			},
+			AfiSafis: afiSafis,
+		},
+	}
+
+	if err := h.bgpServer.AddPeer(ctx, peerConfig); err != nil {
+		h.logger.Error("Failed to add BGP peer",
+			zap.String("address", peer.Address),
+			zap.Error(err),
+		)
+	}
+}
+
+// reconfigureBFD handles BFD configuration changes for BGP peers.
+// Called with h.mu held.
+func (h *BGPHandler) reconfigureBFD(oldBFD, newBFD *pb.BFDConfig, oldBGP, newBGP *pb.BGPConfig) {
+	oldEnabled := oldBFD != nil && oldBFD.Enabled
+	newEnabled := newBFD != nil && newBFD.Enabled
+
+	if !oldEnabled && newEnabled {
+		// BFD newly enabled — create sessions for all current peers
+		h.logger.Info("BFD enabled, creating sessions for BGP peers")
+		tempAssignment := &pb.VIPAssignment{
+			BgpConfig: newBGP,
+			BfdConfig: newBFD,
+		}
+		h.setupBFDSessions(tempAssignment)
+		return
+	}
+
+	if oldEnabled && !newEnabled {
+		// BFD disabled — remove all sessions
+		h.logger.Info("BFD disabled, removing sessions for BGP peers")
+		if oldBGP != nil {
+			for _, peer := range oldBGP.Peers {
+				peerIP := net.ParseIP(peer.Address)
+				if peerIP != nil {
+					h.bfdManager.RemoveSession(peerIP)
+				}
+			}
+		}
+		return
+	}
+
+	if !newEnabled {
+		return
+	}
+
+	// BFD params changed — update existing sessions
+	h.logger.Info("BFD parameters changed, updating sessions")
+	bfdCfg := BFDConfig{
+		DetectMultiplier: newBFD.DetectMultiplier,
+		EchoMode:         newBFD.EchoMode,
+	}
+	if newBFD.DesiredMinTxInterval != "" {
+		if d, err := time.ParseDuration(newBFD.DesiredMinTxInterval); err == nil {
+			bfdCfg.DesiredMinTxInterval = d
+		}
+	}
+	if newBFD.RequiredMinRxInterval != "" {
+		if d, err := time.ParseDuration(newBFD.RequiredMinRxInterval); err == nil {
+			bfdCfg.RequiredMinRxInterval = d
+		}
+	}
+
+	if newBGP != nil {
+		for _, peer := range newBGP.Peers {
+			peerIP := net.ParseIP(peer.Address)
+			if peerIP != nil {
+				if err := h.bfdManager.UpdateSession(peerIP, bfdCfg); err != nil {
+					h.logger.Error("Failed to update BFD session",
+						zap.String("peer", peer.Address),
+						zap.Error(err),
+					)
+				}
+			}
+		}
+	}
+}
+
+// communitiesEqual checks if two community string slices are equal.
+func communitiesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // onBFDNeighborDown is called when BFD detects a neighbor failure.

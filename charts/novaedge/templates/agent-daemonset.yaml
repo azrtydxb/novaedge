@@ -17,6 +17,7 @@ spec:
       labels:
         {{- include "novaedge.agent.selectorLabels" . | nindent 8 }}
       annotations:
+        checksum/config: {{ toYaml .Values.agent | sha256sum }}
         {{- if .Values.agent.metrics.enabled }}
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.agent.metrics.port }}"

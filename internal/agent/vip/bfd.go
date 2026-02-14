@@ -298,6 +298,52 @@ func (m *BFDManager) AddSession(peerIP net.IP, config BFDConfig) error {
 	return nil
 }
 
+// UpdateSession updates the timing parameters of an existing BFD session.
+// If the session does not exist, it creates a new one with the given config.
+func (m *BFDManager) UpdateSession(peerIP net.IP, config BFDConfig) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	peerKey := peerIP.String()
+	session, exists := m.sessions[peerKey]
+	if !exists {
+		// Session doesn't exist — create via unlocked helper
+		m.mu.Unlock()
+		err := m.AddSession(peerIP, config)
+		m.mu.Lock()
+		return err
+	}
+
+	// Apply defaults
+	if config.DetectMultiplier <= 0 {
+		config.DetectMultiplier = bfdDefaultDetectMult
+	}
+	if config.DesiredMinTxInterval <= 0 {
+		config.DesiredMinTxInterval = bfdDefaultDesiredMinTx
+	}
+	if config.RequiredMinRxInterval <= 0 {
+		config.RequiredMinRxInterval = bfdDefaultRequiredMinRx
+	}
+
+	session.mu.Lock()
+	defer session.mu.Unlock()
+
+	session.config = config
+	session.desiredMinTxInterval = config.DesiredMinTxInterval
+	session.requiredMinRxInterval = config.RequiredMinRxInterval
+	session.detectMultiplier = config.DetectMultiplier
+	session.detectionTime = time.Duration(config.DetectMultiplier) * config.RequiredMinRxInterval
+
+	m.logger.Info("BFD session updated",
+		zap.String("peer", peerKey),
+		zap.Int32("detect_mult", config.DetectMultiplier),
+		zap.Duration("desired_min_tx", config.DesiredMinTxInterval),
+		zap.Duration("required_min_rx", config.RequiredMinRxInterval),
+	)
+
+	return nil
+}
+
 // RemoveSession removes a BFD session for a peer
 func (m *BFDManager) RemoveSession(peerIP net.IP) {
 	m.mu.Lock()
