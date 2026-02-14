@@ -27,6 +27,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 // newTestLogger returns a no-op logger for tests.
@@ -533,6 +535,215 @@ func TestBuildVIPAssignment(t *testing.T) {
 	}
 	if !assignment.IsActive {
 		t.Error("expected IsActive to be true")
+	}
+}
+
+func TestBuildVIPAssignment_L2Mode(t *testing.T) {
+	m := &Manager{
+		config: Config{
+			VIPAddress: "10.0.0.100/32",
+			Mode:       "l2",
+		},
+	}
+
+	assignment := m.buildVIPAssignment()
+
+	if assignment.Mode != pb.VIPMode_L2_ARP {
+		t.Errorf("expected L2_ARP mode, got %v", assignment.Mode)
+	}
+	if assignment.BgpConfig != nil {
+		t.Error("expected nil BgpConfig for L2 mode")
+	}
+	if assignment.BfdConfig != nil {
+		t.Error("expected nil BfdConfig for L2 mode")
+	}
+}
+
+func TestBuildVIPAssignment_BGPMode(t *testing.T) {
+	m := &Manager{
+		config: Config{
+			VIPAddress:  "192.168.100.10/32",
+			Mode:        "bgp",
+			BGPLocalAS:  65000,
+			BGPRouterID: "192.168.100.11",
+			BGPPeers: []BGPPeerConfig{
+				{Address: "192.168.100.2", AS: 65000, Port: 179},
+				{Address: "192.168.100.3", AS: 65000, Port: 179},
+			},
+		},
+	}
+
+	assignment := m.buildVIPAssignment()
+
+	if assignment.Mode != pb.VIPMode_BGP {
+		t.Errorf("expected BGP mode, got %v", assignment.Mode)
+	}
+	if assignment.BgpConfig == nil {
+		t.Fatal("expected non-nil BgpConfig for BGP mode")
+	}
+	if assignment.BgpConfig.LocalAs != 65000 {
+		t.Errorf("expected LocalAs 65000, got %d", assignment.BgpConfig.LocalAs)
+	}
+	if assignment.BgpConfig.RouterId != "192.168.100.11" {
+		t.Errorf("expected RouterId 192.168.100.11, got %s", assignment.BgpConfig.RouterId)
+	}
+	if len(assignment.BgpConfig.Peers) != 2 {
+		t.Fatalf("expected 2 peers, got %d", len(assignment.BgpConfig.Peers))
+	}
+	if assignment.BgpConfig.Peers[0].Address != "192.168.100.2" {
+		t.Errorf("expected peer 0 address 192.168.100.2, got %s", assignment.BgpConfig.Peers[0].Address)
+	}
+	if assignment.BgpConfig.Peers[0].As != 65000 {
+		t.Errorf("expected peer 0 AS 65000, got %d", assignment.BgpConfig.Peers[0].As)
+	}
+	if assignment.BgpConfig.Peers[0].Port != 179 {
+		t.Errorf("expected peer 0 port 179, got %d", assignment.BgpConfig.Peers[0].Port)
+	}
+	if assignment.BgpConfig.Peers[1].Address != "192.168.100.3" {
+		t.Errorf("expected peer 1 address 192.168.100.3, got %s", assignment.BgpConfig.Peers[1].Address)
+	}
+	// BFD not enabled, so BfdConfig should be nil
+	if assignment.BfdConfig != nil {
+		t.Error("expected nil BfdConfig when BFD is not enabled")
+	}
+}
+
+func TestBuildVIPAssignment_BGPWithBFD(t *testing.T) {
+	m := &Manager{
+		config: Config{
+			VIPAddress:    "192.168.100.10/32",
+			Mode:          "bgp",
+			BGPLocalAS:    65000,
+			BGPRouterID:   "192.168.100.11",
+			BGPPeers:      []BGPPeerConfig{{Address: "192.168.100.2", AS: 65000, Port: 179}},
+			BFDEnabled:    true,
+			BFDDetectMult: 3,
+			BFDTxInterval: "300ms",
+			BFDRxInterval: "300ms",
+		},
+	}
+
+	assignment := m.buildVIPAssignment()
+
+	if assignment.Mode != pb.VIPMode_BGP {
+		t.Errorf("expected BGP mode, got %v", assignment.Mode)
+	}
+	if assignment.BfdConfig == nil {
+		t.Fatal("expected non-nil BfdConfig when BFD is enabled")
+	}
+	if !assignment.BfdConfig.Enabled {
+		t.Error("expected BfdConfig.Enabled to be true")
+	}
+	if assignment.BfdConfig.DetectMultiplier != 3 {
+		t.Errorf("expected DetectMultiplier 3, got %d", assignment.BfdConfig.DetectMultiplier)
+	}
+	if assignment.BfdConfig.DesiredMinTxInterval != "300ms" {
+		t.Errorf("expected DesiredMinTxInterval 300ms, got %s", assignment.BfdConfig.DesiredMinTxInterval)
+	}
+	if assignment.BfdConfig.RequiredMinRxInterval != "300ms" {
+		t.Errorf("expected RequiredMinRxInterval 300ms, got %s", assignment.BfdConfig.RequiredMinRxInterval)
+	}
+}
+
+// --- BGP Config Validation Tests ---
+
+func TestConfig_Validate_BGPMode_MissingLocalAS(t *testing.T) {
+	cfg := Config{
+		VIPAddress:     "10.0.0.100/32",
+		APIPort:        6443,
+		HealthInterval: time.Second,
+		HealthTimeout:  3 * time.Second,
+		FailThreshold:  3,
+		Mode:           "bgp",
+		BGPLocalAS:     0,
+		BGPPeers:       []BGPPeerConfig{{Address: "10.0.0.2", AS: 65000, Port: 179}},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for missing BGP local AS")
+	}
+	if !strings.Contains(err.Error(), "BGP local AS is required") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestConfig_Validate_BGPMode_MissingPeers(t *testing.T) {
+	cfg := Config{
+		VIPAddress:     "10.0.0.100/32",
+		APIPort:        6443,
+		HealthInterval: time.Second,
+		HealthTimeout:  3 * time.Second,
+		FailThreshold:  3,
+		Mode:           "bgp",
+		BGPLocalAS:     65000,
+		BGPPeers:       nil,
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for missing BGP peers")
+	}
+	if !strings.Contains(err.Error(), "at least one BGP peer") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestConfig_Validate_BGPMode_Valid(t *testing.T) {
+	cfg := Config{
+		VIPAddress:     "10.0.0.100/32",
+		APIPort:        6443,
+		HealthInterval: time.Second,
+		HealthTimeout:  3 * time.Second,
+		FailThreshold:  3,
+		Mode:           "bgp",
+		BGPLocalAS:     65000,
+		BGPRouterID:    "10.0.0.1",
+		BGPPeers:       []BGPPeerConfig{{Address: "10.0.0.2", AS: 65000, Port: 179}},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected no error for valid BGP config, got: %v", err)
+	}
+}
+
+func TestConfig_Validate_L2Mode_IgnoresBGPFields(t *testing.T) {
+	// L2 mode should not require BGP fields
+	cfg := Config{
+		VIPAddress:     "10.0.0.100/32",
+		APIPort:        6443,
+		HealthInterval: time.Second,
+		HealthTimeout:  3 * time.Second,
+		FailThreshold:  3,
+		Mode:           "l2",
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected no error for L2 config without BGP fields, got: %v", err)
+	}
+}
+
+func TestConfig_ApplyDefaults_BGPDefaults(t *testing.T) {
+	cfg := Config{
+		VIPAddress: "10.0.0.100/32",
+	}
+
+	cfg.applyDefaults()
+
+	if cfg.Mode != "l2" {
+		t.Errorf("expected default mode 'l2', got %q", cfg.Mode)
+	}
+	if cfg.BFDDetectMult != DefaultBFDDetectMult {
+		t.Errorf("expected default BFD detect mult %d, got %d", DefaultBFDDetectMult, cfg.BFDDetectMult)
+	}
+	if cfg.BFDTxInterval != DefaultBFDInterval {
+		t.Errorf("expected default BFD TX interval %q, got %q", DefaultBFDInterval, cfg.BFDTxInterval)
+	}
+	if cfg.BFDRxInterval != DefaultBFDInterval {
+		t.Errorf("expected default BFD RX interval %q, got %q", DefaultBFDInterval, cfg.BFDRxInterval)
+	}
+	if cfg.SATokenPath != defaultSATokenPath {
+		t.Errorf("expected default SA token path %q, got %q", defaultSATokenPath, cfg.SATokenPath)
 	}
 }
 

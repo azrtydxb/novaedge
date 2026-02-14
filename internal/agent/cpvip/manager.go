@@ -50,6 +50,18 @@ const (
 	// DefaultFailThreshold is the default number of consecutive failures before releasing the VIP.
 	DefaultFailThreshold = 3
 
+	// DefaultBFDDetectMult is the default BFD detect multiplier.
+	DefaultBFDDetectMult = 3
+
+	// DefaultBFDInterval is the default BFD TX/RX interval.
+	DefaultBFDInterval = "300ms"
+
+	// ModeBGP is the BGP VIP mode constant.
+	ModeBGP = "bgp"
+
+	// ModeL2 is the L2 ARP VIP mode constant.
+	ModeL2 = "l2"
+
 	// cpVIPName is the internal name used for the control-plane VIP assignment.
 	cpVIPName = "control-plane-vip"
 
@@ -66,12 +78,27 @@ const (
 	tokenRefreshInterval = 5 * time.Minute
 )
 
+// vipHandler abstracts VIP operations so the CP VIP manager can use either
+// L2 ARP or BGP mode without knowing the underlying implementation.
+type vipHandler interface {
+	Start(ctx context.Context) error
+	AddVIP(ctx context.Context, assignment *pb.VIPAssignment) error
+	RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment) error
+}
+
+// BGPPeerConfig defines a single BGP peer for the CP VIP manager.
+type BGPPeerConfig struct {
+	Address string
+	AS      uint32
+	Port    uint16
+}
+
 // Config holds the configuration for the control-plane VIP manager.
 type Config struct {
 	// VIPAddress is the VIP in CIDR notation (e.g., "10.0.0.100/32").
 	VIPAddress string
 
-	// Interface is the network interface to bind the VIP to.
+	// Interface is the network interface to bind the VIP to (L2 mode only).
 	// If empty, the primary interface is auto-detected.
 	Interface string
 
@@ -91,6 +118,30 @@ type Config struct {
 	// authenticating health check requests. Defaults to the standard
 	// Kubernetes projected token path. Set to empty string to disable.
 	SATokenPath string
+
+	// Mode selects the VIP mode: "l2" (default) or "bgp".
+	Mode string
+
+	// BGPLocalAS is the local BGP AS number (required for bgp mode).
+	BGPLocalAS uint32
+
+	// BGPRouterID is the BGP router ID (required for bgp mode).
+	BGPRouterID string
+
+	// BGPPeers defines the BGP peers to establish sessions with (required for bgp mode).
+	BGPPeers []BGPPeerConfig
+
+	// BFDEnabled enables BFD for sub-second failure detection.
+	BFDEnabled bool
+
+	// BFDDetectMult is the BFD detect multiplier (default: 3).
+	BFDDetectMult int32
+
+	// BFDTxInterval is the BFD minimum TX interval (default: "300ms").
+	BFDTxInterval string
+
+	// BFDRxInterval is the BFD minimum RX interval (default: "300ms").
+	BFDRxInterval string
 }
 
 // Validate checks that the configuration is valid.
@@ -120,6 +171,15 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("fail threshold must be at least 1")
 	}
 
+	if c.Mode == ModeBGP {
+		if c.BGPLocalAS == 0 {
+			return fmt.Errorf("BGP local AS is required for bgp mode")
+		}
+		if len(c.BGPPeers) == 0 {
+			return fmt.Errorf("at least one BGP peer is required for bgp mode")
+		}
+	}
+
 	return nil
 }
 
@@ -140,6 +200,18 @@ func (c *Config) applyDefaults() {
 	if c.SATokenPath == "" {
 		c.SATokenPath = defaultSATokenPath
 	}
+	if c.Mode == "" {
+		c.Mode = ModeL2
+	}
+	if c.BFDDetectMult == 0 {
+		c.BFDDetectMult = DefaultBFDDetectMult
+	}
+	if c.BFDTxInterval == "" {
+		c.BFDTxInterval = DefaultBFDInterval
+	}
+	if c.BFDRxInterval == "" {
+		c.BFDRxInterval = DefaultBFDInterval
+	}
 }
 
 // Manager manages a single control-plane VIP based on kube-apiserver health.
@@ -148,7 +220,7 @@ func (c *Config) applyDefaults() {
 type Manager struct {
 	config     Config
 	logger     *zap.Logger
-	l2Handler  *vip.L2Handler
+	handler    vipHandler
 	httpClient *http.Client
 
 	mu        sync.Mutex
@@ -169,9 +241,20 @@ func NewManager(cfg Config, logger *zap.Logger) (*Manager, error) {
 		return nil, fmt.Errorf("invalid cpvip config: %w", err)
 	}
 
-	l2Handler, err := vip.NewL2HandlerWithInterface(logger.Named("l2"), cfg.Interface)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create L2 handler: %w", err)
+	var handler vipHandler
+	switch cfg.Mode {
+	case ModeBGP:
+		bgpHandler, err := vip.NewBGPHandler(logger.Named("bgp"))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create BGP handler: %w", err)
+		}
+		handler = bgpHandler
+	default:
+		l2Handler, err := vip.NewL2HandlerWithInterface(logger.Named("l2"), cfg.Interface)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create L2 handler: %w", err)
+		}
+		handler = l2Handler
 	}
 
 	httpClient := &http.Client{
@@ -187,7 +270,7 @@ func NewManager(cfg Config, logger *zap.Logger) (*Manager, error) {
 	return &Manager{
 		config:     cfg,
 		logger:     logger.Named("cpvip"),
-		l2Handler:  l2Handler,
+		handler:    handler,
 		httpClient: httpClient,
 	}, nil
 }
@@ -197,15 +280,15 @@ func NewManager(cfg Config, logger *zap.Logger) (*Manager, error) {
 func (m *Manager) Start(ctx context.Context) error {
 	m.logger.Info("Starting control-plane VIP manager",
 		zap.String("vip", m.config.VIPAddress),
+		zap.String("mode", m.config.Mode),
 		zap.String("interface", m.config.Interface),
 		zap.Int("api_port", m.config.APIPort),
 		zap.Duration("health_interval", m.config.HealthInterval),
 		zap.Int("fail_threshold", m.config.FailThreshold),
 	)
 
-	// Start the L2 handler (runs the GARP announcement loop)
-	if err := m.l2Handler.Start(ctx); err != nil {
-		return fmt.Errorf("failed to start L2 handler: %w", err)
+	if err := m.handler.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start VIP handler: %w", err)
 	}
 
 	ticker := time.NewTicker(m.config.HealthInterval)
@@ -370,41 +453,74 @@ func (m *Manager) refreshSAToken() string {
 
 // buildVIPAssignment creates a protobuf VIPAssignment for the control-plane VIP.
 func (m *Manager) buildVIPAssignment() *pb.VIPAssignment {
-	return &pb.VIPAssignment{
+	assignment := &pb.VIPAssignment{
 		VipName:  cpVIPName,
 		Address:  m.config.VIPAddress,
-		Mode:     pb.VIPMode_L2_ARP,
 		IsActive: true,
 	}
+
+	if m.config.Mode == ModeBGP {
+		assignment.Mode = pb.VIPMode_BGP
+
+		peers := make([]*pb.BGPPeer, 0, len(m.config.BGPPeers))
+		for _, p := range m.config.BGPPeers {
+			peers = append(peers, &pb.BGPPeer{
+				Address: p.Address,
+				As:      p.AS,
+				Port:    uint32(p.Port),
+			})
+		}
+
+		assignment.BgpConfig = &pb.BGPConfig{
+			LocalAs:  m.config.BGPLocalAS,
+			RouterId: m.config.BGPRouterID,
+			Peers:    peers,
+		}
+
+		if m.config.BFDEnabled {
+			assignment.BfdConfig = &pb.BFDConfig{
+				Enabled:               true,
+				DetectMultiplier:      m.config.BFDDetectMult,
+				DesiredMinTxInterval:  m.config.BFDTxInterval,
+				RequiredMinRxInterval: m.config.BFDRxInterval,
+			}
+		}
+	} else {
+		assignment.Mode = pb.VIPMode_L2_ARP
+	}
+
+	return assignment
 }
 
-// bindVIPLocked binds the VIP using the L2 handler. Must be called with m.mu held.
+// bindVIPLocked binds the VIP using the handler. Must be called with m.mu held.
 func (m *Manager) bindVIPLocked() error {
 	assignment := m.buildVIPAssignment()
 
-	if err := m.l2Handler.AddVIP(context.Background(), assignment); err != nil {
+	if err := m.handler.AddVIP(context.Background(), assignment); err != nil {
 		return fmt.Errorf("failed to add VIP: %w", err)
 	}
 
 	m.vipActive = true
 	m.logger.Info("Control-plane VIP bound",
 		zap.String("address", m.config.VIPAddress),
+		zap.String("mode", m.config.Mode),
 	)
 
 	return nil
 }
 
-// releaseVIPLocked releases the VIP using the L2 handler. Must be called with m.mu held.
+// releaseVIPLocked releases the VIP using the handler. Must be called with m.mu held.
 func (m *Manager) releaseVIPLocked() error {
 	assignment := m.buildVIPAssignment()
 
-	if err := m.l2Handler.RemoveVIP(context.Background(), assignment); err != nil {
+	if err := m.handler.RemoveVIP(context.Background(), assignment); err != nil {
 		return fmt.Errorf("failed to remove VIP: %w", err)
 	}
 
 	m.vipActive = false
 	m.logger.Info("Control-plane VIP released",
 		zap.String("address", m.config.VIPAddress),
+		zap.String("mode", m.config.Mode),
 	)
 
 	return nil
