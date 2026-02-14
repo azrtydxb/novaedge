@@ -37,11 +37,13 @@ const (
 // signals existing connections to close while allowing them time to finish
 // in-progress work.
 type DrainManager struct {
-	logger            *zap.Logger
-	drainTimeout      time.Duration
-	draining          atomic.Bool
-	activeConnections sync.WaitGroup
-	activeCount       atomic.Int64 // for observability; mirrors WaitGroup count
+	logger       *zap.Logger
+	drainTimeout time.Duration
+	draining     atomic.Bool
+
+	mu          sync.Mutex
+	activeCount int64
+	zeroCond    *sync.Cond
 }
 
 // NewDrainManager creates a DrainManager with the given timeout.
@@ -50,10 +52,12 @@ func NewDrainManager(logger *zap.Logger, timeout time.Duration) *DrainManager {
 	if timeout <= 0 {
 		timeout = DefaultDrainTimeout
 	}
-	return &DrainManager{
+	dm := &DrainManager{
 		logger:       logger,
 		drainTimeout: timeout,
 	}
+	dm.zeroCond = sync.NewCond(&dm.mu)
+	return dm
 }
 
 // StartDrain initiates the drain process. It sets the draining flag, then
@@ -61,9 +65,12 @@ func NewDrainManager(logger *zap.Logger, timeout time.Duration) *DrainManager {
 // The provided context can be used for early cancellation.
 func (dm *DrainManager) StartDrain(ctx context.Context) {
 	dm.draining.Store(true)
+	dm.mu.Lock()
+	active := dm.activeCount
+	dm.mu.Unlock()
 	dm.logger.Info("Connection draining started",
 		zap.Duration("timeout", dm.drainTimeout),
-		zap.Int64("active_connections", dm.activeCount.Load()),
+		zap.Int64("active_connections", active),
 	)
 
 	timeoutCtx, cancel := context.WithTimeout(ctx, dm.drainTimeout)
@@ -72,7 +79,11 @@ func (dm *DrainManager) StartDrain(ctx context.Context) {
 	// Wait for all active connections to complete or for the timeout.
 	done := make(chan struct{})
 	go func() {
-		dm.activeConnections.Wait()
+		dm.mu.Lock()
+		for dm.activeCount > 0 {
+			dm.zeroCond.Wait()
+		}
+		dm.mu.Unlock()
 		close(done)
 	}()
 
@@ -80,10 +91,14 @@ func (dm *DrainManager) StartDrain(ctx context.Context) {
 	case <-done:
 		dm.logger.Info("All active connections drained successfully")
 	case <-timeoutCtx.Done():
-		remaining := dm.activeCount.Load()
+		dm.mu.Lock()
+		remaining := dm.activeCount
+		dm.mu.Unlock()
 		dm.logger.Warn("Drain timeout reached, proceeding with config swap",
 			zap.Int64("remaining_connections", remaining),
 		)
+		// Broadcast to unblock the waiter goroutine so it doesn't leak
+		dm.zeroCond.Broadcast()
 	}
 
 	// Reset draining state after drain completes so the manager can be reused
@@ -98,19 +113,27 @@ func (dm *DrainManager) IsDraining() bool {
 // TrackConnection increments the active connection counter. Each call must
 // be paired with a corresponding ReleaseConnection call.
 func (dm *DrainManager) TrackConnection() {
-	dm.activeConnections.Add(1)
-	dm.activeCount.Add(1)
+	dm.mu.Lock()
+	dm.activeCount++
+	dm.mu.Unlock()
 }
 
 // ReleaseConnection decrements the active connection counter.
 func (dm *DrainManager) ReleaseConnection() {
-	dm.activeCount.Add(-1)
-	dm.activeConnections.Done()
+	dm.mu.Lock()
+	dm.activeCount--
+	if dm.activeCount <= 0 {
+		dm.zeroCond.Broadcast()
+	}
+	dm.mu.Unlock()
 }
 
 // ActiveConnections returns the current number of tracked active connections.
 func (dm *DrainManager) ActiveConnections() int64 {
-	return dm.activeCount.Load()
+	dm.mu.Lock()
+	count := dm.activeCount
+	dm.mu.Unlock()
+	return count
 }
 
 // DrainMiddleware returns an HTTP middleware that integrates with the

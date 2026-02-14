@@ -617,10 +617,10 @@ func (r *NovaEdgeClusterReconciler) reconcileAgent(ctx context.Context, cluster 
 	args = append(args, cluster.Spec.Agent.ExtraArgs...)
 
 	// Merge volumes
-	volumes := []corev1.Volume{}
+	volumes := make([]corev1.Volume, 0, len(cluster.Spec.Agent.ExtraVolumes))
 	volumes = append(volumes, cluster.Spec.Agent.ExtraVolumes...)
 
-	volumeMounts := []corev1.VolumeMount{}
+	volumeMounts := make([]corev1.VolumeMount, 0, len(cluster.Spec.Agent.ExtraVolumeMounts))
 	volumeMounts = append(volumeMounts, cluster.Spec.Agent.ExtraVolumeMounts...)
 
 	// Security context for privileged operations (VIP, network)

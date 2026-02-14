@@ -30,6 +30,21 @@ linters:
     - wastedassign
     # Security
     - gosec
+  exclusions:
+    rules:
+      # Package names that intentionally share names with stdlib packages.
+      - path: cmd/novactl/pkg/printer/
+        linters:
+          - revive
+        text: "var-naming: avoid package names"
+      - path: cmd/novactl/pkg/trace/
+        linters:
+          - revive
+        text: "var-naming: avoid package names"
+      - path: internal/agent/metrics/
+        linters:
+          - revive
+        text: "var-naming: avoid package names"
   settings:
     staticcheck:
       checks:
