@@ -69,16 +69,33 @@ nav:
     - Routing: user-guide/routing.md
     - Load Balancing: user-guide/load-balancing.md
     - VIP Management: user-guide/vip-management.md
+    - IP Address Pools: user-guide/ip-pools.md
+    - K3s Control Plane HA: user-guide/k3s-control-plane-ha.md
+    - L4 TCP/UDP Proxying: user-guide/l4-proxying.md
     - Policies: user-guide/policies.md
+    - Authentication: user-guide/authentication.md
+    - Keycloak Integration: user-guide/keycloak.md
+    - WAF: user-guide/waf.md
     - TLS: user-guide/tls.md
+    - cert-manager Integration: user-guide/cert-manager.md
+    - HashiCorp Vault: user-guide/vault.md
     - Health Checks: user-guide/health-checks.md
+    - Middleware Pipelines: user-guide/middleware-pipelines.md
+    - Response Caching: user-guide/response-caching.md
+    - Request Retry: user-guide/retry.md
+    - Traffic Mirroring: user-guide/traffic-mirroring.md
+    - PROXY Protocol: user-guide/proxy-protocol.md
+    - Server-Sent Events: user-guide/sse.md
+    - Custom Error Pages: user-guide/error-pages.md
   - Advanced:
     - Multi-Cluster: advanced/multi-cluster.md
     - Federation Setup: advanced/federation-setup.md
     - HTTP/3 & QUIC: advanced/http3-quic.md
     - Gateway API: advanced/gateway-api.md
+    - WASM Plugins: advanced/wasm-plugins.md
   - Operations:
     - Observability: operations/observability.md
+    - Access Logging: operations/access-logging.md
     - Web UI: operations/web-ui.md
     - Troubleshooting: operations/troubleshooting.md
   - Reference:
