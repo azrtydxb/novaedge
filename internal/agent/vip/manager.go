@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -143,6 +144,21 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 			zap.String("mode", assignment.Mode.String()),
 			zap.Bool("is_active", assignment.IsActive),
 		)
+
+		if exists && !configOnlyChange(oldAssignment, assignment) {
+			// Address/mode/active changed — full release and re-apply
+			m.logger.Info("VIP structural change detected, releasing old VIP first",
+				zap.String("vip", vipName),
+			)
+			if err := m.releaseVIP(ctx, oldAssignment); err != nil {
+				m.logger.Error("Failed to release old VIP during reconfiguration",
+					zap.String("vip", vipName),
+					zap.Error(err),
+				)
+			}
+		}
+		// For config-only changes the handler's AddVIP detects the existing
+		// VIP and performs in-place reconfiguration.
 
 		if err := m.applyVIP(ctx, assignment); err != nil {
 			m.logger.Error("Failed to apply VIP",
@@ -334,5 +350,26 @@ func assignmentsEqual(a, b *pb.VIPAssignment) bool {
 			return false
 		}
 	}
+	if !proto.Equal(a.BgpConfig, b.BgpConfig) {
+		return false
+	}
+	if !proto.Equal(a.OspfConfig, b.OspfConfig) {
+		return false
+	}
+	if !proto.Equal(a.BfdConfig, b.BfdConfig) {
+		return false
+	}
 	return true
+}
+
+// configOnlyChange returns true when the assignment change only affects
+// protocol config (BGP/OSPF/BFD) but not the VIP address, mode, or active state.
+// Config-only changes can be handled by in-place reconfiguration without
+// releasing and re-binding the VIP.
+func configOnlyChange(oldAssign, newAssign *pb.VIPAssignment) bool {
+	return oldAssign.Address == newAssign.Address &&
+		oldAssign.Ipv6Address == newAssign.Ipv6Address &&
+		oldAssign.Mode == newAssign.Mode &&
+		oldAssign.IsActive == newAssign.IsActive &&
+		oldAssign.AddressFamily == newAssign.AddressFamily
 }
