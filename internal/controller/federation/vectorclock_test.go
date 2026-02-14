@@ -362,16 +362,16 @@ func TestVectorClock_Concurrent(t *testing.T) {
 
 func TestVectorClock_Copy(t *testing.T) {
 	original := NewVectorClockFromMap(map[string]int64{"node1": 5, "node2": 10})
-	copy := original.Copy()
+	cloned := original.Copy()
 
 	// Verify copy is equal
-	if !original.Equal(copy) {
+	if !original.Equal(cloned) {
 		t.Error("copy is not equal to original")
 	}
 
 	// Modify original and verify copy is independent
 	original.Set("node1", 100)
-	if copy.Get("node1") == 100 {
+	if cloned.Get("node1") == 100 {
 		t.Error("copy was affected by modification to original")
 	}
 }
@@ -686,10 +686,10 @@ func TestPeerState_TimeTracking(t *testing.T) {
 	now := time.Now()
 
 	state := &PeerState{
-		Info:          &PeerInfo{Name: "peer1", Endpoint: "localhost:8080"},
-		VectorClock:   NewVectorClock(),
-		LastSeen:      now,
-		LastSyncTime:  now.Add(-time.Minute),
+		Info:         &PeerInfo{Name: "peer1", Endpoint: "localhost:8080"},
+		VectorClock:  NewVectorClock(),
+		LastSeen:     now,
+		LastSyncTime: now.Add(-time.Minute),
 	}
 
 	// Verify time is properly set

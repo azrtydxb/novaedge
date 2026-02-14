@@ -293,7 +293,7 @@ func TestGetActiveVIPs_NilAssignments(t *testing.T) {
 			t.Logf("GetActiveVIPs panicked with nil map (expected behavior): %v", r)
 		}
 	}()
-	
+
 	active := manager.GetActiveVIPs()
 	// If we get here without panic, check the result
 	_ = active
@@ -302,7 +302,7 @@ func TestGetActiveVIPs_NilAssignments(t *testing.T) {
 func TestNewManager(t *testing.T) {
 	logger := zap.NewNop()
 	manager, err := NewManager(logger)
-	
+
 	// NewManager may fail in environments without network access
 	// This is expected behavior - the handlers need network interfaces
 	if err != nil {

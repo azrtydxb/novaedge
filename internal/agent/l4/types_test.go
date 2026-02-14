@@ -39,9 +39,9 @@ func TestListenerType_Constants(t *testing.T) {
 
 func TestListenerConfig_Fields(t *testing.T) {
 	cfg := ListenerConfig{
-		Name:       "test-listener",
-		Port:       8080,
-		Type:       ListenerTypeTCP,
+		Name:        "test-listener",
+		Port:        8080,
+		Type:        ListenerTypeTCP,
 		BackendName: "test-backend",
 		Backends: []*pb.Endpoint{
 			{Address: "10.0.0.1", Port: 8080},

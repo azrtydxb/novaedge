@@ -384,7 +384,7 @@ func TestAllocator_IsAddressConflict(t *testing.T) {
 	}
 
 	// Check non-conflict
-	poolName, isConflict = a.IsAddressConflict("192.168.1.250")
+	_, isConflict = a.IsAddressConflict("192.168.1.250")
 	if isConflict {
 		t.Error("IsAddressConflict() should return false for unallocated address")
 	}

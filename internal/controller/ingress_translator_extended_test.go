@@ -729,10 +729,10 @@ func TestGetCanaryWeight(t *testing.T) {
 
 func TestGetCanaryHeader(t *testing.T) {
 	tests := []struct {
-		name            string
-		ingress         *networkingv1.Ingress
-		expectedHeader  string
-		expectedValue   string
+		name           string
+		ingress        *networkingv1.Ingress
+		expectedHeader string
+		expectedValue  string
 	}{
 		{
 			name: "header with custom value",
@@ -745,8 +745,8 @@ func TestGetCanaryHeader(t *testing.T) {
 					},
 				},
 			},
-			expectedHeader:  "X-Canary",
-			expectedValue:   "v1",
+			expectedHeader: "X-Canary",
+			expectedValue:  "v1",
 		},
 		{
 			name: "header with default value",
@@ -756,16 +756,16 @@ func TestGetCanaryHeader(t *testing.T) {
 					Annotations: map[string]string{AnnotationCanaryHeader: "X-Canary"},
 				},
 			},
-			expectedHeader:  "X-Canary",
-			expectedValue:   "true",
+			expectedHeader: "X-Canary",
+			expectedValue:  "true",
 		},
 		{
 			name: "no canary header",
 			ingress: &networkingv1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{Name: "test"},
 			},
-			expectedHeader:  "",
-			expectedValue:   "",
+			expectedHeader: "",
+			expectedValue:  "",
 		},
 		{
 			name: "empty canary header",
@@ -775,8 +775,8 @@ func TestGetCanaryHeader(t *testing.T) {
 					Annotations: map[string]string{AnnotationCanaryHeader: ""},
 				},
 			},
-			expectedHeader:  "",
-			expectedValue:   "",
+			expectedHeader: "",
+			expectedValue:  "",
 		},
 	}
 
@@ -852,12 +852,12 @@ func TestUseRegexPathMatching(t *testing.T) {
 
 func TestGetMirrorConfig(t *testing.T) {
 	tests := []struct {
-		name            string
-		ingress         *networkingv1.Ingress
-		expectBackend   bool
-		backendName     string
-		expectPercent   bool
-		percentValue    int32
+		name          string
+		ingress       *networkingv1.Ingress
+		expectBackend bool
+		backendName   string
+		expectPercent bool
+		percentValue  int32
 	}{
 		{
 			name: "with backend and percent",
@@ -865,8 +865,8 @@ func TestGetMirrorConfig(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "test",
 					Annotations: map[string]string{
-						AnnotationMirrorBackend:  "mirror-backend",
-						AnnotationMirrorPercent:  "50",
+						AnnotationMirrorBackend: "mirror-backend",
+						AnnotationMirrorPercent: "50",
 					},
 				},
 			},
@@ -902,7 +902,7 @@ func TestGetMirrorConfig(t *testing.T) {
 					Name: "test",
 					Annotations: map[string]string{
 						AnnotationMirrorBackend: "mirror-backend",
-						AnnotationMirrorPercent:  "150",
+						AnnotationMirrorPercent: "150",
 					},
 				},
 			},

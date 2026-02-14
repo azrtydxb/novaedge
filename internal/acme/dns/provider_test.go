@@ -160,12 +160,12 @@ func TestMockProvider_WaitForPropagation(t *testing.T) {
 func TestDNS01ChallengeProvider_Wrap(t *testing.T) {
 	mock := &mockProvider{}
 	logger := zap.NewNop()
-	
+
 	provider := &DNS01ChallengeProvider{
 		provider: mock,
 		logger:   logger,
 	}
-	
+
 	if provider.provider != mock {
 		t.Error("provider not set correctly")
 	}

@@ -45,7 +45,7 @@ func TestDefaultMaxConcurrentStreams(t *testing.T) {
 func TestServerOptions_ReturnsOptions(t *testing.T) {
 	logger := zap.NewNop()
 	opts := ServerOptions(logger)
-	
+
 	if len(opts) == 0 {
 		t.Error("ServerOptions() returned empty slice")
 	}
@@ -53,7 +53,7 @@ func TestServerOptions_ReturnsOptions(t *testing.T) {
 
 func TestClientOptions_ReturnsOptions(t *testing.T) {
 	opts := ClientOptions()
-	
+
 	if len(opts) == 0 {
 		t.Error("ClientOptions() returned empty slice")
 	}
