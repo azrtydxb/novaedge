@@ -31,6 +31,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	"github.com/piwi3910/novaedge/internal/agent/cpvip"
 	"github.com/piwi3910/novaedge/internal/agent/l4"
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
@@ -60,6 +61,14 @@ var (
 	tracingEnabled    bool
 	tracingEndpoint   string
 	tracingSampleRate float64
+
+	// Control-plane VIP mode
+	controlPlaneVIP  bool
+	cpVIPAddress     string
+	cpVIPInterface   string
+	cpAPIPort        int
+	cpHealthInterval time.Duration
+	cpHealthTimeout  time.Duration
 )
 
 func main() {
@@ -84,6 +93,14 @@ func main() {
 	flag.StringVar(&tracingEndpoint, "tracing-endpoint", "localhost:4317", "OTLP gRPC endpoint for trace export")
 	flag.Float64Var(&tracingSampleRate, "tracing-sample-rate", 0.1, "Trace sampling rate (0.0 to 1.0)")
 
+	// Control-plane VIP mode flags
+	flag.BoolVar(&controlPlaneVIP, "control-plane-vip", false, "Enable control-plane VIP mode for kube-apiserver HA")
+	flag.StringVar(&cpVIPAddress, "cp-vip-address", "", "Control-plane VIP address in CIDR notation (e.g., 10.0.0.100/32)")
+	flag.StringVar(&cpVIPInterface, "cp-vip-interface", "", "Network interface for control-plane VIP (auto-detect if empty)")
+	flag.IntVar(&cpAPIPort, "cp-api-port", 6443, "Kube-apiserver port for health checks")
+	flag.DurationVar(&cpHealthInterval, "cp-health-interval", time.Second, "Health check interval for control-plane VIP")
+	flag.DurationVar(&cpHealthTimeout, "cp-health-timeout", 3*time.Second, "Health check timeout for control-plane VIP")
+
 	flag.Parse()
 
 	// Validate required flags
@@ -101,6 +118,13 @@ func main() {
 		zap.String("version", agentVersion),
 		zap.String("controller", controllerAddr),
 	)
+
+	// Control-plane VIP mode: run a simplified agent that only manages
+	// a VIP for kube-apiserver HA, without connecting to the controller.
+	if controlPlaneVIP {
+		runControlPlaneVIPMode(logger)
+		return
+	}
 
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -375,6 +399,99 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 	logger.Info("Applying L4 configuration",
 		zap.Int("listeners", len(configs)))
 	return manager.ApplyConfig(ctx, configs)
+}
+
+// runControlPlaneVIPMode runs the agent in control-plane VIP mode.
+// This mode manages a single VIP for kube-apiserver HA without requiring
+// the NovaEdge controller, making it suitable for pre-bootstrap scenarios.
+func runControlPlaneVIPMode(logger *zap.Logger) {
+	logger.Info("Running in control-plane VIP mode",
+		zap.String("vip", cpVIPAddress),
+		zap.String("interface", cpVIPInterface),
+		zap.Int("api_port", cpAPIPort),
+	)
+
+	// Validate required flags
+	if cpVIPAddress == "" {
+		logger.Fatal("--cp-vip-address is required when --control-plane-vip is enabled")
+	}
+
+	// Create context with cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create CP VIP manager
+	cpManager, err := cpvip.NewManager(cpvip.Config{
+		VIPAddress:     cpVIPAddress,
+		Interface:      cpVIPInterface,
+		APIPort:        cpAPIPort,
+		HealthInterval: cpHealthInterval,
+		HealthTimeout:  cpHealthTimeout,
+	}, logger)
+	if err != nil {
+		logger.Fatal("Failed to create control-plane VIP manager", zap.Error(err))
+	}
+
+	// Create metrics server
+	metricsServer := server.NewMetricsServer(logger, metricsPort)
+
+	// Create health probe server
+	healthServer := server.NewHealthServer(logger, healthProbePort)
+
+	// Mark health probe as ready (CP VIP mode is always ready once started)
+	healthServer.SetReady(true)
+
+	// Start CP VIP manager
+	cpvipChan := make(chan error, 1)
+	go func() {
+		cpvipChan <- cpManager.Start(ctx)
+	}()
+
+	// Start metrics server
+	metricsChan := make(chan error, 1)
+	go func() {
+		metricsChan <- metricsServer.Start(ctx)
+	}()
+
+	// Start health probe server
+	healthChan := make(chan error, 1)
+	go func() {
+		healthChan <- healthServer.Start(ctx)
+	}()
+
+	// Wait for shutdown signal or error
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	select {
+	case err := <-cpvipChan:
+		logger.Error("CP VIP manager failed", zap.Error(err))
+	case err := <-metricsChan:
+		logger.Error("Metrics server failed", zap.Error(err))
+	case err := <-healthChan:
+		logger.Error("Health probe failed", zap.Error(err))
+	case sig := <-sigChan:
+		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
+	}
+
+	// Graceful shutdown
+	logger.Info("Shutting down control-plane VIP mode...")
+	cancel()
+
+	// Release VIP
+	if err := cpManager.Stop(); err != nil {
+		logger.Error("Error stopping CP VIP manager", zap.Error(err))
+	}
+
+	// Shutdown metrics server
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Error during metrics server shutdown", zap.Error(err))
+	}
+
+	logger.Info("Agent stopped (control-plane VIP mode)")
 }
 
 func initLogger(level string) *zap.Logger {
