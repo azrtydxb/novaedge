@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"syscall"
 
 	"go.uber.org/zap"
 )
@@ -66,6 +67,26 @@ func (t *bfdTransport) Start(ctx context.Context) error {
 	conn, err := net.ListenUDP("udp4", listenAddr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on UDP port %d: %w", t.listenPort, err)
+	}
+
+	// RFC 5881 Section 4: BFD Control packets MUST be transmitted with a
+	// TTL/Hop Limit value of 255. Single-hop receivers MUST verify TTL >= 254.
+	rawConn, err := conn.SyscallConn()
+	if err != nil {
+		_ = conn.Close()
+		return fmt.Errorf("failed to get raw connection for TTL: %w", err)
+	}
+	var setsockoptErr error
+	if controlErr := rawConn.Control(func(fd uintptr) {
+		setsockoptErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, 255)
+	}); controlErr != nil {
+		_ = conn.Close()
+		return fmt.Errorf("failed to set BFD socket options: %w", controlErr)
+	}
+	if setsockoptErr != nil {
+		t.logger.Warn("Failed to set BFD TTL socket option, BFD may not work with strict peers",
+			zap.Error(setsockoptErr),
+		)
 	}
 
 	// Record the actual bound port (important when listenPort is 0)
