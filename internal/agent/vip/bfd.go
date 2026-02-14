@@ -39,8 +39,8 @@ const (
 
 // BFD protocol constants
 const (
-	bfdDefaultDesiredMinTx  = 300 * time.Millisecond
-	bfdDefaultRequiredMinRx = 300 * time.Millisecond
+	bfdDefaultDesiredMinTx  = 500 * time.Millisecond
+	bfdDefaultRequiredMinRx = 500 * time.Millisecond
 	bfdDefaultDetectMult    = 3
 	bfdControlPort          = 3784
 	bfdEchoPort             = 3785
@@ -136,6 +136,9 @@ type BFDManager struct {
 	// Callback when BFD detects a neighbor is down
 	onNeighborDown func(peerIP net.IP)
 
+	// Callback when BFD detects a neighbor has recovered (session transitions to Up)
+	onNeighborUp func(peerIP net.IP)
+
 	// UDP transport for BFD control packets
 	transport *bfdTransport
 
@@ -185,7 +188,7 @@ var (
 )
 
 // NewBFDManager creates a new BFD manager
-func NewBFDManager(logger *zap.Logger, onNeighborDown func(peerIP net.IP)) *BFDManager {
+func NewBFDManager(logger *zap.Logger, onNeighborDown, onNeighborUp func(peerIP net.IP)) *BFDManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &BFDManager{
 		logger:            logger.Named("bfd"),
@@ -194,6 +197,7 @@ func NewBFDManager(logger *zap.Logger, onNeighborDown func(peerIP net.IP)) *BFDM
 		ctx:               ctx,
 		cancel:            cancel,
 		onNeighborDown:    onNeighborDown,
+		onNeighborUp:      onNeighborUp,
 		ListenPort:        bfdControlPort,
 		PeerPort:          bfdControlPort,
 	}
@@ -474,6 +478,16 @@ func (m *BFDManager) handleStateChange(peerIP net.IP, oldState, newState BFDSess
 		)
 		if m.onNeighborDown != nil {
 			m.onNeighborDown(peerIP)
+		}
+	}
+
+	// If session recovered to Up, notify BGP handler to re-announce routes
+	if newState == BFDStateUp && oldState != BFDStateUp {
+		m.logger.Info("BFD detected neighbor recovery, triggering route re-announcement",
+			zap.String("peer", peerIP.String()),
+		)
+		if m.onNeighborUp != nil {
+			m.onNeighborUp(peerIP)
 		}
 	}
 }

@@ -76,8 +76,8 @@ func NewBGPHandler(logger *zap.Logger) (*BGPHandler, error) {
 		started:    false,
 	}
 
-	// Create BFD manager with callback to withdraw routes on neighbor failure
-	handler.bfdManager = NewBFDManager(logger, handler.onBFDNeighborDown)
+	// Create BFD manager with callbacks for neighbor failure and recovery
+	handler.bfdManager = NewBFDManager(logger, handler.onBFDNeighborDown, handler.onBFDNeighborUp)
 
 	return handler, nil
 }
@@ -709,12 +709,97 @@ func (h *BGPHandler) onBFDNeighborDown(peerIP net.IP) {
 	}
 
 	if withdrawn > 0 {
-		metrics.BGPAnnouncedRoutes.Set(float64(len(h.activeVIPs) - withdrawn))
+		metrics.BGPAnnouncedRoutes.Set(float64(h.countAnnouncedVIPs()))
 		h.logger.Warn("Routes withdrawn due to BFD neighbor failure",
 			zap.String("peer", peerStr),
 			zap.Int("withdrawn_count", withdrawn),
 		)
 	}
+}
+
+// onBFDNeighborUp is called when BFD detects a neighbor has recovered.
+// It re-announces all routes that were previously withdrawn due to BFD failure,
+// providing automatic self-healing of BGP sessions.
+func (h *BGPHandler) onBFDNeighborUp(peerIP net.IP) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	peerStr := peerIP.String()
+	h.logger.Info("BFD detected neighbor recovery, re-announcing withdrawn routes",
+		zap.String("peer", peerStr),
+	)
+
+	if h.bgpServer == nil {
+		h.logger.Warn("BGP server not running, cannot re-announce routes",
+			zap.String("peer", peerStr),
+		)
+		return
+	}
+
+	ctx := context.Background()
+	reannounced := 0
+
+	for vipName, state := range h.activeVIPs {
+		if state.Assignment.BgpConfig == nil {
+			continue
+		}
+
+		// Check if this VIP has the recovered peer in its BGP config
+		peerFound := false
+		for _, peer := range state.Assignment.BgpConfig.Peers {
+			if peer.Address == peerStr {
+				peerFound = true
+				break
+			}
+		}
+
+		if !peerFound {
+			continue
+		}
+
+		// Only re-announce routes that were previously withdrawn
+		if state.Announced {
+			continue
+		}
+
+		h.logger.Info("Re-announcing route for VIP after BFD neighbor recovery",
+			zap.String("vip", vipName),
+			zap.String("address", state.Assignment.Address),
+			zap.String("recovered_peer", peerStr),
+		)
+
+		if err := h.announceRoute(ctx, state.IP, state.Assignment.BgpConfig, state.IsIPv6); err != nil {
+			h.logger.Error("Failed to re-announce route on BFD neighbor recovery",
+				zap.String("vip", vipName),
+				zap.String("peer", peerStr),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		state.Announced = true
+		reannounced++
+	}
+
+	if reannounced > 0 {
+		metrics.BGPAnnouncedRoutes.Set(float64(h.countAnnouncedVIPs()))
+		h.logger.Info("Routes re-announced after BFD neighbor recovery",
+			zap.String("peer", peerStr),
+			zap.Int("reannounced_count", reannounced),
+		)
+	}
+}
+
+// countAnnouncedVIPs returns the number of VIPs with Announced=true.
+// Called with h.mu held.
+func (h *BGPHandler) countAnnouncedVIPs() int {
+	count := 0
+	for _, state := range h.activeVIPs {
+		if state.Announced {
+			count++
+		}
+	}
+	return count
 }
 
 // startBGPServer initializes and starts the BGP server
@@ -902,7 +987,7 @@ func (h *BGPHandler) announceRoute(ctx context.Context, ip net.IP, config *pb.BG
 }
 
 // withdrawRoute withdraws a route for a VIP (IPv4 or IPv6)
-func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, _ *pb.BGPConfig, isIPv6 bool) error {
+func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, config *pb.BGPConfig, isIPv6 bool) error {
 	var prefixLen uint32
 	var family *api.Family
 
@@ -931,10 +1016,45 @@ func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, _ *pb.BGPConf
 		return fmt.Errorf("failed to marshal NLRI: %w", err)
 	}
 
+	// Build path attributes matching what was announced, so GoBGP can
+	// identify the exact path to delete. Without these, DeletePath fails
+	// with "nexthop not found".
+	attrs := []*anypb.Any{}
+
+	originAttr, err := anypb.New(&api.OriginAttribute{
+		Origin: 0, // IGP
+	})
+	if err != nil {
+		return fmt.Errorf("failed to marshal origin attribute for withdrawal: %w", err)
+	}
+	attrs = append(attrs, originAttr)
+
+	if config != nil {
+		if isIPv6 {
+			mpReachAttr, err := anypb.New(&api.MpReachNLRIAttribute{
+				Family:   family,
+				NextHops: []string{config.RouterId},
+			})
+			if err != nil {
+				return fmt.Errorf("failed to marshal MP_REACH_NLRI for withdrawal: %w", err)
+			}
+			attrs = append(attrs, mpReachAttr)
+		} else {
+			nexthopAttr, err := anypb.New(&api.NextHopAttribute{
+				NextHop: config.RouterId,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to marshal nexthop for withdrawal: %w", err)
+			}
+			attrs = append(attrs, nexthopAttr)
+		}
+	}
+
 	err = h.bgpServer.DeletePath(ctx, &api.DeletePathRequest{
 		TableType: api.TableType_GLOBAL,
 		Path: &api.Path{
 			Nlri:   nlri,
+			Pattrs: attrs,
 			Family: family,
 		},
 	})
