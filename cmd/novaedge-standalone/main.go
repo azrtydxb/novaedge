@@ -36,13 +36,19 @@ import (
 	"github.com/piwi3910/novaedge/internal/standalone"
 )
 
+// Build-time variables set via ldflags.
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 var (
 	configFile      string
 	nodeName        string
 	metricsPort     int
 	healthProbePort int
 	logLevel        string
-	version         = "dev"
 )
 
 func main() {
@@ -59,6 +65,8 @@ func main() {
 
 	logger.Info("Starting NovaEdge Standalone Load Balancer",
 		zap.String("version", version),
+		zap.String("commit", commit),
+		zap.String("date", date),
 		zap.String("config", configFile))
 
 	// Get node name

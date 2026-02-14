@@ -49,6 +49,13 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 )
 
+// Build-time variables set via ldflags.
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
@@ -105,6 +112,9 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	setupLog.Info("Starting NovaEdge controller",
+		"version", version, "commit", commit, "date", date)
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
