@@ -10,6 +10,20 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
+// Build-time version info set from main via SetVersionInfo.
+var (
+	cliVersion = "dev"
+	cliCommit  = "unknown"
+	cliDate    = "unknown"
+)
+
+// SetVersionInfo sets the build-time version information from ldflags.
+func SetVersionInfo(ver, com, dt string) {
+	cliVersion = ver
+	cliCommit = com
+	cliDate = dt
+}
+
 var (
 	kubeconfig string
 	namespace  string
@@ -79,4 +93,16 @@ func init() {
 
 	// Generation commands
 	rootCmd.AddCommand(newGenerateCommand())
+
+	// Version command
+	rootCmd.AddCommand(&cobra.Command{
+		Use:   "version",
+		Short: "Print the version information",
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			return nil // Skip kubeconfig loading
+		},
+		Run: func(_ *cobra.Command, _ []string) {
+			fmt.Printf("novactl %s (commit: %s, built: %s)\n", cliVersion, cliCommit, cliDate)
+		},
+	})
 }

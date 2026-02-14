@@ -20,8 +20,15 @@ COPY cmd/ cmd/
 COPY api/ api/
 COPY internal/ internal/
 
+# Build args for version injection
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+
 # Build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -a -o novaedge-controller cmd/novaedge-controller/main.go
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath \
+    -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
+    -o novaedge-controller cmd/novaedge-controller/main.go
 
 # Use distroless as minimal base image to package the controller binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
