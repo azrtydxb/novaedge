@@ -172,12 +172,14 @@ type ServicePortResolver func(namespace, serviceName, portName string) (int32, e
 type IngressTranslator struct {
 	namespace           string
 	servicePortResolver ServicePortResolver
+	defaultVIPRef       string
 }
 
 // NewIngressTranslator creates a new IngressTranslator
 func NewIngressTranslator(namespace string) *IngressTranslator {
 	return &IngressTranslator{
-		namespace: namespace,
+		namespace:     namespace,
+		defaultVIPRef: DefaultVIPRef,
 	}
 }
 
@@ -186,6 +188,20 @@ func NewIngressTranslatorWithResolver(namespace string, resolver ServicePortReso
 	return &IngressTranslator{
 		namespace:           namespace,
 		servicePortResolver: resolver,
+		defaultVIPRef:       DefaultVIPRef,
+	}
+}
+
+// NewIngressTranslatorWithOptions creates a new IngressTranslator with a service port resolver and configurable default VIP ref
+func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver, defaultVIPRef string) *IngressTranslator {
+	vipRef := defaultVIPRef
+	if vipRef == "" {
+		vipRef = DefaultVIPRef
+	}
+	return &IngressTranslator{
+		namespace:           namespace,
+		servicePortResolver: resolver,
+		defaultVIPRef:       vipRef,
 	}
 }
 
@@ -649,7 +665,7 @@ func (t *IngressTranslator) getVIPRef(ingress *networkingv1.Ingress) string {
 	if vipRef, exists := ingress.Annotations[AnnotationVIPRef]; exists {
 		return vipRef
 	}
-	return DefaultVIPRef
+	return t.defaultVIPRef
 }
 
 func (t *IngressTranslator) getIngressClassName(ingress *networkingv1.Ingress) string {

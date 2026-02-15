@@ -199,7 +199,12 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 
 	// Build routing table
 	for _, route := range snapshot.Routes {
-		for _, hostname := range route.Hostnames {
+		// Routes without hostnames act as catch-all: use "" as the key
+		hostnames := route.Hostnames
+		if len(hostnames) == 0 {
+			hostnames = []string{""}
+		}
+		for _, hostname := range hostnames {
 			for _, rule := range route.Rules {
 				entry := &RouteEntry{
 					Route:          route,
@@ -547,8 +552,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		span.SetAttributes(attribute.String("http.hostname", hostname))
 	}
 
-	// Find matching route using radix tree index for O(log n) path lookup
+	// Find matching route using radix tree index for O(log n) path lookup.
+	// If no hostname-specific routes exist, fall back to catch-all routes (empty hostname key).
 	rIdx, ok := r.routeIndexes[hostname]
+	if !ok {
+		rIdx, ok = r.routeIndexes[""]
+	}
 	if !ok {
 		if recording {
 			span.AddEvent("route_not_found", trace.WithAttributes(
