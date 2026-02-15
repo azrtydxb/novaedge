@@ -26,7 +26,7 @@ flowchart LR
 
 | Feature | Traditional | NovaEdge |
 |---------|-------------|----------|
-| L7 Load Balancing | NGINX/Envoy | Built-in (6 algorithms) |
+| L7 Load Balancing | NGINX/Envoy | Built-in (12 algorithms) |
 | L4 TCP/UDP Proxying | HAProxy/Envoy | Built-in |
 | VIP Management | MetalLB | Built-in (L2/BGP/OSPF + BFD) |
 | Rate Limiting | Envoy/Kong | Built-in (local + Redis) |
@@ -34,7 +34,11 @@ flowchart LR
 | WAF | ModSecurity/Kong | Built-in (Coraza) |
 | TLS/ACME | cert-manager/Traefik | Built-in + cert-manager support |
 | WASM Plugins | Envoy | Built-in (Wazero) |
+| Service Mesh | Istio/Linkerd | Built-in (TPROXY, no sidecars) |
+| Control-Plane VIP | kube-vip | Built-in (L2/BGP/BFD) |
 | Components to manage | 3+ | 1 |
+
+[Full comparison: What NovaEdge Replaces](comparison.md){ .md-button }
 
 ## Key Features
 
@@ -116,6 +120,23 @@ flowchart TB
 
 [Learn more about the architecture](architecture/overview.md)
 
+## What NovaEdge Replaces
+
+- [Full Comparison](comparison.md) - Tool-by-tool replacement guide with feature matrix
+
+## Use Cases
+
+Hands-on guides for common deployment scenarios, each with architecture diagrams and complete configurations:
+
+- [API Gateway](use-cases/api-gateway.md) - Replace Kong/Ambassador with NovaEdge
+- [Ingress Controller](use-cases/ingress-controller.md) - Replace NGINX Ingress Controller
+- [Bare-Metal Load Balancer](use-cases/bare-metal-lb.md) - Replace MetalLB for bare-metal clusters
+- [Gateway API](use-cases/gateway-api.md) - Use Kubernetes Gateway API with NovaEdge
+- [Service Mesh](use-cases/service-mesh.md) - Replace Istio/Linkerd with TPROXY-based mesh
+- [TLS & Certificate Management](use-cases/tls-management.md) - ACME, cert-manager, Vault integration
+- [WAF & Security Stack](use-cases/waf-security.md) - Replace ModSecurity with defense-in-depth
+- [Multi-Cluster Federation](use-cases/multi-cluster.md) - Hub-spoke federation across clusters
+
 ## Documentation
 
 ### Getting Started
@@ -134,7 +155,7 @@ flowchart TB
 
 #### Routing & Traffic
 - [Routing](user-guide/routing.md) - Configure routes and traffic matching
-- [Load Balancing](user-guide/load-balancing.md) - 6 algorithms and session affinity
+- [Load Balancing](user-guide/load-balancing.md) - 12 algorithms and session affinity
 - [L4 Proxying](user-guide/l4-proxying.md) - TCP/UDP proxying and TLS passthrough
 - [Middleware Pipelines](user-guide/middleware-pipelines.md) - Composable middleware chains
 - [Response Caching](user-guide/response-caching.md) - HTTP response caching
@@ -145,8 +166,12 @@ flowchart TB
 
 #### VIP & Networking
 - [VIP Management](user-guide/vip-management.md) - L2, BGP, OSPF modes with BFD and IPv6
+- [Control-Plane VIP](user-guide/control-plane-vip.md) - HA VIP for Kubernetes API server
 - [IP Pools](user-guide/ip-pools.md) - ProxyIPPool management and IPAM
 - [PROXY Protocol](user-guide/proxy-protocol.md) - PROXY protocol v1/v2 support
+
+#### Service Mesh
+- [Service Mesh](user-guide/service-mesh.md) - TPROXY-based mesh with mTLS and authorization
 
 #### Security & Authentication
 - [TLS](user-guide/tls.md) - TLS termination, mTLS, OCSP stapling, ACME challenges
