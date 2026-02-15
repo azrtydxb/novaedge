@@ -23,7 +23,9 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
@@ -575,6 +577,102 @@ func TestProxyVIPDeletion(t *testing.T) {
 
 	if err == nil && deletedVIP.DeletionTimestamp == nil {
 		t.Error("expected VIP to be deleted or marked for deletion")
+	}
+}
+
+func TestValidateLBPoliciesForECMP(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = novaedgev1alpha1.AddToScheme(scheme)
+
+	tests := []struct {
+		name              string
+		vipMode           novaedgev1alpha1.VIPMode
+		backendPolicy     novaedgev1alpha1.LoadBalancingPolicy
+		expectValid       bool
+		expectNoCondition bool
+	}{
+		{
+			name:          "BGP with Maglev - valid",
+			vipMode:       novaedgev1alpha1.VIPModeBGP,
+			backendPolicy: novaedgev1alpha1.LBPolicyMaglev,
+			expectValid:   true,
+		},
+		{
+			name:          "BGP with RingHash - valid",
+			vipMode:       novaedgev1alpha1.VIPModeBGP,
+			backendPolicy: novaedgev1alpha1.LBPolicyRingHash,
+			expectValid:   true,
+		},
+		{
+			name:          "BGP with unspecified - valid (will be auto-promoted)",
+			vipMode:       novaedgev1alpha1.VIPModeBGP,
+			backendPolicy: "",
+			expectValid:   true,
+		},
+		{
+			name:          "BGP with RoundRobin - invalid",
+			vipMode:       novaedgev1alpha1.VIPModeBGP,
+			backendPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
+			expectValid:   false,
+		},
+		{
+			name:          "OSPF with LeastConn - invalid",
+			vipMode:       novaedgev1alpha1.VIPModeOSPF,
+			backendPolicy: novaedgev1alpha1.LBPolicyLeastConn,
+			expectValid:   false,
+		},
+		{
+			name:              "L2ARP with RoundRobin - no condition",
+			vipMode:           novaedgev1alpha1.VIPModeL2ARP,
+			backendPolicy:     novaedgev1alpha1.LBPolicyRoundRobin,
+			expectNoCondition: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			vip := &novaedgev1alpha1.ProxyVIP{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-vip", Generation: 1},
+				Spec: novaedgev1alpha1.ProxyVIPSpec{
+					Address: "10.0.0.1/32",
+					Mode:    tt.vipMode,
+				},
+			}
+			backend := &novaedgev1alpha1.ProxyBackend{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-backend", Namespace: "default"},
+				Spec:       novaedgev1alpha1.ProxyBackendSpec{LBPolicy: tt.backendPolicy},
+			}
+
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
+			reconciler := &ProxyVIPReconciler{Client: fakeClient, Scheme: scheme}
+			reconciler.validateLBPoliciesForECMP(context.Background(), vip)
+
+			var found *metav1.Condition
+			for i := range vip.Status.Conditions {
+				if vip.Status.Conditions[i].Type == "LBPolicyValid" {
+					found = &vip.Status.Conditions[i]
+					break
+				}
+			}
+
+			if tt.expectNoCondition {
+				if found != nil {
+					t.Errorf("expected no LBPolicyValid condition, got %v", found)
+				}
+				return
+			}
+
+			if found == nil {
+				t.Fatal("expected LBPolicyValid condition, got none")
+			}
+
+			if tt.expectValid && found.Status != metav1.ConditionTrue {
+				t.Errorf("expected condition True, got %v", found.Status)
+			}
+			if !tt.expectValid && found.Status != metav1.ConditionFalse {
+				t.Errorf("expected condition False, got %v", found.Status)
+			}
+		})
 	}
 }
 
