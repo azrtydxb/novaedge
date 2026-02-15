@@ -33,6 +33,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
@@ -322,10 +323,16 @@ func main() {
 		}
 	}
 
-	// Initialize mesh CA for issuing workload certificates
+	// Initialize mesh CA for issuing workload certificates.
+	// Use a direct (non-cached) client since the manager cache hasn't started yet.
+	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "failed to create direct client for mesh CA")
+		os.Exit(1)
+	}
 	meshCALogger, _ := uberzap.NewProduction()
 	meshCA := meshca.NewMeshCA(meshCALogger, meshTrustDomain)
-	if err := meshCA.Initialize(context.Background(), mgr.GetClient()); err != nil {
+	if err := meshCA.Initialize(context.Background(), directClient); err != nil {
 		setupLog.Error(err, "failed to initialize mesh CA")
 		os.Exit(1)
 	}
