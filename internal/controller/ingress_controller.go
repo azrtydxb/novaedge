@@ -44,8 +44,9 @@ const (
 // IngressReconciler reconciles Kubernetes Ingress objects
 type IngressReconciler struct {
 	client.Client
-	Scheme       *runtime.Scheme
-	IngressClass string // Configurable ingress class name to watch
+	Scheme        *runtime.Scheme
+	IngressClass  string // Configurable ingress class name to watch
+	DefaultVIPRef string // Configurable default VIP reference for Ingress resources without explicit annotation
 }
 
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;update;patch
@@ -93,8 +94,8 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// Translate Ingress to CRDs with service port resolver
-	translator := NewIngressTranslatorWithResolver(ingress.Namespace, r.resolveServicePort)
+	// Translate Ingress to CRDs with service port resolver and configurable default VIP
+	translator := NewIngressTranslatorWithOptions(ingress.Namespace, r.resolveServicePort, r.DefaultVIPRef)
 	result, err := translator.Translate(ingress)
 	if err != nil {
 		logger.Error(err, "Failed to translate Ingress to CRDs")
