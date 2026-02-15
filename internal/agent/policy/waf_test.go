@@ -726,6 +726,62 @@ func (r *stringReaderCloser) Close() error {
 	return nil
 }
 
+func TestWAFEngineCache_HitAndMiss(t *testing.T) {
+	cache := NewWAFEngineCache(zap.NewNop())
+
+	config1 := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+	}
+
+	// First call: cache miss
+	engine1, err := cache.GetOrCreate(config1)
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	if cache.Size() != 1 {
+		t.Errorf("Expected cache size 1, got %d", cache.Size())
+	}
+
+	// Second call with same config: cache hit
+	engine2, err := cache.GetOrCreate(config1)
+	if err != nil {
+		t.Fatalf("Failed to get engine: %v", err)
+	}
+	if engine1 != engine2 {
+		t.Error("Expected same engine instance from cache")
+	}
+	if cache.Size() != 1 {
+		t.Errorf("Expected cache size still 1, got %d", cache.Size())
+	}
+
+	// Different config: cache miss
+	config2 := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    2,
+		AnomalyThreshold: 10,
+	}
+	engine3, err := cache.GetOrCreate(config2)
+	if err != nil {
+		t.Fatalf("Failed to create engine: %v", err)
+	}
+	if engine3 == engine1 {
+		t.Error("Expected different engine for different config")
+	}
+	if cache.Size() != 2 {
+		t.Errorf("Expected cache size 2, got %d", cache.Size())
+	}
+
+	// Purge
+	cache.Purge()
+	if cache.Size() != 0 {
+		t.Errorf("Expected cache size 0 after purge, got %d", cache.Size())
+	}
+}
+
 func TestHandleWAF_ResponseBodyInspection_BlocksCreditCard(t *testing.T) {
 	config := &pb.WAFConfig{
 		Enabled:                true,
