@@ -861,7 +861,7 @@ Key metrics:
 
 ## Related Documentation
 
-- [ProxyPolicy CRD Reference](../reference/proxypolicy.md) -- Full specification for all 13 policy types
+- [ProxyPolicy CRD Reference](../reference/crd-reference.md) -- Full specification for all 13 policy types
 - [TLS & Certificate Management](tls-management.md) -- Setting up HTTPS and mTLS for your gateway
 - [Service Mesh](service-mesh.md) -- East-west security with mesh authorization policies
-- [ProxyRoute CRD Reference](../reference/proxyroute.md) -- Routing rules and middleware pipelines
+- [ProxyRoute CRD Reference](../reference/crd-reference.md) -- Routing rules and middleware pipelines

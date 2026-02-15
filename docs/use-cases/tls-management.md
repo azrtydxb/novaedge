@@ -694,7 +694,7 @@ Key metrics:
 
 ## Related Documentation
 
-- [ProxyCertificate CRD Reference](../reference/proxycertificate.md) -- Full specification for certificate management
-- [ProxyGateway CRD Reference](../reference/proxygateway.md) -- Listener and TLS configuration details
+- [ProxyCertificate CRD Reference](../reference/crd-reference.md) -- Full specification for certificate management
+- [ProxyGateway CRD Reference](../reference/crd-reference.md) -- Listener and TLS configuration details
 - [WAF & Security Stack](waf-security.md) -- Applying security policies to your TLS endpoints
-- [Installation Guide](../installation/index.md) -- Setting up Vault connectivity and DNS provider access
+- [Installation Guide](../installation/kubernetes.md) -- Setting up Vault connectivity and DNS provider access

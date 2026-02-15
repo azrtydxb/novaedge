@@ -334,7 +334,7 @@ Key metrics:
 
 ## Related Documentation
 
-- [ProxyPolicy CRD Reference](../reference/proxypolicy.md) -- Full specification for all policy types including MeshAuthorization
+- [ProxyPolicy CRD Reference](../reference/crd-reference.md) -- Full specification for all policy types including MeshAuthorization
 - [Architecture Overview](../architecture/overview.md) -- How the controller and agent components interact
-- [Installation Guide](../installation/index.md) -- Deploying the NovaEdge agent DaemonSet
+- [Installation Guide](../installation/kubernetes.md) -- Deploying the NovaEdge agent DaemonSet
 - [WAF & Security Stack](waf-security.md) -- Complementary security policies for north-south traffic

@@ -581,8 +581,8 @@ psql -h 10.200.0.100 -p 5432 -U myuser -d mydb
 
 - [Kubernetes Gateway API Specification](https://gateway-api.sigs.k8s.io/)
 - [Ingress Controller Use Case](./ingress-controller.md) -- for legacy Ingress support
-- [ProxyVIP Reference](../reference/proxyvip.md)
-- [ProxyPolicy Reference](../reference/proxypolicy.md)
-- [ProxyGateway Reference](../reference/proxygateway.md)
-- [gRPC Routing Guide](../user-guide/grpc.md)
-- [L4 TCP/UDP Proxying Guide](../user-guide/l4-proxy.md)
+- [ProxyVIP Reference](../reference/crd-reference.md)
+- [ProxyPolicy Reference](../reference/crd-reference.md)
+- [ProxyGateway Reference](../reference/crd-reference.md)
+- [gRPC Routing Guide](../user-guide/routing.md)
+- [L4 TCP/UDP Proxying Guide](../user-guide/l4-proxying.md)
