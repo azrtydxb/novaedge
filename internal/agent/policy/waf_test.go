@@ -792,6 +792,42 @@ func TestHandleWAF_ResponseBodyInspection_AllowsCleanResponse(t *testing.T) {
 	}
 }
 
+func TestHandleWAF_DetectionMode_AddsHeaders(t *testing.T) {
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "detection",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+	}
+	engine, err := NewWAFEngine(config, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Failed to create WAF engine: %v", err)
+	}
+
+	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := HandleWAF(engine)(backend)
+	// Use a SQLi payload that triggers rules
+	req := httptest.NewRequest("GET", "http://example.com/api?q=SELECT+*+FROM+users+WHERE+1%3D1", nil)
+	req.RemoteAddr = testRemoteAddr
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected 200 in detection mode, got %d", rec.Code)
+	}
+	// In detection mode, matched rules info should be in headers
+	if matches := rec.Header().Get("X-WAF-Matches"); matches == "" {
+		t.Error("Expected X-WAF-Matches header in detection mode")
+	}
+	if ruleID := rec.Header().Get("X-WAF-Rule"); ruleID == "" {
+		t.Error("Expected X-WAF-Rule header in detection mode")
+	}
+}
+
 func TestHandleWAF_ResponseBodyInspection_Disabled(t *testing.T) {
 	config := &pb.WAFConfig{
 		Enabled:                true,

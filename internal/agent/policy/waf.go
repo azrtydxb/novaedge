@@ -144,8 +144,25 @@ func buildWAFDirectives(config *pb.WAFConfig) []string {
 	return directives
 }
 
+// WAFResult contains the result of WAF processing
+type WAFResult struct {
+	Interruption *types.Interruption
+	MatchedRules int
+	TopRuleID    int
+	TopCategory  string
+}
+
 // ProcessRequest processes an HTTP request through the WAF engine
 func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error) {
+	result, err := w.ProcessRequestDetailed(r)
+	if err != nil {
+		return nil, err
+	}
+	return result.Interruption, nil
+}
+
+// ProcessRequestDetailed processes an HTTP request and returns detailed match information
+func (w *WAFEngine) ProcessRequestDetailed(r *http.Request) (*WAFResult, error) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -180,7 +197,7 @@ func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error)
 	// Process request headers phase
 	if interruption := tx.ProcessRequestHeaders(); interruption != nil {
 		w.logInterruption(interruption, r)
-		return interruption, nil
+		return &WAFResult{Interruption: interruption, MatchedRules: 1, TopRuleID: interruption.RuleID, TopCategory: ruleCategory(interruption.RuleID)}, nil
 	}
 
 	// Buffer request body with size limit for WAF inspection.
@@ -198,7 +215,7 @@ func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error)
 			return nil, fmt.Errorf("failed to read request body: %w", readErr)
 		}
 		r.Body = io.NopCloser(bytes.NewReader(fullBody))
-		return nil, nil
+		return &WAFResult{}, nil
 	} else if r.Body != nil {
 		maxSize := w.config.MaxBodySize
 		if maxSize <= 0 {
@@ -223,42 +240,83 @@ func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error)
 		if interruption, _, err := tx.ReadRequestBodyFrom(bodyReader); err != nil {
 			w.logger.Error("Error reading request body for WAF", zap.Error(err))
 		} else if interruption != nil {
-			// Restore full body before returning so downstream can still read it
 			r.Body = io.NopCloser(bytes.NewReader(fullBody))
 			w.logInterruption(interruption, r)
-			return interruption, nil
+			return &WAFResult{Interruption: interruption, MatchedRules: 1, TopRuleID: interruption.RuleID, TopCategory: ruleCategory(interruption.RuleID)}, nil
 		}
 	}
 
 	if interruption, err := tx.ProcessRequestBody(); err != nil {
 		w.logger.Error("Error processing request body for WAF", zap.Error(err))
 	} else if interruption != nil {
-		// Restore full body before returning so downstream can still read it
 		r.Body = io.NopCloser(bytes.NewReader(fullBody))
 		w.logInterruption(interruption, r)
-		return interruption, nil
+		return &WAFResult{Interruption: interruption, MatchedRules: 1, TopRuleID: interruption.RuleID, TopCategory: ruleCategory(interruption.RuleID)}, nil
 	}
 
 	// Restore full request body for downstream handlers
 	r.Body = io.NopCloser(bytes.NewReader(fullBody))
 
-	return nil, nil
+	// Collect matched rules info (for detection mode where there's no interruption)
+	result := &WAFResult{}
+	matched := tx.MatchedRules()
+	result.MatchedRules = len(matched)
+	if len(matched) > 0 {
+		// Use the last matched rule as the "top" rule (highest phase/priority)
+		lastRule := matched[len(matched)-1]
+		result.TopRuleID = lastRule.Rule().ID()
+		result.TopCategory = ruleCategory(lastRule.Rule().ID())
+	}
+	return result, nil
 }
 
 // logInterruption logs a WAF interruption event
 func (w *WAFEngine) logInterruption(interruption *types.Interruption, r *http.Request) {
+	ruleID := strconv.Itoa(interruption.RuleID)
+	category := ruleCategory(interruption.RuleID)
+
 	metrics.WAFRequestsBlocked.Inc()
-	metrics.WAFRulesMatched.Inc()
+	metrics.WAFRulesMatched.WithLabelValues(ruleID, category).Inc()
 	metrics.WAFAnomalyScore.Observe(float64(interruption.Status))
 
 	w.logger.Warn("WAF rule matched",
 		zap.Int("rule_id", interruption.RuleID),
+		zap.String("category", category),
 		zap.String("action", interruption.Action),
 		zap.Int("status", interruption.Status),
 		zap.String("method", r.Method),
 		zap.String("path", r.URL.Path),
 		zap.String("remote_addr", r.RemoteAddr),
 	)
+}
+
+// ruleCategory maps a CRS rule ID to its attack category
+func ruleCategory(ruleID int) string {
+	prefix := ruleID / 1000
+	switch prefix {
+	case 920:
+		return "protocol"
+	case 921:
+		return "protocol"
+	case 930:
+		return "lfi"
+	case 932:
+		return "rce"
+	case 933:
+		return "injection-php"
+	case 934:
+		return "ssti"
+	case 941:
+		return "xss"
+	case 942:
+		return "sqli"
+	case 943:
+		return "fixation"
+	case 950:
+		return "data-leakage"
+	default:
+		return "other"
+	}
 }
 
 // GetFailMode returns the configured fail mode for the WAF engine
@@ -285,7 +343,7 @@ func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 				return
 			}
 
-			interruption, err := engine.ProcessRequest(r)
+			result, err := engine.ProcessRequestDetailed(r)
 			if err != nil {
 				failMode := string(engine.failMode)
 				if engine.failMode == WAFFailClosed {
@@ -312,21 +370,27 @@ func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 				return
 			}
 
-			if interruption != nil {
+			if result.Interruption != nil {
 				// In prevention mode, block the request
 				if engine.config.Mode != "detection" {
-					status := interruption.Status
+					status := result.Interruption.Status
 					if status == 0 {
 						status = http.StatusForbidden
 					}
 					http.Error(w, "Forbidden", status)
 					return
 				}
-				// In detection mode, log but allow the request
+				// In detection mode, log but allow the request; add score header
+				w.Header().Set("X-WAF-Score", strconv.Itoa(result.Interruption.Status))
+				w.Header().Set("X-WAF-Rule", strconv.Itoa(result.Interruption.RuleID))
 				engine.logger.Info("WAF detection mode: would have blocked request",
 					zap.String("path", r.URL.Path),
-					zap.Int("rule_id", interruption.RuleID),
+					zap.Int("rule_id", result.Interruption.RuleID),
 				)
+			} else if result.MatchedRules > 0 {
+				// Detection mode: rules matched but no interruption
+				w.Header().Set("X-WAF-Matches", strconv.Itoa(result.MatchedRules))
+				w.Header().Set("X-WAF-Rule", strconv.Itoa(result.TopRuleID))
 			}
 
 			// If response body inspection is enabled, wrap the writer

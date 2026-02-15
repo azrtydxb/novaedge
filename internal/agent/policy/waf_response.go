@@ -19,6 +19,7 @@ package policy
 import (
 	"bytes"
 	"net/http"
+	"strconv"
 
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/types"
@@ -116,11 +117,15 @@ func (w *wafResponseWriter) finish() {
 
 // logResponseInterruption logs a WAF response body interruption
 func (w *WAFEngine) logResponseInterruption(interruption *types.Interruption, r *http.Request) {
+	ruleID := strconv.Itoa(interruption.RuleID)
+	category := ruleCategory(interruption.RuleID)
+
 	metrics.WAFResponsesBlocked.Inc()
-	metrics.WAFRulesMatched.Inc()
+	metrics.WAFRulesMatched.WithLabelValues(ruleID, category).Inc()
 
 	w.logger.Warn("WAF response body rule matched",
 		zap.Int("rule_id", interruption.RuleID),
+		zap.String("category", category),
 		zap.String("action", interruption.Action),
 		zap.Int("status", interruption.Status),
 		zap.String("method", r.Method),
