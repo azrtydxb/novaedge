@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ConfigService_StreamConfig_FullMethodName = "/novaedge.proto.ConfigService/StreamConfig"
-	ConfigService_ReportStatus_FullMethodName = "/novaedge.proto.ConfigService/ReportStatus"
+	ConfigService_StreamConfig_FullMethodName           = "/novaedge.proto.ConfigService/StreamConfig"
+	ConfigService_ReportStatus_FullMethodName           = "/novaedge.proto.ConfigService/ReportStatus"
+	ConfigService_RequestMeshCertificate_FullMethodName = "/novaedge.proto.ConfigService/RequestMeshCertificate"
 )
 
 // ConfigServiceClient is the client API for ConfigService service.
@@ -34,6 +35,8 @@ type ConfigServiceClient interface {
 	StreamConfig(ctx context.Context, in *StreamConfigRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[ConfigSnapshot], error)
 	// ReportStatus allows agents to report their status back to controller
 	ReportStatus(ctx context.Context, in *AgentStatus, opts ...grpc.CallOption) (*StatusResponse, error)
+	// RequestMeshCertificate allows agents to request a mesh workload certificate
+	RequestMeshCertificate(ctx context.Context, in *MeshCertificateRequest, opts ...grpc.CallOption) (*MeshCertificateResponse, error)
 }
 
 type configServiceClient struct {
@@ -73,6 +76,16 @@ func (c *configServiceClient) ReportStatus(ctx context.Context, in *AgentStatus,
 	return out, nil
 }
 
+func (c *configServiceClient) RequestMeshCertificate(ctx context.Context, in *MeshCertificateRequest, opts ...grpc.CallOption) (*MeshCertificateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MeshCertificateResponse)
+	err := c.cc.Invoke(ctx, ConfigService_RequestMeshCertificate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConfigServiceServer is the server API for ConfigService service.
 // All implementations must embed UnimplementedConfigServiceServer
 // for forward compatibility.
@@ -84,6 +97,8 @@ type ConfigServiceServer interface {
 	StreamConfig(*StreamConfigRequest, grpc.ServerStreamingServer[ConfigSnapshot]) error
 	// ReportStatus allows agents to report their status back to controller
 	ReportStatus(context.Context, *AgentStatus) (*StatusResponse, error)
+	// RequestMeshCertificate allows agents to request a mesh workload certificate
+	RequestMeshCertificate(context.Context, *MeshCertificateRequest) (*MeshCertificateResponse, error)
 	mustEmbedUnimplementedConfigServiceServer()
 }
 
@@ -99,6 +114,9 @@ func (UnimplementedConfigServiceServer) StreamConfig(*StreamConfigRequest, grpc.
 }
 func (UnimplementedConfigServiceServer) ReportStatus(context.Context, *AgentStatus) (*StatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReportStatus not implemented")
+}
+func (UnimplementedConfigServiceServer) RequestMeshCertificate(context.Context, *MeshCertificateRequest) (*MeshCertificateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RequestMeshCertificate not implemented")
 }
 func (UnimplementedConfigServiceServer) mustEmbedUnimplementedConfigServiceServer() {}
 func (UnimplementedConfigServiceServer) testEmbeddedByValue()                       {}
@@ -150,6 +168,24 @@ func _ConfigService_ReportStatus_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConfigService_RequestMeshCertificate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MeshCertificateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).RequestMeshCertificate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_RequestMeshCertificate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).RequestMeshCertificate(ctx, req.(*MeshCertificateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ConfigService_ServiceDesc is the grpc.ServiceDesc for ConfigService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -160,6 +196,10 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportStatus",
 			Handler:    _ConfigService_ReportStatus_Handler,
+		},
+		{
+			MethodName: "RequestMeshCertificate",
+			Handler:    _ConfigService_RequestMeshCertificate_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
