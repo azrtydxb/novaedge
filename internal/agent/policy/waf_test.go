@@ -725,3 +725,101 @@ func (r *stringReaderCloser) Read(p []byte) (n int, err error) {
 func (r *stringReaderCloser) Close() error {
 	return nil
 }
+
+func TestHandleWAF_ResponseBodyInspection_BlocksCreditCard(t *testing.T) {
+	config := &pb.WAFConfig{
+		Enabled:                true,
+		Mode:                   "prevention",
+		ParanoiaLevel:          1,
+		AnomalyThreshold:       5,
+		ResponseBodyInspection: true,
+	}
+	engine, err := NewWAFEngine(config, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Failed to create WAF engine: %v", err)
+	}
+
+	// Backend handler that returns a credit card number in response
+	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"card": "4111111111111111"}`))
+	})
+
+	handler := HandleWAF(engine)(backend)
+	req := httptest.NewRequest("GET", "/api/user", nil)
+	req.RemoteAddr = testRemoteAddr
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("Expected 502 Bad Gateway for credit card leakage, got %d. Body: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandleWAF_ResponseBodyInspection_AllowsCleanResponse(t *testing.T) {
+	config := &pb.WAFConfig{
+		Enabled:                true,
+		Mode:                   "prevention",
+		ParanoiaLevel:          1,
+		AnomalyThreshold:       5,
+		ResponseBodyInspection: true,
+	}
+	engine, err := NewWAFEngine(config, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Failed to create WAF engine: %v", err)
+	}
+
+	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "ok", "user": "john"}`))
+	})
+
+	handler := HandleWAF(engine)(backend)
+	req := httptest.NewRequest("GET", "/api/user", nil)
+	req.RemoteAddr = testRemoteAddr
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected 200 OK for clean response, got %d", rec.Code)
+	}
+	if rec.Body.String() != `{"status": "ok", "user": "john"}` {
+		t.Errorf("Response body mismatch: %s", rec.Body.String())
+	}
+}
+
+func TestHandleWAF_ResponseBodyInspection_Disabled(t *testing.T) {
+	config := &pb.WAFConfig{
+		Enabled:                true,
+		Mode:                   "prevention",
+		ParanoiaLevel:          1,
+		AnomalyThreshold:       5,
+		ResponseBodyInspection: false,
+	}
+	engine, err := NewWAFEngine(config, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Failed to create WAF engine: %v", err)
+	}
+
+	// Backend returns a credit card number — should pass through since inspection is disabled
+	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"card": "4111111111111111"}`))
+	})
+
+	handler := HandleWAF(engine)(backend)
+	req := httptest.NewRequest("GET", "/api/user", nil)
+	req.RemoteAddr = testRemoteAddr
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected 200 OK when response inspection is disabled, got %d", rec.Code)
+	}
+}

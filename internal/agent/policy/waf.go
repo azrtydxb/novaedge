@@ -268,6 +268,16 @@ func (w *WAFEngine) GetFailMode() WAFFailMode {
 
 // HandleWAF is HTTP middleware for WAF protection
 func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
+	// Pre-create response inspection WAF if enabled
+	var respWAF coraza.WAF
+	if engine != nil && engine.config.ResponseBodyInspection {
+		var err error
+		respWAF, err = newResponseInspectionWAF(engine)
+		if err != nil {
+			engine.logger.Error("Failed to create response inspection WAF, disabling response inspection", zap.Error(err))
+		}
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if engine == nil || !engine.config.Enabled {
@@ -317,6 +327,29 @@ func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 					zap.String("path", r.URL.Path),
 					zap.Int("rule_id", interruption.RuleID),
 				)
+			}
+
+			// If response body inspection is enabled, wrap the writer
+			if respWAF != nil {
+				tx := respWAF.NewTransaction()
+				maxRespSize := engine.config.MaxResponseBodySize
+				if maxRespSize <= 0 {
+					maxRespSize = 131072 // Default 128KB
+				}
+				rw := &wafResponseWriter{
+					ResponseWriter: w,
+					tx:             tx,
+					engine:         engine,
+					request:        r,
+					maxBodySize:    maxRespSize,
+				}
+				next.ServeHTTP(rw, r)
+				rw.finish()
+				tx.ProcessLogging()
+				if closeErr := tx.Close(); closeErr != nil {
+					engine.logger.Debug("Error closing WAF response transaction", zap.Error(closeErr))
+				}
+				return
 			}
 
 			next.ServeHTTP(w, r)

@@ -49,6 +49,14 @@ var (
 		},
 	)
 
+	// WAFResponsesBlocked tracks total responses blocked by WAF response body inspection
+	WAFResponsesBlocked = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_waf_responses_blocked_total",
+			Help: "Total number of responses blocked by WAF response body inspection",
+		},
+	)
+
 	// WAFProcessingErrorsTotal tracks WAF processing errors with fail mode and action labels
 	WAFProcessingErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
