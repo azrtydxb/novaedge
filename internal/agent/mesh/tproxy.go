@@ -19,6 +19,7 @@ limitations under the License.
 package mesh
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -45,7 +46,7 @@ type IPTablesRunner interface {
 type execRunner struct{}
 
 func (e *execRunner) Run(args ...string) error {
-	cmd := exec.Command("iptables", args...) //nolint:gosec // args are constructed internally, not from user input
+	cmd := exec.CommandContext(context.Background(), "iptables", args...) //nolint:gosec // args are constructed internally, not from user input
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("iptables %s: %s: %w", strings.Join(args, " "), string(out), err)
@@ -54,7 +55,7 @@ func (e *execRunner) Run(args ...string) error {
 }
 
 func (e *execRunner) Output(args ...string) (string, error) {
-	cmd := exec.Command("iptables", args...) //nolint:gosec // args are constructed internally, not from user input
+	cmd := exec.CommandContext(context.Background(), "iptables", args...) //nolint:gosec // args are constructed internally, not from user input
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("iptables %s: %s: %w", strings.Join(args, " "), string(out), err)
@@ -191,8 +192,8 @@ func (m *TPROXYManager) Cleanup() error {
 
 	// Remove ip rule
 	if m.routingSetUp {
-		_ = exec.Command("ip", "rule", "del", "fwmark", "1", "lookup", "100").Run()                     //nolint:gosec // static args
-		_ = exec.Command("ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100").Run() //nolint:gosec // static args
+		_ = exec.CommandContext(context.Background(), "ip", "rule", "del", "fwmark", "1", "lookup", "100").Run()                     //nolint:gosec // static args
+		_ = exec.CommandContext(context.Background(), "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100").Run() //nolint:gosec // static args
 		m.routingSetUp = false
 	}
 
@@ -222,17 +223,17 @@ func (m *TPROXYManager) ensureChain() error {
 // Packets marked by TPROXY need a local route to be delivered to the proxy.
 func (m *TPROXYManager) ensureRouting() error {
 	// Add ip rule: fwmark 1 → lookup table 100
-	if err := exec.Command("ip", "rule", "add", "fwmark", "1", "lookup", "100").Run(); err != nil { //nolint:gosec // static args
+	if err := exec.CommandContext(context.Background(), "ip", "rule", "add", "fwmark", "1", "lookup", "100").Run(); err != nil { //nolint:gosec // static args
 		// May already exist — check
-		out, _ := exec.Command("ip", "rule", "show").Output() //nolint:gosec // static args
+		out, _ := exec.CommandContext(context.Background(), "ip", "rule", "show").Output() //nolint:gosec // static args
 		if !strings.Contains(string(out), "fwmark 0x1 lookup 100") {
 			return fmt.Errorf("failed to add ip rule: %w", err)
 		}
 	}
 
 	// Add local route: all traffic in table 100 goes to loopback
-	if err := exec.Command("ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100").Run(); err != nil { //nolint:gosec // static args
-		out, _ := exec.Command("ip", "route", "show", "table", "100").Output() //nolint:gosec // static args
+	if err := exec.CommandContext(context.Background(), "ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100").Run(); err != nil { //nolint:gosec // static args
+		out, _ := exec.CommandContext(context.Background(), "ip", "route", "show", "table", "100").Output() //nolint:gosec // static args
 		if !strings.Contains(string(out), "local default dev lo") {
 			return fmt.Errorf("failed to add local route: %w", err)
 		}

@@ -208,7 +208,7 @@ func (m *Manager) Shutdown(_ context.Context) error {
 // destination in the service table, detecting the protocol, and proxying
 // the traffic to a backend endpoint.
 func (m *Manager) handleConn(ctx context.Context, conn net.Conn, origDst net.IP, origPort int) {
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Look up the service
 	endpoint, ok := m.serviceTable.Lookup(origDst.String(), origPort)
@@ -234,16 +234,17 @@ func (m *Manager) handleConn(ctx context.Context, conn net.Conn, origDst net.IP,
 
 // proxyTCP establishes a connection to the backend and bidirectionally
 // copies data between the client and backend connections.
-func (m *Manager) proxyTCP(_ context.Context, clientConn io.ReadWriteCloser, backendAddr string, backendPort int) {
-	addr := fmt.Sprintf("%s:%d", backendAddr, backendPort)
-	backendConn, err := net.DialTimeout("tcp", addr, connectTimeout)
+func (m *Manager) proxyTCP(ctx context.Context, clientConn io.ReadWriteCloser, backendAddr string, backendPort int) {
+	addr := net.JoinHostPort(backendAddr, fmt.Sprintf("%d", backendPort))
+	dialer := &net.Dialer{Timeout: connectTimeout}
+	backendConn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		m.logger.Error("Failed to connect to backend",
 			zap.String("backend", addr),
 			zap.Error(err))
 		return
 	}
-	defer backendConn.Close()
+	defer func() { _ = backendConn.Close() }()
 
 	// Bidirectional copy
 	done := make(chan struct{})

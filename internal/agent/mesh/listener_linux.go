@@ -68,7 +68,7 @@ func OriginalDst(conn net.Conn) (net.IP, int, error) {
 	}
 
 	ip := net.IPv4(origAddr.Addr[0], origAddr.Addr[1], origAddr.Addr[2], origAddr.Addr[3])
-	port := int(binary.BigEndian.Uint16((*[2]byte)(unsafe.Pointer(&origAddr.Port))[:]))
+	port := int(binary.BigEndian.Uint16((*[2]byte)(unsafe.Pointer(&origAddr.Port))[:])) //nolint:gosec // required for SO_ORIGINAL_DST port extraction
 
 	return ip, port, nil
 }
@@ -131,7 +131,7 @@ func (tl *TransparentListener) acceptLoop(ctx context.Context, listener net.List
 			tl.logger.Error("Failed to get original destination",
 				zap.String("remote", conn.RemoteAddr().String()),
 				zap.Error(err))
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 

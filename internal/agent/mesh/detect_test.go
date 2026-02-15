@@ -27,7 +27,7 @@ func pipeConn(data []byte) net.Conn {
 	server, client := net.Pipe()
 	go func() {
 		_, _ = client.Write(data)
-		client.Close()
+		_ = client.Close()
 	}()
 	return server
 }
@@ -48,7 +48,7 @@ func TestDetectProtocolHTTP1GET(t *testing.T) {
 	if string(buf[:n]) != "GET" {
 		t.Errorf("Expected peeked data to start with 'GET', got %q", string(buf[:n]))
 	}
-	pc.Close()
+	_ = pc.Close()
 }
 
 func TestDetectProtocolHTTP1POST(t *testing.T) {
@@ -57,7 +57,7 @@ func TestDetectProtocolHTTP1POST(t *testing.T) {
 	if proto != ProtocolHTTP1 {
 		t.Errorf("Expected HTTP1, got %s", proto)
 	}
-	pc.Close()
+	_ = pc.Close()
 }
 
 func TestDetectProtocolHTTP2(t *testing.T) {
@@ -67,7 +67,7 @@ func TestDetectProtocolHTTP2(t *testing.T) {
 	if proto != ProtocolHTTP2 {
 		t.Errorf("Expected HTTP2, got %s", proto)
 	}
-	pc.Close()
+	_ = pc.Close()
 }
 
 func TestDetectProtocolTLS(t *testing.T) {
@@ -82,15 +82,14 @@ func TestDetectProtocolTLS(t *testing.T) {
 
 	// Verify data is still readable through PeekConn
 	buf := make([]byte, 2)
-	n, err := pc.Read(buf)
+	_, err := pc.Read(buf)
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
-	if buf[0] != 0x16 || buf[1] != 0x03 {
+	if len(buf) >= 2 && (buf[0] != 0x16 || buf[1] != 0x03) { //nolint:gosec // bounds checked
 		t.Errorf("Expected TLS header bytes, got %x %x", buf[0], buf[1])
 	}
-	_ = n
-	pc.Close()
+	_ = pc.Close()
 }
 
 func TestDetectProtocolOpaque(t *testing.T) {
@@ -101,7 +100,7 @@ func TestDetectProtocolOpaque(t *testing.T) {
 	if proto != ProtocolOpaque {
 		t.Errorf("Expected Opaque, got %s", proto)
 	}
-	pc.Close()
+	_ = pc.Close()
 }
 
 func TestDetectProtocolEmptyConn(t *testing.T) {
@@ -110,7 +109,7 @@ func TestDetectProtocolEmptyConn(t *testing.T) {
 	if proto != ProtocolOpaque {
 		t.Errorf("Expected Opaque for empty connection, got %s", proto)
 	}
-	pc.Close()
+	_ = pc.Close()
 }
 
 func TestPeekConnPreservesFullData(t *testing.T) {
@@ -131,5 +130,5 @@ func TestPeekConnPreservesFullData(t *testing.T) {
 	if string(all) != string(data) {
 		t.Errorf("Expected full data to be preserved.\nGot:  %q\nWant: %q", string(all), string(data))
 	}
-	pc.Close()
+	_ = pc.Close()
 }

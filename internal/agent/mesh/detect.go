@@ -68,7 +68,7 @@ func DetectProtocol(conn net.Conn) (Protocol, *PeekConn) {
 
 	pc := &PeekConn{Conn: conn, reader: br}
 
-	if err != nil && !(err == io.EOF && len(peeked) > 0) {
+	if err != nil && (err != io.EOF || len(peeked) == 0) {
 		return ProtocolOpaque, pc
 	}
 
