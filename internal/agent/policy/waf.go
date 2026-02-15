@@ -49,6 +49,7 @@ type WAFEngine struct {
 	config   *pb.WAFConfig
 	failMode WAFFailMode
 	logger   *zap.Logger
+	audit    *WAFAuditLogger
 	mu       sync.RWMutex
 }
 
@@ -88,6 +89,7 @@ func NewWAFEngine(config *pb.WAFConfig, logger *zap.Logger) (*WAFEngine, error) 
 		config:   config,
 		failMode: failMode,
 		logger:   logger,
+		audit:    NewWAFAuditLogger(logger),
 	}, nil
 }
 
@@ -347,32 +349,20 @@ func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 			if err != nil {
 				failMode := string(engine.failMode)
 				if engine.failMode == WAFFailClosed {
-					// Fail-closed: block the request on WAF processing error
 					metrics.WAFProcessingErrorsTotal.WithLabelValues(failMode, "blocked").Inc()
-					engine.logger.Error("WAF processing error, blocking request (fail-closed)",
-						zap.Error(err),
-						zap.String("method", r.Method),
-						zap.String("path", r.URL.Path),
-						zap.String("remote_addr", r.RemoteAddr),
-					)
+					engine.audit.LogProcessingError(r, err, engine.failMode, "blocked")
 					http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 					return
 				}
-				// Fail-open: allow request through but log a warning
 				metrics.WAFProcessingErrorsTotal.WithLabelValues(failMode, "allowed").Inc()
-				engine.logger.Warn("WAF processing error, allowing request (fail-open)",
-					zap.Error(err),
-					zap.String("method", r.Method),
-					zap.String("path", r.URL.Path),
-					zap.String("remote_addr", r.RemoteAddr),
-				)
+				engine.audit.LogProcessingError(r, err, engine.failMode, "allowed")
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			if result.Interruption != nil {
-				// In prevention mode, block the request
 				if engine.config.Mode != "detection" {
+					engine.audit.LogRequestBlocked(r, result.Interruption, "prevention")
 					status := result.Interruption.Status
 					if status == 0 {
 						status = http.StatusForbidden
@@ -380,15 +370,12 @@ func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 					http.Error(w, "Forbidden", status)
 					return
 				}
-				// In detection mode, log but allow the request; add score header
+				// Detection mode: log but allow; add score header
+				engine.audit.LogRequestBlocked(r, result.Interruption, "detection")
 				w.Header().Set("X-WAF-Score", strconv.Itoa(result.Interruption.Status))
 				w.Header().Set("X-WAF-Rule", strconv.Itoa(result.Interruption.RuleID))
-				engine.logger.Info("WAF detection mode: would have blocked request",
-					zap.String("path", r.URL.Path),
-					zap.Int("rule_id", result.Interruption.RuleID),
-				)
 			} else if result.MatchedRules > 0 {
-				// Detection mode: rules matched but no interruption
+				engine.audit.LogRequestDetected(r, result)
 				w.Header().Set("X-WAF-Matches", strconv.Itoa(result.MatchedRules))
 				w.Header().Set("X-WAF-Rule", strconv.Itoa(result.TopRuleID))
 			}
