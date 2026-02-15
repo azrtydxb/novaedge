@@ -45,6 +45,9 @@ dist/
 # Claude Code
 .claude/
 
+# Implementation plans (generated, not tracked)
+docs/plans/
+
 # Serena MCP plugin
 .serena/
 
