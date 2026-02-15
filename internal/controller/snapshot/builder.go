@@ -204,8 +204,18 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	}
 	snapshot.Routes = routes
 
+	// Determine if this node has any BGP/OSPF (ECMP) VIP assignments.
+	// ECMP VIPs require hash-based LB for cross-node routing consistency.
+	hasECMPVIP := false
+	for _, v := range vips {
+		if v.Mode == pb.VIPMode_BGP || v.Mode == pb.VIPMode_OSPF {
+			hasECMPVIP = true
+			break
+		}
+	}
+
 	// Build backends/clusters
-	clusters, endpoints, err := b.buildClusters(ctx)
+	clusters, endpoints, err := b.buildClusters(ctx, hasECMPVIP)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build clusters: %w", err)
 	}
@@ -530,8 +540,10 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 	return routes, nil
 }
 
-// buildClusters builds backend cluster configurations and their endpoints
-func (b *Builder) buildClusters(ctx context.Context) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
+// buildClusters builds backend cluster configurations and their endpoints.
+// When hasECMPVIP is true, non-hash LB policies are rejected and unspecified
+// policies are auto-promoted to Maglev for cross-node routing consistency.
+func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
 	backendList := &novaedgev1alpha1.ProxyBackendList{}
 	if err := b.client.List(ctx, backendList); err != nil {
 		return nil, nil, err
@@ -591,6 +603,25 @@ func (b *Builder) buildClusters(ctx context.Context) ([]*pb.Cluster, map[string]
 		// Session affinity configuration
 		if backend.Spec.SessionAffinity != nil {
 			cluster.SessionAffinity = convertSessionAffinity(backend.Spec.SessionAffinity)
+		}
+
+		// ECMP consistency: validate and adjust LB policy for BGP/OSPF VIPs
+		if hasECMPVIP {
+			switch cluster.LbPolicy {
+			case pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
+				// Auto-promote unspecified to Maglev for ECMP consistency
+				cluster.LbPolicy = pb.LoadBalancingPolicy_MAGLEV
+				log.FromContext(ctx).Info("Auto-promoted LB policy to Maglev for ECMP VIP consistency",
+					"backend", backend.Name, "namespace", backend.Namespace)
+			case pb.LoadBalancingPolicy_MAGLEV, pb.LoadBalancingPolicy_RING_HASH:
+				// Hash-based policies are compatible with ECMP
+			default:
+				// Non-hash policy with ECMP VIP: skip this cluster
+				log.FromContext(ctx).Error(nil, "Skipping backend: non-hash LB policy is incompatible with BGP/OSPF ECMP VIPs. Use Maglev or RingHash.",
+					"backend", backend.Name, "namespace", backend.Namespace,
+					"policy", cluster.LbPolicy.String())
+				continue
+			}
 		}
 
 		clusters = append(clusters, cluster)

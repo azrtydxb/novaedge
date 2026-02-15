@@ -90,6 +90,9 @@ var (
 	cpHealthInterval time.Duration
 	cpHealthTimeout  time.Duration
 
+	// Shutdown drain period
+	shutdownDrainPeriod time.Duration
+
 	// Control-plane VIP BGP/BFD configuration
 	cpVIPMode       string
 	cpBGPLocalAS    uint
@@ -130,6 +133,10 @@ func main() {
 	flag.IntVar(&cpAPIPort, "cp-api-port", 6443, "Kube-apiserver port for health checks")
 	flag.DurationVar(&cpHealthInterval, "cp-health-interval", time.Second, "Health check interval for control-plane VIP")
 	flag.DurationVar(&cpHealthTimeout, "cp-health-timeout", 3*time.Second, "Health check timeout for control-plane VIP")
+
+	// Shutdown drain period
+	flag.DurationVar(&shutdownDrainPeriod, "shutdown-drain-period", 3*time.Second,
+		"Delay between VIP release and server shutdown, allowing upstream routers to converge after BGP/OSPF withdrawal")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -356,6 +363,18 @@ func main() {
 	logger.Info("Releasing VIPs...")
 	if err := vipManager.Release(); err != nil {
 		logger.Error("Error releasing VIPs", zap.Error(err))
+	}
+
+	// Wait for upstream routers to converge after BGP/OSPF route withdrawal
+	// before shutting down servers. This prevents dropping in-flight requests.
+	if shutdownDrainPeriod > 0 {
+		logger.Info("Draining connections after VIP release...",
+			zap.Duration("drain_period", shutdownDrainPeriod))
+		select {
+		case <-time.After(shutdownDrainPeriod):
+		case <-shutdownCtx.Done():
+			logger.Warn("Shutdown timeout reached during drain period")
+		}
 	}
 
 	// Shutdown L4 listeners
