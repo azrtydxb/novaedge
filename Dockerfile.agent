@@ -32,9 +32,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath \
 
 # Use distroless as minimal base image to package the agent binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM gcr.io/distroless/static:nonroot
+# Agent requires root for privileged network operations (VIP binding, BGP port 179, ARP/NDP)
+FROM gcr.io/distroless/static:latest
 WORKDIR /
 COPY --from=builder /workspace/novaedge-agent .
-USER 65532:65532
 
 ENTRYPOINT ["/novaedge-agent"]
