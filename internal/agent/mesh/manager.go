@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -238,6 +239,13 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 		zap.Int("authz_policies", len(authzPolicies)))
 
 	return nil
+}
+
+// StartCertRequester launches a background goroutine that requests a mesh
+// workload certificate from the controller and renews it before expiry.
+func (m *Manager) StartCertRequester(ctx context.Context, nodeName string, conn *grpc.ClientConn) {
+	cr := NewCertRequester(m.logger, nodeName, m.trustDomain, m.UpdateTLSCertificate)
+	go cr.Run(ctx, conn)
 }
 
 // UpdateTLSCertificate updates the mesh mTLS certificate material.
