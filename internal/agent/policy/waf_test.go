@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -724,6 +725,45 @@ func (r *stringReaderCloser) Read(p []byte) (n int, err error) {
 
 func (r *stringReaderCloser) Close() error {
 	return nil
+}
+
+func TestWAFMatchCounter(t *testing.T) {
+	now := time.Now()
+	counter := NewWAFMatchCounter(10 * time.Minute)
+	counter.nowFunc = func() time.Time { return now }
+
+	// Initial count is 0
+	if got := counter.Get("1.2.3.4"); got != 0 {
+		t.Errorf("Expected 0, got %d", got)
+	}
+
+	// Increment and check
+	counter.Increment("1.2.3.4")
+	counter.Increment("1.2.3.4")
+	counter.Increment("5.6.7.8")
+
+	if got := counter.Get("1.2.3.4"); got != 2 {
+		t.Errorf("Expected 2, got %d", got)
+	}
+	if got := counter.Get("5.6.7.8"); got != 1 {
+		t.Errorf("Expected 1, got %d", got)
+	}
+
+	// Advance past TTL
+	counter.nowFunc = func() time.Time { return now.Add(11 * time.Minute) }
+	if got := counter.Get("1.2.3.4"); got != 0 {
+		t.Errorf("Expected 0 after TTL, got %d", got)
+	}
+
+	// New increment after TTL resets count
+	counter.Increment("1.2.3.4")
+	if got := counter.Get("1.2.3.4"); got != 1 {
+		t.Errorf("Expected 1 after TTL reset, got %d", got)
+	}
+
+	// Cleanup removes expired
+	counter.Cleanup()
+	// 5.6.7.8 should be cleaned up (expired), 1.2.3.4 should remain (just incremented)
 }
 
 func TestWAFEngineCache_HitAndMiss(t *testing.T) {

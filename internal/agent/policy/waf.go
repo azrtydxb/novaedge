@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/types"
@@ -45,12 +46,13 @@ const (
 
 // WAFEngine wraps the Coraza WAF engine with NovaEdge-specific configuration
 type WAFEngine struct {
-	waf      coraza.WAF
-	config   *pb.WAFConfig
-	failMode WAFFailMode
-	logger   *zap.Logger
-	audit    *WAFAuditLogger
-	mu       sync.RWMutex
+	waf          coraza.WAF
+	config       *pb.WAFConfig
+	failMode     WAFFailMode
+	logger       *zap.Logger
+	audit        *WAFAuditLogger
+	matchCounter *WAFMatchCounter
+	mu           sync.RWMutex
 }
 
 // NewWAFEngine creates a new WAF engine from protobuf configuration
@@ -85,11 +87,12 @@ func NewWAFEngine(config *pb.WAFConfig, logger *zap.Logger) (*WAFEngine, error) 
 	}
 
 	return &WAFEngine{
-		waf:      waf,
-		config:   config,
-		failMode: failMode,
-		logger:   logger,
-		audit:    NewWAFAuditLogger(logger),
+		waf:          waf,
+		config:       config,
+		failMode:     failMode,
+		logger:       logger,
+		audit:        NewWAFAuditLogger(logger),
+		matchCounter: NewWAFMatchCounter(10 * time.Minute),
 	}, nil
 }
 
@@ -272,14 +275,16 @@ func (w *WAFEngine) ProcessRequestDetailed(r *http.Request) (*WAFResult, error) 
 	return result, nil
 }
 
-// logInterruption logs a WAF interruption event
+// logInterruption logs a WAF interruption event and updates per-IP match counter
 func (w *WAFEngine) logInterruption(interruption *types.Interruption, r *http.Request) {
 	ruleID := strconv.Itoa(interruption.RuleID)
 	category := ruleCategory(interruption.RuleID)
+	clientIP := extractClientIP(r)
 
 	metrics.WAFRequestsBlocked.Inc()
 	metrics.WAFRulesMatched.WithLabelValues(ruleID, category).Inc()
 	metrics.WAFAnomalyScore.Observe(float64(interruption.Status))
+	w.matchCounter.Increment(clientIP)
 
 	w.logger.Warn("WAF rule matched",
 		zap.Int("rule_id", interruption.RuleID),
@@ -290,6 +295,12 @@ func (w *WAFEngine) logInterruption(interruption *types.Interruption, r *http.Re
 		zap.String("path", r.URL.Path),
 		zap.String("remote_addr", r.RemoteAddr),
 	)
+}
+
+// GetMatchCount returns the WAF match count for the given IP address.
+// This can be used by the rate limiter to dynamically throttle repeat offenders.
+func (w *WAFEngine) GetMatchCount(ip string) int {
+	return w.matchCounter.Get(ip)
 }
 
 // ruleCategory maps a CRS rule ID to its attack category
