@@ -601,8 +601,8 @@ kubectl get novaedgeremoteclusters -n novaedge-system -w
 
 ## Related Documentation
 
-- [NovaEdgeFederation CRD Reference](../reference/novaedgefederation.md) -- Full specification for federation configuration
-- [NovaEdgeRemoteCluster CRD Reference](../reference/novaedgeremotecluster.md) -- Full specification for spoke cluster registration
+- [NovaEdgeFederation CRD Reference](../reference/crd-reference.md) -- Full specification for federation configuration
+- [NovaEdgeRemoteCluster CRD Reference](../reference/crd-reference.md) -- Full specification for spoke cluster registration
 - [Architecture Overview](../architecture/overview.md) -- How the controller and agent components interact
 - [TLS & Certificate Management](tls-management.md) -- Setting up mTLS certificates for federation communication
-- [Installation Guide](../installation/index.md) -- Deploying NovaEdge in multi-cluster environments
+- [Installation Guide](../installation/kubernetes.md) -- Deploying NovaEdge in multi-cluster environments
