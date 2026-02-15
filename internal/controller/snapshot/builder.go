@@ -815,7 +815,7 @@ func (b *Builder) buildInternalServices(ctx context.Context) ([]*pb.InternalServ
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
 
-	var services []*pb.InternalService
+	services := make([]*pb.InternalService, 0, len(serviceList.Items))
 	for i := range serviceList.Items {
 		svc := &serviceList.Items[i]
 

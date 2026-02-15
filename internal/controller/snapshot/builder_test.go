@@ -31,9 +31,13 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testPortNameHTTP = "http"
+
 func TestBuildSnapshot(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
 
 	// Create test resources
 	vip := &novaedgev1alpha1.ProxyVIP{
@@ -60,7 +64,7 @@ func TestBuildSnapshot(t *testing.T) {
 			IngressClassName: "novaedge",
 			Listeners: []novaedgev1alpha1.Listener{
 				{
-					Name:      "http",
+					Name:      testPortNameHTTP,
 					Port:      80,
 					Protocol:  novaedgev1alpha1.ProtocolTypeHTTP,
 					Hostnames: []string{"example.com"},
@@ -235,6 +239,8 @@ func TestSnapshotCacheOperations(t *testing.T) {
 func TestBuildPoliciesSecurityHeaders(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
 
 	policy := &novaedgev1alpha1.ProxyPolicy{
 		ObjectMeta: metav1.ObjectMeta{
@@ -341,7 +347,7 @@ func TestResolveEndpointsTargetPort(t *testing.T) {
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
 				{
-					Name:       "http",
+					Name:       testPortNameHTTP,
 					Port:       80,
 					TargetPort: intstr.FromInt32(8080),
 				},
@@ -350,7 +356,7 @@ func TestResolveEndpointsTargetPort(t *testing.T) {
 	}
 
 	ready := true
-	portName := "http"
+	portName := testPortNameHTTP
 	port8080 := int32(8080)
 	es := &discoveryv1.EndpointSlice{
 		ObjectMeta: metav1.ObjectMeta{
@@ -608,7 +614,7 @@ func TestBuildInternalServices(t *testing.T) {
 
 	ready := true
 	port80 := int32(80)
-	portName := "http"
+	portName := testPortNameHTTP
 	protocol := corev1.ProtocolTCP
 
 	// Mesh-enabled service with endpoints
@@ -623,7 +629,7 @@ func TestBuildInternalServices(t *testing.T) {
 		Spec: corev1.ServiceSpec{
 			ClusterIP: "10.96.0.10",
 			Ports: []corev1.ServicePort{
-				{Name: "http", Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: corev1.ProtocolTCP},
+				{Name: testPortNameHTTP, Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: corev1.ProtocolTCP},
 			},
 		},
 	}
@@ -670,7 +676,7 @@ func TestBuildInternalServices(t *testing.T) {
 		Spec: corev1.ServiceSpec{
 			ClusterIP: "None",
 			Ports: []corev1.ServicePort{
-				{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
+				{Name: testPortNameHTTP, Port: 80, Protocol: corev1.ProtocolTCP},
 			},
 		},
 	}
@@ -704,7 +710,7 @@ func TestBuildInternalServices(t *testing.T) {
 	if len(svc.Ports) != 1 {
 		t.Fatalf("Expected 1 port, got %d", len(svc.Ports))
 	}
-	if svc.Ports[0].Port != 80 || svc.Ports[0].Name != "http" {
+	if svc.Ports[0].Port != 80 || svc.Ports[0].Name != testPortNameHTTP {
 		t.Errorf("Expected port 80/http, got %d/%s", svc.Ports[0].Port, svc.Ports[0].Name)
 	}
 	if len(svc.Endpoints) != 2 {
