@@ -34,6 +34,8 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
@@ -42,6 +44,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	"github.com/piwi3910/novaedge/internal/observability"
+	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -308,6 +311,14 @@ func main() {
 		if err := meshManager.Start(ctx); err != nil {
 			logger.Fatal("Failed to start mesh manager", zap.Error(err))
 		}
+
+		// Start mesh certificate requester in background.
+		// Creates a separate gRPC connection to the controller for cert requests.
+		meshConn, meshConnErr := createGRPCConnection(controllerAddr, grpcTLSCert, grpcTLSKey, grpcTLSCA)
+		if meshConnErr != nil {
+			logger.Fatal("Failed to create gRPC connection for mesh cert requester", zap.Error(meshConnErr))
+		}
+		meshManager.StartCertRequester(ctx, nodeName, meshConn)
 	}
 
 	// Start config watcher
@@ -687,4 +698,26 @@ func initLogger(level string) (*zap.Logger, zap.AtomicLevel) {
 	}
 
 	return logger, atomicLevel
+}
+
+// createGRPCConnection creates a gRPC client connection to the controller.
+// If TLS cert/key/CA are provided, it uses mTLS; otherwise insecure.
+func createGRPCConnection(addr, certFile, keyFile, caFile string) (*grpc.ClientConn, error) {
+	var opts []grpc.DialOption
+
+	if certFile != "" && keyFile != "" && caFile != "" {
+		creds, err := tlsutil.LoadClientTLSCredentials(certFile, keyFile, caFile, "")
+		if err != nil {
+			return nil, fmt.Errorf("failed to load TLS credentials: %w", err)
+		}
+		opts = append(opts, grpc.WithTransportCredentials(creds))
+	} else {
+		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	}
+
+	conn, err := grpc.NewClient(addr, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create gRPC connection: %w", err)
+	}
+	return conn, nil
 }
