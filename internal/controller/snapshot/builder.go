@@ -233,6 +233,13 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	l4Listeners := b.buildL4Listeners(ctx, snapshot.Gateways, snapshot.Endpoints)
 	snapshot.L4Listeners = l4Listeners
 
+	// Build internal service routing tables for east-west mesh traffic
+	internalServices, err := b.buildInternalServices(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build internal services: %w", err)
+	}
+	snapshot.InternalServices = internalServices
+
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
 
@@ -240,12 +247,13 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	duration := time.Since(startTime).Seconds()
 	sizeBytes := proto.Size(snapshot)
 	resourceCounts := map[string]int{
-		"gateways":     len(snapshot.Gateways),
-		"routes":       len(snapshot.Routes),
-		"clusters":     len(snapshot.Clusters),
-		"vips":         len(snapshot.VipAssignments),
-		"policies":     len(snapshot.Policies),
-		"l4_listeners": len(snapshot.L4Listeners),
+		"gateways":          len(snapshot.Gateways),
+		"routes":            len(snapshot.Routes),
+		"clusters":          len(snapshot.Clusters),
+		"vips":              len(snapshot.VipAssignments),
+		"policies":          len(snapshot.Policies),
+		"l4_listeners":      len(snapshot.L4Listeners),
+		"internal_services": len(snapshot.InternalServices),
 	}
 	RecordSnapshotBuild(nodeName, duration, sizeBytes, resourceCounts)
 
@@ -257,6 +265,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"vips", len(snapshot.VipAssignments),
 		"policies", len(snapshot.Policies),
 		"l4_listeners", len(snapshot.L4Listeners),
+		"internal_services", len(snapshot.InternalServices),
 		"duration_ms", duration*1000,
 		"size_bytes", sizeBytes)
 
@@ -790,6 +799,121 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 	}
 
 	return policies, nil
+}
+
+// meshAnnotation is the annotation key that opts a Service into mesh interception.
+const meshAnnotation = "novaedge.io/mesh"
+
+// buildInternalServices discovers Kubernetes Services annotated for mesh
+// interception and builds routing entries with resolved endpoints.
+func (b *Builder) buildInternalServices(ctx context.Context) ([]*pb.InternalService, error) {
+	logger := log.FromContext(ctx)
+
+	// List all Services across all namespaces
+	serviceList := &corev1.ServiceList{}
+	if err := b.client.List(ctx, serviceList); err != nil {
+		return nil, fmt.Errorf("failed to list services: %w", err)
+	}
+
+	var services []*pb.InternalService
+	for i := range serviceList.Items {
+		svc := &serviceList.Items[i]
+
+		// Only include Services annotated with novaedge.io/mesh: "enabled"
+		if svc.Annotations[meshAnnotation] != "enabled" {
+			continue
+		}
+
+		// Skip headless services (no ClusterIP) and ExternalName services
+		if svc.Spec.ClusterIP == "" || svc.Spec.ClusterIP == "None" {
+			logger.V(1).Info("Skipping headless/ExternalName service for mesh",
+				"service", svc.Name, "namespace", svc.Namespace)
+			continue
+		}
+
+		// Build ServicePort list
+		var ports []*pb.ServicePort
+		for _, sp := range svc.Spec.Ports {
+			ports = append(ports, &pb.ServicePort{
+				Name:       sp.Name,
+				Port:       sp.Port,
+				TargetPort: int32(sp.TargetPort.IntValue()), //nolint:gosec // port range is 0-65535
+				Protocol:   string(sp.Protocol),
+			})
+		}
+
+		// Resolve endpoints from EndpointSlices
+		endpoints, err := b.resolveInternalServiceEndpoints(ctx, svc)
+		if err != nil {
+			logger.Error(err, "Failed to resolve endpoints for mesh service",
+				"service", svc.Name, "namespace", svc.Namespace)
+			continue
+		}
+
+		services = append(services, &pb.InternalService{
+			Name:        svc.Name,
+			Namespace:   svc.Namespace,
+			ClusterIp:   svc.Spec.ClusterIP,
+			Ports:       ports,
+			Endpoints:   endpoints,
+			LbPolicy:    pb.LoadBalancingPolicy_ROUND_ROBIN,
+			MeshEnabled: true,
+		})
+
+		logger.V(1).Info("Added internal service for mesh routing",
+			"service", svc.Name, "namespace", svc.Namespace,
+			"clusterIP", svc.Spec.ClusterIP, "endpoints", len(endpoints))
+	}
+
+	// Sort for deterministic snapshot generation
+	sort.Slice(services, func(i, j int) bool {
+		if services[i].Namespace != services[j].Namespace {
+			return services[i].Namespace < services[j].Namespace
+		}
+		return services[i].Name < services[j].Name
+	})
+
+	return services, nil
+}
+
+// resolveInternalServiceEndpoints resolves all endpoints for a Service
+// from its EndpointSlices, across all ports.
+func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *corev1.Service) ([]*pb.Endpoint, error) {
+	endpointSliceList := &discoveryv1.EndpointSliceList{}
+	if err := b.client.List(ctx, endpointSliceList,
+		client.InNamespace(svc.Namespace),
+		client.MatchingLabels{
+			"kubernetes.io/service-name": svc.Name,
+		}); err != nil {
+		return nil, fmt.Errorf("failed to list endpoint slices: %w", err)
+	}
+
+	var endpoints []*pb.Endpoint
+	for _, es := range endpointSliceList.Items {
+		for _, ep := range es.Endpoints {
+			if len(ep.Addresses) == 0 {
+				continue
+			}
+
+			ready := ep.Conditions.Ready != nil && *ep.Conditions.Ready
+
+			// For each port in the EndpointSlice, create endpoints
+			for _, p := range es.Ports {
+				if p.Port == nil {
+					continue
+				}
+				for _, addr := range ep.Addresses {
+					endpoints = append(endpoints, &pb.Endpoint{
+						Address: addr,
+						Port:    *p.Port,
+						Ready:   ready,
+					})
+				}
+			}
+		}
+	}
+
+	return endpoints, nil
 }
 
 // resolveServiceEndpoints resolves endpoints from a ServiceReference

@@ -600,3 +600,137 @@ func TestResolveEndpointsUnnamedPort(t *testing.T) {
 		t.Errorf("Expected endpoint port 8080 (targetPort), got %d", result.Endpoints[0].Port)
 	}
 }
+
+func TestBuildInternalServices(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
+
+	ready := true
+	port80 := int32(80)
+	portName := "http"
+	protocol := corev1.ProtocolTCP
+
+	// Mesh-enabled service with endpoints
+	meshSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web",
+			Namespace: "app",
+			Annotations: map[string]string{
+				"novaedge.io/mesh": "enabled",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "10.96.0.10",
+			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 80, TargetPort: intstr.FromInt32(8080), Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
+
+	meshES := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "web-abc",
+			Namespace: "app",
+			Labels:    map[string]string{"kubernetes.io/service-name": "web"},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Ports: []discoveryv1.EndpointPort{
+			{Name: &portName, Port: &port80, Protocol: &protocol},
+		},
+		Endpoints: []discoveryv1.Endpoint{
+			{Addresses: []string{"10.244.0.5"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
+			{Addresses: []string{"10.244.0.6"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
+		},
+	}
+
+	// Non-mesh service (no annotation)
+	plainSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "db",
+			Namespace: "app",
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "10.96.0.20",
+			Ports: []corev1.ServicePort{
+				{Name: "postgres", Port: 5432, Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
+
+	// Headless mesh service (should be skipped)
+	headlessSvc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "headless",
+			Namespace: "app",
+			Annotations: map[string]string{
+				"novaedge.io/mesh": "enabled",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "None",
+			Ports: []corev1.ServicePort{
+				{Name: "http", Port: 80, Protocol: corev1.ProtocolTCP},
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(meshSvc, plainSvc, headlessSvc, meshES).
+		Build()
+
+	builder := NewBuilder(fakeClient)
+	services, err := builder.buildInternalServices(context.Background())
+	if err != nil {
+		t.Fatalf("buildInternalServices failed: %v", err)
+	}
+
+	// Only the mesh-enabled non-headless service should be included
+	if len(services) != 1 {
+		t.Fatalf("Expected 1 internal service, got %d", len(services))
+	}
+
+	svc := services[0]
+	if svc.Name != "web" || svc.Namespace != "app" {
+		t.Errorf("Expected web/app, got %s/%s", svc.Name, svc.Namespace)
+	}
+	if svc.ClusterIp != "10.96.0.10" {
+		t.Errorf("Expected ClusterIP 10.96.0.10, got %s", svc.ClusterIp)
+	}
+	if !svc.MeshEnabled {
+		t.Error("Expected MeshEnabled=true")
+	}
+	if len(svc.Ports) != 1 {
+		t.Fatalf("Expected 1 port, got %d", len(svc.Ports))
+	}
+	if svc.Ports[0].Port != 80 || svc.Ports[0].Name != "http" {
+		t.Errorf("Expected port 80/http, got %d/%s", svc.Ports[0].Port, svc.Ports[0].Name)
+	}
+	if len(svc.Endpoints) != 2 {
+		t.Fatalf("Expected 2 endpoints, got %d", len(svc.Endpoints))
+	}
+	if svc.LbPolicy != pb.LoadBalancingPolicy_ROUND_ROBIN {
+		t.Errorf("Expected ROUND_ROBIN LB policy, got %s", svc.LbPolicy.String())
+	}
+}
+
+func TestBuildInternalServicesEmpty(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
+
+	// No services at all
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		Build()
+
+	builder := NewBuilder(fakeClient)
+	services, err := builder.buildInternalServices(context.Background())
+	if err != nil {
+		t.Fatalf("buildInternalServices failed: %v", err)
+	}
+	if len(services) != 0 {
+		t.Errorf("Expected 0 internal services, got %d", len(services))
+	}
+}
