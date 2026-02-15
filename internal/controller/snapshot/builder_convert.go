@@ -572,7 +572,7 @@ func convertWAFConfig(config *novaedgev1alpha1.WAFConfig, c client.Reader, names
 // parseConfigMapRules parses multi-line SecLang rules from ConfigMap content
 func parseConfigMapRules(content string) []string {
 	lines := strings.Split(content, "\n")
-	var rules []string
+	rules := make([]string, 0, len(lines))
 	var current strings.Builder
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)

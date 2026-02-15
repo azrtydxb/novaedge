@@ -112,7 +112,9 @@ func (w *wafResponseWriter) finish() {
 
 	// No leakage detected — flush the original response
 	w.ResponseWriter.WriteHeader(w.statusCode)
-	w.ResponseWriter.Write(bodyBytes)
+	if _, writeErr := w.ResponseWriter.Write(bodyBytes); writeErr != nil {
+		w.engine.logger.Debug("Error writing response body", zap.Error(writeErr))
+	}
 }
 
 // logResponseInterruption logs a WAF response body interruption
@@ -135,7 +137,7 @@ func (w *WAFEngine) logResponseInterruption(interruption *types.Interruption, r 
 }
 
 // newResponseInspectionWAF creates a Coraza WAF instance configured for response body inspection
-func newResponseInspectionWAF(engine *WAFEngine) (coraza.WAF, error) {
+func newResponseInspectionWAF(_ *WAFEngine) (coraza.WAF, error) {
 	cfg := coraza.NewWAFConfig()
 	cfg = cfg.WithDirectives("SecRuleEngine On")
 	cfg = cfg.WithDirectives("SecResponseBodyAccess On")

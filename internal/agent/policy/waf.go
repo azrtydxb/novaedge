@@ -236,7 +236,8 @@ func (w *WAFEngine) ProcessRequestDetailed(r *http.Request) (*WAFResult, error) 
 		}
 		// Read remaining body (not inspected) for downstream
 		remaining, _ := io.ReadAll(r.Body)
-		fullBody = append(bodyBytes, remaining...)
+		fullBody = bodyBytes
+		fullBody = append(fullBody, remaining...)
 	}
 
 	// Process request body phase using buffered (size-limited) body

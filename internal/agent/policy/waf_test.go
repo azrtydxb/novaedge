@@ -836,10 +836,10 @@ func TestHandleWAF_ResponseBodyInspection_BlocksCreditCard(t *testing.T) {
 	}
 
 	// Backend handler that returns a credit card number in response
-	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"card": "4111111111111111"}`))
+		_, _ = w.Write([]byte(`{"card": "4111111111111111"}`))
 	})
 
 	handler := HandleWAF(engine)(backend)
@@ -867,10 +867,10 @@ func TestHandleWAF_ResponseBodyInspection_AllowsCleanResponse(t *testing.T) {
 		t.Fatalf("Failed to create WAF engine: %v", err)
 	}
 
-	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status": "ok", "user": "john"}`))
+		_, _ = w.Write([]byte(`{"status": "ok", "user": "john"}`))
 	})
 
 	handler := HandleWAF(engine)(backend)
@@ -900,7 +900,7 @@ func TestHandleWAF_DetectionMode_AddsHeaders(t *testing.T) {
 		t.Fatalf("Failed to create WAF engine: %v", err)
 	}
 
-	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -938,10 +938,10 @@ func TestHandleWAF_ResponseBodyInspection_Disabled(t *testing.T) {
 	}
 
 	// Backend returns a credit card number — should pass through since inspection is disabled
-	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"card": "4111111111111111"}`))
+		_, _ = w.Write([]byte(`{"card": "4111111111111111"}`))
 	})
 
 	handler := HandleWAF(engine)(backend)
