@@ -595,13 +595,16 @@ type RedisConnectionConfig struct {
 
 // WAFPolicy defines WAF configuration
 type WAFPolicy struct {
-	Enabled          bool     `yaml:"enabled"`
-	Mode             string   `yaml:"mode,omitempty"` // detection, prevention
-	ParanoiaLevel    int      `yaml:"paranoiaLevel,omitempty"`
-	AnomalyThreshold int      `yaml:"anomalyThreshold,omitempty"`
-	RulesFile        string   `yaml:"rulesFile,omitempty"`
-	RuleExclusions   []string `yaml:"ruleExclusions,omitempty"`
-	CustomRules      []string `yaml:"customRules,omitempty"`
+	Enabled                bool     `yaml:"enabled"`
+	Mode                   string   `yaml:"mode,omitempty"` // detection, prevention
+	ParanoiaLevel          int      `yaml:"paranoiaLevel,omitempty"`
+	AnomalyThreshold       int      `yaml:"anomalyThreshold,omitempty"`
+	RulesFile              string   `yaml:"rulesFile,omitempty"`
+	RuleExclusions         []string `yaml:"ruleExclusions,omitempty"`
+	CustomRules            []string `yaml:"customRules,omitempty"`
+	MaxBodySize            int64    `yaml:"maxBodySize,omitempty"`
+	ResponseBodyInspection bool     `yaml:"responseBodyInspection,omitempty"`
+	MaxResponseBodySize    int64    `yaml:"maxResponseBodySize,omitempty"`
 }
 
 // WASMPluginPolicy defines WASM plugin configuration for standalone mode

@@ -527,11 +527,15 @@ func convertWAFConfig(config *novaedgev1alpha1.WAFConfig) *pb.WAFConfig {
 	}
 
 	pbConfig := &pb.WAFConfig{
-		Enabled:          config.Enabled,
-		Mode:             config.Mode,
-		ParanoiaLevel:    config.ParanoiaLevel,
-		AnomalyThreshold: config.AnomalyThreshold,
-		RuleExclusions:   config.RuleExclusions,
+		Enabled:                config.Enabled,
+		Mode:                   config.Mode,
+		ParanoiaLevel:          config.ParanoiaLevel,
+		AnomalyThreshold:       config.AnomalyThreshold,
+		RuleExclusions:         config.RuleExclusions,
+		CustomRules:            config.CustomRules,
+		MaxBodySize:            config.MaxBodySize,
+		ResponseBodyInspection: config.ResponseBodyInspection,
+		MaxResponseBodySize:    config.MaxResponseBodySize,
 	}
 
 	if config.RulesConfigMap != nil {
