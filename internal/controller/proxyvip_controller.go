@@ -18,7 +18,9 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -258,6 +260,9 @@ func (r *ProxyVIPReconciler) updateVIPStatus(ctx context.Context, vip *novaedgev
 	// Update or add condition
 	setCondition(&vip.Status.Conditions, condition)
 
+	// Validate LB policies for ECMP compatibility
+	r.validateLBPoliciesForECMP(ctx, vip)
+
 	// Update status
 	return r.Status().Update(ctx, vip)
 }
@@ -279,6 +284,62 @@ func setCondition(conditions *[]metav1.Condition, newCondition metav1.Condition)
 
 	// Add new condition
 	*conditions = append(*conditions, newCondition)
+}
+
+// validateLBPoliciesForECMP checks if backends use hash-based LB when VIP is in ECMP mode (BGP/OSPF).
+// Sets a LBPolicyValid condition on the VIP status.
+func (r *ProxyVIPReconciler) validateLBPoliciesForECMP(ctx context.Context, vip *novaedgev1alpha1.ProxyVIP) {
+	// Only validate for ECMP modes
+	if vip.Spec.Mode != novaedgev1alpha1.VIPModeBGP && vip.Spec.Mode != novaedgev1alpha1.VIPModeOSPF {
+		removeCondition(&vip.Status.Conditions, "LBPolicyValid")
+		return
+	}
+
+	backendList := &novaedgev1alpha1.ProxyBackendList{}
+	if err := r.List(ctx, backendList); err != nil {
+		return
+	}
+
+	var invalidBackends []string
+	for _, backend := range backendList.Items {
+		switch backend.Spec.LBPolicy {
+		case novaedgev1alpha1.LBPolicyMaglev, novaedgev1alpha1.LBPolicyRingHash, "":
+			// Valid for ECMP (empty will be auto-promoted to Maglev at snapshot time)
+		default:
+			invalidBackends = append(invalidBackends, backend.Namespace+"/"+backend.Name)
+		}
+	}
+
+	condition := metav1.Condition{
+		Type:               "LBPolicyValid",
+		ObservedGeneration: vip.Generation,
+		LastTransitionTime: metav1.Now(),
+	}
+
+	if len(invalidBackends) == 0 {
+		condition.Status = metav1.ConditionTrue
+		condition.Reason = "AllPoliciesCompatible"
+		condition.Message = "All backends use hash-based LB compatible with ECMP"
+	} else {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = "IncompatibleLBPolicy"
+		condition.Message = fmt.Sprintf("Backends with non-hash LB will be excluded from ECMP routing: %s. Use Maglev or RingHash.", strings.Join(invalidBackends, ", "))
+	}
+
+	setCondition(&vip.Status.Conditions, condition)
+}
+
+// removeCondition removes a condition by type from the condition list
+func removeCondition(conditions *[]metav1.Condition, conditionType string) {
+	if conditions == nil {
+		return
+	}
+	for i, c := range *conditions {
+		if c.Type == conditionType {
+			*conditions = append((*conditions)[:i], (*conditions)[i+1:]...)
+			return
+		}
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager
