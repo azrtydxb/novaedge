@@ -54,6 +54,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - What NovaEdge Replaces: comparison.md
   - Getting Started:
     - Quick Start: getting-started/quickstart.md
   - Architecture:
@@ -65,12 +66,23 @@ nav:
     - Kubernetes: installation/kubernetes.md
     - Helm: installation/helm.md
     - Standalone: installation/standalone.md
+  - Use Cases:
+    - API Gateway: use-cases/api-gateway.md
+    - Ingress Controller: use-cases/ingress-controller.md
+    - Bare-Metal Load Balancer: use-cases/bare-metal-lb.md
+    - Gateway API: use-cases/gateway-api.md
+    - Service Mesh: use-cases/service-mesh.md
+    - TLS & Certificate Management: use-cases/tls-management.md
+    - WAF & Security Stack: use-cases/waf-security.md
+    - Multi-Cluster Federation: use-cases/multi-cluster.md
   - User Guide:
     - Routing: user-guide/routing.md
     - Load Balancing: user-guide/load-balancing.md
     - VIP Management: user-guide/vip-management.md
+    - Control-Plane VIP: user-guide/control-plane-vip.md
     - IP Address Pools: user-guide/ip-pools.md
     - K3s Control Plane HA: user-guide/k3s-control-plane-ha.md
+    - Service Mesh: user-guide/service-mesh.md
     - L4 TCP/UDP Proxying: user-guide/l4-proxying.md
     - Policies: user-guide/policies.md
     - Authentication: user-guide/authentication.md

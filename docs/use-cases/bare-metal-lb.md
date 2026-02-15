@@ -509,9 +509,9 @@ kubectl get proxyvip web-vip-bgp -w
 
 ## Related Documentation
 
-- [ProxyVIP Reference](../reference/proxyvip.md)
-- [ProxyIPPool Reference](../reference/proxyippool.md)
+- [ProxyVIP Reference](../reference/crd-reference.md)
+- [ProxyIPPool Reference](../reference/crd-reference.md)
 - [VIP Management Guide](../user-guide/vip-management.md)
-- [BGP Configuration Guide](../user-guide/bgp.md)
-- [BFD Configuration Guide](../user-guide/bfd.md)
-- [Network Architecture](../architecture/networking.md)
+- [BGP Configuration Guide](../user-guide/vip-management.md)
+- [BFD Configuration Guide](../user-guide/vip-management.md)
+- [Network Architecture](../architecture/overview.md)

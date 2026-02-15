@@ -453,11 +453,7 @@ curl -v -X OPTIONS https://api.example.com/api/v1/users \
 
 ## Related Documentation
 
-- [ProxyGateway Reference](../reference/proxygateway.md)
-- [ProxyRoute Reference](../reference/proxyroute.md)
-- [ProxyPolicy Reference](../reference/proxypolicy.md)
-- [ProxyBackend Reference](../reference/proxybackend.md)
-- [ProxyVIP Reference](../reference/proxyvip.md)
-- [TLS and Certificate Management](../user-guide/tls-certificates.md)
-- [Rate Limiting Guide](../user-guide/rate-limiting.md)
+- [CRD Reference](../reference/crd-reference.md)
+- [TLS Management](../user-guide/tls.md)
+- [Policies](../user-guide/policies.md)
 - [Authentication Guide](../user-guide/authentication.md)

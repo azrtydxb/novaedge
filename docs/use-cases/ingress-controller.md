@@ -381,8 +381,8 @@ echo | openssl s_client -connect 192.168.1.100:443 -servername app.example.com 2
 
 ## Related Documentation
 
-- [ProxyGateway Reference](../reference/proxygateway.md)
-- [ProxyVIP Reference](../reference/proxyvip.md)
-- [TLS and Certificate Management](../user-guide/tls-certificates.md)
+- [ProxyGateway Reference](../reference/crd-reference.md)
+- [ProxyVIP Reference](../reference/crd-reference.md)
+- [TLS and Certificate Management](../user-guide/tls.md)
 - [Gateway API Use Case](./gateway-api.md) -- for the modern alternative to Ingress
 - [Installation Guide](../installation/helm.md)

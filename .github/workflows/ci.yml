@@ -20,6 +20,7 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go }}
       helm: ${{ steps.filter.outputs.helm }}
+      docs: ${{ steps.filter.outputs.docs }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -38,6 +39,9 @@ jobs:
             helm:
               - 'charts/**'
               - 'config/crd/**'
+            docs:
+              - 'docs/**'
+              - 'mkdocs.yml'
 
   # Go code quality checks
   lint:
@@ -211,11 +215,34 @@ jobs:
           fi
           echo "CRDs are in sync"
 
+  # Documentation build validation
+  docs:
+    name: Docs Build
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install MkDocs and dependencies
+        run: |
+          pip install mkdocs-material
+          pip install mkdocs-git-revision-date-localized-plugin
+
+      - name: Build documentation (strict mode)
+        run: mkdocs build --strict
+
   # Status check (all jobs must pass or be skipped)
   status-check:
     name: Status Check
     runs-on: ubuntu-latest
-    needs: [lint, security, test, build, helm-lint]
+    needs: [lint, security, test, build, helm-lint, docs]
     if: always()
     steps:
       - name: Check all jobs status
@@ -225,6 +252,7 @@ jobs:
           TEST_RESULT: ${{ needs.test.result }}
           BUILD_RESULT: ${{ needs.build.result }}
           HELM_RESULT: ${{ needs.helm-lint.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
         run: |
           results=(
             "$LINT_RESULT"
@@ -232,6 +260,7 @@ jobs:
             "$TEST_RESULT"
             "$BUILD_RESULT"
             "$HELM_RESULT"
+            "$DOCS_RESULT"
           )
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then

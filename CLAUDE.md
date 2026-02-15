@@ -350,6 +350,32 @@ Agents must atomically swap runtime config when receiving new snapshots.
 - WAF via Coraza engine
 - Request size limits and security headers policy
 
+## Documentation Freshness
+
+**Every PR that changes behavior must include corresponding documentation updates.** This is enforced by CI and code review.
+
+### What Requires Doc Updates
+- New features or CRDs → user guide page or section, examples, CRD reference
+- Changed API fields, flags, or config options → update relevant reference docs
+- New LB algorithms, policies, or middleware → update user guide + examples
+- Architecture changes → update architecture docs and diagrams
+- New CLI commands or flags → update CLI reference
+- Helm chart changes → update Helm values reference
+- Changed deployment requirements → update installation guides
+
+### Documentation Structure
+- `docs/comparison.md` - Tool replacement guide (update when adding new replacement capabilities)
+- `docs/use-cases/` - Use-case guides with architecture diagrams and complete YAML configs
+- `docs/user-guide/` - Feature reference docs
+- `docs/reference/` - CRD, CLI, and Helm reference
+- `docs/examples/index.md` - Quick-reference config examples
+- `mkdocs.yml` - Navigation (must include any new pages)
+
+### CI Enforcement
+- `mkdocs build --strict` runs on every PR that touches `docs/`, `mkdocs.yml`, `*.go`, `charts/`, or `config/`
+- Broken internal links, missing nav entries, and malformed Mermaid diagrams will fail the build
+- The Claude code review also checks for documentation completeness
+
 ## Common Pitfalls
 
 ### Controller Development
