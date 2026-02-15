@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -622,4 +623,105 @@ func containsString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestWAFEngine_MaxBodySize_Negative_SkipsBody(t *testing.T) {
+	config := &pb.WAFConfig{
+		Enabled:       true,
+		Mode:          "prevention",
+		ParanoiaLevel: 1,
+		MaxBodySize:   -1, // Skip body inspection entirely
+	}
+	engine, err := NewWAFEngine(config, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Failed to create WAF engine: %v", err)
+	}
+
+	// Body contains SQLi but MaxBodySize=0 means no body inspection
+	body := "username=admin' OR 1=1--"
+	req := httptest.NewRequest("POST", "/login", stringReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if interruption != nil {
+		t.Error("Body should not be inspected when MaxBodySize=0")
+	}
+}
+
+func TestWAFEngine_MaxBodySize_LimitsInspection(t *testing.T) {
+	config := &pb.WAFConfig{
+		Enabled:       true,
+		Mode:          "prevention",
+		ParanoiaLevel: 1,
+		MaxBodySize:   50, // Only inspect first 50 bytes
+	}
+	engine, err := NewWAFEngine(config, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Failed to create WAF engine: %v", err)
+	}
+
+	// Put attack payload after the 50-byte limit
+	padding := make([]byte, 100)
+	for i := range padding {
+		padding[i] = 'A'
+	}
+	body := string(padding) + "'; DROP TABLE users; --"
+	req := httptest.NewRequest("POST", "/api/data", stringReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	// Attack is past the limit — should not be caught
+	if interruption != nil {
+		t.Error("Attack past MaxBodySize should not be detected")
+	}
+}
+
+func TestWAFEngine_MaxBodySize_Default_InspectsBody(t *testing.T) {
+	config := &pb.WAFConfig{
+		Enabled:          true,
+		Mode:             "prevention",
+		ParanoiaLevel:    1,
+		AnomalyThreshold: 5,
+		// MaxBodySize 0 = use default 128KB
+		MaxBodySize: 0,
+	}
+	engine, err := NewWAFEngine(config, zap.NewNop())
+	if err != nil {
+		t.Fatalf("Failed to create WAF engine: %v", err)
+	}
+
+	// SQLi in body should be detected with default body limit
+	body := "id=1' OR '1'='1"
+	req := httptest.NewRequest("POST", "/login", stringReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	interruption, err := engine.ProcessRequest(req)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if interruption == nil {
+		t.Error("SQLi in body should be detected with default body size limit")
+	}
+}
+
+func stringReader(s string) *stringReaderCloser {
+	return &stringReaderCloser{reader: bytes.NewReader([]byte(s))}
+}
+
+type stringReaderCloser struct {
+	reader *bytes.Reader
+}
+
+func (r *stringReaderCloser) Read(p []byte) (n int, err error) {
+	return r.reader.Read(p)
+}
+
+func (r *stringReaderCloser) Close() error {
+	return nil
 }

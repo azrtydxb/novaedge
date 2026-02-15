@@ -105,6 +105,9 @@ func buildWAFDirectives(config *pb.WAFConfig) []string {
 		directives = append(directives, "SecRuleEngine On")
 	}
 
+	// Enable request body inspection (required for body-based rules)
+	directives = append(directives, "SecRequestBodyAccess On")
+
 	// Set audit logging
 	directives = append(directives, "SecAuditEngine On")
 	directives = append(directives, `SecAuditLogParts ABCFHZ`)
@@ -180,25 +183,48 @@ func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error)
 		return interruption, nil
 	}
 
-	// Buffer request body before passing to WAF so downstream handlers can still read it
+	// Buffer request body with size limit for WAF inspection.
+	// MaxBodySize > 0: inspect up to that many bytes
+	// MaxBodySize == 0: use default 128KB (backward compatible)
+	// MaxBodySize < 0: skip body inspection entirely
 	var bodyBytes []byte
-	if r.Body != nil {
+	var fullBody []byte
+	if r.Body != nil && w.config.MaxBodySize < 0 {
+		// Negative: skip body inspection, read full body for downstream
 		var readErr error
-		bodyBytes, readErr = io.ReadAll(r.Body)
+		fullBody, readErr = io.ReadAll(r.Body)
+		if readErr != nil {
+			w.logger.Error("Error reading request body", zap.Error(readErr))
+			return nil, fmt.Errorf("failed to read request body: %w", readErr)
+		}
+		r.Body = io.NopCloser(bytes.NewReader(fullBody))
+		return nil, nil
+	} else if r.Body != nil {
+		maxSize := w.config.MaxBodySize
+		if maxSize <= 0 {
+			maxSize = 131072 // Default 128KB
+		}
+		// Read up to maxSize bytes for WAF inspection
+		limitedReader := io.LimitReader(r.Body, maxSize)
+		var readErr error
+		bodyBytes, readErr = io.ReadAll(limitedReader)
 		if readErr != nil {
 			w.logger.Error("Error reading request body for WAF", zap.Error(readErr))
 			return nil, fmt.Errorf("failed to read request body: %w", readErr)
 		}
+		// Read remaining body (not inspected) for downstream
+		remaining, _ := io.ReadAll(r.Body)
+		fullBody = append(bodyBytes, remaining...)
 	}
 
-	// Process request body phase using buffered body
+	// Process request body phase using buffered (size-limited) body
 	if len(bodyBytes) > 0 {
 		bodyReader := bytes.NewReader(bodyBytes)
 		if interruption, _, err := tx.ReadRequestBodyFrom(bodyReader); err != nil {
 			w.logger.Error("Error reading request body for WAF", zap.Error(err))
 		} else if interruption != nil {
-			// Restore body before returning so downstream can still read it
-			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			// Restore full body before returning so downstream can still read it
+			r.Body = io.NopCloser(bytes.NewReader(fullBody))
 			w.logInterruption(interruption, r)
 			return interruption, nil
 		}
@@ -207,14 +233,14 @@ func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error)
 	if interruption, err := tx.ProcessRequestBody(); err != nil {
 		w.logger.Error("Error processing request body for WAF", zap.Error(err))
 	} else if interruption != nil {
-		// Restore body before returning so downstream can still read it
-		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		// Restore full body before returning so downstream can still read it
+		r.Body = io.NopCloser(bytes.NewReader(fullBody))
 		w.logInterruption(interruption, r)
 		return interruption, nil
 	}
 
-	// Restore request body for downstream handlers
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	// Restore full request body for downstream handlers
+	r.Body = io.NopCloser(bytes.NewReader(fullBody))
 
 	return nil, nil
 }
