@@ -728,12 +728,15 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 			if p.WAF != nil {
 				policy.Type = pb.PolicyType_WAF
 				policy.Waf = &pb.WAFConfig{
-					Enabled:          p.WAF.Enabled,
-					Mode:             p.WAF.Mode,
-					ParanoiaLevel:    safeInt32(p.WAF.ParanoiaLevel),
-					AnomalyThreshold: safeInt32(p.WAF.AnomalyThreshold),
-					RuleExclusions:   p.WAF.RuleExclusions,
-					CustomRules:      p.WAF.CustomRules,
+					Enabled:                p.WAF.Enabled,
+					Mode:                   p.WAF.Mode,
+					ParanoiaLevel:          safeInt32(p.WAF.ParanoiaLevel),
+					AnomalyThreshold:       safeInt32(p.WAF.AnomalyThreshold),
+					RuleExclusions:         p.WAF.RuleExclusions,
+					CustomRules:            p.WAF.CustomRules,
+					MaxBodySize:            p.WAF.MaxBodySize,
+					ResponseBodyInspection: p.WAF.ResponseBodyInspection,
+					MaxResponseBodySize:    p.WAF.MaxResponseBodySize,
 				}
 			}
 		case "WASMPlugin":

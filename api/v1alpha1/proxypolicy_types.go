@@ -334,6 +334,24 @@ type WAFConfig struct {
 	// RuleExclusions is a list of rule IDs to exclude
 	// +optional
 	RuleExclusions []string `json:"ruleExclusions,omitempty"`
+
+	// CustomRules are inline SecLang WAF rules applied after built-in rules
+	// +optional
+	CustomRules []string `json:"customRules,omitempty"`
+
+	// MaxBodySize limits request body inspection in bytes. 0 disables body inspection.
+	// +optional
+	// +kubebuilder:default=131072
+	MaxBodySize int64 `json:"maxBodySize,omitempty"`
+
+	// ResponseBodyInspection enables response body scanning for data leakage
+	// +optional
+	ResponseBodyInspection bool `json:"responseBodyInspection,omitempty"`
+
+	// MaxResponseBodySize limits response body inspection in bytes
+	// +optional
+	// +kubebuilder:default=131072
+	MaxResponseBodySize int64 `json:"maxResponseBodySize,omitempty"`
 }
 
 // BasicAuthPolicyConfig defines HTTP Basic Authentication configuration

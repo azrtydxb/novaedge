@@ -17,11 +17,16 @@ limitations under the License.
 package snapshot
 
 import (
+	"context"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"go.uber.org/zap"
@@ -520,25 +525,77 @@ func convertDistributedRateLimitConfig(config *novaedgev1alpha1.DistributedRateL
 	return pbConfig
 }
 
-// convertWAFConfig converts NovaEdge WAFConfig to protobuf WAFConfig
-func convertWAFConfig(config *novaedgev1alpha1.WAFConfig) *pb.WAFConfig {
+// convertWAFConfig converts NovaEdge WAFConfig to protobuf WAFConfig.
+// When a client and namespace are provided, it fetches referenced ConfigMap rules.
+func convertWAFConfig(config *novaedgev1alpha1.WAFConfig, c client.Reader, namespace string) *pb.WAFConfig {
 	if config == nil {
 		return nil
 	}
 
 	pbConfig := &pb.WAFConfig{
-		Enabled:          config.Enabled,
-		Mode:             config.Mode,
-		ParanoiaLevel:    config.ParanoiaLevel,
-		AnomalyThreshold: config.AnomalyThreshold,
-		RuleExclusions:   config.RuleExclusions,
+		Enabled:                config.Enabled,
+		Mode:                   config.Mode,
+		ParanoiaLevel:          config.ParanoiaLevel,
+		AnomalyThreshold:       config.AnomalyThreshold,
+		RuleExclusions:         config.RuleExclusions,
+		CustomRules:            config.CustomRules,
+		MaxBodySize:            config.MaxBodySize,
+		ResponseBodyInspection: config.ResponseBodyInspection,
+		MaxResponseBodySize:    config.MaxResponseBodySize,
 	}
 
 	if config.RulesConfigMap != nil {
 		pbConfig.RulesConfigMapRef = config.RulesConfigMap.Name
+
+		// Fetch ConfigMap data and load rules
+		if c != nil && namespace != "" {
+			cm := &corev1.ConfigMap{}
+			key := types.NamespacedName{Name: config.RulesConfigMap.Name, Namespace: namespace}
+			if err := c.Get(context.Background(), key, cm); err != nil {
+				logger := log.Log.WithName("snapshot")
+				logger.Error(err, "Failed to fetch WAF rules ConfigMap",
+					"configmap", config.RulesConfigMap.Name,
+					"namespace", namespace,
+				)
+			} else {
+				for _, content := range cm.Data {
+					rules := parseConfigMapRules(content)
+					pbConfig.CustomRules = append(pbConfig.CustomRules, rules...)
+				}
+			}
+		}
 	}
 
 	return pbConfig
+}
+
+// parseConfigMapRules parses multi-line SecLang rules from ConfigMap content
+func parseConfigMapRules(content string) []string {
+	lines := strings.Split(content, "\n")
+	rules := make([]string, 0, len(lines))
+	var current strings.Builder
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			if current.Len() > 0 {
+				rules = append(rules, current.String())
+				current.Reset()
+			}
+			continue
+		}
+		if strings.HasSuffix(trimmed, "\\") {
+			current.WriteString(strings.TrimSuffix(trimmed, "\\"))
+			current.WriteString(" ")
+			continue
+		}
+		current.WriteString(trimmed)
+		rules = append(rules, current.String())
+		current.Reset()
+	}
+	if current.Len() > 0 {
+		rules = append(rules, current.String())
+	}
+	return rules
 }
 
 // parseByteSize parses a human-readable byte size string (e.g., "10Mi", "1024", "50MB").

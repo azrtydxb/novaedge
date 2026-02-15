@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/corazawaf/coraza/v3"
 	"github.com/corazawaf/coraza/v3/types"
@@ -45,11 +46,13 @@ const (
 
 // WAFEngine wraps the Coraza WAF engine with NovaEdge-specific configuration
 type WAFEngine struct {
-	waf      coraza.WAF
-	config   *pb.WAFConfig
-	failMode WAFFailMode
-	logger   *zap.Logger
-	mu       sync.RWMutex
+	waf          coraza.WAF
+	config       *pb.WAFConfig
+	failMode     WAFFailMode
+	logger       *zap.Logger
+	audit        *WAFAuditLogger
+	matchCounter *WAFMatchCounter
+	mu           sync.RWMutex
 }
 
 // NewWAFEngine creates a new WAF engine from protobuf configuration
@@ -84,10 +87,12 @@ func NewWAFEngine(config *pb.WAFConfig, logger *zap.Logger) (*WAFEngine, error) 
 	}
 
 	return &WAFEngine{
-		waf:      waf,
-		config:   config,
-		failMode: failMode,
-		logger:   logger,
+		waf:          waf,
+		config:       config,
+		failMode:     failMode,
+		logger:       logger,
+		audit:        NewWAFAuditLogger(logger),
+		matchCounter: NewWAFMatchCounter(10 * time.Minute),
 	}, nil
 }
 
@@ -104,6 +109,9 @@ func buildWAFDirectives(config *pb.WAFConfig) []string {
 	default:
 		directives = append(directives, "SecRuleEngine On")
 	}
+
+	// Enable request body inspection (required for body-based rules)
+	directives = append(directives, "SecRequestBodyAccess On")
 
 	// Set audit logging
 	directives = append(directives, "SecAuditEngine On")
@@ -141,8 +149,25 @@ func buildWAFDirectives(config *pb.WAFConfig) []string {
 	return directives
 }
 
+// WAFResult contains the result of WAF processing
+type WAFResult struct {
+	Interruption *types.Interruption
+	MatchedRules int
+	TopRuleID    int
+	TopCategory  string
+}
+
 // ProcessRequest processes an HTTP request through the WAF engine
 func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error) {
+	result, err := w.ProcessRequestDetailed(r)
+	if err != nil {
+		return nil, err
+	}
+	return result.Interruption, nil
+}
+
+// ProcessRequestDetailed processes an HTTP request and returns detailed match information
+func (w *WAFEngine) ProcessRequestDetailed(r *http.Request) (*WAFResult, error) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
@@ -177,62 +202,135 @@ func (w *WAFEngine) ProcessRequest(r *http.Request) (*types.Interruption, error)
 	// Process request headers phase
 	if interruption := tx.ProcessRequestHeaders(); interruption != nil {
 		w.logInterruption(interruption, r)
-		return interruption, nil
+		return &WAFResult{Interruption: interruption, MatchedRules: 1, TopRuleID: interruption.RuleID, TopCategory: ruleCategory(interruption.RuleID)}, nil
 	}
 
-	// Buffer request body before passing to WAF so downstream handlers can still read it
+	// Buffer request body with size limit for WAF inspection.
+	// MaxBodySize > 0: inspect up to that many bytes
+	// MaxBodySize == 0: use default 128KB (backward compatible)
+	// MaxBodySize < 0: skip body inspection entirely
 	var bodyBytes []byte
-	if r.Body != nil {
+	var fullBody []byte
+	if r.Body != nil && w.config.MaxBodySize < 0 {
+		// Negative: skip body inspection, read full body for downstream
 		var readErr error
-		bodyBytes, readErr = io.ReadAll(r.Body)
+		fullBody, readErr = io.ReadAll(r.Body)
+		if readErr != nil {
+			w.logger.Error("Error reading request body", zap.Error(readErr))
+			return nil, fmt.Errorf("failed to read request body: %w", readErr)
+		}
+		r.Body = io.NopCloser(bytes.NewReader(fullBody))
+		return &WAFResult{}, nil
+	} else if r.Body != nil {
+		maxSize := w.config.MaxBodySize
+		if maxSize <= 0 {
+			maxSize = 131072 // Default 128KB
+		}
+		// Read up to maxSize bytes for WAF inspection
+		limitedReader := io.LimitReader(r.Body, maxSize)
+		var readErr error
+		bodyBytes, readErr = io.ReadAll(limitedReader)
 		if readErr != nil {
 			w.logger.Error("Error reading request body for WAF", zap.Error(readErr))
 			return nil, fmt.Errorf("failed to read request body: %w", readErr)
 		}
+		// Read remaining body (not inspected) for downstream
+		remaining, _ := io.ReadAll(r.Body)
+		fullBody = bodyBytes
+		fullBody = append(fullBody, remaining...)
 	}
 
-	// Process request body phase using buffered body
+	// Process request body phase using buffered (size-limited) body
 	if len(bodyBytes) > 0 {
 		bodyReader := bytes.NewReader(bodyBytes)
 		if interruption, _, err := tx.ReadRequestBodyFrom(bodyReader); err != nil {
 			w.logger.Error("Error reading request body for WAF", zap.Error(err))
 		} else if interruption != nil {
-			// Restore body before returning so downstream can still read it
-			r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+			r.Body = io.NopCloser(bytes.NewReader(fullBody))
 			w.logInterruption(interruption, r)
-			return interruption, nil
+			return &WAFResult{Interruption: interruption, MatchedRules: 1, TopRuleID: interruption.RuleID, TopCategory: ruleCategory(interruption.RuleID)}, nil
 		}
 	}
 
 	if interruption, err := tx.ProcessRequestBody(); err != nil {
 		w.logger.Error("Error processing request body for WAF", zap.Error(err))
 	} else if interruption != nil {
-		// Restore body before returning so downstream can still read it
-		r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		r.Body = io.NopCloser(bytes.NewReader(fullBody))
 		w.logInterruption(interruption, r)
-		return interruption, nil
+		return &WAFResult{Interruption: interruption, MatchedRules: 1, TopRuleID: interruption.RuleID, TopCategory: ruleCategory(interruption.RuleID)}, nil
 	}
 
-	// Restore request body for downstream handlers
-	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	// Restore full request body for downstream handlers
+	r.Body = io.NopCloser(bytes.NewReader(fullBody))
 
-	return nil, nil
+	// Collect matched rules info (for detection mode where there's no interruption)
+	result := &WAFResult{}
+	matched := tx.MatchedRules()
+	result.MatchedRules = len(matched)
+	if len(matched) > 0 {
+		// Use the last matched rule as the "top" rule (highest phase/priority)
+		lastRule := matched[len(matched)-1]
+		result.TopRuleID = lastRule.Rule().ID()
+		result.TopCategory = ruleCategory(lastRule.Rule().ID())
+	}
+	return result, nil
 }
 
-// logInterruption logs a WAF interruption event
+// logInterruption logs a WAF interruption event and updates per-IP match counter
 func (w *WAFEngine) logInterruption(interruption *types.Interruption, r *http.Request) {
+	ruleID := strconv.Itoa(interruption.RuleID)
+	category := ruleCategory(interruption.RuleID)
+	clientIP := extractClientIP(r)
+
 	metrics.WAFRequestsBlocked.Inc()
-	metrics.WAFRulesMatched.Inc()
+	metrics.WAFRulesMatched.WithLabelValues(ruleID, category).Inc()
 	metrics.WAFAnomalyScore.Observe(float64(interruption.Status))
+	w.matchCounter.Increment(clientIP)
 
 	w.logger.Warn("WAF rule matched",
 		zap.Int("rule_id", interruption.RuleID),
+		zap.String("category", category),
 		zap.String("action", interruption.Action),
 		zap.Int("status", interruption.Status),
 		zap.String("method", r.Method),
 		zap.String("path", r.URL.Path),
 		zap.String("remote_addr", r.RemoteAddr),
 	)
+}
+
+// GetMatchCount returns the WAF match count for the given IP address.
+// This can be used by the rate limiter to dynamically throttle repeat offenders.
+func (w *WAFEngine) GetMatchCount(ip string) int {
+	return w.matchCounter.Get(ip)
+}
+
+// ruleCategory maps a CRS rule ID to its attack category
+func ruleCategory(ruleID int) string {
+	prefix := ruleID / 1000
+	switch prefix {
+	case 920:
+		return "protocol"
+	case 921:
+		return "protocol"
+	case 930:
+		return "lfi"
+	case 932:
+		return "rce"
+	case 933:
+		return "injection-php"
+	case 934:
+		return "ssti"
+	case 941:
+		return "xss"
+	case 942:
+		return "sqli"
+	case 943:
+		return "fixation"
+	case 950:
+		return "data-leakage"
+	default:
+		return "other"
+	}
 }
 
 // GetFailMode returns the configured fail mode for the WAF engine
@@ -242,6 +340,16 @@ func (w *WAFEngine) GetFailMode() WAFFailMode {
 
 // HandleWAF is HTTP middleware for WAF protection
 func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
+	// Pre-create response inspection WAF if enabled
+	var respWAF coraza.WAF
+	if engine != nil && engine.config.ResponseBodyInspection {
+		var err error
+		respWAF, err = newResponseInspectionWAF(engine)
+		if err != nil {
+			engine.logger.Error("Failed to create response inspection WAF, disabling response inspection", zap.Error(err))
+		}
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if engine == nil || !engine.config.Enabled {
@@ -249,48 +357,62 @@ func HandleWAF(engine *WAFEngine) func(http.Handler) http.Handler {
 				return
 			}
 
-			interruption, err := engine.ProcessRequest(r)
+			result, err := engine.ProcessRequestDetailed(r)
 			if err != nil {
 				failMode := string(engine.failMode)
 				if engine.failMode == WAFFailClosed {
-					// Fail-closed: block the request on WAF processing error
 					metrics.WAFProcessingErrorsTotal.WithLabelValues(failMode, "blocked").Inc()
-					engine.logger.Error("WAF processing error, blocking request (fail-closed)",
-						zap.Error(err),
-						zap.String("method", r.Method),
-						zap.String("path", r.URL.Path),
-						zap.String("remote_addr", r.RemoteAddr),
-					)
+					engine.audit.LogProcessingError(r, err, engine.failMode, "blocked")
 					http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 					return
 				}
-				// Fail-open: allow request through but log a warning
 				metrics.WAFProcessingErrorsTotal.WithLabelValues(failMode, "allowed").Inc()
-				engine.logger.Warn("WAF processing error, allowing request (fail-open)",
-					zap.Error(err),
-					zap.String("method", r.Method),
-					zap.String("path", r.URL.Path),
-					zap.String("remote_addr", r.RemoteAddr),
-				)
+				engine.audit.LogProcessingError(r, err, engine.failMode, "allowed")
 				next.ServeHTTP(w, r)
 				return
 			}
 
-			if interruption != nil {
-				// In prevention mode, block the request
+			if result.Interruption != nil {
 				if engine.config.Mode != "detection" {
-					status := interruption.Status
+					engine.audit.LogRequestBlocked(r, result.Interruption, "prevention")
+					status := result.Interruption.Status
 					if status == 0 {
 						status = http.StatusForbidden
 					}
 					http.Error(w, "Forbidden", status)
 					return
 				}
-				// In detection mode, log but allow the request
-				engine.logger.Info("WAF detection mode: would have blocked request",
-					zap.String("path", r.URL.Path),
-					zap.Int("rule_id", interruption.RuleID),
-				)
+				// Detection mode: log but allow; add score header
+				engine.audit.LogRequestBlocked(r, result.Interruption, "detection")
+				w.Header().Set("X-WAF-Score", strconv.Itoa(result.Interruption.Status))
+				w.Header().Set("X-WAF-Rule", strconv.Itoa(result.Interruption.RuleID))
+			} else if result.MatchedRules > 0 {
+				engine.audit.LogRequestDetected(r, result)
+				w.Header().Set("X-WAF-Matches", strconv.Itoa(result.MatchedRules))
+				w.Header().Set("X-WAF-Rule", strconv.Itoa(result.TopRuleID))
+			}
+
+			// If response body inspection is enabled, wrap the writer
+			if respWAF != nil {
+				tx := respWAF.NewTransaction()
+				maxRespSize := engine.config.MaxResponseBodySize
+				if maxRespSize <= 0 {
+					maxRespSize = 131072 // Default 128KB
+				}
+				rw := &wafResponseWriter{
+					ResponseWriter: w,
+					tx:             tx,
+					engine:         engine,
+					request:        r,
+					maxBodySize:    maxRespSize,
+				}
+				next.ServeHTTP(rw, r)
+				rw.finish()
+				tx.ProcessLogging()
+				if closeErr := tx.Close(); closeErr != nil {
+					engine.logger.Debug("Error closing WAF response transaction", zap.Error(closeErr))
+				}
+				return
 			}
 
 			next.ServeHTTP(w, r)
