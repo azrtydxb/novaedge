@@ -4,11 +4,11 @@ Configure how NovaEdge distributes traffic across backend endpoints.
 
 ## Algorithms
 
-NovaEdge supports six load balancing algorithms:
+NovaEdge supports 12 load balancing algorithms plus composable wrappers:
 
 ```mermaid
 flowchart TB
-    subgraph Algorithms["Load Balancing Algorithms"]
+    subgraph Core["Core Algorithms"]
         RR["Round Robin<br/>Equal distribution"]
         P2C["P2C<br/>Low latency"]
         EWMA["EWMA<br/>Latency-aware"]
@@ -16,7 +16,19 @@ flowchart TB
         RH["Ring Hash<br/>Session affinity"]
         MG["Maglev<br/>Consistent hashing"]
     end
+
+    subgraph Wrappers["Composable Wrappers"]
+        SK["Sticky<br/>Cookie affinity"]
+        LO["Locality<br/>Zone-aware"]
+        PR["Priority<br/>Failover groups"]
+        PA["Panic<br/>Emergency fallback"]
+        SS["Slow Start<br/>Gradual ramp-up"]
+    end
+
+    Wrappers -->|"wraps any"| Core
 ```
+
+### Core Algorithms
 
 | Algorithm | Best For | Session Affinity |
 |-----------|----------|------------------|
@@ -26,6 +38,18 @@ flowchart TB
 | LeastConn | Connection-aware distribution | No |
 | RingHash | Stateful applications | Yes |
 | Maglev | High-performance consistent hashing | Yes |
+
+### Composable Wrappers
+
+These wrap any core algorithm to add additional behavior:
+
+| Wrapper | Purpose | Key Config |
+|---------|---------|------------|
+| Sticky | Cookie-based session affinity | `cookieName`, `cookieTTL` |
+| Locality | Prefer same-zone endpoints | `localZone`, `minHealthyPercent` (default: 70%) |
+| Priority | Failover between priority groups | `overflowThreshold` (default: 70%) |
+| Panic | Include unhealthy endpoints when too few are healthy | `threshold` (default: 50%) |
+| Slow Start | Gradually ramp traffic to new/recovered endpoints | `window` (default: 30s), `aggression` |
 
 ## Round Robin
 
@@ -457,6 +481,188 @@ spec:
     idle: 60s
 ```
 
+## Locality-Aware Load Balancing
+
+Wraps any algorithm to prefer endpoints in the same availability zone. When at least 70% (configurable) of local-zone endpoints are healthy, traffic stays in the local zone. When the local zone degrades, traffic spills to all zones.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: locality-backend
+spec:
+  serviceRef:
+    name: api-service
+    port: 8080
+  lbPolicy: RoundRobin
+  locality:
+    enabled: true
+    minHealthyPercent: 70
+```
+
+```mermaid
+flowchart LR
+    subgraph LocalZone["Zone us-east-1a"]
+        E1["Endpoint 1 ✓"]
+        E2["Endpoint 2 ✓"]
+        E3["Endpoint 3 ✗"]
+    end
+
+    subgraph RemoteZone["Zone us-east-1b"]
+        E4["Endpoint 4 ✓"]
+        E5["Endpoint 5 ✓"]
+    end
+
+    LB{"Locality LB"}
+    LB -->|"67% healthy < 70%<br/>spill to all zones"| LocalZone & RemoteZone
+
+    style LocalZone fill:#FFE4B5
+    style RemoteZone fill:#e1f5ff
+```
+
+**Use when:**
+- Multi-zone cluster where you want to minimize cross-zone latency
+- Endpoints have `topology.kubernetes.io/zone` labels
+- Need automatic failover when local zone degrades
+
+## Priority-Based Failover
+
+Groups endpoints by priority level (label `lb.priority`). Traffic goes to the highest-priority group (lowest number = highest priority). When the healthy ratio drops below the overflow threshold (default: 70%), the next priority group is included.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: priority-backend
+spec:
+  serviceRef:
+    name: api-service
+    port: 8080
+  lbPolicy: RoundRobin
+  priority:
+    overflowThreshold: 70
+```
+
+Endpoints need the `lb.priority` label:
+
+```yaml
+# Priority 0 (highest) - primary endpoints
+# Priority 1 - secondary endpoints (used when primary degrades)
+# Priority 2 - tertiary endpoints (disaster recovery)
+```
+
+```mermaid
+flowchart TB
+    subgraph P0["Priority 0 (Primary)"]
+        E1["Endpoint 1 ✓"]
+        E2["Endpoint 2 ✗"]
+        E3["Endpoint 3 ✗"]
+    end
+
+    subgraph P1["Priority 1 (Secondary)"]
+        E4["Endpoint 4 ✓"]
+        E5["Endpoint 5 ✓"]
+    end
+
+    LB{"Priority LB"}
+    LB -->|"33% healthy < 70%<br/>overflow to P1"| P0 & P1
+
+    style P0 fill:#FFE4B5
+    style P1 fill:#e1f5ff
+```
+
+**Use when:**
+- Active-passive or active-active-DR setups
+- Primary/secondary datacenter failover
+- Canary groups with different priority levels
+
+## Panic Mode
+
+Safety net that prevents complete traffic loss. When the healthy endpoint fraction drops below the panic threshold (default: 50%), the load balancer selects from ALL endpoints (healthy and unhealthy) using random selection. Includes Prometheus metric `novaedge_lb_panic_mode`.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: panic-backend
+spec:
+  serviceRef:
+    name: api-service
+    port: 8080
+  lbPolicy: RoundRobin
+  panicMode:
+    enabled: true
+    threshold: 50
+```
+
+```mermaid
+stateDiagram-v2
+    [*] --> Normal
+    Normal --> Panic: healthy% < 50%
+    Panic --> Normal: healthy% ≥ 50%
+
+    state Normal {
+        [*] --> SelectHealthy
+        SelectHealthy: Route to healthy endpoints only
+    }
+
+    state Panic {
+        [*] --> SelectAll
+        SelectAll: Route to ALL endpoints
+        SelectAll: (random selection)
+    }
+```
+
+**Use when:**
+- Preventing cascading failures during outages
+- Preferring degraded responses over no responses
+- Critical services that must always serve traffic
+
+## Slow Start
+
+Gradually ramps traffic to newly added or recovered endpoints over a configurable window (default: 30s). Prevents sudden traffic floods to cold endpoints. The ramp-up curve is controlled by the aggression parameter:
+- `aggression = 1.0` — linear ramp-up
+- `aggression > 1.0` — slower initial ramp, faster finish
+- `aggression < 1.0` — faster initial ramp, slower finish
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: slowstart-backend
+spec:
+  serviceRef:
+    name: api-service
+    port: 8080
+  lbPolicy: LeastConn
+  slowStart:
+    window: 30s
+    aggression: 1.0
+```
+
+```mermaid
+flowchart LR
+    subgraph SlowStart["Slow Start (30s window)"]
+        T0["t=0s<br/>weight: 0%"]
+        T10["t=10s<br/>weight: 33%"]
+        T20["t=20s<br/>weight: 67%"]
+        T30["t=30s<br/>weight: 100%"]
+    end
+
+    T0 --> T10 --> T20 --> T30
+
+    style T0 fill:#ffebee
+    style T10 fill:#FFE4B5
+    style T20 fill:#fff9c4
+    style T30 fill:#90EE90
+```
+
+**Use when:**
+- JVM applications that need JIT warmup
+- Applications with cold caches
+- Endpoints recovering from health check failures
+- Preventing thundering herd after scaling events
+
 ## Algorithm Selection Guide
 
 ```mermaid
@@ -466,6 +672,8 @@ flowchart TB
     Q2{"Need latency<br/>awareness?"}
     Q3{"High<br/>performance?"}
     Q4{"Variable<br/>backend perf?"}
+    Q5{"Multi-zone<br/>cluster?"}
+    Q6{"Failover<br/>groups?"}
 
     Start --> Q1
     Q1 -->|Yes| Q3
@@ -475,17 +683,27 @@ flowchart TB
     Q3 -->|No| RingHash
 
     Q2 -->|Yes| Q4
-    Q2 -->|No| RoundRobin
+    Q2 -->|No| Q5
 
     Q4 -->|Yes| EWMA
     Q4 -->|No| P2C
+
+    Q5 -->|Yes| Locality["Locality + RoundRobin"]
+    Q5 -->|No| Q6
+
+    Q6 -->|Yes| Priority["Priority + RoundRobin"]
+    Q6 -->|No| RoundRobin
 
     style Maglev fill:#90EE90
     style RingHash fill:#90EE90
     style EWMA fill:#90EE90
     style P2C fill:#90EE90
     style RoundRobin fill:#90EE90
+    style Locality fill:#e1f5ff
+    style Priority fill:#e1f5ff
 ```
+
+**Tip:** Wrappers are composable. You can combine Locality + Priority + Slow Start + Panic + Sticky on a single backend for maximum resilience.
 
 ## Monitoring
 
