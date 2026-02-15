@@ -33,6 +33,9 @@ const (
 	// DefaultTPROXYPort is the default port for the transparent listener.
 	DefaultTPROXYPort int32 = 15001
 
+	// DefaultTunnelPort is the default port for the mTLS tunnel server.
+	DefaultTunnelPort int32 = 15002
+
 	// connectTimeout is the timeout for dialing the upstream backend.
 	connectTimeout = 5 * time.Second
 )
@@ -110,26 +113,49 @@ func (st *ServiceTable) ServiceCount() int {
 }
 
 // Manager orchestrates the service mesh data plane components: TPROXY rule
-// management, transparent listener, protocol detection, and service routing.
+// management, transparent listener, protocol detection, service routing,
+// mTLS tunnel server/client, and authorization policy enforcement.
 type Manager struct {
 	logger       *zap.Logger
 	tproxy       *TPROXYManager
 	serviceTable *ServiceTable
 	tproxyPort   int32
+	tunnelPort   int32
+	tunnelServer *TunnelServer
+	tunnelPool   *TunnelPool
+	tlsProvider  *TLSProvider
+	authorizer   *Authorizer
+	trustDomain  string
 	cancel       context.CancelFunc
 }
 
-// NewManager creates a new mesh manager.
-func NewManager(logger *zap.Logger, tproxyPort int32) *Manager {
+// ManagerConfig holds configuration for creating a mesh Manager.
+type ManagerConfig struct {
+	TPROXYPort  int32
+	TunnelPort  int32
+	TrustDomain string
+}
+
+// NewManager creates a new mesh manager with mTLS tunnel support.
+func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
+	namedLogger := logger.Named("mesh")
+	trustDomain := cfg.TrustDomain
+	if trustDomain == "" {
+		trustDomain = "cluster.local"
+	}
 	return &Manager{
-		logger:       logger.Named("mesh"),
-		tproxyPort:   tproxyPort,
+		logger:       namedLogger,
+		tproxyPort:   cfg.TPROXYPort,
+		tunnelPort:   cfg.TunnelPort,
 		serviceTable: NewServiceTable(),
+		tlsProvider:  NewTLSProvider(namedLogger, trustDomain),
+		authorizer:   NewAuthorizer(namedLogger),
+		trustDomain:  trustDomain,
 	}
 }
 
-// Start initializes the mesh data plane: sets up TPROXY iptables rules
-// and starts the transparent listener.
+// Start initializes the mesh data plane: sets up TPROXY iptables rules,
+// starts the transparent listener, and starts the mTLS tunnel server.
 func (m *Manager) Start(ctx context.Context) error {
 	m.tproxy = NewTPROXYManager(m.logger, m.tproxyPort)
 
@@ -147,13 +173,33 @@ func (m *Manager) Start(ctx context.Context) error {
 		}
 	}()
 
-	m.logger.Info("Mesh manager started", zap.Int32("tproxy_port", m.tproxyPort))
+	// Start tunnel server (will serve once TLS certificates are available).
+	if m.tunnelPort > 0 {
+		serverTLS := m.tlsProvider.ServerTLSConfig()
+		m.tunnelServer = NewTunnelServer(m.logger, m.tunnelPort, serverTLS, m.authorizer)
+		go func() {
+			if err := m.tunnelServer.Start(listenerCtx); err != nil {
+				m.logger.Error("Tunnel server stopped", zap.Error(err))
+			}
+		}()
+
+		// Create tunnel pool for outbound connections.
+		clientTLS := m.tlsProvider.ClientTLSConfig()
+		m.tunnelPool = NewTunnelPool(m.logger, clientTLS)
+
+		m.logger.Info("Mesh tunnel server started", zap.Int32("tunnel_port", m.tunnelPort))
+	}
+
+	m.logger.Info("Mesh manager started",
+		zap.Int32("tproxy_port", m.tproxyPort),
+		zap.Int32("tunnel_port", m.tunnelPort),
+		zap.String("trust_domain", m.trustDomain))
 	return nil
 }
 
-// ApplyConfig updates the mesh routing table and TPROXY interception rules
-// from a new set of InternalService entries.
-func (m *Manager) ApplyConfig(services []*pb.InternalService) error {
+// ApplyConfig updates the mesh routing table, TPROXY interception rules,
+// and authorization policies from a config snapshot.
+func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*pb.MeshAuthorizationPolicy) error {
 	if m.tproxy == nil {
 		return fmt.Errorf("mesh manager not started")
 	}
@@ -180,18 +226,43 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService) error {
 		return fmt.Errorf("failed to apply TPROXY rules: %w", err)
 	}
 
+	// Update authorization policies
+	if m.authorizer != nil && authzPolicies != nil {
+		m.authorizer.UpdatePolicies(authzPolicies)
+	}
+
 	m.logger.Info("Mesh config applied",
 		zap.Int("services", len(services)),
 		zap.Int("intercept_rules", len(targets)),
-		zap.Int("routing_entries", m.serviceTable.ServiceCount()))
+		zap.Int("routing_entries", m.serviceTable.ServiceCount()),
+		zap.Int("authz_policies", len(authzPolicies)))
 
 	return nil
+}
+
+// UpdateTLSCertificate updates the mesh mTLS certificate material.
+func (m *Manager) UpdateTLSCertificate(certPEM, keyPEM, caCertPEM []byte, spiffeID string) error {
+	return m.tlsProvider.UpdateCertificate(certPEM, keyPEM, caCertPEM, spiffeID)
+}
+
+// HasTLSCertificate returns true if the mesh has a valid TLS certificate loaded.
+func (m *Manager) HasTLSCertificate() bool {
+	return m.tlsProvider.HasCertificate()
+}
+
+// TrustDomain returns the configured SPIFFE trust domain.
+func (m *Manager) TrustDomain() string {
+	return m.trustDomain
 }
 
 // Shutdown stops the mesh manager and cleans up all resources.
 func (m *Manager) Shutdown(_ context.Context) error {
 	if m.cancel != nil {
 		m.cancel()
+	}
+
+	if m.tunnelPool != nil {
+		m.tunnelPool.Close()
 	}
 
 	if m.tproxy != nil {

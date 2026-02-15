@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/piwi3910/novaedge/internal/controller/meshca"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -83,6 +84,9 @@ type Server struct {
 
 	// Remote agent tracking for hub-spoke deployments
 	remoteAgentTracker *RemoteAgentTracker
+
+	// Mesh CA for issuing workload certificates
+	meshCA *meshca.MeshCA
 
 	// Metrics
 	activeStreams int64
@@ -465,6 +469,45 @@ func (s *Server) cleanupStaleAgents() {
 			return
 		}
 	}
+}
+
+// SetMeshCA configures the mesh CA for issuing workload certificates.
+func (s *Server) SetMeshCA(ca *meshca.MeshCA) {
+	s.meshCA = ca
+}
+
+// RequestMeshCertificate implements the RequestMeshCertificate RPC.
+// Agents call this to obtain a signed mesh workload certificate.
+func (s *Server) RequestMeshCertificate(ctx context.Context, req *pb.MeshCertificateRequest) (*pb.MeshCertificateResponse, error) {
+	logger := log.FromContext(ctx).WithValues("node", req.NodeName)
+
+	if s.meshCA == nil {
+		return nil, status.Errorf(codes.Unavailable, "mesh CA not initialized")
+	}
+
+	if len(req.Csr) == 0 {
+		return nil, status.Errorf(codes.InvalidArgument, "CSR is required")
+	}
+	if req.NodeName == "" {
+		return nil, status.Errorf(codes.InvalidArgument, "node_name is required")
+	}
+
+	certPEM, err := s.meshCA.SignCSR(req.Csr, req.NodeName)
+	if err != nil {
+		logger.Error(err, "Failed to sign mesh CSR")
+		return nil, status.Errorf(codes.Internal, "failed to sign CSR: %v", err)
+	}
+
+	spiffeID := fmt.Sprintf("spiffe://%s/agent/%s", s.meshCA.TrustDomain(), req.NodeName)
+
+	logger.Info("Issued mesh workload certificate", "spiffeID", spiffeID)
+
+	return &pb.MeshCertificateResponse{
+		Certificate:   certPEM,
+		CaCertificate: s.meshCA.CACertPEM(),
+		SpiffeId:      spiffeID,
+		ExpiryUnix:    time.Now().Add(24 * time.Hour).Unix(),
+	}, nil
 }
 
 // Shutdown gracefully shuts down the server
