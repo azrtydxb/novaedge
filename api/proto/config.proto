@@ -722,6 +722,9 @@ message WAFConfig {
   repeated string rule_exclusions = 6; // Rule IDs to exclude
   repeated string custom_rules = 7; // Inline custom rules
   string fail_mode = 8; // "closed" (default) or "open" - behavior on WAF processing errors
+  int64 max_body_size = 9; // Max request body bytes to inspect (0 = skip body inspection)
+  bool response_body_inspection = 10; // Enable response body scanning for data leakage
+  int64 max_response_body_size = 11; // Max response body bytes to inspect
 }
 
 // WASMPluginConfig defines WASM plugin settings in a policy

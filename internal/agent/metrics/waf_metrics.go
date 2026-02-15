@@ -32,12 +32,13 @@ var (
 		},
 	)
 
-	// WAFRulesMatched tracks total WAF rule matches
-	WAFRulesMatched = promauto.NewCounter(
+	// WAFRulesMatched tracks WAF rule matches by rule ID and category
+	WAFRulesMatched = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "novaedge_waf_rules_matched_total",
-			Help: "Total number of WAF rules matched",
+			Help: "Total number of WAF rules matched, labeled by rule ID and category",
 		},
+		[]string{"rule_id", "category"},
 	)
 
 	// WAFAnomalyScore tracks WAF anomaly scores
@@ -46,6 +47,14 @@ var (
 			Name:    "novaedge_waf_anomaly_score",
 			Help:    "WAF anomaly score distribution",
 			Buckets: []float64{1, 2, 3, 5, 10, 15, 25, 50, 100},
+		},
+	)
+
+	// WAFResponsesBlocked tracks total responses blocked by WAF response body inspection
+	WAFResponsesBlocked = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "novaedge_waf_responses_blocked_total",
+			Help: "Total number of responses blocked by WAF response body inspection",
 		},
 	)
 

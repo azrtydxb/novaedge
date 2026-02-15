@@ -745,7 +745,7 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 		}
 
 		if p.Spec.WAF != nil {
-			policy.Waf = convertWAFConfig(p.Spec.WAF)
+			policy.Waf = convertWAFConfig(p.Spec.WAF, b.client, p.Namespace)
 		}
 
 		// Add WASM plugin configuration
