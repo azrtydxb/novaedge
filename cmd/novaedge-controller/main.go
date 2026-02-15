@@ -44,6 +44,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/controller"
 	"github.com/piwi3910/novaedge/internal/controller/certmanager"
 	"github.com/piwi3910/novaedge/internal/controller/ipam"
+	"github.com/piwi3910/novaedge/internal/controller/meshca"
 	"github.com/piwi3910/novaedge/internal/controller/snapshot"
 	vaultpkg "github.com/piwi3910/novaedge/internal/controller/vault"
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
@@ -89,6 +90,7 @@ func main() {
 
 	var defaultVIPRef string
 	var enableServiceLB bool
+	var meshTrustDomain string
 
 	var enableCertManager string
 	var enableVault string
@@ -104,6 +106,7 @@ func main() {
 	flag.StringVar(&vaultAddr, "vault-addr", "", "HashiCorp Vault server address")
 	flag.StringVar(&vaultAuthMethod, "vault-auth-method", "kubernetes", "Vault auth method (kubernetes|approle|token)")
 	flag.StringVar(&vaultRole, "vault-role", "novaedge", "Vault auth role name")
+	flag.StringVar(&meshTrustDomain, "mesh-trust-domain", "cluster.local", "SPIFFE trust domain for mesh mTLS identity")
 
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -319,8 +322,18 @@ func main() {
 		}
 	}
 
+	// Initialize mesh CA for issuing workload certificates
+	meshCALogger, _ := uberzap.NewProduction()
+	meshCA := meshca.NewMeshCA(meshCALogger, meshTrustDomain)
+	if err := meshCA.Initialize(context.Background(), mgr.GetClient()); err != nil {
+		setupLog.Error(err, "failed to initialize mesh CA")
+		os.Exit(1)
+	}
+	setupLog.Info("Mesh CA initialized", "trustDomain", meshTrustDomain)
+
 	// Create and start gRPC server for config distribution
 	configServer := snapshot.NewServer(mgr.GetClient())
+	configServer.SetMeshCA(meshCA)
 
 	// Create gRPC server with message size limits and interceptors
 	grpcLogger, _ := uberzap.NewProduction()

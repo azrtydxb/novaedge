@@ -21,7 +21,7 @@ import (
 )
 
 // PolicyType defines the type of policy
-// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders;DistributedRateLimit;WAF;WASMPlugin;BasicAuth;ForwardAuth;OIDC
+// +kubebuilder:validation:Enum=RateLimit;JWT;IPAllowList;IPDenyList;CORS;SecurityHeaders;DistributedRateLimit;WAF;WASMPlugin;BasicAuth;ForwardAuth;OIDC;MeshAuthorization
 type PolicyType string
 
 const (
@@ -49,6 +49,8 @@ const (
 	PolicyTypeForwardAuth PolicyType = "ForwardAuth"
 	// PolicyTypeOIDC applies OAuth2/OIDC authentication flow
 	PolicyTypeOIDC PolicyType = "OIDC"
+	// PolicyTypeMeshAuthorization applies identity-based authorization for mesh traffic
+	PolicyTypeMeshAuthorization PolicyType = "MeshAuthorization"
 )
 
 // RateLimitConfig defines rate limiting configuration
@@ -466,11 +468,61 @@ type AuthorizationPolicyConfig struct {
 	Mode string `json:"mode,omitempty"`
 }
 
+// MeshAuthorizationConfig defines identity-based authorization for mesh traffic
+type MeshAuthorizationConfig struct {
+	// Rules defines authorization rules
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	Rules []MeshAuthorizationRule `json:"rules"`
+
+	// Action is the policy action: ALLOW or DENY
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=ALLOW;DENY
+	Action string `json:"action"`
+}
+
+// MeshAuthorizationRule defines a single authorization rule
+type MeshAuthorizationRule struct {
+	// From specifies allowed source identities
+	// +optional
+	From []MeshSource `json:"from,omitempty"`
+
+	// To specifies allowed destination traffic properties
+	// +optional
+	To []MeshDestination `json:"to,omitempty"`
+}
+
+// MeshSource identifies allowed source workloads by identity
+type MeshSource struct {
+	// Namespaces restricts to source workloads in these namespaces
+	// +optional
+	Namespaces []string `json:"namespaces,omitempty"`
+
+	// ServiceAccounts restricts to source workloads with these service accounts
+	// +optional
+	ServiceAccounts []string `json:"serviceAccounts,omitempty"`
+
+	// SpiffeIDs restricts to sources matching these SPIFFE ID patterns (glob)
+	// +optional
+	SpiffeIDs []string `json:"spiffeIds,omitempty"`
+}
+
+// MeshDestination matches destination traffic properties for L7 authorization
+type MeshDestination struct {
+	// Methods restricts to these HTTP methods
+	// +optional
+	Methods []string `json:"methods,omitempty"`
+
+	// Paths restricts to these URL path patterns (glob)
+	// +optional
+	Paths []string `json:"paths,omitempty"`
+}
+
 // TargetRef identifies the resource(s) this policy applies to
 type TargetRef struct {
-	// Kind is the kind of resource (e.g., ProxyGateway, ProxyRoute)
+	// Kind is the kind of resource (e.g., ProxyGateway, ProxyRoute, Service)
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Enum=ProxyGateway;ProxyRoute;ProxyBackend
+	// +kubebuilder:validation:Enum=ProxyGateway;ProxyRoute;ProxyBackend;Service
 	Kind string `json:"kind"`
 
 	// Name is the name of the resource
@@ -561,6 +613,10 @@ type ProxyPolicySpec struct {
 	// OIDC configuration (for OIDC type)
 	// +optional
 	OIDC *OIDCPolicyConfig `json:"oidc,omitempty"`
+
+	// MeshAuthorization configuration (for MeshAuthorization type)
+	// +optional
+	MeshAuthorization *MeshAuthorizationConfig `json:"meshAuthorization,omitempty"`
 }
 
 // ProxyPolicyStatus defines the observed state of ProxyPolicy

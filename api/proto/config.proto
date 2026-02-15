@@ -42,6 +42,12 @@ message ConfigSnapshot {
 
   // Internal service routing tables for east-west mesh traffic
   repeated InternalService internal_services = 12;
+
+  // Mesh mTLS configuration
+  MeshTLSConfig mesh_tls_config = 13;
+
+  // Mesh authorization policies
+  repeated MeshAuthorizationPolicy mesh_authz_policies = 14;
 }
 
 // FederationMetadata contains federation-related metadata for the snapshot
@@ -452,6 +458,7 @@ message Policy {
   BasicAuthConfig basic_auth = 13;
   ForwardAuthConfig forward_auth = 14;
   OIDCConfig oidc = 15;
+  MeshAuthorizationConfig mesh_authorization = 16;
 }
 
 enum PolicyType {
@@ -468,6 +475,7 @@ enum PolicyType {
   BASIC_AUTH = 10;
   FORWARD_AUTH = 11;
   OIDC = 12;
+  MESH_AUTHORIZATION = 13;
 }
 
 // TargetRef identifies the resource a policy applies to
@@ -634,6 +642,12 @@ message InternalService {
 
   // Whether this service is opted into mesh interception
   bool mesh_enabled = 7;
+
+  // mTLS mode: "permissive", "strict", or "disabled"
+  string mtls_mode = 8;
+
+  // Trust domain for SPIFFE IDs
+  string trust_domain = 9;
 }
 
 // ServicePort describes a port on an InternalService
@@ -834,6 +848,108 @@ message AuthorizationConfig {
   string mode = 3;
 }
 
+// MeshTLSConfig contains mesh-wide mTLS configuration pushed to agents
+message MeshTLSConfig {
+  // Trust domain for SPIFFE IDs (e.g., "novaedge")
+  string trust_domain = 1;
+
+  // PEM-encoded CA certificate for verifying peer mesh certificates
+  bytes ca_certificate = 2;
+
+  // PEM-encoded workload certificate for this agent
+  bytes certificate = 3;
+
+  // PEM-encoded private key for this agent's workload certificate
+  bytes private_key = 4;
+
+  // SPIFFE ID assigned to this agent (e.g., spiffe://novaedge/agent/node-name)
+  string spiffe_id = 5;
+
+  // Certificate expiry as Unix timestamp
+  int64 expiry_unix = 6;
+}
+
+// MeshCertificateRequest is sent by agents to request a mesh workload certificate
+message MeshCertificateRequest {
+  // PEM-encoded CSR
+  bytes csr = 1;
+
+  // Node name requesting the certificate
+  string node_name = 2;
+}
+
+// MeshCertificateResponse contains the signed workload certificate
+message MeshCertificateResponse {
+  // PEM-encoded signed certificate
+  bytes certificate = 1;
+
+  // PEM-encoded CA certificate chain (trust bundle)
+  bytes ca_certificate = 2;
+
+  // SPIFFE ID in the certificate
+  string spiffe_id = 3;
+
+  // Certificate expiry as Unix timestamp
+  int64 expiry_unix = 4;
+}
+
+// MeshAuthorizationPolicy defines identity-based authorization for mesh traffic
+message MeshAuthorizationPolicy {
+  // Policy name
+  string name = 1;
+
+  // Target service name
+  string target_service = 2;
+
+  // Target service namespace
+  string target_namespace = 3;
+
+  // Authorization rules
+  repeated MeshAuthorizationRule rules = 4;
+
+  // Action: "ALLOW" or "DENY"
+  string action = 5;
+}
+
+// MeshAuthorizationConfig defines mesh authorization settings (embedded in Policy message)
+message MeshAuthorizationConfig {
+  // Authorization rules
+  repeated MeshAuthorizationRule rules = 1;
+
+  // Action: "ALLOW" or "DENY"
+  string action = 2;
+}
+
+// MeshAuthorizationRule defines a single authorization rule
+message MeshAuthorizationRule {
+  // Source identity matchers
+  repeated MeshSource from = 1;
+
+  // Destination matchers (L7)
+  repeated MeshDestination to = 2;
+}
+
+// MeshSource identifies allowed source workloads
+message MeshSource {
+  // Allowed source namespaces
+  repeated string namespaces = 1;
+
+  // Allowed source service accounts
+  repeated string service_accounts = 2;
+
+  // Allowed SPIFFE ID patterns (regex)
+  repeated string spiffe_ids = 3;
+}
+
+// MeshDestination matches destination traffic properties
+message MeshDestination {
+  // HTTP methods to match
+  repeated string methods = 1;
+
+  // URL path patterns to match (glob: /api/*)
+  repeated string paths = 2;
+}
+
 // ConfigService is the gRPC service for distributing config snapshots
 service ConfigService {
   // StreamConfig streams config snapshots to agents
@@ -842,6 +958,9 @@ service ConfigService {
 
   // ReportStatus allows agents to report their status back to controller
   rpc ReportStatus(AgentStatus) returns (StatusResponse);
+
+  // RequestMeshCertificate allows agents to request a mesh workload certificate
+  rpc RequestMeshCertificate(MeshCertificateRequest) returns (MeshCertificateResponse);
 }
 
 // StreamConfigRequest is sent by agents to subscribe to config updates

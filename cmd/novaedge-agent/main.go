@@ -95,8 +95,10 @@ var (
 	shutdownDrainPeriod time.Duration
 
 	// Service mesh configuration
-	meshEnabled    bool
-	meshTPROXYPort int
+	meshEnabled     bool
+	meshTPROXYPort  int
+	meshTunnelPort  int
+	meshTrustDomain string
 
 	// Control-plane VIP BGP/BFD configuration
 	cpVIPMode       string
@@ -146,6 +148,8 @@ func main() {
 	// Service mesh flags
 	flag.BoolVar(&meshEnabled, "mesh-enabled", false, "Enable service mesh east-west traffic interception")
 	flag.IntVar(&meshTPROXYPort, "mesh-tproxy-port", int(mesh.DefaultTPROXYPort), "Port for transparent proxy listener")
+	flag.IntVar(&meshTunnelPort, "mesh-tunnel-port", int(mesh.DefaultTunnelPort), "Port for mTLS tunnel server")
+	flag.StringVar(&meshTrustDomain, "mesh-trust-domain", "cluster.local", "SPIFFE trust domain for mesh identity")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -281,7 +285,11 @@ func main() {
 	// Create mesh manager (if enabled)
 	var meshManager *mesh.Manager
 	if meshEnabled {
-		meshManager = mesh.NewManager(logger, int32(meshTPROXYPort)) //nolint:gosec // port range validated by flag
+		meshManager = mesh.NewManager(logger, mesh.ManagerConfig{
+			TPROXYPort:  int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
+			TunnelPort:  int32(meshTunnelPort), //nolint:gosec // port range validated by flag
+			TrustDomain: meshTrustDomain,
+		})
 	}
 
 	// Create metrics server
@@ -326,9 +334,9 @@ func main() {
 				// Don't fail the whole config update
 			}
 
-			// Apply mesh config (east-west traffic interception)
+			// Apply mesh config (east-west traffic interception + authorization)
 			if meshManager != nil {
-				if applyErr := meshManager.ApplyConfig(snapshot.InternalServices); applyErr != nil {
+				if applyErr := meshManager.ApplyConfig(snapshot.InternalServices, snapshot.MeshAuthzPolicies); applyErr != nil {
 					logger.Error("Failed to apply mesh config", zap.Error(applyErr))
 				}
 			}

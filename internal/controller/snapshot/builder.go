@@ -240,6 +240,13 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	}
 	snapshot.InternalServices = internalServices
 
+	// Build mesh authorization policies
+	meshAuthzPolicies, err := b.buildMeshAuthorizationPolicies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build mesh authorization policies: %w", err)
+	}
+	snapshot.MeshAuthzPolicies = meshAuthzPolicies
+
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
 
@@ -247,13 +254,14 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	duration := time.Since(startTime).Seconds()
 	sizeBytes := proto.Size(snapshot)
 	resourceCounts := map[string]int{
-		"gateways":          len(snapshot.Gateways),
-		"routes":            len(snapshot.Routes),
-		"clusters":          len(snapshot.Clusters),
-		"vips":              len(snapshot.VipAssignments),
-		"policies":          len(snapshot.Policies),
-		"l4_listeners":      len(snapshot.L4Listeners),
-		"internal_services": len(snapshot.InternalServices),
+		"gateways":            len(snapshot.Gateways),
+		"routes":              len(snapshot.Routes),
+		"clusters":            len(snapshot.Clusters),
+		"vips":                len(snapshot.VipAssignments),
+		"policies":            len(snapshot.Policies),
+		"l4_listeners":        len(snapshot.L4Listeners),
+		"internal_services":   len(snapshot.InternalServices),
+		"mesh_authz_policies": len(snapshot.MeshAuthzPolicies),
 	}
 	RecordSnapshotBuild(nodeName, duration, sizeBytes, resourceCounts)
 
@@ -266,6 +274,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"policies", len(snapshot.Policies),
 		"l4_listeners", len(snapshot.L4Listeners),
 		"internal_services", len(snapshot.InternalServices),
+		"mesh_authz_policies", len(snapshot.MeshAuthzPolicies),
 		"duration_ms", duration*1000,
 		"size_bytes", sizeBytes)
 
@@ -804,6 +813,10 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 // meshAnnotation is the annotation key that opts a Service into mesh interception.
 const meshAnnotation = "novaedge.io/mesh"
 
+// meshMTLSAnnotation controls the mTLS mode for a mesh-enabled Service.
+// Valid values: "permissive" (default), "strict", "disabled".
+const meshMTLSAnnotation = "novaedge.io/mesh-mtls"
+
 // buildInternalServices discovers Kubernetes Services annotated for mesh
 // interception and builds routing entries with resolved endpoints.
 func (b *Builder) buildInternalServices(ctx context.Context) ([]*pb.InternalService, error) {
@@ -850,6 +863,12 @@ func (b *Builder) buildInternalServices(ctx context.Context) ([]*pb.InternalServ
 			continue
 		}
 
+		// Determine mTLS mode from annotation (default: permissive)
+		mtlsMode := "permissive"
+		if mode, ok := svc.Annotations[meshMTLSAnnotation]; ok {
+			mtlsMode = mode
+		}
+
 		services = append(services, &pb.InternalService{
 			Name:        svc.Name,
 			Namespace:   svc.Namespace,
@@ -858,6 +877,7 @@ func (b *Builder) buildInternalServices(ctx context.Context) ([]*pb.InternalServ
 			Endpoints:   endpoints,
 			LbPolicy:    pb.LoadBalancingPolicy_ROUND_ROBIN,
 			MeshEnabled: true,
+			MtlsMode:    mtlsMode,
 		})
 
 		logger.V(1).Info("Added internal service for mesh routing",
@@ -1118,4 +1138,77 @@ func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 
 	// Return timestamp + hash prefix for readability
 	return fmt.Sprintf("%d-%s", snapshot.GenerationTime, hash[:16])
+}
+
+// buildMeshAuthorizationPolicies converts ProxyPolicy resources of type
+// MeshAuthorization into proto MeshAuthorizationPolicy messages.
+func (b *Builder) buildMeshAuthorizationPolicies(ctx context.Context) ([]*pb.MeshAuthorizationPolicy, error) {
+	policyList := &novaedgev1alpha1.ProxyPolicyList{}
+	if err := b.client.List(ctx, policyList); err != nil {
+		return nil, err
+	}
+
+	policies := make([]*pb.MeshAuthorizationPolicy, 0, len(policyList.Items))
+	for _, p := range policyList.Items {
+		if p.Spec.Type != novaedgev1alpha1.PolicyTypeMeshAuthorization {
+			continue
+		}
+		if p.Spec.MeshAuthorization == nil {
+			continue
+		}
+
+		targetNS := p.Namespace
+		if p.Spec.TargetRef.Namespace != nil {
+			targetNS = *p.Spec.TargetRef.Namespace
+		}
+
+		policy := &pb.MeshAuthorizationPolicy{
+			Name:            p.Name,
+			TargetService:   p.Spec.TargetRef.Name,
+			TargetNamespace: targetNS,
+			Action:          p.Spec.MeshAuthorization.Action,
+			Rules:           convertMeshAuthzRules(p.Spec.MeshAuthorization.Rules),
+		}
+		policies = append(policies, policy)
+	}
+
+	return policies, nil
+}
+
+// convertMeshAuthzRules converts CRD MeshAuthorizationRule slices to proto.
+func convertMeshAuthzRules(rules []novaedgev1alpha1.MeshAuthorizationRule) []*pb.MeshAuthorizationRule {
+	result := make([]*pb.MeshAuthorizationRule, 0, len(rules))
+	for _, r := range rules {
+		rule := &pb.MeshAuthorizationRule{
+			From: convertMeshSources(r.From),
+			To:   convertMeshDestinations(r.To),
+		}
+		result = append(result, rule)
+	}
+	return result
+}
+
+// convertMeshSources converts CRD MeshSource slices to proto.
+func convertMeshSources(sources []novaedgev1alpha1.MeshSource) []*pb.MeshSource {
+	result := make([]*pb.MeshSource, 0, len(sources))
+	for _, s := range sources {
+		result = append(result, &pb.MeshSource{
+			Namespaces:      s.Namespaces,
+			ServiceAccounts: s.ServiceAccounts,
+			SpiffeIds:       s.SpiffeIDs,
+		})
+	}
+	return result
+}
+
+// convertMeshDestinations converts CRD MeshDestination slices to proto.
+func convertMeshDestinations(dests []novaedgev1alpha1.MeshDestination) []*pb.MeshDestination {
+	result := make([]*pb.MeshDestination, 0, len(dests))
+	for _, d := range dests {
+		result = append(result, &pb.MeshDestination{
+			Methods: d.Methods,
+			Paths:   d.Paths,
+		})
+	}
+	return result
 }
