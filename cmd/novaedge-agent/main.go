@@ -38,6 +38,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
 	"github.com/piwi3910/novaedge/internal/agent/l4"
+	"github.com/piwi3910/novaedge/internal/agent/mesh"
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	"github.com/piwi3910/novaedge/internal/observability"
@@ -93,6 +94,10 @@ var (
 	// Shutdown drain period
 	shutdownDrainPeriod time.Duration
 
+	// Service mesh configuration
+	meshEnabled    bool
+	meshTPROXYPort int
+
 	// Control-plane VIP BGP/BFD configuration
 	cpVIPMode       string
 	cpBGPLocalAS    uint
@@ -137,6 +142,10 @@ func main() {
 	// Shutdown drain period
 	flag.DurationVar(&shutdownDrainPeriod, "shutdown-drain-period", 3*time.Second,
 		"Delay between VIP release and server shutdown, allowing upstream routers to converge after BGP/OSPF withdrawal")
+
+	// Service mesh flags
+	flag.BoolVar(&meshEnabled, "mesh-enabled", false, "Enable service mesh east-west traffic interception")
+	flag.IntVar(&meshTPROXYPort, "mesh-tproxy-port", int(mesh.DefaultTPROXYPort), "Port for transparent proxy listener")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -269,6 +278,12 @@ func main() {
 	// Create L4 manager
 	l4Manager := l4.NewManager(logger)
 
+	// Create mesh manager (if enabled)
+	var meshManager *mesh.Manager
+	if meshEnabled {
+		meshManager = mesh.NewManager(logger, int32(meshTPROXYPort)) //nolint:gosec // port range validated by flag
+	}
+
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
 
@@ -278,6 +293,13 @@ func main() {
 	// Start VIP manager
 	if err := vipManager.Start(ctx); err != nil {
 		logger.Fatal("Failed to start VIP manager", zap.Error(err))
+	}
+
+	// Start mesh manager (if enabled)
+	if meshManager != nil {
+		if err := meshManager.Start(ctx); err != nil {
+			logger.Fatal("Failed to start mesh manager", zap.Error(err))
+		}
 	}
 
 	// Start config watcher
@@ -302,6 +324,13 @@ func main() {
 			if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
 				logger.Error("Failed to apply VIP assignments", zap.Error(err))
 				// Don't fail the whole config update
+			}
+
+			// Apply mesh config (east-west traffic interception)
+			if meshManager != nil {
+				if applyErr := meshManager.ApplyConfig(snapshot.InternalServices); applyErr != nil {
+					logger.Error("Failed to apply mesh config", zap.Error(applyErr))
+				}
 			}
 
 			// Apply HTTP server config
@@ -374,6 +403,13 @@ func main() {
 		case <-time.After(shutdownDrainPeriod):
 		case <-shutdownCtx.Done():
 			logger.Warn("Shutdown timeout reached during drain period")
+		}
+	}
+
+	// Shutdown mesh manager (removes iptables rules)
+	if meshManager != nil {
+		if err := meshManager.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Error during mesh manager shutdown", zap.Error(err))
 		}
 	}
 
