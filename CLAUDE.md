@@ -11,6 +11,7 @@ NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VI
 - Ingress Controller (compatible with Kubernetes Ingress and Gateway API)
 - Distributed VIP management (L2 ARP, BGP, OSPF modes with BFD and IPv6)
 - Certificate management (ACME, cert-manager, HashiCorp Vault)
+- Service mesh with transparent mTLS (TPROXY + SPIFFE)
 - WASM plugin system for extensibility
 - Multi-cluster federation with hub-spoke topology
 - Kubernetes-native control plane using 10 CRDs
@@ -43,10 +44,11 @@ novaedge/
 │   │   ├── vault/                    # HashiCorp Vault integration
 │   │   ├── federation/               # Multi-cluster federation
 │   │   ├── ipam/                     # IP address management
+│   │   ├── meshca/                   # Mesh certificate authority
 │   │   └── snapshot/                 # Config snapshot builder
 │   ├── agent/                        # Agent implementation
 │   │   ├── vip/                      # VIP management (L2/BGP/OSPF/BFD)
-│   │   ├── lb/                       # Load balancing algorithms (6 + sticky)
+│   │   ├── lb/                       # Load balancing algorithms (12 types)
 │   │   ├── router/                   # Request routing, middleware, caching, compression
 │   │   ├── policy/                   # Policy enforcement (rate-limit, auth, CORS, JWT, WAF, mTLS)
 │   │   ├── server/                   # HTTP/HTTPS/HTTP3 servers, mTLS, OCSP, PROXY protocol
@@ -57,7 +59,11 @@ novaedge/
 │   │   ├── config/                   # Config snapshot handling
 │   │   ├── metrics/                  # Prometheus metrics
 │   │   ├── grpc/                     # gRPC handler
-│   │   └── protocol/                 # Protocol detection
+│   │   ├── protocol/                 # Protocol detection
+│   │   ├── mesh/                     # Service mesh (mTLS, TPROXY, tunnel, authz, certs)
+│   │   ├── cpvip/                    # Control-plane VIP management
+│   │   ├── filters/                  # Request/response filter chains
+│   │   └── websocket/               # WebSocket upgrade handling
 │   ├── acme/                         # ACME client (Let's Encrypt)
 │   │   └── dns/                      # DNS-01 providers (Cloudflare, Route53, Google)
 │   ├── standalone/                   # Standalone mode config
@@ -70,7 +76,7 @@ novaedge/
 │   └── novaedge-operator/            # Operator chart
 ├── config/                           # Kubernetes manifests
 │   ├── crd/                          # CRD definitions (10 CRDs)
-│   ├── samples/                      # Example resources (52 samples)
+│   ├── samples/                      # Example resources (51 samples)
 │   ├── rbac/                         # RBAC manifests
 │   ├── controller/                   # Controller deployment
 │   ├── agent/                        # Agent DaemonSet
@@ -112,8 +118,8 @@ make test
 # Run unit tests only
 go test ./internal/...
 
-# Run integration tests
-make test-integration
+# Run conformance tests (requires running cluster)
+make test-conformance
 
 # Run tests with coverage
 make test-coverage
@@ -213,6 +219,11 @@ When implementing LB algorithms in `internal/agent/lb/`:
 - **EWMA**: Latency-aware using exponentially weighted moving average
 - **Ring Hash / Maglev**: Consistent hashing for session affinity
 - **Sticky**: Cookie-based session affinity
+- **Locality-aware**: Prefer endpoints in the same zone/region
+- **Priority failover**: Route to highest-priority endpoint group
+- **Panic mode**: Bypass health checks when too many endpoints are unhealthy
+- **Slow-start**: Gradually ramp traffic to newly added endpoints
+- **Resource-adaptive**: Weight endpoints by CPU/memory usage
 - All algorithms must handle endpoint addition/removal without disruption
 
 ## VIP Management
@@ -238,6 +249,24 @@ When implementing LB algorithms in `internal/agent/lb/`:
 ### IPv6 Dual-Stack
 - Full IPv6 support for VIP addresses
 - IP address pools via ProxyIPPool CRD with IPAM allocation
+
+## Service Mesh
+
+The service mesh provides transparent mTLS between Kubernetes services:
+
+- **`internal/agent/mesh/`**: TPROXY-based traffic interception, HTTP/2 mTLS tunnel, TLS provider, authorization engine, certificate requester
+- **`internal/controller/meshca/`**: Embedded certificate authority issuing SPIFFE workload certificates (ECDSA P-256, 24h lifetime)
+- Services opt-in via `novaedge.io/mesh: "enabled"` annotation
+- SPIFFE identity format: `spiffe://cluster.local/agent/<node>`
+- Agent cert requester generates CSR, calls `RequestMeshCertificate` RPC, auto-renews at 80% lifetime
+- TPROXY iptables rules intercept ClusterIP traffic to port 15001, tunnel via mTLS on port 15002
+
+## Control-Plane VIP
+
+- **`internal/agent/cpvip/`**: Manages a dedicated VIP for controller high availability
+- Health checks controller via `/livez` endpoint with ServiceAccount token auth
+- Supports L2/BGP/BFD modes for CP VIP announcement
+- Separate from data-plane VIP management in `internal/agent/vip/`
 
 ## Policy & Middleware Architecture
 
@@ -267,6 +296,8 @@ The controller pushes versioned `ConfigSnapshot` to agents containing:
 - TLS certificates
 - L4 route configurations
 - Authentication configurations
+- Internal services (mesh-enabled) with endpoints
+- Mesh authorization policies
 
 Agents must atomically swap runtime config when receiving new snapshots.
 

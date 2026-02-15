@@ -10,9 +10,22 @@ rules:
 - apiGroups:
   - ""
   resources:
-  - nodes
+  - configmaps
   - secrets
+  - serviceaccounts
   - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - nodes
   verbs:
   - get
   - list
@@ -24,6 +37,19 @@ rules:
   verbs:
   - create
   - patch
+- apiGroups:
+  - apps
+  resources:
+  - daemonsets
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - discovery.k8s.io
   resources:
@@ -88,8 +114,13 @@ rules:
 - apiGroups:
   - novaedge.io
   resources:
+  - novaedgeclusters
+  - novaedgefederations
+  - novaedgeremoteclusters
   - proxybackends
+  - proxycertificates
   - proxygateways
+  - proxyippools
   - proxypolicies
   - proxyroutes
   - proxyvips
@@ -104,8 +135,13 @@ rules:
 - apiGroups:
   - novaedge.io
   resources:
+  - novaedgeclusters/finalizers
+  - novaedgefederations/finalizers
+  - novaedgeremoteclusters/finalizers
   - proxybackends/finalizers
+  - proxycertificates/finalizers
   - proxygateways/finalizers
+  - proxyippools/finalizers
   - proxypolicies/finalizers
   - proxyroutes/finalizers
   - proxyvips/finalizers
@@ -114,8 +150,13 @@ rules:
 - apiGroups:
   - novaedge.io
   resources:
+  - novaedgeclusters/status
+  - novaedgefederations/status
+  - novaedgeremoteclusters/status
   - proxybackends/status
+  - proxycertificates/status
   - proxygateways/status
+  - proxyippools/status
   - proxypolicies/status
   - proxyroutes/status
   - proxyvips/status
@@ -123,6 +164,21 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - clusterrolebindings
+  - clusterroles
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - coordination.k8s.io
   resources:
