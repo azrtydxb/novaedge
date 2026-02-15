@@ -30,10 +30,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${BUILD_DATE}" \
     -o novaedge-agent cmd/novaedge-agent/main.go
 
-# Use distroless as minimal base image to package the agent binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
-# Agent requires root for privileged network operations (VIP binding, BGP port 179, ARP/NDP)
-FROM gcr.io/distroless/static:latest
+# Agent requires iptables for TPROXY mesh interception and root for privileged
+# network operations (VIP binding, BGP port 179, ARP/NDP, iptables rules)
+FROM alpine:3.21
+RUN apk add --no-cache iptables ip6tables iproute2
 WORKDIR /
 COPY --from=builder /workspace/novaedge-agent .
 
