@@ -17,9 +17,15 @@ limitations under the License.
 package router
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"testing"
 
+	"go.uber.org/zap"
+
+	"github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -164,6 +170,106 @@ func NewRegexMatcher(pattern string) (*RegexMatcher, error) {
 		return nil, err
 	}
 	return &RegexMatcher{Pattern: regex}, nil
+}
+
+func TestApplyConfigCatchAllRoute(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	r := NewRouter(logger)
+
+	// Create a snapshot with a route that has NO hostnames (catch-all)
+	snapshot := &config.Snapshot{
+		ConfigSnapshot: &pb.ConfigSnapshot{
+			Routes: []*pb.Route{
+				{
+					Name:      "catch-all",
+					Namespace: "default",
+					Hostnames: nil, // empty hostnames = catch-all
+					Rules: []*pb.RouteRule{
+						{
+							Matches: []*pb.RouteMatch{
+								{
+									Path: &pb.PathMatch{
+										Type:  pb.PathMatchType_PATH_PREFIX,
+										Value: "/",
+									},
+								},
+							},
+							BackendRefs: []*pb.BackendRef{
+								{Namespace: "default", Name: "backend1"},
+							},
+						},
+					},
+				},
+			},
+			Clusters:  []*pb.Cluster{},
+			Endpoints: map[string]*pb.EndpointList{},
+			Gateways:  []*pb.Gateway{},
+		},
+	}
+
+	err := r.ApplyConfig(context.Background(), snapshot)
+	if err != nil {
+		t.Fatalf("ApplyConfig failed: %v", err)
+	}
+
+	// Verify that the catch-all route is stored under the empty string key
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if _, ok := r.routeIndexes[""]; !ok {
+		t.Fatal("Expected catch-all route index for empty hostname key")
+	}
+
+	if _, ok := r.routes[""]; !ok {
+		t.Fatal("Expected catch-all routes for empty hostname key")
+	}
+
+	if len(r.routes[""]) != 1 {
+		t.Fatalf("Expected 1 catch-all route, got %d", len(r.routes[""]))
+	}
+}
+
+func TestServeHTTPCatchAllFallback(t *testing.T) {
+	logger, _ := zap.NewDevelopment()
+	r := NewRouter(logger)
+
+	// Set up a catch-all route under the empty hostname key
+	entry := &RouteEntry{
+		Route: &pb.Route{
+			Name:      "catch-all",
+			Namespace: "default",
+		},
+		Rule: &pb.RouteRule{
+			Matches: []*pb.RouteMatch{
+				{
+					Path: &pb.PathMatch{
+						Type:  pb.PathMatchType_PATH_PREFIX,
+						Value: "/",
+					},
+				},
+			},
+		},
+		PathMatcher: &PrefixMatcher{Prefix: "/"},
+	}
+
+	r.mu.Lock()
+	r.routes[""] = []*RouteEntry{entry}
+	r.routeIndexes[""] = newRouteIndex(r.routes[""])
+	r.mu.Unlock()
+
+	// Make a request with a specific hostname that has no route
+	req := httptest.NewRequest("GET", "http://unknown-host.example.com/api/test", nil)
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, req)
+
+	// Should NOT get 404 "No route found" since catch-all exists.
+	// It may get 404 "No matching route rule" or other errors due to missing backends,
+	// but the key assertion is that the catch-all route was tried.
+	body := w.Body.String()
+	if w.Code == http.StatusNotFound && body == "No route found\n" {
+		t.Error("Expected catch-all route to handle request, but got 'No route found'")
+	}
 }
 
 func TestHashEndpointListIncludesLBPolicy(t *testing.T) {

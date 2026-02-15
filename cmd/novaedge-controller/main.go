@@ -87,6 +87,7 @@ func main() {
 	flag.StringVar(&controllerClass, "controller-class", "novaedge.io/proxy",
 		"The loadBalancerClass this controller handles. Only gateways matching this class will be reconciled.")
 
+	var defaultVIPRef string
 	var enableServiceLB bool
 
 	var enableCertManager string
@@ -94,6 +95,8 @@ func main() {
 	var vaultAddr string
 	var vaultAuthMethod string
 	var vaultRole string
+	flag.StringVar(&defaultVIPRef, "default-vip-ref", "default-vip",
+		"Default VIP reference name for Ingress resources that don't specify the novaedge.io/vip-ref annotation.")
 	flag.BoolVar(&enableServiceLB, "enable-service-lb", false,
 		"Enable ServiceLB controller that watches type:LoadBalancer Services and creates ProxyVIP resources with IPAM allocation.")
 	flag.StringVar(&enableCertManager, "enable-cert-manager", "auto", "Enable cert-manager integration (auto|true|false)")
@@ -186,8 +189,9 @@ func main() {
 	}
 
 	if err = (&controller.IngressReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		DefaultVIPRef: defaultVIPRef,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Ingress")
 		os.Exit(1)
