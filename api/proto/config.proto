@@ -39,6 +39,9 @@ message ConfigSnapshot {
 
   // L4 (TCP/UDP/TLS passthrough) listener configurations
   repeated L4Listener l4_listeners = 11;
+
+  // Internal service routing tables for east-west mesh traffic
+  repeated InternalService internal_services = 12;
 }
 
 // FederationMetadata contains federation-related metadata for the snapshot
@@ -605,6 +608,47 @@ message L4TLSRoute {
   string backend_name = 2;
   // Backend endpoints
   repeated Endpoint backends = 3;
+}
+
+// InternalService represents a Kubernetes Service discovered for east-west mesh routing.
+// The controller auto-discovers Services and includes their routing information
+// in the ConfigSnapshot so agents can route intercepted traffic.
+message InternalService {
+  // Kubernetes Service name
+  string name = 1;
+
+  // Kubernetes namespace
+  string namespace = 2;
+
+  // ClusterIP of the Service (original destination for TPROXY matching)
+  string cluster_ip = 3;
+
+  // Ports exposed by this Service
+  repeated ServicePort ports = 4;
+
+  // Backend endpoints resolved from EndpointSlices
+  repeated Endpoint endpoints = 5;
+
+  // Load balancing policy for this service
+  LoadBalancingPolicy lb_policy = 6;
+
+  // Whether this service is opted into mesh interception
+  bool mesh_enabled = 7;
+}
+
+// ServicePort describes a port on an InternalService
+message ServicePort {
+  // Port name (e.g. "http", "grpc")
+  string name = 1;
+
+  // Port number exposed by the Service
+  int32 port = 2;
+
+  // Target port on the backend pods
+  int32 target_port = 3;
+
+  // Protocol: TCP or UDP
+  string protocol = 4;
 }
 
 // ErrorPageConfig defines custom error page configuration
