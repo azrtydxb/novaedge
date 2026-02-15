@@ -6,8 +6,7 @@ NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VI
 
 ### L7 Load Balancing & Reverse Proxy
 - **Protocol support**: HTTP/1.1, HTTP/2 (h2/h2c), HTTP/3 (QUIC), WebSockets, gRPC, Server-Sent Events
-- **6 load balancing algorithms**: RoundRobin, P2C, EWMA, RingHash, Maglev, LeastConn
-- **Cookie-based session affinity** (sticky sessions)
+- **12 load balancing algorithms**: RoundRobin, LeastConn, P2C, EWMA, RingHash, Maglev, Sticky (cookie-based), Locality-aware, Priority failover, Panic mode, Slow-start, Resource-adaptive
 - **Advanced routing**: hostname, path, header, method matching with boolean routing expressions
 - **Traffic management**: canary/weighted splitting, traffic mirroring, request retry with configurable policies
 - **Response processing**: HTTP caching, gzip/Brotli compression, buffering, custom error pages
@@ -65,6 +64,18 @@ NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VI
 - **Web UI dashboard** (via novactl)
 - **Per-route access logging**
 - **CLI tool** (novactl) with trace query, metrics query, and agent inspection
+
+### Service Mesh
+- **Transparent mTLS** between services via TPROXY interception
+- **Embedded mesh CA** with SPIFFE identity (ECDSA P-256 workload certificates)
+- **HTTP/2 mTLS tunnel** for encrypted service-to-service communication
+- **Mesh authorization engine** with service-level access policies
+- **Automatic certificate rotation** with configurable renewal threshold
+
+### Control-Plane VIP
+- **Dedicated VIP for controller** high availability
+- **Health-check based failover** using Kubernetes `/livez` endpoint
+- **BGP/BFD mode support** for CP VIP announcement
 
 ### Health & Resilience
 - **Active and passive health checking**
@@ -218,9 +229,8 @@ kubectl get proxyippools
 ## Testing & Quality
 
 ### Test Suite
-- **191+ test functions** across unit, integration, and controller tests
-- **46.5% integration coverage** with end-to-end request flow validation
-- **85%+ unit coverage** for critical components (router, health, VIP, load balancing)
+- **1500+ test functions** across unit, integration, and controller tests
+- **85%+ unit coverage** for critical components (router, health, VIP, load balancing, mesh, policies)
 
 ### Running Tests
 ```bash

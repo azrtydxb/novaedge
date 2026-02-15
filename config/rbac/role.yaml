@@ -107,7 +107,9 @@ rules:
   - novaedgefederations
   - novaedgeremoteclusters
   - proxybackends
+  - proxycertificates
   - proxygateways
+  - proxyippools
   - proxypolicies
   - proxyroutes
   - proxyvips
@@ -126,7 +128,9 @@ rules:
   - novaedgefederations/finalizers
   - novaedgeremoteclusters/finalizers
   - proxybackends/finalizers
+  - proxycertificates/finalizers
   - proxygateways/finalizers
+  - proxyippools/finalizers
   - proxypolicies/finalizers
   - proxyroutes/finalizers
   - proxyvips/finalizers
@@ -139,7 +143,9 @@ rules:
   - novaedgefederations/status
   - novaedgeremoteclusters/status
   - proxybackends/status
+  - proxycertificates/status
   - proxygateways/status
+  - proxyippools/status
   - proxypolicies/status
   - proxyroutes/status
   - proxyvips/status
