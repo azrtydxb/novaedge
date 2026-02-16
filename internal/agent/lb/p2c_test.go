@@ -18,7 +18,6 @@ package lb
 
 import (
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -40,8 +39,8 @@ func TestNewP2C(t *testing.T) {
 		t.Errorf("Expected 2 endpoints, got %d", len(p2c.endpoints))
 	}
 
-	if len(p2c.activeRequests) != 2 {
-		t.Errorf("Expected 2 active request counters, got %d", len(p2c.activeRequests))
+	if len(p2c.loadSnapshot().activeRequests) != 2 {
+		t.Errorf("Expected 2 active request counters, got %d", len(p2c.loadSnapshot().activeRequests))
 	}
 
 }
@@ -418,10 +417,7 @@ func TestP2CAtomicCounters(t *testing.T) {
 		wg.Wait()
 
 		// Check that final count is correct
-		key := endpointKey(endpoints[0])
-		p2c.mu.RLock()
-		counter := atomic.LoadInt64(p2c.activeRequests[key])
-		p2c.mu.RUnlock()
+		counter := p2c.GetActiveCount(endpoints[0])
 
 		if counter != int64(numGoroutines) {
 			t.Errorf("Expected active count %d, got %d", numGoroutines, counter)
