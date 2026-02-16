@@ -48,7 +48,7 @@ func TestHandleForwardAuth_AllowedResponse(t *testing.T) {
 		TimeoutMs:       5000,
 	}
 
-	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop())
+	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop(), WithForwardAuthHTTPClient(&http.Client{}))
 
 	nextCalled := false
 	next := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -88,7 +88,7 @@ func TestHandleForwardAuth_UnauthorizedResponse(t *testing.T) {
 		TimeoutMs: 5000,
 	}
 
-	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop())
+	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop(), WithForwardAuthHTTPClient(&http.Client{}))
 
 	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("next handler should not be called on 401")
@@ -117,7 +117,7 @@ func TestHandleForwardAuth_ForbiddenResponse(t *testing.T) {
 		TimeoutMs: 5000,
 	}
 
-	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop())
+	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop(), WithForwardAuthHTTPClient(&http.Client{}))
 
 	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("next handler should not be called on 403")
@@ -154,7 +154,7 @@ func TestHandleForwardAuth_HeaderForwarding(t *testing.T) {
 		TimeoutMs:   5000,
 	}
 
-	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop())
+	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop(), WithForwardAuthHTTPClient(&http.Client{}))
 
 	nextCalled := false
 	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
@@ -191,7 +191,7 @@ func TestHandleForwardAuth_CachingSuccess(t *testing.T) {
 		CacheTtlSeconds: 60,
 	}
 
-	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop())
+	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop(), WithForwardAuthHTTPClient(&http.Client{}))
 
 	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})
 
@@ -222,7 +222,7 @@ func TestHandleForwardAuth_AuthServiceUnavailable(t *testing.T) {
 		TimeoutMs: 100,
 	}
 
-	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop())
+	handler := NewForwardAuthHandler(context.Background(), config, zap.NewNop(), WithForwardAuthHTTPClient(&http.Client{}))
 
 	next := http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("next handler should not be called")

@@ -118,6 +118,8 @@ jobs:
             dockerfile: Dockerfile.standalone
           - name: novaedge-operator
             dockerfile: Dockerfile.operator
+          - name: novaedge-webui
+            dockerfile: Dockerfile.webui
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

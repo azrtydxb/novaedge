@@ -27,6 +27,10 @@ import (
 	"time"
 )
 
+const (
+	namespaceAll = "all"
+)
+
 // SnapshotStore stores configuration snapshots in memory.
 type SnapshotStore struct {
 	snapshots []ConfigSnapshot
@@ -131,10 +135,10 @@ func (s *Server) handleConfigSnapshots(w http.ResponseWriter, r *http.Request) {
 		var req snapshotRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			// Allow empty body; default to "all" namespace and empty comment
-			req.Namespace = "all"
+			req.Namespace = namespaceAll
 		}
 		if req.Namespace == "" {
-			req.Namespace = "all"
+			req.Namespace = namespaceAll
 		}
 
 		ctx := r.Context()

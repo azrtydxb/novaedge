@@ -4,10 +4,8 @@ package webui
 import (
 	"context"
 	"crypto/tls"
-	"embed"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"strings"
 	"time"
@@ -24,8 +22,9 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-//go:embed static/*
-var staticFiles embed.FS
+const (
+	defaultNamespace = "novaedge-system"
+)
 
 // Server represents the web UI server
 type Server struct {
@@ -205,12 +204,18 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/config/diff", s.handleConfigDiff)
 	mux.HandleFunc("/api/v1/config/rollback/", s.handleConfigRollback)
 
-	// Static files with SPA fallback
-	staticFS, err := fs.Sub(staticFiles, "static")
-	if err != nil {
-		return fmt.Errorf("failed to get static files: %w", err)
-	}
-	mux.Handle("/", spaHandler(http.FS(staticFS)))
+	// Root handler returns API info (static files served by nginx sidecar)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"service": "novaedge-webui-api",
+			"version": "v1",
+			"docs":    "/api/v1/",
+		})
+	})
 
 	// Wrap with auth middleware, then CORS
 	var handler http.Handler = mux
@@ -314,43 +319,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 		}
 
 		next.ServeHTTP(w, r)
-	})
-}
-
-// spaHandler serves static files and falls back to index.html for SPA routing
-func spaHandler(fsys http.FileSystem) http.Handler {
-	fileServer := http.FileServer(fsys)
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-
-		// Try to open the requested file
-		f, err := fsys.Open(path)
-		if err != nil {
-			// File not found, serve index.html for SPA routing
-			r.URL.Path = "/"
-			fileServer.ServeHTTP(w, r)
-			return
-		}
-
-		// Check if it's a directory
-		stat, err := f.Stat()
-		_ = f.Close()
-		if err == nil && stat.IsDir() {
-			// Try to serve index.html from the directory
-			indexPath := strings.TrimSuffix(path, "/") + "/index.html"
-			indexFile, err := fsys.Open(indexPath)
-			if err != nil {
-				// No index.html in directory, serve root index.html
-				r.URL.Path = "/"
-				fileServer.ServeHTTP(w, r)
-				return
-			}
-			_ = indexFile.Close()
-		}
-
-		// Serve the file
-		fileServer.ServeHTTP(w, r)
 	})
 }
 
@@ -1187,7 +1155,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	namespace := r.URL.Query().Get("namespace")
 	if namespace == "" {
-		namespace = "novaedge-system"
+		namespace = defaultNamespace
 	}
 
 	// List agent pods (support both common label conventions)

@@ -147,6 +147,11 @@ Return the proper image name
 {{- printf "%s:%s" .Values.webui.image.repository $tag -}}
 {{- end }}
 
+{{- define "novaedge.webui.frontend.image" -}}
+{{- $tag := default .Chart.AppVersion .Values.webui.frontend.image.tag -}}
+{{- printf "%s:%s" .Values.webui.frontend.image.repository $tag -}}
+{{- end }}
+
 {{/*
 Namespace to use
 */}}
