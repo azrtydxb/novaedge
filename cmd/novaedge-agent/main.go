@@ -44,6 +44,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	"github.com/piwi3910/novaedge/internal/observability"
+	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -703,7 +704,7 @@ func initLogger(level string) (*zap.Logger, zap.AtomicLevel) {
 // createGRPCConnection creates a gRPC client connection to the controller.
 // If TLS cert/key/CA are provided, it uses mTLS; otherwise insecure.
 func createGRPCConnection(addr, certFile, keyFile, caFile string) (*grpc.ClientConn, error) {
-	var opts []grpc.DialOption
+	opts := grpclimits.ClientOptions()
 
 	if certFile != "" && keyFile != "" && caFile != "" {
 		creds, err := tlsutil.LoadClientTLSCredentials(certFile, keyFile, caFile, "")
