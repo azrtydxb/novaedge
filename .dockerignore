@@ -1,0 +1,33 @@
+# Version control
+.git
+.github
+
+# Documentation
+docs
+*.md
+LICENSE
+mkdocs.yml
+
+# Kubernetes manifests (not needed in images)
+charts
+config
+
+# Tests
+test
+
+# Lint/CI config
+.golangci.yml
+
+# Web frontend build artifacts and dependencies
+web/node_modules
+web/dist
+
+# Binary artifacts
+novaedge-agent
+bin/
+
+# IDE and OS files
+.idea
+.vscode
+*.swp
+.DS_Store
