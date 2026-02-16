@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,9 +36,9 @@ func NewAgentClient(ctx context.Context, clientset kubernetes.Interface, namespa
 	agentAddress := fmt.Sprintf("%s:9090", pod.Status.PodIP)
 
 	// Create gRPC connection using lazy connect (grpc.NewClient)
-	conn, err := grpc.NewClient(agentAddress,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
+	opts := grpclimits.ClientOptions()
+	opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(agentAddress, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to agent at %s: %w", agentAddress, err)
 	}
