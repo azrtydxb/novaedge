@@ -1,5 +1,19 @@
 import { useApp } from '@/contexts/AppContext'
-import { useDashboardMetrics, useGateways, useRoutes, useBackends, useVIPs, usePolicies } from '@/api/hooks'
+import {
+  useDashboardMetrics,
+  useGateways,
+  useRoutes,
+  useBackends,
+  useVIPs,
+  usePolicies,
+  useCertificates,
+  useIPPools,
+  useClusters,
+  useFederations,
+  useRemoteClusters,
+  useAgents,
+  useEvents,
+} from '@/api/hooks'
 import { MetricCard } from '@/components/metrics/MetricCard'
 import { MetricsChart } from '@/components/metrics/MetricsChart'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -14,6 +28,12 @@ import {
   AlertCircle,
   Cpu,
   MemoryStick,
+  KeyRound,
+  Network,
+  Boxes,
+  Globe,
+  MonitorCheck,
+  CalendarClock,
 } from 'lucide-react'
 import { formatBytes, formatUptime } from '@/lib/utils'
 import {
@@ -24,6 +44,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Link } from 'react-router-dom'
 
 export default function Dashboard() {
   const { namespace, mode } = useApp()
@@ -33,37 +54,115 @@ export default function Dashboard() {
   const { data: backends = [] } = useBackends(namespace)
   const { data: vips = [] } = useVIPs(namespace)
   const { data: policies = [] } = usePolicies(namespace)
+  const { data: certificates = [] } = useCertificates(namespace)
+  const { data: ippools = [] } = useIPPools()
+  const { data: clusters = [] } = useClusters(namespace)
+  const { data: federations = [] } = useFederations(namespace)
+  const { data: remoteClusters = [] } = useRemoteClusters(namespace)
+  const { data: agents = [] } = useAgents()
+  const { data: events = [] } = useEvents()
+
+  const readyAgents = agents.filter((a) => a.ready).length
+  const totalAgents = agents.length
 
   const resourceCounts = [
-    { title: 'Gateways', value: gateways.length, icon: <Server className="h-4 w-4" /> },
-    { title: 'Routes', value: routes.length, icon: <GitBranch className="h-4 w-4" /> },
-    { title: 'Backends', value: backends.length, icon: <Database className="h-4 w-4" /> },
-    { title: 'VIPs', value: vips.length, icon: <Star className="h-4 w-4" /> },
-    { title: 'Policies', value: policies.length, icon: <Shield className="h-4 w-4" /> },
+    { title: 'Gateways', value: gateways.length, icon: <Server className="h-4 w-4" />, link: '/gateways' },
+    { title: 'Routes', value: routes.length, icon: <GitBranch className="h-4 w-4" />, link: '/routes' },
+    { title: 'Backends', value: backends.length, icon: <Database className="h-4 w-4" />, link: '/backends' },
+    { title: 'VIPs', value: vips.length, icon: <Star className="h-4 w-4" />, link: '/vips' },
+    { title: 'Policies', value: policies.length, icon: <Shield className="h-4 w-4" />, link: '/policies' },
+    { title: 'Certificates', value: certificates.length, icon: <KeyRound className="h-4 w-4" />, link: '/certificates' },
+    { title: 'IP Pools', value: ippools.length, icon: <Network className="h-4 w-4" />, link: '/ippools' },
+    { title: 'Clusters', value: clusters.length, icon: <Boxes className="h-4 w-4" />, link: '/clusters' },
+    { title: 'Federations', value: federations.length, icon: <Globe className="h-4 w-4" />, link: '/federation' },
+    { title: 'Remote Clusters', value: remoteClusters.length, icon: <MonitorCheck className="h-4 w-4" />, link: '/federation' },
   ]
 
   const hasMetrics = metrics && !metricsError
 
+  // Recent events (last 10)
+  const recentEvents = events.slice(0, 10)
+
   return (
     <div className="space-y-6">
-      {/* Mode indicator */}
-      <div className="flex items-center gap-2">
-        <Badge variant={mode === 'kubernetes' ? 'default' : 'secondary'}>
-          {mode === 'kubernetes' ? 'Kubernetes Mode' : 'Standalone Mode'}
-        </Badge>
-      </div>
+      {/* Cluster Health Bar */}
+      <Card>
+        <CardContent className="py-3">
+          <div className="flex items-center gap-6 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Badge variant={mode === 'kubernetes' ? 'default' : 'secondary'}>
+                {mode === 'kubernetes' ? 'Kubernetes Mode' : 'Standalone Mode'}
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Nodes:</span>
+              <Badge variant="outline">{totalAgents}</Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Agents:</span>
+              <Badge className={readyAgents === totalAgents && totalAgents > 0 ? 'bg-green-500' : totalAgents > 0 ? 'bg-yellow-500' : ''}>
+                {readyAgents}/{totalAgents} Ready
+              </Badge>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Controller:</span>
+              <Badge className={hasMetrics ? 'bg-green-500' : 'bg-red-500'}>
+                {hasMetrics ? 'Healthy' : 'Unknown'}
+              </Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Resource counts */}
+      {/* Resource Summary Grid - all 10 CRDs */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         {resourceCounts.map((item) => (
-          <MetricCard
-            key={item.title}
-            title={item.title}
-            value={item.value}
-            icon={item.icon}
-          />
+          <Link key={item.title} to={item.link} className="block">
+            <MetricCard
+              title={item.title}
+              value={item.value}
+              icon={item.icon}
+              className="hover:border-primary/50 transition-colors cursor-pointer"
+            />
+          </Link>
         ))}
       </div>
+
+      {/* Recent Events */}
+      {recentEvents.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <CalendarClock className="h-4 w-4" />
+              Recent Events
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {recentEvents.map((event, i) => (
+                <div
+                  key={`${event.timestamp}-${event.reason}-${i}`}
+                  className={`flex items-start gap-3 p-2 rounded text-sm ${
+                    event.type === 'Warning' ? 'bg-yellow-500/10' : ''
+                  }`}
+                >
+                  <span className="text-xs text-muted-foreground whitespace-nowrap mt-0.5">
+                    {new Date(event.timestamp).toLocaleTimeString()}
+                  </span>
+                  <Badge
+                    variant={event.type === 'Warning' ? 'destructive' : 'secondary'}
+                    className="text-xs shrink-0"
+                  >
+                    {event.type}
+                  </Badge>
+                  <span className="font-medium shrink-0">{event.reason}</span>
+                  <span className="text-muted-foreground truncate">{event.message}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Metrics section */}
       {metricsLoading ? (

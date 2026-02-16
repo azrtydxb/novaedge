@@ -423,3 +423,116 @@ type ValidationResult struct {
 	Valid  bool              `json:"valid"`
 	Errors []ValidationError `json:"errors,omitempty"`
 }
+
+// Certificate represents a ProxyCertificate configuration
+type Certificate struct {
+	Name            string            `json:"name" yaml:"name"`
+	Namespace       string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            CertificateSpec   `json:"spec" yaml:"spec"`
+	Status          CertificateStatus `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+}
+
+// CertificateSpec defines the desired state of a certificate
+type CertificateSpec struct {
+	Domains     []string    `json:"domains" yaml:"domains"`
+	Issuer      IssuerRef   `json:"issuer" yaml:"issuer"`
+	SecretName  string      `json:"secretName,omitempty" yaml:"secretName,omitempty"`
+	KeyType     string      `json:"keyType,omitempty" yaml:"keyType,omitempty"`
+	RenewBefore string      `json:"renewBefore,omitempty" yaml:"renewBefore,omitempty"`
+	MustStaple  bool        `json:"mustStaple,omitempty" yaml:"mustStaple,omitempty"`
+	ACME        *ACMEConfig `json:"acme,omitempty" yaml:"acme,omitempty"`
+}
+
+// IssuerRef references a certificate issuer
+type IssuerRef struct {
+	Type string `json:"type" yaml:"type"`
+}
+
+// ACMEConfig defines ACME-specific configuration
+type ACMEConfig struct {
+	Server        string `json:"server,omitempty" yaml:"server,omitempty"`
+	Email         string `json:"email,omitempty" yaml:"email,omitempty"`
+	ChallengeType string `json:"challengeType,omitempty" yaml:"challengeType,omitempty"`
+	DNSProvider   string `json:"dnsProvider,omitempty" yaml:"dnsProvider,omitempty"`
+}
+
+// CertificateStatus defines the observed state of a certificate
+type CertificateStatus struct {
+	State           string      `json:"state,omitempty" yaml:"state,omitempty"`
+	SecretName      string      `json:"secretName,omitempty" yaml:"secretName,omitempty"`
+	NotBefore       *time.Time  `json:"notBefore,omitempty" yaml:"notBefore,omitempty"`
+	NotAfter        *time.Time  `json:"notAfter,omitempty" yaml:"notAfter,omitempty"`
+	LastRenewalTime *time.Time  `json:"lastRenewalTime,omitempty" yaml:"lastRenewalTime,omitempty"`
+	SerialNumber    string      `json:"serialNumber,omitempty" yaml:"serialNumber,omitempty"`
+	Issuer          string      `json:"issuer,omitempty" yaml:"issuer,omitempty"`
+	Message         string      `json:"message,omitempty" yaml:"message,omitempty"`
+	Conditions      []Condition `json:"conditions,omitempty" yaml:"conditions,omitempty"`
+}
+
+// IPPool represents a ProxyIPPool configuration
+type IPPool struct {
+	Name            string            `json:"name" yaml:"name"`
+	Namespace       string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            IPPoolSpec        `json:"spec" yaml:"spec"`
+	Status          IPPoolStatus      `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+}
+
+// IPPoolSpec defines the desired state of an IP pool
+type IPPoolSpec struct {
+	CIDRs      []string `json:"cidrs,omitempty" yaml:"cidrs,omitempty"`
+	Addresses  []string `json:"addresses,omitempty" yaml:"addresses,omitempty"`
+	AutoAssign bool     `json:"autoAssign,omitempty" yaml:"autoAssign,omitempty"`
+}
+
+// IPPoolStatus defines the observed state of an IP pool
+type IPPoolStatus struct {
+	Allocated   int32          `json:"allocated,omitempty" yaml:"allocated,omitempty"`
+	Available   int32          `json:"available,omitempty" yaml:"available,omitempty"`
+	Allocations []IPAllocation `json:"allocations,omitempty" yaml:"allocations,omitempty"`
+	Conditions  []Condition    `json:"conditions,omitempty" yaml:"conditions,omitempty"`
+}
+
+// IPAllocation tracks a single IP allocation from a pool
+type IPAllocation struct {
+	Address string `json:"address" yaml:"address"`
+	VIPRef  string `json:"vipRef" yaml:"vipRef"`
+}
+
+// NovaEdgeClusterModel represents a NovaEdgeCluster configuration
+type NovaEdgeClusterModel struct {
+	Name            string                 `json:"name" yaml:"name"`
+	Namespace       string                 `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string      `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string      `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            map[string]interface{} `json:"spec" yaml:"spec"`
+	Status          map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string                 `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+}
+
+// FederationModel represents a NovaEdgeFederation configuration
+type FederationModel struct {
+	Name            string                 `json:"name" yaml:"name"`
+	Namespace       string                 `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string      `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string      `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            map[string]interface{} `json:"spec" yaml:"spec"`
+	Status          map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string                 `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+}
+
+// RemoteClusterModel represents a NovaEdgeRemoteCluster configuration
+type RemoteClusterModel struct {
+	Name            string                 `json:"name" yaml:"name"`
+	Namespace       string                 `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string      `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string      `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            map[string]interface{} `json:"spec" yaml:"spec"`
+	Status          map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string                 `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+}

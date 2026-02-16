@@ -443,6 +443,196 @@ export interface HistoryEntry {
   snapshot?: string
 }
 
+// Certificate types
+export interface Certificate {
+  apiVersion?: string
+  kind?: string
+  metadata?: ResourceMetadata
+  spec?: CertificateSpec
+  status?: CertificateStatus
+}
+
+export interface CertificateSpec {
+  domains: string[]
+  issuer: string
+  secretName?: string
+  renewBefore?: string
+  acme?: {
+    server: string
+    email: string
+    challenge: string
+    dnsProvider?: string
+  }
+}
+
+export interface CertificateStatus {
+  ready: boolean
+  notAfter?: string
+  notBefore?: string
+  serialNumber?: string
+  issuer?: string
+  renewalTime?: string
+  conditions?: Condition[]
+}
+
+// IPPool types
+export interface IPPool {
+  apiVersion?: string
+  kind?: string
+  metadata?: ResourceMetadata
+  spec?: IPPoolSpec
+  status?: IPPoolStatus
+}
+
+export interface IPPoolSpec {
+  cidrs?: string[]
+  addresses?: string[]
+  protocol?: string
+  autoAssign?: boolean
+}
+
+export interface IPPoolStatus {
+  allocated: number
+  total: number
+  used?: string[]
+  conditions?: Condition[]
+}
+
+// Generic CRD model (for Cluster, Federation, RemoteCluster)
+export interface GenericResource {
+  apiVersion?: string
+  kind?: string
+  metadata?: ResourceMetadata
+  spec?: Record<string, unknown>
+  status?: Record<string, unknown>
+}
+
+// Auth types
+export interface AuthSession {
+  authenticated: boolean
+  authEnabled: boolean
+  oidcEnabled: boolean
+}
+
+export interface LoginResult {
+  success: boolean
+}
+
+// Traces
+export interface Trace {
+  traceID: string
+  spans: Span[]
+  services: string[]
+  operationName?: string
+  duration?: number
+  startTime?: number
+}
+
+export interface Span {
+  traceID: string
+  spanID: string
+  operationName: string
+  serviceName: string
+  duration: number
+  startTime: number
+  tags?: Record<string, string>
+  logs?: SpanLog[]
+  references?: SpanReference[]
+}
+
+export interface SpanLog {
+  timestamp: number
+  fields: Record<string, string>
+}
+
+export interface SpanReference {
+  refType: string
+  traceID: string
+  spanID: string
+}
+
+// Logs
+export interface LogEntry {
+  timestamp: string
+  level: string
+  message: string
+  pod?: string
+}
+
+// Events
+export interface KubeEvent {
+  timestamp: string
+  type: string
+  reason: string
+  message: string
+  involvedObject: {
+    name: string
+    kind: string
+    namespace?: string
+  }
+}
+
+// WAF
+export interface WAFSummary {
+  totalRequests: number
+  blockedRequests: number
+  loggedRequests: number
+  topRules: WAFRuleHit[]
+}
+
+export interface WAFRuleHit {
+  ruleId: string
+  ruleMsg: string
+  count: number
+}
+
+// Mesh
+export interface MeshStatus {
+  totalServices: number
+  mtlsEnabled: number
+  services: MeshService[]
+}
+
+export interface MeshService {
+  name: string
+  namespace: string
+  spiffeId?: string
+  meshEnabled: boolean
+  mtlsStatus: string
+}
+
+export interface MeshTopology {
+  nodes: MeshNode[]
+  edges: MeshEdge[]
+}
+
+export interface MeshNode {
+  id: string
+  name: string
+  namespace: string
+  spiffeId?: string
+}
+
+export interface MeshEdge {
+  source: string
+  target: string
+  mtls: boolean
+  traffic?: number
+}
+
+// Config snapshots
+export interface ConfigSnapshot {
+  id: string
+  timestamp: string
+  config: string
+  comment: string
+}
+
+export interface ConfigDiff {
+  from: ConfigSnapshot
+  to: ConfigSnapshot
+}
+
 // Resource type for generic handling
-export type ResourceType = 'gateway' | 'route' | 'backend' | 'vip' | 'policy'
-export type Resource = Gateway | Route | Backend | VIP | Policy
+export type ResourceType = 'gateway' | 'route' | 'backend' | 'vip' | 'policy' | 'certificate' | 'ippool'
+export type Resource = Gateway | Route | Backend | VIP | Policy | Certificate | IPPool

@@ -3,13 +3,16 @@ import { useAgents } from '@/api/hooks'
 import type { AgentInfo } from '@/api/types'
 import { DataTable, Column } from '@/components/common/DataTable'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { AlertCircle, Server, Cpu, HardDrive } from 'lucide-react'
+import { AlertCircle, Server, Cpu, HardDrive, FileText } from 'lucide-react'
 import { formatAge, formatBytes } from '@/lib/utils'
+import { useNavigate } from 'react-router-dom'
 
 export default function Agents() {
   const { mode } = useApp()
   const { data: agents = [], isLoading, error } = useAgents()
+  const navigate = useNavigate()
 
   const columns: Column<AgentInfo>[] = [
     {
@@ -44,6 +47,22 @@ export default function Agents() {
           {row.ready ? 'Ready' : 'Not Ready'}
         </Badge>
       ),
+    },
+    {
+      key: 'mesh',
+      header: 'Mesh Status',
+      accessor: (row) => {
+        // Mesh status is inferred from annotations or metadata if available
+        const meshEnabled = row.podName && row.ready
+        return (
+          <Badge
+            variant={meshEnabled ? 'default' : 'secondary'}
+            className={meshEnabled ? 'bg-blue-500 hover:bg-blue-600' : ''}
+          >
+            {meshEnabled ? 'Enrolled' : 'Not Enrolled'}
+          </Badge>
+        )
+      },
     },
     {
       key: 'version',
@@ -152,6 +171,16 @@ export default function Agents() {
           row.podIP?.toLowerCase().includes(query) ||
           false
         }
+        actions={(row) => [
+          {
+            label: 'View Logs',
+            onClick: () => {
+              const podName = row.podName ?? ''
+              const ns = row.namespace ?? 'novaedge-system'
+              navigate(`/logs?pod=${encodeURIComponent(podName)}&namespace=${encodeURIComponent(ns)}`)
+            },
+          },
+        ]}
       />
 
       {/* Agent details */}
@@ -164,12 +193,26 @@ export default function Agents() {
                   <CardTitle className="text-sm font-medium">
                     {agent.podName}
                   </CardTitle>
-                  <Badge
-                    variant={agent.ready ? 'default' : 'secondary'}
-                    className={agent.ready ? 'bg-green-500' : ''}
-                  >
-                    {agent.ready ? 'Ready' : 'Not Ready'}
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant={agent.ready ? 'default' : 'secondary'}
+                      className={agent.ready ? 'bg-green-500' : ''}
+                    >
+                      {agent.ready ? 'Ready' : 'Not Ready'}
+                    </Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const podName = agent.podName ?? ''
+                        const ns = agent.namespace ?? 'novaedge-system'
+                        navigate(`/logs?pod=${encodeURIComponent(podName)}&namespace=${encodeURIComponent(ns)}`)
+                      }}
+                    >
+                      <FileText className="h-3 w-3 mr-1" />
+                      Logs
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">

@@ -880,6 +880,131 @@ func (s *StandaloneBackend) DeletePolicy(ctx context.Context, namespace, name st
 	return fmt.Errorf("policy '%s' not found", name)
 }
 
+// ListCertificates returns all certificates (not supported in standalone mode)
+func (s *StandaloneBackend) ListCertificates(_ context.Context, _ string) ([]models.Certificate, error) {
+	return []models.Certificate{}, nil
+}
+
+// GetCertificate returns a specific certificate (not supported in standalone mode)
+func (s *StandaloneBackend) GetCertificate(_ context.Context, _, _ string) (*models.Certificate, error) {
+	return nil, fmt.Errorf("certificates are not supported in standalone mode")
+}
+
+// CreateCertificate creates a new certificate (not supported in standalone mode)
+func (s *StandaloneBackend) CreateCertificate(_ context.Context, _ *models.Certificate) (*models.Certificate, error) {
+	return nil, fmt.Errorf("certificates are not supported in standalone mode")
+}
+
+// UpdateCertificate updates an existing certificate (not supported in standalone mode)
+func (s *StandaloneBackend) UpdateCertificate(_ context.Context, _ *models.Certificate) (*models.Certificate, error) {
+	return nil, fmt.Errorf("certificates are not supported in standalone mode")
+}
+
+// DeleteCertificate deletes a certificate (not supported in standalone mode)
+func (s *StandaloneBackend) DeleteCertificate(_ context.Context, _, _ string) error {
+	return fmt.Errorf("certificates are not supported in standalone mode")
+}
+
+// ListIPPools returns all IP pools (not supported in standalone mode)
+func (s *StandaloneBackend) ListIPPools(_ context.Context) ([]models.IPPool, error) {
+	return []models.IPPool{}, nil
+}
+
+// GetIPPool returns a specific IP pool (not supported in standalone mode)
+func (s *StandaloneBackend) GetIPPool(_ context.Context, _ string) (*models.IPPool, error) {
+	return nil, fmt.Errorf("IP pools are not supported in standalone mode")
+}
+
+// CreateIPPool creates a new IP pool (not supported in standalone mode)
+func (s *StandaloneBackend) CreateIPPool(_ context.Context, _ *models.IPPool) (*models.IPPool, error) {
+	return nil, fmt.Errorf("IP pools are not supported in standalone mode")
+}
+
+// UpdateIPPool updates an existing IP pool (not supported in standalone mode)
+func (s *StandaloneBackend) UpdateIPPool(_ context.Context, _ *models.IPPool) (*models.IPPool, error) {
+	return nil, fmt.Errorf("IP pools are not supported in standalone mode")
+}
+
+// DeleteIPPool deletes an IP pool (not supported in standalone mode)
+func (s *StandaloneBackend) DeleteIPPool(_ context.Context, _ string) error {
+	return fmt.Errorf("IP pools are not supported in standalone mode")
+}
+
+// ListNovaEdgeClusters returns all NovaEdge clusters (not supported in standalone mode)
+func (s *StandaloneBackend) ListNovaEdgeClusters(_ context.Context, _ string) ([]models.NovaEdgeClusterModel, error) {
+	return []models.NovaEdgeClusterModel{}, nil
+}
+
+// GetNovaEdgeCluster returns a specific NovaEdge cluster (not supported in standalone mode)
+func (s *StandaloneBackend) GetNovaEdgeCluster(_ context.Context, _, _ string) (*models.NovaEdgeClusterModel, error) {
+	return nil, fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+}
+
+// CreateNovaEdgeCluster creates a new NovaEdge cluster (not supported in standalone mode)
+func (s *StandaloneBackend) CreateNovaEdgeCluster(_ context.Context, _ *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
+	return nil, fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+}
+
+// UpdateNovaEdgeCluster updates an existing NovaEdge cluster (not supported in standalone mode)
+func (s *StandaloneBackend) UpdateNovaEdgeCluster(_ context.Context, _ *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
+	return nil, fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+}
+
+// DeleteNovaEdgeCluster deletes a NovaEdge cluster (not supported in standalone mode)
+func (s *StandaloneBackend) DeleteNovaEdgeCluster(_ context.Context, _, _ string) error {
+	return fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+}
+
+// ListFederations returns all federations (not supported in standalone mode)
+func (s *StandaloneBackend) ListFederations(_ context.Context, _ string) ([]models.FederationModel, error) {
+	return []models.FederationModel{}, nil
+}
+
+// GetFederation returns a specific federation (not supported in standalone mode)
+func (s *StandaloneBackend) GetFederation(_ context.Context, _, _ string) (*models.FederationModel, error) {
+	return nil, fmt.Errorf("federations are not supported in standalone mode")
+}
+
+// CreateFederation creates a new federation (not supported in standalone mode)
+func (s *StandaloneBackend) CreateFederation(_ context.Context, _ *models.FederationModel) (*models.FederationModel, error) {
+	return nil, fmt.Errorf("federations are not supported in standalone mode")
+}
+
+// UpdateFederation updates an existing federation (not supported in standalone mode)
+func (s *StandaloneBackend) UpdateFederation(_ context.Context, _ *models.FederationModel) (*models.FederationModel, error) {
+	return nil, fmt.Errorf("federations are not supported in standalone mode")
+}
+
+// DeleteFederation deletes a federation (not supported in standalone mode)
+func (s *StandaloneBackend) DeleteFederation(_ context.Context, _, _ string) error {
+	return fmt.Errorf("federations are not supported in standalone mode")
+}
+
+// ListRemoteClusters returns all remote clusters (not supported in standalone mode)
+func (s *StandaloneBackend) ListRemoteClusters(_ context.Context, _ string) ([]models.RemoteClusterModel, error) {
+	return []models.RemoteClusterModel{}, nil
+}
+
+// GetRemoteCluster returns a specific remote cluster (not supported in standalone mode)
+func (s *StandaloneBackend) GetRemoteCluster(_ context.Context, _, _ string) (*models.RemoteClusterModel, error) {
+	return nil, fmt.Errorf("remote clusters are not supported in standalone mode")
+}
+
+// CreateRemoteCluster creates a new remote cluster (not supported in standalone mode)
+func (s *StandaloneBackend) CreateRemoteCluster(_ context.Context, _ *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
+	return nil, fmt.Errorf("remote clusters are not supported in standalone mode")
+}
+
+// UpdateRemoteCluster updates an existing remote cluster (not supported in standalone mode)
+func (s *StandaloneBackend) UpdateRemoteCluster(_ context.Context, _ *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
+	return nil, fmt.Errorf("remote clusters are not supported in standalone mode")
+}
+
+// DeleteRemoteCluster deletes a remote cluster (not supported in standalone mode)
+func (s *StandaloneBackend) DeleteRemoteCluster(_ context.Context, _, _ string) error {
+	return fmt.Errorf("remote clusters are not supported in standalone mode")
+}
+
 // ListNamespaces returns available namespaces (just "standalone" in standalone mode)
 func (s *StandaloneBackend) ListNamespaces(ctx context.Context) ([]string, error) {
 	return []string{"standalone"}, nil

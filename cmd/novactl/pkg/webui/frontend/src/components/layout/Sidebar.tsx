@@ -1,28 +1,97 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
+  Network,
+  GitBranch,
   Server,
-  Route,
-  Database,
-  Star,
   Shield,
+  Globe,
+  LayoutGrid,
+  Lock,
+  Workflow,
+  ShieldCheck,
   Cpu,
+  Boxes,
+  Globe2,
+  BarChart3,
+  Waypoints,
+  ScrollText,
+  ShieldAlert,
+  Settings,
   Download,
   Upload,
   History,
+  type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useApp } from '@/contexts/AppContext'
 
-const navItems = [
-  { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/gateways', icon: Server, label: 'Gateways' },
-  { to: '/routes', icon: Route, label: 'Routes' },
-  { to: '/backends', icon: Database, label: 'Backends' },
-  { to: '/vips', icon: Star, label: 'VIPs' },
-  { to: '/policies', icon: Shield, label: 'Policies' },
-  { to: '/agents', icon: Cpu, label: 'Agents' },
+interface NavItem {
+  name: string
+  path: string
+  icon: LucideIcon
+}
+
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
+
+const navGroups: NavGroup[] = [
+  {
+    label: 'Overview',
+    items: [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    ],
+  },
+  {
+    label: 'Traffic Management',
+    items: [
+      { name: 'Gateways', path: '/gateways', icon: Network },
+      { name: 'Routes', path: '/routes', icon: GitBranch },
+      { name: 'Backends', path: '/backends', icon: Server },
+      { name: 'Policies', path: '/policies', icon: Shield },
+    ],
+  },
+  {
+    label: 'Networking',
+    items: [
+      { name: 'VIPs', path: '/vips', icon: Globe },
+      { name: 'IP Pools', path: '/ippools', icon: LayoutGrid },
+      { name: 'Certificates', path: '/certificates', icon: Lock },
+    ],
+  },
+  {
+    label: 'Service Mesh',
+    items: [
+      { name: 'Mesh Overview', path: '/mesh', icon: Workflow },
+      { name: 'Mesh Policies', path: '/mesh-policies', icon: ShieldCheck },
+    ],
+  },
+  {
+    label: 'Cluster',
+    items: [
+      { name: 'Agents', path: '/agents', icon: Cpu },
+      { name: 'Clusters', path: '/clusters', icon: Boxes },
+      { name: 'Federation', path: '/federation', icon: Globe2 },
+    ],
+  },
+  {
+    label: 'Observability',
+    items: [
+      { name: 'Metrics', path: '/metrics-dashboard', icon: BarChart3 },
+      { name: 'Traces', path: '/traces', icon: Waypoints },
+      { name: 'Logs', path: '/logs', icon: ScrollText },
+      { name: 'WAF Events', path: '/waf', icon: ShieldAlert },
+    ],
+  },
+  {
+    label: 'Settings',
+    items: [
+      { name: 'Configuration', path: '/config', icon: Settings },
+    ],
+  },
 ]
 
 export function Sidebar() {
@@ -59,29 +128,36 @@ export function Sidebar() {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 px-3">
-        {navItems.map((item) => {
-          const isActive =
-            item.to === '/'
-              ? location.pathname === '/'
-              : location.pathname.startsWith(item.to)
+      <nav className="flex-1 overflow-y-auto px-3">
+        {navGroups.map((group) => (
+          <div key={group.label} className="mb-3">
+            <div className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+              {group.label}
+            </div>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const isActive = location.pathname === item.path ||
+                  (item.path !== '/dashboard' && location.pathname.startsWith(item.path))
 
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={cn(
-                'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
-              )}
-            >
-              <item.icon className="h-5 w-5" />
-              {item.label}
-            </NavLink>
-          )
-        })}
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-slate-800 text-white'
+                        : 'text-slate-400 hover:bg-slate-800/50 hover:text-white'
+                    )}
+                  >
+                    <item.icon className="h-4 w-4" />
+                    {item.name}
+                  </NavLink>
+                )
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       {/* Footer Actions */}
