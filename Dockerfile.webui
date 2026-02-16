@@ -25,11 +25,12 @@ RUN chmod +x /docker-entrypoint.sh
 # Copy built frontend
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Create temp directories for non-root operation
+# Create temp directories and set permissions for non-root operation
 RUN mkdir -p /tmp/client_temp /tmp/proxy_temp /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp && \
     chown -R 101:101 /tmp/client_temp /tmp/proxy_temp /tmp/fastcgi_temp /tmp/uwsgi_temp /tmp/scgi_temp && \
     chown -R 101:101 /var/log/nginx && \
     chown -R 101:101 /var/cache/nginx && \
+    chown 101:101 /etc/nginx/nginx.conf && \
     touch /tmp/nginx.pid && chown 101:101 /tmp/nginx.pid
 
 # Run as nginx user (uid 101)
