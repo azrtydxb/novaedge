@@ -28,8 +28,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller/certmanager"
@@ -317,6 +319,6 @@ func (r *ProxyGatewayReconciler) shouldReconcileGateway(gateway *novaedgev1alpha
 // SetupWithManager sets up the controller with the Manager
 func (r *ProxyGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&novaedgev1alpha1.ProxyGateway{}).
+		For(&novaedgev1alpha1.ProxyGateway{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Complete(r)
 }
