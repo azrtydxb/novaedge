@@ -39,6 +39,24 @@ func isBogonIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
 
+// parseSingleIPAsCIDR converts a validated net.IP to a *net.IPNet by appending
+// the appropriate mask (/32 for IPv4, /128 for IPv6). It logs a warning if the
+// resulting CIDR string unexpectedly fails to parse.
+func parseSingleIPAsCIDR(ip net.IP, raw string) *net.IPNet {
+	mask := "/128"
+	if ip.To4() != nil {
+		mask = "/32"
+	}
+	_, ipNet, err := net.ParseCIDR(raw + mask)
+	if err != nil {
+		zap.L().Warn("failed to parse single IP as CIDR",
+			zap.String("input", raw+mask),
+			zap.Error(err),
+		)
+	}
+	return ipNet
+}
+
 // trustedProxyCIDRsPtr holds the global list of trusted proxy IP ranges.
 // It uses atomic.Pointer for lock-free concurrent reads during request
 // processing while allowing safe writes during config reload.
@@ -59,11 +77,7 @@ func SetGlobalTrustedProxies(cidrs []string) error {
 				return err
 			}
 			// Convert single IP to CIDR
-			if ip.To4() != nil {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/32")
-			} else {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/128")
-			}
+			ipNet = parseSingleIPAsCIDR(ip, cidr)
 		}
 		newCIDRs = append(newCIDRs, ipNet)
 	}
@@ -193,11 +207,7 @@ func NewIPAllowListFilter(cidrs []string) (*IPFilter, error) {
 				return nil, err
 			}
 			// Convert single IP to CIDR
-			if ip.To4() != nil {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/32")
-			} else {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/128")
-			}
+			ipNet = parseSingleIPAsCIDR(ip, cidr)
 		}
 		filter.allowList = append(filter.allowList, ipNet)
 	}
@@ -220,11 +230,7 @@ func NewIPDenyListFilter(cidrs []string) (*IPFilter, error) {
 				return nil, err
 			}
 			// Convert single IP to CIDR
-			if ip.To4() != nil {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/32")
-			} else {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/128")
-			}
+			ipNet = parseSingleIPAsCIDR(ip, cidr)
 		}
 		filter.denyList = append(filter.denyList, ipNet)
 	}
@@ -244,11 +250,7 @@ func (f *IPFilter) SetTrustedProxies(cidrs []string) error {
 				return err
 			}
 			// Convert single IP to CIDR
-			if ip.To4() != nil {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/32")
-			} else {
-				_, ipNet, _ = net.ParseCIDR(cidr + "/128")
-			}
+			ipNet = parseSingleIPAsCIDR(ip, cidr)
 		}
 		f.trustedProxy = append(f.trustedProxy, ipNet)
 	}

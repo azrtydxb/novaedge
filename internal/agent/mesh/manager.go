@@ -328,10 +328,14 @@ func (m *Manager) proxyTCP(ctx context.Context, clientConn io.ReadWriteCloser, b
 	// Bidirectional copy
 	done := make(chan struct{})
 	go func() {
-		_, _ = io.Copy(backendConn, clientConn)
+		if _, err := io.Copy(backendConn, clientConn); err != nil {
+			m.logger.Debug("io.Copy client->backend finished with error", zap.Error(err))
+		}
 		done <- struct{}{}
 	}()
 
-	_, _ = io.Copy(clientConn, backendConn)
+	if _, err := io.Copy(clientConn, backendConn); err != nil {
+		m.logger.Debug("io.Copy backend->client finished with error", zap.Error(err))
+	}
 	<-done
 }
