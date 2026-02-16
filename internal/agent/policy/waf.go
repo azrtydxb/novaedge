@@ -205,6 +205,19 @@ func (w *WAFEngine) ProcessRequestDetailed(r *http.Request) (*WAFResult, error) 
 		return &WAFResult{Interruption: interruption, MatchedRules: 1, TopRuleID: interruption.RuleID, TopCategory: ruleCategory(interruption.RuleID)}, nil
 	}
 
+	// Warn on requests with both Content-Length and Transfer-Encoding headers.
+	// Per RFC 7230 section 3.3.3, a sender MUST NOT send both; the presence
+	// of both may indicate a request smuggling attempt.
+	if r.Header.Get("Content-Length") != "" && r.Header.Get("Transfer-Encoding") != "" {
+		w.logger.Warn("Ambiguous request encoding: both Content-Length and Transfer-Encoding headers present (possible smuggling attempt)",
+			zap.String("method", r.Method),
+			zap.String("path", r.URL.Path),
+			zap.String("remote_addr", r.RemoteAddr),
+			zap.String("content_length", r.Header.Get("Content-Length")),
+			zap.String("transfer_encoding", r.Header.Get("Transfer-Encoding")),
+		)
+	}
+
 	// Buffer request body with size limit for WAF inspection.
 	// MaxBodySize > 0: inspect up to that many bytes
 	// MaxBodySize == 0: use default 128KB (backward compatible)
