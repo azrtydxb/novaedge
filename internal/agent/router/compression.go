@@ -153,6 +153,12 @@ var compressWriterPool = sync.Pool{
 	},
 }
 
+// gzipWriterPool reuses gzip.Writer instances to reduce GC pressure.
+var gzipWriterPool sync.Pool
+
+// brotliWriterPool reuses brotli.Writer instances to reduce GC pressure.
+var brotliWriterPool sync.Pool
+
 func getCompressWriter(w http.ResponseWriter, encoding string, config *pb.CompressionConfig, gzipLvl, brotliLvl int) *compressResponseWriter {
 	cw, ok := compressWriterPool.Get().(*compressResponseWriter)
 	if !ok {
@@ -274,6 +280,13 @@ func (cw *compressResponseWriter) finish() {
 		if err := cw.writer.Close(); err != nil {
 			zap.L().Warn("failed to close compression writer", zap.Error(err))
 		}
+		// Return the compressor writer to its pool for reuse
+		switch w := cw.writer.(type) {
+		case *gzip.Writer:
+			gzipWriterPool.Put(w)
+		case *brotli.Writer:
+			brotliWriterPool.Put(w)
+		}
 		return
 	}
 
@@ -305,16 +318,35 @@ func (cw *compressResponseWriter) startCompression() error {
 	cw.ResponseWriter.WriteHeader(cw.statusCode)
 	cw.headersSent = true
 
-	// Create the compression writer
+	// Create the compression writer, reusing pooled instances when available
 	switch cw.encoding {
 	case encodingGzip:
-		gw, err := gzip.NewWriterLevel(cw.ResponseWriter, cw.gzipLevel)
-		if err != nil {
-			return err
+		if pooled := gzipWriterPool.Get(); pooled != nil {
+			gw, ok := pooled.(*gzip.Writer)
+			if !ok {
+				return gzip.ErrHeader
+			}
+			gw.Reset(cw.ResponseWriter)
+			cw.writer = gw
+		} else {
+			gw, err := gzip.NewWriterLevel(cw.ResponseWriter, cw.gzipLevel)
+			if err != nil {
+				return err
+			}
+			cw.writer = gw
 		}
-		cw.writer = gw
 	case encodingBrotli:
-		cw.writer = brotli.NewWriterLevel(cw.ResponseWriter, cw.brotliLevel)
+		if pooled := brotliWriterPool.Get(); pooled != nil {
+			bw, ok := pooled.(*brotli.Writer)
+			if !ok {
+				cw.writer = brotli.NewWriterLevel(cw.ResponseWriter, cw.brotliLevel)
+			} else {
+				bw.Reset(cw.ResponseWriter)
+				cw.writer = bw
+			}
+		} else {
+			cw.writer = brotli.NewWriterLevel(cw.ResponseWriter, cw.brotliLevel)
+		}
 	default:
 		// Should not happen; fallback to identity
 		cw.skipCompress = true
