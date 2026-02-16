@@ -46,8 +46,18 @@ type ForwardAuthHandler struct {
 	cache      map[string]forwardAuthCacheEntry
 }
 
+// ForwardAuthOption configures a ForwardAuthHandler.
+type ForwardAuthOption func(*ForwardAuthHandler)
+
+// WithForwardAuthHTTPClient sets the HTTP client used for forward auth requests.
+func WithForwardAuthHTTPClient(c *http.Client) ForwardAuthOption {
+	return func(h *ForwardAuthHandler) {
+		h.httpClient = c
+	}
+}
+
 // NewForwardAuthHandler creates a new forward auth handler.
-func NewForwardAuthHandler(ctx context.Context, config *pb.ForwardAuthConfig, logger *zap.Logger) *ForwardAuthHandler {
+func NewForwardAuthHandler(ctx context.Context, config *pb.ForwardAuthConfig, logger *zap.Logger, opts ...ForwardAuthOption) *ForwardAuthHandler {
 	timeout := 5 * time.Second
 	if config.TimeoutMs > 0 {
 		timeout = time.Duration(config.TimeoutMs) * time.Millisecond
@@ -64,6 +74,10 @@ func NewForwardAuthHandler(ctx context.Context, config *pb.ForwardAuthConfig, lo
 			},
 		},
 		cache: make(map[string]forwardAuthCacheEntry),
+	}
+
+	for _, opt := range opts {
+		opt(h)
 	}
 
 	// Start cache cleanup goroutine if caching is enabled

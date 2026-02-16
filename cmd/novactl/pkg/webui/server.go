@@ -22,6 +22,10 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+const (
+	defaultNamespace = "novaedge-system"
+)
+
 // Server represents the web UI server
 type Server struct {
 	addr             string
@@ -1151,7 +1155,7 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	namespace := r.URL.Query().Get("namespace")
 	if namespace == "" {
-		namespace = "novaedge-system"
+		namespace = defaultNamespace
 	}
 
 	// List agent pods (support both common label conventions)

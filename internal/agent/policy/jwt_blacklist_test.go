@@ -158,7 +158,7 @@ func TestJWTValidatorRevoke(t *testing.T) {
 		Audience:          []string{"test-audience"},
 	}
 
-	validator, err := NewJWTValidator(context.Background(), config)
+	validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestJWTValidatorBlacklistInitialized(t *testing.T) {
 		Issuer:            "test-issuer",
 	}
 
-	validator, err := NewJWTValidator(context.Background(), config)
+	validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -287,7 +287,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -319,7 +319,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -351,7 +351,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -404,7 +404,7 @@ func TestHandleJWTWithBlacklist(t *testing.T) {
 		JwksUri:           server.URL,
 	}
 
-	validator, err := NewJWTValidator(context.Background(), config)
+	validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
