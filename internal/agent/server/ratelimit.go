@@ -123,20 +123,10 @@ func RateLimitMiddleware(limiter *IPRateLimiter) func(http.Handler) http.Handler
 				ip = r.RemoteAddr
 			}
 
-			// Check X-Forwarded-For header for proxied requests
-			if forwardedFor := r.Header.Get("X-Forwarded-For"); forwardedFor != "" {
-				// Use the first IP in the X-Forwarded-For chain
-				ip = forwardedFor
-				if commaIdx := len(ip); commaIdx > 0 {
-					for i, c := range ip {
-						if c == ',' {
-							commaIdx = i
-							break
-						}
-					}
-					ip = ip[:commaIdx]
-				}
-			}
+			// Security: Do NOT trust X-Forwarded-For for rate limiting.
+			// XFF can be freely set by clients, allowing attackers to bypass
+			// rate limits by randomizing fake IPs. Observability endpoints
+			// should always use the direct connection IP (RemoteAddr).
 
 			// Get rate limiter for this IP
 			rl := limiter.getLimiter(ip)
