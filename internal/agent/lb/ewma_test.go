@@ -46,12 +46,12 @@ func TestNewEWMA(t *testing.T) {
 		t.Errorf("Expected 2 endpoints, got %d", len(ewma.endpoints))
 	}
 
-	if len(ewma.scores) != 2 {
-		t.Errorf("Expected 2 scores, got %d", len(ewma.scores))
+	if len(ewma.loadSnapshot().scores) != 2 {
+		t.Errorf("Expected 2 scores, got %d", len(ewma.loadSnapshot().scores))
 	}
 
-	if len(ewma.activeRequests) != 2 {
-		t.Errorf("Expected 2 active request counters, got %d", len(ewma.activeRequests))
+	if len(ewma.loadSnapshot().activeRequests) != 2 {
+		t.Errorf("Expected 2 active request counters, got %d", len(ewma.loadSnapshot().activeRequests))
 	}
 }
 
@@ -520,10 +520,8 @@ func TestEWMAAtomicOperations(t *testing.T) {
 		wg.Wait()
 
 		// Check that final count is correct
-		key := endpointKey(endpoints[0])
-		ewma.mu.RLock()
-		counter := atomic.LoadInt64(ewma.activeRequests[key])
-		ewma.mu.RUnlock()
+		s := ewma.loadSnapshot()
+		counter := atomic.LoadInt64(s.activeRequests[endpointKey(endpoints[0])])
 
 		if counter != int64(numGoroutines) {
 			t.Errorf("Expected active count %d, got %d", numGoroutines, counter)
