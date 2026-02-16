@@ -18,6 +18,7 @@ package router
 
 import (
 	"net/http"
+	"strings"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -25,6 +26,11 @@ import (
 // Filter represents a request/response filter
 type Filter interface {
 	Apply(w http.ResponseWriter, r *http.Request) (*http.Request, bool)
+}
+
+// sanitizeHeaderValue removes CR/LF characters to prevent header injection (CRLF injection).
+func sanitizeHeaderValue(value string) string {
+	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
 }
 
 // HeaderModifierFilter modifies request headers
@@ -41,7 +47,7 @@ func NewHeaderModifierFilter(filter *pb.RouteFilter) *HeaderModifierFilter {
 func (f *HeaderModifierFilter) Apply(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	// Add headers
 	for _, header := range f.filter.AddHeaders {
-		r.Header.Add(header.Name, header.Value)
+		r.Header.Add(header.Name, sanitizeHeaderValue(header.Value))
 	}
 
 	// Remove headers

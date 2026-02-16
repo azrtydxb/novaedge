@@ -123,6 +123,9 @@ func (v *BasicAuthValidator) Validate(username, password string) bool {
 	v.mu.RUnlock()
 
 	if !exists {
+		// Constant-time: always perform a bcrypt comparison to prevent
+		// timing-based username enumeration attacks.
+		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$0000000000000000000000uVVuhVPJx6oeQxTAIoLqnGq7Ghfkhaq"), []byte(password))
 		return false
 	}
 

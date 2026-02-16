@@ -21,7 +21,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -99,10 +98,12 @@ func NewOIDCHandler(ctx context.Context, config *pb.OIDCConfig, logger *zap.Logg
 	if len(sessionKey) == 0 {
 		return nil, fmt.Errorf("session secret is required (32 bytes)")
 	}
-	if len(sessionKey) != 32 {
-		// Hash to 32 bytes if not exact length
-		h := sha256.Sum256(sessionKey)
-		sessionKey = h[:]
+	if len(sessionKey) < 32 {
+		return nil, fmt.Errorf("session secret must be at least 32 bytes of random data, got %d", len(sessionKey))
+	}
+	if len(sessionKey) > 32 {
+		// Truncate to 32 bytes for AES-256
+		sessionKey = sessionKey[:32]
 	}
 
 	oauth2Config := oauth2.Config{
