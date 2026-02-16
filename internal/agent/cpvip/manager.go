@@ -313,7 +313,7 @@ func (m *Manager) Stop() error {
 
 	if m.vipActive {
 		m.logger.Info("Releasing control-plane VIP on shutdown")
-		if err := m.releaseVIPLocked(); err != nil {
+		if err := m.releaseVIPLocked(context.Background()); err != nil {
 			return fmt.Errorf("failed to release VIP on stop: %w", err)
 		}
 	}
@@ -339,7 +339,7 @@ func (m *Manager) healthCheckTick(ctx context.Context) {
 		m.failCount = 0
 		if !m.vipActive {
 			m.logger.Info("API server is healthy, binding VIP")
-			if err := m.bindVIPLocked(); err != nil {
+			if err := m.bindVIPLocked(ctx); err != nil {
 				m.logger.Error("Failed to bind VIP", zap.Error(err))
 			}
 		}
@@ -353,7 +353,7 @@ func (m *Manager) healthCheckTick(ctx context.Context) {
 			m.logger.Warn("Fail threshold reached, releasing VIP",
 				zap.Int("fail_count", m.failCount),
 			)
-			if err := m.releaseVIPLocked(); err != nil {
+			if err := m.releaseVIPLocked(ctx); err != nil {
 				m.logger.Error("Failed to release VIP", zap.Error(err))
 			}
 		}
@@ -493,10 +493,10 @@ func (m *Manager) buildVIPAssignment() *pb.VIPAssignment {
 }
 
 // bindVIPLocked binds the VIP using the handler. Must be called with m.mu held.
-func (m *Manager) bindVIPLocked() error {
+func (m *Manager) bindVIPLocked(ctx context.Context) error {
 	assignment := m.buildVIPAssignment()
 
-	if err := m.handler.AddVIP(context.Background(), assignment); err != nil {
+	if err := m.handler.AddVIP(ctx, assignment); err != nil {
 		return fmt.Errorf("failed to add VIP: %w", err)
 	}
 
@@ -510,10 +510,10 @@ func (m *Manager) bindVIPLocked() error {
 }
 
 // releaseVIPLocked releases the VIP using the handler. Must be called with m.mu held.
-func (m *Manager) releaseVIPLocked() error {
+func (m *Manager) releaseVIPLocked(ctx context.Context) error {
 	assignment := m.buildVIPAssignment()
 
-	if err := m.handler.RemoveVIP(context.Background(), assignment); err != nil {
+	if err := m.handler.RemoveVIP(ctx, assignment); err != nil {
 		return fmt.Errorf("failed to remove VIP: %w", err)
 	}
 
