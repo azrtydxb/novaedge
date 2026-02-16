@@ -35,4 +35,9 @@ const (
 	// This prevents memory exhaustion attacks from extremely large request bodies.
 	// Can be overridden per-gateway via policy configuration in the future.
 	DefaultMaxRequestBodySize = 10 * 1024 * 1024 // 10MB
+
+	// MaxWebSocketMessageSize is the maximum allowed size for a single WebSocket message (10MB)
+	// This prevents memory exhaustion from oversized messages sent by clients or backends.
+	// Messages exceeding this limit will cause the connection to be closed with an error.
+	MaxWebSocketMessageSize = 10 * 1024 * 1024 // 10MB
 )
