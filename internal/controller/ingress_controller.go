@@ -98,7 +98,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Translate Ingress to CRDs with service port resolver, configurable default VIP, and VIP mode resolver
 	translator := NewIngressTranslatorWithOptions(ingress.Namespace, r.resolveServicePort, r.DefaultVIPRef, r.resolveVIPMode)
-	result, err := translator.Translate(ingress)
+	result, err := translator.Translate(ctx, ingress)
 	if err != nil {
 		logger.Error(err, "Failed to translate Ingress to CRDs")
 		return ctrl.Result{}, err
@@ -301,8 +301,7 @@ func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 // resolveServicePort resolves a service port name to its port number
-func (r *IngressReconciler) resolveServicePort(namespace, serviceName, portName string) (int32, error) {
-	ctx := context.Background()
+func (r *IngressReconciler) resolveServicePort(ctx context.Context, namespace, serviceName, portName string) (int32, error) {
 	svc := &corev1.Service{}
 	if err := r.Get(ctx, types.NamespacedName{Namespace: namespace, Name: serviceName}, svc); err != nil {
 		return 0, fmt.Errorf("failed to get service %s/%s: %w", namespace, serviceName, err)
@@ -320,9 +319,9 @@ func (r *IngressReconciler) resolveServicePort(namespace, serviceName, portName 
 
 // resolveVIPMode fetches a ProxyVIP by name and returns its mode (e.g. "BGP", "OSPF", "L2ARP").
 // Returns an empty string if the VIP cannot be found.
-func (r *IngressReconciler) resolveVIPMode(vipRef string) string {
+func (r *IngressReconciler) resolveVIPMode(ctx context.Context, vipRef string) string {
 	vip := &novaedgev1alpha1.ProxyVIP{}
-	if err := r.Get(context.Background(), types.NamespacedName{Name: vipRef}, vip); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: vipRef}, vip); err != nil {
 		return ""
 	}
 	return string(vip.Spec.Mode)
