@@ -38,6 +38,9 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// DefaultConnectTimeout is the fallback connect timeout when ConnectTimeoutMs is zero or negative.
+const DefaultConnectTimeout = 60 * time.Second
+
 // Pool manages connections to backend endpoints
 type Pool struct {
 	logger    *zap.Logger
@@ -115,7 +118,7 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	transport := &http.Transport{
 		Proxy: http.ProxyFromEnvironment,
 		DialContext: (&net.Dialer{
-			Timeout:   time.Duration(cluster.ConnectTimeoutMs) * time.Millisecond,
+			Timeout:   connectTimeout(cluster.ConnectTimeoutMs),
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		MaxIdleConns:           maxIdleConns,
@@ -338,11 +341,9 @@ func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.Response
 
 	// Set up request context with timeout
 	ctx := req.Context()
-	if p.cluster.ConnectTimeoutMs > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(p.cluster.ConnectTimeoutMs)*time.Millisecond)
-		defer cancel()
-	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, connectTimeout(p.cluster.ConnectTimeoutMs))
+	defer cancel()
 
 	// Create new request with modified context
 	reqWithContext := req.WithContext(ctx)
@@ -351,6 +352,16 @@ func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.Response
 	proxy.ServeHTTP(w, reqWithContext)
 
 	return nil
+}
+
+// connectTimeout returns the connect timeout duration, falling back to DefaultConnectTimeout
+// when the configured value is zero or negative.
+func connectTimeout(ms int64) time.Duration {
+	timeout := time.Duration(ms) * time.Millisecond
+	if timeout <= 0 {
+		timeout = DefaultConnectTimeout
+	}
+	return timeout
 }
 
 // endpointKey builds a key for an endpoint using net.JoinHostPort
