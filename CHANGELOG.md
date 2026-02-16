@@ -2,6 +2,25 @@
 
 All notable changes to NovaEdge are documented in this file.
 
+## [1.0.2] - 2026-02-16
+
+Helm chart coverage and operator feature completeness release.
+
+### Features
+
+- **Comprehensive Helm chart coverage**: All 3 charts (novaedge, novaedge-agent, novaedge-operator) updated to expose every configurable feature — VIP modes, all 12 LB algorithms, connection pooling, circuit breaking, TLS/HTTP3, all policies, middleware, mesh, CP VIP, WASM, L4, federation, webhooks, PDB, HPA, ServiceMonitor (#344)
+
+### Fixes
+
+- **Operator CLI flags**: Add 9 missing CLI flags to the operator binary that the Helm chart referenced (`--log-level`, `--log-format`, `--webhook-port`, `--controller-image`, `--agent-image`, `--novactl-image`, `--leader-elect-lease-duration`, `--leader-elect-renew-deadline`, `--leader-elect-retry-period`) (#346)
+- **Federation controller registration**: Wire up `NovaEdgeFederationReconciler` which existed in code but was never registered in `main.go` (#346)
+- **Webhook registration**: Register `FederationValidator` and `FederationDefaulter` admission webhooks when webhook port is configured (#346)
+- **Managed image overrides**: Add `--controller-image`/`--agent-image`/`--novactl-image` override support to `NovaEdgeClusterReconciler` (#346)
+
+### Chores
+
+- Remove tracked binaries and PLAN.md from repository, update .gitignore (#342)
+
 ## [1.0.1] - 2026-02-16
 
 Security hardening and performance optimization release with 21 fixes across the data plane, control plane, and policy engine.
