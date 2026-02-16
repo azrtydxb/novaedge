@@ -70,6 +70,31 @@ var (
 		Version:  "v1alpha1",
 		Resource: "proxypolicies",
 	}
+	gvrCertificate = schema.GroupVersionResource{
+		Group:    "novaedge.piwi3910.com",
+		Version:  "v1alpha1",
+		Resource: "proxycertificates",
+	}
+	gvrIPPool = schema.GroupVersionResource{
+		Group:    "novaedge.piwi3910.com",
+		Version:  "v1alpha1",
+		Resource: "proxyippools",
+	}
+	gvrCluster = schema.GroupVersionResource{
+		Group:    "novaedge.piwi3910.com",
+		Version:  "v1alpha1",
+		Resource: "novaedgeclusters",
+	}
+	gvrFederation = schema.GroupVersionResource{
+		Group:    "novaedge.piwi3910.com",
+		Version:  "v1alpha1",
+		Resource: "novaedgefederations",
+	}
+	gvrRemoteCluster = schema.GroupVersionResource{
+		Group:    "novaedge.piwi3910.com",
+		Version:  "v1alpha1",
+		Resource: "novaedgeremoteclusters",
+	}
 )
 
 // NewKubernetesBackend creates a new Kubernetes backend
@@ -523,6 +548,519 @@ func (k *KubernetesBackend) DeletePolicy(ctx context.Context, namespace, name st
 	}
 
 	return k.dynamic.Resource(gvrPolicy).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// ListCertificates returns all certificates
+func (k *KubernetesBackend) ListCertificates(ctx context.Context, namespace string) ([]models.Certificate, error) {
+	var list *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" || namespace == namespaceAll {
+		list, err = k.dynamic.Resource(gvrCertificate).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = k.dynamic.Resource(gvrCertificate).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list certificates: %w", err)
+	}
+
+	certs := make([]models.Certificate, 0, len(list.Items))
+	for _, item := range list.Items {
+		cert, err := k.unstructuredToCertificate(&item)
+		if err != nil {
+			continue
+		}
+		certs = append(certs, *cert)
+	}
+
+	return certs, nil
+}
+
+// GetCertificate returns a specific certificate
+func (k *KubernetesBackend) GetCertificate(ctx context.Context, namespace, name string) (*models.Certificate, error) {
+	obj, err := k.dynamic.Resource(gvrCertificate).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("certificate not found: %w", err)
+	}
+	return k.unstructuredToCertificate(obj)
+}
+
+// CreateCertificate creates a new certificate
+func (k *KubernetesBackend) CreateCertificate(ctx context.Context, cert *models.Certificate) (*models.Certificate, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	obj := k.certificateToUnstructured(cert)
+	namespace := cert.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	result, err := k.dynamic.Resource(gvrCertificate).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create certificate: %w", err)
+	}
+
+	return k.unstructuredToCertificate(result)
+}
+
+// UpdateCertificate updates an existing certificate
+func (k *KubernetesBackend) UpdateCertificate(ctx context.Context, cert *models.Certificate) (*models.Certificate, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	obj := k.certificateToUnstructured(cert)
+	namespace := cert.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	result, err := k.dynamic.Resource(gvrCertificate).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update certificate: %w", err)
+	}
+
+	return k.unstructuredToCertificate(result)
+}
+
+// DeleteCertificate deletes a certificate
+func (k *KubernetesBackend) DeleteCertificate(ctx context.Context, namespace, name string) error {
+	if k.readOnly {
+		return fmt.Errorf("backend is read-only")
+	}
+
+	return k.dynamic.Resource(gvrCertificate).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// ListIPPools returns all IP pools (cluster-scoped)
+func (k *KubernetesBackend) ListIPPools(ctx context.Context) ([]models.IPPool, error) {
+	list, err := k.dynamic.Resource(gvrIPPool).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list IP pools: %w", err)
+	}
+
+	pools := make([]models.IPPool, 0, len(list.Items))
+	for _, item := range list.Items {
+		pool, err := k.unstructuredToIPPool(&item)
+		if err != nil {
+			continue
+		}
+		pools = append(pools, *pool)
+	}
+
+	return pools, nil
+}
+
+// GetIPPool returns a specific IP pool (cluster-scoped)
+func (k *KubernetesBackend) GetIPPool(ctx context.Context, name string) (*models.IPPool, error) {
+	obj, err := k.dynamic.Resource(gvrIPPool).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("IP pool not found: %w", err)
+	}
+	return k.unstructuredToIPPool(obj)
+}
+
+// CreateIPPool creates a new IP pool (cluster-scoped)
+func (k *KubernetesBackend) CreateIPPool(ctx context.Context, pool *models.IPPool) (*models.IPPool, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	obj := k.ipPoolToUnstructured(pool)
+
+	result, err := k.dynamic.Resource(gvrIPPool).Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create IP pool: %w", err)
+	}
+
+	return k.unstructuredToIPPool(result)
+}
+
+// UpdateIPPool updates an existing IP pool (cluster-scoped)
+func (k *KubernetesBackend) UpdateIPPool(ctx context.Context, pool *models.IPPool) (*models.IPPool, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	obj := k.ipPoolToUnstructured(pool)
+
+	result, err := k.dynamic.Resource(gvrIPPool).Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update IP pool: %w", err)
+	}
+
+	return k.unstructuredToIPPool(result)
+}
+
+// DeleteIPPool deletes an IP pool (cluster-scoped)
+func (k *KubernetesBackend) DeleteIPPool(ctx context.Context, name string) error {
+	if k.readOnly {
+		return fmt.Errorf("backend is read-only")
+	}
+
+	return k.dynamic.Resource(gvrIPPool).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// ListNovaEdgeClusters returns all NovaEdge clusters
+func (k *KubernetesBackend) ListNovaEdgeClusters(ctx context.Context, namespace string) ([]models.NovaEdgeClusterModel, error) {
+	var list *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" || namespace == namespaceAll {
+		list, err = k.dynamic.Resource(gvrCluster).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = k.dynamic.Resource(gvrCluster).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list NovaEdge clusters: %w", err)
+	}
+
+	clusters := make([]models.NovaEdgeClusterModel, 0, len(list.Items))
+	for _, item := range list.Items {
+		cluster := unstructuredToGenericModel(&item)
+		clusters = append(clusters, models.NovaEdgeClusterModel{
+			Name:            cluster.name,
+			Namespace:       cluster.namespace,
+			Labels:          cluster.labels,
+			Annotations:     cluster.annotations,
+			Spec:            cluster.spec,
+			Status:          cluster.status,
+			ResourceVersion: cluster.resourceVersion,
+		})
+	}
+
+	return clusters, nil
+}
+
+// GetNovaEdgeCluster returns a specific NovaEdge cluster
+func (k *KubernetesBackend) GetNovaEdgeCluster(ctx context.Context, namespace, name string) (*models.NovaEdgeClusterModel, error) {
+	obj, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("NovaEdge cluster not found: %w", err)
+	}
+	g := unstructuredToGenericModel(obj)
+	return &models.NovaEdgeClusterModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// CreateNovaEdgeCluster creates a new NovaEdge cluster
+func (k *KubernetesBackend) CreateNovaEdgeCluster(ctx context.Context, cluster *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	namespace := cluster.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeCluster",
+		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
+
+	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create NovaEdge cluster: %w", err)
+	}
+
+	g := unstructuredToGenericModel(result)
+	return &models.NovaEdgeClusterModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// UpdateNovaEdgeCluster updates an existing NovaEdge cluster
+func (k *KubernetesBackend) UpdateNovaEdgeCluster(ctx context.Context, cluster *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	namespace := cluster.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeCluster",
+		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
+
+	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update NovaEdge cluster: %w", err)
+	}
+
+	g := unstructuredToGenericModel(result)
+	return &models.NovaEdgeClusterModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// DeleteNovaEdgeCluster deletes a NovaEdge cluster
+func (k *KubernetesBackend) DeleteNovaEdgeCluster(ctx context.Context, namespace, name string) error {
+	if k.readOnly {
+		return fmt.Errorf("backend is read-only")
+	}
+
+	return k.dynamic.Resource(gvrCluster).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// ListFederations returns all federations
+func (k *KubernetesBackend) ListFederations(ctx context.Context, namespace string) ([]models.FederationModel, error) {
+	var list *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" || namespace == namespaceAll {
+		list, err = k.dynamic.Resource(gvrFederation).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = k.dynamic.Resource(gvrFederation).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list federations: %w", err)
+	}
+
+	federations := make([]models.FederationModel, 0, len(list.Items))
+	for _, item := range list.Items {
+		g := unstructuredToGenericModel(&item)
+		federations = append(federations, models.FederationModel{
+			Name:            g.name,
+			Namespace:       g.namespace,
+			Labels:          g.labels,
+			Annotations:     g.annotations,
+			Spec:            g.spec,
+			Status:          g.status,
+			ResourceVersion: g.resourceVersion,
+		})
+	}
+
+	return federations, nil
+}
+
+// GetFederation returns a specific federation
+func (k *KubernetesBackend) GetFederation(ctx context.Context, namespace, name string) (*models.FederationModel, error) {
+	obj, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("federation not found: %w", err)
+	}
+	g := unstructuredToGenericModel(obj)
+	return &models.FederationModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// CreateFederation creates a new federation
+func (k *KubernetesBackend) CreateFederation(ctx context.Context, federation *models.FederationModel) (*models.FederationModel, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	namespace := federation.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeFederation",
+		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
+
+	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create federation: %w", err)
+	}
+
+	g := unstructuredToGenericModel(result)
+	return &models.FederationModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// UpdateFederation updates an existing federation
+func (k *KubernetesBackend) UpdateFederation(ctx context.Context, federation *models.FederationModel) (*models.FederationModel, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	namespace := federation.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeFederation",
+		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
+
+	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update federation: %w", err)
+	}
+
+	g := unstructuredToGenericModel(result)
+	return &models.FederationModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// DeleteFederation deletes a federation
+func (k *KubernetesBackend) DeleteFederation(ctx context.Context, namespace, name string) error {
+	if k.readOnly {
+		return fmt.Errorf("backend is read-only")
+	}
+
+	return k.dynamic.Resource(gvrFederation).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+}
+
+// ListRemoteClusters returns all remote clusters
+func (k *KubernetesBackend) ListRemoteClusters(ctx context.Context, namespace string) ([]models.RemoteClusterModel, error) {
+	var list *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" || namespace == namespaceAll {
+		list, err = k.dynamic.Resource(gvrRemoteCluster).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list remote clusters: %w", err)
+	}
+
+	remoteClusters := make([]models.RemoteClusterModel, 0, len(list.Items))
+	for _, item := range list.Items {
+		g := unstructuredToGenericModel(&item)
+		remoteClusters = append(remoteClusters, models.RemoteClusterModel{
+			Name:            g.name,
+			Namespace:       g.namespace,
+			Labels:          g.labels,
+			Annotations:     g.annotations,
+			Spec:            g.spec,
+			Status:          g.status,
+			ResourceVersion: g.resourceVersion,
+		})
+	}
+
+	return remoteClusters, nil
+}
+
+// GetRemoteCluster returns a specific remote cluster
+func (k *KubernetesBackend) GetRemoteCluster(ctx context.Context, namespace, name string) (*models.RemoteClusterModel, error) {
+	obj, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("remote cluster not found: %w", err)
+	}
+	g := unstructuredToGenericModel(obj)
+	return &models.RemoteClusterModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// CreateRemoteCluster creates a new remote cluster
+func (k *KubernetesBackend) CreateRemoteCluster(ctx context.Context, rc *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	namespace := rc.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeRemoteCluster",
+		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
+
+	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create remote cluster: %w", err)
+	}
+
+	g := unstructuredToGenericModel(result)
+	return &models.RemoteClusterModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// UpdateRemoteCluster updates an existing remote cluster
+func (k *KubernetesBackend) UpdateRemoteCluster(ctx context.Context, rc *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
+	if k.readOnly {
+		return nil, fmt.Errorf("backend is read-only")
+	}
+
+	namespace := rc.Namespace
+	if namespace == "" {
+		namespace = defaultNamespace
+	}
+
+	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeRemoteCluster",
+		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
+
+	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to update remote cluster: %w", err)
+	}
+
+	g := unstructuredToGenericModel(result)
+	return &models.RemoteClusterModel{
+		Name:            g.name,
+		Namespace:       g.namespace,
+		Labels:          g.labels,
+		Annotations:     g.annotations,
+		Spec:            g.spec,
+		Status:          g.status,
+		ResourceVersion: g.resourceVersion,
+	}, nil
+}
+
+// DeleteRemoteCluster deletes a remote cluster
+func (k *KubernetesBackend) DeleteRemoteCluster(ctx context.Context, namespace, name string) error {
+	if k.readOnly {
+		return fmt.Errorf("backend is read-only")
+	}
+
+	return k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
 // ListNamespaces returns available namespaces
@@ -1071,6 +1609,286 @@ func getInt64Field(m map[string]interface{}, key string) int64 {
 		}
 	}
 	return 0
+}
+
+// Certificate conversion helpers
+
+func (k *KubernetesBackend) unstructuredToCertificate(obj *unstructured.Unstructured) (*models.Certificate, error) {
+	cert := &models.Certificate{
+		Name:            obj.GetName(),
+		Namespace:       obj.GetNamespace(),
+		Labels:          obj.GetLabels(),
+		Annotations:     obj.GetAnnotations(),
+		ResourceVersion: obj.GetResourceVersion(),
+	}
+
+	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec: %w", err)
+	}
+	if !found {
+		return cert, nil
+	}
+
+	if domains, found, _ := unstructured.NestedStringSlice(spec, "domains"); found {
+		cert.Spec.Domains = domains
+	}
+	cert.Spec.SecretName = getStringField(spec, "secretName")
+	cert.Spec.KeyType = getStringField(spec, "keyType")
+	cert.Spec.MustStaple = getBoolField(spec, "mustStaple")
+
+	if issuer, found, _ := unstructured.NestedMap(spec, "issuer"); found {
+		cert.Spec.Issuer.Type = getStringField(issuer, "type")
+		if acme, found, _ := unstructured.NestedMap(issuer, "acme"); found {
+			cert.Spec.ACME = &models.ACMEConfig{
+				Server:        getStringField(acme, "server"),
+				Email:         getStringField(acme, "email"),
+				ChallengeType: getStringField(acme, "challengeType"),
+				DNSProvider:   getStringField(acme, "dnsProvider"),
+			}
+		}
+	}
+
+	// Parse status
+	status, found, _ := unstructured.NestedMap(obj.Object, "status")
+	if found {
+		cert.Status.State = getStringField(status, "state")
+		cert.Status.SecretName = getStringField(status, "secretName")
+		cert.Status.SerialNumber = getStringField(status, "serialNumber")
+		cert.Status.Issuer = getStringField(status, "issuer")
+		cert.Status.Message = getStringField(status, "message")
+	}
+
+	return cert, nil
+}
+
+func (k *KubernetesBackend) certificateToUnstructured(cert *models.Certificate) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"kind":       "ProxyCertificate",
+			"metadata": map[string]interface{}{
+				"name":      cert.Name,
+				"namespace": cert.Namespace,
+			},
+			"spec": map[string]interface{}{},
+		},
+	}
+
+	if cert.ResourceVersion != "" {
+		obj.SetResourceVersion(cert.ResourceVersion)
+	}
+	if len(cert.Labels) > 0 {
+		obj.SetLabels(cert.Labels)
+	}
+	if len(cert.Annotations) > 0 {
+		obj.SetAnnotations(cert.Annotations)
+	}
+
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return obj
+	}
+
+	if len(cert.Spec.Domains) > 0 {
+		domains := make([]interface{}, len(cert.Spec.Domains))
+		for i, d := range cert.Spec.Domains {
+			domains[i] = d
+		}
+		spec["domains"] = domains
+	}
+
+	issuer := map[string]interface{}{
+		"type": cert.Spec.Issuer.Type,
+	}
+	if cert.Spec.ACME != nil {
+		acme := map[string]interface{}{}
+		if cert.Spec.ACME.Server != "" {
+			acme["server"] = cert.Spec.ACME.Server
+		}
+		if cert.Spec.ACME.Email != "" {
+			acme["email"] = cert.Spec.ACME.Email
+		}
+		if cert.Spec.ACME.ChallengeType != "" {
+			acme["challengeType"] = cert.Spec.ACME.ChallengeType
+		}
+		if cert.Spec.ACME.DNSProvider != "" {
+			acme["dnsProvider"] = cert.Spec.ACME.DNSProvider
+		}
+		issuer["acme"] = acme
+	}
+	spec["issuer"] = issuer
+
+	if cert.Spec.SecretName != "" {
+		spec["secretName"] = cert.Spec.SecretName
+	}
+	if cert.Spec.KeyType != "" {
+		spec["keyType"] = cert.Spec.KeyType
+	}
+	if cert.Spec.MustStaple {
+		spec["mustStaple"] = cert.Spec.MustStaple
+	}
+
+	return obj
+}
+
+// IPPool conversion helpers
+
+func (k *KubernetesBackend) unstructuredToIPPool(obj *unstructured.Unstructured) (*models.IPPool, error) {
+	pool := &models.IPPool{
+		Name:            obj.GetName(),
+		Labels:          obj.GetLabels(),
+		Annotations:     obj.GetAnnotations(),
+		ResourceVersion: obj.GetResourceVersion(),
+	}
+
+	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read spec: %w", err)
+	}
+	if !found {
+		return pool, nil
+	}
+
+	if cidrs, found, _ := unstructured.NestedStringSlice(spec, "cidrs"); found {
+		pool.Spec.CIDRs = cidrs
+	}
+	if addresses, found, _ := unstructured.NestedStringSlice(spec, "addresses"); found {
+		pool.Spec.Addresses = addresses
+	}
+	pool.Spec.AutoAssign = getBoolField(spec, "autoAssign")
+
+	// Parse status
+	status, found, _ := unstructured.NestedMap(obj.Object, "status")
+	if found {
+		pool.Status.Allocated = int32(getInt64Field(status, "allocated"))
+		pool.Status.Available = int32(getInt64Field(status, "available"))
+	}
+
+	return pool, nil
+}
+
+func (k *KubernetesBackend) ipPoolToUnstructured(pool *models.IPPool) *unstructured.Unstructured {
+	obj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"kind":       "ProxyIPPool",
+			"metadata": map[string]interface{}{
+				"name": pool.Name,
+			},
+			"spec": map[string]interface{}{},
+		},
+	}
+
+	if pool.ResourceVersion != "" {
+		obj.SetResourceVersion(pool.ResourceVersion)
+	}
+	if len(pool.Labels) > 0 {
+		obj.SetLabels(pool.Labels)
+	}
+	if len(pool.Annotations) > 0 {
+		obj.SetAnnotations(pool.Annotations)
+	}
+
+	spec, ok := obj.Object["spec"].(map[string]interface{})
+	if !ok {
+		return obj
+	}
+
+	if len(pool.Spec.CIDRs) > 0 {
+		cidrs := make([]interface{}, len(pool.Spec.CIDRs))
+		for i, c := range pool.Spec.CIDRs {
+			cidrs[i] = c
+		}
+		spec["cidrs"] = cidrs
+	}
+	if len(pool.Spec.Addresses) > 0 {
+		addresses := make([]interface{}, len(pool.Spec.Addresses))
+		for i, a := range pool.Spec.Addresses {
+			addresses[i] = a
+		}
+		spec["addresses"] = addresses
+	}
+	spec["autoAssign"] = pool.Spec.AutoAssign
+
+	return obj
+}
+
+// Generic model conversion helpers for Cluster, Federation, RemoteCluster
+
+type genericModel struct {
+	name            string
+	namespace       string
+	labels          map[string]string
+	annotations     map[string]string
+	spec            map[string]interface{}
+	status          map[string]interface{}
+	resourceVersion string
+}
+
+func unstructuredToGenericModel(obj *unstructured.Unstructured) genericModel {
+	g := genericModel{
+		name:            obj.GetName(),
+		namespace:       obj.GetNamespace(),
+		labels:          obj.GetLabels(),
+		annotations:     obj.GetAnnotations(),
+		resourceVersion: obj.GetResourceVersion(),
+	}
+
+	if spec, found, err := unstructured.NestedMap(obj.Object, "spec"); err == nil && found {
+		g.spec = spec
+	}
+	if status, found, err := unstructured.NestedMap(obj.Object, "status"); err == nil && found {
+		g.status = status
+	}
+
+	return g
+}
+
+func genericModelToUnstructured(apiVersion, kind, name, namespace string,
+	labels, annotations map[string]string, spec map[string]interface{}, resourceVersion string) *unstructured.Unstructured {
+
+	metadata := map[string]interface{}{
+		"name": name,
+	}
+	if namespace != "" {
+		metadata["namespace"] = namespace
+	}
+
+	obj := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"apiVersion": apiVersion,
+			"kind":       kind,
+			"metadata":   metadata,
+		},
+	}
+
+	if resourceVersion != "" {
+		obj.SetResourceVersion(resourceVersion)
+	}
+	if len(labels) > 0 {
+		obj.SetLabels(labels)
+	}
+	if len(annotations) > 0 {
+		obj.SetAnnotations(annotations)
+	}
+
+	if spec != nil {
+		obj.Object["spec"] = spec
+	} else {
+		obj.Object["spec"] = map[string]interface{}{}
+	}
+
+	return obj
+}
+
+func getBoolField(m map[string]interface{}, key string) bool {
+	if v, ok := m[key]; ok {
+		if b, ok := v.(bool); ok {
+			return b
+		}
+	}
+	return false
 }
 
 // validateConfig performs basic configuration validation
