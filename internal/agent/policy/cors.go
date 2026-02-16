@@ -23,6 +23,7 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"go.uber.org/zap"
 )
 
 // CORS implements Cross-Origin Resource Sharing policy
@@ -48,9 +49,18 @@ func HandleCORS(cors *CORS) func(http.Handler) http.Handler {
 				// Set CORS headers
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 
-				// Set allowed credentials
+				// Set allowed credentials only for explicit origin matches.
+				// When the origin was matched via wildcard ("*") or empty
+				// allowlist, reflecting credentials would let any website
+				// make credentialed cross-origin requests (security risk).
 				if cors.config.AllowCredentials {
-					w.Header().Set("Access-Control-Allow-Credentials", "true")
+					if cors.isWildcardMatch(origin) {
+						zap.L().Warn("CORS: suppressing Access-Control-Allow-Credentials because origin was matched via wildcard",
+							zap.String("origin", origin),
+						)
+					} else {
+						w.Header().Set("Access-Control-Allow-Credentials", "true")
+					}
 				}
 
 				// Set exposed headers
@@ -114,6 +124,28 @@ func (c *CORS) isOriginAllowed(origin string) bool {
 	}
 
 	return false
+}
+
+// isWildcardMatch returns true when the origin would be allowed only
+// because the allowlist is empty or contains a wildcard entry ("*").
+// It returns false when the origin is explicitly listed.
+func (c *CORS) isWildcardMatch(origin string) bool {
+	// Empty allowlist means everything is allowed via wildcard
+	if len(c.config.AllowOrigins) == 0 {
+		return true
+	}
+
+	// Check whether the origin is explicitly listed first.
+	// If it is, this is NOT a wildcard match even if "*" also appears.
+	for _, allowed := range c.config.AllowOrigins {
+		if allowed == origin {
+			return false
+		}
+	}
+
+	// The origin was not explicitly listed, so it must have been
+	// matched by a wildcard entry.
+	return true
 }
 
 // matchWildcard performs simple wildcard matching
