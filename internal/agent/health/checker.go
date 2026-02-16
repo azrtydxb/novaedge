@@ -131,6 +131,9 @@ func NewChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logge
 					Timeout:   DefaultHealthCheckDialTimeout,
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
+				MaxIdleConns:        50,
+				MaxIdleConnsPerHost: 2,
+				IdleConnTimeout:     90 * time.Second,
 			},
 		},
 		httpsClient: &http.Client{
@@ -140,6 +143,9 @@ func NewChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logge
 					Timeout:   DefaultHealthCheckDialTimeout,
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
+				MaxIdleConns:        50,
+				MaxIdleConnsPerHost: 2,
+				IdleConnTimeout:     90 * time.Second,
 				TLSClientConfig: &tls.Config{
 					MinVersion:         tls.VersionTLS12,
 					InsecureSkipVerify: true, //nolint:gosec // Health checks use skip-verify for backend probing
@@ -361,25 +367,37 @@ func (hc *Checker) healthCheckLoop(ctx context.Context) {
 	}
 }
 
-// performHealthChecks performs health checks on all endpoints
+// healthCheckWorkers is the maximum number of concurrent goroutines used
+// to perform health checks. This bounds resource usage regardless of
+// how many endpoints are configured.
+const healthCheckWorkers = 10
+
+// performHealthChecks performs health checks on all endpoints using a
+// bounded worker pool to avoid spawning unbounded goroutines.
 func (hc *Checker) performHealthChecks(ctx context.Context) {
 	hc.mu.RLock()
 	endpoints := make([]*pb.Endpoint, len(hc.endpoints))
 	copy(endpoints, hc.endpoints)
 	hc.mu.RUnlock()
 
-	// Use WaitGroup to ensure all health checks complete before returning
-	var wg sync.WaitGroup
+	// Create a job channel and enqueue all endpoints
+	jobs := make(chan *pb.Endpoint, len(endpoints))
 	for _, ep := range endpoints {
-		wg.Add(1)
-		// Perform check in goroutine for concurrency
-		go func(endpoint *pb.Endpoint) {
-			defer wg.Done()
-			hc.checkEndpoint(ctx, endpoint)
-		}(ep)
+		jobs <- ep
 	}
+	close(jobs)
 
-	// Wait for all health checks to complete
+	// Spawn a bounded number of workers
+	var wg sync.WaitGroup
+	for i := 0; i < healthCheckWorkers && i < len(endpoints); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ep := range jobs {
+				hc.checkEndpoint(ctx, ep)
+			}
+		}()
+	}
 	wg.Wait()
 }
 
