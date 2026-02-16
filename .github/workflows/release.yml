@@ -67,6 +67,37 @@ jobs:
           path: ${{ matrix.binary.name }}-linux-${{ matrix.arch }}
           retention-days: 1
 
+  # Build frontend natively (avoids QEMU segfault for arm64)
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: cd web && pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        run: cd web && pnpm run build
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: webui-dist
+          path: web/dist/
+          retention-days: 1
+
   # Create GitHub Release with all binaries
   release:
     name: Create Release
@@ -87,6 +118,10 @@ jobs:
         run: |
           mkdir -p release
           for dir in artifacts/*/; do
+            # Skip non-binary artifacts (like webui-dist)
+            if [[ "$(basename "$dir")" == "webui-dist" ]]; then
+              continue
+            fi
             cp "${dir}"* release/
           done
           chmod +x release/*
@@ -101,7 +136,7 @@ jobs:
           files: release/*
           fail_on_unmatched_files: true
 
-  # Build and push multi-arch Docker images
+  # Build and push multi-arch Go Docker images
   docker:
     name: Docker Images
     runs-on: ubuntu-latest
@@ -118,8 +153,6 @@ jobs:
             dockerfile: Dockerfile.standalone
           - name: novaedge-operator
             dockerfile: Dockerfile.operator
-          - name: novaedge-webui
-            dockerfile: Dockerfile.webui
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -160,5 +193,55 @@ jobs:
             VERSION=${{ github.ref_name }}
             COMMIT=${{ github.sha }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Build and push multi-arch webui Docker image (uses pre-built frontend)
+  docker-webui:
+    name: Docker WebUI Image
+    runs-on: ubuntu-latest
+    needs: build-frontend
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: web/dist/
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/novaedge-webui
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: web/
+          file: Dockerfile.webui.release
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
