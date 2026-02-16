@@ -37,7 +37,13 @@ novaedge/
 │   ├── novaedge-agent/               # Node agent entrypoint
 │   ├── novaedge-standalone/          # Standalone mode (no Kubernetes)
 │   ├── novaedge-operator/            # Operator entrypoint
-│   └── novactl/                      # CLI tool with Web UI
+│   └── novactl/                      # CLI tool (JSON API backend)
+├── web/                              # React frontend (standalone, served by nginx)
+│   ├── src/                          # React source code
+│   ├── nginx.conf                    # nginx configuration for SPA + API proxy
+│   ├── docker-entrypoint.sh          # Container entrypoint (env var substitution)
+│   ├── vite.config.ts                # Vite build config (outputs to dist/)
+│   └── package.json                  # Node.js dependencies
 ├── internal/                         # Private application code
 │   ├── controller/                   # Controller logic
 │   │   ├── certmanager/              # cert-manager integration
@@ -100,7 +106,10 @@ make build-standalone
 make build-operator
 make build-novactl
 
-# Build Docker images
+# Build web UI frontend (requires Node.js)
+make build-webui
+
+# Build Docker images (all 6: controller, agent, novactl, standalone, operator, webui)
 make docker-build
 
 # Generate CRDs

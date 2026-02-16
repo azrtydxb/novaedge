@@ -591,7 +591,7 @@ func TestNewJWTValidator(t *testing.T) {
 			Audience:          []string{"test-audience"},
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Errorf("Expected no error, got: %v", err)
 		}
@@ -633,7 +633,7 @@ func TestNewJWTValidator(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Errorf("Expected no error, got: %v", err)
 		}
@@ -660,7 +660,7 @@ func TestNewJWTValidator(t *testing.T) {
 			JwksUri:           "http://invalid-host-that-does-not-exist.local/jwks",
 		}
 
-		_, err := NewJWTValidator(context.Background(), config)
+		_, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err == nil {
 			t.Error("Expected error for invalid JWKS URI")
 		}
@@ -672,7 +672,7 @@ func TestNewJWTValidator(t *testing.T) {
 			AllowedAlgorithms: []string{"RS256", "ES256"},
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -694,7 +694,7 @@ func TestNewJWTValidator(t *testing.T) {
 			Audience: []string{"test-audience"},
 		}
 
-		_, err := NewJWTValidator(context.Background(), config)
+		_, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err == nil {
 			t.Fatal("Expected error when AllowedAlgorithms is empty")
 		}
@@ -735,7 +735,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -763,7 +763,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -787,7 +787,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -811,7 +811,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -835,7 +835,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -859,7 +859,7 @@ func TestValidate(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -899,13 +899,13 @@ func TestValidateECDSA(t *testing.T) {
 			defer server.Close()
 
 			config := &pb.JWTConfig{
-				AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+				AllowedAlgorithms: []string{"RS256", "ES256", "ES384", "ES512", "EdDSA"},
 				Issuer:            "test-issuer",
 				Audience:          []string{"test-audience"},
 				JwksUri:           server.URL,
 			}
 
-			validator, err := NewJWTValidator(context.Background(), config)
+			validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 			if err != nil {
 				t.Fatalf("Failed to create validator: %v", err)
 			}
@@ -947,7 +947,7 @@ func TestValidateECDSA(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -986,7 +986,7 @@ func TestValidateEdDSA(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -1027,7 +1027,7 @@ func TestValidateEdDSA(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -1081,7 +1081,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			AllowedAlgorithms: []string{"RS256"},
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -1118,7 +1118,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			AllowedAlgorithms: []string{"ES256"},
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -1155,7 +1155,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			AllowedAlgorithms: []string{"EdDSA"},
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -1192,7 +1192,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -1231,7 +1231,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 			JwksUri:           server.URL,
 		}
 
-		validator, err := NewJWTValidator(context.Background(), config)
+		validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 		if err != nil {
 			t.Fatalf("Failed to create validator: %v", err)
 		}
@@ -1299,7 +1299,7 @@ func TestValidateMixedKeyTypes(t *testing.T) {
 		JwksUri:           server.URL,
 	}
 
-	validator, err := NewJWTValidator(context.Background(), config)
+	validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
@@ -1378,7 +1378,7 @@ func TestHandleJWT(t *testing.T) {
 		JwksUri:           server.URL,
 	}
 
-	validator, err := NewJWTValidator(context.Background(), config)
+	validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
@@ -1511,7 +1511,7 @@ func TestHandleJWTWithECDSA(t *testing.T) {
 		JwksUri:           server.URL,
 	}
 
-	validator, err := NewJWTValidator(context.Background(), config)
+	validator, err := NewJWTValidator(context.Background(), config, WithHTTPClient(&http.Client{}))
 	if err != nil {
 		t.Fatalf("Failed to create validator: %v", err)
 	}
@@ -1577,6 +1577,7 @@ func TestFetchJWKS(t *testing.T) {
 			config:            config,
 			keys:              make(map[string]interface{}),
 			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
+			httpClient:        &http.Client{},
 		}
 
 		err = validator.fetchJWKS(context.Background())
@@ -1616,6 +1617,7 @@ func TestFetchJWKS(t *testing.T) {
 			config:            config,
 			keys:              make(map[string]interface{}),
 			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
+			httpClient:        &http.Client{},
 		}
 
 		err = validator.fetchJWKS(context.Background())
@@ -1655,6 +1657,7 @@ func TestFetchJWKS(t *testing.T) {
 			config:            config,
 			keys:              make(map[string]interface{}),
 			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
+			httpClient:        &http.Client{},
 		}
 
 		err = validator.fetchJWKS(context.Background())
@@ -1686,6 +1689,7 @@ func TestFetchJWKS(t *testing.T) {
 			config:            config,
 			keys:              make(map[string]interface{}),
 			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
+			httpClient:        &http.Client{},
 		}
 
 		err := validator.fetchJWKS(context.Background())
@@ -1710,6 +1714,7 @@ func TestFetchJWKS(t *testing.T) {
 			config:            config,
 			keys:              make(map[string]interface{}),
 			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
+			httpClient:        &http.Client{},
 		}
 
 		err := validator.fetchJWKS(context.Background())

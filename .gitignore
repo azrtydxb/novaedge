@@ -67,5 +67,5 @@ docs/plans/
 !config/samples/**/*.crt
 
 # Frontend build output
-cmd/novactl/pkg/webui/frontend/dist/
-cmd/novactl/pkg/webui/frontend/node_modules/
+web/dist/
+web/node_modules/

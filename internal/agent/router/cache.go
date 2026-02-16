@@ -311,12 +311,12 @@ func (rc *ResponseCache) storeResponse(key string, rec *cacheRecorder, ttl time.
 func buildCacheKey(r *http.Request) string {
 	h := fnv.New64a()
 	_, _ = h.Write([]byte(r.Method))
-	h.Write([]byte{'|'})
+	_, _ = h.Write([]byte{'|'})
 	_, _ = h.Write([]byte(r.Host))
-	h.Write([]byte{'|'})
+	_, _ = h.Write([]byte{'|'})
 	_, _ = h.Write([]byte(r.URL.Path))
 	if r.URL.RawQuery != "" {
-		h.Write([]byte{'?'})
+		_, _ = h.Write([]byte{'?'})
 		_, _ = h.Write([]byte(r.URL.RawQuery))
 	}
 
@@ -327,9 +327,9 @@ func buildCacheKey(r *http.Request) string {
 		sort.Strings(varyHeaders)
 		for _, hdr := range varyHeaders {
 			hdr = strings.TrimSpace(hdr)
-			h.Write([]byte{'|'})
+			_, _ = h.Write([]byte{'|'})
 			_, _ = h.Write([]byte(hdr))
-			h.Write([]byte{'='})
+			_, _ = h.Write([]byte{'='})
 			_, _ = h.Write([]byte(r.Header.Get(hdr)))
 		}
 	}

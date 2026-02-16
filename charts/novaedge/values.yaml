@@ -289,6 +289,21 @@ webui:
   enabled: true
   replicaCount: 1
 
+  # Frontend container (nginx serving React SPA)
+  frontend:
+    image:
+      repository: ghcr.io/piwi3910/novaedge-webui
+      tag: ""  # Defaults to Chart.appVersion
+      pullPolicy: IfNotPresent
+    resources:
+      limits:
+        cpu: 100m
+        memory: 128Mi
+      requests:
+        cpu: 25m
+        memory: 32Mi
+
+  # API backend container (novactl)
   image:
     repository: ghcr.io/piwi3910/novaedge-novactl
     tag: ""  # Defaults to Chart.appVersion
@@ -302,7 +317,7 @@ webui:
   service:
     type: ClusterIP
     port: 80
-    targetPort: 9080
+    targetPort: 8080
 
   # Ingress configuration
   ingress:

@@ -33,6 +33,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	meshEnabledValue = "enabled"
+)
+
 // handleTraces handles GET /api/v1/traces - search traces
 func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -202,7 +206,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 
 	namespace := q.Get("namespace")
 	if namespace == "" {
-		namespace = "novaedge-system"
+		namespace = defaultNamespace
 	}
 
 	// Parse tailLines (default 100)
@@ -293,7 +297,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	namespace := q.Get("namespace")
 	if namespace == "" {
-		namespace = "novaedge-system"
+		namespace = defaultNamespace
 	}
 	involved := q.Get("involved")
 
@@ -441,8 +445,8 @@ func (s *Server) handleMeshStatus(w http.ResponseWriter, r *http.Request) {
 	serviceMap := make(map[string]*MeshServiceInfo)
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		meshEnabled := pod.Annotations["novaedge.io/mesh"] == "enabled" ||
-			pod.Labels["novaedge.io/mesh"] == "enabled"
+		meshEnabled := pod.Annotations["novaedge.io/mesh"] == meshEnabledValue ||
+			pod.Labels["novaedge.io/mesh"] == meshEnabledValue
 
 		if !meshEnabled {
 			continue
@@ -539,8 +543,8 @@ func (s *Server) handleMeshTopology(w http.ResponseWriter, r *http.Request) {
 	nodeMap := make(map[string]*MeshNode)
 	for i := range pods.Items {
 		pod := &pods.Items[i]
-		meshEnabled := pod.Annotations["novaedge.io/mesh"] == "enabled" ||
-			pod.Labels["novaedge.io/mesh"] == "enabled"
+		meshEnabled := pod.Annotations["novaedge.io/mesh"] == meshEnabledValue ||
+			pod.Labels["novaedge.io/mesh"] == meshEnabledValue
 
 		if !meshEnabled {
 			continue

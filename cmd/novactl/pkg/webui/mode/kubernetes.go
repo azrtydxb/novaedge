@@ -19,6 +19,7 @@ package mode
 import (
 	"context"
 	"fmt"
+	"math"
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
 	"gopkg.in/yaml.v3"
@@ -763,7 +764,7 @@ func (k *KubernetesBackend) CreateNovaEdgeCluster(ctx context.Context, cluster *
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeCluster",
+	obj := genericModelToUnstructured("NovaEdgeCluster",
 		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -794,7 +795,7 @@ func (k *KubernetesBackend) UpdateNovaEdgeCluster(ctx context.Context, cluster *
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeCluster",
+	obj := genericModelToUnstructured("NovaEdgeCluster",
 		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -883,7 +884,7 @@ func (k *KubernetesBackend) CreateFederation(ctx context.Context, federation *mo
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeFederation",
+	obj := genericModelToUnstructured("NovaEdgeFederation",
 		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -914,7 +915,7 @@ func (k *KubernetesBackend) UpdateFederation(ctx context.Context, federation *mo
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeFederation",
+	obj := genericModelToUnstructured("NovaEdgeFederation",
 		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -1003,7 +1004,7 @@ func (k *KubernetesBackend) CreateRemoteCluster(ctx context.Context, rc *models.
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeRemoteCluster",
+	obj := genericModelToUnstructured("NovaEdgeRemoteCluster",
 		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -1034,7 +1035,7 @@ func (k *KubernetesBackend) UpdateRemoteCluster(ctx context.Context, rc *models.
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeRemoteCluster",
+	obj := genericModelToUnstructured("NovaEdgeRemoteCluster",
 		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -1761,8 +1762,8 @@ func (k *KubernetesBackend) unstructuredToIPPool(obj *unstructured.Unstructured)
 	// Parse status
 	status, found, _ := unstructured.NestedMap(obj.Object, "status")
 	if found {
-		pool.Status.Allocated = int32(getInt64Field(status, "allocated"))
-		pool.Status.Available = int32(getInt64Field(status, "available"))
+		pool.Status.Allocated = safeInt64ToInt32(getInt64Field(status, "allocated"))
+		pool.Status.Available = safeInt64ToInt32(getInt64Field(status, "available"))
 	}
 
 	return pool, nil
@@ -1845,8 +1846,21 @@ func unstructuredToGenericModel(obj *unstructured.Unstructured) genericModel {
 	return g
 }
 
-func genericModelToUnstructured(apiVersion, kind, name, namespace string,
+// safeInt64ToInt32 safely converts int64 to int32 with bounds checking
+func safeInt64ToInt32(val int64) int32 {
+	if val > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if val < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(val)
+}
+
+func genericModelToUnstructured(kind, name, namespace string,
 	labels, annotations map[string]string, spec map[string]interface{}, resourceVersion string) *unstructured.Unstructured {
+
+	const apiVersion = "novaedge.io/v1alpha1"
 
 	metadata := map[string]interface{}{
 		"name": name,

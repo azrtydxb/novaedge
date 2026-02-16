@@ -62,6 +62,7 @@ type JWTValidator struct {
 	jwks              *JWKS
 	blacklist         *TokenBlacklist
 	allowedAlgorithms map[string]bool // set of allowed algorithm names
+	httpClient        *http.Client
 }
 
 // JWKS represents a JSON Web Key Set
@@ -85,12 +86,27 @@ type JWK struct {
 	// OKP (Ed25519) key fields - X is reused from EC fields above
 }
 
+// JWTValidatorOption configures a JWTValidator.
+type JWTValidatorOption func(*JWTValidator)
+
+// WithHTTPClient sets the HTTP client used for JWKS fetching.
+func WithHTTPClient(c *http.Client) JWTValidatorOption {
+	return func(v *JWTValidator) {
+		v.httpClient = c
+	}
+}
+
 // NewJWTValidator creates a new JWT validator
-func NewJWTValidator(ctx context.Context, config *pb.JWTConfig) (*JWTValidator, error) {
+func NewJWTValidator(ctx context.Context, config *pb.JWTConfig, opts ...JWTValidatorOption) (*JWTValidator, error) {
 	v := &JWTValidator{
-		config:    config,
-		keys:      make(map[string]interface{}),
-		blacklist: NewTokenBlacklist(),
+		config:     config,
+		keys:       make(map[string]interface{}),
+		blacklist:  NewTokenBlacklist(),
+		httpClient: NewSSRFProtectedClient(10 * time.Second),
+	}
+
+	for _, opt := range opts {
+		opt(v)
 	}
 
 	// Require explicit algorithm configuration to prevent algorithm confusion attacks
@@ -136,7 +152,7 @@ func (v *JWTValidator) fetchJWKS(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := NewSSRFProtectedClient(10 * time.Second).Do(req)
+	resp, err := v.httpClient.Do(req)
 	if err != nil {
 		return err
 	}
