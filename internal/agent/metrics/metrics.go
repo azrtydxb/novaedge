@@ -59,27 +59,46 @@ var (
 
 	// Endpoint tracking to limit cardinality
 	endpointTracker = &endpointCardinalityTracker{
-		endpoints: make(map[string]map[string]bool),
+		endpoints: make(map[string]map[string]*trackedEndpoint),
 		mu:        sync.RWMutex{},
 	}
+
+	// Cached time bucket for sampling to avoid per-call time.Format allocations
+	cachedTimeBucket   string
+	cachedTimeBucketMu sync.Mutex
+	lastBucketUpdate   time.Time
 )
+
+// trackedEndpoint holds metadata for a tracked endpoint
+type trackedEndpoint struct {
+	lastSeen time.Time
+}
 
 // endpointCardinalityTracker tracks endpoints per cluster to limit metric cardinality
 type endpointCardinalityTracker struct {
-	endpoints map[string]map[string]bool // cluster -> endpoint -> bool
+	endpoints map[string]map[string]*trackedEndpoint // cluster -> endpoint -> metadata
 	mu        sync.RWMutex
 }
 
 // shouldTrackEndpoint determines if we should track metrics for this endpoint
 func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint string) bool {
+	now := time.Now()
+
 	t.mu.RLock()
 	clusterEndpoints, exists := t.endpoints[cluster]
 	if exists {
-		_, tracked := clusterEndpoints[endpoint]
+		ep, tracked := clusterEndpoints[endpoint]
 		t.mu.RUnlock()
-		return tracked
+		if tracked {
+			// Update lastSeen under write lock
+			t.mu.Lock()
+			ep.lastSeen = now
+			t.mu.Unlock()
+			return true
+		}
+	} else {
+		t.mu.RUnlock()
 	}
-	t.mu.RUnlock()
 
 	// Need to check if we should add this endpoint
 	t.mu.Lock()
@@ -87,7 +106,13 @@ func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint strin
 
 	// Double check after acquiring write lock
 	if t.endpoints[cluster] == nil {
-		t.endpoints[cluster] = make(map[string]bool)
+		t.endpoints[cluster] = make(map[string]*trackedEndpoint)
+	}
+
+	// Check if already added by another goroutine
+	if ep, ok := t.endpoints[cluster][endpoint]; ok {
+		ep.lastSeen = now
+		return true
 	}
 
 	// Check cardinality limit
@@ -97,7 +122,7 @@ func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint strin
 	}
 
 	// Add endpoint to tracking
-	t.endpoints[cluster][endpoint] = true
+	t.endpoints[cluster][endpoint] = &trackedEndpoint{lastSeen: now}
 	return true
 }
 
@@ -112,6 +137,54 @@ func (t *endpointCardinalityTracker) cleanupCluster(cluster string) {
 	for endpoint := range endpoints {
 		deleteEndpointMetrics(cluster, endpoint)
 	}
+}
+
+// cleanupStaleEndpoints removes endpoints not seen within the given TTL
+// and deletes their Prometheus metric series.
+func (t *endpointCardinalityTracker) cleanupStaleEndpoints(ttl time.Duration) {
+	now := time.Now()
+	cutoff := now.Add(-ttl)
+
+	t.mu.Lock()
+	stale := make(map[string][]string) // cluster -> []endpoint
+	for cluster, endpoints := range t.endpoints {
+		for endpoint, ep := range endpoints {
+			if ep.lastSeen.Before(cutoff) {
+				stale[cluster] = append(stale[cluster], endpoint)
+			}
+		}
+		for _, endpoint := range stale[cluster] {
+			delete(endpoints, endpoint)
+		}
+		if len(endpoints) == 0 {
+			delete(t.endpoints, cluster)
+		}
+	}
+	t.mu.Unlock()
+
+	// Delete Prometheus metric series outside the lock
+	for cluster, endpoints := range stale {
+		for _, endpoint := range endpoints {
+			deleteEndpointMetrics(cluster, endpoint)
+		}
+	}
+}
+
+// StartCleanupLoop starts a background goroutine that periodically removes
+// stale endpoints not seen within the given TTL. It stops when ctx is cancelled.
+func (t *endpointCardinalityTracker) StartCleanupLoop(ctx context.Context, interval, ttl time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				t.cleanupStaleEndpoints(ttl)
+			}
+		}
+	}()
 }
 
 // removeEndpoint removes a single endpoint from tracking and cleans up its metrics
@@ -151,6 +224,19 @@ func resolveEndpointLabel(cluster, endpoint string) string {
 	return endpoint
 }
 
+// getTimeBucket returns a cached time bucket string, only reformatting
+// when the minute changes. This avoids per-call time.Format allocations.
+func getTimeBucket() string {
+	now := time.Now()
+	cachedTimeBucketMu.Lock()
+	defer cachedTimeBucketMu.Unlock()
+	if now.Sub(lastBucketUpdate) >= time.Minute {
+		cachedTimeBucket = now.Format("2006-01-02-15-04")
+		lastBucketUpdate = now
+	}
+	return cachedTimeBucket
+}
+
 // shouldSample determines if we should record this metric based on sampling rate
 func shouldSample(key string) bool {
 	if !defaultConfig.EnableSampling {
@@ -160,7 +246,7 @@ func shouldSample(key string) bool {
 	// Use hash-based sampling for consistent decisions
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(key))
-	_, _ = h.Write([]byte(time.Now().Format("2006-01-02-15-04"))) // Include minute for time-based sampling
+	_, _ = h.Write([]byte(getTimeBucket()))
 	hash := h.Sum32()
 
 	return int(hash%100) < defaultConfig.SampleRate
