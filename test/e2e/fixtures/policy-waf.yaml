@@ -1,0 +1,17 @@
+# E2E WAF policy: validates Coraza engine blocks OWASP CRS-detected attacks
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: e2e-waf-policy
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  type: WAF
+  targetRef:
+    kind: ProxyGateway
+    name: lb-gateway
+  waf:
+    enabled: true
+    mode: prevention
+    paranoiaLevel: 1

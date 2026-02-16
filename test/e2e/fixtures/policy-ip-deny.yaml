@@ -1,0 +1,16 @@
+# E2E IP deny-list policy: validates source-IP denylisting
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: e2e-ip-deny-policy
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  type: IPDenyList
+  targetRef:
+    kind: ProxyGateway
+    name: lb-gateway
+  ipList:
+    cidrs:
+      - "192.168.100.0/24"

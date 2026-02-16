@@ -1,0 +1,17 @@
+# E2E IP allow-list policy: validates source-IP allowlisting
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: e2e-ip-allow-policy
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  type: IPAllowList
+  targetRef:
+    kind: ProxyGateway
+    name: lb-gateway
+  ipList:
+    cidrs:
+      - "192.168.100.0/24"
+      - "10.0.0.0/8"

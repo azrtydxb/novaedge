@@ -1,0 +1,41 @@
+# E2E compression test: gateway with gzip/brotli compression and a matching route
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: e2e-compression-gateway
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  vipRef: lb-vip
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostnames:
+        - "e2e.test.local"
+  compression:
+    enabled: true
+    algorithms:
+      - gzip
+      - br
+    minSize: "1"
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: e2e-compress-route
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  hostnames:
+    - "e2e.test.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /compress/
+      backendRefs:
+        - name: e2e-echo-backend

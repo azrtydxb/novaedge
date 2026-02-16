@@ -1,0 +1,78 @@
+# E2E filter tests: exercises URL rewrite, redirect, request/response header manipulation
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: e2e-filter-tests
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  hostnames:
+    - "e2e.test.local"
+  rules:
+    # URLRewrite filter
+    - matches:
+        - path:
+            type: Exact
+            value: /rewrite-me
+      filters:
+        - type: URLRewrite
+          rewritePath: "/rewritten"
+      backendRefs:
+        - name: e2e-echo-backend
+    # RequestRedirect filter
+    - matches:
+        - path:
+            type: Exact
+            value: /redirect-me
+      filters:
+        - type: RequestRedirect
+          redirectURL: "https://e2e.test.local/redirected"
+      backendRefs:
+        - name: e2e-echo-backend
+    # AddHeader filter
+    - matches:
+        - path:
+            type: Exact
+            value: /add-header
+      filters:
+        - type: AddHeader
+          add:
+            - name: X-E2E-Added
+              value: "true"
+      backendRefs:
+        - name: e2e-echo-backend
+    # RemoveHeader filter
+    - matches:
+        - path:
+            type: Exact
+            value: /remove-header
+      filters:
+        - type: RemoveHeader
+          remove:
+            - X-Remove-Me
+      backendRefs:
+        - name: e2e-echo-backend
+    # ResponseAddHeader filter
+    - matches:
+        - path:
+            type: Exact
+            value: /response-add-header
+      filters:
+        - type: ResponseAddHeader
+          responseAdd:
+            - name: X-E2E-Response
+              value: injected
+      backendRefs:
+        - name: e2e-echo-backend
+    # ResponseRemoveHeader filter
+    - matches:
+        - path:
+            type: Exact
+            value: /response-remove-header
+      filters:
+        - type: ResponseRemoveHeader
+          responseRemove:
+            - X-App-Version
+      backendRefs:
+        - name: e2e-echo-backend

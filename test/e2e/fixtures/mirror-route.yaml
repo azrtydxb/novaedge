@@ -1,0 +1,23 @@
+# E2E traffic mirroring test: mirrors 100% of /mirror traffic to a shadow backend
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: e2e-mirror-route
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  hostnames:
+    - "e2e.test.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /mirror
+      backendRefs:
+        - name: e2e-echo-backend
+      filters:
+        - type: RequestMirror
+          mirrorBackend:
+            name: e2e-mirror-target
+          mirrorPercent: 100

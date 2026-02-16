@@ -1,0 +1,24 @@
+# E2E load balancing routing: routes for testing traffic through hash-based LB backends
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: e2e-lb-routing
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  hostnames:
+    - "e2e.test.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /lb/maglev
+      backendRefs:
+        - name: e2e-echo-backend
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /lb/sticky
+      backendRefs:
+        - name: e2e-sticky-backend
