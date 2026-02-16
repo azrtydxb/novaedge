@@ -14,6 +14,7 @@ import (
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/prometheus"
+	"github.com/piwi3910/novaedge/cmd/novactl/pkg/trace"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/auth"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/mode"
 	"github.com/piwi3910/novaedge/internal/acme"
@@ -40,6 +41,8 @@ type Server struct {
 	tlsAuto          bool
 	authManager      *auth.Manager
 	jaegerEndpoint   string
+	traceClient      *trace.Client
+	snapshotStore    *SnapshotStore
 }
 
 // Config holds server configuration
@@ -125,8 +128,14 @@ func NewServer(cfg Config) (*Server, error) {
 	}
 	s.authManager = authMgr
 
-	// Store Jaeger endpoint
+	// Store Jaeger endpoint and create trace client if configured
 	s.jaegerEndpoint = cfg.JaegerEndpoint
+	if cfg.JaegerEndpoint != "" {
+		s.traceClient = trace.NewClient(cfg.JaegerEndpoint)
+	}
+
+	// Initialize snapshot store
+	s.snapshotStore = NewSnapshotStore(50)
 
 	return s, nil
 }
@@ -176,6 +185,23 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/config/import", s.handleConfigImport)
 	mux.HandleFunc("/api/v1/config/history", s.handleConfigHistory)
 	mux.HandleFunc("/api/v1/config/history/", s.handleConfigHistoryRestore)
+
+	// Observability endpoints (more specific paths must be registered first)
+	mux.HandleFunc("/api/v1/traces/services", s.handleTraceServices)
+	mux.HandleFunc("/api/v1/traces/operations", s.handleTraceOperations)
+	mux.HandleFunc("/api/v1/traces/", s.handleTrace)
+	mux.HandleFunc("/api/v1/traces", s.handleTraces)
+	mux.HandleFunc("/api/v1/logs", s.handleLogs)
+	mux.HandleFunc("/api/v1/events", s.handleEvents)
+	mux.HandleFunc("/api/v1/waf/events", s.handleWAFEvents)
+	mux.HandleFunc("/api/v1/mesh/status", s.handleMeshStatus)
+	mux.HandleFunc("/api/v1/mesh/topology", s.handleMeshTopology)
+
+	// Config snapshot endpoints
+	mux.HandleFunc("/api/v1/config/snapshots/", s.handleConfigSnapshot)
+	mux.HandleFunc("/api/v1/config/snapshots", s.handleConfigSnapshots)
+	mux.HandleFunc("/api/v1/config/diff", s.handleConfigDiff)
+	mux.HandleFunc("/api/v1/config/rollback/", s.handleConfigRollback)
 
 	// Static files with SPA fallback
 	staticFS, err := fs.Sub(staticFiles, "static")
