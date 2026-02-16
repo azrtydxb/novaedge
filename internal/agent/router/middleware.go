@@ -81,7 +81,16 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 		case pb.PolicyType_IP_ALLOW_LIST:
 			if policyProto.IpList != nil {
 				filter, err := policy.NewIPAllowListFilter(policyProto.IpList.Cidrs)
-				if err == nil {
+				if err != nil {
+					r.logger.Error("Failed to create IP allow list filter, failing closed",
+						zap.String("policy", policyProto.Name),
+						zap.Error(err),
+					)
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("ip-allow-%s-fail-closed", policyProto.Name),
+						handler: failClosedMiddleware("IP allow list", policyProto.Name, r.logger),
+					})
+				} else {
 					middlewares = append(middlewares, policyMiddleware{
 						name:    fmt.Sprintf("ip-allow-%s", policyProto.Name),
 						handler: policy.HandleIPFilter(filter),
@@ -92,7 +101,16 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 		case pb.PolicyType_IP_DENY_LIST:
 			if policyProto.IpList != nil {
 				filter, err := policy.NewIPDenyListFilter(policyProto.IpList.Cidrs)
-				if err == nil {
+				if err != nil {
+					r.logger.Error("Failed to create IP deny list filter, failing closed",
+						zap.String("policy", policyProto.Name),
+						zap.Error(err),
+					)
+					middlewares = append(middlewares, policyMiddleware{
+						name:    fmt.Sprintf("ip-deny-%s-fail-closed", policyProto.Name),
+						handler: failClosedMiddleware("IP deny list", policyProto.Name, r.logger),
+					})
+				} else {
 					middlewares = append(middlewares, policyMiddleware{
 						name:    fmt.Sprintf("ip-deny-%s", policyProto.Name),
 						handler: policy.HandleIPFilter(filter),
