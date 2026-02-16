@@ -1,0 +1,25 @@
+# E2E CORS policy: validates preflight and cross-origin header handling
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: e2e-cors-policy
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  type: CORS
+  targetRef:
+    kind: ProxyGateway
+    name: lb-gateway
+  cors:
+    allowOrigins:
+      - "https://allowed.example.com"
+    allowMethods:
+      - GET
+      - POST
+      - OPTIONS
+    allowHeaders:
+      - Content-Type
+      - Authorization
+    maxAge: 3600s
+    allowCredentials: true

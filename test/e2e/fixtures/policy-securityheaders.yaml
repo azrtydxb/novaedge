@@ -1,0 +1,22 @@
+# E2E security headers policy: validates HSTS, CSP, X-Frame-Options, and related headers
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: e2e-securityheaders-policy
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  type: SecurityHeaders
+  targetRef:
+    kind: ProxyGateway
+    name: lb-gateway
+  securityHeaders:
+    hsts:
+      enabled: true
+      maxAge: 31536000
+      includeSubDomains: true
+    contentSecurityPolicy: "default-src 'self'"
+    xFrameOptions: DENY
+    xContentTypeOptions: true
+    referrerPolicy: strict-origin-when-cross-origin
