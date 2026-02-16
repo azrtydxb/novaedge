@@ -176,7 +176,7 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 	detailed := DefaultTraceVerbosity.ShouldTraceDetailed() && backendSpan.IsRecording()
 
 	// Acquire pool for the selected cluster
-	pool, poolFound := r.acquirePool(snap, clusterKey, detailed, tracer, ctx)
+	pool, poolFound := r.acquirePool(ctx, snap, clusterKey, detailed, tracer)
 	if !poolFound {
 		backendSpan.SetStatus(codes.Error, "No pool for cluster")
 		r.logger.Error("No pool for cluster", zap.String("cluster", clusterKey))
@@ -185,7 +185,7 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 	}
 
 	// Select endpoint using appropriate load balancer
-	endpoint, lbType := r.selectEndpoint(snap, clusterKey, req, w, backendSpan, detailed, tracer, ctx)
+	endpoint, lbType := r.selectEndpoint(ctx, snap, clusterKey, req, w, backendSpan, detailed, tracer)
 	if endpoint == nil {
 		return // selectEndpoint already wrote the error response
 	}
@@ -193,7 +193,7 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 	backendSpan.SetAttributes(attribute.String("novaedge.lb.type", lbType))
 
 	// Execute the forward to the selected endpoint
-	r.executeForward(snap, entry, pool, endpoint, clusterKey, isGRPC, backendSpan, w, req, ctx)
+	r.executeForward(ctx, snap, entry, pool, endpoint, clusterKey, isGRPC, backendSpan, w, req)
 
 	// Link to parent span if available (for debugging)
 	_ = parentSpan
@@ -224,7 +224,7 @@ func (r *Router) validateAndPrepareGRPC(snap *routerState, backendSpan trace.Spa
 
 // acquirePool looks up the connection pool for the given cluster key.
 // In detailed trace mode, wraps the lookup in a child span.
-func (r *Router) acquirePool(snap *routerState, clusterKey string, detailed bool, tracer trace.Tracer, ctx context.Context) (*upstream.Pool, bool) {
+func (r *Router) acquirePool(ctx context.Context, snap *routerState, clusterKey string, detailed bool, tracer trace.Tracer) (*upstream.Pool, bool) {
 	if detailed {
 		var poolSpan trace.Span
 		_, poolSpan = tracer.Start(ctx, "pool_acquisition",
@@ -245,7 +245,7 @@ func (r *Router) acquirePool(snap *routerState, clusterKey string, detailed bool
 // selectEndpoint picks a backend endpoint using the appropriate load balancer.
 // Returns the selected endpoint and the LB type string, or nil if no healthy
 // endpoint is available (in which case an error response is already written).
-func (r *Router) selectEndpoint(snap *routerState, clusterKey string, req *http.Request, w http.ResponseWriter, backendSpan trace.Span, detailed bool, tracer trace.Tracer, ctx context.Context) (*pb.Endpoint, string) {
+func (r *Router) selectEndpoint(ctx context.Context, snap *routerState, clusterKey string, req *http.Request, w http.ResponseWriter, backendSpan trace.Span, detailed bool, tracer trace.Tracer) (*pb.Endpoint, string) {
 	var endpoint *pb.Endpoint
 	var lbType string
 	var selSpan trace.Span
@@ -322,7 +322,7 @@ func (r *Router) finishSelectionSpan(selSpan trace.Span, endpoint *pb.Endpoint, 
 
 // executeForward sends the request to the selected endpoint, handling retries,
 // metrics recording, and health-check feedback.
-func (r *Router) executeForward(snap *routerState, entry *RouteEntry, pool *upstream.Pool, endpoint *pb.Endpoint, clusterKey string, isGRPC bool, backendSpan trace.Span, w http.ResponseWriter, req *http.Request, ctx context.Context) {
+func (r *Router) executeForward(ctx context.Context, snap *routerState, entry *RouteEntry, pool *upstream.Pool, endpoint *pb.Endpoint, clusterKey string, isGRPC bool, backendSpan trace.Span, w http.ResponseWriter, req *http.Request) {
 	backendStart := time.Now()
 	endpointKey := formatEndpointKey(endpoint.Address, endpoint.Port)
 
