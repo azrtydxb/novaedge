@@ -232,10 +232,31 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Carry forward cache (it is shared across snapshots)
 	newState.cache = prev.cache
 
-	// Build routing table
+	// Build routing table from snapshot routes
+	newState.routes, newState.routeIndexes = r.buildRoutes(ctx, snapshot)
+
+	// Create upstream pools and load balancers for each cluster
+	newLoadBalancers, newHashBasedLBs := r.buildPoolsAndBalancers(ctx, snapshot, prev, newState)
+	newState.loadBalancers = newLoadBalancers
+	newState.hashBasedLBs = newHashBasedLBs
+
+	// Create sticky session wrappers for clusters with session affinity
+	newState.stickyWrappers = r.buildStickyWrappers(snapshot, newLoadBalancers)
+
+	// Atomically publish the new state so ServeHTTP picks it up without locking.
+	r.state.Store(newState)
+
+	r.logger.Info("Router configuration applied",
+		zap.Int("hostnames", len(newState.routes)),
+		zap.Int("pools", len(newState.pools)),
+	)
+
+	return nil
+}
+
+// buildRoutes constructs the routing table and radix-tree indexes from the snapshot.
+func (r *Router) buildRoutes(ctx context.Context, snapshot *config.Snapshot) (map[string][]*RouteEntry, map[string]*routeIndex) {
 	newRoutes := make(map[string][]*RouteEntry)
-	newLoadBalancers := make(map[string]lb.LoadBalancer)
-	newHashBasedLBs := make(map[string]interface{})
 
 	for _, route := range snapshot.Routes {
 		// Routes without hostnames act as catch-all: use "" as the key
@@ -245,81 +266,89 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 		}
 		for _, hostname := range hostnames {
 			for _, rule := range route.Rules {
-				entry := &RouteEntry{
-					Route:          route,
-					Rule:           rule,
-					PathMatcher:    createPathMatcher(rule),
-					Policies:       r.createPolicyMiddleware(ctx, route, snapshot),
-					HeaderRegexes:  compileHeaderRegexes(rule),
-					ResponseFilter: collectResponseFilters(rule.Filters),
-					Limits:         rule.Limits,
-					Buffering:      rule.Buffering,
-					Filters:        buildFilters(rule.Filters),
-				}
-
-				// Pre-compile boolean routing expression at config time
-				// to avoid per-request parsing overhead (same pattern as
-				// compileHeaderRegexes and createPathMatcher above).
-				if expr := route.GetExpression(); expr != "" {
-					compiled, err := CompileExpression(expr)
-					if err != nil {
-						r.logger.Error("Failed to compile route expression, skipping",
-							zap.String("route", route.Name),
-							zap.String("expression", expr),
-							zap.Error(err),
-						)
-					} else {
-						entry.Expression = compiled
-						r.logger.Debug("Compiled route expression",
-							zap.String("route", route.Name),
-							zap.String("expression", expr),
-						)
-					}
-				}
-
-				// Pre-compute cluster keys for all backend refs to avoid
-				// per-request string concatenation in the forwarding hot path.
-				if len(rule.BackendRefs) > 0 {
-					entry.BackendClusterKeys = make(map[*pb.BackendRef]string, len(rule.BackendRefs))
-					for _, ref := range rule.BackendRefs {
-						entry.BackendClusterKeys[ref] = ref.Namespace + "/" + ref.Name
-					}
-				}
-
-				// Build mirror config from rule if present
-				if rule.MirrorBackend != nil {
-					entry.MirrorConfig = &MirrorConfig{
-						BackendRef: rule.MirrorBackend,
-						Percentage: rule.MirrorPercent,
-						ClusterKey: rule.MirrorBackend.Namespace + "/" + rule.MirrorBackend.Name,
-					}
-					if entry.MirrorConfig.Percentage == 0 {
-						entry.MirrorConfig.Percentage = 100
-					}
-				}
+				entry := r.buildRouteEntry(ctx, route, rule, snapshot)
 				newRoutes[hostname] = append(newRoutes[hostname], entry)
 			}
 		}
 	}
 
 	// Sort routes by specificity so the most specific matches are tried first.
-	// This ensures exact matches beat prefix matches, longer prefixes beat shorter ones,
-	// and routes with more conditions (headers, methods) are preferred.
 	newRouteIndexes := make(map[string]*routeIndex, len(newRoutes))
 	for hostname := range newRoutes {
 		sortRoutesBySpecificity(newRoutes[hostname])
-		// Build radix tree index for O(log n) path lookup instead of O(n) linear scan
 		newRouteIndexes[hostname] = newRouteIndex(newRoutes[hostname])
 	}
-	newState.routes = newRoutes
-	newState.routeIndexes = newRouteIndexes
 
-	// Create upstream pools for each cluster
+	return newRoutes, newRouteIndexes
+}
+
+// buildRouteEntry creates a single RouteEntry from a route and rule, including
+// pre-compiled matchers, filters, expressions, and backend cluster keys.
+func (r *Router) buildRouteEntry(ctx context.Context, route *pb.Route, rule *pb.RouteRule, snapshot *config.Snapshot) *RouteEntry {
+	entry := &RouteEntry{
+		Route:          route,
+		Rule:           rule,
+		PathMatcher:    createPathMatcher(rule),
+		Policies:       r.createPolicyMiddleware(ctx, route, snapshot),
+		HeaderRegexes:  compileHeaderRegexes(rule),
+		ResponseFilter: collectResponseFilters(rule.Filters),
+		Limits:         rule.Limits,
+		Buffering:      rule.Buffering,
+		Filters:        buildFilters(rule.Filters),
+	}
+
+	// Pre-compile boolean routing expression at config time
+	if expr := route.GetExpression(); expr != "" {
+		compiled, err := CompileExpression(expr)
+		if err != nil {
+			r.logger.Error("Failed to compile route expression, skipping",
+				zap.String("route", route.Name),
+				zap.String("expression", expr),
+				zap.Error(err),
+			)
+		} else {
+			entry.Expression = compiled
+			r.logger.Debug("Compiled route expression",
+				zap.String("route", route.Name),
+				zap.String("expression", expr),
+			)
+		}
+	}
+
+	// Pre-compute cluster keys for all backend refs
+	if len(rule.BackendRefs) > 0 {
+		entry.BackendClusterKeys = make(map[*pb.BackendRef]string, len(rule.BackendRefs))
+		for _, ref := range rule.BackendRefs {
+			entry.BackendClusterKeys[ref] = ref.Namespace + "/" + ref.Name
+		}
+	}
+
+	// Build mirror config from rule if present
+	if rule.MirrorBackend != nil {
+		entry.MirrorConfig = &MirrorConfig{
+			BackendRef: rule.MirrorBackend,
+			Percentage: rule.MirrorPercent,
+			ClusterKey: rule.MirrorBackend.Namespace + "/" + rule.MirrorBackend.Name,
+		}
+		if entry.MirrorConfig.Percentage == 0 {
+			entry.MirrorConfig.Percentage = 100
+		}
+	}
+
+	return entry
+}
+
+// buildPoolsAndBalancers creates upstream pools and load balancers for each cluster.
+// It reuses existing pools when possible and only recreates load balancers when
+// endpoints change. Stale pools are closed and their metrics cleaned up.
+func (r *Router) buildPoolsAndBalancers(ctx context.Context, snapshot *config.Snapshot, prev *routerState, newState *routerState) (map[string]lb.LoadBalancer, map[string]interface{}) {
 	newPools := make(map[string]*upstream.Pool)
+	newLoadBalancers := make(map[string]lb.LoadBalancer)
+	newHashBasedLBs := make(map[string]interface{})
+
 	for _, cluster := range snapshot.Clusters {
 		clusterKey := cluster.Namespace + "/" + cluster.Name
 
-		// Get endpoints for this cluster
 		endpointList := snapshot.Endpoints[clusterKey]
 		if endpointList == nil {
 			r.logger.Warn("No endpoints for cluster", zap.String("cluster", clusterKey))
@@ -328,11 +357,9 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 
 		// Create or reuse pool
 		if existingPool, ok := prev.pools[clusterKey]; ok {
-			// Update existing pool with new endpoints
 			existingPool.UpdateEndpoints(endpointList.Endpoints)
 			newPools[clusterKey] = existingPool
 		} else {
-			// Create new pool
 			pool := upstream.NewPool(ctx, cluster, endpointList.Endpoints, r.logger)
 			newPools[clusterKey] = pool
 		}
@@ -341,51 +368,8 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 		endpointHash := hashEndpointList(endpointList.Endpoints, cluster.LbPolicy)
 		previousHash, exists := r.endpointVersions[clusterKey]
 
-		// Only recreate load balancer if endpoints actually changed
 		if !exists || previousHash != endpointHash {
-			r.logger.Debug("Endpoints changed, recreating load balancer",
-				zap.String("cluster", clusterKey),
-				zap.Bool("new_cluster", !exists),
-			)
-
-			// Create load balancer based on cluster policy
-			switch cluster.LbPolicy {
-			case pb.LoadBalancingPolicy_P2C:
-				newLoadBalancers[clusterKey] = lb.NewP2C(endpointList.Endpoints)
-				r.logger.Debug("Created P2C load balancer", zap.String("cluster", clusterKey))
-
-			case pb.LoadBalancingPolicy_EWMA:
-				newLoadBalancers[clusterKey] = lb.NewEWMA(endpointList.Endpoints)
-				r.logger.Debug("Created EWMA load balancer", zap.String("cluster", clusterKey))
-
-			case pb.LoadBalancingPolicy_RING_HASH:
-				// RingHash uses consistent hashing - store separately
-				newHashBasedLBs[clusterKey] = lb.NewRingHash(endpointList.Endpoints)
-				r.logger.Debug("Created RingHash load balancer", zap.String("cluster", clusterKey))
-
-			case pb.LoadBalancingPolicy_MAGLEV:
-				// Maglev uses consistent hashing - store separately
-				newHashBasedLBs[clusterKey] = lb.NewMaglev(endpointList.Endpoints)
-				r.logger.Debug("Created Maglev load balancer", zap.String("cluster", clusterKey))
-
-			case pb.LoadBalancingPolicy_LEAST_CONN:
-				newLoadBalancers[clusterKey] = lb.NewLeastConn(endpointList.Endpoints)
-				r.logger.Debug("Created LeastConn load balancer", zap.String("cluster", clusterKey))
-
-			case pb.LoadBalancingPolicy_ROUND_ROBIN, pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
-				newLoadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
-				r.logger.Debug("Created RoundRobin load balancer", zap.String("cluster", clusterKey))
-
-			default:
-				// Fallback to round robin for unknown policies
-				newLoadBalancers[clusterKey] = lb.NewRoundRobin(endpointList.Endpoints)
-				r.logger.Warn("Unknown LB policy, using RoundRobin",
-					zap.String("cluster", clusterKey),
-					zap.Int32("policy", int32(cluster.LbPolicy)),
-				)
-			}
-
-			// Update version tracking
+			r.createLoadBalancer(cluster, clusterKey, endpointList.Endpoints, newLoadBalancers, newHashBasedLBs)
 			r.endpointVersions[clusterKey] = endpointHash
 		} else {
 			// Carry over existing load balancers when endpoints unchanged
@@ -406,18 +390,59 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 		if _, needed := newPools[key]; !needed {
 			r.logger.Info("Closing unused pool", zap.String("cluster", key))
 			pool.Close()
-			// Clean up stale Prometheus metrics for the removed cluster
 			metrics.CleanupClusterMetrics(key)
-			// Remove endpoint version tracking
 			delete(r.endpointVersions, key)
 		}
 	}
 
 	newState.pools = newPools
-	newState.loadBalancers = newLoadBalancers
-	newState.hashBasedLBs = newHashBasedLBs
+	return newLoadBalancers, newHashBasedLBs
+}
 
-	// Create sticky session wrappers for clusters with session affinity configured
+// createLoadBalancer creates the appropriate load balancer for a cluster based on its LB policy.
+func (r *Router) createLoadBalancer(cluster *pb.Cluster, clusterKey string, endpoints []*pb.Endpoint, newLoadBalancers map[string]lb.LoadBalancer, newHashBasedLBs map[string]interface{}) {
+	r.logger.Debug("Endpoints changed, recreating load balancer",
+		zap.String("cluster", clusterKey),
+		zap.Bool("new_cluster", true),
+	)
+
+	switch cluster.LbPolicy {
+	case pb.LoadBalancingPolicy_P2C:
+		newLoadBalancers[clusterKey] = lb.NewP2C(endpoints)
+		r.logger.Debug("Created P2C load balancer", zap.String("cluster", clusterKey))
+
+	case pb.LoadBalancingPolicy_EWMA:
+		newLoadBalancers[clusterKey] = lb.NewEWMA(endpoints)
+		r.logger.Debug("Created EWMA load balancer", zap.String("cluster", clusterKey))
+
+	case pb.LoadBalancingPolicy_RING_HASH:
+		newHashBasedLBs[clusterKey] = lb.NewRingHash(endpoints)
+		r.logger.Debug("Created RingHash load balancer", zap.String("cluster", clusterKey))
+
+	case pb.LoadBalancingPolicy_MAGLEV:
+		newHashBasedLBs[clusterKey] = lb.NewMaglev(endpoints)
+		r.logger.Debug("Created Maglev load balancer", zap.String("cluster", clusterKey))
+
+	case pb.LoadBalancingPolicy_LEAST_CONN:
+		newLoadBalancers[clusterKey] = lb.NewLeastConn(endpoints)
+		r.logger.Debug("Created LeastConn load balancer", zap.String("cluster", clusterKey))
+
+	case pb.LoadBalancingPolicy_ROUND_ROBIN, pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
+		newLoadBalancers[clusterKey] = lb.NewRoundRobin(endpoints)
+		r.logger.Debug("Created RoundRobin load balancer", zap.String("cluster", clusterKey))
+
+	default:
+		newLoadBalancers[clusterKey] = lb.NewRoundRobin(endpoints)
+		r.logger.Warn("Unknown LB policy, using RoundRobin",
+			zap.String("cluster", clusterKey),
+			zap.Int32("policy", int32(cluster.LbPolicy)),
+		)
+	}
+}
+
+// buildStickyWrappers creates sticky session wrappers for clusters with cookie-based
+// session affinity configured.
+func (r *Router) buildStickyWrappers(snapshot *config.Snapshot, newLoadBalancers map[string]lb.LoadBalancer) map[string]*lb.StickyWrapper {
 	newStickyWrappers := make(map[string]*lb.StickyWrapper)
 	for _, cluster := range snapshot.Clusters {
 		clusterKey := cluster.Namespace + "/" + cluster.Name
@@ -457,17 +482,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 			zap.String("cookie", cookieName),
 		)
 	}
-	newState.stickyWrappers = newStickyWrappers
-
-	// Atomically publish the new state so ServeHTTP picks it up without locking.
-	r.state.Store(newState)
-
-	r.logger.Info("Router configuration applied",
-		zap.Int("hostnames", len(newState.routes)),
-		zap.Int("pools", len(newState.pools)),
-	)
-
-	return nil
+	return newStickyWrappers
 }
 
 // ServeHTTP routes incoming HTTP requests
