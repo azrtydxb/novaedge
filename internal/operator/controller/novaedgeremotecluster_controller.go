@@ -358,9 +358,10 @@ func (r *NovaEdgeRemoteClusterReconciler) updateOverallStatus(ctx context.Contex
 	return r.Status().Update(ctx, rc)
 }
 
-// cleanupRemoteCluster handles cleanup when a remote cluster is deleted
+// cleanupRemoteCluster handles cleanup when a remote cluster is deleted.
+// The error return is kept for future cleanup operations that may fail.
 //
-//nolint:unparam // error return kept for future cleanup operations (see TODOs)
+//nolint:unparam // error return reserved for future cleanup operations
 func (r *NovaEdgeRemoteClusterReconciler) cleanupRemoteCluster(ctx context.Context, rc *novaedgev1alpha1.NovaEdgeRemoteCluster) error {
 	logger := log.FromContext(ctx)
 	logger.Info("Cleaning up remote cluster", "clusterName", rc.Spec.ClusterName)
@@ -368,8 +369,9 @@ func (r *NovaEdgeRemoteClusterReconciler) cleanupRemoteCluster(ctx context.Conte
 	// Unregister from registry
 	r.Registry.Unregister(rc.Spec.ClusterName)
 
-	// TODO: Notify controller to stop accepting connections from this cluster
-	// TODO: Clean up any cluster-specific resources (secrets, configmaps, etc.)
+	logger.Info("Remote cluster unregistered; notifying controller and cleaning up cluster-specific resources is not yet implemented",
+		"clusterName", rc.Spec.ClusterName,
+	)
 
 	return nil
 }
