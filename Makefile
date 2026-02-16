@@ -99,8 +99,8 @@ build-operator: fmt vet ## Build operator binary.
 	go build -o bin/novaedge-operator cmd/novaedge-operator/main.go
 
 .PHONY: build-webui
-build-webui: ## Build web UI frontend (requires Node.js).
-	cd web && npm ci && npm run build
+build-webui: ## Build web UI frontend (requires pnpm).
+	cd web && pnpm install --frozen-lockfile && pnpm run build
 
 .PHONY: build-all
 build-all: build-controller build-agent build-novactl build-standalone build-operator ## Build all binaries.
