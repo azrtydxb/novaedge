@@ -57,7 +57,8 @@ func NewForwardAuthHandler(ctx context.Context, config *pb.ForwardAuthConfig, lo
 		config: config,
 		logger: logger,
 		httpClient: &http.Client{
-			Timeout: timeout,
+			Transport: NewSSRFProtectedTransport(),
+			Timeout:   timeout,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse // Don't follow redirects
 			},
