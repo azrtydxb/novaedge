@@ -93,6 +93,11 @@ func NewJWTValidator(ctx context.Context, config *pb.JWTConfig) (*JWTValidator, 
 		blacklist: NewTokenBlacklist(),
 	}
 
+	// Require explicit algorithm configuration to prevent algorithm confusion attacks
+	if len(config.GetAllowedAlgorithms()) == 0 {
+		return nil, fmt.Errorf("AllowedAlgorithms must be explicitly configured; refusing to allow all algorithms by default")
+	}
+
 	// Build allowed algorithms set
 	v.allowedAlgorithms = buildAllowedAlgorithms(config.GetAllowedAlgorithms())
 
@@ -109,18 +114,9 @@ func NewJWTValidator(ctx context.Context, config *pb.JWTConfig) (*JWTValidator, 
 	return v, nil
 }
 
-// buildAllowedAlgorithms constructs a set of allowed algorithm names.
-// If the input slice is empty, all supported algorithms are allowed.
+// buildAllowedAlgorithms constructs a set of allowed algorithm names from the
+// provided list. Only algorithms present in supportedAlgorithms are included.
 func buildAllowedAlgorithms(algorithms []string) map[string]bool {
-	if len(algorithms) == 0 {
-		// Allow all supported algorithms
-		result := make(map[string]bool, len(supportedAlgorithms))
-		for alg := range supportedAlgorithms {
-			result[alg] = true
-		}
-		return result
-	}
-
 	result := make(map[string]bool, len(algorithms))
 	for _, alg := range algorithms {
 		if supportedAlgorithms[alg] {
@@ -214,6 +210,11 @@ func isSupportedSigningMethod(method jwt.SigningMethod) bool {
 func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 	// Parse token
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// Explicitly reject the "none" algorithm to prevent algorithm confusion attacks
+		if algHeader, ok := token.Header["alg"].(string); ok && strings.EqualFold(algHeader, "none") {
+			return nil, fmt.Errorf("algorithm \"none\" is not allowed")
+		}
+
 		// Verify the signing method is a supported type
 		if !isSupportedSigningMethod(token.Method) {
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])

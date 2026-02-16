@@ -153,8 +153,9 @@ func TestTokenBlacklistStartCleanupContextCancel(t *testing.T) {
 
 func TestJWTValidatorRevoke(t *testing.T) {
 	config := &pb.JWTConfig{
-		Issuer:   "test-issuer",
-		Audience: []string{"test-audience"},
+		AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+		Issuer:            "test-issuer",
+		Audience:          []string{"test-audience"},
 	}
 
 	validator, err := NewJWTValidator(context.Background(), config)
@@ -177,7 +178,8 @@ func TestJWTValidatorRevoke(t *testing.T) {
 
 func TestJWTValidatorBlacklistInitialized(t *testing.T) {
 	config := &pb.JWTConfig{
-		Issuer: "test-issuer",
+		AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+		Issuer:            "test-issuer",
 	}
 
 	validator, err := NewJWTValidator(context.Background(), config)
@@ -238,9 +240,10 @@ func TestValidateBlacklistedToken(t *testing.T) {
 
 	t.Run("blacklisted token is rejected", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -278,9 +281,10 @@ func TestValidateBlacklistedToken(t *testing.T) {
 
 	t.Run("token without jti is not affected by blacklist", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -309,9 +313,10 @@ func TestValidateBlacklistedToken(t *testing.T) {
 
 	t.Run("token with expired blacklist entry is allowed", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -340,9 +345,10 @@ func TestValidateBlacklistedToken(t *testing.T) {
 
 	t.Run("different jti not affected", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -392,9 +398,10 @@ func TestHandleJWTWithBlacklist(t *testing.T) {
 	defer server.Close()
 
 	config := &pb.JWTConfig{
-		Issuer:   "test-issuer",
-		Audience: []string{"test-audience"},
-		JwksUri:  server.URL,
+		AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+		Issuer:            "test-issuer",
+		Audience:          []string{"test-audience"},
+		JwksUri:           server.URL,
 	}
 
 	validator, err := NewJWTValidator(context.Background(), config)
