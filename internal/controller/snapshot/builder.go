@@ -1136,8 +1136,8 @@ func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	}
 	hash := hex.EncodeToString(h.Sum(nil))
 
-	// Return timestamp + hash prefix for readability
-	return fmt.Sprintf("%d-%s", snapshot.GenerationTime, hash[:16])
+	// Return content hash only for deterministic version comparison
+	return hash[:16]
 }
 
 // buildMeshAuthorizationPolicies converts ProxyPolicy resources of type

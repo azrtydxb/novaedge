@@ -152,14 +152,14 @@ func TestGenerateVersion(t *testing.T) {
 	v2 := builder.generateVersion(snapshot2)
 	v3 := builder.generateVersion(snapshot3)
 
-	// Same content, different timestamps should have different full versions
-	if v1 == v2 {
-		t.Error("Expected different versions for different timestamps")
+	// Same content, different timestamps should produce the same version (content-based)
+	if v1 != v2 {
+		t.Errorf("Expected same version for same content regardless of timestamp, got %q and %q", v1, v2)
 	}
 
-	// Different content should have different hash parts
-	if v1[len("1000-"):] == v3[len("1000-"):] {
-		t.Error("Expected different hash parts for different content")
+	// Different content should produce different versions
+	if v1 == v3 {
+		t.Error("Expected different versions for different content")
 	}
 }
 

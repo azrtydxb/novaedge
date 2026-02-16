@@ -181,6 +181,9 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 	RecordSnapshotUpdate(req.NodeName, "initial")
 	logger.Info("Sent initial config snapshot", "version", snapshot.Version)
 
+	// Track last sent version to skip unchanged snapshots
+	lastVersion := snapshot.Version
+
 	// Create update channel for this node
 	updateCh := make(chan string, 10)
 	s.cache.Subscribe(req.NodeName, updateCh)
@@ -205,17 +208,20 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 				continue
 			}
 
-			// Only send if version changed
-			if newSnapshot.Version != snapshot.Version {
-				if err := stream.Send(newSnapshot); err != nil {
-					logger.Error(err, "Failed to send updated snapshot")
-					return status.Errorf(codes.Internal, "failed to send snapshot: %v", err)
-				}
-				snapshot = newSnapshot
-				s.cache.Set(req.NodeName, snapshot)
-				RecordSnapshotUpdate(req.NodeName, "periodic")
-				logger.Info("Sent updated config snapshot", "version", snapshot.Version)
+			// Skip if version hasn't changed since last push
+			if newSnapshot.Version == lastVersion {
+				continue
 			}
+
+			if err := stream.Send(newSnapshot); err != nil {
+				logger.Error(err, "Failed to send updated snapshot")
+				return status.Errorf(codes.Internal, "failed to send snapshot: %v", err)
+			}
+			lastVersion = newSnapshot.Version
+			snapshot = newSnapshot
+			s.cache.Set(req.NodeName, snapshot)
+			RecordSnapshotUpdate(req.NodeName, "periodic")
+			logger.Info("Sent updated config snapshot", "version", snapshot.Version)
 
 		case <-updateCh:
 			// Triggered update - rebuild and send
@@ -231,6 +237,7 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 				return status.Errorf(codes.Internal, "failed to send snapshot: %v", err)
 			}
 
+			lastVersion = newSnapshot.Version
 			snapshot = newSnapshot
 			s.cache.Set(req.NodeName, snapshot)
 			RecordSnapshotUpdate(req.NodeName, "triggered")
