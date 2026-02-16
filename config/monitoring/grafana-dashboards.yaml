@@ -1,0 +1,1363 @@
+# Grafana dashboard ConfigMaps - auto-discovered by Grafana sidecar
+# The grafana sidecar watches for ConfigMaps with label grafana_dashboard=1
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: novaedge-agent-overview
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  novaedge-agent-overview.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "NovaEdge Agent - Request traffic, latency, connections, and errors",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Requests In Flight",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_http_requests_in_flight) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "TLS Handshakes/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_tls_handshakes_total[5m])) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Active SSE Connections",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_sse_active_connections) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Backend Health Status",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 8 },
+          "targets": [
+            {
+              "expr": "count(novaedge_backend_health_status == 1)",
+              "legendFormat": "Healthy"
+            },
+            {
+              "expr": "count(novaedge_backend_health_status == 0)",
+              "legendFormat": "Unhealthy"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Unhealthy" },
+                "properties": [
+                  { "id": "thresholds", "value": { "steps": [
+                    { "color": "red", "value": null }
+                  ]}}
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "title": "Health Check Duration",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(novaedge_health_check_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(novaedge_health_check_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p95"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(novaedge_health_check_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p99"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Health Checks/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_health_checks_total[5m])) by (result)",
+              "legendFormat": "{{result}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Circuit Breaker States",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "count(novaedge_circuit_breaker_state == 0) or vector(0)",
+              "legendFormat": "Closed"
+            },
+            {
+              "expr": "count(novaedge_circuit_breaker_state == 1) or vector(0)",
+              "legendFormat": "Half-Open"
+            },
+            {
+              "expr": "count(novaedge_circuit_breaker_state == 2) or vector(0)",
+              "legendFormat": "Open"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Half-Open" },
+                "properties": [
+                  { "id": "thresholds", "value": { "steps": [
+                    { "color": "yellow", "value": null }
+                  ]}}
+                ]
+              },
+              {
+                "matcher": { "id": "byName", "options": "Open" },
+                "properties": [
+                  { "id": "thresholds", "value": { "steps": [
+                    { "color": "red", "value": null }
+                  ]}}
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "title": "Retry Requests",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_retry_count_total[5m]))",
+              "legendFormat": "Retries"
+            },
+            {
+              "expr": "sum(rate(novaedge_retry_success_total[5m]))",
+              "legendFormat": "Retry Successes"
+            },
+            {
+              "expr": "sum(rate(novaedge_retry_exhausted_total[5m]))",
+              "legendFormat": "Retries Exhausted"
+            },
+            {
+              "expr": "sum(rate(novaedge_retry_budget_exhausted_total[5m]))",
+              "legendFormat": "Budget Exhausted"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Request Hedging",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_hedging_requests_total[5m]))",
+              "legendFormat": "Hedged Requests"
+            },
+            {
+              "expr": "sum(rate(novaedge_hedging_wins_total[5m]))",
+              "legendFormat": "Hedge Wins"
+            },
+            {
+              "expr": "sum(rate(novaedge_hedging_cancelled_total[5m]))",
+              "legendFormat": "Hedge Cancelled"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Go Goroutines per Agent",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "targets": [
+            {
+              "expr": "go_goroutines{job=\"novaedge-agent\"}",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Agent Memory Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+          "targets": [
+            {
+              "expr": "process_resident_memory_bytes{job=\"novaedge-agent\"}",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["novaedge", "agent"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NovaEdge - Agent Overview",
+      "uid": "novaedge-agent-overview"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: novaedge-controller-overview
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  novaedge-controller-overview.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "NovaEdge Controller - Reconciliation, config snapshots, and agent health",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Leader Election Status",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "leader_election_master_status{job=\"novaedge-controller\"}",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [
+                { "options": { "0": { "text": "Standby" }, "1": { "text": "Leader" } }, "type": "value" }
+              ],
+              "thresholds": {
+                "steps": [
+                  { "color": "yellow", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Active Config Streams",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_active_config_streams)",
+              "legendFormat": "Streams"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "green", "value": 1 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Cached Snapshots",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_cached_snapshots)",
+              "legendFormat": "Snapshots"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "blue", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Agent Health",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+          "targets": [
+            {
+              "expr": "count(novaedge_agent_status == 1) or vector(0)",
+              "legendFormat": "Healthy"
+            },
+            {
+              "expr": "count(novaedge_agent_status == 0) or vector(0)",
+              "legendFormat": "Unhealthy"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": { "id": "byName", "options": "Unhealthy" },
+                "properties": [
+                  { "id": "thresholds", "value": { "steps": [
+                    { "color": "red", "value": null }
+                  ]}}
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "title": "Snapshot Build Duration",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(novaedge_snapshot_build_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(novaedge_snapshot_build_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p95"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(novaedge_snapshot_build_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p99"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Snapshot Updates/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_snapshot_updates_total[5m])) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Snapshot Size",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "novaedge_snapshot_size_bytes",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Snapshot Resources",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            {
+              "expr": "novaedge_snapshot_resources",
+              "legendFormat": "{{instance}} - {{resource_type}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Controller Runtime - Active Workers",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "controller_runtime_active_workers{job=\"novaedge-controller\"}",
+              "legendFormat": "{{controller}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Controller Runtime - Reconcile Duration p95",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(controller_runtime_reconcile_time_seconds_bucket{job=\"novaedge-controller\"}[5m])) by (le, controller))",
+              "legendFormat": "{{controller}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Controller Memory Usage",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "targets": [
+            {
+              "expr": "process_resident_memory_bytes{job=\"novaedge-controller\"}",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Certificate Reads",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "targets": [
+            {
+              "expr": "sum(rate(certwatcher_read_certificate_total{job=\"novaedge-controller\"}[5m]))",
+              "legendFormat": "Reads"
+            },
+            {
+              "expr": "sum(rate(certwatcher_read_certificate_errors_total{job=\"novaedge-controller\"}[5m]))",
+              "legendFormat": "Errors"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["novaedge", "controller"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NovaEdge - Controller Overview",
+      "uid": "novaedge-controller-overview"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: novaedge-vip-loadbalancing
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  novaedge-vip-loadbalancing.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "NovaEdge VIP management, BGP/OSPF routing, and connection pooling",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "BGP Announced Routes",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_bgp_announced_routes) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "blue", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "OSPF Announced LSAs",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_ospf_announced_routes) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "blue", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "WASM Plugins Loaded",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_wasm_plugins_loaded) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "steps": [
+                  { "color": "purple", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Connection Pool - Active vs Idle",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_pool_active_connections) by (instance)",
+              "legendFormat": "Active - {{instance}}"
+            },
+            {
+              "expr": "sum(novaedge_pool_idle_connections) by (instance)",
+              "legendFormat": "Idle - {{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Total Pool Connections",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_pool_connections_total) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Proxy Cache Hit Rate",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_pool_hits_total[5m])) / (sum(rate(novaedge_pool_hits_total[5m])) + sum(rate(novaedge_pool_misses_total[5m])))",
+              "legendFormat": "Hit Rate"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "HTTP/3 QUIC",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_http3_active_requests)",
+              "legendFormat": "Active HTTP/3 Requests"
+            },
+            {
+              "expr": "sum(novaedge_http3_quic_streams)",
+              "legendFormat": "Active QUIC Streams"
+            },
+            {
+              "expr": "sum(rate(novaedge_http3_connections_total[5m]))",
+              "legendFormat": "New Connections/sec"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "QUIC 0-RTT Success Rate",
+          "type": "gauge",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_quic_0rtt_accepted_total[5m])) / (sum(rate(novaedge_quic_0rtt_accepted_total[5m])) + sum(rate(novaedge_quic_0rtt_rejected_total[5m])))",
+              "legendFormat": "0-RTT Success"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 0.5 },
+                  { "color": "green", "value": 0.8 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "QUIC Handshake Duration",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 20 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(novaedge_http3_quic_handshake_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(novaedge_http3_quic_handshake_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "QUIC Packets",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 20 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_quic_packets_sent_total[5m]))",
+              "legendFormat": "Sent/sec"
+            },
+            {
+              "expr": "sum(rate(novaedge_quic_packets_received_total[5m]))",
+              "legendFormat": "Received/sec"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "pps"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Mirror Requests",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_mirror_requests_total[5m]))",
+              "legendFormat": "Mirrored/sec"
+            },
+            {
+              "expr": "sum(rate(novaedge_mirror_errors_total[5m]))",
+              "legendFormat": "Errors/sec"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Mirror Latency",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(novaedge_mirror_latency_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(novaedge_mirror_latency_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["novaedge", "vip", "loadbalancing"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NovaEdge - VIP & Load Balancing",
+      "uid": "novaedge-vip-lb"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: novaedge-security-waf
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  novaedge-security-waf.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "NovaEdge Security - WAF, rate limiting, JWT, and TLS metrics",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "WAF Requests Blocked/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_waf_requests_blocked_total[5m])) by (instance)",
+              "legendFormat": "Requests Blocked - {{instance}}"
+            },
+            {
+              "expr": "sum(rate(novaedge_waf_responses_blocked_total[5m])) by (instance)",
+              "legendFormat": "Responses Blocked - {{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "WAF Anomaly Score Distribution",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(novaedge_waf_anomaly_score_bucket[5m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.90, sum(rate(novaedge_waf_anomaly_score_bucket[5m])) by (le))",
+              "legendFormat": "p90"
+            },
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(novaedge_waf_anomaly_score_bucket[5m])) by (le))",
+              "legendFormat": "p99"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Rate Limiting - Allowed vs Denied",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_rate_limit_allowed_total[5m]))",
+              "legendFormat": "Local Allowed"
+            },
+            {
+              "expr": "sum(rate(novaedge_rate_limit_denied_total[5m]))",
+              "legendFormat": "Local Denied"
+            },
+            {
+              "expr": "sum(rate(novaedge_distributed_rate_limit_allowed_total[5m]))",
+              "legendFormat": "Distributed Allowed"
+            },
+            {
+              "expr": "sum(rate(novaedge_distributed_rate_limit_denied_total[5m]))",
+              "legendFormat": "Distributed Denied"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Active Rate Limiters",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_rate_limiter_active_count) by (instance)",
+              "legendFormat": "Active - {{instance}}"
+            },
+            {
+              "expr": "sum(rate(novaedge_rate_limiter_cleanups_total[5m])) by (instance)",
+              "legendFormat": "Cleanups/sec - {{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "JWT Token Operations",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_jwt_blocked_total[5m]))",
+              "legendFormat": "Blocked (revoked)"
+            },
+            {
+              "expr": "sum(rate(novaedge_jwt_revocations_total[5m]))",
+              "legendFormat": "Revocations"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "JWT Blacklist Size",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_jwt_blacklist_size) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "TLS Handshakes/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_tls_handshakes_total[5m])) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Security Headers Applied/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_security_headers_applied_total[5m])) by (instance)",
+              "legendFormat": "{{instance}}"
+            },
+            {
+              "expr": "sum(rate(novaedge_response_headers_modified_total[5m])) by (instance)",
+              "legendFormat": "Modified - {{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Redis Operations (Distributed Rate Limit)",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_redis_errors_total[5m]))",
+              "legendFormat": "Errors/sec"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Redis Latency",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(novaedge_redis_latency_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(novaedge_redis_latency_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["novaedge", "security", "waf"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NovaEdge - Security & WAF",
+      "uid": "novaedge-security-waf"
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: novaedge-caching-performance
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  novaedge-caching-performance.json: |
+    {
+      "annotations": { "list": [] },
+      "description": "NovaEdge Caching and Performance - cache hit rates, SSE, compression pools",
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "title": "Cache Hit Rate",
+          "type": "gauge",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_cache_hit_total[5m])) / (sum(rate(novaedge_cache_hit_total[5m])) + sum(rate(novaedge_cache_miss_total[5m])))",
+              "legendFormat": "Hit Rate"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "yellow", "value": 0.5 },
+                  { "color": "green", "value": 0.8 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Cache Size",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_cache_size_bytes)",
+              "legendFormat": "Total"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "thresholds": {
+                "steps": [
+                  { "color": "blue", "value": null }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Cache Evictions/sec",
+          "type": "stat",
+          "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_cache_eviction_total[5m]))",
+              "legendFormat": "Evictions"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ops",
+              "thresholds": {
+                "steps": [
+                  { "color": "green", "value": null },
+                  { "color": "yellow", "value": 10 },
+                  { "color": "red", "value": 100 }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Cache Hits & Misses/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 16, "x": 8, "y": 4 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_cache_hit_total[5m])) by (instance)",
+              "legendFormat": "Hits - {{instance}}"
+            },
+            {
+              "expr": "sum(rate(novaedge_cache_miss_total[5m])) by (instance)",
+              "legendFormat": "Misses - {{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "SSE Active Connections",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+          "targets": [
+            {
+              "expr": "sum(novaedge_sse_active_connections) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "short"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "SSE Connection Duration",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.50, sum(rate(novaedge_sse_connection_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p50"
+            },
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(novaedge_sse_connection_duration_seconds_bucket[5m])) by (le))",
+              "legendFormat": "p95"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "s"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "SSE Heartbeats Sent/sec",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+          "targets": [
+            {
+              "expr": "sum(rate(novaedge_sse_heartbeats_sent_total[5m])) by (instance)",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "ops"
+            },
+            "overrides": []
+          }
+        },
+        {
+          "title": "Cache Memory per Agent",
+          "type": "timeseries",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+          "targets": [
+            {
+              "expr": "novaedge_cache_size_bytes",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": { "mode": "palette-classic" },
+              "custom": { "fillOpacity": 10, "lineWidth": 2 },
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        }
+      ],
+      "schemaVersion": 39,
+      "tags": ["novaedge", "cache", "performance"],
+      "templating": { "list": [] },
+      "time": { "from": "now-1h", "to": "now" },
+      "timepicker": {},
+      "timezone": "browser",
+      "title": "NovaEdge - Caching & Performance",
+      "uid": "novaedge-caching-perf"
+    }
