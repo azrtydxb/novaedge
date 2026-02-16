@@ -94,8 +94,8 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// Translate Ingress to CRDs with service port resolver and configurable default VIP
-	translator := NewIngressTranslatorWithOptions(ingress.Namespace, r.resolveServicePort, r.DefaultVIPRef)
+	// Translate Ingress to CRDs with service port resolver, configurable default VIP, and VIP mode resolver
+	translator := NewIngressTranslatorWithOptions(ingress.Namespace, r.resolveServicePort, r.DefaultVIPRef, r.resolveVIPMode)
 	result, err := translator.Translate(ingress)
 	if err != nil {
 		logger.Error(err, "Failed to translate Ingress to CRDs")
@@ -314,6 +314,16 @@ func (r *IngressReconciler) resolveServicePort(namespace, serviceName, portName 
 	}
 
 	return 0, fmt.Errorf("port %s not found in service %s/%s", portName, namespace, serviceName)
+}
+
+// resolveVIPMode fetches a ProxyVIP by name and returns its mode (e.g. "BGP", "OSPF", "L2ARP").
+// Returns an empty string if the VIP cannot be found.
+func (r *IngressReconciler) resolveVIPMode(vipRef string) string {
+	vip := &novaedgev1alpha1.ProxyVIP{}
+	if err := r.Get(context.Background(), types.NamespacedName{Name: vipRef}, vip); err != nil {
+		return ""
+	}
+	return string(vip.Spec.Mode)
 }
 
 // updateIngressStatus updates the Ingress status with the LoadBalancer IP from the VIP

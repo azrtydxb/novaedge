@@ -168,11 +168,15 @@ const (
 // ServicePortResolver resolves service port names to port numbers
 type ServicePortResolver func(namespace, serviceName, portName string) (int32, error)
 
+// VIPModeResolver resolves a VIP reference name to its mode (e.g. "BGP", "OSPF", "L2ARP")
+type VIPModeResolver func(vipRef string) string
+
 // IngressTranslator translates Kubernetes Ingress resources to NovaEdge CRDs
 type IngressTranslator struct {
 	namespace           string
 	servicePortResolver ServicePortResolver
 	defaultVIPRef       string
+	vipModeResolver     VIPModeResolver
 }
 
 // NewIngressTranslator creates a new IngressTranslator
@@ -193,7 +197,7 @@ func NewIngressTranslatorWithResolver(namespace string, resolver ServicePortReso
 }
 
 // NewIngressTranslatorWithOptions creates a new IngressTranslator with a service port resolver and configurable default VIP ref
-func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver, defaultVIPRef string) *IngressTranslator {
+func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver, defaultVIPRef string, vipModeResolver VIPModeResolver) *IngressTranslator {
 	vipRef := defaultVIPRef
 	if vipRef == "" {
 		vipRef = DefaultVIPRef
@@ -202,6 +206,7 @@ func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResol
 		namespace:           namespace,
 		servicePortResolver: resolver,
 		defaultVIPRef:       vipRef,
+		vipModeResolver:     vipModeResolver,
 	}
 }
 
@@ -680,6 +685,7 @@ func (t *IngressTranslator) getIngressClassName(ingress *networkingv1.Ingress) s
 }
 
 func (t *IngressTranslator) getLBPolicy(ingress *networkingv1.Ingress) novaedgev1alpha1.LoadBalancingPolicy {
+	// Explicit annotation always wins
 	if lbPolicy, exists := ingress.Annotations[AnnotationLoadBalancing]; exists {
 		switch strings.ToLower(lbPolicy) {
 		case "roundrobin":
@@ -694,7 +700,14 @@ func (t *IngressTranslator) getLBPolicy(ingress *networkingv1.Ingress) novaedgev
 			return novaedgev1alpha1.LBPolicyMaglev
 		}
 	}
-	// Default to RoundRobin
+	// Auto-detect from VIP mode: BGP/OSPF require hash-based LB for ECMP
+	if t.vipModeResolver != nil {
+		vipRef := t.getVIPRef(ingress)
+		mode := t.vipModeResolver(vipRef)
+		if mode == string(novaedgev1alpha1.VIPModeBGP) || mode == string(novaedgev1alpha1.VIPModeOSPF) {
+			return novaedgev1alpha1.LBPolicyMaglev
+		}
+	}
 	return novaedgev1alpha1.LBPolicyRoundRobin
 }
 
