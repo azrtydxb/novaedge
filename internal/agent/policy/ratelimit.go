@@ -42,22 +42,29 @@ const (
 	// DefaultCleanupMaxAge is the default maximum age for inactive limiters
 	// before they are eligible for removal.
 	DefaultCleanupMaxAge = 1 * time.Hour
+
+	// DefaultMaxEntries is the maximum number of rate limiter entries before
+	// oldest entries are evicted. This prevents unbounded memory growth under
+	// DDoS with high-cardinality source IPs.
+	DefaultMaxEntries = 100000
 )
 
 // RateLimiter implements token bucket rate limiting
 type RateLimiter struct {
-	config   *pb.RateLimitConfig
-	limiters map[string]*rate.Limiter
-	lastUsed map[string]time.Time
-	mu       sync.RWMutex
+	config     *pb.RateLimitConfig
+	limiters   map[string]*rate.Limiter
+	lastUsed   map[string]time.Time
+	mu         sync.RWMutex
+	maxEntries int
 }
 
 // NewRateLimiter creates a new rate limiter
 func NewRateLimiter(config *pb.RateLimitConfig) *RateLimiter {
 	return &RateLimiter{
-		config:   config,
-		limiters: make(map[string]*rate.Limiter),
-		lastUsed: make(map[string]time.Time),
+		config:     config,
+		limiters:   make(map[string]*rate.Limiter),
+		lastUsed:   make(map[string]time.Time),
+		maxEntries: DefaultMaxEntries,
 	}
 }
 
@@ -107,6 +114,11 @@ func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 		return limiter
 	}
 
+	// Evict oldest entries if the map has reached its capacity
+	if len(rl.limiters) >= rl.maxEntries {
+		rl.evictOldestLocked(len(rl.limiters) - rl.maxEntries + 1)
+	}
+
 	// Create limiter with configured rate and burst
 	rps := rate.Limit(rl.config.RequestsPerSecond)
 	burst := int(rl.config.Burst)
@@ -119,6 +131,37 @@ func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 	rl.lastUsed[key] = time.Now()
 
 	return limiter
+}
+
+// evictOldestLocked removes the n oldest entries by lastUsed time.
+// The caller must hold rl.mu in write mode.
+func (rl *RateLimiter) evictOldestLocked(n int) {
+	if n <= 0 {
+		return
+	}
+
+	for n > 0 {
+		var oldestKey string
+		var oldestTime time.Time
+		first := true
+
+		for key, lastAccess := range rl.lastUsed {
+			if first || lastAccess.Before(oldestTime) {
+				oldestKey = key
+				oldestTime = lastAccess
+				first = false
+			}
+		}
+
+		if first {
+			// Map is empty
+			break
+		}
+
+		delete(rl.limiters, oldestKey)
+		delete(rl.lastUsed, oldestKey)
+		n--
+	}
 }
 
 // extractKey extracts the rate limiting key from the request
@@ -159,6 +202,8 @@ func HandleRateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
 }
 
 // Cleanup removes inactive limiters that haven't been accessed within maxAge.
+// It also enforces the maxEntries bound by evicting the oldest entries if the
+// map still exceeds the limit after age-based eviction.
 func (rl *RateLimiter) Cleanup(maxAge time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -172,6 +217,12 @@ func (rl *RateLimiter) Cleanup(maxAge time.Duration) {
 			delete(rl.lastUsed, key)
 			removed++
 		}
+	}
+
+	// Enforce maxEntries bound after age-based eviction
+	if overflow := len(rl.limiters) - rl.maxEntries; overflow > 0 {
+		rl.evictOldestLocked(overflow)
+		removed += overflow
 	}
 
 	if removed > 0 {
