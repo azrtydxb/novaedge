@@ -2,6 +2,41 @@
 
 All notable changes to NovaEdge are documented in this file.
 
+## [1.0.1] - 2026-02-16
+
+Security hardening and performance optimization release with 21 fixes across the data plane, control plane, and policy engine.
+
+### Security Fixes
+
+- **OIDC CSRF protection**: Bind OAuth state parameter to session cookie to prevent session fixation attacks; validate redirect URLs are same-origin to prevent open redirect phishing (#322)
+- **JWT algorithm enforcement**: Require explicit `AllowedAlgorithms` configuration; explicitly reject `alg: none` tokens (#323)
+- **SSRF protection**: Block outbound HTTP requests to private IP ranges in forward auth, JWKS, and OCSP responder paths (#324)
+- **X-Forwarded-For bypass**: Use `RemoteAddr` for observability rate limiting instead of trusting XFF headers (#320)
+- **PROXY protocol hardening**: Default to deny when no trusted CIDRs configured; validate protocol field and port ranges (#321)
+- **WebSocket security**: Reject upgrades when no allowed origins configured (fail secure); add 10MB message size limit (#326)
+- **L4 proxy limits**: Add TCP max connection limit (10,000) and UDP max session limit (10,000) to prevent resource exhaustion (#327)
+- **WAF improvements**: Warn on responses exceeding inspection buffer; add yaml/csv/graphql MIME types; detect ambiguous Content-Length + Transfer-Encoding (#328)
+- **gRPC size limits**: Enforce 16MB max message size on all gRPC connections (#329)
+- **ReDoS prevention**: Validate user-supplied regex patterns with 500-character length limit (#325)
+- **Minor hardening**: Constant-time basic auth validation, CRLF header sanitization, minimum OIDC session secret length, mesh authorization default-allow logging (#331)
+
+### Performance Improvements
+
+- **LB hot path**: Eliminate `RWMutex` contention in LeastConn, EWMA, and P2C `Select()` using atomic endpoint snapshots (#332)
+- **RingHash**: Copy-on-write ring rebuild with atomic swap; reduce virtual nodes from 150 to 100 (#333)
+- **Compression pooling**: Reuse gzip and brotli compressor writers via `sync.Pool` (#330)
+- **Cache store**: Shard locks across 16 buckets; FNV hash-based cache keys (#334)
+- **Config snapshots**: Skip unchanged snapshot sends using content-based version tracking (#336)
+- **Health checks**: Bounded worker pool (10 goroutines) with HTTP connection reuse (#335)
+- **Connection pool**: Add 60-second default connect timeout fallback (#337)
+- **VIP manager**: Perform network operations outside lock; rate-limit GARPs to 10/sec; increase periodic interval to 60s (#338)
+- **Metrics**: TTL-based endpoint cardinality cleanup; cached time-based sampling bucket (#339)
+- **Controller reconciliation**: Generation-based event filtering across all 14 controllers (#340)
+
+### Features
+
+- **Nightly changelog**: Auto-generate categorized changelog in nightly release notes (#298)
+
 ## [1.0.0] - 2026-02-16
 
 NovaEdge v1.0.0 is the first stable release. It delivers a unified Kubernetes-native load balancer, reverse proxy, VIP controller, and service mesh that replaces Envoy + MetalLB + NGINX Ingress in a single binary.
