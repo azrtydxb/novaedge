@@ -60,6 +60,12 @@ const (
 type NovaEdgeClusterReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
+
+	// Managed image overrides (set via CLI flags).
+	// When non-empty, these take precedence over the CRD spec for image resolution.
+	ControllerImage string
+	AgentImage      string
+	NovactlImage    string
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=novaedgeclusters,verbs=get;list;watch;create;update;patch;delete
@@ -1045,6 +1051,23 @@ func (r *NovaEdgeClusterReconciler) getSelectorLabels(cluster *novaedgev1alpha1.
 }
 
 func (r *NovaEdgeClusterReconciler) getImage(cluster *novaedgev1alpha1.NovaEdgeCluster, component string) string {
+	// Check for CLI-level image overrides first
+	switch component {
+	case "novaedge-controller":
+		if r.ControllerImage != "" {
+			return r.ControllerImage
+		}
+	case "novaedge-agent":
+		if r.AgentImage != "" {
+			return r.AgentImage
+		}
+	case "novactl":
+		if r.NovactlImage != "" {
+			return r.NovactlImage
+		}
+	}
+
+	// Fall back to CRD spec
 	repo := "ghcr.io/piwi3910/novaedge"
 	if cluster.Spec.ImageRepository != "" {
 		repo = cluster.Spec.ImageRepository
