@@ -33,6 +33,36 @@ rules:
       - novaedgeclusters/finalizers
     verbs:
       - update
+  # Federation CRD management
+  - apiGroups:
+      - novaedge.io
+    resources:
+      - novaedgefederations
+      - novaedgeremoteclusters
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - novaedge.io
+    resources:
+      - novaedgefederations/status
+      - novaedgeremoteclusters/status
+    verbs:
+      - get
+      - update
+      - patch
+  - apiGroups:
+      - novaedge.io
+    resources:
+      - novaedgefederations/finalizers
+      - novaedgeremoteclusters/finalizers
+    verbs:
+      - update
   # Deployments and DaemonSets
   - apiGroups:
       - apps
@@ -100,6 +130,22 @@ rules:
     verbs:
       - create
       - patch
+  {{- if .Values.webhooks.enabled }}
+  # Webhook management
+  - apiGroups:
+      - admissionregistration.k8s.io
+    resources:
+      - validatingwebhookconfigurations
+      - mutatingwebhookconfigurations
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

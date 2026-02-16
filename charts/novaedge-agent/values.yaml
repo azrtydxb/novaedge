@@ -31,7 +31,6 @@ tls:
   # -- Enable mTLS (highly recommended for production)
   enabled: true
   # -- CA certificate for validating the controller
-  # If using cert-manager, this can be auto-generated
   caSecretName: novaedge-ca
   # -- Client certificate for agent authentication
   clientCertSecretName: novaedge-agent-cert
@@ -139,7 +138,9 @@ ports:
   metrics: 9090
   health: 8080
 
-# -- VIP configuration
+# =============================================================================
+# VIP Configuration
+# =============================================================================
 vip:
   # -- Enable VIP management
   enabled: true
@@ -147,6 +148,12 @@ vip:
   mode: L2
   # -- Network interface for VIP binding (L2 mode)
   interface: ""
+  # -- GARP (Gratuitous ARP) settings for L2 mode
+  garp:
+    # -- Rate limit GARP packets per second
+    rateLimit: 10
+    # -- Number of GARP retries on failover
+    retries: 3
   # -- BGP configuration (when mode=BGP)
   bgp:
     # -- Local ASN
@@ -159,14 +166,567 @@ vip:
     # - address: 192.168.1.1
     #   asn: 65001
     #   port: 179
+    #   password: ""
+    #   holdTime: 90s
+    #   keepalive: 30s
+    # -- Enable BGP graceful restart
+    gracefulRestart: true
+    # -- BGP multipath (ECMP) max paths
+    multipathMaxPaths: 4
+  # -- OSPF configuration (when mode=OSPF)
+  ospf:
+    # -- OSPF area ID
+    areaID: "0.0.0.0"
+    # -- Hello interval (seconds)
+    helloInterval: 10
+    # -- Dead interval (seconds)
+    deadInterval: 40
+    # -- Interface cost
+    cost: 10
+    # -- Authentication password secret
+    authSecretName: ""
+  # -- BFD (Bidirectional Forwarding Detection)
+  bfd:
+    # -- Enable BFD for sub-second failure detection
+    enabled: false
+    # -- Desired minimum TX interval (milliseconds)
+    desiredMinTx: 300
+    # -- Required minimum RX interval (milliseconds)
+    requiredMinRx: 300
+    # -- Detection multiplier
+    detectMultiplier: 3
+  # -- IPv6 dual-stack support
+  ipv6:
+    enabled: false
+  # -- Periodic VIP announcement interval (seconds)
+  periodicInterval: 60
 
-# -- Metrics configuration
+# =============================================================================
+# Server / Listener TLS Configuration
+# =============================================================================
+server:
+  # -- Frontend TLS configuration
+  tls:
+    # -- Minimum TLS version: 1.2 or 1.3
+    minVersion: "1.3"
+    # -- Cipher suites (empty = secure defaults)
+    cipherSuites: []
+    # -- ALPN protocols
+    alpnProtocols:
+      - h2
+      - http/1.1
+  # -- Frontend mTLS (client certificate verification)
+  mtls:
+    enabled: false
+    # -- Client CA secret name
+    caSecretName: ""
+    # -- Allowed CN patterns (regex)
+    allowedCNPatterns: []
+  # -- OCSP stapling
+  ocspStapling:
+    enabled: false
+    # -- OCSP responder URL override
+    responderURL: ""
+  # -- PROXY protocol support
+  proxyProtocol:
+    enabled: false
+    # -- Version: v1 or v2
+    version: v2
+    # -- Trusted CIDRs for PROXY protocol
+    trustedCIDRs: []
+
+# =============================================================================
+# HTTP/3 QUIC Configuration
+# =============================================================================
+http3:
+  # -- Enable HTTP/3 QUIC support
+  enabled: false
+  # -- UDP port for QUIC
+  port: 443
+  # -- Enable 0-RTT connection resumption
+  earlyData: true
+
+# =============================================================================
+# Load Balancing Configuration
+# =============================================================================
+loadBalancing:
+  # -- Default algorithm: RoundRobin, LeastConn, P2C, EWMA, RingHash, Maglev,
+  #    Sticky, LocalityAware, Priority, Random, ResourceAdaptive
+  defaultAlgorithm: RoundRobin
+  # -- Ring hash configuration
+  ringHash:
+    # -- Virtual nodes per endpoint
+    virtualNodes: 100
+  # -- EWMA (Exponentially Weighted Moving Average) latency tracking
+  ewma:
+    # -- Decay factor (0-1)
+    decayFactor: 0.9
+  # -- Sticky sessions (cookie-based)
+  sticky:
+    # -- Cookie name
+    cookieName: NOVAEDGE_BACKEND
+    # -- Cookie TTL
+    cookieTTL: 0
+    # -- Cookie path
+    cookiePath: /
+  # -- Locality-aware routing
+  locality:
+    # -- Prefer same-zone endpoints
+    preferSameZone: true
+    # -- Failover threshold (percentage of healthy same-zone endpoints)
+    failoverThreshold: 70
+  # -- Priority-based failover
+  priority:
+    # -- Failover groups (list of priority levels)
+    groups: []
+  # -- Panic mode
+  panic:
+    # -- Enable panic mode (bypass health checks when too many unhealthy)
+    enabled: false
+    # -- Threshold (percentage) to trigger panic mode
+    threshold: 50
+  # -- Slow-start ramp-up
+  slowStart:
+    # -- Duration to ramp traffic to new endpoints
+    duration: 30s
+  # -- Statistical outlier detection
+  outlierDetection:
+    # -- Enable outlier detection
+    enabled: false
+    # -- Consecutive failures before ejection
+    consecutiveFailures: 5
+    # -- Ejection duration
+    ejectionDuration: 30s
+    # -- Max ejection percentage
+    maxEjectionPercent: 50
+
+# =============================================================================
+# Connection Pool Configuration
+# =============================================================================
+connectionPool:
+  # -- Max idle connections per backend
+  maxIdleConns: 100
+  # -- Max connections per backend
+  maxConnsPerHost: 250
+  # -- Idle connection timeout
+  idleTimeout: 90s
+  # -- Connect timeout
+  connectTimeout: 60s
+  # -- Circuit breaker configuration
+  circuitBreaker:
+    # -- Enable circuit breaker
+    enabled: true
+    # -- Max concurrent requests before opening circuit
+    maxRequests: 100
+    # -- Failure threshold to open circuit
+    failureThreshold: 5
+    # -- Success threshold to close circuit
+    successThreshold: 2
+    # -- Timeout before half-open state
+    timeout: 60s
+
+# =============================================================================
+# Health Check Configuration
+# =============================================================================
+healthChecking:
+  # -- Active health check settings
+  active:
+    # -- Check interval
+    interval: 10s
+    # -- Check timeout
+    timeout: 5s
+    # -- Healthy threshold
+    healthyThreshold: 2
+    # -- Unhealthy threshold
+    unhealthyThreshold: 3
+  # -- Bounded worker pool for health checks
+  workers: 10
+  # -- HTTP connection reuse for health checks
+  reuseConnections: true
+
+# =============================================================================
+# L4 TCP/UDP Proxy Configuration
+# =============================================================================
+l4Proxy:
+  # -- Enable L4 proxy
+  enabled: true
+  # -- TCP proxy settings
+  tcp:
+    # -- Max TCP connections
+    maxConnections: 10000
+    # -- Connection idle timeout
+    idleTimeout: 300s
+    # -- Enable TLS passthrough
+    tlsPassthrough: false
+  # -- UDP proxy settings
+  udp:
+    # -- Max UDP sessions
+    maxSessions: 10000
+    # -- Session idle timeout
+    idleTimeout: 60s
+
+# =============================================================================
+# Policy & Security Configuration
+# =============================================================================
+policy:
+  # -- Rate limiting
+  rateLimit:
+    # -- Enable local rate limiting (token bucket)
+    enabled: false
+    # -- Default requests per second
+    requestsPerSecond: 100
+    # -- Token bucket burst size
+    burst: 200
+    # -- Distributed rate limiting via Redis
+    redis:
+      enabled: false
+      address: ""
+      # -- Secret containing Redis password
+      passwordSecretName: ""
+      # -- Redis database number
+      db: 0
+
+  # -- Web Application Firewall (WAF)
+  waf:
+    # -- Enable WAF (Coraza engine)
+    enabled: false
+    # -- WAF mode: prevention or detection
+    mode: prevention
+    # -- Paranoia level (1-4)
+    paranoiaLevel: 1
+    # -- Anomaly scoring threshold
+    anomalyThreshold: 5
+    # -- Request body inspection
+    requestBodyInspection: true
+    # -- Request body limit (bytes)
+    requestBodyLimit: 131072
+    # -- Response body inspection
+    responseBodyInspection: false
+    # -- Response body limit (bytes)
+    responseBodyLimit: 524288
+    # -- WAF rules (OWASP CRS)
+    rules: []
+    # -- Fail-closed mode (block on WAF error)
+    failClosed: true
+    # -- Enable WAF metrics
+    metricsEnabled: true
+    # -- Enable WAF result caching
+    cachingEnabled: false
+    # -- Enable audit logging
+    auditLogging: false
+
+  # -- Authentication
+  auth:
+    # -- Basic authentication
+    basicAuth:
+      enabled: false
+      # -- Secret containing htpasswd file
+      htpasswdSecretName: ""
+    # -- Forward authentication (external auth service)
+    forwardAuth:
+      enabled: false
+      # -- External auth service URL
+      address: ""
+      # -- Headers to forward to auth service
+      authRequestHeaders: []
+      # -- Headers to copy from auth response
+      authResponseHeaders: []
+    # -- OAuth2/OIDC authentication
+    oidc:
+      enabled: false
+      # -- OIDC provider URL
+      issuerURL: ""
+      # -- Client ID
+      clientID: ""
+      # -- Secret containing client secret
+      clientSecretName: ""
+      # -- Redirect URL
+      redirectURL: ""
+      # -- Scopes
+      scopes:
+        - openid
+        - profile
+        - email
+      # -- Session secret name
+      sessionSecretName: ""
+
+  # -- JWT validation
+  jwt:
+    enabled: false
+    # -- JWKS URL for key retrieval
+    jwksURL: ""
+    # -- Allowed algorithms (required for security)
+    allowedAlgorithms:
+      - RS256
+      - ES256
+    # -- Required issuer
+    issuer: ""
+    # -- Required audience
+    audience: ""
+
+  # -- CORS configuration
+  cors:
+    enabled: false
+    allowOrigins: []
+    allowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allowHeaders: []
+    exposeHeaders: []
+    maxAge: 3600
+    allowCredentials: false
+
+  # -- IP filtering
+  ipFilter:
+    enabled: false
+    # -- IP allow list (CIDRs)
+    allowList: []
+    # -- IP deny list (CIDRs)
+    denyList: []
+
+  # -- Security headers
+  securityHeaders:
+    enabled: false
+    # -- HTTP Strict Transport Security
+    hsts:
+      enabled: true
+      maxAge: 31536000
+      includeSubDomains: true
+      preload: false
+    # -- Content Security Policy
+    contentSecurityPolicy: ""
+    # -- X-Frame-Options: DENY, SAMEORIGIN
+    xFrameOptions: DENY
+    # -- X-Content-Type-Options
+    xContentTypeOptions: nosniff
+    # -- Referrer-Policy
+    referrerPolicy: strict-origin-when-cross-origin
+
+# =============================================================================
+# Middleware Configuration
+# =============================================================================
+middleware:
+  # -- Response caching
+  cache:
+    enabled: false
+    # -- Max cache size (bytes)
+    maxSize: 104857600  # 100MB
+    # -- Default TTL
+    defaultTTL: 300s
+    # -- Number of shard locks
+    shardCount: 16
+
+  # -- Compression
+  compression:
+    enabled: false
+    # -- Enable gzip compression
+    gzip: true
+    # -- Enable Brotli compression
+    brotli: true
+    # -- Minimum response size to compress (bytes)
+    minSize: 1024
+    # -- Content types to compress
+    contentTypes:
+      - text/html
+      - text/css
+      - text/javascript
+      - application/javascript
+      - application/json
+      - application/xml
+      - image/svg+xml
+
+  # -- Request buffering
+  buffering:
+    enabled: false
+    # -- Max request body buffer size (bytes)
+    maxRequestBody: 10485760  # 10MB
+    # -- Max response body buffer size (bytes)
+    maxResponseBody: 10485760  # 10MB
+
+  # -- Request retry
+  retry:
+    enabled: false
+    # -- Max retry attempts
+    attempts: 3
+    # -- Retry on status codes
+    retryOn:
+      - 502
+      - 503
+      - 504
+    # -- Per-try timeout
+    perTryTimeout: 10s
+    # -- Retry budget (percentage of requests allowed to be retried)
+    retryBudget: 20
+
+  # -- Request hedging (tail latency reduction)
+  hedging:
+    enabled: false
+    # -- Delay before sending hedged request
+    delay: 100ms
+    # -- Max concurrent hedged requests
+    maxConcurrent: 2
+
+  # -- Traffic mirroring
+  mirroring:
+    enabled: false
+    # -- Mirror percentage (0-100)
+    percentage: 100
+
+  # -- Request timeouts
+  timeouts:
+    # -- Total request timeout
+    request: 60s
+    # -- Backend connect timeout
+    connect: 10s
+    # -- Idle timeout
+    idle: 300s
+
+  # -- Body size limits
+  bodyLimits:
+    # -- Max request body size (bytes, 0 = unlimited)
+    maxRequestSize: 0
+    # -- Max response body size (bytes, 0 = unlimited)
+    maxResponseSize: 0
+
+  # -- HTTP-to-HTTPS redirect
+  httpsRedirect:
+    enabled: false
+    # -- Redirect status code (301 or 308)
+    statusCode: 308
+
+  # -- Custom error pages
+  errorPages:
+    enabled: false
+    # -- ConfigMap containing custom error pages
+    configMapName: ""
+
+  # -- Fault injection (chaos engineering)
+  faultInjection:
+    enabled: false
+    # -- Delay fault
+    delay:
+      percentage: 0
+      duration: 0s
+    # -- Abort fault
+    abort:
+      percentage: 0
+      statusCode: 503
+
+  # -- Overload management
+  overloadManagement:
+    enabled: false
+    # -- Max concurrent requests
+    maxConcurrentRequests: 10000
+    # -- Queue size
+    queueSize: 1000
+    # -- Queue timeout
+    queueTimeout: 30s
+
+# =============================================================================
+# WebSocket Configuration
+# =============================================================================
+websocket:
+  # -- Enable WebSocket upgrade forwarding
+  enabled: true
+  # -- Allowed origins (empty = reject all upgrades)
+  allowedOrigins: []
+  # -- Max message size (bytes)
+  maxMessageSize: 10485760  # 10MB
+
+# =============================================================================
+# SSE (Server-Sent Events) Configuration
+# =============================================================================
+sse:
+  # -- Enable SSE support
+  enabled: true
+  # -- Heartbeat interval
+  heartbeatInterval: 30s
+
+# =============================================================================
+# gRPC Configuration
+# =============================================================================
+grpc:
+  # -- Enable gRPC routing
+  enabled: true
+  # -- Max message size (bytes)
+  maxMessageSize: 16777216  # 16MB
+  # -- Enable gRPC-Web bridge
+  web:
+    enabled: false
+
+# =============================================================================
+# Service Mesh Configuration
+# =============================================================================
+mesh:
+  # -- Enable service mesh
+  enabled: false
+  # -- TPROXY interception port
+  interceptPort: 15001
+  # -- mTLS tunnel port
+  tunnelPort: 15002
+  # -- SPIFFE trust domain
+  trustDomain: cluster.local
+  # -- Certificate renewal threshold (percentage of lifetime)
+  certRenewalThreshold: 80
+  # -- Authorization policies
+  authorization:
+    # -- Default action: allow or deny
+    defaultAction: allow
+    # -- Enable default-allow logging
+    defaultAllowLogging: true
+  # -- SPIRE integration
+  spire:
+    enabled: false
+    # -- SPIRE server address
+    serverAddress: ""
+
+# =============================================================================
+# Control-Plane VIP Configuration
+# =============================================================================
+controlPlaneVIP:
+  # -- Enable control-plane VIP (for kube-apiserver HA)
+  enabled: false
+  # -- VIP address for control plane
+  address: ""
+  # -- VIP mode: L2, BGP, or BFD
+  mode: L2
+  # -- Network interface
+  interface: ""
+  # -- Health check endpoint for controller
+  healthCheckPath: /livez
+  # -- Health check interval
+  healthCheckInterval: 5s
+
+# =============================================================================
+# WASM Plugin Configuration
+# =============================================================================
+wasm:
+  # -- Enable WASM plugin system
+  enabled: false
+  # -- Max plugin execution timeout
+  executionTimeout: 100ms
+  # -- Resource limits per plugin
+  resourceLimits:
+    # -- Max memory per plugin (bytes)
+    maxMemory: 16777216  # 16MB
+    # -- Max execution time per request (milliseconds)
+    maxExecutionTime: 100
+
+# =============================================================================
+# Metrics configuration
+# =============================================================================
 metrics:
   enabled: true
   serviceMonitor:
     enabled: false
     interval: 30s
     scrapeTimeout: 10s
+    labels: {}
+  # -- TTL for endpoint cardinality cleanup
+  endpointCardinalityTTL: 300s
 
 # -- Health probes
 probes:
@@ -221,8 +781,6 @@ tracing:
   samplingRate: 10
 
 # -- Controller reachability configuration for agent-assisted quorum
-# When enabled, agents report which controllers they can reach
-# This enables split-brain prevention with only 2 controllers
 controllerReachability:
   # -- Enable controller reachability probing
   enabled: false
@@ -231,13 +789,7 @@ controllerReachability:
   # -- Timeout for each controller probe
   probeTimeout: 5s
   # -- List of all controller endpoints to probe
-  # If empty, only the primary controller is probed
   controllerEndpoints: []
-  # Example:
-  # - name: controller-dc1
-  #   endpoint: controller-dc1.novaedge.example.com:9090
-  # - name: controller-dc2
-  #   endpoint: controller-dc2.novaedge.example.com:9090
 
 # -- Failover configuration for controller connectivity
 failover:
@@ -245,9 +797,6 @@ failover:
   enabled: true
   # -- List of backup controller endpoints
   backupControllers: []
-  # Example:
-  # - endpoint: controller-backup.novaedge.example.com:9090
-  #   priority: 100
   # -- How long to wait before failing over
   failoverTimeout: 30s
   # -- How often to check primary controller health
@@ -261,15 +810,11 @@ failover:
 networkPolicy:
   # -- Enable NetworkPolicy for the agent
   enabled: false
-  # -- Pod selector labels for Prometheus (if empty, allows all pods in namespace)
   # prometheusSelector:
   #   app.kubernetes.io/name: prometheus
-  # -- Namespace selector for Prometheus
   # prometheusNamespaceSelector:
   #   kubernetes.io/metadata.name: monitoring
-  # -- Extra ingress rules
   # extraIngress: []
-  # -- Extra egress rules
   # extraEgress: []
 
 # -- RBAC configuration
