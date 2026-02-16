@@ -352,7 +352,7 @@ func (h *L2Handler) announcementLoop(ctx context.Context) {
 			return
 
 		case <-ticker.C:
-			h.announceActiveVIPs()
+			h.announceActiveVIPs(ctx)
 		}
 	}
 }
@@ -364,7 +364,7 @@ const maxGARPPerSecond = 10
 // announceActiveVIPs sends GARP/NDP for all active VIPs with rate limiting.
 // VIP state is snapshot under a short read lock, then announcements are sent
 // outside the lock to avoid blocking concurrent operations.
-func (h *L2Handler) announceActiveVIPs() {
+func (h *L2Handler) announceActiveVIPs(ctx context.Context) {
 	// Snapshot active VIPs under read lock
 	h.mu.RLock()
 	if len(h.activeVIPs) == 0 {
@@ -391,7 +391,11 @@ func (h *L2Handler) announceActiveVIPs() {
 
 	for i, vip := range vips {
 		if i > 0 {
-			time.Sleep(garpInterval)
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(garpInterval):
+			}
 		}
 
 		if vip.isIPv6 {
