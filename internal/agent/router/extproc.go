@@ -42,6 +42,10 @@ const (
 // Default configuration values for ExtProc.
 const (
 	DefaultExtProcTimeout = 200 * time.Millisecond
+
+	// maxExtProcBodySize is the maximum request body size (10 MB) that will
+	// be read for external processing. This prevents OOM from oversized payloads.
+	maxExtProcBodySize = 10 << 20
 )
 
 // ProcessingRequest is the message sent to the external processing gRPC service.
@@ -218,7 +222,7 @@ func (m *ExtProcMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Phase 2: Process request body
 	if m.config.ProcessRequestBody && r.Body != nil {
-		bodyBytes, err := io.ReadAll(r.Body)
+		bodyBytes, err := io.ReadAll(io.LimitReader(r.Body, maxExtProcBodySize))
 		if err != nil {
 			m.logger.Error("failed to read request body for extproc", zap.Error(err))
 			http.Error(w, "internal server error", http.StatusInternalServerError)

@@ -43,6 +43,10 @@ import (
 // jwtClaimsKey is a typed context key for storing JWT claims, avoiding SA1029.
 type jwtClaimsKey struct{}
 
+// maxJWKSResponseSize is the maximum size (1 MB) for a JWKS HTTP response.
+// This prevents OOM if a malicious or misconfigured endpoint returns a huge payload.
+const maxJWKSResponseSize = 1 << 20
+
 // supportedAlgorithms lists all JWT signing algorithms the validator supports.
 var supportedAlgorithms = map[string]bool{
 	"RS256": true,
@@ -162,7 +166,7 @@ func (v *JWTValidator) fetchJWKS(ctx context.Context) error {
 		return fmt.Errorf("JWKS endpoint returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJWKSResponseSize))
 	if err != nil {
 		return err
 	}

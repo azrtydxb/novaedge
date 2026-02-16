@@ -42,6 +42,11 @@ const (
 	WAFFailClosed WAFFailMode = "closed"
 	// WAFFailOpen allows requests through when WAF processing errors occur
 	WAFFailOpen WAFFailMode = "open"
+
+	// maxWAFBodyHardCap is the absolute maximum body size (100 MB) that the
+	// WAF will read, even when body inspection is disabled (MaxBodySize < 0).
+	// This prevents unbounded memory consumption from very large payloads.
+	maxWAFBodyHardCap int64 = 100 << 20
 )
 
 // WAFEngine wraps the Coraza WAF engine with NovaEdge-specific configuration
@@ -225,9 +230,9 @@ func (w *WAFEngine) ProcessRequestDetailed(r *http.Request) (*WAFResult, error) 
 	var bodyBytes []byte
 	var fullBody []byte
 	if r.Body != nil && w.config.MaxBodySize < 0 {
-		// Negative: skip body inspection, read full body for downstream
+		// Negative: skip body inspection, read body for downstream with hard cap
 		var readErr error
-		fullBody, readErr = io.ReadAll(r.Body)
+		fullBody, readErr = io.ReadAll(io.LimitReader(r.Body, maxWAFBodyHardCap))
 		if readErr != nil {
 			w.logger.Error("Error reading request body", zap.Error(readErr))
 			return nil, fmt.Errorf("failed to read request body: %w", readErr)
@@ -247,8 +252,12 @@ func (w *WAFEngine) ProcessRequestDetailed(r *http.Request) (*WAFResult, error) 
 			w.logger.Error("Error reading request body for WAF", zap.Error(readErr))
 			return nil, fmt.Errorf("failed to read request body: %w", readErr)
 		}
-		// Read remaining body (not inspected) for downstream
-		remaining, _ := io.ReadAll(r.Body)
+		// Read remaining body (not inspected) for downstream with hard cap
+		remainCap := maxWAFBodyHardCap - int64(len(bodyBytes))
+		if remainCap < 0 {
+			remainCap = 0
+		}
+		remaining, _ := io.ReadAll(io.LimitReader(r.Body, remainCap))
 		fullBody = bodyBytes
 		fullBody = append(fullBody, remaining...)
 	}
