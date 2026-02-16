@@ -1,4 +1,4 @@
-import{j as a}from"./ui-C7EZ6zpn.js";import{a as t}from"./vendor-CwhvS1Xk.js";import{u as U,k as x,l as G,R as Y,m as I,e as l}from"./index-A4onkd9k.js";import{d as _,x as K,y as H,z as J,p as Q}from"./hooks-CYf9dbMf.js";import{D as W}from"./DataTable-CUHh48Aj.js";import{T as X,P as Z}from"./trash-2-DAWsEp5H.js";import"./query-B9ZAROpx.js";import"./charts-I6YY2jED.js";import"./table-CmBIFowf.js";import"./chevron-up-CKZ8edvZ.js";import"./input-CXqIgivH.js";import"./search-D_dRqmYe.js";const q=`apiVersion: novaedge.io/v1alpha1
+import{j as a}from"./ui-C7EZ6zpn.js";import{a as t}from"./vendor-CwhvS1Xk.js";import{u as U,k as x,l as G,R as Y,m as I,e as l}from"./index-DqyNCDVA.js";import{d as _,x as K,y as H,z as J,p as Q}from"./hooks-Bz9YhTMq.js";import{D as W}from"./DataTable-mbxzTGQZ.js";import{T as X,P as Z}from"./trash-2-DoPKzTP9.js";import"./query-B9ZAROpx.js";import"./charts-I6YY2jED.js";import"./table-CTlBdFvg.js";import"./chevron-up-Dj1cMKet.js";import"./input-Ca4FuTMm.js";import"./search-CjkAmyjE.js";const q=`apiVersion: novaedge.io/v1alpha1
 kind: ProxyVIP
 metadata:
   name: my-vip
