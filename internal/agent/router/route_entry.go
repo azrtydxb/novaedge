@@ -57,6 +57,9 @@ func compileHeaderRegexes(rule *pb.RouteRule) map[int]*regexp.Regexp {
 	for matchIdx, match := range rule.Matches {
 		for headerIdx, header := range match.Headers {
 			if header.Type == pb.HeaderMatchType_HEADER_REGULAR_EXPRESSION {
+				if err := validateRegexPattern(header.Value); err != nil {
+					continue
+				}
 				if regex, err := regexp.Compile(header.Value); err == nil {
 					// Store with a unique key combining match and header index
 					key := matchIdx*1000 + headerIdx

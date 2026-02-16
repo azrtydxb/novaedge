@@ -17,6 +17,7 @@ limitations under the License.
 package router
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -58,6 +59,17 @@ func (m *RegexMatcher) Match(path string) bool {
 	return m.Pattern.MatchString(path)
 }
 
+// maxRegexLength is the maximum allowed length for user-supplied regex patterns.
+const maxRegexLength = 500
+
+// validateRegexPattern checks a regex pattern for dangerous constructs.
+func validateRegexPattern(pattern string) error {
+	if len(pattern) > maxRegexLength {
+		return fmt.Errorf("regex pattern exceeds maximum length of %d characters", maxRegexLength)
+	}
+	return nil
+}
+
 // createPathMatcher creates a path matcher from a route rule
 func createPathMatcher(rule *pb.RouteRule) PathMatcher {
 	if len(rule.Matches) == 0 {
@@ -76,6 +88,9 @@ func createPathMatcher(rule *pb.RouteRule) PathMatcher {
 	case pb.PathMatchType_PATH_PREFIX:
 		return &PrefixMatcher{Prefix: match.Path.Value}
 	case pb.PathMatchType_REGULAR_EXPRESSION:
+		if err := validateRegexPattern(match.Path.Value); err != nil {
+			return nil
+		}
 		if regex, err := regexp.Compile(match.Path.Value); err == nil {
 			return &RegexMatcher{Pattern: regex}
 		}
