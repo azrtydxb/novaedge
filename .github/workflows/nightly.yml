@@ -76,6 +76,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -99,24 +101,90 @@ jobs:
         run: |
           gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
 
-      - name: Create nightly release
+      - name: Generate changelog and create nightly release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
           SHORT_SHA="${GITHUB_SHA::8}"
+
+          # Find the latest stable release tag
+          LAST_TAG="$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null || echo '')"
+
+          NOTES_FILE="$(mktemp)"
+
+          {
+            echo "Automated nightly build from main branch."
+            echo ""
+            echo "**Commit:** ${SHORT_SHA}"
+            echo "**Date:** ${DATE}"
+            echo ""
+
+            if [ -n "${LAST_TAG}" ]; then
+              echo "## Changes since ${LAST_TAG}"
+              echo ""
+
+              # Collect commits since last tag
+              COMMITS="$(git log "${LAST_TAG}..HEAD" --pretty=format:'%s' --no-merges)"
+
+              # Category arrays
+              FEATURES=""
+              FIXES=""
+              PERFORMANCE=""
+              SECURITY=""
+              TESTS=""
+              DOCS=""
+              CHORES=""
+              REFACTORS=""
+              OTHER=""
+
+              while IFS= read -r line; do
+                [ -z "${line}" ] && continue
+                case "${line}" in
+                  \[Feature\]*)  FEATURES="${FEATURES}
+          - ${line#\[Feature\] }" ;;
+                  \[Fix\]*)      FIXES="${FIXES}
+          - ${line#\[Fix\] }" ;;
+                  \[Performance\]*) PERFORMANCE="${PERFORMANCE}
+          - ${line#\[Performance\] }" ;;
+                  \[Security\]*) SECURITY="${SECURITY}
+          - ${line#\[Security\] }" ;;
+                  \[Test\]*)     TESTS="${TESTS}
+          - ${line#\[Test\] }" ;;
+                  \[Docs\]*)     DOCS="${DOCS}
+          - ${line#\[Docs\] }" ;;
+                  \[Chore\]*)    CHORES="${CHORES}
+          - ${line#\[Chore\] }" ;;
+                  \[Refactor\]*) REFACTORS="${REFACTORS}
+          - ${line#\[Refactor\] }" ;;
+                  *)             OTHER="${OTHER}
+          - ${line}" ;;
+                esac
+              done <<< "${COMMITS}"
+
+              [ -n "${FEATURES}" ]    && printf '### Features\n%s\n\n' "${FEATURES}"
+              [ -n "${FIXES}" ]       && printf '### Bug Fixes\n%s\n\n' "${FIXES}"
+              [ -n "${PERFORMANCE}" ] && printf '### Performance\n%s\n\n' "${PERFORMANCE}"
+              [ -n "${SECURITY}" ]    && printf '### Security\n%s\n\n' "${SECURITY}"
+              [ -n "${REFACTORS}" ]   && printf '### Refactoring\n%s\n\n' "${REFACTORS}"
+              [ -n "${TESTS}" ]       && printf '### Tests\n%s\n\n' "${TESTS}"
+              [ -n "${DOCS}" ]        && printf '### Documentation\n%s\n\n' "${DOCS}"
+              [ -n "${CHORES}" ]      && printf '### Chores\n%s\n\n' "${CHORES}"
+              [ -n "${OTHER}" ]       && printf '### Other\n%s\n\n' "${OTHER}"
+            fi
+
+            echo "> These builds are from the latest main branch and may be unstable."
+            echo "> For stable releases, use a versioned tag."
+          } > "${NOTES_FILE}"
+
           gh release create nightly \
             --title "Nightly Build (${DATE})" \
-            --notes "Automated nightly build from main branch.
-
-          **Commit:** ${SHORT_SHA}
-          **Date:** ${DATE}
-
-          > These builds are from the latest main branch and may be unstable.
-          > For stable releases, use a versioned tag." \
+            --notes-file "${NOTES_FILE}" \
             --prerelease \
             --target main \
             release/*
+
+          rm -f "${NOTES_FILE}"
 
   # Build and push multi-arch Docker images
   docker:
