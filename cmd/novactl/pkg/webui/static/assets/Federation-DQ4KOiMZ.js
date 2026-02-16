@@ -1,1 +1,0 @@
-import{j as e}from"./ui-weZN0jFY.js";import"./vendor-Dk2pv1e-.js";function r(){return e.jsxs("div",{className:"space-y-4",children:[e.jsx("h1",{className:"text-2xl font-bold",children:"Federation"}),e.jsx("p",{className:"text-muted-foreground",children:"This page is under construction."})]})}export{r as default};

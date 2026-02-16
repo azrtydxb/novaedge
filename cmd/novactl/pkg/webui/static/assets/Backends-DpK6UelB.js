@@ -1,0 +1,21 @@
+import{j as a}from"./ui-C7EZ6zpn.js";import{a as n}from"./vendor-CwhvS1Xk.js";import{u as K,k as x,l as U,R as Y,m as v,e as h}from"./index-D2NKZ5iG.js";import{c as _,t as H,v as G,w as I,p as J}from"./hooks-LIr8xFai.js";import{D as Q}from"./DataTable-Nknefu9o.js";import{T as W,P as X}from"./trash-2-WueFybTX.js";import"./query-B9ZAROpx.js";import"./charts-I6YY2jED.js";import"./table-DQF6FC_p.js";import"./chevron-up-D2Rliuq6.js";import"./input-CYP15ZsC.js";import"./search-BE7d1k6s.js";const Z=`apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: my-backend
+  namespace: default
+spec:
+  endpoints:
+    - address: 10.0.0.1
+      port: 8080
+    - address: 10.0.0.2
+      port: 8080
+  loadBalancer:
+    algorithm: RoundRobin
+  healthCheck:
+    enabled: true
+    path: /health
+    interval: 10s
+    timeout: 5s
+    healthyThreshold: 2
+    unhealthyThreshold: 3
+`;function me(){const{namespace:j,readOnly:s}=K(),{data:S=[],isLoading:w,error:u}=_(j),p=H(),k=G(),g=I(),f=J("backends"),[c,b]=n.useState(new Set),[A,l]=n.useState(!1),[o,D]=n.useState("create"),[T,y]=n.useState(),[L,B]=n.useState(!1),[i,N]=n.useState(null),[R,C]=n.useState(!1),O=[{key:"name",header:"Name",accessor:e=>e.metadata?.name??"-",sortable:!0},{key:"namespace",header:"Namespace",accessor:e=>a.jsx(h,{variant:"outline",children:e.metadata?.namespace??"-"}),sortable:!0},{key:"endpoints",header:"Endpoints",accessor:e=>{const t=e.spec?.endpoints??[],d=t.filter(m=>m.healthy!==!1).length;return a.jsxs("span",{children:[d,"/",t.length," healthy"]})}},{key:"algorithm",header:"LB Algorithm",accessor:e=>a.jsx(h,{variant:"secondary",children:e.spec?.loadBalancer?.algorithm??"RoundRobin"})},{key:"healthCheck",header:"Health Check",accessor:e=>a.jsx(h,{variant:e.spec?.healthCheck?.enabled?"default":"secondary",className:e.spec?.healthCheck?.enabled?"bg-green-500 hover:bg-green-600":"",children:e.spec?.healthCheck?.enabled?"Enabled":"Disabled"})},{key:"age",header:"Age",accessor:e=>e.metadata?.creationTimestamp?U(e.metadata.creationTimestamp):"-",sortable:!0}],E=()=>{y(void 0),D("create"),l(!0)},r=e=>{y(e),D(s?"view":"edit"),l(!0)},P=e=>{N(e),B(!0)},z=()=>{i&&g.mutate({namespace:i.metadata?.namespace??"",name:i.metadata?.name??""})},M=()=>{C(!0)},$=()=>{const e=Array.from(c).map(t=>{const[d,m]=t.split("/");return{namespace:d,name:m}});f.mutate(e,{onSuccess:()=>b(new Set)})},F=async e=>{o==="create"?await p.mutateAsync(e):await k.mutateAsync({namespace:e.metadata?.namespace??"",name:e.metadata?.name??"",backend:e})},V=e=>`${e.metadata?.namespace}/${e.metadata?.name}`;return u?a.jsxs("div",{className:"text-center py-12 text-destructive",children:["Failed to load backends: ",u.message]}):a.jsxs("div",{className:"space-y-4",children:[a.jsxs("div",{className:"flex items-center justify-between",children:[a.jsx("div",{className:"flex items-center gap-2",children:!s&&c.size>0&&a.jsxs(x,{variant:"destructive",size:"sm",onClick:M,children:[a.jsx(W,{className:"h-4 w-4 mr-2"}),"Delete (",c.size,")"]})}),!s&&a.jsxs(x,{onClick:E,children:[a.jsx(X,{className:"h-4 w-4 mr-2"}),"Create Backend"]})]}),a.jsx(Q,{data:S,columns:O,getRowKey:V,selectable:!s,selectedRows:c,onSelectionChange:b,onRowClick:r,isLoading:w,emptyMessage:"No backends found",searchPlaceholder:"Search backends...",searchFilter:(e,t)=>e.metadata?.name?.toLowerCase().includes(t)||e.metadata?.namespace?.toLowerCase().includes(t)||!1,actions:e=>s?[{label:"View",onClick:()=>r(e)}]:[{label:"Edit",onClick:()=>r(e)},{label:"Delete",onClick:()=>P(e),variant:"destructive"}]}),a.jsx(Y,{open:A,onOpenChange:l,title:o==="create"?"Create Backend":o==="edit"?"Edit Backend":"View Backend",description:o==="create"?"Define a new backend configuration":void 0,mode:o,resource:T,onSubmit:F,isLoading:p.isPending||k.isPending,readOnly:s,defaultYaml:Z}),a.jsx(v,{open:L,onOpenChange:B,title:"Delete Backend",description:`Are you sure you want to delete backend "${i?.metadata?.name}"? This action cannot be undone.`,confirmLabel:"Delete",variant:"destructive",onConfirm:z,isLoading:g.isPending}),a.jsx(v,{open:R,onOpenChange:C,title:"Delete Selected Backends",description:`Are you sure you want to delete ${c.size} backend(s)? This action cannot be undone.`,confirmLabel:"Delete All",variant:"destructive",onConfirm:$,isLoading:f.isPending})]})}export{me as default};

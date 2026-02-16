@@ -1,1 +1,0 @@
-import{j as s}from"./ui-weZN0jFY.js";import"./vendor-Dk2pv1e-.js";function t(){return s.jsxs("div",{className:"space-y-4",children:[s.jsx("h1",{className:"text-2xl font-bold",children:"MetricsDashboard"}),s.jsx("p",{className:"text-muted-foreground",children:"This page is under construction."})]})}export{t as default};
