@@ -30,6 +30,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -545,12 +546,10 @@ func TestParseJWKPublicKey(t *testing.T) {
 }
 
 func TestBuildAllowedAlgorithms(t *testing.T) {
-	t.Run("empty list allows all", func(t *testing.T) {
+	t.Run("empty list returns empty set", func(t *testing.T) {
 		result := buildAllowedAlgorithms(nil)
-		for alg := range supportedAlgorithms {
-			if !result[alg] {
-				t.Errorf("Expected algorithm %s to be allowed", alg)
-			}
+		if len(result) != 0 {
+			t.Errorf("Expected empty set for nil input, got %d entries", len(result))
 		}
 	})
 
@@ -587,8 +586,9 @@ func TestBuildAllowedAlgorithms(t *testing.T) {
 func TestNewJWTValidator(t *testing.T) {
 	t.Run("without JWKS URI", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -627,9 +627,10 @@ func TestNewJWTValidator(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -653,9 +654,10 @@ func TestNewJWTValidator(t *testing.T) {
 
 	t.Run("with invalid JWKS URI", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  "http://invalid-host-that-does-not-exist.local/jwks",
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           "http://invalid-host-that-does-not-exist.local/jwks",
 		}
 
 		_, err := NewJWTValidator(context.Background(), config)
@@ -685,6 +687,23 @@ func TestNewJWTValidator(t *testing.T) {
 			t.Error("Expected ES384 to NOT be allowed")
 		}
 	})
+
+	t.Run("empty allowed algorithms returns error", func(t *testing.T) {
+		config := &pb.JWTConfig{
+			Issuer:   "test-issuer",
+			Audience: []string{"test-audience"},
+		}
+
+		_, err := NewJWTValidator(context.Background(), config)
+		if err == nil {
+			t.Fatal("Expected error when AllowedAlgorithms is empty")
+		}
+
+		expectedMsg := "AllowedAlgorithms must be explicitly configured"
+		if !strings.Contains(err.Error(), expectedMsg) {
+			t.Errorf("Expected error containing %q, got: %v", expectedMsg, err)
+		}
+	})
 }
 
 func TestValidate(t *testing.T) {
@@ -710,9 +729,10 @@ func TestValidate(t *testing.T) {
 
 	t.Run("valid token", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -737,9 +757,10 @@ func TestValidate(t *testing.T) {
 
 	t.Run("expired token", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -760,9 +781,10 @@ func TestValidate(t *testing.T) {
 
 	t.Run("invalid issuer", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "expected-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "expected-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -783,9 +805,10 @@ func TestValidate(t *testing.T) {
 
 	t.Run("invalid audience", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"expected-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"expected-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -806,9 +829,10 @@ func TestValidate(t *testing.T) {
 
 	t.Run("unknown key ID", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -829,9 +853,10 @@ func TestValidate(t *testing.T) {
 
 	t.Run("malformed token", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -874,9 +899,10 @@ func TestValidateECDSA(t *testing.T) {
 			defer server.Close()
 
 			config := &pb.JWTConfig{
-				Issuer:   "test-issuer",
-				Audience: []string{"test-audience"},
-				JwksUri:  server.URL,
+				AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+				Issuer:            "test-issuer",
+				Audience:          []string{"test-audience"},
+				JwksUri:           server.URL,
 			}
 
 			validator, err := NewJWTValidator(context.Background(), config)
@@ -915,9 +941,10 @@ func TestValidateECDSA(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -953,9 +980,10 @@ func TestValidateEdDSA(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -993,9 +1021,10 @@ func TestValidateEdDSA(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -1196,9 +1225,10 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 
 	t.Run("no algorithms configured allows all", func(t *testing.T) {
 		config := &pb.JWTConfig{
-			Issuer:   "test-issuer",
-			Audience: []string{"test-audience"},
-			JwksUri:  server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			Issuer:            "test-issuer",
+			Audience:          []string{"test-audience"},
+			JwksUri:           server.URL,
 		}
 
 		validator, err := NewJWTValidator(context.Background(), config)
@@ -1263,9 +1293,10 @@ func TestValidateMixedKeyTypes(t *testing.T) {
 	defer server.Close()
 
 	config := &pb.JWTConfig{
-		Issuer:   "test-issuer",
-		Audience: []string{"test-audience"},
-		JwksUri:  server.URL,
+		AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+		Issuer:            "test-issuer",
+		Audience:          []string{"test-audience"},
+		JwksUri:           server.URL,
 	}
 
 	validator, err := NewJWTValidator(context.Background(), config)
@@ -1341,9 +1372,10 @@ func TestHandleJWT(t *testing.T) {
 	defer server.Close()
 
 	config := &pb.JWTConfig{
-		Issuer:   "test-issuer",
-		Audience: []string{"test-audience"},
-		JwksUri:  server.URL,
+		AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+		Issuer:            "test-issuer",
+		Audience:          []string{"test-audience"},
+		JwksUri:           server.URL,
 	}
 
 	validator, err := NewJWTValidator(context.Background(), config)
@@ -1473,9 +1505,10 @@ func TestHandleJWTWithECDSA(t *testing.T) {
 	defer server.Close()
 
 	config := &pb.JWTConfig{
-		Issuer:   "test-issuer",
-		Audience: []string{"test-audience"},
-		JwksUri:  server.URL,
+		AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+		Issuer:            "test-issuer",
+		Audience:          []string{"test-audience"},
+		JwksUri:           server.URL,
 	}
 
 	validator, err := NewJWTValidator(context.Background(), config)
@@ -1536,13 +1569,14 @@ func TestFetchJWKS(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			JwksUri: server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			JwksUri:           server.URL,
 		}
 
 		validator := &JWTValidator{
 			config:            config,
 			keys:              make(map[string]interface{}),
-			allowedAlgorithms: buildAllowedAlgorithms(nil),
+			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
 		}
 
 		err = validator.fetchJWKS(context.Background())
@@ -1574,13 +1608,14 @@ func TestFetchJWKS(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			JwksUri: server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			JwksUri:           server.URL,
 		}
 
 		validator := &JWTValidator{
 			config:            config,
 			keys:              make(map[string]interface{}),
-			allowedAlgorithms: buildAllowedAlgorithms(nil),
+			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
 		}
 
 		err = validator.fetchJWKS(context.Background())
@@ -1612,13 +1647,14 @@ func TestFetchJWKS(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			JwksUri: server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			JwksUri:           server.URL,
 		}
 
 		validator := &JWTValidator{
 			config:            config,
 			keys:              make(map[string]interface{}),
-			allowedAlgorithms: buildAllowedAlgorithms(nil),
+			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
 		}
 
 		err = validator.fetchJWKS(context.Background())
@@ -1642,13 +1678,14 @@ func TestFetchJWKS(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			JwksUri: server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			JwksUri:           server.URL,
 		}
 
 		validator := &JWTValidator{
 			config:            config,
 			keys:              make(map[string]interface{}),
-			allowedAlgorithms: buildAllowedAlgorithms(nil),
+			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
 		}
 
 		err := validator.fetchJWKS(context.Background())
@@ -1665,13 +1702,14 @@ func TestFetchJWKS(t *testing.T) {
 		defer server.Close()
 
 		config := &pb.JWTConfig{
-			JwksUri: server.URL,
+			AllowedAlgorithms: []string{"RS256", "ES256", "EdDSA"},
+			JwksUri:           server.URL,
 		}
 
 		validator := &JWTValidator{
 			config:            config,
 			keys:              make(map[string]interface{}),
-			allowedAlgorithms: buildAllowedAlgorithms(nil),
+			allowedAlgorithms: buildAllowedAlgorithms([]string{"RS256", "ES256", "EdDSA"}),
 		}
 
 		err := validator.fetchJWKS(context.Background())
