@@ -393,6 +393,350 @@ func (s *Server) handlePolicyWrite(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleCertificateWrite handles POST/PUT/DELETE for certificates
+func (s *Server) handleCertificateWrite(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/certificates")
+
+	switch r.Method {
+	case http.MethodPost:
+		var cert models.Certificate
+		if err := json.NewDecoder(r.Body).Decode(&cert); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		result, err := s.backend.CreateCertificate(ctx, &cert)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, result)
+
+	case http.MethodPut:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/certificates/{namespace}/{name}")
+			return
+		}
+
+		var cert models.Certificate
+		if err := json.NewDecoder(r.Body).Decode(&cert); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		cert.Namespace = parts[0]
+		cert.Name = parts[1]
+
+		result, err := s.backend.UpdateCertificate(ctx, &cert)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/certificates/{namespace}/{name}")
+			return
+		}
+
+		if err := s.backend.DeleteCertificate(ctx, parts[0], parts[1]); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleIPPoolWrite handles POST/PUT/DELETE for IP pools
+func (s *Server) handleIPPoolWrite(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/ippools")
+
+	switch r.Method {
+	case http.MethodPost:
+		var pool models.IPPool
+		if err := json.NewDecoder(r.Body).Decode(&pool); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		result, err := s.backend.CreateIPPool(ctx, &pool)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, result)
+
+	case http.MethodPut:
+		name := strings.TrimPrefix(path, "/")
+		if name == "" || strings.Contains(name, "/") {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/ippools/{name}")
+			return
+		}
+
+		var pool models.IPPool
+		if err := json.NewDecoder(r.Body).Decode(&pool); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		pool.Name = name
+
+		result, err := s.backend.UpdateIPPool(ctx, &pool)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		name := strings.TrimPrefix(path, "/")
+		if name == "" || strings.Contains(name, "/") {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/ippools/{name}")
+			return
+		}
+
+		if err := s.backend.DeleteIPPool(ctx, name); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleClusterWrite handles POST/PUT/DELETE for NovaEdge clusters
+func (s *Server) handleClusterWrite(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters")
+
+	switch r.Method {
+	case http.MethodPost:
+		var cluster models.NovaEdgeClusterModel
+		if err := json.NewDecoder(r.Body).Decode(&cluster); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		result, err := s.backend.CreateNovaEdgeCluster(ctx, &cluster)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, result)
+
+	case http.MethodPut:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/clusters/{namespace}/{name}")
+			return
+		}
+
+		var cluster models.NovaEdgeClusterModel
+		if err := json.NewDecoder(r.Body).Decode(&cluster); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		cluster.Namespace = parts[0]
+		cluster.Name = parts[1]
+
+		result, err := s.backend.UpdateNovaEdgeCluster(ctx, &cluster)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/clusters/{namespace}/{name}")
+			return
+		}
+
+		if err := s.backend.DeleteNovaEdgeCluster(ctx, parts[0], parts[1]); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleFederationWrite handles POST/PUT/DELETE for federations
+func (s *Server) handleFederationWrite(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/federations")
+
+	switch r.Method {
+	case http.MethodPost:
+		var federation models.FederationModel
+		if err := json.NewDecoder(r.Body).Decode(&federation); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		result, err := s.backend.CreateFederation(ctx, &federation)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, result)
+
+	case http.MethodPut:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/federations/{namespace}/{name}")
+			return
+		}
+
+		var federation models.FederationModel
+		if err := json.NewDecoder(r.Body).Decode(&federation); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		federation.Namespace = parts[0]
+		federation.Name = parts[1]
+
+		result, err := s.backend.UpdateFederation(ctx, &federation)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/federations/{namespace}/{name}")
+			return
+		}
+
+		if err := s.backend.DeleteFederation(ctx, parts[0], parts[1]); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleRemoteClusterWrite handles POST/PUT/DELETE for remote clusters
+func (s *Server) handleRemoteClusterWrite(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/remoteclusters")
+
+	switch r.Method {
+	case http.MethodPost:
+		var rc models.RemoteClusterModel
+		if err := json.NewDecoder(r.Body).Decode(&rc); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		result, err := s.backend.CreateRemoteCluster(ctx, &rc)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, result)
+
+	case http.MethodPut:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/remoteclusters/{namespace}/{name}")
+			return
+		}
+
+		var rc models.RemoteClusterModel
+		if err := json.NewDecoder(r.Body).Decode(&rc); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		rc.Namespace = parts[0]
+		rc.Name = parts[1]
+
+		result, err := s.backend.UpdateRemoteCluster(ctx, &rc)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/remoteclusters/{namespace}/{name}")
+			return
+		}
+
+		if err := s.backend.DeleteRemoteCluster(ctx, parts[0], parts[1]); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 // handleConfigValidate handles POST /api/v1/config/validate
 func (s *Server) handleConfigValidate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

@@ -149,6 +149,16 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/vips/", s.handleVIPWithWrite)
 	mux.HandleFunc("/api/v1/policies", s.handlePoliciesWithWrite)
 	mux.HandleFunc("/api/v1/policies/", s.handlePolicyWithWrite)
+	mux.HandleFunc("/api/v1/certificates", s.handleCertificatesWithWrite)
+	mux.HandleFunc("/api/v1/certificates/", s.handleCertificateWithWrite)
+	mux.HandleFunc("/api/v1/ippools", s.handleIPPoolsWithWrite)
+	mux.HandleFunc("/api/v1/ippools/", s.handleIPPoolWithWrite)
+	mux.HandleFunc("/api/v1/clusters", s.handleClustersWithWrite)
+	mux.HandleFunc("/api/v1/clusters/", s.handleClusterWithWrite)
+	mux.HandleFunc("/api/v1/federations", s.handleFederationsWithWrite)
+	mux.HandleFunc("/api/v1/federations/", s.handleFederationWithWrite)
+	mux.HandleFunc("/api/v1/remoteclusters", s.handleRemoteClustersWithWrite)
+	mux.HandleFunc("/api/v1/remoteclusters/", s.handleRemoteClusterWithWrite)
 	mux.HandleFunc("/api/v1/agents", s.handleAgents)
 	mux.HandleFunc("/api/v1/metrics/dashboard", s.handleMetricsDashboard)
 	mux.HandleFunc("/api/v1/metrics/query", s.handleMetricsQuery)
@@ -461,6 +471,126 @@ func (s *Server) handlePolicyWithWrite(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleCertificatesWithWrite dispatches to GET or POST handler
+func (s *Server) handleCertificatesWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleCertificates(w, r)
+	case http.MethodPost:
+		s.handleCertificateWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleCertificateWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleCertificateWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleCertificate(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleCertificateWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleIPPoolsWithWrite dispatches to GET or POST handler
+func (s *Server) handleIPPoolsWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleIPPools(w, r)
+	case http.MethodPost:
+		s.handleIPPoolWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleIPPoolWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleIPPoolWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleIPPool(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleIPPoolWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleClustersWithWrite dispatches to GET or POST handler
+func (s *Server) handleClustersWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleClusters(w, r)
+	case http.MethodPost:
+		s.handleClusterWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleClusterWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleClusterWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleCluster(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleClusterWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleFederationsWithWrite dispatches to GET or POST handler
+func (s *Server) handleFederationsWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleFederations(w, r)
+	case http.MethodPost:
+		s.handleFederationWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleFederationWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleFederationWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleFederation(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleFederationWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleRemoteClustersWithWrite dispatches to GET or POST handler
+func (s *Server) handleRemoteClustersWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleRemoteClusters(w, r)
+	case http.MethodPost:
+		s.handleRemoteClusterWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleRemoteClusterWithWrite dispatches to GET, PUT, or DELETE handler
+func (s *Server) handleRemoteClusterWithWrite(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleRemoteCluster(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleRemoteClusterWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
 // handleGateways handles GET /api/v1/gateways
 func (s *Server) handleGateways(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -729,6 +859,274 @@ func (s *Server) handlePolicy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, policy)
+}
+
+// handleCertificates handles GET /api/v1/certificates
+func (s *Server) handleCertificates(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	namespace := parseNamespaceFromQuery(r)
+
+	certificates, err := s.backend.ListCertificates(ctx, namespace)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list certificates: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, certificates)
+}
+
+// handleCertificate handles GET /api/v1/certificates/{namespace}/{name}
+func (s *Server) handleCertificate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/certificates/"), "/")
+	if len(parts) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/certificates/{namespace}/{name}")
+		return
+	}
+
+	namespace, name := parts[0], parts[1]
+	ctx := r.Context()
+
+	certificate, err := s.backend.GetCertificate(ctx, namespace, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("certificate not found: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, certificate)
+}
+
+// handleIPPools handles GET /api/v1/ippools
+func (s *Server) handleIPPools(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+
+	pools, err := s.backend.ListIPPools(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list IP pools: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pools)
+}
+
+// handleIPPool handles GET /api/v1/ippools/{name}
+func (s *Server) handleIPPool(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	name := strings.TrimPrefix(r.URL.Path, "/api/v1/ippools/")
+	if name == "" || strings.Contains(name, "/") {
+		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/ippools/{name}")
+		return
+	}
+
+	ctx := r.Context()
+
+	pool, err := s.backend.GetIPPool(ctx, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("IP pool not found: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, pool)
+}
+
+// handleClusters handles GET /api/v1/clusters
+func (s *Server) handleClusters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	namespace := parseNamespaceFromQuery(r)
+
+	clusters, err := s.backend.ListNovaEdgeClusters(ctx, namespace)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list clusters: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, clusters)
+}
+
+// handleCluster handles GET /api/v1/clusters/{namespace}/{name}
+func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/clusters/"), "/")
+	if len(parts) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/clusters/{namespace}/{name}")
+		return
+	}
+
+	namespace, name := parts[0], parts[1]
+	ctx := r.Context()
+
+	cluster, err := s.backend.GetNovaEdgeCluster(ctx, namespace, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("cluster not found: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, cluster)
+}
+
+// handleFederations handles GET /api/v1/federations
+func (s *Server) handleFederations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	namespace := parseNamespaceFromQuery(r)
+
+	federations, err := s.backend.ListFederations(ctx, namespace)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list federations: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, federations)
+}
+
+// handleFederation handles GET /api/v1/federations/{namespace}/{name}
+func (s *Server) handleFederation(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/federations/"), "/")
+	if len(parts) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/federations/{namespace}/{name}")
+		return
+	}
+
+	namespace, name := parts[0], parts[1]
+	ctx := r.Context()
+
+	federation, err := s.backend.GetFederation(ctx, namespace, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("federation not found: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, federation)
+}
+
+// handleRemoteClusters handles GET /api/v1/remoteclusters
+func (s *Server) handleRemoteClusters(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	namespace := parseNamespaceFromQuery(r)
+
+	remoteClusters, err := s.backend.ListRemoteClusters(ctx, namespace)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list remote clusters: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, remoteClusters)
+}
+
+// handleRemoteCluster handles GET /api/v1/remoteclusters/{namespace}/{name}
+func (s *Server) handleRemoteCluster(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/remoteclusters/"), "/")
+	if len(parts) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/remoteclusters/{namespace}/{name}")
+		return
+	}
+
+	namespace, name := parts[0], parts[1]
+	ctx := r.Context()
+
+	remoteCluster, err := s.backend.GetRemoteCluster(ctx, namespace, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("remote cluster not found: %v", err))
+		return
+	}
+
+	writeJSON(w, http.StatusOK, remoteCluster)
 }
 
 // handleAgents handles GET /api/v1/agents
