@@ -6,6 +6,7 @@ IMG_AGENT ?= novaedge-agent:latest
 IMG_NOVACTL ?= novaedge-novactl:latest
 IMG_STANDALONE ?= novaedge-standalone:latest
 IMG_OPERATOR ?= novaedge-operator:latest
+IMG_WEBUI ?= novaedge-webui:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -97,6 +98,10 @@ build-standalone: fmt vet ## Build standalone agent binary.
 build-operator: fmt vet ## Build operator binary.
 	go build -o bin/novaedge-operator cmd/novaedge-operator/main.go
 
+.PHONY: build-webui
+build-webui: ## Build web UI frontend (requires Node.js).
+	cd web && npm ci && npm run build
+
 .PHONY: build-all
 build-all: build-controller build-agent build-novactl build-standalone build-operator ## Build all binaries.
 
@@ -113,7 +118,7 @@ run-standalone: fmt vet ## Run standalone agent from your host.
 	go run ./cmd/novaedge-standalone/main.go --config=$(CONFIG_FILE)
 
 .PHONY: docker-build
-docker-build: docker-build-controller docker-build-agent docker-build-novactl docker-build-standalone ## Build all docker images.
+docker-build: docker-build-controller docker-build-agent docker-build-novactl docker-build-standalone docker-build-webui ## Build all docker images.
 
 .PHONY: test-agent
 test-agent: ## Run agent tests.
@@ -128,8 +133,12 @@ docker-build-agent: ## Build agent docker image.
 	docker build -t ${IMG_AGENT} -f Dockerfile.agent .
 
 .PHONY: docker-build-novactl
-docker-build-novactl: ## Build novactl docker image (includes web UI).
+docker-build-novactl: ## Build novactl docker image (API backend only).
 	docker build -t ${IMG_NOVACTL} -f Dockerfile.novactl .
+
+.PHONY: docker-build-webui
+docker-build-webui: ## Build web UI frontend docker image (nginx + React SPA).
+	docker build -t ${IMG_WEBUI} -f Dockerfile.webui .
 
 .PHONY: docker-build-standalone
 docker-build-standalone: ## Build standalone agent docker image.
@@ -140,7 +149,7 @@ docker-build-operator: ## Build operator docker image.
 	docker build -t ${IMG_OPERATOR} -f Dockerfile.operator .
 
 .PHONY: docker-push
-docker-push: docker-push-controller docker-push-agent docker-push-novactl docker-push-operator ## Push all docker images.
+docker-push: docker-push-controller docker-push-agent docker-push-novactl docker-push-operator docker-push-webui ## Push all docker images.
 
 .PHONY: docker-push-controller
 docker-push-controller: ## Push controller docker image.
@@ -157,6 +166,10 @@ docker-push-novactl: ## Push novactl docker image.
 .PHONY: docker-push-operator
 docker-push-operator: ## Push operator docker image.
 	docker push ${IMG_OPERATOR}
+
+.PHONY: docker-push-webui
+docker-push-webui: ## Push web UI frontend docker image.
+	docker push ${IMG_WEBUI}
 
 ##@ Deployment
 
