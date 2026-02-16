@@ -30,6 +30,8 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+
+	"github.com/piwi3910/novaedge/internal/agent/policy"
 	"golang.org/x/crypto/ocsp"
 )
 
@@ -333,7 +335,7 @@ func (s *OCSPStapler) fetchOCSPResponse(entry *ocspCertEntry, leaf *x509.Certifi
 	}
 
 	responderURL := leaf.OCSPServer[0]
-	httpClient := &http.Client{Timeout: ocspHTTPTimeout}
+	httpClient := policy.NewSSRFProtectedClient(ocspHTTPTimeout)
 
 	ocspHTTPReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, responderURL, bytes.NewReader(ocspReq))
 	if err != nil {

@@ -136,7 +136,7 @@ func (v *JWTValidator) fetchJWKS(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := NewSSRFProtectedClient(10 * time.Second).Do(req)
 	if err != nil {
 		return err
 	}
