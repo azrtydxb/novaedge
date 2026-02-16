@@ -36,7 +36,7 @@ import (
 )
 
 // handleRoute handles a matched route
-func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
+func (r *Router) handleRoute(snap *routerState, entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
 	// Wrap response writer with response filter if needed
 	responseWriter := w
 	if entry.ResponseFilter != nil && entry.ResponseFilter.HasModifications() {
@@ -47,7 +47,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 
 	// Create the final handler that forwards to backend (with optional retry)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		r.forwardToBackend(entry, w, req)
+		r.forwardToBackend(snap, entry, w, req)
 	})
 
 	// Apply response buffering middleware (wraps backend, buffers before sending to client)
@@ -57,14 +57,14 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 	}
 
 	// Apply compression middleware (wraps backend response, compresses before client)
-	if r.compressionConfig != nil && r.compressionConfig.Enabled {
-		comp := NewCompressionMiddleware(r.compressionConfig)
+	if snap.compressionConfig != nil && snap.compressionConfig.Enabled {
+		comp := NewCompressionMiddleware(snap.compressionConfig)
 		handler = comp.Wrap(handler)
 	}
 
 	// Apply cache middleware: cache executes BEFORE backend forwarding (cache hit skips backend)
-	if r.cache != nil && r.cache.config.Enabled {
-		handler = r.cache.Middleware(handler)
+	if snap.cache != nil && snap.cache.config.Enabled {
+		handler = snap.cache.Middleware(handler)
 	}
 
 	// Apply request buffering middleware (buffers request body before forwarding)
@@ -90,8 +90,8 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 	}
 
 	// Wrap with error page interceptor if configured
-	if r.errorPages != nil && r.errorPages.IsEnabled() {
-		handler = r.errorPages.Wrap(handler)
+	if snap.errorPages != nil && snap.errorPages.IsEnabled() {
+		handler = snap.errorPages.Wrap(handler)
 	}
 	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> error pages -> pipeline -> backend
 	// In detailed trace mode, wrap the middleware chain in a child span.
@@ -111,7 +111,7 @@ func (r *Router) handleRoute(entry *RouteEntry, w http.ResponseWriter, req *http
 }
 
 // forwardToBackend forwards the request to the backend
-func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
+func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
 	// Get the parent span from request context
 	ctx := req.Context()
 	parentSpan := trace.SpanFromContext(ctx)
@@ -143,7 +143,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		}
 
 		// Validate gRPC request
-		if err := r.grpcHandler.ValidateGRPCRequest(req); err != nil {
+		if err := snap.grpcHandler.ValidateGRPCRequest(req); err != nil {
 			backendSpan.SetStatus(codes.Error, "Invalid gRPC request")
 			backendSpan.RecordError(err)
 			r.logger.Error("Invalid gRPC request", zap.Error(err))
@@ -152,7 +152,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		}
 
 		// Prepare gRPC request for backend
-		req = r.grpcHandler.PrepareGRPCRequest(req)
+		req = snap.grpcHandler.PrepareGRPCRequest(req)
 	}
 
 	// Apply route filters first (header modifications, redirects, rewrites)
@@ -176,11 +176,11 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	// The original request flow is unaffected by the mirror.
 	if entry.MirrorConfig != nil {
 		// Build interface maps for mirror endpoint selection
-		standardLBs := make(map[string]interface{}, len(r.loadBalancers))
-		for k, v := range r.loadBalancers {
+		standardLBs := make(map[string]interface{}, len(snap.loadBalancers))
+		for k, v := range snap.loadBalancers {
 			standardLBs[k] = v
 		}
-		r.mirrorRequest(ctx, req, entry.MirrorConfig, r.pools, r.hashBasedLBs, standardLBs)
+		r.mirrorRequest(ctx, req, entry.MirrorConfig, snap.pools, snap.hashBasedLBs, standardLBs)
 	}
 
 	clusterKey := entry.BackendClusterKeys[backendRef]
@@ -199,7 +199,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		var poolSpan trace.Span
 		_, poolSpan = tracer.Start(ctx, "pool_acquisition",
 			trace.WithAttributes(attribute.String("novaedge.backend.cluster", clusterKey)))
-		pool, poolFound = r.pools[clusterKey]
+		pool, poolFound = snap.pools[clusterKey]
 		if poolFound {
 			poolSpan.SetStatus(codes.Ok, "")
 		} else {
@@ -207,7 +207,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 		}
 		poolSpan.End()
 	} else {
-		pool, poolFound = r.pools[clusterKey]
+		pool, poolFound = snap.pools[clusterKey]
 	}
 	if !poolFound {
 		backendSpan.SetStatus(codes.Error, "No pool for cluster")
@@ -227,7 +227,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	}
 
 	// Check if this cluster uses hash-based load balancing
-	if hashLB, ok := r.hashBasedLBs[clusterKey]; ok {
+	if hashLB, ok := snap.hashBasedLBs[clusterKey]; ok {
 		// Use client IP as the hash key for consistent hashing
 		// Extract client IP from request
 		clientIP := req.RemoteAddr
@@ -249,13 +249,13 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 			http.Error(w, "Backend configuration error", http.StatusInternalServerError)
 			return
 		}
-	} else if stickyWrapper, hasSW := r.stickyWrappers[clusterKey]; hasSW {
+	} else if stickyWrapper, hasSW := snap.stickyWrappers[clusterKey]; hasSW {
 		// Use sticky session wrapper (cookie-based affinity)
 		endpoint = stickyWrapper.SelectWithAffinity(req, w)
 		lbType = "sticky"
 	} else {
 		// Use standard load balancer
-		loadBalancer, ok := r.loadBalancers[clusterKey]
+		loadBalancer, ok := snap.loadBalancers[clusterKey]
 		if !ok {
 			backendSpan.SetStatus(codes.Error, "No load balancer for cluster")
 			r.logger.Error("No load balancer for cluster", zap.String("cluster", clusterKey))
@@ -307,7 +307,7 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	propagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	// Set X-Cache: MISS if caching is enabled and this is a cache miss (no cache header set yet)
-	if r.cache != nil && r.cache.config.Enabled && w.Header().Get("X-Cache") == "" {
+	if snap.cache != nil && snap.cache.config.Enabled && w.Header().Get("X-Cache") == "" {
 		w.Header().Set("X-Cache", "MISS")
 	}
 
@@ -317,11 +317,11 @@ func (r *Router) forwardToBackend(entry *RouteEntry, w http.ResponseWriter, req 
 	if retryPolicy != nil && !isGRPC {
 		// Use retry-aware forwarding
 		var loadBalancer lb.LoadBalancer
-		if stdLB, ok := r.loadBalancers[clusterKey]; ok {
+		if stdLB, ok := snap.loadBalancers[clusterKey]; ok {
 			loadBalancer = stdLB
 		}
 		var hashLB interface{}
-		if hLB, ok := r.hashBasedLBs[clusterKey]; ok {
+		if hLB, ok := snap.hashBasedLBs[clusterKey]; ok {
 			hashLB = hLB
 		}
 
