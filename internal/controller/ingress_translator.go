@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -166,10 +167,10 @@ const (
 )
 
 // ServicePortResolver resolves service port names to port numbers
-type ServicePortResolver func(namespace, serviceName, portName string) (int32, error)
+type ServicePortResolver func(ctx context.Context, namespace, serviceName, portName string) (int32, error)
 
 // VIPModeResolver resolves a VIP reference name to its mode (e.g. "BGP", "OSPF", "L2ARP")
-type VIPModeResolver func(vipRef string) string
+type VIPModeResolver func(ctx context.Context, vipRef string) string
 
 // IngressTranslator translates Kubernetes Ingress resources to NovaEdge CRDs
 type IngressTranslator struct {
@@ -218,7 +219,7 @@ type TranslationResult struct {
 }
 
 // Translate converts an Ingress resource to NovaEdge CRDs
-func (t *IngressTranslator) Translate(ingress *networkingv1.Ingress) (*TranslationResult, error) {
+func (t *IngressTranslator) Translate(ctx context.Context, ingress *networkingv1.Ingress) (*TranslationResult, error) {
 	result := &TranslationResult{
 		Routes:   make([]*novaedgev1alpha1.ProxyRoute, 0),
 		Backends: make([]*novaedgev1alpha1.ProxyBackend, 0),
@@ -244,7 +245,7 @@ func (t *IngressTranslator) Translate(ingress *networkingv1.Ingress) (*Translati
 		for pathIdx, path := range rule.HTTP.Paths {
 			backendName := t.generateBackendName(ingress, ruleIdx, pathIdx)
 			if _, exists := backendMap[backendName]; !exists {
-				backend := t.translateBackend(ingress, path.Backend, backendName)
+				backend := t.translateBackend(ctx, ingress, path.Backend, backendName)
 				backendMap[backendName] = backend
 			}
 		}
@@ -259,7 +260,7 @@ func (t *IngressTranslator) Translate(ingress *networkingv1.Ingress) (*Translati
 	if ingress.Spec.DefaultBackend != nil {
 		defaultBackendName := t.generateDefaultBackendName(ingress)
 		if _, exists := backendMap[defaultBackendName]; !exists {
-			backend := t.translateBackend(ingress, *ingress.Spec.DefaultBackend, defaultBackendName)
+			backend := t.translateBackend(ctx, ingress, *ingress.Spec.DefaultBackend, defaultBackendName)
 			result.Backends = append(result.Backends, backend)
 		}
 	}
@@ -574,7 +575,7 @@ func (t *IngressTranslator) convertPathMatchWithIngress(ingress *networkingv1.In
 }
 
 // translateBackend creates a ProxyBackend from an Ingress backend
-func (t *IngressTranslator) translateBackend(ingress *networkingv1.Ingress, backend networkingv1.IngressBackend, backendName string) *novaedgev1alpha1.ProxyBackend {
+func (t *IngressTranslator) translateBackend(ctx context.Context, ingress *networkingv1.Ingress, backend networkingv1.IngressBackend, backendName string) *novaedgev1alpha1.ProxyBackend {
 	proxyBackend := &novaedgev1alpha1.ProxyBackend{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      backendName,
@@ -585,7 +586,7 @@ func (t *IngressTranslator) translateBackend(ingress *networkingv1.Ingress, back
 			},
 		},
 		Spec: novaedgev1alpha1.ProxyBackendSpec{
-			LBPolicy: t.getLBPolicy(ingress),
+			LBPolicy: t.getLBPolicy(ctx, ingress),
 		},
 	}
 
@@ -595,7 +596,7 @@ func (t *IngressTranslator) translateBackend(ingress *networkingv1.Ingress, back
 		proxyBackend.Spec.ServiceRef = &novaedgev1alpha1.ServiceReference{
 			Name:      backend.Service.Name,
 			Namespace: &namespace,
-			Port:      t.getServicePort(ingress, backend.Service),
+			Port:      t.getServicePort(ctx, ingress, backend.Service),
 		}
 	}
 
@@ -630,13 +631,13 @@ func (t *IngressTranslator) translateBackend(ingress *networkingv1.Ingress, back
 }
 
 // getServicePort extracts the port number from IngressServiceBackend
-func (t *IngressTranslator) getServicePort(ingress *networkingv1.Ingress, service *networkingv1.IngressServiceBackend) int32 {
+func (t *IngressTranslator) getServicePort(ctx context.Context, ingress *networkingv1.Ingress, service *networkingv1.IngressServiceBackend) int32 {
 	if service.Port.Number != 0 {
 		return service.Port.Number
 	}
 	// If port is specified by name, try to resolve it
 	if service.Port.Name != "" && t.servicePortResolver != nil {
-		port, err := t.servicePortResolver(ingress.Namespace, service.Name, service.Port.Name)
+		port, err := t.servicePortResolver(ctx, ingress.Namespace, service.Name, service.Port.Name)
 		if err == nil {
 			return port
 		}
@@ -684,7 +685,7 @@ func (t *IngressTranslator) getIngressClassName(ingress *networkingv1.Ingress) s
 	return ""
 }
 
-func (t *IngressTranslator) getLBPolicy(ingress *networkingv1.Ingress) novaedgev1alpha1.LoadBalancingPolicy {
+func (t *IngressTranslator) getLBPolicy(ctx context.Context, ingress *networkingv1.Ingress) novaedgev1alpha1.LoadBalancingPolicy {
 	// Explicit annotation always wins
 	if lbPolicy, exists := ingress.Annotations[AnnotationLoadBalancing]; exists {
 		switch strings.ToLower(lbPolicy) {
@@ -703,7 +704,7 @@ func (t *IngressTranslator) getLBPolicy(ingress *networkingv1.Ingress) novaedgev
 	// Auto-detect from VIP mode: BGP/OSPF require hash-based LB for ECMP
 	if t.vipModeResolver != nil {
 		vipRef := t.getVIPRef(ingress)
-		mode := t.vipModeResolver(vipRef)
+		mode := t.vipModeResolver(ctx, vipRef)
 		if mode == string(novaedgev1alpha1.VIPModeBGP) || mode == string(novaedgev1alpha1.VIPModeOSPF) {
 			return novaedgev1alpha1.LBPolicyMaglev
 		}

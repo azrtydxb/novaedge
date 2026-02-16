@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"testing"
 
 	networkingv1 "k8s.io/api/networking/v1"
@@ -264,7 +265,7 @@ func TestGetLBPolicy(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			translator := NewIngressTranslator("default")
-			result := translator.getLBPolicy(tt.ingress)
+			result := translator.getLBPolicy(context.Background(), tt.ingress)
 			if string(result) != tt.expectedName {
 				t.Errorf("getLBPolicy() = %v, want %v", result, tt.expectedName)
 			}
@@ -1308,7 +1309,7 @@ func TestGetLBPolicyVIPModeAware(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var resolver VIPModeResolver
 			if tt.name != "nil resolver defaults to RoundRobin" {
-				resolver = func(_ string) string { return tt.vipModeResult }
+				resolver = func(_ context.Context, _ string) string { return tt.vipModeResult }
 			}
 
 			translator := NewIngressTranslatorWithOptions("default", nil, "default-vip", resolver)
@@ -1324,7 +1325,7 @@ func TestGetLBPolicyVIPModeAware(t *testing.T) {
 				},
 			}
 
-			result := translator.getLBPolicy(ingress)
+			result := translator.getLBPolicy(context.Background(), ingress)
 			if result != tt.expectedPolicy {
 				t.Errorf("getLBPolicy() = %v, want %v", result, tt.expectedPolicy)
 			}
