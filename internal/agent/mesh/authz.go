@@ -111,8 +111,14 @@ func (a *Authorizer) Authorize(source SourceIdentity, destService, method, reque
 	servicePolicies, exists := a.policies[destService]
 	a.mu.RUnlock()
 
-	// No policies for this service — default allow
+	// No policies for this service — default allow.
+	// NOTE: Changing to default-deny would be a breaking change and should
+	// be a separate configurable option in a future release.
 	if !exists || len(servicePolicies) == 0 {
+		a.logger.Debug("mesh authorization default-allow: no policies defined for service",
+			zap.String("source", source.SpiffeID),
+			zap.String("dest", destService),
+		)
 		return true
 	}
 
