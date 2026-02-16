@@ -48,7 +48,6 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 		}
 
 		// Match by Kind: only apply policies that target ProxyRoute resources.
-		// Policies targeting ProxyGateway or ProxyBackend should not match routes.
 		if policyProto.TargetRef.Kind != "ProxyRoute" {
 			continue
 		}
@@ -59,187 +58,233 @@ func (r *Router) createPolicyMiddleware(ctx context.Context, route *pb.Route, sn
 		}
 
 		// Create middleware based on policy type
-		switch policyProto.Type {
-		case pb.PolicyType_RATE_LIMIT:
-			if policyProto.RateLimit != nil {
-				limiter := policy.NewRateLimiter(policyProto.RateLimit)
-				middlewares = append(middlewares, policyMiddleware{
-					name:    fmt.Sprintf("rate-limit-%s", policyProto.Name),
-					handler: policy.HandleRateLimit(limiter),
-				})
-			}
-
-		case pb.PolicyType_CORS:
-			if policyProto.Cors != nil {
-				cors := policy.NewCORS(policyProto.Cors)
-				middlewares = append(middlewares, policyMiddleware{
-					name:    fmt.Sprintf("cors-%s", policyProto.Name),
-					handler: policy.HandleCORS(cors),
-				})
-			}
-
-		case pb.PolicyType_IP_ALLOW_LIST:
-			if policyProto.IpList != nil {
-				filter, err := policy.NewIPAllowListFilter(policyProto.IpList.Cidrs)
-				if err != nil {
-					r.logger.Error("Failed to create IP allow list filter, failing closed",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("ip-allow-%s-fail-closed", policyProto.Name),
-						handler: failClosedMiddleware("IP allow list", policyProto.Name, r.logger),
-					})
-				} else {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("ip-allow-%s", policyProto.Name),
-						handler: policy.HandleIPFilter(filter),
-					})
-				}
-			}
-
-		case pb.PolicyType_IP_DENY_LIST:
-			if policyProto.IpList != nil {
-				filter, err := policy.NewIPDenyListFilter(policyProto.IpList.Cidrs)
-				if err != nil {
-					r.logger.Error("Failed to create IP deny list filter, failing closed",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("ip-deny-%s-fail-closed", policyProto.Name),
-						handler: failClosedMiddleware("IP deny list", policyProto.Name, r.logger),
-					})
-				} else {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("ip-deny-%s", policyProto.Name),
-						handler: policy.HandleIPFilter(filter),
-					})
-				}
-			}
-
-		case pb.PolicyType_JWT:
-			if policyProto.Jwt != nil {
-				validator, err := policy.NewJWTValidator(ctx, policyProto.Jwt)
-				if err == nil {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("jwt-%s", policyProto.Name),
-						handler: policy.HandleJWT(validator),
-					})
-				} else {
-					r.logger.Error("Failed to create JWT validator",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
-				}
-			}
-
-		case pb.PolicyType_SECURITY_HEADERS:
-			if policyProto.SecurityHeaders != nil {
-				sh := policy.NewSecurityHeaders(policyProto.SecurityHeaders)
-				middlewares = append(middlewares, policyMiddleware{
-					name:    fmt.Sprintf("security-headers-%s", policyProto.Name),
-					handler: policy.HandleSecurityHeaders(sh),
-				})
-			}
-
-		case pb.PolicyType_DISTRIBUTED_RATE_LIMIT:
-			if policyProto.DistributedRateLimit != nil {
-				redisClient, err := policy.NewRedisClient(policyProto.DistributedRateLimit.Redis, "", r.logger)
-				if err != nil {
-					r.logger.Error("Failed to create Redis client for distributed rate limit",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
-					// Fail closed: reject requests when rate limiter cannot be initialized
-					policyName := policyProto.Name
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("distributed-ratelimit-%s", policyName),
-						handler: failClosedMiddleware("distributed rate limit", policyName, r.logger),
-					})
-				} else {
-					limiter := policy.NewDistributedRateLimiter(policyProto.DistributedRateLimit, redisClient, r.logger)
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("distributed-ratelimit-%s", policyProto.Name),
-						handler: policy.HandleDistributedRateLimit(limiter),
-					})
-				}
-			}
-
-		case pb.PolicyType_WAF:
-			if policyProto.Waf != nil {
-				engine, err := policy.NewWAFEngine(policyProto.Waf, r.logger)
-				if err != nil {
-					r.logger.Error("Failed to create WAF engine",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
-					// Fail closed: reject requests when WAF cannot be initialized
-					policyName := policyProto.Name
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("waf-%s", policyName),
-						handler: failClosedMiddleware("WAF", policyName, r.logger),
-					})
-				} else {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("waf-%s", policyProto.Name),
-						handler: policy.HandleWAF(engine),
-					})
-				}
-			}
-
-		case pb.PolicyType_BASIC_AUTH:
-			if policyProto.BasicAuth != nil {
-				validator, err := policy.NewBasicAuthValidator(policyProto.BasicAuth)
-				if err == nil {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("basic-auth-%s", policyProto.Name),
-						handler: policy.HandleBasicAuth(validator),
-					})
-				} else {
-					r.logger.Error("Failed to create Basic Auth validator, failing closed",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("basic-auth-%s-fail-closed", policyProto.Name),
-						handler: failClosedMiddleware("Basic Auth", policyProto.Name, r.logger),
-					})
-				}
-			}
-
-		case pb.PolicyType_FORWARD_AUTH:
-			if policyProto.ForwardAuth != nil {
-				handler := policy.NewForwardAuthHandler(ctx, policyProto.ForwardAuth, r.logger)
-				middlewares = append(middlewares, policyMiddleware{
-					name:    fmt.Sprintf("forward-auth-%s", policyProto.Name),
-					handler: policy.HandleForwardAuth(handler),
-				})
-			}
-
-		case pb.PolicyType_OIDC:
-			if policyProto.Oidc != nil {
-				handler, err := policy.NewOIDCHandler(ctx, policyProto.Oidc, r.logger)
-				if err == nil {
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("oidc-%s", policyProto.Name),
-						handler: policy.HandleOIDC(handler),
-					})
-				} else {
-					r.logger.Error("Failed to create OIDC handler, failing closed",
-						zap.String("policy", policyProto.Name),
-						zap.Error(err),
-					)
-					middlewares = append(middlewares, policyMiddleware{
-						name:    fmt.Sprintf("oidc-%s-fail-closed", policyProto.Name),
-						handler: failClosedMiddleware("OIDC", policyProto.Name, r.logger),
-					})
-				}
-			}
+		mw := r.buildPolicyHandler(ctx, policyProto)
+		if mw != nil {
+			middlewares = append(middlewares, *mw)
 		}
 	}
 
 	return middlewares
+}
+
+// buildPolicyHandler creates a single policyMiddleware for the given policy proto.
+// Returns nil if the policy type has no configuration or is unrecognized.
+func (r *Router) buildPolicyHandler(ctx context.Context, p *pb.Policy) *policyMiddleware {
+	switch p.Type {
+	case pb.PolicyType_RATE_LIMIT:
+		return r.buildRateLimitPolicy(p)
+	case pb.PolicyType_CORS:
+		return r.buildCORSPolicy(p)
+	case pb.PolicyType_IP_ALLOW_LIST:
+		return r.buildIPAllowListPolicy(p)
+	case pb.PolicyType_IP_DENY_LIST:
+		return r.buildIPDenyListPolicy(p)
+	case pb.PolicyType_JWT:
+		return r.buildJWTPolicy(ctx, p)
+	case pb.PolicyType_SECURITY_HEADERS:
+		return r.buildSecurityHeadersPolicy(p)
+	case pb.PolicyType_DISTRIBUTED_RATE_LIMIT:
+		return r.buildDistributedRateLimitPolicy(p)
+	case pb.PolicyType_WAF:
+		return r.buildWAFPolicy(p)
+	case pb.PolicyType_BASIC_AUTH:
+		return r.buildBasicAuthPolicy(p)
+	case pb.PolicyType_FORWARD_AUTH:
+		return r.buildForwardAuthPolicy(ctx, p)
+	case pb.PolicyType_OIDC:
+		return r.buildOIDCPolicy(ctx, p)
+	default:
+		return nil
+	}
+}
+
+func (r *Router) buildRateLimitPolicy(p *pb.Policy) *policyMiddleware {
+	if p.RateLimit == nil {
+		return nil
+	}
+	limiter := policy.NewRateLimiter(p.RateLimit)
+	return &policyMiddleware{
+		name:    fmt.Sprintf("rate-limit-%s", p.Name),
+		handler: policy.HandleRateLimit(limiter),
+	}
+}
+
+func (r *Router) buildCORSPolicy(p *pb.Policy) *policyMiddleware {
+	if p.Cors == nil {
+		return nil
+	}
+	cors := policy.NewCORS(p.Cors)
+	return &policyMiddleware{
+		name:    fmt.Sprintf("cors-%s", p.Name),
+		handler: policy.HandleCORS(cors),
+	}
+}
+
+func (r *Router) buildIPAllowListPolicy(p *pb.Policy) *policyMiddleware {
+	if p.IpList == nil {
+		return nil
+	}
+	filter, err := policy.NewIPAllowListFilter(p.IpList.Cidrs)
+	if err != nil {
+		r.logger.Error("Failed to create IP allow list filter, failing closed",
+			zap.String("policy", p.Name),
+			zap.Error(err),
+		)
+		return &policyMiddleware{
+			name:    fmt.Sprintf("ip-allow-%s-fail-closed", p.Name),
+			handler: failClosedMiddleware("IP allow list", p.Name, r.logger),
+		}
+	}
+	return &policyMiddleware{
+		name:    fmt.Sprintf("ip-allow-%s", p.Name),
+		handler: policy.HandleIPFilter(filter),
+	}
+}
+
+func (r *Router) buildIPDenyListPolicy(p *pb.Policy) *policyMiddleware {
+	if p.IpList == nil {
+		return nil
+	}
+	filter, err := policy.NewIPDenyListFilter(p.IpList.Cidrs)
+	if err != nil {
+		r.logger.Error("Failed to create IP deny list filter, failing closed",
+			zap.String("policy", p.Name),
+			zap.Error(err),
+		)
+		return &policyMiddleware{
+			name:    fmt.Sprintf("ip-deny-%s-fail-closed", p.Name),
+			handler: failClosedMiddleware("IP deny list", p.Name, r.logger),
+		}
+	}
+	return &policyMiddleware{
+		name:    fmt.Sprintf("ip-deny-%s", p.Name),
+		handler: policy.HandleIPFilter(filter),
+	}
+}
+
+func (r *Router) buildJWTPolicy(ctx context.Context, p *pb.Policy) *policyMiddleware {
+	if p.Jwt == nil {
+		return nil
+	}
+	validator, err := policy.NewJWTValidator(ctx, p.Jwt)
+	if err != nil {
+		r.logger.Error("Failed to create JWT validator",
+			zap.String("policy", p.Name),
+			zap.Error(err),
+		)
+		return nil
+	}
+	return &policyMiddleware{
+		name:    fmt.Sprintf("jwt-%s", p.Name),
+		handler: policy.HandleJWT(validator),
+	}
+}
+
+func (r *Router) buildSecurityHeadersPolicy(p *pb.Policy) *policyMiddleware {
+	if p.SecurityHeaders == nil {
+		return nil
+	}
+	sh := policy.NewSecurityHeaders(p.SecurityHeaders)
+	return &policyMiddleware{
+		name:    fmt.Sprintf("security-headers-%s", p.Name),
+		handler: policy.HandleSecurityHeaders(sh),
+	}
+}
+
+func (r *Router) buildDistributedRateLimitPolicy(p *pb.Policy) *policyMiddleware {
+	if p.DistributedRateLimit == nil {
+		return nil
+	}
+	redisClient, err := policy.NewRedisClient(p.DistributedRateLimit.Redis, "", r.logger)
+	if err != nil {
+		r.logger.Error("Failed to create Redis client for distributed rate limit",
+			zap.String("policy", p.Name),
+			zap.Error(err),
+		)
+		return &policyMiddleware{
+			name:    fmt.Sprintf("distributed-ratelimit-%s", p.Name),
+			handler: failClosedMiddleware("distributed rate limit", p.Name, r.logger),
+		}
+	}
+	limiter := policy.NewDistributedRateLimiter(p.DistributedRateLimit, redisClient, r.logger)
+	return &policyMiddleware{
+		name:    fmt.Sprintf("distributed-ratelimit-%s", p.Name),
+		handler: policy.HandleDistributedRateLimit(limiter),
+	}
+}
+
+func (r *Router) buildWAFPolicy(p *pb.Policy) *policyMiddleware {
+	if p.Waf == nil {
+		return nil
+	}
+	engine, err := policy.NewWAFEngine(p.Waf, r.logger)
+	if err != nil {
+		r.logger.Error("Failed to create WAF engine",
+			zap.String("policy", p.Name),
+			zap.Error(err),
+		)
+		return &policyMiddleware{
+			name:    fmt.Sprintf("waf-%s", p.Name),
+			handler: failClosedMiddleware("WAF", p.Name, r.logger),
+		}
+	}
+	return &policyMiddleware{
+		name:    fmt.Sprintf("waf-%s", p.Name),
+		handler: policy.HandleWAF(engine),
+	}
+}
+
+func (r *Router) buildBasicAuthPolicy(p *pb.Policy) *policyMiddleware {
+	if p.BasicAuth == nil {
+		return nil
+	}
+	validator, err := policy.NewBasicAuthValidator(p.BasicAuth)
+	if err != nil {
+		r.logger.Error("Failed to create Basic Auth validator, failing closed",
+			zap.String("policy", p.Name),
+			zap.Error(err),
+		)
+		return &policyMiddleware{
+			name:    fmt.Sprintf("basic-auth-%s-fail-closed", p.Name),
+			handler: failClosedMiddleware("Basic Auth", p.Name, r.logger),
+		}
+	}
+	return &policyMiddleware{
+		name:    fmt.Sprintf("basic-auth-%s", p.Name),
+		handler: policy.HandleBasicAuth(validator),
+	}
+}
+
+func (r *Router) buildForwardAuthPolicy(ctx context.Context, p *pb.Policy) *policyMiddleware {
+	if p.ForwardAuth == nil {
+		return nil
+	}
+	handler := policy.NewForwardAuthHandler(ctx, p.ForwardAuth, r.logger)
+	return &policyMiddleware{
+		name:    fmt.Sprintf("forward-auth-%s", p.Name),
+		handler: policy.HandleForwardAuth(handler),
+	}
+}
+
+func (r *Router) buildOIDCPolicy(ctx context.Context, p *pb.Policy) *policyMiddleware {
+	if p.Oidc == nil {
+		return nil
+	}
+	handler, err := policy.NewOIDCHandler(ctx, p.Oidc, r.logger)
+	if err != nil {
+		r.logger.Error("Failed to create OIDC handler, failing closed",
+			zap.String("policy", p.Name),
+			zap.Error(err),
+		)
+		return &policyMiddleware{
+			name:    fmt.Sprintf("oidc-%s-fail-closed", p.Name),
+			handler: failClosedMiddleware("OIDC", p.Name, r.logger),
+		}
+	}
+	return &policyMiddleware{
+		name:    fmt.Sprintf("oidc-%s", p.Name),
+		handler: policy.HandleOIDC(handler),
+	}
 }
 
 // failClosedMiddleware returns a middleware that rejects all requests with 503 Service Unavailable.
