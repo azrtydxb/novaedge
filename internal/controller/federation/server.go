@@ -1013,27 +1013,15 @@ func (s *Server) maintainPeerConnection(ctx context.Context, peer *PeerInfo) {
 	}
 }
 
-// connectToPeer establishes a connection to a federation peer
-//
-//nolint:unparam // error return kept for future peer connection implementation (see TODOs)
+// connectToPeer establishes a connection to a federation peer.
+// Not yet implemented - returns an error indicating the feature is pending.
 func (s *Server) connectToPeer(_ context.Context, peer *PeerInfo) error {
-	// This would establish a gRPC client connection to the peer
-	// and start the SyncStream
-	// For now, this is a placeholder - the actual implementation
-	// would use grpc.Dial and the client stubs
-
-	s.logger.Debug("Would connect to peer",
+	s.logger.Warn("Federation peer connection is not yet implemented",
 		zap.String("peer", peer.Name),
 		zap.String("endpoint", peer.Endpoint),
 	)
 
-	// TODO: Implement actual peer connection
-	// conn, err := grpc.Dial(peer.Endpoint, opts...)
-	// client := pb.NewFederationServiceClient(conn)
-	// stream, err := client.SyncStream(ctx)
-	// ...
-
-	return nil
+	return fmt.Errorf("federation peer connection not yet implemented for peer %q at %s", peer.Name, peer.Endpoint)
 }
 
 // cleanupTombstones removes old tombstones
