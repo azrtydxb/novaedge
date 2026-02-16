@@ -20,29 +20,40 @@ import (
 	"hash/fnv"
 	"sort"
 	"sync"
+	"sync/atomic"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// RingHash implements consistent hashing with virtual nodes
-type RingHash struct {
-	mu        sync.RWMutex
-	endpoints []*pb.Endpoint
-
-	// Hash ring: sorted list of hash values
+// ringData holds the immutable hash ring state that is atomically swapped.
+type ringData struct {
+	// sorted hash values forming the ring
 	ring []uint32
-
-	// Map hash values to endpoints
+	// maps each hash value to its endpoint
 	hashToEndpoint map[uint32]*pb.Endpoint
+	// snapshot of endpoints used to build this ring
+	endpoints []*pb.Endpoint
+}
+
+// RingHash implements consistent hashing with virtual nodes.
+// Select() is lock-free via atomic load of the immutable ringData.
+// UpdateEndpoints() builds a new ring without holding locks, then swaps atomically.
+type RingHash struct {
+	data atomic.Pointer[ringData]
+
+	// mu serialises concurrent UpdateEndpoints calls so only one rebuild
+	// runs at a time; Select() never acquires this lock.
+	mu sync.Mutex
 
 	// Number of virtual nodes per endpoint
 	virtualNodes int
 }
 
 const (
-	// Default number of virtual nodes per endpoint
-	// More virtual nodes = better distribution but more memory
-	defaultVirtualNodes = 150
+	// Default number of virtual nodes per endpoint.
+	// 100 virtual nodes provides good distribution while keeping
+	// rebuild cost lower than the previous value of 150.
+	defaultVirtualNodes = 100
 )
 
 // ringEntry represents a position on the hash ring
@@ -54,47 +65,44 @@ type ringEntry struct {
 // NewRingHash creates a new Ring Hash load balancer
 func NewRingHash(endpoints []*pb.Endpoint) *RingHash {
 	rh := &RingHash{
-		endpoints:      endpoints,
-		ring:           []uint32{},
-		hashToEndpoint: make(map[uint32]*pb.Endpoint),
-		virtualNodes:   defaultVirtualNodes,
+		virtualNodes: defaultVirtualNodes,
 	}
 
-	rh.buildRing()
+	rd := rh.buildRing(endpoints)
+	rh.data.Store(rd)
 	return rh
 }
 
-// Select chooses an endpoint using consistent hashing based on a key
+// Select chooses an endpoint using consistent hashing based on a key.
+// This method is lock-free.
 func (rh *RingHash) Select(key string) *pb.Endpoint {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
+	rd := rh.data.Load()
 
-	if len(rh.ring) == 0 {
+	if len(rd.ring) == 0 {
 		return nil
 	}
 
 	// Hash the key
-	hash := rh.hashKey(key)
+	hash := hashKey(key)
 
 	// Binary search to find the first hash >= our hash
-	idx := sort.Search(len(rh.ring), func(i int) bool {
-		return rh.ring[i] >= hash
+	idx := sort.Search(len(rd.ring), func(i int) bool {
+		return rd.ring[i] >= hash
 	})
 
 	// Wrap around if we're past the end
-	if idx == len(rh.ring) {
+	if idx == len(rd.ring) {
 		idx = 0
 	}
 
-	return rh.hashToEndpoint[rh.ring[idx]]
+	return rd.hashToEndpoint[rd.ring[idx]]
 }
 
 // SelectDefault selects an endpoint without a key (uses first healthy endpoint)
 func (rh *RingHash) SelectDefault() *pb.Endpoint {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
+	rd := rh.data.Load()
 
-	for _, ep := range rh.endpoints {
+	for _, ep := range rd.endpoints {
 		if ep.Ready {
 			return ep
 		}
@@ -102,21 +110,26 @@ func (rh *RingHash) SelectDefault() *pb.Endpoint {
 	return nil
 }
 
-// UpdateEndpoints updates the endpoint list and rebuilds the ring
+// UpdateEndpoints updates the endpoint list and rebuilds the ring.
+// The new ring is built into local variables (no lock held for Select),
+// then atomically swapped in.
 func (rh *RingHash) UpdateEndpoints(endpoints []*pb.Endpoint) {
-	rh.mu.Lock()
-	defer rh.mu.Unlock()
+	// Build the new ring outside any lock that Select uses
+	rd := rh.buildRing(endpoints)
 
-	rh.endpoints = endpoints
-	rh.buildRing()
+	// Serialise concurrent UpdateEndpoints calls
+	rh.mu.Lock()
+	rh.data.Store(rd)
+	rh.mu.Unlock()
 }
 
-// buildRing constructs the hash ring from current endpoints
-func (rh *RingHash) buildRing() {
+// buildRing constructs an immutable ringData from the given endpoints.
+// This is a pure function that does not touch any shared state.
+func (rh *RingHash) buildRing(endpoints []*pb.Endpoint) *ringData {
 	entries := []ringEntry{}
 
 	// Create virtual nodes for each healthy endpoint
-	for _, ep := range rh.endpoints {
+	for _, ep := range endpoints {
 		if !ep.Ready {
 			continue
 		}
@@ -127,7 +140,7 @@ func (rh *RingHash) buildRing() {
 		for i := 0; i < rh.virtualNodes; i++ {
 			// Generate unique key for each virtual node
 			virtualKey := epKey + "#" + string(rune(i))
-			hash := rh.hashKey(virtualKey)
+			hash := hashKey(virtualKey)
 
 			entries = append(entries, ringEntry{
 				hash:     hash,
@@ -142,17 +155,23 @@ func (rh *RingHash) buildRing() {
 	})
 
 	// Build sorted ring and hash-to-endpoint map
-	rh.ring = make([]uint32, len(entries))
-	rh.hashToEndpoint = make(map[uint32]*pb.Endpoint)
+	ring := make([]uint32, len(entries))
+	hashToEndpoint := make(map[uint32]*pb.Endpoint, len(entries))
 
 	for i, entry := range entries {
-		rh.ring[i] = entry.hash
-		rh.hashToEndpoint[entry.hash] = entry.endpoint
+		ring[i] = entry.hash
+		hashToEndpoint[entry.hash] = entry.endpoint
+	}
+
+	return &ringData{
+		ring:           ring,
+		hashToEndpoint: hashToEndpoint,
+		endpoints:      endpoints,
 	}
 }
 
 // hashKey hashes a string key to a uint32
-func (rh *RingHash) hashKey(key string) uint32 {
+func hashKey(key string) uint32 {
 	h := fnv.New32a()
 	_, _ = h.Write([]byte(key))
 	return h.Sum32()
@@ -160,7 +179,6 @@ func (rh *RingHash) hashKey(key string) uint32 {
 
 // GetRingSize returns the current size of the hash ring
 func (rh *RingHash) GetRingSize() int {
-	rh.mu.RLock()
-	defer rh.mu.RUnlock()
-	return len(rh.ring)
+	rd := rh.data.Load()
+	return len(rd.ring)
 }
