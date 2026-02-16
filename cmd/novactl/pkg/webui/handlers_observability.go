@@ -17,6 +17,7 @@ limitations under the License.
 package webui
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/prometheus"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/trace"
+	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -50,6 +52,12 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 	params := trace.SearchParams{
 		ServiceName:   q.Get("service"),
 		OperationName: q.Get("operation"),
+	}
+
+	// Jaeger requires a service parameter; return empty list if not provided
+	if params.ServiceName == "" {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
 	}
 
 	// Parse limit (default 20)
@@ -594,4 +602,202 @@ func (s *Server) handleMeshTopology(w http.ResponseWriter, r *http.Request) {
 		Nodes: nodes,
 		Edges: edges,
 	})
+}
+
+// handleMeshPolicies handles GET /api/v1/mesh/policies and POST /api/v1/mesh/policies
+func (s *Server) handleMeshPolicies(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleMeshPoliciesList(w, r)
+	case http.MethodPost:
+		s.handleMeshPolicyWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleMeshPolicy handles GET/PUT/DELETE /api/v1/mesh/policies/{namespace}/{name}
+func (s *Server) handleMeshPolicy(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.handleMeshPolicyGet(w, r)
+	case http.MethodPut, http.MethodDelete:
+		s.handleMeshPolicyWrite(w, r)
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// handleMeshPoliciesList handles GET /api/v1/mesh/policies
+func (s *Server) handleMeshPoliciesList(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	namespace := parseNamespaceFromQuery(r)
+
+	// List ProxyPolicy resources and filter for mesh authorization type
+	policies, err := s.backend.ListPolicies(ctx, namespace)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list mesh policies: %v", err))
+		return
+	}
+
+	// Filter for policies that are of mesh authorization type
+	meshPolicies := make([]map[string]interface{}, 0)
+	for _, p := range policies {
+		if p.Type == "MeshAuthorization" {
+			meshPolicies = append(meshPolicies, map[string]interface{}{
+				"apiVersion": "novaedge.io/v1alpha1",
+				"kind":       "MeshAuthorizationPolicy",
+				"metadata": map[string]interface{}{
+					"name":      p.Name,
+					"namespace": p.Namespace,
+				},
+				"spec": map[string]interface{}{
+					"targetRef": p.TargetRef,
+				},
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, meshPolicies)
+}
+
+// handleMeshPolicyGet handles GET /api/v1/mesh/policies/{namespace}/{name}
+func (s *Server) handleMeshPolicyGet(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/mesh/policies/"), "/")
+	if len(parts) != 2 {
+		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/mesh/policies/{namespace}/{name}")
+		return
+	}
+
+	namespace, name := parts[0], parts[1]
+	ctx := r.Context()
+
+	policy, err := s.backend.GetPolicy(ctx, namespace, name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("mesh policy not found: %v", err))
+		return
+	}
+
+	result := map[string]interface{}{
+		"apiVersion": "novaedge.io/v1alpha1",
+		"kind":       "MeshAuthorizationPolicy",
+		"metadata": map[string]interface{}{
+			"name":      policy.Name,
+			"namespace": policy.Namespace,
+		},
+		"spec": map[string]interface{}{
+			"type":      policy.Type,
+			"targetRef": policy.TargetRef,
+			"rateLimit": policy.RateLimit,
+			"cors":      policy.CORS,
+			"ipFilter":  policy.IPFilter,
+			"jwt":       policy.JWT,
+		},
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// handleMeshPolicyWrite handles POST/PUT/DELETE for mesh policies
+func (s *Server) handleMeshPolicyWrite(w http.ResponseWriter, r *http.Request) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	if s.backend.ReadOnly() {
+		writeError(w, http.StatusForbidden, "backend is read-only")
+		return
+	}
+
+	ctx := r.Context()
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/mesh/policies")
+
+	switch r.Method {
+	case http.MethodPost:
+		var resource map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&resource); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		policy := meshResourceToPolicy(resource)
+		result, err := s.backend.CreatePolicy(ctx, policy)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, result)
+
+	case http.MethodPut:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path")
+			return
+		}
+
+		var resource map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&resource); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		policy := meshResourceToPolicy(resource)
+		policy.Namespace = parts[0]
+		policy.Name = parts[1]
+
+		result, err := s.backend.UpdatePolicy(ctx, policy)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path")
+			return
+		}
+
+		if err := s.backend.DeletePolicy(ctx, parts[0], parts[1]); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+// meshResourceToPolicy converts a generic mesh policy resource to a Policy model
+func meshResourceToPolicy(resource map[string]interface{}) *models.Policy {
+	policy := &models.Policy{
+		Type: "MeshAuthorization",
+	}
+
+	if metadata, ok := resource["metadata"].(map[string]interface{}); ok {
+		if name, ok := metadata["name"].(string); ok {
+			policy.Name = name
+		}
+		if ns, ok := metadata["namespace"].(string); ok {
+			policy.Namespace = ns
+		}
+	}
+
+	return policy
 }

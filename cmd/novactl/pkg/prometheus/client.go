@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -253,7 +254,14 @@ func ValueAsFloat(r Result) (float64, error) {
 		return 0, fmt.Errorf("value is not a string")
 	}
 
-	return strconv.ParseFloat(valueStr, 64)
+	v, err := strconv.ParseFloat(valueStr, 64)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, fmt.Errorf("value is NaN or Inf")
+	}
+	return v, nil
 }
 
 // TimestampFromValue extracts the timestamp from a Result

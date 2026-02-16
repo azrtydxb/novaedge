@@ -1,4 +1,4 @@
-import{j as a}from"./ui-C7EZ6zpn.js";import{a as n}from"./vendor-CwhvS1Xk.js";import{u as K,k as x,l as U,R as Y,m as v,e as h}from"./index-D2NKZ5iG.js";import{c as _,t as H,v as G,w as I,p as J}from"./hooks-LIr8xFai.js";import{D as Q}from"./DataTable-Nknefu9o.js";import{T as W,P as X}from"./trash-2-WueFybTX.js";import"./query-B9ZAROpx.js";import"./charts-I6YY2jED.js";import"./table-DQF6FC_p.js";import"./chevron-up-D2Rliuq6.js";import"./input-CYP15ZsC.js";import"./search-BE7d1k6s.js";const Z=`apiVersion: novaedge.io/v1alpha1
+import{j as a}from"./ui-C7EZ6zpn.js";import{a as n}from"./vendor-CwhvS1Xk.js";import{u as K,k as x,l as U,R as Y,m as v,e as h}from"./index-A4onkd9k.js";import{c as _,t as H,v as G,w as I,p as J}from"./hooks-CYf9dbMf.js";import{D as Q}from"./DataTable-CUHh48Aj.js";import{T as W,P as X}from"./trash-2-DAWsEp5H.js";import"./query-B9ZAROpx.js";import"./charts-I6YY2jED.js";import"./table-CmBIFowf.js";import"./chevron-up-CKZ8edvZ.js";import"./input-CXqIgivH.js";import"./search-D_dRqmYe.js";const Z=`apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: my-backend
