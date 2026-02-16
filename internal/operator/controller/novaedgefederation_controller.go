@@ -149,7 +149,9 @@ func (r *NovaEdgeFederationReconciler) ensureManager(ctx context.Context, fed *n
 
 	// Check if manager already exists
 	if existing, ok := r.managers[key]; ok {
-		// TODO: Check if config changed and restart if needed
+		log.Warn("Federation manager already exists; config change detection not yet implemented",
+			zap.String("key", key),
+		)
 		_ = existing
 		return nil
 	}
@@ -183,11 +185,10 @@ func (r *NovaEdgeFederationReconciler) ensureManager(ctx context.Context, fed *n
 
 	// Set up callbacks
 	manager.OnResourceChange(func(key federation.ResourceKey, changeType federation.ChangeType, data []byte) {
-		log.Debug("Resource changed from federation",
+		log.Warn("Resource changed from federation but applying changes to local Kubernetes resources is not yet implemented",
 			zap.String("resource", fmt.Sprintf("%s/%s/%s", key.Kind, key.Namespace, key.Name)),
 			zap.String("change_type", string(changeType)),
 		)
-		// TODO: Apply changes to local Kubernetes resources
 	})
 
 	// Start the manager

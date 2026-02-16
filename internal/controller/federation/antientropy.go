@@ -481,27 +481,24 @@ func (m *AntiEntropyManager) compareWithPeer(peerName string) {
 	switch cmp {
 	case 0:
 		// Concurrent - potential conflicts, need detailed comparison
-		m.logger.Debug("Concurrent state with peer, detailed comparison needed",
+		m.logger.Warn("Concurrent state with peer requires full sync or merkle tree comparison (not yet implemented)",
 			zap.String("peer", peerName),
 		)
-		// TODO: Request full sync or merkle tree comparison
 
 	case 1:
 		// We're ahead - peer might need updates
 		if m.config.RepairMode == "push" || m.config.RepairMode == "bidirectional" {
-			m.logger.Debug("We're ahead of peer, may need to push updates",
+			m.logger.Warn("Push updates to peer not yet implemented",
 				zap.String("peer", peerName),
 			)
-			// TODO: Push updates to peer
 		}
 
 	case -1:
 		// Peer is ahead - we might need updates
 		if m.config.RepairMode == "pull" || m.config.RepairMode == "bidirectional" {
-			m.logger.Debug("Peer is ahead, may need to pull updates",
+			m.logger.Warn("Pull updates from peer not yet implemented",
 				zap.String("peer", peerName),
 			)
-			// TODO: Request full sync from peer
 		}
 	}
 }
