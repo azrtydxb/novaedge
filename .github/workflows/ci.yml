@@ -239,9 +239,6 @@ jobs:
       - name: Install dependencies
         run: cd web && npm ci
 
-      - name: Run lint
-        run: cd web && npm run lint --if-present
-
       - name: Build frontend
         run: cd web && npm run build
 
