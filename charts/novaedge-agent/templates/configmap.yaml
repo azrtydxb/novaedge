@@ -65,11 +65,18 @@ data:
       metrics: {{ .Values.ports.metrics }}
       health: {{ .Values.ports.health }}
 
+    # VIP Configuration
     vip:
       enabled: {{ .Values.vip.enabled }}
       mode: {{ .Values.vip.mode }}
       {{- if .Values.vip.interface }}
       interface: {{ .Values.vip.interface | quote }}
+      {{- end }}
+      periodicInterval: {{ .Values.vip.periodicInterval }}
+      {{- if eq .Values.vip.mode "L2" }}
+      garp:
+        rateLimit: {{ .Values.vip.garp.rateLimit }}
+        retries: {{ .Values.vip.garp.retries }}
       {{- end }}
       {{- if and (eq .Values.vip.mode "BGP") .Values.vip.bgp.asn }}
       bgp:
@@ -77,11 +84,418 @@ data:
         {{- if .Values.vip.bgp.routerID }}
         routerID: {{ .Values.vip.bgp.routerID | quote }}
         {{- end }}
+        gracefulRestart: {{ .Values.vip.bgp.gracefulRestart }}
+        multipathMaxPaths: {{ .Values.vip.bgp.multipathMaxPaths }}
         {{- if .Values.vip.bgp.peers }}
         peers:
           {{- toYaml .Values.vip.bgp.peers | nindent 10 }}
         {{- end }}
       {{- end }}
+      {{- if eq .Values.vip.mode "OSPF" }}
+      ospf:
+        areaID: {{ .Values.vip.ospf.areaID | quote }}
+        helloInterval: {{ .Values.vip.ospf.helloInterval }}
+        deadInterval: {{ .Values.vip.ospf.deadInterval }}
+        cost: {{ .Values.vip.ospf.cost }}
+        {{- if .Values.vip.ospf.authSecretName }}
+        authSecretName: {{ .Values.vip.ospf.authSecretName | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.vip.bfd.enabled }}
+      bfd:
+        enabled: true
+        desiredMinTx: {{ .Values.vip.bfd.desiredMinTx }}
+        requiredMinRx: {{ .Values.vip.bfd.requiredMinRx }}
+        detectMultiplier: {{ .Values.vip.bfd.detectMultiplier }}
+      {{- end }}
+      {{- if .Values.vip.ipv6.enabled }}
+      ipv6:
+        enabled: true
+      {{- end }}
+
+    # Server/Listener Configuration
+    server:
+      tls:
+        minVersion: {{ .Values.server.tls.minVersion | quote }}
+        {{- if .Values.server.tls.cipherSuites }}
+        cipherSuites:
+          {{- toYaml .Values.server.tls.cipherSuites | nindent 10 }}
+        {{- end }}
+        alpnProtocols:
+          {{- toYaml .Values.server.tls.alpnProtocols | nindent 10 }}
+      {{- if .Values.server.mtls.enabled }}
+      mtls:
+        enabled: true
+        {{- if .Values.server.mtls.caSecretName }}
+        caSecretName: {{ .Values.server.mtls.caSecretName | quote }}
+        {{- end }}
+        {{- if .Values.server.mtls.allowedCNPatterns }}
+        allowedCNPatterns:
+          {{- toYaml .Values.server.mtls.allowedCNPatterns | nindent 10 }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.server.ocspStapling.enabled }}
+      ocspStapling:
+        enabled: true
+        {{- if .Values.server.ocspStapling.responderURL }}
+        responderURL: {{ .Values.server.ocspStapling.responderURL | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.server.proxyProtocol.enabled }}
+      proxyProtocol:
+        enabled: true
+        version: {{ .Values.server.proxyProtocol.version }}
+        {{- if .Values.server.proxyProtocol.trustedCIDRs }}
+        trustedCIDRs:
+          {{- toYaml .Values.server.proxyProtocol.trustedCIDRs | nindent 10 }}
+        {{- end }}
+      {{- end }}
+
+    {{- if .Values.http3.enabled }}
+    # HTTP/3 QUIC
+    http3:
+      enabled: true
+      port: {{ .Values.http3.port }}
+      earlyData: {{ .Values.http3.earlyData }}
+    {{- end }}
+
+    # Load Balancing
+    loadBalancing:
+      defaultAlgorithm: {{ .Values.loadBalancing.defaultAlgorithm }}
+      ringHash:
+        virtualNodes: {{ .Values.loadBalancing.ringHash.virtualNodes }}
+      ewma:
+        decayFactor: {{ .Values.loadBalancing.ewma.decayFactor }}
+      sticky:
+        cookieName: {{ .Values.loadBalancing.sticky.cookieName | quote }}
+        cookieTTL: {{ .Values.loadBalancing.sticky.cookieTTL }}
+        cookiePath: {{ .Values.loadBalancing.sticky.cookiePath | quote }}
+      locality:
+        preferSameZone: {{ .Values.loadBalancing.locality.preferSameZone }}
+        failoverThreshold: {{ .Values.loadBalancing.locality.failoverThreshold }}
+      {{- if .Values.loadBalancing.priority.groups }}
+      priority:
+        groups:
+          {{- toYaml .Values.loadBalancing.priority.groups | nindent 10 }}
+      {{- end }}
+      panic:
+        enabled: {{ .Values.loadBalancing.panic.enabled }}
+        threshold: {{ .Values.loadBalancing.panic.threshold }}
+      slowStart:
+        duration: {{ .Values.loadBalancing.slowStart.duration }}
+      outlierDetection:
+        enabled: {{ .Values.loadBalancing.outlierDetection.enabled }}
+        consecutiveFailures: {{ .Values.loadBalancing.outlierDetection.consecutiveFailures }}
+        ejectionDuration: {{ .Values.loadBalancing.outlierDetection.ejectionDuration }}
+        maxEjectionPercent: {{ .Values.loadBalancing.outlierDetection.maxEjectionPercent }}
+
+    # Connection Pool
+    connectionPool:
+      maxIdleConns: {{ .Values.connectionPool.maxIdleConns }}
+      maxConnsPerHost: {{ .Values.connectionPool.maxConnsPerHost }}
+      idleTimeout: {{ .Values.connectionPool.idleTimeout }}
+      connectTimeout: {{ .Values.connectionPool.connectTimeout }}
+      circuitBreaker:
+        enabled: {{ .Values.connectionPool.circuitBreaker.enabled }}
+        maxRequests: {{ .Values.connectionPool.circuitBreaker.maxRequests }}
+        failureThreshold: {{ .Values.connectionPool.circuitBreaker.failureThreshold }}
+        successThreshold: {{ .Values.connectionPool.circuitBreaker.successThreshold }}
+        timeout: {{ .Values.connectionPool.circuitBreaker.timeout }}
+
+    # Health Checking
+    healthChecking:
+      active:
+        interval: {{ .Values.healthChecking.active.interval }}
+        timeout: {{ .Values.healthChecking.active.timeout }}
+        healthyThreshold: {{ .Values.healthChecking.active.healthyThreshold }}
+        unhealthyThreshold: {{ .Values.healthChecking.active.unhealthyThreshold }}
+      workers: {{ .Values.healthChecking.workers }}
+      reuseConnections: {{ .Values.healthChecking.reuseConnections }}
+
+    # L4 Proxy
+    l4Proxy:
+      enabled: {{ .Values.l4Proxy.enabled }}
+      tcp:
+        maxConnections: {{ .Values.l4Proxy.tcp.maxConnections }}
+        idleTimeout: {{ .Values.l4Proxy.tcp.idleTimeout }}
+        tlsPassthrough: {{ .Values.l4Proxy.tcp.tlsPassthrough }}
+      udp:
+        maxSessions: {{ .Values.l4Proxy.udp.maxSessions }}
+        idleTimeout: {{ .Values.l4Proxy.udp.idleTimeout }}
+
+    # Policy & Security
+    {{- if .Values.policy.rateLimit.enabled }}
+    rateLimit:
+      enabled: true
+      requestsPerSecond: {{ .Values.policy.rateLimit.requestsPerSecond }}
+      burst: {{ .Values.policy.rateLimit.burst }}
+      {{- if .Values.policy.rateLimit.redis.enabled }}
+      redis:
+        enabled: true
+        address: {{ .Values.policy.rateLimit.redis.address | quote }}
+        db: {{ .Values.policy.rateLimit.redis.db }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.policy.waf.enabled }}
+    waf:
+      enabled: true
+      mode: {{ .Values.policy.waf.mode }}
+      paranoiaLevel: {{ .Values.policy.waf.paranoiaLevel }}
+      anomalyThreshold: {{ .Values.policy.waf.anomalyThreshold }}
+      requestBodyInspection: {{ .Values.policy.waf.requestBodyInspection }}
+      requestBodyLimit: {{ .Values.policy.waf.requestBodyLimit }}
+      responseBodyInspection: {{ .Values.policy.waf.responseBodyInspection }}
+      responseBodyLimit: {{ .Values.policy.waf.responseBodyLimit }}
+      failClosed: {{ .Values.policy.waf.failClosed }}
+      metricsEnabled: {{ .Values.policy.waf.metricsEnabled }}
+      cachingEnabled: {{ .Values.policy.waf.cachingEnabled }}
+      auditLogging: {{ .Values.policy.waf.auditLogging }}
+      {{- if .Values.policy.waf.rules }}
+      rules:
+        {{- toYaml .Values.policy.waf.rules | nindent 8 }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.policy.auth.basicAuth.enabled }}
+    basicAuth:
+      enabled: true
+    {{- end }}
+
+    {{- if .Values.policy.auth.forwardAuth.enabled }}
+    forwardAuth:
+      enabled: true
+      address: {{ .Values.policy.auth.forwardAuth.address | quote }}
+      {{- if .Values.policy.auth.forwardAuth.authRequestHeaders }}
+      authRequestHeaders:
+        {{- toYaml .Values.policy.auth.forwardAuth.authRequestHeaders | nindent 8 }}
+      {{- end }}
+      {{- if .Values.policy.auth.forwardAuth.authResponseHeaders }}
+      authResponseHeaders:
+        {{- toYaml .Values.policy.auth.forwardAuth.authResponseHeaders | nindent 8 }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.policy.auth.oidc.enabled }}
+    oidc:
+      enabled: true
+      issuerURL: {{ .Values.policy.auth.oidc.issuerURL | quote }}
+      clientID: {{ .Values.policy.auth.oidc.clientID | quote }}
+      redirectURL: {{ .Values.policy.auth.oidc.redirectURL | quote }}
+      scopes:
+        {{- toYaml .Values.policy.auth.oidc.scopes | nindent 8 }}
+    {{- end }}
+
+    {{- if .Values.policy.jwt.enabled }}
+    jwt:
+      enabled: true
+      jwksURL: {{ .Values.policy.jwt.jwksURL | quote }}
+      allowedAlgorithms:
+        {{- toYaml .Values.policy.jwt.allowedAlgorithms | nindent 8 }}
+      {{- if .Values.policy.jwt.issuer }}
+      issuer: {{ .Values.policy.jwt.issuer | quote }}
+      {{- end }}
+      {{- if .Values.policy.jwt.audience }}
+      audience: {{ .Values.policy.jwt.audience | quote }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.policy.cors.enabled }}
+    cors:
+      enabled: true
+      allowOrigins:
+        {{- toYaml .Values.policy.cors.allowOrigins | nindent 8 }}
+      allowMethods:
+        {{- toYaml .Values.policy.cors.allowMethods | nindent 8 }}
+      {{- if .Values.policy.cors.allowHeaders }}
+      allowHeaders:
+        {{- toYaml .Values.policy.cors.allowHeaders | nindent 8 }}
+      {{- end }}
+      {{- if .Values.policy.cors.exposeHeaders }}
+      exposeHeaders:
+        {{- toYaml .Values.policy.cors.exposeHeaders | nindent 8 }}
+      {{- end }}
+      maxAge: {{ .Values.policy.cors.maxAge }}
+      allowCredentials: {{ .Values.policy.cors.allowCredentials }}
+    {{- end }}
+
+    {{- if .Values.policy.ipFilter.enabled }}
+    ipFilter:
+      enabled: true
+      {{- if .Values.policy.ipFilter.allowList }}
+      allowList:
+        {{- toYaml .Values.policy.ipFilter.allowList | nindent 8 }}
+      {{- end }}
+      {{- if .Values.policy.ipFilter.denyList }}
+      denyList:
+        {{- toYaml .Values.policy.ipFilter.denyList | nindent 8 }}
+      {{- end }}
+    {{- end }}
+
+    {{- if .Values.policy.securityHeaders.enabled }}
+    securityHeaders:
+      enabled: true
+      hsts:
+        enabled: {{ .Values.policy.securityHeaders.hsts.enabled }}
+        maxAge: {{ .Values.policy.securityHeaders.hsts.maxAge }}
+        includeSubDomains: {{ .Values.policy.securityHeaders.hsts.includeSubDomains }}
+        preload: {{ .Values.policy.securityHeaders.hsts.preload }}
+      {{- if .Values.policy.securityHeaders.contentSecurityPolicy }}
+      contentSecurityPolicy: {{ .Values.policy.securityHeaders.contentSecurityPolicy | quote }}
+      {{- end }}
+      xFrameOptions: {{ .Values.policy.securityHeaders.xFrameOptions }}
+      xContentTypeOptions: {{ .Values.policy.securityHeaders.xContentTypeOptions }}
+      referrerPolicy: {{ .Values.policy.securityHeaders.referrerPolicy }}
+    {{- end }}
+
+    # Middleware
+    {{- if .Values.middleware.cache.enabled }}
+    cache:
+      enabled: true
+      maxSize: {{ .Values.middleware.cache.maxSize }}
+      defaultTTL: {{ .Values.middleware.cache.defaultTTL }}
+      shardCount: {{ .Values.middleware.cache.shardCount }}
+    {{- end }}
+
+    {{- if .Values.middleware.compression.enabled }}
+    compression:
+      enabled: true
+      gzip: {{ .Values.middleware.compression.gzip }}
+      brotli: {{ .Values.middleware.compression.brotli }}
+      minSize: {{ .Values.middleware.compression.minSize }}
+      contentTypes:
+        {{- toYaml .Values.middleware.compression.contentTypes | nindent 8 }}
+    {{- end }}
+
+    {{- if .Values.middleware.buffering.enabled }}
+    buffering:
+      enabled: true
+      maxRequestBody: {{ .Values.middleware.buffering.maxRequestBody }}
+      maxResponseBody: {{ .Values.middleware.buffering.maxResponseBody }}
+    {{- end }}
+
+    {{- if .Values.middleware.retry.enabled }}
+    retry:
+      enabled: true
+      attempts: {{ .Values.middleware.retry.attempts }}
+      retryOn:
+        {{- toYaml .Values.middleware.retry.retryOn | nindent 8 }}
+      perTryTimeout: {{ .Values.middleware.retry.perTryTimeout }}
+      retryBudget: {{ .Values.middleware.retry.retryBudget }}
+    {{- end }}
+
+    {{- if .Values.middleware.hedging.enabled }}
+    hedging:
+      enabled: true
+      delay: {{ .Values.middleware.hedging.delay }}
+      maxConcurrent: {{ .Values.middleware.hedging.maxConcurrent }}
+    {{- end }}
+
+    {{- if .Values.middleware.mirroring.enabled }}
+    mirroring:
+      enabled: true
+      percentage: {{ .Values.middleware.mirroring.percentage }}
+    {{- end }}
+
+    timeouts:
+      request: {{ .Values.middleware.timeouts.request }}
+      connect: {{ .Values.middleware.timeouts.connect }}
+      idle: {{ .Values.middleware.timeouts.idle }}
+
+    {{- if or .Values.middleware.bodyLimits.maxRequestSize .Values.middleware.bodyLimits.maxResponseSize }}
+    bodyLimits:
+      maxRequestSize: {{ .Values.middleware.bodyLimits.maxRequestSize }}
+      maxResponseSize: {{ .Values.middleware.bodyLimits.maxResponseSize }}
+    {{- end }}
+
+    {{- if .Values.middleware.httpsRedirect.enabled }}
+    httpsRedirect:
+      enabled: true
+      statusCode: {{ .Values.middleware.httpsRedirect.statusCode }}
+    {{- end }}
+
+    {{- if .Values.middleware.faultInjection.enabled }}
+    faultInjection:
+      enabled: true
+      delay:
+        percentage: {{ .Values.middleware.faultInjection.delay.percentage }}
+        duration: {{ .Values.middleware.faultInjection.delay.duration }}
+      abort:
+        percentage: {{ .Values.middleware.faultInjection.abort.percentage }}
+        statusCode: {{ .Values.middleware.faultInjection.abort.statusCode }}
+    {{- end }}
+
+    {{- if .Values.middleware.overloadManagement.enabled }}
+    overloadManagement:
+      enabled: true
+      maxConcurrentRequests: {{ .Values.middleware.overloadManagement.maxConcurrentRequests }}
+      queueSize: {{ .Values.middleware.overloadManagement.queueSize }}
+      queueTimeout: {{ .Values.middleware.overloadManagement.queueTimeout }}
+    {{- end }}
+
+    # WebSocket
+    websocket:
+      enabled: {{ .Values.websocket.enabled }}
+      {{- if .Values.websocket.allowedOrigins }}
+      allowedOrigins:
+        {{- toYaml .Values.websocket.allowedOrigins | nindent 8 }}
+      {{- end }}
+      maxMessageSize: {{ .Values.websocket.maxMessageSize }}
+
+    # SSE
+    sse:
+      enabled: {{ .Values.sse.enabled }}
+      heartbeatInterval: {{ .Values.sse.heartbeatInterval }}
+
+    # gRPC
+    grpc:
+      enabled: {{ .Values.grpc.enabled }}
+      maxMessageSize: {{ .Values.grpc.maxMessageSize }}
+      {{- if .Values.grpc.web.enabled }}
+      web:
+        enabled: true
+      {{- end }}
+
+    # Service Mesh
+    {{- if .Values.mesh.enabled }}
+    mesh:
+      enabled: true
+      interceptPort: {{ .Values.mesh.interceptPort }}
+      tunnelPort: {{ .Values.mesh.tunnelPort }}
+      trustDomain: {{ .Values.mesh.trustDomain | quote }}
+      certRenewalThreshold: {{ .Values.mesh.certRenewalThreshold }}
+      authorization:
+        defaultAction: {{ .Values.mesh.authorization.defaultAction }}
+        defaultAllowLogging: {{ .Values.mesh.authorization.defaultAllowLogging }}
+      {{- if .Values.mesh.spire.enabled }}
+      spire:
+        enabled: true
+        serverAddress: {{ .Values.mesh.spire.serverAddress | quote }}
+      {{- end }}
+    {{- end }}
+
+    # Control-Plane VIP
+    {{- if .Values.controlPlaneVIP.enabled }}
+    controlPlaneVIP:
+      enabled: true
+      address: {{ .Values.controlPlaneVIP.address | quote }}
+      mode: {{ .Values.controlPlaneVIP.mode }}
+      {{- if .Values.controlPlaneVIP.interface }}
+      interface: {{ .Values.controlPlaneVIP.interface | quote }}
+      {{- end }}
+      healthCheckPath: {{ .Values.controlPlaneVIP.healthCheckPath }}
+      healthCheckInterval: {{ .Values.controlPlaneVIP.healthCheckInterval }}
+    {{- end }}
+
+    # WASM Plugins
+    {{- if .Values.wasm.enabled }}
+    wasm:
+      enabled: true
+      executionTimeout: {{ .Values.wasm.executionTimeout }}
+      resourceLimits:
+        maxMemory: {{ .Values.wasm.resourceLimits.maxMemory }}
+        maxExecutionTime: {{ .Values.wasm.resourceLimits.maxExecutionTime }}
+    {{- end }}
 
     logging:
       level: {{ .Values.logging.level }}
@@ -97,3 +511,4 @@ data:
     metrics:
       enabled: {{ .Values.metrics.enabled }}
       port: {{ .Values.ports.metrics }}
+      endpointCardinalityTTL: {{ .Values.metrics.endpointCardinalityTTL }}

@@ -23,9 +23,26 @@ controller:
     name: ""
     annotations: {}
 
+  # Pod annotations
+  podAnnotations: {}
+
+  # Pod labels
+  podLabels: {}
+
+  # Priority class name
+  priorityClassName: ""
+
   # Leader election for HA
   leaderElection:
     enabled: true
+    leaseDuration: 15s
+    renewDeadline: 10s
+    retryPeriod: 2s
+
+  # Logging configuration
+  logging:
+    level: info
+    format: json
 
   # Metrics configuration
   metrics:
@@ -35,6 +52,7 @@ controller:
       enabled: false
       interval: 30s
       scrapeTimeout: 10s
+      labels: {}
 
   # Health probes
   healthProbe:
@@ -43,6 +61,70 @@ controller:
   # gRPC server for agent communication
   grpc:
     port: 8082
+    # TLS configuration for gRPC server
+    tls:
+      enabled: false
+      # Secret containing TLS certificate and key
+      certSecretName: ""
+      # CA certificate secret for client verification (mTLS)
+      caSecretName: ""
+
+  # Controller class (only process resources with matching class)
+  controllerClass: ""
+
+  # Ingress class name to watch
+  ingressClass: novaedge
+
+  # Default VIP reference for LoadBalancer services
+  defaultVIPRef: ""
+
+  # Enable ServiceLB controller (kube-vip replacement)
+  serviceLB:
+    enabled: true
+
+  # Certificate management
+  certificates:
+    # ACME/Let's Encrypt configuration
+    acme:
+      enabled: false
+      # ACME server URL (use staging for testing)
+      server: "https://acme-v02.api.letsencrypt.org/directory"
+      # Email for ACME account
+      email: ""
+      # Default challenge type: http-01, dns-01, tls-alpn-01
+      defaultChallenge: http-01
+      # DNS-01 provider: cloudflare, route53, google
+      dnsProvider: ""
+      # Secret containing DNS provider credentials
+      dnsCredentialsSecretName: ""
+    # cert-manager integration
+    certManager:
+      enabled: false
+      # ClusterIssuer or Issuer name
+      issuerRef: ""
+      issuerKind: ClusterIssuer
+    # HashiCorp Vault PKI
+    vault:
+      enabled: false
+      address: ""
+      # Vault authentication method: token, kubernetes, approle
+      authMethod: kubernetes
+      # Vault PKI role
+      role: ""
+      # Vault PKI mount path
+      mountPath: pki
+      # Secret containing Vault token or credentials
+      credentialsSecretName: ""
+
+  # Mesh certificate authority
+  meshCA:
+    enabled: false
+    # Key algorithm: ecdsa-p256, ecdsa-p384, rsa-2048
+    keyAlgorithm: ecdsa-p256
+    # Certificate lifetime
+    certLifetime: 24h
+    # CA certificate validity
+    caValidity: 87600h
 
   resources:
     limits:
@@ -55,6 +137,18 @@ controller:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+
+  # Additional environment variables
+  extraEnv: []
+
+  # Additional command-line arguments
+  extraArgs: []
+
+  # Additional volumes
+  extraVolumes: []
+
+  # Additional volume mounts
+  extraVolumeMounts: []
 
   # Pod disruption budget
   podDisruptionBudget:
@@ -96,6 +190,15 @@ agent:
     name: ""
     annotations: {}
 
+  # Pod annotations
+  podAnnotations: {}
+
+  # Pod labels
+  podLabels: {}
+
+  # Priority class name (default: system-node-critical)
+  priorityClassName: system-node-critical
+
   # Node selector for edge nodes
   nodeSelector: {}
     # novaedge.io/role: edge
@@ -114,6 +217,11 @@ agent:
     http: 80
     https: 443
 
+  # Logging configuration
+  logging:
+    level: info
+    format: json
+
   # Metrics configuration
   metrics:
     enabled: true
@@ -122,6 +230,7 @@ agent:
       enabled: false
       interval: 30s
       scrapeTimeout: 10s
+      labels: {}
 
   # Health probes
   healthProbe:
@@ -155,6 +264,25 @@ agent:
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 1
+
+  # Additional environment variables
+  extraEnv: []
+
+  # Additional command-line arguments
+  extraArgs: []
+
+  # Additional volumes
+  extraVolumes: []
+
+  # Additional volume mounts
+  extraVolumeMounts: []
+
+  # Tracing configuration
+  tracing:
+    enabled: false
+    # OTLP endpoint
+    endpoint: ""
+    samplingRate: 10
 
 # Web UI settings
 webui:

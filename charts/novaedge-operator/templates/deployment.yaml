@@ -26,6 +26,9 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "novaedge-operator.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -37,8 +40,25 @@ spec:
           args:
             - --metrics-bind-address=:{{ .Values.metrics.port }}
             - --health-probe-bind-address=:{{ .Values.health.port }}
+            - --log-level={{ .Values.logging.level }}
+            - --log-format={{ .Values.logging.format }}
             {{- if .Values.leaderElection.enabled }}
             - --leader-elect=true
+            - --leader-elect-lease-duration={{ .Values.leaderElection.leaseDuration }}
+            - --leader-elect-renew-deadline={{ .Values.leaderElection.renewDeadline }}
+            - --leader-elect-retry-period={{ .Values.leaderElection.retryPeriod }}
+            {{- end }}
+            {{- if .Values.webhooks.enabled }}
+            - --webhook-port={{ .Values.webhooks.port }}
+            {{- end }}
+            {{- if .Values.managedImages.controller.repository }}
+            - --controller-image={{ .Values.managedImages.controller.repository }}:{{ .Values.managedImages.controller.tag | default .Chart.AppVersion }}
+            {{- end }}
+            {{- if .Values.managedImages.agent.repository }}
+            - --agent-image={{ .Values.managedImages.agent.repository }}:{{ .Values.managedImages.agent.tag | default .Chart.AppVersion }}
+            {{- end }}
+            {{- if .Values.managedImages.novactl.repository }}
+            - --novactl-image={{ .Values.managedImages.novactl.repository }}:{{ .Values.managedImages.novactl.tag | default .Chart.AppVersion }}
             {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}
@@ -50,6 +70,11 @@ spec:
             - name: health
               containerPort: {{ .Values.health.port }}
               protocol: TCP
+            {{- if .Values.webhooks.enabled }}
+            - name: webhook
+              containerPort: {{ .Values.webhooks.port }}
+              protocol: TCP
+            {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
@@ -60,12 +85,22 @@ spec:
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- with .Values.extraVolumeMounts }}
           volumeMounts:
+          {{- if .Values.webhooks.enabled }}
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
+          {{- end }}
+          {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- with .Values.extraVolumes }}
       volumes:
+      {{- if .Values.webhooks.enabled }}
+        - name: webhook-certs
+          secret:
+            secretName: {{ .Values.webhooks.certSecretName | default (printf "%s-webhook-certs" (include "novaedge-operator.fullname" .)) }}
+      {{- end }}
+      {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- with .Values.nodeSelector }}

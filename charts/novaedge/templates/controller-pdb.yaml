@@ -1,0 +1,19 @@
+{{- if and .Values.controller.enabled .Values.controller.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "novaedge.fullname" . }}-controller
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.controller.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.controller.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.controller.podDisruptionBudget.minAvailable }}
+  {{- end }}
+  {{- if .Values.controller.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.controller.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "novaedge.controller.selectorLabels" . | nindent 6 }}
+{{- end }}
