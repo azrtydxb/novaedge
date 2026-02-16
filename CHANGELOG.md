@@ -2,6 +2,22 @@
 
 All notable changes to NovaEdge are documented in this file.
 
+## [1.0.3] - 2026-02-16
+
+Web Admin GUI architecture overhaul and monitoring release.
+
+### Features
+
+- **Standalone Web UI container**: Split React frontend into a standalone nginx container (`novaedge-webui`), decoupling it from the novactl binary. The webui pod now runs a two-container sidecar pattern: nginx serves the SPA and proxies `/api/` requests to the novactl API backend (#356)
+- **Comprehensive Web Admin GUI expansion**: 19 fully functional pages covering all NovaEdge resources — dashboard, gateways, routes, backends, VIPs, certificates, IP pools, policies, mesh, federation, agents, config management, metrics, logs, traces, WAF events, and clusters (#350)
+- **Prometheus/Grafana monitoring**: 5 pre-built Grafana dashboards for traffic overview, backend health, VIP management, policy enforcement, and mesh observability; plus Prometheus scrape configs and ServiceMonitor resources (#348)
+
+### Fixes
+
+- **WebUI page fixes**: Fix broken agents page, dashboard metrics, mesh policies, logs viewer, and traces page (#352)
+- **Static asset rebuild**: Rebuild frontend assets to match source code fixes (#354)
+- **Lint and test fixes**: Fix 11 lint issues (goconst, gosec, unparam) and pre-existing SSRF-related test failures by making HTTP clients injectable (#356)
+
 ## [1.0.2] - 2026-02-16
 
 Helm chart coverage and operator feature completeness release.
