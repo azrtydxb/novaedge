@@ -1,4 +1,4 @@
-import{j as t}from"./ui-C7EZ6zpn.js";import{a as c}from"./vendor-CwhvS1Xk.js";import{u as V,k,R as U,m as L,e as o,t as E,n as Y}from"./index-DqyNCDVA.js";import{f as _,D as q,E as G,F as H}from"./hooks-Bz9YhTMq.js";import{D as J}from"./DataTable-mbxzTGQZ.js";import{u as W,b as X}from"./query-B9ZAROpx.js";import{T as Z,P as ee}from"./trash-2-DoPKzTP9.js";import"./charts-I6YY2jED.js";import"./table-CTlBdFvg.js";import"./chevron-up-Dj1cMKet.js";import"./input-Ca4FuTMm.js";import"./search-CjkAmyjE.js";const te=`apiVersion: novaedge.io/v1alpha1
+import{j as t}from"./ui-C7EZ6zpn.js";import{a as c}from"./vendor-CwhvS1Xk.js";import{u as V,k,R as U,m as L,e as o,t as E,n as Y}from"./index-zIHORJjl.js";import{f as _,D as q,E as G,F as H}from"./hooks-C-0xL2rF.js";import{D as J}from"./DataTable-D5f8MIRS.js";import{u as W,b as X}from"./query-B9ZAROpx.js";import{T as Z,P as ee}from"./trash-2-DwpltwP9.js";import"./charts-I6YY2jED.js";import"./table-BgrfVKVy.js";import"./chevron-up-C0iLhvea.js";import"./input-dJczonoE.js";import"./search-CNhmf8yx.js";const te=`apiVersion: novaedge.io/v1alpha1
 kind: ProxyCertificate
 metadata:
   name: example-cert
