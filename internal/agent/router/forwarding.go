@@ -17,6 +17,7 @@ limitations under the License.
 package router
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -130,35 +131,19 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 	// that trace propagation carries the per-backend child span to the upstream.
 	req = req.WithContext(ctx)
 
-	// Check if this is a gRPC request
+	// Check if this is a gRPC request and validate/prepare it
 	isGRPC := protocol.IsGRPCRequest(req)
 	if isGRPC {
-		backendSpan.SetAttributes(attribute.Bool("rpc.system", true))
-		backendSpan.AddEvent("grpc_request_detected")
-		if ce := r.logger.Check(zap.DebugLevel, "Detected gRPC request"); ce != nil {
-			ce.Write(
-				zap.String("path", req.URL.Path),
-				zap.String("content-type", req.Header.Get("Content-Type")),
-			)
-		}
-
-		// Validate gRPC request
-		if err := snap.grpcHandler.ValidateGRPCRequest(req); err != nil {
-			backendSpan.SetStatus(codes.Error, "Invalid gRPC request")
-			backendSpan.RecordError(err)
-			r.logger.Error("Invalid gRPC request", zap.Error(err))
-			http.Error(w, "Invalid gRPC request", http.StatusBadRequest)
+		var ok bool
+		req, ok = r.validateAndPrepareGRPC(snap, backendSpan, w, req)
+		if !ok {
 			return
 		}
-
-		// Prepare gRPC request for backend
-		req = snap.grpcHandler.PrepareGRPCRequest(req)
 	}
 
 	// Apply route filters first (header modifications, redirects, rewrites)
-	modifiedReq, shouldContinue := applyPrebuiltFilters(entry.Filters, w, req)
-	if !shouldContinue {
-		// Filter handled the response (e.g., redirect)
+	modifiedReq, filterContinue := applyPrebuiltFilters(entry.Filters, w, req)
+	if !filterContinue {
 		backendSpan.AddEvent("filter_handled_response")
 		return
 	}
@@ -172,10 +157,8 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 		return
 	}
 
-	// Fire-and-forget mirror: execute AFTER backend selection but the mirror copy runs in a goroutine.
-	// The original request flow is unaffected by the mirror.
+	// Fire-and-forget mirror
 	if entry.MirrorConfig != nil {
-		// Build interface maps for mirror endpoint selection
 		standardLBs := make(map[string]interface{}, len(snap.loadBalancers))
 		for k, v := range snap.loadBalancers {
 			standardLBs[k] = v
@@ -192,23 +175,8 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 
 	detailed := DefaultTraceVerbosity.ShouldTraceDetailed() && backendSpan.IsRecording()
 
-	// Get pool.  In detailed mode, wrap the lookup in a child span.
-	var pool *upstream.Pool
-	var poolFound bool
-	if detailed {
-		var poolSpan trace.Span
-		_, poolSpan = tracer.Start(ctx, "pool_acquisition",
-			trace.WithAttributes(attribute.String("novaedge.backend.cluster", clusterKey)))
-		pool, poolFound = snap.pools[clusterKey]
-		if poolFound {
-			poolSpan.SetStatus(codes.Ok, "")
-		} else {
-			poolSpan.SetStatus(codes.Error, "pool not found")
-		}
-		poolSpan.End()
-	} else {
-		pool, poolFound = snap.pools[clusterKey]
-	}
+	// Acquire pool for the selected cluster
+	pool, poolFound := r.acquirePool(snap, clusterKey, detailed, tracer, ctx)
 	if !poolFound {
 		backendSpan.SetStatus(codes.Error, "No pool for cluster")
 		r.logger.Error("No pool for cluster", zap.String("cluster", clusterKey))
@@ -216,8 +184,68 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 		return
 	}
 
-	// Select endpoint using appropriate load balancer.
-	// In detailed mode, wrap the selection in a child span.
+	// Select endpoint using appropriate load balancer
+	endpoint, lbType := r.selectEndpoint(snap, clusterKey, req, w, backendSpan, detailed, tracer, ctx)
+	if endpoint == nil {
+		return // selectEndpoint already wrote the error response
+	}
+
+	backendSpan.SetAttributes(attribute.String("novaedge.lb.type", lbType))
+
+	// Execute the forward to the selected endpoint
+	r.executeForward(snap, entry, pool, endpoint, clusterKey, isGRPC, backendSpan, w, req, ctx)
+
+	// Link to parent span if available (for debugging)
+	_ = parentSpan
+}
+
+// validateAndPrepareGRPC validates and prepares a gRPC request for forwarding.
+// Returns the (possibly modified) request and whether processing should continue.
+func (r *Router) validateAndPrepareGRPC(snap *routerState, backendSpan trace.Span, w http.ResponseWriter, req *http.Request) (*http.Request, bool) {
+	backendSpan.SetAttributes(attribute.Bool("rpc.system", true))
+	backendSpan.AddEvent("grpc_request_detected")
+	if ce := r.logger.Check(zap.DebugLevel, "Detected gRPC request"); ce != nil {
+		ce.Write(
+			zap.String("path", req.URL.Path),
+			zap.String("content-type", req.Header.Get("Content-Type")),
+		)
+	}
+
+	if err := snap.grpcHandler.ValidateGRPCRequest(req); err != nil {
+		backendSpan.SetStatus(codes.Error, "Invalid gRPC request")
+		backendSpan.RecordError(err)
+		r.logger.Error("Invalid gRPC request", zap.Error(err))
+		http.Error(w, "Invalid gRPC request", http.StatusBadRequest)
+		return req, false
+	}
+
+	return snap.grpcHandler.PrepareGRPCRequest(req), true
+}
+
+// acquirePool looks up the connection pool for the given cluster key.
+// In detailed trace mode, wraps the lookup in a child span.
+func (r *Router) acquirePool(snap *routerState, clusterKey string, detailed bool, tracer trace.Tracer, ctx context.Context) (*upstream.Pool, bool) {
+	if detailed {
+		var poolSpan trace.Span
+		_, poolSpan = tracer.Start(ctx, "pool_acquisition",
+			trace.WithAttributes(attribute.String("novaedge.backend.cluster", clusterKey)))
+		pool, found := snap.pools[clusterKey]
+		if found {
+			poolSpan.SetStatus(codes.Ok, "")
+		} else {
+			poolSpan.SetStatus(codes.Error, "pool not found")
+		}
+		poolSpan.End()
+		return pool, found
+	}
+	pool, found := snap.pools[clusterKey]
+	return pool, found
+}
+
+// selectEndpoint picks a backend endpoint using the appropriate load balancer.
+// Returns the selected endpoint and the LB type string, or nil if no healthy
+// endpoint is available (in which case an error response is already written).
+func (r *Router) selectEndpoint(snap *routerState, clusterKey string, req *http.Request, w http.ResponseWriter, backendSpan trace.Span, detailed bool, tracer trace.Tracer, ctx context.Context) (*pb.Endpoint, string) {
 	var endpoint *pb.Endpoint
 	var lbType string
 	var selSpan trace.Span
@@ -228,14 +256,11 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 
 	// Check if this cluster uses hash-based load balancing
 	if hashLB, ok := snap.hashBasedLBs[clusterKey]; ok {
-		// Use client IP as the hash key for consistent hashing
-		// Extract client IP from request
 		clientIP := req.RemoteAddr
 		if idx := strings.LastIndex(clientIP, ":"); idx != -1 {
 			clientIP = clientIP[:idx]
 		}
 
-		// Type assert to the specific hash-based LB type
 		switch hashBalancer := hashLB.(type) {
 		case *lb.RingHash:
 			endpoint = hashBalancer.Select(clientIP)
@@ -244,52 +269,60 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 			endpoint = hashBalancer.Select(clientIP)
 			lbType = "maglev"
 		default:
+			r.finishSelectionSpan(selSpan, endpoint, lbType)
 			backendSpan.SetStatus(codes.Error, "Unknown hash-based load balancer type")
 			r.logger.Error("Unknown hash-based load balancer type", zap.String("cluster", clusterKey))
 			http.Error(w, "Backend configuration error", http.StatusInternalServerError)
-			return
+			return nil, ""
 		}
 	} else if stickyWrapper, hasSW := snap.stickyWrappers[clusterKey]; hasSW {
-		// Use sticky session wrapper (cookie-based affinity)
 		endpoint = stickyWrapper.SelectWithAffinity(req, w)
 		lbType = "sticky"
 	} else {
-		// Use standard load balancer
 		loadBalancer, ok := snap.loadBalancers[clusterKey]
 		if !ok {
+			r.finishSelectionSpan(selSpan, nil, "")
 			backendSpan.SetStatus(codes.Error, "No load balancer for cluster")
 			r.logger.Error("No load balancer for cluster", zap.String("cluster", clusterKey))
 			http.Error(w, "Backend not available", http.StatusServiceUnavailable)
-			return
+			return nil, ""
 		}
 		endpoint = loadBalancer.Select()
 		lbType = "standard"
 	}
 
-	backendSpan.SetAttributes(attribute.String("novaedge.lb.type", lbType))
-
-	// End the detailed backend_selection span if we started one
-	if selSpan != nil {
-		if endpoint != nil {
-			selSpan.SetAttributes(
-				attribute.String("novaedge.lb.type", lbType),
-				attribute.String("novaedge.endpoint", endpoint.Address),
-			)
-			selSpan.SetStatus(codes.Ok, "")
-		} else {
-			selSpan.SetStatus(codes.Error, "no healthy endpoint")
-		}
-		selSpan.End()
-	}
+	r.finishSelectionSpan(selSpan, endpoint, lbType)
 
 	if endpoint == nil {
 		backendSpan.SetStatus(codes.Error, "No healthy endpoint available")
 		r.logger.Error("No healthy endpoint available", zap.String("cluster", clusterKey))
 		http.Error(w, "No healthy backend", http.StatusServiceUnavailable)
-		return
+		return nil, ""
 	}
 
-	// Track backend request timing
+	return endpoint, lbType
+}
+
+// finishSelectionSpan ends the backend_selection span with appropriate attributes.
+func (r *Router) finishSelectionSpan(selSpan trace.Span, endpoint *pb.Endpoint, lbType string) {
+	if selSpan == nil {
+		return
+	}
+	if endpoint != nil {
+		selSpan.SetAttributes(
+			attribute.String("novaedge.lb.type", lbType),
+			attribute.String("novaedge.endpoint", endpoint.Address),
+		)
+		selSpan.SetStatus(codes.Ok, "")
+	} else {
+		selSpan.SetStatus(codes.Error, "no healthy endpoint")
+	}
+	selSpan.End()
+}
+
+// executeForward sends the request to the selected endpoint, handling retries,
+// metrics recording, and health-check feedback.
+func (r *Router) executeForward(snap *routerState, entry *RouteEntry, pool *upstream.Pool, endpoint *pb.Endpoint, clusterKey string, isGRPC bool, backendSpan trace.Span, w http.ResponseWriter, req *http.Request, ctx context.Context) {
 	backendStart := time.Now()
 	endpointKey := formatEndpointKey(endpoint.Address, endpoint.Port)
 
@@ -315,7 +348,6 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 	retryPolicy := NewRetryPolicy(entry.Rule.Retry)
 
 	if retryPolicy != nil && !isGRPC {
-		// Use retry-aware forwarding
 		var loadBalancer lb.LoadBalancer
 		if stdLB, ok := snap.loadBalancers[clusterKey]; ok {
 			loadBalancer = stdLB
@@ -324,61 +356,54 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 		if hLB, ok := snap.hashBasedLBs[clusterKey]; ok {
 			hashLB = hLB
 		}
-
 		r.forwardWithRetry(entry, w, req, retryPolicy, pool, clusterKey, loadBalancer, hashLB, backendSpan, r.logger)
 	} else {
-		// Standard forwarding without retry
-		// Forward request to backend
-		if err := pool.Forward(endpoint, req, w); err != nil {
-			// Record failure for passive health checking
-			pool.RecordFailure(endpoint)
+		r.forwardDirect(pool, endpoint, clusterKey, endpointKey, isGRPC, backendStart, backendSpan, w, req)
+	}
+}
 
-			// Record backend failure metrics
-			backendDuration := time.Since(backendStart).Seconds()
-			metrics.RecordBackendRequest(clusterKey, endpointKey, "failure", backendDuration)
+// forwardDirect sends the request to the backend without retry logic and records metrics.
+func (r *Router) forwardDirect(pool *upstream.Pool, endpoint *pb.Endpoint, clusterKey, endpointKey string, isGRPC bool, backendStart time.Time, backendSpan trace.Span, w http.ResponseWriter, req *http.Request) {
+	if err := pool.Forward(endpoint, req, w); err != nil {
+		pool.RecordFailure(endpoint)
 
-			// Record error on span
-			backendSpan.RecordError(err)
-			backendSpan.SetStatus(codes.Error, "Backend request failed")
-			backendSpan.SetAttributes(
-				attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
-				attribute.String("novaedge.backend.status", "failure"),
-			)
+		backendDuration := time.Since(backendStart).Seconds()
+		metrics.RecordBackendRequest(clusterKey, endpointKey, "failure", backendDuration)
 
-			r.logger.Error("Failed to forward request",
-				zap.String("cluster", clusterKey),
-				zap.String("endpoint", endpointKey),
-				zap.Bool("grpc", isGRPC),
-				zap.Error(err),
-			)
-			http.Error(w, "Backend error", http.StatusBadGateway)
-		} else {
-			// Record success for passive health checking
-			pool.RecordSuccess(endpoint)
+		backendSpan.RecordError(err)
+		backendSpan.SetStatus(codes.Error, "Backend request failed")
+		backendSpan.SetAttributes(
+			attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
+			attribute.String("novaedge.backend.status", "failure"),
+		)
 
-			// Record backend success metrics
-			backendDuration := time.Since(backendStart).Seconds()
-			metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
+		r.logger.Error("Failed to forward request",
+			zap.String("cluster", clusterKey),
+			zap.String("endpoint", endpointKey),
+			zap.Bool("grpc", isGRPC),
+			zap.Error(err),
+		)
+		http.Error(w, "Backend error", http.StatusBadGateway)
+	} else {
+		pool.RecordSuccess(endpoint)
 
-			// Record success on span
-			backendSpan.SetStatus(codes.Ok, "")
-			backendSpan.SetAttributes(
-				attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
-				attribute.String("novaedge.backend.status", "success"),
-			)
+		backendDuration := time.Since(backendStart).Seconds()
+		metrics.RecordBackendRequest(clusterKey, endpointKey, "success", backendDuration)
 
-			if isGRPC {
-				if ce := r.logger.Check(zap.DebugLevel, "Successfully forwarded gRPC request"); ce != nil {
-					ce.Write(
-						zap.String("cluster", clusterKey),
-						zap.String("endpoint", endpointKey),
-						zap.Duration("duration", time.Since(backendStart)),
-					)
-				}
+		backendSpan.SetStatus(codes.Ok, "")
+		backendSpan.SetAttributes(
+			attribute.Float64("novaedge.backend.duration_seconds", backendDuration),
+			attribute.String("novaedge.backend.status", "success"),
+		)
+
+		if isGRPC {
+			if ce := r.logger.Check(zap.DebugLevel, "Successfully forwarded gRPC request"); ce != nil {
+				ce.Write(
+					zap.String("cluster", clusterKey),
+					zap.String("endpoint", endpointKey),
+					zap.Duration("duration", time.Since(backendStart)),
+				)
 			}
 		}
 	}
-
-	// Link to parent span if available (for debugging)
-	_ = parentSpan // Use parentSpan to avoid unused variable warning if we need it later
 }
