@@ -189,11 +189,15 @@ func (ts *TunnelServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	done := make(chan struct{})
 	go func() {
 		defer func() { done <- struct{}{} }()
-		_, _ = io.Copy(backendConn, r.Body)
+		if _, err := io.Copy(backendConn, r.Body); err != nil {
+			ts.logger.Debug("io.Copy client->backend finished with error", zap.Error(err))
+		}
 	}()
 
 	fw := &flushWriter{w: w}
-	_, _ = io.Copy(fw, backendConn)
+	if _, err := io.Copy(fw, backendConn); err != nil {
+		ts.logger.Debug("io.Copy backend->client finished with error", zap.Error(err))
+	}
 	<-done
 }
 

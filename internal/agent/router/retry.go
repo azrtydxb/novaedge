@@ -24,7 +24,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -453,12 +452,4 @@ func selectEndpointExcluding(
 		return loadBalancer.Select()
 	}
 	return nil
-}
-
-// retryMetricsOnce ensures retry metrics are registered once
-var retryMetricsOnce atomic.Bool
-
-func init() {
-	// Metrics are registered in the metrics package
-	_ = retryMetricsOnce.Load()
 }
