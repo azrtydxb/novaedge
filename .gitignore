@@ -21,6 +21,12 @@ vendor/
 
 # Build output
 bin/
+novactl
+novaedge-*
+!novaedge-*.go
+
+# Implementation plans
+PLAN.md
 
 # IDE specific files
 .vscode/
