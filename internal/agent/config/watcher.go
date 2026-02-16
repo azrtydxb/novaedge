@@ -164,7 +164,11 @@ func (w *Watcher) Start(applyFunc ApplyFunc) error {
 					zap.Error(err),
 					zap.Duration("retry_delay", 5*time.Second),
 				)
-				time.Sleep(5 * time.Second)
+				select {
+				case <-w.ctx.Done():
+					return w.ctx.Err()
+				case <-time.After(5 * time.Second):
+				}
 				continue
 			}
 		}
@@ -216,7 +220,11 @@ func (w *Watcher) connectWithRetry() (*grpc.ClientConn, error) {
 				zap.Error(err),
 				zap.Duration("retry_in", backoff),
 			)
-			time.Sleep(backoff)
+			select {
+			case <-w.ctx.Done():
+				return nil, w.ctx.Err()
+			case <-time.After(backoff):
+			}
 			backoff *= 2
 			if backoff > maxBackoff {
 				backoff = maxBackoff
