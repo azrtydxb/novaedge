@@ -342,7 +342,7 @@ func TestL2Handler_AnnounceActiveVIPs(t *testing.T) {
 	}
 
 	t.Run("no VIPs to announce", func(t *testing.T) {
-		handler.announceActiveVIPs()
+		handler.announceActiveVIPs(context.Background())
 	})
 
 	t.Run("with active VIPs including IPv6", func(t *testing.T) {
@@ -362,7 +362,7 @@ func TestL2Handler_AnnounceActiveVIPs(t *testing.T) {
 		handler.mu.Unlock()
 
 		// Should not panic
-		handler.announceActiveVIPs()
+		handler.announceActiveVIPs(context.Background())
 	})
 }
 

@@ -265,7 +265,12 @@ func (w *FailoverWatcher) Start(applyFunc ApplyFunc) error {
 
 		if err := w.runStateMachine(); err != nil {
 			w.logger.Error("State machine error", zap.Error(err))
-			time.Sleep(time.Second)
+			select {
+			case <-w.ctx.Done():
+				w.cleanup()
+				return w.ctx.Err()
+			case <-time.After(time.Second):
+			}
 		}
 	}
 }
@@ -402,7 +407,11 @@ func (w *FailoverWatcher) handleFailingOver() error {
 		w.transitionTo(StateAutonomous, nil)
 	} else {
 		// Wait and retry
-		time.Sleep(5 * time.Second)
+		select {
+		case <-w.ctx.Done():
+			return w.ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
 	}
 
 	return nil
