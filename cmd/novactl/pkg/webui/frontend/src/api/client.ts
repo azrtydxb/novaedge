@@ -10,6 +10,18 @@ import type {
   ImportResult,
   ValidationResult,
   HistoryEntry,
+  Certificate,
+  IPPool,
+  GenericResource,
+  AuthSession,
+  LoginResult,
+  Trace,
+  KubeEvent,
+  WAFSummary,
+  MeshStatus,
+  MeshTopology,
+  ConfigSnapshot,
+  ConfigDiff,
 } from './types'
 import {
   normalizeGateways,
@@ -41,6 +53,22 @@ async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
   }
 
   return response.json()
+}
+
+async function fetchText(url: string, options?: RequestInit): Promise<string> {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...options?.headers,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.text().catch(() => response.statusText)
+    throw new Error(error || 'Request failed')
+  }
+
+  return response.text()
 }
 
 // Resource CRUD operations with normalization for each type
@@ -184,7 +212,148 @@ const policiesAPI = {
   },
 }
 
+// Certificates CRUD
+const certificatesAPI = {
+  list: async (namespace: string = 'all'): Promise<Certificate[]> => {
+    return fetchJSON<Certificate[]>(`${API_BASE}/certificates?namespace=${namespace}`)
+  },
+  get: async (namespace: string, name: string): Promise<Certificate> => {
+    return fetchJSON<Certificate>(`${API_BASE}/certificates/${namespace}/${name}`)
+  },
+  create: async (resource: Certificate): Promise<Certificate> => {
+    return fetchJSON<Certificate>(`${API_BASE}/certificates`, {
+      method: 'POST',
+      body: JSON.stringify(resource),
+    })
+  },
+  update: async (namespace: string, name: string, resource: Certificate): Promise<Certificate> => {
+    return fetchJSON<Certificate>(`${API_BASE}/certificates/${namespace}/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(resource),
+    })
+  },
+  delete: async (namespace: string, name: string): Promise<void> => {
+    await fetchJSON<{ status: string }>(`${API_BASE}/certificates/${namespace}/${name}`, { method: 'DELETE' })
+  },
+}
+
+// IP Pools CRUD
+const ippoolsAPI = {
+  list: async (): Promise<IPPool[]> => {
+    return fetchJSON<IPPool[]>(`${API_BASE}/ippools`)
+  },
+  get: async (name: string): Promise<IPPool> => {
+    return fetchJSON<IPPool>(`${API_BASE}/ippools/${name}`)
+  },
+  create: async (resource: IPPool): Promise<IPPool> => {
+    return fetchJSON<IPPool>(`${API_BASE}/ippools`, {
+      method: 'POST',
+      body: JSON.stringify(resource),
+    })
+  },
+  update: async (name: string, resource: IPPool): Promise<IPPool> => {
+    return fetchJSON<IPPool>(`${API_BASE}/ippools/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(resource),
+    })
+  },
+  delete: async (name: string): Promise<void> => {
+    await fetchJSON<{ status: string }>(`${API_BASE}/ippools/${name}`, { method: 'DELETE' })
+  },
+}
+
+// Clusters CRUD (NovaEdgeCluster)
+const clustersAPI = {
+  list: async (namespace: string = 'all'): Promise<GenericResource[]> => {
+    return fetchJSON<GenericResource[]>(`${API_BASE}/clusters?namespace=${namespace}`)
+  },
+  get: async (namespace: string, name: string): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/clusters/${namespace}/${name}`)
+  },
+  create: async (resource: GenericResource): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/clusters`, {
+      method: 'POST',
+      body: JSON.stringify(resource),
+    })
+  },
+  update: async (namespace: string, name: string, resource: GenericResource): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/clusters/${namespace}/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(resource),
+    })
+  },
+  delete: async (namespace: string, name: string): Promise<void> => {
+    await fetchJSON<{ status: string }>(`${API_BASE}/clusters/${namespace}/${name}`, { method: 'DELETE' })
+  },
+}
+
+// Federations CRUD
+const federationsAPI = {
+  list: async (namespace: string = 'all'): Promise<GenericResource[]> => {
+    return fetchJSON<GenericResource[]>(`${API_BASE}/federations?namespace=${namespace}`)
+  },
+  get: async (namespace: string, name: string): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/federations/${namespace}/${name}`)
+  },
+  create: async (resource: GenericResource): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/federations`, {
+      method: 'POST',
+      body: JSON.stringify(resource),
+    })
+  },
+  update: async (namespace: string, name: string, resource: GenericResource): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/federations/${namespace}/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(resource),
+    })
+  },
+  delete: async (namespace: string, name: string): Promise<void> => {
+    await fetchJSON<{ status: string }>(`${API_BASE}/federations/${namespace}/${name}`, { method: 'DELETE' })
+  },
+}
+
+// Remote Clusters CRUD
+const remoteclustersAPI = {
+  list: async (namespace: string = 'all'): Promise<GenericResource[]> => {
+    return fetchJSON<GenericResource[]>(`${API_BASE}/remoteclusters?namespace=${namespace}`)
+  },
+  get: async (namespace: string, name: string): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/remoteclusters/${namespace}/${name}`)
+  },
+  create: async (resource: GenericResource): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/remoteclusters`, {
+      method: 'POST',
+      body: JSON.stringify(resource),
+    })
+  },
+  update: async (namespace: string, name: string, resource: GenericResource): Promise<GenericResource> => {
+    return fetchJSON<GenericResource>(`${API_BASE}/remoteclusters/${namespace}/${name}`, {
+      method: 'PUT',
+      body: JSON.stringify(resource),
+    })
+  },
+  delete: async (namespace: string, name: string): Promise<void> => {
+    await fetchJSON<{ status: string }>(`${API_BASE}/remoteclusters/${namespace}/${name}`, { method: 'DELETE' })
+  },
+}
+
 export const api = {
+  // Auth
+  auth: {
+    getSession: async (): Promise<AuthSession> => {
+      return fetchJSON<AuthSession>(`${API_BASE}/auth/session`)
+    },
+    login: async (username: string, password: string): Promise<LoginResult> => {
+      return fetchJSON<LoginResult>(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      })
+    },
+    logout: async (): Promise<void> => {
+      await fetchJSON<void>(`${API_BASE}/auth/logout`, { method: 'POST' })
+    },
+  },
+
   // Mode
   getMode: async (): Promise<ModeInfo> => {
     return fetchJSON<ModeInfo>(`${API_BASE}/mode`)
@@ -203,6 +372,13 @@ export const api = {
   backends: backendsAPI,
   vips: vipsAPI,
   policies: policiesAPI,
+
+  // New CRDs
+  certificates: certificatesAPI,
+  ippools: ippoolsAPI,
+  clusters: clustersAPI,
+  federations: federationsAPI,
+  remoteclusters: remoteclustersAPI,
 
   // Agents
   agents: {
@@ -281,6 +457,80 @@ export const api = {
       await fetchJSON(`${API_BASE}/config/history/${id}/restore`, {
         method: 'POST',
       })
+    },
+  },
+
+  // Traces
+  traces: {
+    search: async (params: Record<string, string>): Promise<Trace[]> => {
+      return fetchJSON<Trace[]>(`${API_BASE}/traces?${new URLSearchParams(params)}`)
+    },
+    get: async (traceID: string): Promise<Trace> => {
+      return fetchJSON<Trace>(`${API_BASE}/traces/${traceID}`)
+    },
+    services: async (): Promise<string[]> => {
+      return fetchJSON<string[]>(`${API_BASE}/traces/services`)
+    },
+    operations: async (service: string): Promise<string[]> => {
+      return fetchJSON<string[]>(`${API_BASE}/traces/operations?service=${encodeURIComponent(service)}`)
+    },
+  },
+
+  // Logs
+  logs: {
+    get: async (pod: string, namespace: string, tailLines: number = 100): Promise<string> => {
+      return fetchText(
+        `${API_BASE}/logs?pod=${encodeURIComponent(pod)}&namespace=${encodeURIComponent(namespace)}&tailLines=${tailLines}`
+      )
+    },
+  },
+
+  // Events
+  events: {
+    list: async (namespace?: string, involved?: string): Promise<KubeEvent[]> => {
+      const params = new URLSearchParams()
+      if (namespace) params.set('namespace', namespace)
+      if (involved) params.set('involved', involved)
+      return fetchJSON<KubeEvent[]>(`${API_BASE}/events?${params}`)
+    },
+  },
+
+  // WAF
+  waf: {
+    events: async (): Promise<WAFSummary> => {
+      return fetchJSON<WAFSummary>(`${API_BASE}/waf/events`)
+    },
+  },
+
+  // Mesh
+  mesh: {
+    status: async (): Promise<MeshStatus> => {
+      return fetchJSON<MeshStatus>(`${API_BASE}/mesh/status`)
+    },
+    topology: async (): Promise<MeshTopology> => {
+      return fetchJSON<MeshTopology>(`${API_BASE}/mesh/topology`)
+    },
+  },
+
+  // Config Snapshots
+  configSnapshots: {
+    list: async (): Promise<ConfigSnapshot[]> => {
+      return fetchJSON<ConfigSnapshot[]>(`${API_BASE}/config/snapshots`)
+    },
+    get: async (id: string): Promise<ConfigSnapshot> => {
+      return fetchJSON<ConfigSnapshot>(`${API_BASE}/config/snapshots/${id}`)
+    },
+    create: async (comment?: string): Promise<ConfigSnapshot> => {
+      return fetchJSON<ConfigSnapshot>(`${API_BASE}/config/snapshots`, {
+        method: 'POST',
+        body: JSON.stringify({ comment }),
+      })
+    },
+    diff: async (fromId: string, toId: string): Promise<ConfigDiff> => {
+      return fetchJSON<ConfigDiff>(`${API_BASE}/config/diff?from=${fromId}&to=${toId}`)
+    },
+    rollback: async (id: string): Promise<void> => {
+      await fetchJSON<unknown>(`${API_BASE}/config/rollback/${id}`, { method: 'POST' })
     },
   },
 

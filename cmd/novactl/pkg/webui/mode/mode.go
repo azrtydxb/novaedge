@@ -118,6 +118,81 @@ type Backend interface {
 	// DeletePolicy deletes a policy
 	DeletePolicy(ctx context.Context, namespace, name string) error
 
+	// ListCertificates returns all certificates
+	ListCertificates(ctx context.Context, namespace string) ([]models.Certificate, error)
+
+	// GetCertificate returns a specific certificate
+	GetCertificate(ctx context.Context, namespace, name string) (*models.Certificate, error)
+
+	// CreateCertificate creates a new certificate
+	CreateCertificate(ctx context.Context, cert *models.Certificate) (*models.Certificate, error)
+
+	// UpdateCertificate updates an existing certificate
+	UpdateCertificate(ctx context.Context, cert *models.Certificate) (*models.Certificate, error)
+
+	// DeleteCertificate deletes a certificate
+	DeleteCertificate(ctx context.Context, namespace, name string) error
+
+	// ListIPPools returns all IP pools
+	ListIPPools(ctx context.Context) ([]models.IPPool, error)
+
+	// GetIPPool returns a specific IP pool
+	GetIPPool(ctx context.Context, name string) (*models.IPPool, error)
+
+	// CreateIPPool creates a new IP pool
+	CreateIPPool(ctx context.Context, pool *models.IPPool) (*models.IPPool, error)
+
+	// UpdateIPPool updates an existing IP pool
+	UpdateIPPool(ctx context.Context, pool *models.IPPool) (*models.IPPool, error)
+
+	// DeleteIPPool deletes an IP pool
+	DeleteIPPool(ctx context.Context, name string) error
+
+	// ListNovaEdgeClusters returns all NovaEdge clusters
+	ListNovaEdgeClusters(ctx context.Context, namespace string) ([]models.NovaEdgeClusterModel, error)
+
+	// GetNovaEdgeCluster returns a specific NovaEdge cluster
+	GetNovaEdgeCluster(ctx context.Context, namespace, name string) (*models.NovaEdgeClusterModel, error)
+
+	// CreateNovaEdgeCluster creates a new NovaEdge cluster
+	CreateNovaEdgeCluster(ctx context.Context, cluster *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error)
+
+	// UpdateNovaEdgeCluster updates an existing NovaEdge cluster
+	UpdateNovaEdgeCluster(ctx context.Context, cluster *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error)
+
+	// DeleteNovaEdgeCluster deletes a NovaEdge cluster
+	DeleteNovaEdgeCluster(ctx context.Context, namespace, name string) error
+
+	// ListFederations returns all federations
+	ListFederations(ctx context.Context, namespace string) ([]models.FederationModel, error)
+
+	// GetFederation returns a specific federation
+	GetFederation(ctx context.Context, namespace, name string) (*models.FederationModel, error)
+
+	// CreateFederation creates a new federation
+	CreateFederation(ctx context.Context, federation *models.FederationModel) (*models.FederationModel, error)
+
+	// UpdateFederation updates an existing federation
+	UpdateFederation(ctx context.Context, federation *models.FederationModel) (*models.FederationModel, error)
+
+	// DeleteFederation deletes a federation
+	DeleteFederation(ctx context.Context, namespace, name string) error
+
+	// ListRemoteClusters returns all remote clusters
+	ListRemoteClusters(ctx context.Context, namespace string) ([]models.RemoteClusterModel, error)
+
+	// GetRemoteCluster returns a specific remote cluster
+	GetRemoteCluster(ctx context.Context, namespace, name string) (*models.RemoteClusterModel, error)
+
+	// CreateRemoteCluster creates a new remote cluster
+	CreateRemoteCluster(ctx context.Context, rc *models.RemoteClusterModel) (*models.RemoteClusterModel, error)
+
+	// UpdateRemoteCluster updates an existing remote cluster
+	UpdateRemoteCluster(ctx context.Context, rc *models.RemoteClusterModel) (*models.RemoteClusterModel, error)
+
+	// DeleteRemoteCluster deletes a remote cluster
+	DeleteRemoteCluster(ctx context.Context, namespace, name string) error
+
 	// ListNamespaces returns available namespaces
 	ListNamespaces(ctx context.Context) ([]string, error)
 

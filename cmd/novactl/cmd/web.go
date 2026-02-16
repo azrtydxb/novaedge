@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui"
+	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/auth"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -29,6 +30,14 @@ var (
 	webTLSAuto    bool
 	webACMEEmail  string
 	webACMEDomain string
+	// Auth flags
+	webAuthUser       string
+	webAuthPassword   string
+	webOIDCIssuerURL  string
+	webOIDCClientID   string
+	webOIDCSecret     string
+	webSessionTTL     time.Duration
+	webJaegerEndpoint string
 )
 
 func newWebCommand() *cobra.Command {
@@ -102,10 +111,37 @@ The mode is auto-detected but can be explicitly set with --mode.`,
 	cmd.Flags().StringVar(&webACMEDomain, "acme-domain", "",
 		"Domain name for certificate (used with --tls-auto)")
 
+	// Auth flags
+	cmd.Flags().StringVar(&webAuthUser, "auth-user", "",
+		"Username for basic authentication (env: NOVACTL_AUTH_USER)")
+	cmd.Flags().StringVar(&webAuthPassword, "auth-password", "",
+		"Password for basic authentication (env: NOVACTL_AUTH_PASSWORD)")
+	cmd.Flags().StringVar(&webOIDCIssuerURL, "oidc-issuer-url", "",
+		"OIDC issuer URL (reserved for future use)")
+	cmd.Flags().StringVar(&webOIDCClientID, "oidc-client-id", "",
+		"OIDC client ID (reserved for future use)")
+	cmd.Flags().StringVar(&webOIDCSecret, "oidc-client-secret", "",
+		"OIDC client secret (reserved for future use)")
+	cmd.Flags().DurationVar(&webSessionTTL, "session-ttl", 8*time.Hour,
+		"Session token time-to-live")
+	cmd.Flags().StringVar(&webJaegerEndpoint, "jaeger-endpoint",
+		"http://jaeger.jaeger.svc.cluster.local:16686",
+		"Jaeger endpoint URL for trace viewing")
+
 	return cmd
 }
 
 func runWeb(cmd *cobra.Command, args []string) error {
+	// Resolve auth flags from environment if not set on command line
+	authUser := webAuthUser
+	if authUser == "" {
+		authUser = os.Getenv("NOVACTL_AUTH_USER")
+	}
+	authPass := webAuthPassword
+	if authPass == "" {
+		authPass = os.Getenv("NOVACTL_AUTH_PASSWORD")
+	}
+
 	// Create server config
 	serverConfig := webui.Config{
 		Address:              webAddress,
@@ -119,6 +155,16 @@ func runWeb(cmd *cobra.Command, args []string) error {
 		TLSAuto:    webTLSAuto,
 		ACMEEmail:  webACMEEmail,
 		ACMEDomain: webACMEDomain,
+		// Auth configuration
+		AuthConfig: auth.Config{
+			BasicUser:    authUser,
+			BasicPass:    authPass,
+			OIDCIssuer:   webOIDCIssuerURL,
+			OIDCClientID: webOIDCClientID,
+			OIDCSecret:   webOIDCSecret,
+			SessionTTL:   webSessionTTL,
+		},
+		JaegerEndpoint: webJaegerEndpoint,
 	}
 
 	// For Kubernetes mode (or auto mode), try to load kubeconfig
