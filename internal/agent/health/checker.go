@@ -66,6 +66,10 @@ type CheckConfig struct {
 
 	// Mode is the type of health check to perform.
 	Mode CheckMode
+
+	// InsecureSkipVerify disables TLS certificate verification for HTTPS
+	// health checks. Defaults to false (certificates are verified).
+	InsecureSkipVerify bool
 }
 
 // Checker performs active health checks on endpoints
@@ -148,7 +152,7 @@ func NewChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logge
 				IdleConnTimeout:     90 * time.Second,
 				TLSClientConfig: &tls.Config{
 					MinVersion:         tls.VersionTLS12,
-					InsecureSkipVerify: true, //nolint:gosec // Health checks use skip-verify for backend probing
+					InsecureSkipVerify: config.InsecureSkipVerify, //nolint:gosec // Configurable per-backend TLS verification
 				},
 			},
 		},
@@ -183,6 +187,12 @@ func buildCheckConfig(cluster *pb.Cluster) CheckConfig {
 		Path:     DefaultHealthCheckPath,
 		Interval: DefaultHealthCheckInterval,
 		Mode:     CheckHTTP,
+	}
+
+	// Configure TLS skip-verify from cluster TLS settings.
+	// This defaults to false (secure) when not explicitly set.
+	if tlsConfig := cluster.GetTls(); tlsConfig != nil {
+		config.InsecureSkipVerify = tlsConfig.GetInsecureSkipVerify()
 	}
 
 	hcConfig := cluster.GetHealthCheck()

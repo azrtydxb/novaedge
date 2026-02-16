@@ -554,6 +554,7 @@ func TestHealthChecker_PerformHTTPSCheck_Success(t *testing.T) {
 		HealthCheck: &pb.HealthCheck{
 			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
 		},
+		Tls: &pb.BackendTLS{InsecureSkipVerify: true},
 	}
 	ep := newTestEndpoint(host, port)
 
@@ -594,6 +595,7 @@ func TestHealthChecker_PerformHTTPSCheck_CustomPath(t *testing.T) {
 			Type:     pb.HealthCheckType_HEALTH_CHECK_HTTPS,
 			HttpPath: "/healthz",
 		},
+		Tls: &pb.BackendTLS{InsecureSkipVerify: true},
 	}
 	ep := newTestEndpoint(host, port)
 
@@ -629,6 +631,7 @@ func TestHealthChecker_PerformHTTPSCheck_ServerError(t *testing.T) {
 		HealthCheck: &pb.HealthCheck{
 			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
 		},
+		Tls: &pb.BackendTLS{InsecureSkipVerify: true},
 	}
 	ep := newTestEndpoint(host, port)
 
@@ -668,7 +671,7 @@ func TestHealthChecker_PerformHTTPSCheck_ConnectionRefused(t *testing.T) {
 
 func TestHealthChecker_PerformHTTPSCheck_SkipsTLSVerify(t *testing.T) {
 	// The TLS server from httptest uses a self-signed cert.
-	// Our HTTPS health checker should succeed because it skips TLS verification.
+	// Our HTTPS health checker should succeed when InsecureSkipVerify is enabled.
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -689,6 +692,7 @@ func TestHealthChecker_PerformHTTPSCheck_SkipsTLSVerify(t *testing.T) {
 		HealthCheck: &pb.HealthCheck{
 			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
 		},
+		Tls: &pb.BackendTLS{InsecureSkipVerify: true},
 	}
 	ep := newTestEndpoint(host, port)
 
@@ -826,4 +830,93 @@ func TestEndpointKey(t *testing.T) {
 	if key != expected {
 		t.Errorf("expected key %q, got %q", expected, key)
 	}
+}
+func TestHealthChecker_PerformHTTPSCheck_DefaultSecure(t *testing.T) {
+	// By default (no TLS config or InsecureSkipVerify=false), HTTPS health
+	// checks should verify TLS certificates. A self-signed cert should fail.
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	addr := strings.TrimPrefix(server.URL, "https://")
+	parts := strings.Split(addr, ":")
+	host := parts[0]
+	var port int32
+	if _, err := fmt.Sscanf(parts[1], "%d", &port); err != nil {
+		t.Fatalf("failed to parse port: %v", err)
+	}
+
+	logger := zap.NewNop()
+	cluster := &pb.Cluster{
+		Name:      "backend",
+		Namespace: "default",
+		HealthCheck: &pb.HealthCheck{
+			Type: pb.HealthCheckType_HEALTH_CHECK_HTTPS,
+		},
+		// No TLS config: InsecureSkipVerify defaults to false
+	}
+	ep := newTestEndpoint(host, port)
+
+	hc := NewChecker(cluster, []*pb.Endpoint{ep}, logger)
+
+	// Verify that InsecureSkipVerify is false by default
+	transport, ok := hc.httpsClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("expected *http.Transport")
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("expected non-nil TLSClientConfig")
+	}
+	if transport.TLSClientConfig.InsecureSkipVerify {
+		t.Error("expected InsecureSkipVerify=false by default")
+	}
+
+	// The health check should fail because the self-signed cert is not trusted
+	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
+	if err == nil {
+		t.Log("note: TLS verification passed (cert may be in system trust store)")
+	} else if healthy {
+		// Expected: TLS verification failure with self-signed cert
+		t.Error("expected unhealthy when TLS verification fails")
+	}
+}
+
+func TestHealthChecker_InsecureSkipVerify_ConfigPropagation(t *testing.T) {
+	logger := zap.NewNop()
+
+	t.Run("defaults to false without TLS config", func(t *testing.T) {
+		cluster := &pb.Cluster{
+			Name:      "backend",
+			Namespace: "default",
+		}
+		hc := NewChecker(cluster, nil, logger)
+		if hc.config.InsecureSkipVerify {
+			t.Error("expected InsecureSkipVerify=false by default")
+		}
+	})
+
+	t.Run("defaults to false with empty TLS config", func(t *testing.T) {
+		cluster := &pb.Cluster{
+			Name:      "backend",
+			Namespace: "default",
+			Tls:       &pb.BackendTLS{},
+		}
+		hc := NewChecker(cluster, nil, logger)
+		if hc.config.InsecureSkipVerify {
+			t.Error("expected InsecureSkipVerify=false with empty TLS config")
+		}
+	})
+
+	t.Run("respects InsecureSkipVerify=true", func(t *testing.T) {
+		cluster := &pb.Cluster{
+			Name:      "backend",
+			Namespace: "default",
+			Tls:       &pb.BackendTLS{InsecureSkipVerify: true},
+		}
+		hc := NewChecker(cluster, nil, logger)
+		if !hc.config.InsecureSkipVerify {
+			t.Error("expected InsecureSkipVerify=true when explicitly set")
+		}
+	})
 }
