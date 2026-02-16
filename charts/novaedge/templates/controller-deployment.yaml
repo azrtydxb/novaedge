@@ -15,6 +15,9 @@ spec:
     metadata:
       labels:
         {{- include "novaedge.controller.selectorLabels" . | nindent 8 }}
+        {{- with .Values.controller.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
         checksum/config: {{ toYaml .Values.controller | sha256sum }}
         {{- if .Values.controller.metrics.enabled }}
@@ -22,12 +25,18 @@ spec:
         prometheus.io/port: "{{ .Values.controller.metrics.port }}"
         prometheus.io/path: "/metrics"
         {{- end }}
+        {{- with .Values.controller.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
       {{- with .Values.global.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       serviceAccountName: {{ include "novaedge.controller.serviceAccountName" . }}
+      {{- if .Values.controller.priorityClassName }}
+      priorityClassName: {{ .Values.controller.priorityClassName }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -41,10 +50,72 @@ spec:
         args:
         {{- if .Values.controller.leaderElection.enabled }}
         - --leader-elect
+        - --leader-elect-lease-duration={{ .Values.controller.leaderElection.leaseDuration }}
+        - --leader-elect-renew-deadline={{ .Values.controller.leaderElection.renewDeadline }}
+        - --leader-elect-retry-period={{ .Values.controller.leaderElection.retryPeriod }}
         {{- end }}
         - --metrics-bind-address=:{{ .Values.controller.metrics.port }}
         - --health-probe-bind-address=:{{ .Values.controller.healthProbe.port }}
         - --grpc-bind-address=:{{ .Values.controller.grpc.port }}
+        - --log-level={{ .Values.controller.logging.level }}
+        - --log-format={{ .Values.controller.logging.format }}
+        {{- if .Values.controller.controllerClass }}
+        - --controller-class={{ .Values.controller.controllerClass }}
+        {{- end }}
+        {{- if .Values.controller.ingressClass }}
+        - --ingress-class={{ .Values.controller.ingressClass }}
+        {{- end }}
+        {{- if .Values.controller.defaultVIPRef }}
+        - --default-vip-ref={{ .Values.controller.defaultVIPRef }}
+        {{- end }}
+        {{- if .Values.controller.serviceLB.enabled }}
+        - --enable-service-lb
+        {{- end }}
+        {{- if .Values.controller.grpc.tls.enabled }}
+        - --grpc-tls-cert-file=/etc/novaedge/grpc-tls/tls.crt
+        - --grpc-tls-key-file=/etc/novaedge/grpc-tls/tls.key
+        {{- if .Values.controller.grpc.tls.caSecretName }}
+        - --grpc-tls-ca-file=/etc/novaedge/grpc-tls/ca.crt
+        {{- end }}
+        {{- end }}
+        {{- if .Values.controller.certificates.acme.enabled }}
+        - --acme-enabled
+        - --acme-server={{ .Values.controller.certificates.acme.server }}
+        {{- if .Values.controller.certificates.acme.email }}
+        - --acme-email={{ .Values.controller.certificates.acme.email }}
+        {{- end }}
+        - --acme-challenge={{ .Values.controller.certificates.acme.defaultChallenge }}
+        {{- if .Values.controller.certificates.acme.dnsProvider }}
+        - --acme-dns-provider={{ .Values.controller.certificates.acme.dnsProvider }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.controller.certificates.certManager.enabled }}
+        - --cert-manager-enabled
+        {{- if .Values.controller.certificates.certManager.issuerRef }}
+        - --cert-manager-issuer-ref={{ .Values.controller.certificates.certManager.issuerRef }}
+        - --cert-manager-issuer-kind={{ .Values.controller.certificates.certManager.issuerKind }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.controller.certificates.vault.enabled }}
+        - --vault-enabled
+        - --vault-address={{ .Values.controller.certificates.vault.address }}
+        - --vault-auth-method={{ .Values.controller.certificates.vault.authMethod }}
+        - --vault-pki-role={{ .Values.controller.certificates.vault.role }}
+        - --vault-pki-mount-path={{ .Values.controller.certificates.vault.mountPath }}
+        {{- end }}
+        {{- if .Values.controller.meshCA.enabled }}
+        - --mesh-ca-enabled
+        - --mesh-ca-key-algorithm={{ .Values.controller.meshCA.keyAlgorithm }}
+        - --mesh-ca-cert-lifetime={{ .Values.controller.meshCA.certLifetime }}
+        - --mesh-ca-validity={{ .Values.controller.meshCA.caValidity }}
+        {{- end }}
+        {{- with .Values.controller.extraArgs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        env:
+        {{- with .Values.controller.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         ports:
         - name: metrics
           containerPort: {{ .Values.controller.metrics.port }}
@@ -75,6 +146,44 @@ spec:
             drop:
             - ALL
           readOnlyRootFilesystem: true
+        volumeMounts:
+        {{- if .Values.controller.grpc.tls.enabled }}
+        - name: grpc-tls
+          mountPath: /etc/novaedge/grpc-tls
+          readOnly: true
+        {{- end }}
+        {{- if and .Values.controller.certificates.acme.enabled .Values.controller.certificates.acme.dnsCredentialsSecretName }}
+        - name: acme-dns-credentials
+          mountPath: /etc/novaedge/acme
+          readOnly: true
+        {{- end }}
+        {{- if and .Values.controller.certificates.vault.enabled .Values.controller.certificates.vault.credentialsSecretName }}
+        - name: vault-credentials
+          mountPath: /etc/novaedge/vault
+          readOnly: true
+        {{- end }}
+        {{- with .Values.controller.extraVolumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      volumes:
+      {{- if .Values.controller.grpc.tls.enabled }}
+      - name: grpc-tls
+        secret:
+          secretName: {{ .Values.controller.grpc.tls.certSecretName }}
+      {{- end }}
+      {{- if and .Values.controller.certificates.acme.enabled .Values.controller.certificates.acme.dnsCredentialsSecretName }}
+      - name: acme-dns-credentials
+        secret:
+          secretName: {{ .Values.controller.certificates.acme.dnsCredentialsSecretName }}
+      {{- end }}
+      {{- if and .Values.controller.certificates.vault.enabled .Values.controller.certificates.vault.credentialsSecretName }}
+      - name: vault-credentials
+        secret:
+          secretName: {{ .Values.controller.certificates.vault.credentialsSecretName }}
+      {{- end }}
+      {{- with .Values.controller.extraVolumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
       {{- with .Values.controller.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

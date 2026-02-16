@@ -85,10 +85,26 @@ tolerations: []
 # -- Affinity rules for pod scheduling
 affinity: {}
 
+# -- Priority class name
+priorityClassName: ""
+
 # -- Leader election configuration
 leaderElection:
   # -- Enable leader election
   enabled: true
+  # -- Lease duration
+  leaseDuration: 15s
+  # -- Renew deadline
+  renewDeadline: 10s
+  # -- Retry period
+  retryPeriod: 2s
+
+# -- Logging configuration
+logging:
+  # -- Log level: debug, info, warn, error
+  level: info
+  # -- Log format: json, text
+  format: json
 
 # -- Metrics configuration
 metrics:
@@ -121,6 +137,42 @@ extraVolumes: []
 
 # -- Additional volume mounts
 extraVolumeMounts: []
+
+# -- Pod disruption budget
+podDisruptionBudget:
+  # -- Enable PDB
+  enabled: false
+  # -- Minimum available pods
+  minAvailable: 1
+
+# -- Webhook configuration for federation CRD validation
+webhooks:
+  # -- Enable admission webhooks
+  enabled: false
+  # -- Webhook service port
+  port: 9443
+  # -- TLS certificate configuration
+  certManager:
+    # -- Use cert-manager for webhook certificates
+    enabled: false
+    # -- Issuer reference
+    issuerRef: ""
+    issuerKind: ClusterIssuer
+  # -- Manual TLS certificate secret (when not using cert-manager)
+  certSecretName: ""
+
+# -- Managed component image configuration
+# Override images for components the operator deploys
+managedImages:
+  controller:
+    repository: ""
+    tag: ""
+  agent:
+    repository: ""
+    tag: ""
+  novactl:
+    repository: ""
+    tag: ""
 
 # -- CRD installation configuration
 crds:
@@ -217,8 +269,6 @@ federation:
     # -- How long without peer contact before declaring partition
     partitionTimeout: 30s
     # -- Quorum mode: Controllers or AgentAssisted
-    # Controllers: Traditional quorum requiring 3+ controllers
-    # AgentAssisted: Uses agent reachability for quorum (works with 2 controllers)
     quorumMode: Controllers
     # -- Require quorum for write operations
     quorumRequired: false

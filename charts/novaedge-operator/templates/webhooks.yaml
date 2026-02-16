@@ -1,0 +1,118 @@
+{{- if .Values.webhooks.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "novaedge-operator.fullname" . }}-webhook
+  labels:
+    {{- include "novaedge-operator.labels" . | nindent 4 }}
+spec:
+  ports:
+    - port: 443
+      targetPort: {{ .Values.webhooks.port }}
+      protocol: TCP
+      name: webhook
+  selector:
+    {{- include "novaedge-operator.selectorLabels" . | nindent 4 }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "novaedge-operator.fullname" . }}-federation
+  labels:
+    {{- include "novaedge-operator.labels" . | nindent 4 }}
+  {{- if .Values.webhooks.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "novaedge-operator.fullname" . }}-webhook-cert
+  {{- end }}
+webhooks:
+  - name: validate.novaedgefederation.novaedge.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "novaedge-operator.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-novaedge-io-v1alpha1-novaedgefederation
+    rules:
+      - apiGroups:
+          - novaedge.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - novaedgefederations
+    sideEffects: None
+    failurePolicy: Fail
+  - name: validate.novaedgeremotecluster.novaedge.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "novaedge-operator.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /validate-novaedge-io-v1alpha1-novaedgeremotecluster
+    rules:
+      - apiGroups:
+          - novaedge.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - novaedgeremoteclusters
+    sideEffects: None
+    failurePolicy: Fail
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: {{ include "novaedge-operator.fullname" . }}-federation
+  labels:
+    {{- include "novaedge-operator.labels" . | nindent 4 }}
+  {{- if .Values.webhooks.certManager.enabled }}
+  annotations:
+    cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/{{ include "novaedge-operator.fullname" . }}-webhook-cert
+  {{- end }}
+webhooks:
+  - name: default.novaedgefederation.novaedge.io
+    admissionReviewVersions:
+      - v1
+    clientConfig:
+      service:
+        name: {{ include "novaedge-operator.fullname" . }}-webhook
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-novaedge-io-v1alpha1-novaedgefederation
+    rules:
+      - apiGroups:
+          - novaedge.io
+        apiVersions:
+          - v1alpha1
+        operations:
+          - CREATE
+          - UPDATE
+        resources:
+          - novaedgefederations
+    sideEffects: None
+    failurePolicy: Fail
+{{- if .Values.webhooks.certManager.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "novaedge-operator.fullname" . }}-webhook-cert
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "novaedge-operator.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ include "novaedge-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc
+    - {{ include "novaedge-operator.fullname" . }}-webhook.{{ .Release.Namespace }}.svc.cluster.local
+  issuerRef:
+    kind: {{ .Values.webhooks.certManager.issuerKind }}
+    name: {{ .Values.webhooks.certManager.issuerRef }}
+  secretName: {{ include "novaedge-operator.fullname" . }}-webhook-certs
+{{- end }}
+{{- end }}

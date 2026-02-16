@@ -1,0 +1,21 @@
+{{- if and .Values.agent.enabled .Values.agent.metrics.enabled .Values.agent.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "novaedge.fullname" . }}-agent
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.agent.labels" . | nindent 4 }}
+    {{- with .Values.agent.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "novaedge.agent.selectorLabels" . | nindent 6 }}
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.agent.metrics.serviceMonitor.interval }}
+    scrapeTimeout: {{ .Values.agent.metrics.serviceMonitor.scrapeTimeout }}
+    path: /metrics
+{{- end }}

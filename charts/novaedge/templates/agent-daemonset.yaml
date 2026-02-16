@@ -16,12 +16,18 @@ spec:
     metadata:
       labels:
         {{- include "novaedge.agent.selectorLabels" . | nindent 8 }}
+        {{- with .Values.agent.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       annotations:
         checksum/config: {{ toYaml .Values.agent | sha256sum }}
         {{- if .Values.agent.metrics.enabled }}
         prometheus.io/scrape: "true"
         prometheus.io/port: "{{ .Values.agent.metrics.port }}"
         prometheus.io/path: "/metrics"
+        {{- end }}
+        {{- with .Values.agent.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
       {{- with .Values.global.imagePullSecrets }}
@@ -31,6 +37,9 @@ spec:
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       serviceAccountName: {{ include "novaedge.agent.serviceAccountName" . }}
+      {{- if .Values.agent.priorityClassName }}
+      priorityClassName: {{ .Values.agent.priorityClassName }}
+      {{- end }}
       {{- with .Values.agent.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -50,7 +59,16 @@ spec:
         - -node-name=$(NODE_NAME)
         - -metrics-port={{ .Values.agent.metrics.port }}
         - -health-probe-address=:{{ .Values.agent.healthProbe.port }}
-        - -log-level=info
+        - -log-level={{ .Values.agent.logging.level }}
+        - -log-format={{ .Values.agent.logging.format }}
+        {{- if .Values.agent.tracing.enabled }}
+        - -tracing-enabled
+        - -tracing-endpoint={{ .Values.agent.tracing.endpoint }}
+        - -tracing-sampling-rate={{ .Values.agent.tracing.samplingRate }}
+        {{- end }}
+        {{- with .Values.agent.extraArgs }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         env:
         - name: NODE_NAME
           valueFrom:
@@ -60,6 +78,9 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        {{- with .Values.agent.extraEnv }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         ports:
         - name: http
           containerPort: {{ .Values.agent.ports.http }}
@@ -114,6 +135,9 @@ spec:
         - name: config
           mountPath: /etc/novaedge/config
           readOnly: true
+        {{- with .Values.agent.extraVolumeMounts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       volumes:
       - name: certs
         emptyDir: {}
@@ -121,6 +145,8 @@ spec:
         configMap:
           name: {{ include "novaedge.fullname" . }}-agent-config
           optional: true
-      priorityClassName: system-node-critical
+      {{- with .Values.agent.extraVolumes }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
       restartPolicy: Always
 {{- end }}

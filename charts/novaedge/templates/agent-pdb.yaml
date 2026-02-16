@@ -1,0 +1,16 @@
+{{- if and .Values.agent.enabled .Values.agent.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "novaedge.fullname" . }}-agent
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.agent.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.agent.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.agent.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "novaedge.agent.selectorLabels" . | nindent 6 }}
+{{- end }}

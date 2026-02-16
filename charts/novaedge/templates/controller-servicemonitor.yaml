@@ -1,0 +1,21 @@
+{{- if and .Values.controller.enabled .Values.controller.metrics.enabled .Values.controller.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "novaedge.fullname" . }}-controller
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.controller.labels" . | nindent 4 }}
+    {{- with .Values.controller.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "novaedge.controller.selectorLabels" . | nindent 6 }}
+  endpoints:
+  - port: metrics
+    interval: {{ .Values.controller.metrics.serviceMonitor.interval }}
+    scrapeTimeout: {{ .Values.controller.metrics.serviceMonitor.scrapeTimeout }}
+    path: /metrics
+{{- end }}
