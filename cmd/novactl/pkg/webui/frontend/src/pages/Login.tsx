@@ -25,7 +25,7 @@ export default function Login({ oidcEnabled, onLoginSuccess }: LoginProps) {
 
     try {
       const result = await api.auth.login(username, password)
-      if (result.success) {
+      if (result.status === 'ok') {
         onLoginSuccess()
         navigate('/dashboard', { replace: true })
       } else {

@@ -515,7 +515,7 @@ export interface AuthSession {
 }
 
 export interface LoginResult {
-  success: boolean
+  status: string
 }
 
 // Traces
