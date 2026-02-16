@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Critical Rules
+
+- **NEVER create version tags (`git tag`) or push tags after merging PRs unless the user explicitly asks for a new release/version.** Tagging triggers the release workflow which builds and publishes Docker images and GitHub releases. Only tag when specifically instructed.
+
 ## Project Overview
 
 NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VIP controller written in Go. It serves as a unified replacement for Envoy + MetalLB + NGINX Ingress, providing:
