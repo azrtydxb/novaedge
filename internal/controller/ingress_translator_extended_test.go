@@ -22,6 +22,8 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
+
+	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
 func TestGetVIPRef(t *testing.T) {
@@ -93,7 +95,7 @@ func TestGetVIPRefConfigurable(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			translator := NewIngressTranslatorWithOptions("default", nil, tt.defaultVIPRef)
+			translator := NewIngressTranslatorWithOptions("default", nil, tt.defaultVIPRef, nil)
 			ingress := &networkingv1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-ingress",
@@ -1249,4 +1251,83 @@ func TestGenerateNames(t *testing.T) {
 			t.Errorf("generateDefaultBackendName() = %v, want %v", result, expected)
 		}
 	})
+}
+
+func TestGetLBPolicyVIPModeAware(t *testing.T) {
+	tests := []struct {
+		name           string
+		vipModeResult  string
+		annotation     string
+		expectedPolicy novaedgev1alpha1.LoadBalancingPolicy
+	}{
+		{
+			name:           "BGP VIP with no annotation defaults to Maglev",
+			vipModeResult:  "BGP",
+			annotation:     "",
+			expectedPolicy: novaedgev1alpha1.LBPolicyMaglev,
+		},
+		{
+			name:           "OSPF VIP with no annotation defaults to Maglev",
+			vipModeResult:  "OSPF",
+			annotation:     "",
+			expectedPolicy: novaedgev1alpha1.LBPolicyMaglev,
+		},
+		{
+			name:           "L2ARP VIP with no annotation defaults to RoundRobin",
+			vipModeResult:  "L2ARP",
+			annotation:     "",
+			expectedPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
+		},
+		{
+			name:           "BGP VIP with explicit roundrobin annotation honored",
+			vipModeResult:  "BGP",
+			annotation:     "roundrobin",
+			expectedPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
+		},
+		{
+			name:           "BGP VIP with explicit ringhash annotation honored",
+			vipModeResult:  "BGP",
+			annotation:     "ringhash",
+			expectedPolicy: novaedgev1alpha1.LBPolicyRingHash,
+		},
+		{
+			name:           "VIP not found (empty mode) defaults to RoundRobin",
+			vipModeResult:  "",
+			annotation:     "",
+			expectedPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
+		},
+		{
+			name:           "nil resolver defaults to RoundRobin",
+			vipModeResult:  "", // won't be called
+			annotation:     "",
+			expectedPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var resolver VIPModeResolver
+			if tt.name != "nil resolver defaults to RoundRobin" {
+				resolver = func(_ string) string { return tt.vipModeResult }
+			}
+
+			translator := NewIngressTranslatorWithOptions("default", nil, "default-vip", resolver)
+			annotations := map[string]string{}
+			if tt.annotation != "" {
+				annotations[AnnotationLoadBalancing] = tt.annotation
+			}
+			ingress := &networkingv1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "test-ingress",
+					Namespace:   "default",
+					Annotations: annotations,
+				},
+			}
+
+			result := translator.getLBPolicy(ingress)
+			if result != tt.expectedPolicy {
+				t.Errorf("getLBPolicy() = %v, want %v", result, tt.expectedPolicy)
+			}
+		})
+	}
 }
