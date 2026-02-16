@@ -18,6 +18,7 @@ package policy
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -34,14 +35,16 @@ import (
 // response with a 502 error.
 type wafResponseWriter struct {
 	http.ResponseWriter
-	tx          types.Transaction
-	engine      *WAFEngine
-	request     *http.Request
-	buf         bytes.Buffer
-	maxBodySize int64
-	statusCode  int
-	headersSent bool
-	blocked     bool
+	tx             types.Transaction
+	engine         *WAFEngine
+	request        *http.Request
+	buf            bytes.Buffer
+	maxBodySize    int64
+	blockOversized bool
+	statusCode     int
+	headersSent    bool
+	blocked        bool
+	oversizeLogged bool
 }
 
 func (w *wafResponseWriter) WriteHeader(code int) {
@@ -77,6 +80,20 @@ func (w *wafResponseWriter) Write(b []byte) (int, error) {
 			toWrite = toWrite[:remaining]
 		}
 		w.buf.Write(toWrite)
+	} else if !w.oversizeLogged {
+		w.oversizeLogged = true
+		w.engine.logger.Warn("Response body exceeds WAF inspection buffer limit; tail of response will not be inspected",
+			zap.Int64("max_body_size", w.maxBodySize),
+			zap.String("method", w.request.Method),
+			zap.String("path", w.request.URL.Path),
+			zap.String("remote_addr", w.request.RemoteAddr),
+		)
+		if w.blockOversized {
+			w.blocked = true
+			w.ResponseWriter.WriteHeader(http.StatusBadGateway)
+			w.headersSent = true
+			return 0, fmt.Errorf("response body exceeded WAF inspection limit")
+		}
 	}
 	return len(b), nil
 }
@@ -141,7 +158,7 @@ func newResponseInspectionWAF(_ *WAFEngine) (coraza.WAF, error) {
 	cfg := coraza.NewWAFConfig()
 	cfg = cfg.WithDirectives("SecRuleEngine On")
 	cfg = cfg.WithDirectives("SecResponseBodyAccess On")
-	cfg = cfg.WithDirectives(`SecResponseBodyMimeType text/plain text/html text/xml application/json application/xml`)
+	cfg = cfg.WithDirectives(`SecResponseBodyMimeType text/plain text/html text/xml application/json application/xml text/yaml application/x-yaml text/csv application/graphql`)
 
 	// Data leakage detection rules (response body phase 4)
 	for _, rule := range getResponseBodyRules() {
