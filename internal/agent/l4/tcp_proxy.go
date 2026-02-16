@@ -40,6 +40,8 @@ const (
 	DefaultTCPBufferSize = 32 * 1024
 	// DefaultDrainTimeout is the default drain timeout for graceful shutdown
 	DefaultDrainTimeout = 30 * time.Second
+	// MaxTCPConnections is the maximum number of concurrent TCP connections allowed
+	MaxTCPConnections int64 = 10000
 )
 
 // TCPProxyConfig holds configuration for a TCP proxy instance
@@ -99,6 +101,16 @@ func NewTCPProxy(cfg TCPProxyConfig, logger *zap.Logger) *TCPProxy {
 // HandleConnection handles a single TCP connection by proxying it to a backend
 func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) {
 	if p.draining.Load() {
+		_ = clientConn.Close()
+		return
+	}
+
+	// Reject new connections if at the maximum connection limit
+	if p.activeConns.Load() >= MaxTCPConnections {
+		p.logger.Warn("TCP connection limit reached",
+			zap.Int64("max", MaxTCPConnections),
+			zap.String("client", clientConn.RemoteAddr().String()))
+		L4ConnectionErrors.WithLabelValues("tcp", p.config.ListenerName, "connection_limit").Inc()
 		_ = clientConn.Close()
 		return
 	}
