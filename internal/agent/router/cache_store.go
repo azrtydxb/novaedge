@@ -18,9 +18,13 @@ package router
 
 import (
 	"container/list"
+	"hash/fnv"
 	"sync"
 	"time"
 )
+
+// cacheShardCount is the number of lock shards used to reduce contention.
+const cacheShardCount = 16
 
 // CacheEntry represents a single cached HTTP response.
 type CacheEntry struct {
@@ -64,142 +68,183 @@ func DefaultCacheStoreConfig() CacheStoreConfig {
 	}
 }
 
-// CacheStore is a thread-safe LRU cache with TTL-based expiry.
-type CacheStore struct {
-	mu       sync.RWMutex
-	config   CacheStoreConfig
-	items    map[string]*list.Element
+// cacheShard is a single shard of the sharded cache, containing its own
+// mutex, entry map, and LRU eviction list.
+type cacheShard struct {
+	mu       sync.Mutex
+	entries  map[string]*list.Element
 	eviction *list.List // Front = most recently used
 	memUsed  int64
-	stopCh   chan struct{}
 
-	// Metrics
+	// Per-shard metrics.
 	hitCount      int64
 	missCount     int64
 	evictionCount int64
 }
 
-// NewCacheStore creates a new LRU cache store and starts the background cleanup goroutine.
+// CacheStore is a thread-safe sharded LRU cache with TTL-based expiry.
+// Entries are distributed across 16 shards by key hash to reduce lock
+// contention under concurrent access.
+type CacheStore struct {
+	shards         [cacheShardCount]*cacheShard
+	config         CacheStoreConfig
+	maxPerShard    int
+	maxMemPerShard int64
+	stopCh         chan struct{}
+}
+
+// NewCacheStore creates a new sharded LRU cache store and starts the
+// background cleanup goroutine.
 func NewCacheStore(config CacheStoreConfig) *CacheStore {
+	maxPerShard := config.MaxEntries / cacheShardCount
+	if maxPerShard < 1 {
+		maxPerShard = 1
+	}
+	maxMemPerShard := config.MaxMemoryBytes / cacheShardCount
+	if maxMemPerShard < 1 {
+		maxMemPerShard = 1
+	}
+
 	cs := &CacheStore{
-		config:   config,
-		items:    make(map[string]*list.Element, config.MaxEntries),
-		eviction: list.New(),
-		stopCh:   make(chan struct{}),
+		config:         config,
+		maxPerShard:    maxPerShard,
+		maxMemPerShard: maxMemPerShard,
+		stopCh:         make(chan struct{}),
+	}
+	for i := range cs.shards {
+		cs.shards[i] = &cacheShard{
+			entries:  make(map[string]*list.Element, maxPerShard),
+			eviction: list.New(),
+		}
 	}
 	go cs.cleanupLoop()
 	return cs
 }
 
+// getShard returns the shard responsible for the given key.
+func (cs *CacheStore) getShard(key string) *cacheShard {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(key))
+	return cs.shards[h.Sum32()%cacheShardCount]
+}
+
 // Get retrieves a cache entry by key. Returns nil if not found or expired.
 func (cs *CacheStore) Get(key string) *CacheEntry {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
+	shard := cs.getShard(key)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
-	elem, ok := cs.items[key]
+	elem, ok := shard.entries[key]
 	if !ok {
-		cs.missCount++
+		shard.missCount++
 		return nil
 	}
 
 	entry, ok := elem.Value.(*CacheEntry)
 	if !ok {
-		cs.missCount++
+		shard.missCount++
 		return nil
 	}
 
 	if entry.IsExpired() {
-		cs.removeElement(elem)
-		cs.missCount++
+		shard.removeElement(elem)
+		shard.missCount++
 		return nil
 	}
 
 	// Move to front (most recently used)
-	cs.eviction.MoveToFront(elem)
-	cs.hitCount++
+	shard.eviction.MoveToFront(elem)
+	shard.hitCount++
 	return entry
 }
 
 // Put stores a cache entry. Evicts least-recently-used entries if necessary.
 func (cs *CacheStore) Put(entry *CacheEntry) {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
+	shard := cs.getShard(entry.Key)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
 	entrySize := int64(entry.SizeBytes)
 
-	// If this single entry exceeds max memory, don't cache it
-	if entrySize > cs.config.MaxMemoryBytes {
+	// If this single entry exceeds the per-shard memory limit, don't cache it
+	if entrySize > cs.maxMemPerShard {
 		return
 	}
 
 	// If key already exists, remove old entry first
-	if existing, ok := cs.items[entry.Key]; ok {
-		cs.removeElement(existing)
+	if existing, ok := shard.entries[entry.Key]; ok {
+		shard.removeElement(existing)
 	}
 
 	// Evict entries until we have room
-	for cs.eviction.Len() >= cs.config.MaxEntries || (cs.memUsed+entrySize > cs.config.MaxMemoryBytes && cs.eviction.Len() > 0) {
-		cs.evictLRU()
+	for shard.eviction.Len() >= cs.maxPerShard || (shard.memUsed+entrySize > cs.maxMemPerShard && shard.eviction.Len() > 0) {
+		shard.evictLRU()
 	}
 
-	elem := cs.eviction.PushFront(entry)
-	cs.items[entry.Key] = elem
-	cs.memUsed += entrySize
+	elem := shard.eviction.PushFront(entry)
+	shard.entries[entry.Key] = elem
+	shard.memUsed += entrySize
 }
 
 // Delete removes a specific cache entry by key.
 func (cs *CacheStore) Delete(key string) bool {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
+	shard := cs.getShard(key)
+	shard.mu.Lock()
+	defer shard.mu.Unlock()
 
-	elem, ok := cs.items[key]
+	elem, ok := shard.entries[key]
 	if !ok {
 		return false
 	}
-	cs.removeElement(elem)
+	shard.removeElement(elem)
 	return true
 }
 
 // Purge removes all entries matching the given key prefix pattern.
 // Returns the number of entries purged.
 func (cs *CacheStore) Purge(pattern string) int {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
-	count := 0
-	for key, elem := range cs.items {
-		if matchPattern(pattern, key) {
-			cs.removeElement(elem)
-			count++
+	total := 0
+	for _, shard := range cs.shards {
+		shard.mu.Lock()
+		for key, elem := range shard.entries {
+			if matchPattern(pattern, key) {
+				shard.removeElement(elem)
+				total++
+			}
 		}
+		shard.mu.Unlock()
 	}
-	return count
+	return total
 }
 
 // PurgeAll removes all cache entries.
 func (cs *CacheStore) PurgeAll() int {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
-	count := cs.eviction.Len()
-	cs.items = make(map[string]*list.Element, cs.config.MaxEntries)
-	cs.eviction.Init()
-	cs.memUsed = 0
-	return count
+	total := 0
+	for _, shard := range cs.shards {
+		shard.mu.Lock()
+		total += shard.eviction.Len()
+		shard.entries = make(map[string]*list.Element, cs.maxPerShard)
+		shard.eviction.Init()
+		shard.memUsed = 0
+		shard.mu.Unlock()
+	}
+	return total
 }
 
-// Stats returns cache statistics.
+// Stats returns aggregated cache statistics across all shards.
 func (cs *CacheStore) Stats() CacheStats {
-	cs.mu.RLock()
-	defer cs.mu.RUnlock()
-	return CacheStats{
-		Entries:       cs.eviction.Len(),
-		MemoryUsed:    cs.memUsed,
-		MaxMemory:     cs.config.MaxMemoryBytes,
-		HitCount:      cs.hitCount,
-		MissCount:     cs.missCount,
-		EvictionCount: cs.evictionCount,
+	var stats CacheStats
+	stats.MaxMemory = cs.config.MaxMemoryBytes
+	for _, shard := range cs.shards {
+		shard.mu.Lock()
+		stats.Entries += shard.eviction.Len()
+		stats.MemoryUsed += shard.memUsed
+		stats.HitCount += shard.hitCount
+		stats.MissCount += shard.missCount
+		stats.EvictionCount += shard.evictionCount
+		shard.mu.Unlock()
 	}
+	return stats
 }
 
 // CacheStats holds cache statistics.
@@ -217,31 +262,31 @@ func (cs *CacheStore) Stop() {
 	close(cs.stopCh)
 }
 
-// removeElement removes a list element from the cache (caller must hold lock).
-func (cs *CacheStore) removeElement(elem *list.Element) {
+// removeElement removes a list element from the shard (caller must hold lock).
+func (s *cacheShard) removeElement(elem *list.Element) {
 	entry, ok := elem.Value.(*CacheEntry)
 	if !ok {
 		return
 	}
-	cs.eviction.Remove(elem)
-	delete(cs.items, entry.Key)
-	cs.memUsed -= int64(entry.SizeBytes)
-	if cs.memUsed < 0 {
-		cs.memUsed = 0
+	s.eviction.Remove(elem)
+	delete(s.entries, entry.Key)
+	s.memUsed -= int64(entry.SizeBytes)
+	if s.memUsed < 0 {
+		s.memUsed = 0
 	}
 }
 
 // evictLRU removes the least recently used entry (caller must hold lock).
-func (cs *CacheStore) evictLRU() {
-	back := cs.eviction.Back()
+func (s *cacheShard) evictLRU() {
+	back := s.eviction.Back()
 	if back == nil {
 		return
 	}
-	cs.removeElement(back)
-	cs.evictionCount++
+	s.removeElement(back)
+	s.evictionCount++
 }
 
-// cleanupLoop periodically removes expired entries.
+// cleanupLoop periodically removes expired entries across all shards.
 func (cs *CacheStore) cleanupLoop() {
 	ticker := time.NewTicker(cs.config.CleanupInterval)
 	defer ticker.Stop()
@@ -255,24 +300,25 @@ func (cs *CacheStore) cleanupLoop() {
 	}
 }
 
-// cleanupExpired removes all expired entries.
+// cleanupExpired removes all expired entries from every shard.
 func (cs *CacheStore) cleanupExpired() {
-	cs.mu.Lock()
-	defer cs.mu.Unlock()
-
-	var toRemove []*list.Element
-	for elem := cs.eviction.Back(); elem != nil; elem = elem.Prev() {
-		entry, ok := elem.Value.(*CacheEntry)
-		if !ok {
-			continue
+	for _, shard := range cs.shards {
+		shard.mu.Lock()
+		var toRemove []*list.Element
+		for elem := shard.eviction.Back(); elem != nil; elem = elem.Prev() {
+			entry, ok := elem.Value.(*CacheEntry)
+			if !ok {
+				continue
+			}
+			if entry.IsExpired() {
+				toRemove = append(toRemove, elem)
+			}
 		}
-		if entry.IsExpired() {
-			toRemove = append(toRemove, elem)
+		for _, elem := range toRemove {
+			shard.removeElement(elem)
+			shard.evictionCount++
 		}
-	}
-	for _, elem := range toRemove {
-		cs.removeElement(elem)
-		cs.evictionCount++
+		shard.mu.Unlock()
 	}
 }
 

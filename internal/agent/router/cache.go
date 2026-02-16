@@ -22,6 +22,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash/fnv"
 	"net"
 	"net/http"
 	"sort"
@@ -303,35 +304,37 @@ func (rc *ResponseCache) storeResponse(key string, rec *cacheRecorder, ttl time.
 	rc.store.Put(entry)
 }
 
-// buildCacheKey builds a cache key from the request.
-// Key: method + host + path + sorted Vary header values
+// buildCacheKey builds a cache key from the request using FNV-1a hashing.
+// The hash is computed over: method, host, path, query string, and sorted
+// Vary header values. The result is returned as a base-36 encoded string
+// for compact representation.
 func buildCacheKey(r *http.Request) string {
-	var b strings.Builder
-	b.WriteString(r.Method)
-	b.WriteByte('|')
-	b.WriteString(r.Host)
-	b.WriteByte('|')
-	b.WriteString(r.URL.Path)
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(r.Method))
+	h.Write([]byte{'|'})
+	_, _ = h.Write([]byte(r.Host))
+	h.Write([]byte{'|'})
+	_, _ = h.Write([]byte(r.URL.Path))
 	if r.URL.RawQuery != "" {
-		b.WriteByte('?')
-		b.WriteString(r.URL.RawQuery)
+		h.Write([]byte{'?'})
+		_, _ = h.Write([]byte(r.URL.RawQuery))
 	}
 
-	// Include Vary header values in the key
+	// Include Vary header values in the hash
 	vary := r.Header.Get("Vary")
 	if vary != "" {
 		varyHeaders := strings.Split(vary, ",")
 		sort.Strings(varyHeaders)
-		for _, h := range varyHeaders {
-			h = strings.TrimSpace(h)
-			b.WriteByte('|')
-			b.WriteString(h)
-			b.WriteByte('=')
-			b.WriteString(r.Header.Get(h))
+		for _, hdr := range varyHeaders {
+			hdr = strings.TrimSpace(hdr)
+			h.Write([]byte{'|'})
+			_, _ = h.Write([]byte(hdr))
+			h.Write([]byte{'='})
+			_, _ = h.Write([]byte(r.Header.Get(hdr)))
 		}
 	}
 
-	return b.String()
+	return strconv.FormatUint(h.Sum64(), 36)
 }
 
 // cacheControl holds parsed Cache-Control directives.
