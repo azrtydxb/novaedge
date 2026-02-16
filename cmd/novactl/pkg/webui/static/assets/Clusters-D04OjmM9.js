@@ -1,4 +1,4 @@
-import{j as t}from"./ui-C7EZ6zpn.js";import{a as r}from"./vendor-CwhvS1Xk.js";import{u as Q,k as j,l as Y,R as _,m as R,t as N,n as q,e as A}from"./index-DqyNCDVA.js";import{h as I,J,K as G,L as H}from"./hooks-Bz9YhTMq.js";import{D as W}from"./DataTable-mbxzTGQZ.js";import{u as X,b as Z}from"./query-B9ZAROpx.js";import{T as ee,P as te}from"./trash-2-DoPKzTP9.js";import"./charts-I6YY2jED.js";import"./table-CTlBdFvg.js";import"./chevron-up-Dj1cMKet.js";import"./input-Ca4FuTMm.js";import"./search-CjkAmyjE.js";const ae=`apiVersion: novaedge.io/v1alpha1
+import{j as t}from"./ui-C7EZ6zpn.js";import{a as r}from"./vendor-CwhvS1Xk.js";import{u as Q,k as j,l as Y,R as _,m as R,t as N,n as q,e as A}from"./index-zIHORJjl.js";import{h as I,J,K as G,L as H}from"./hooks-C-0xL2rF.js";import{D as W}from"./DataTable-D5f8MIRS.js";import{u as X,b as Z}from"./query-B9ZAROpx.js";import{T as ee,P as te}from"./trash-2-DwpltwP9.js";import"./charts-I6YY2jED.js";import"./table-BgrfVKVy.js";import"./chevron-up-C0iLhvea.js";import"./input-dJczonoE.js";import"./search-CNhmf8yx.js";const ae=`apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: example-cluster
