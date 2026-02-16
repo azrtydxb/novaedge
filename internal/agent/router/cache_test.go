@@ -30,39 +30,40 @@ const (
 	testCacheHitVal = "HIT"
 )
 
-func TestBuildCacheKey(t *testing.T) {
+func TestBuildCacheKeyDeterministic(t *testing.T) {
+	// buildCacheKey now returns a base-36 FNV hash, so we verify
+	// determinism and uniqueness rather than exact string format.
+	req1 := httptest.NewRequest(http.MethodGet, "http://example.com/api/v1/users", nil)
+	req1.Host = testCacheHost
+	req2 := httptest.NewRequest(http.MethodGet, "http://example.com/api/v1/users", nil)
+	req2.Host = testCacheHost
+
+	key1 := buildCacheKey(req1)
+	key2 := buildCacheKey(req2)
+	if key1 != key2 {
+		t.Errorf("same request produced different keys: %q vs %q", key1, key2)
+	}
+	if key1 == "" {
+		t.Error("buildCacheKey returned empty string")
+	}
+}
+
+func TestBuildCacheKeyUniqueness(t *testing.T) {
 	tests := []struct {
-		name     string
-		method   string
-		host     string
-		path     string
-		query    string
-		expected string
+		name   string
+		method string
+		host   string
+		path   string
+		query  string
 	}{
-		{
-			name:     "simple GET",
-			method:   "GET",
-			host:     testCacheHost,
-			path:     "/api/v1/users",
-			expected: "GET|example.com|/api/v1/users",
-		},
-		{
-			name:     "GET with query",
-			method:   "GET",
-			host:     testCacheHost,
-			path:     "/api/v1/users",
-			query:    "page=1",
-			expected: "GET|example.com|/api/v1/users?page=1",
-		},
-		{
-			name:     "HEAD request",
-			method:   "HEAD",
-			host:     testCacheHost,
-			path:     "/",
-			expected: "HEAD|example.com|/",
-		},
+		{"simple GET", "GET", testCacheHost, "/api/v1/users", ""},
+		{"GET with query", "GET", testCacheHost, "/api/v1/users", "page=1"},
+		{"HEAD request", "HEAD", testCacheHost, "/", ""},
+		{"different path", "GET", testCacheHost, "/api/v2/users", ""},
+		{"different host", "GET", "other.com", "/api/v1/users", ""},
 	}
 
+	keys := make(map[string]string) // key -> test name
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			url := "http://" + tt.host + tt.path
@@ -73,9 +74,13 @@ func TestBuildCacheKey(t *testing.T) {
 			req.Host = tt.host
 
 			key := buildCacheKey(req)
-			if key != tt.expected {
-				t.Errorf("buildCacheKey() = %q, want %q", key, tt.expected)
+			if key == "" {
+				t.Error("buildCacheKey returned empty string")
 			}
+			if existing, ok := keys[key]; ok {
+				t.Errorf("key collision: %q and %q both produce key %q", tt.name, existing, key)
+			}
+			keys[key] = tt.name
 		})
 	}
 }
