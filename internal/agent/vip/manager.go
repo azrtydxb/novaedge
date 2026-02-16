@@ -103,11 +103,16 @@ func (m *DefaultManager) Start(ctx context.Context) error {
 	return nil
 }
 
-// ApplyVIPs applies new VIP assignments
-func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAssignment) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// vipAction describes a VIP operation to perform outside the lock.
+type vipAction struct {
+	release    bool // true = release, false = apply
+	assignment *pb.VIPAssignment
+}
 
+// ApplyVIPs applies new VIP assignments using a read-copy-update pattern:
+// compute the diff under lock, perform network operations without the lock,
+// then update state under a short write lock.
+func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAssignment) error {
 	m.logger.Info("Applying VIP assignments", zap.Int("count", len(assignments)))
 
 	// Build map of new assignments
@@ -116,24 +121,23 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 		newAssignments[assignment.VipName] = assignment
 	}
 
-	// Release VIPs that are no longer assigned
+	// Phase 1: Compute diff under read lock
+	m.mu.RLock()
+	var actions []vipAction
+
+	// Find VIPs to release (no longer assigned)
 	for vipName, oldAssignment := range m.assignments {
 		if _, exists := newAssignments[vipName]; !exists {
 			m.logger.Info("Releasing VIP", zap.String("vip", vipName))
-			if err := m.releaseVIP(ctx, oldAssignment); err != nil {
-				m.logger.Error("Failed to release VIP",
-					zap.String("vip", vipName),
-					zap.Error(err),
-				)
-			}
+			actions = append(actions, vipAction{release: true, assignment: oldAssignment})
 		}
 	}
 
-	// Apply new VIP assignments
+	// Find VIPs to add or update
 	for vipName, assignment := range newAssignments {
 		oldAssignment, exists := m.assignments[vipName]
 
-		// Check if assignment changed
+		// Skip unchanged assignments
 		if exists && assignmentsEqual(oldAssignment, assignment) {
 			continue
 		}
@@ -146,44 +150,50 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 		)
 
 		if exists && !configOnlyChange(oldAssignment, assignment) {
-			// Address/mode/active changed — full release and re-apply
+			// Address/mode/active changed -- release old VIP first
 			m.logger.Info("VIP structural change detected, releasing old VIP first",
 				zap.String("vip", vipName),
 			)
-			if err := m.releaseVIP(ctx, oldAssignment); err != nil {
-				m.logger.Error("Failed to release old VIP during reconfiguration",
-					zap.String("vip", vipName),
-					zap.Error(err),
-				)
-			}
+			actions = append(actions, vipAction{release: true, assignment: oldAssignment})
 		}
+
 		// For config-only changes the handler's AddVIP detects the existing
 		// VIP and performs in-place reconfiguration.
+		actions = append(actions, vipAction{release: false, assignment: assignment})
 
-		if err := m.applyVIP(ctx, assignment); err != nil {
-			m.logger.Error("Failed to apply VIP",
-				zap.String("vip", vipName),
-				zap.Error(err),
-			)
-			continue
-		}
-
-		// For dual-stack: also apply the IPv6 address if present
+		// Dual-stack: also apply IPv6 address if present
 		if assignment.Ipv6Address != "" && assignment.IsActive {
 			ipv6Assignment := cloneAssignmentWithAddress(assignment, assignment.Ipv6Address)
 			ipv6Assignment.VipName = vipName + "-v6"
+			actions = append(actions, vipAction{release: false, assignment: ipv6Assignment})
+		}
+	}
+	m.mu.RUnlock()
 
-			if err := m.applyVIP(ctx, ipv6Assignment); err != nil {
-				m.logger.Error("Failed to apply IPv6 VIP",
-					zap.String("vip", vipName),
-					zap.String("ipv6_address", assignment.Ipv6Address),
+	// Phase 2: Execute network operations without holding the lock
+	for _, action := range actions {
+		if action.release {
+			if err := m.releaseVIP(ctx, action.assignment); err != nil {
+				m.logger.Error("Failed to release VIP",
+					zap.String("vip", action.assignment.VipName),
+					zap.Error(err),
+				)
+			}
+		} else {
+			if err := m.applyVIP(ctx, action.assignment); err != nil {
+				m.logger.Error("Failed to apply VIP",
+					zap.String("vip", action.assignment.VipName),
 					zap.Error(err),
 				)
 			}
 		}
 	}
 
+	// Phase 3: Update state under write lock
+	m.mu.Lock()
 	m.assignments = newAssignments
+	m.mu.Unlock()
+
 	return nil
 }
 

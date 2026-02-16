@@ -342,7 +342,7 @@ func (h *L2Handler) sendUnsolicitedNA(ip net.IP) error {
 
 // announcementLoop periodically sends GARP/NDP for active VIPs
 func (h *L2Handler) announcementLoop(ctx context.Context) {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(60 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -357,29 +357,54 @@ func (h *L2Handler) announcementLoop(ctx context.Context) {
 	}
 }
 
-// announceActiveVIPs sends GARP/NDP for all active VIPs
-func (h *L2Handler) announceActiveVIPs() {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+// maxGARPPerSecond is the maximum number of GARP/NDP announcements sent per second
+// to avoid flooding the network during periodic announcements.
+const maxGARPPerSecond = 10
 
+// announceActiveVIPs sends GARP/NDP for all active VIPs with rate limiting.
+// VIP state is snapshot under a short read lock, then announcements are sent
+// outside the lock to avoid blocking concurrent operations.
+func (h *L2Handler) announceActiveVIPs() {
+	// Snapshot active VIPs under read lock
+	h.mu.RLock()
 	if len(h.activeVIPs) == 0 {
+		h.mu.RUnlock()
 		return
 	}
 
-	h.logger.Debug("Announcing active VIPs", zap.Int("count", len(h.activeVIPs)))
+	type vipSnapshot struct {
+		name   string
+		ip     net.IP
+		isIPv6 bool
+	}
 
-	for vipName, state := range h.activeVIPs {
-		if state.IsIPv6 {
-			if err := h.sendUnsolicitedNA(state.IP); err != nil {
+	vips := make([]vipSnapshot, 0, len(h.activeVIPs))
+	for name, state := range h.activeVIPs {
+		vips = append(vips, vipSnapshot{name: name, ip: state.IP, isIPv6: state.IsIPv6})
+	}
+	h.mu.RUnlock()
+
+	h.logger.Debug("Announcing active VIPs", zap.Int("count", len(vips)))
+
+	// Rate-limit GARP/NDP sends to avoid network flooding
+	garpInterval := time.Second / time.Duration(maxGARPPerSecond)
+
+	for i, vip := range vips {
+		if i > 0 {
+			time.Sleep(garpInterval)
+		}
+
+		if vip.isIPv6 {
+			if err := h.sendUnsolicitedNA(vip.ip); err != nil {
 				h.logger.Warn("Failed to send unsolicited NA",
-					zap.String("vip", vipName),
+					zap.String("vip", vip.name),
 					zap.Error(err),
 				)
 			}
 		} else {
-			if err := h.sendGARP(state.IP); err != nil {
+			if err := h.sendGARP(vip.ip); err != nil {
 				h.logger.Warn("Failed to send GARP",
-					zap.String("vip", vipName),
+					zap.String("vip", vip.name),
 					zap.Error(err),
 				)
 			}
