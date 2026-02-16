@@ -41,7 +41,7 @@ func NewWebSocketProxy(logger *zap.Logger) *WebSocketProxy {
 }
 
 // NewWebSocketProxyWithOrigins creates a new WebSocket proxy with allowed origins
-// If allowedOrigins is nil or empty, all origins are allowed (insecure - for development only)
+// If allowedOrigins is nil or empty, all origins are rejected (fail secure)
 // Supports wildcard patterns like "*.example.com"
 func NewWebSocketProxyWithOrigins(logger *zap.Logger, allowedOrigins []string) *WebSocketProxy {
 	proxy := &WebSocketProxy{
@@ -62,12 +62,12 @@ func NewWebSocketProxyWithOrigins(logger *zap.Logger, allowedOrigins []string) *
 func (p *WebSocketProxy) checkOrigin(r *http.Request) bool {
 	origin := r.Header.Get("Origin")
 
-	// If no allowed origins configured, allow all (insecure - log warning)
+	// If no allowed origins configured, reject all (fail secure)
 	if len(p.allowedOrigins) == 0 {
-		p.logger.Warn("WebSocket origin validation disabled - allowing all origins",
+		p.logger.Warn("WebSocket upgrade rejected - no allowed origins configured, configure allowedOrigins to permit upgrades",
 			zap.String("origin", origin),
 			zap.String("remote_addr", r.RemoteAddr))
-		return true
+		return false
 	}
 
 	// If no Origin header, reject (WebSocket spec requires Origin)
@@ -159,6 +159,10 @@ func (p *WebSocketProxy) ProxyWebSocket(w http.ResponseWriter, r *http.Request, 
 		return fmt.Errorf("failed to connect to backend: %w", err)
 	}
 	defer func() { _ = backendConn.Close() }()
+
+	// Set read limits to prevent memory exhaustion from oversized messages
+	clientConn.SetReadLimit(MaxWebSocketMessageSize)
+	backendConn.SetReadLimit(MaxWebSocketMessageSize)
 
 	p.logger.Info("WebSocket connection established",
 		zap.String("client", r.RemoteAddr),
