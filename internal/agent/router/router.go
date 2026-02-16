@@ -682,6 +682,10 @@ func (r *Router) matchHeader(match *pb.HeaderMatch, headerIdx, matchIdx int, val
 		// Fallback: compile on the fly (shouldn't happen if caching is working)
 		// Log this as it indicates a problem with caching
 		r.logger.Warn("Regex not cached, compiling on-the-fly", zap.String("pattern", match.Value))
+		if err := validateRegexPattern(match.Value); err != nil {
+			r.logger.Warn("Regex pattern validation failed", zap.String("pattern", match.Value), zap.Error(err))
+			return false
+		}
 		if regex, err := regexp.Compile(match.Value); err == nil {
 			return regex.MatchString(value)
 		}
