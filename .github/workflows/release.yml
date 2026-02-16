@@ -109,19 +109,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
+      - name: Download binary artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: '*-linux-*'
 
       - name: Prepare release assets
         run: |
           mkdir -p release
           for dir in artifacts/*/; do
-            # Skip non-binary artifacts (like webui-dist)
-            if [[ "$(basename "$dir")" == "webui-dist" ]]; then
-              continue
-            fi
             cp "${dir}"* release/
           done
           chmod +x release/*
