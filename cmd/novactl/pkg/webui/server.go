@@ -14,6 +14,7 @@ import (
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/prometheus"
+	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/auth"
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/mode"
 	"github.com/piwi3910/novaedge/internal/acme"
 	corev1 "k8s.io/api/core/v1"
@@ -37,6 +38,8 @@ type Server struct {
 	tlsCert          string
 	tlsKey           string
 	tlsAuto          bool
+	authManager      *auth.Manager
+	jaegerEndpoint   string
 }
 
 // Config holds server configuration
@@ -54,6 +57,12 @@ type Config struct {
 	TLSAuto    bool   // Auto-generate self-signed certificate
 	ACMEEmail  string // Email for ACME/Let's Encrypt
 	ACMEDomain string // Domain for ACME certificate
+
+	// Authentication configuration
+	AuthConfig auth.Config
+
+	// Jaeger endpoint for trace viewing
+	JaegerEndpoint string
 }
 
 // NewServer creates a new web UI server
@@ -109,6 +118,16 @@ func NewServer(cfg Config) (*Server, error) {
 		s.prometheusClient = prometheus.NewClient(cfg.PrometheusEndpoint)
 	}
 
+	// Initialize auth manager
+	authMgr, err := auth.NewManager(cfg.AuthConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create auth manager: %w", err)
+	}
+	s.authManager = authMgr
+
+	// Store Jaeger endpoint
+	s.jaegerEndpoint = cfg.JaegerEndpoint
+
 	return s, nil
 }
 
@@ -136,6 +155,11 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/namespaces", s.handleNamespaces)
 	mux.HandleFunc("/api/v1/health", s.handleHealth)
 
+	// Auth endpoints
+	mux.HandleFunc("/api/v1/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("/api/v1/auth/logout", s.handleAuthLogout)
+	mux.HandleFunc("/api/v1/auth/session", s.handleAuthSession)
+
 	// Config management endpoints
 	mux.HandleFunc("/api/v1/config/validate", s.handleConfigValidate)
 	mux.HandleFunc("/api/v1/config/export", s.handleConfigExport)
@@ -150,9 +174,15 @@ func (s *Server) Start() error {
 	}
 	mux.Handle("/", spaHandler(http.FS(staticFS)))
 
+	// Wrap with auth middleware, then CORS
+	var handler http.Handler = mux
+	if s.authManager != nil {
+		handler = s.authManager.Middleware(handler)
+	}
+
 	s.server = &http.Server{
 		Addr:              s.addr,
-		Handler:           corsMiddleware(mux),
+		Handler:           corsMiddleware(handler),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -1093,4 +1123,89 @@ func (s *Server) handleMetricsQuery(w http.ResponseWriter, r *http.Request) {
 
 		writeJSON(w, http.StatusOK, result)
 	}
+}
+
+// loginRequest represents the JSON body for login.
+type loginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// handleAuthLogin handles POST /api/v1/auth/login
+func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req loginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+		return
+	}
+
+	token, err := s.authManager.Login(req.Username, req.Password)
+	if err != nil {
+		writeError(w, http.StatusUnauthorized, "invalid credentials")
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "novaedge_session",
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleAuthLogout handles POST /api/v1/auth/logout
+func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	cookie, err := r.Cookie("novaedge_session")
+	if err == nil && cookie.Value != "" {
+		s.authManager.Logout(cookie.Value)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "novaedge_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handleAuthSession handles GET /api/v1/auth/session
+func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	authEnabled := s.authManager.Enabled()
+	authenticated := false
+
+	if authEnabled {
+		cookie, err := r.Cookie("novaedge_session")
+		if err == nil && cookie.Value != "" {
+			if validateErr := s.authManager.ValidateToken(cookie.Value); validateErr == nil {
+				authenticated = true
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"authenticated": authenticated,
+		"authEnabled":   authEnabled,
+		"oidcEnabled":   s.authManager.OIDCEnabled(),
+	})
 }
