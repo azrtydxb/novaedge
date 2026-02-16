@@ -35,14 +35,14 @@ func TestNewRingHash(t *testing.T) {
 	}
 
 	// Verify ring is built
-	if len(rh.ring) == 0 {
+	if len(rh.data.Load().ring) == 0 {
 		t.Error("Ring should not be empty")
 	}
 
 	// Each endpoint should have virtualNodes entries
 	expectedSize := len(endpoints) * defaultVirtualNodes
-	if len(rh.ring) != expectedSize {
-		t.Errorf("Ring size = %d, want %d", len(rh.ring), expectedSize)
+	if len(rh.data.Load().ring) != expectedSize {
+		t.Errorf("Ring size = %d, want %d", len(rh.data.Load().ring), expectedSize)
 	}
 }
 
@@ -52,8 +52,8 @@ func TestNewRingHash_EmptyEndpoints(t *testing.T) {
 		t.Fatal("NewRingHash() returned nil for empty endpoints")
 	}
 
-	if len(rh.ring) != 0 {
-		t.Errorf("Ring should be empty, got size %d", len(rh.ring))
+	if len(rh.data.Load().ring) != 0 {
+		t.Errorf("Ring should be empty, got size %d", len(rh.data.Load().ring))
 	}
 }
 
@@ -345,8 +345,8 @@ func TestRingHash_UnreadyEndpoints(t *testing.T) {
 	rh := NewRingHash(endpoints)
 
 	// No ready endpoints, so ring should be empty
-	if len(rh.ring) != 0 {
-		t.Errorf("Ring should be empty with no ready endpoints, got size %d", len(rh.ring))
+	if len(rh.data.Load().ring) != 0 {
+		t.Errorf("Ring should be empty with no ready endpoints, got size %d", len(rh.data.Load().ring))
 	}
 
 	// Select should return nil
@@ -367,8 +367,8 @@ func TestRingHash_MixedReadyEndpoints(t *testing.T) {
 
 	// Only ready endpoints should be in the ring
 	expectedSize := 2 * defaultVirtualNodes
-	if len(rh.ring) != expectedSize {
-		t.Errorf("Ring size = %d, want %d", len(rh.ring), expectedSize)
+	if len(rh.data.Load().ring) != expectedSize {
+		t.Errorf("Ring size = %d, want %d", len(rh.data.Load().ring), expectedSize)
 	}
 
 	// All selections should be ready endpoints
