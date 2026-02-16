@@ -213,19 +213,18 @@ func TestApplyConfigCatchAllRoute(t *testing.T) {
 	}
 
 	// Verify that the catch-all route is stored under the empty string key
-	r.mu.RLock()
-	defer r.mu.RUnlock()
+	snap := r.state.Load()
 
-	if _, ok := r.routeIndexes[""]; !ok {
+	if _, ok := snap.routeIndexes[""]; !ok {
 		t.Fatal("Expected catch-all route index for empty hostname key")
 	}
 
-	if _, ok := r.routes[""]; !ok {
+	if _, ok := snap.routes[""]; !ok {
 		t.Fatal("Expected catch-all routes for empty hostname key")
 	}
 
-	if len(r.routes[""]) != 1 {
-		t.Fatalf("Expected 1 catch-all route, got %d", len(r.routes[""]))
+	if len(snap.routes[""]) != 1 {
+		t.Fatalf("Expected 1 catch-all route, got %d", len(snap.routes[""]))
 	}
 }
 
@@ -252,10 +251,16 @@ func TestServeHTTPCatchAllFallback(t *testing.T) {
 		PathMatcher: &PrefixMatcher{Prefix: "/"},
 	}
 
-	r.mu.Lock()
-	r.routes[""] = []*RouteEntry{entry}
-	r.routeIndexes[""] = newRouteIndex(r.routes[""])
-	r.mu.Unlock()
+	// Atomically swap in a new state with the catch-all route
+	old := r.state.Load()
+	updated := *old
+	updated.routes = map[string][]*RouteEntry{
+		"": {entry},
+	}
+	updated.routeIndexes = map[string]*routeIndex{
+		"": newRouteIndex(updated.routes[""]),
+	}
+	r.state.Store(&updated)
 
 	// Make a request with a specific hostname that has no route
 	req := httptest.NewRequest("GET", "http://unknown-host.example.com/api/test", nil)

@@ -36,37 +36,44 @@ func BenchmarkRouterServeHTTP(b *testing.B) {
 	router := NewRouter(logger)
 
 	// Set up minimal routing configuration directly (bypassing ApplyConfig
-	// to avoid needing a full config.Snapshot with pools and LBs)
-	router.mu.Lock()
-	router.routes["example.com"] = []*RouteEntry{
-		{
-			Route: &pb.Route{
-				Name:      "test-route",
-				Namespace: "default",
-				Hostnames: []string{"example.com"},
-			},
-			Rule: &pb.RouteRule{
-				Matches: []*pb.RouteMatch{
-					{
-						Path: &pb.PathMatch{
-							Type:  pb.PathMatchType_PATH_PREFIX,
-							Value: "/api",
+	// to avoid needing a full config.Snapshot with pools and LBs).
+	// Atomically swap in a state snapshot with the test route.
+	old := router.state.Load()
+	updated := *old
+	updated.routes = map[string][]*RouteEntry{
+		"example.com": {
+			{
+				Route: &pb.Route{
+					Name:      "test-route",
+					Namespace: "default",
+					Hostnames: []string{"example.com"},
+				},
+				Rule: &pb.RouteRule{
+					Matches: []*pb.RouteMatch{
+						{
+							Path: &pb.PathMatch{
+								Type:  pb.PathMatchType_PATH_PREFIX,
+								Value: "/api",
+							},
+						},
+					},
+					BackendRefs: []*pb.BackendRef{
+						{
+							Name:      "test-backend",
+							Namespace: "default",
+							Weight:    1,
 						},
 					},
 				},
-				BackendRefs: []*pb.BackendRef{
-					{
-						Name:      "test-backend",
-						Namespace: "default",
-						Weight:    1,
-					},
-				},
+				PathMatcher:   &PrefixMatcher{Prefix: "/api"},
+				HeaderRegexes: make(map[int]*regexp.Regexp),
 			},
-			PathMatcher:   &PrefixMatcher{Prefix: "/api"},
-			HeaderRegexes: make(map[int]*regexp.Regexp),
 		},
 	}
-	router.mu.Unlock()
+	updated.routeIndexes = map[string]*routeIndex{
+		"example.com": newRouteIndex(updated.routes["example.com"]),
+	}
+	router.state.Store(&updated)
 
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/api/v1/users", nil)
 	req.Host = "example.com"

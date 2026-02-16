@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -72,11 +73,10 @@ func formatEndpointKey(address string, port int32) string {
 // tracerName is the instrumentation name for the router tracer
 const tracerName = "github.com/piwi3910/novaedge/internal/agent/router"
 
-// Router routes HTTP requests to backends
-type Router struct {
-	logger *zap.Logger
-	mu     sync.RWMutex
-
+// routerState holds the immutable routing state that is atomically swapped
+// on each configuration update. ServeHTTP loads a snapshot of this state
+// once per request, so in-flight requests are never blocked by config updates.
+type routerState struct {
 	// Routing table: hostname -> routes
 	routes map[string][]*RouteEntry
 
@@ -99,9 +99,6 @@ type Router struct {
 	// gRPC handler for gRPC-specific request processing
 	grpcHandler *grpchandler.Handler
 
-	// LB state caching: track endpoint versions to avoid unnecessary LB recreation
-	endpointVersions map[string]uint64 // clusterKey -> hash of endpoint list
-
 	// WASM plugin runtime
 	wasmRuntime *wasm.Runtime
 
@@ -113,8 +110,7 @@ type Router struct {
 	compressionConfig *pb.CompressionConfig
 
 	// Response cache
-	cache       *ResponseCache
-	cacheConfig CacheConfig
+	cache *ResponseCache
 
 	// Error page interceptor for custom error responses
 	errorPages *ErrorPageInterceptor
@@ -126,6 +122,26 @@ type Router struct {
 	accessLog *AccessLogMiddleware
 }
 
+// Router routes HTTP requests to backends
+type Router struct {
+	logger *zap.Logger
+
+	// mu serializes ApplyConfig and Close calls. It is NOT held during
+	// request serving; ServeHTTP uses the lock-free atomic pointer instead.
+	mu sync.Mutex
+
+	// state holds the current immutable routing state. ServeHTTP atomically
+	// loads this pointer once per request for lock-free access.
+	state atomic.Pointer[routerState]
+
+	// LB state caching: track endpoint versions to avoid unnecessary LB recreation.
+	// Only accessed under mu in ApplyConfig.
+	endpointVersions map[string]uint64
+
+	// cacheConfig is set once during construction and never changes.
+	cacheConfig CacheConfig
+}
+
 // NewRouter creates a new router
 func NewRouter(logger *zap.Logger) *Router {
 	return NewRouterWithCache(logger, DefaultCacheConfig())
@@ -133,8 +149,7 @@ func NewRouter(logger *zap.Logger) *Router {
 
 // NewRouterWithCache creates a new router with the given cache configuration.
 func NewRouterWithCache(logger *zap.Logger, cacheConfig CacheConfig) *Router {
-	r := &Router{
-		logger:              logger,
+	initial := &routerState{
 		routes:              make(map[string][]*RouteEntry),
 		routeIndexes:        make(map[string]*routeIndex),
 		pools:               make(map[string]*upstream.Pool),
@@ -142,34 +157,46 @@ func NewRouterWithCache(logger *zap.Logger, cacheConfig CacheConfig) *Router {
 		hashBasedLBs:        make(map[string]interface{}),
 		stickyWrappers:      make(map[string]*lb.StickyWrapper),
 		grpcHandler:         grpchandler.NewHandler(logger),
-		endpointVersions:    make(map[string]uint64),
 		maxRequestBodyBytes: 10 * 1024 * 1024,  // Default: 10MB
 		maxUploadBodyBytes:  100 * 1024 * 1024, // Default: 100MB
-		cacheConfig:         cacheConfig,
 	}
 	if cacheConfig.Enabled {
-		r.cache = NewResponseCache(cacheConfig, logger)
+		initial.cache = NewResponseCache(cacheConfig, logger)
 	}
+
+	r := &Router{
+		logger:           logger,
+		endpointVersions: make(map[string]uint64),
+		cacheConfig:      cacheConfig,
+	}
+	r.state.Store(initial)
 	return r
 }
 
 // Cache returns the response cache, or nil if caching is disabled.
 func (r *Router) Cache() *ResponseCache {
-	return r.cache
+	snap := r.state.Load()
+	return snap.cache
 }
 
 // StopCache stops the cache background goroutines.
 func (r *Router) StopCache() {
-	if r.cache != nil {
-		r.cache.Stop()
+	snap := r.state.Load()
+	if snap.cache != nil {
+		snap.cache.Stop()
 	}
 }
 
 // SetWASMRuntime sets the WASM runtime for the router.
+// It atomically swaps a new state snapshot with the updated runtime.
 func (r *Router) SetWASMRuntime(rt *wasm.Runtime) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.wasmRuntime = rt
+
+	old := r.state.Load()
+	updated := *old
+	updated.wasmRuntime = rt
+	r.state.Store(&updated)
 }
 
 // ApplyConfig applies a new configuration to the router
@@ -182,22 +209,34 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 		zap.Int("clusters", len(snapshot.Clusters)),
 	)
 
+	// Load the previous state to carry forward pools and LB state
+	prev := r.state.Load()
+
+	// Start building the new state from scratch
+	newState := &routerState{
+		grpcHandler: prev.grpcHandler,
+		wasmRuntime: prev.wasmRuntime,
+	}
+
 	// Update request size limits from gateway configuration
-	r.updateRequestLimits(snapshot)
+	newState.maxRequestBodyBytes = prev.maxRequestBodyBytes
+	newState.maxUploadBodyBytes = prev.maxUploadBodyBytes
+	r.updateRequestLimits(snapshot, newState, prev)
 
 	// Update compression configuration from gateway settings
-	r.updateCompressionConfig(snapshot)
+	r.updateCompressionConfig(snapshot, newState)
 
 	// Configure error pages, redirect scheme, and access log from gateway config
-	r.configureMiddleware(snapshot)
+	r.configureMiddleware(snapshot, newState, prev)
 
-	// Clear route table (rebuilt below); preserve load balancers
-	// so they survive config snapshots with unchanged endpoints.
-	r.routes = make(map[string][]*RouteEntry)
+	// Carry forward cache (it is shared across snapshots)
+	newState.cache = prev.cache
+
+	// Build routing table
+	newRoutes := make(map[string][]*RouteEntry)
 	newLoadBalancers := make(map[string]lb.LoadBalancer)
 	newHashBasedLBs := make(map[string]interface{})
 
-	// Build routing table
 	for _, route := range snapshot.Routes {
 		// Routes without hostnames act as catch-all: use "" as the key
 		hostnames := route.Hostnames
@@ -258,7 +297,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 						entry.MirrorConfig.Percentage = 100
 					}
 				}
-				r.routes[hostname] = append(r.routes[hostname], entry)
+				newRoutes[hostname] = append(newRoutes[hostname], entry)
 			}
 		}
 	}
@@ -266,12 +305,14 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Sort routes by specificity so the most specific matches are tried first.
 	// This ensures exact matches beat prefix matches, longer prefixes beat shorter ones,
 	// and routes with more conditions (headers, methods) are preferred.
-	r.routeIndexes = make(map[string]*routeIndex, len(r.routes))
-	for hostname := range r.routes {
-		sortRoutesBySpecificity(r.routes[hostname])
+	newRouteIndexes := make(map[string]*routeIndex, len(newRoutes))
+	for hostname := range newRoutes {
+		sortRoutesBySpecificity(newRoutes[hostname])
 		// Build radix tree index for O(log n) path lookup instead of O(n) linear scan
-		r.routeIndexes[hostname] = newRouteIndex(r.routes[hostname])
+		newRouteIndexes[hostname] = newRouteIndex(newRoutes[hostname])
 	}
+	newState.routes = newRoutes
+	newState.routeIndexes = newRouteIndexes
 
 	// Create upstream pools for each cluster
 	newPools := make(map[string]*upstream.Pool)
@@ -286,7 +327,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 		}
 
 		// Create or reuse pool
-		if existingPool, ok := r.pools[clusterKey]; ok {
+		if existingPool, ok := prev.pools[clusterKey]; ok {
 			// Update existing pool with new endpoints
 			existingPool.UpdateEndpoints(endpointList.Endpoints)
 			newPools[clusterKey] = existingPool
@@ -348,10 +389,10 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 			r.endpointVersions[clusterKey] = endpointHash
 		} else {
 			// Carry over existing load balancers when endpoints unchanged
-			if existingLB, ok := r.loadBalancers[clusterKey]; ok {
+			if existingLB, ok := prev.loadBalancers[clusterKey]; ok {
 				newLoadBalancers[clusterKey] = existingLB
 			}
-			if existingHashLB, ok := r.hashBasedLBs[clusterKey]; ok {
+			if existingHashLB, ok := prev.hashBasedLBs[clusterKey]; ok {
 				newHashBasedLBs[clusterKey] = existingHashLB
 			}
 			r.logger.Debug("Endpoints unchanged, reusing load balancer",
@@ -361,7 +402,7 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	}
 
 	// Close pools that are no longer needed and clean up their metrics
-	for key, pool := range r.pools {
+	for key, pool := range prev.pools {
 		if _, needed := newPools[key]; !needed {
 			r.logger.Info("Closing unused pool", zap.String("cluster", key))
 			pool.Close()
@@ -372,9 +413,9 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 		}
 	}
 
-	r.pools = newPools
-	r.loadBalancers = newLoadBalancers
-	r.hashBasedLBs = newHashBasedLBs
+	newState.pools = newPools
+	newState.loadBalancers = newLoadBalancers
+	newState.hashBasedLBs = newHashBasedLBs
 
 	// Create sticky session wrappers for clusters with session affinity configured
 	newStickyWrappers := make(map[string]*lb.StickyWrapper)
@@ -416,11 +457,14 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 			zap.String("cookie", cookieName),
 		)
 	}
-	r.stickyWrappers = newStickyWrappers
+	newState.stickyWrappers = newStickyWrappers
+
+	// Atomically publish the new state so ServeHTTP picks it up without locking.
+	r.state.Store(newState)
 
 	r.logger.Info("Router configuration applied",
-		zap.Int("hostnames", len(r.routes)),
-		zap.Int("pools", len(r.pools)),
+		zap.Int("hostnames", len(newState.routes)),
+		zap.Int("pools", len(newState.pools)),
 	)
 
 	return nil
@@ -428,6 +472,10 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 
 // ServeHTTP routes incoming HTTP requests
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Atomically load the current routing state. This is the only
+	// synchronization needed; no locks are held for the request lifetime.
+	snap := r.state.Load()
+
 	// Extract trace context from incoming request headers (W3C TraceContext propagation)
 	ctx := req.Context()
 	propagator := otel.GetTextMapPropagator()
@@ -462,12 +510,12 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	req = req.WithContext(ctx)
 
 	// Determine request body size limit based on content type
-	maxBodySize := r.maxRequestBodyBytes
+	maxBodySize := snap.maxRequestBodyBytes
 
 	// For file uploads (multipart/form-data), use larger limit
 	contentType := req.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
-		maxBodySize = r.maxUploadBodyBytes
+		maxBodySize = snap.maxUploadBodyBytes
 	}
 
 	// Limit request body size to prevent memory exhaustion attacks
@@ -505,8 +553,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		metrics.RecordHTTPRequest(req.Method, statusClass, "unknown", duration)
 
 		// Record access log entry if access logging is enabled
-		if r.accessLog != nil && r.accessLog.IsEnabled() {
-			if r.accessLog.shouldSample() && r.accessLog.shouldLog(wrappedWriter.statusCode) {
+		if snap.accessLog != nil && snap.accessLog.IsEnabled() {
+			if snap.accessLog.shouldSample() && snap.accessLog.shouldLog(wrappedWriter.statusCode) {
 				entry := AccessLogEntry{
 					ClientIP:      extractClientIP(req),
 					Timestamp:     startTime.UTC().Format(time.RFC3339Nano),
@@ -521,20 +569,17 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 					RequestID:     req.Header.Get("X-Request-ID"),
 					Host:          req.Host,
 				}
-				r.accessLog.writeEntry(entry)
+				snap.accessLog.writeEntry(entry)
 			}
 		}
 	}()
 
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
 	// Check if redirect scheme middleware should short-circuit the request
-	if r.redirectScheme != nil && r.redirectScheme.IsEnabled() {
+	if snap.redirectScheme != nil && snap.redirectScheme.IsEnabled() {
 		// Check if request should be redirected (HTTP -> HTTPS)
-		if req.TLS == nil && req.Header.Get("X-Forwarded-Proto") != r.redirectScheme.scheme {
-			if !r.redirectScheme.isExcluded(req.URL.Path) {
-				r.redirectScheme.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})).ServeHTTP(wrappedWriter, req)
+		if req.TLS == nil && req.Header.Get("X-Forwarded-Proto") != snap.redirectScheme.scheme {
+			if !snap.redirectScheme.isExcluded(req.URL.Path) {
+				snap.redirectScheme.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {})).ServeHTTP(wrappedWriter, req)
 				return
 			}
 		}
@@ -554,9 +599,9 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Find matching route using radix tree index for O(log n) path lookup.
 	// If no hostname-specific routes exist, fall back to catch-all routes (empty hostname key).
-	rIdx, ok := r.routeIndexes[hostname]
+	rIdx, ok := snap.routeIndexes[hostname]
 	if !ok {
-		rIdx, ok = r.routeIndexes[""]
+		rIdx, ok = snap.routeIndexes[""]
 	}
 	if !ok {
 		if recording {
@@ -598,7 +643,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 				attribute.String("novaedge.route.namespace", entry.Route.Namespace),
 			)
 		}
-		r.handleRoute(entry, wrappedWriter, req)
+		r.handleRoute(snap, entry, wrappedWriter, req)
 		return
 	}
 
@@ -696,10 +741,10 @@ func (r *Router) matchHeader(match *pb.HeaderMatch, headerIdx, matchIdx int, val
 }
 
 // updateRequestLimits updates request size limits from gateway configuration
-func (r *Router) updateRequestLimits(snapshot *config.Snapshot) {
+func (r *Router) updateRequestLimits(snapshot *config.Snapshot, newState *routerState, prev *routerState) {
 	// Find the maximum request size limits across all gateways
-	maxRequest := r.maxRequestBodyBytes
-	maxUpload := r.maxUploadBodyBytes
+	maxRequest := newState.maxRequestBodyBytes
+	maxUpload := newState.maxUploadBodyBytes
 
 	for _, gateway := range snapshot.Gateways {
 		for _, listener := range gateway.Listeners {
@@ -717,20 +762,20 @@ func (r *Router) updateRequestLimits(snapshot *config.Snapshot) {
 	}
 
 	// Update limits if they changed
-	if maxRequest != r.maxRequestBodyBytes || maxUpload != r.maxUploadBodyBytes {
+	if maxRequest != prev.maxRequestBodyBytes || maxUpload != prev.maxUploadBodyBytes {
 		r.logger.Info("Updated request size limits",
 			zap.Int64("max_request_body_bytes", maxRequest),
 			zap.Int64("max_upload_body_bytes", maxUpload))
-		r.maxRequestBodyBytes = maxRequest
-		r.maxUploadBodyBytes = maxUpload
 	}
+	newState.maxRequestBodyBytes = maxRequest
+	newState.maxUploadBodyBytes = maxUpload
 }
 
 // updateCompressionConfig extracts compression configuration from gateway settings.
-func (r *Router) updateCompressionConfig(snapshot *config.Snapshot) {
+func (r *Router) updateCompressionConfig(snapshot *config.Snapshot, newState *routerState) {
 	for _, gateway := range snapshot.Gateways {
 		if gateway.Compression != nil && gateway.Compression.Enabled {
-			r.compressionConfig = gateway.Compression
+			newState.compressionConfig = gateway.Compression
 			r.logger.Info("Compression enabled",
 				zap.Bool("enabled", gateway.Compression.Enabled),
 				zap.Int64("min_size", gateway.Compression.MinSize),
@@ -741,14 +786,14 @@ func (r *Router) updateCompressionConfig(snapshot *config.Snapshot) {
 		}
 	}
 	// No gateway has compression enabled
-	r.compressionConfig = nil
+	newState.compressionConfig = nil
 }
 
 // configureMiddleware configures error pages, redirect scheme, and access log from gateway config
-func (r *Router) configureMiddleware(snapshot *config.Snapshot) {
+func (r *Router) configureMiddleware(snapshot *config.Snapshot, newState *routerState, prev *routerState) {
 	// Close previous access log middleware if any
-	if r.accessLog != nil {
-		r.accessLog.Close()
+	if prev.accessLog != nil {
+		prev.accessLog.Close()
 	}
 
 	// Find first gateway with error page / redirect / access log config
@@ -756,7 +801,7 @@ func (r *Router) configureMiddleware(snapshot *config.Snapshot) {
 	// for now, we use the first configured one as the default.
 	for _, gw := range snapshot.Gateways {
 		if gw.ErrorPages != nil && gw.ErrorPages.Enabled {
-			r.errorPages = NewErrorPageInterceptor(gw.ErrorPages, r.logger)
+			newState.errorPages = NewErrorPageInterceptor(gw.ErrorPages, r.logger)
 			r.logger.Info("Error page interceptor configured",
 				zap.String("gateway", gw.Name),
 				zap.Int("custom_pages", len(gw.ErrorPages.Pages)),
@@ -767,7 +812,7 @@ func (r *Router) configureMiddleware(snapshot *config.Snapshot) {
 
 	for _, gw := range snapshot.Gateways {
 		if gw.RedirectScheme != nil && gw.RedirectScheme.Enabled {
-			r.redirectScheme = NewRedirectSchemeMiddleware(gw.RedirectScheme, r.logger)
+			newState.redirectScheme = NewRedirectSchemeMiddleware(gw.RedirectScheme, r.logger)
 			r.logger.Info("Redirect scheme middleware configured",
 				zap.String("gateway", gw.Name),
 				zap.String("scheme", gw.RedirectScheme.Scheme),
@@ -788,7 +833,7 @@ func (r *Router) configureMiddleware(snapshot *config.Snapshot) {
 				)
 				continue
 			}
-			r.accessLog = alm
+			newState.accessLog = alm
 			r.logger.Info("Access log middleware configured",
 				zap.String("route", route.Name),
 				zap.String("format", route.AccessLog.Format),
@@ -804,11 +849,12 @@ func (r *Router) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.accessLog != nil {
-		r.accessLog.Close()
+	snap := r.state.Load()
+	if snap.accessLog != nil {
+		snap.accessLog.Close()
 	}
 
-	for _, pool := range r.pools {
+	for _, pool := range snap.pools {
 		pool.Close()
 	}
 }
