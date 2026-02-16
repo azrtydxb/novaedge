@@ -20,6 +20,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 
@@ -38,13 +39,17 @@ func isBogonIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast()
 }
 
-// Global list of trusted proxy IP ranges (can be configured at package level)
-var trustedProxyCIDRs []*net.IPNet
+// trustedProxyCIDRsPtr holds the global list of trusted proxy IP ranges.
+// It uses atomic.Pointer for lock-free concurrent reads during request
+// processing while allowing safe writes during config reload.
+var trustedProxyCIDRsPtr atomic.Pointer[[]*net.IPNet]
 
-// SetGlobalTrustedProxies sets the global list of trusted proxy IP ranges
-// This is used by rate limiters and other policies that need IP extraction
+// SetGlobalTrustedProxies sets the global list of trusted proxy IP ranges.
+// This is used by rate limiters and other policies that need IP extraction.
+// The new slice is built locally and stored atomically so that concurrent
+// readers always see a consistent snapshot.
 func SetGlobalTrustedProxies(cidrs []string) error {
-	trustedProxyCIDRs = nil
+	var newCIDRs []*net.IPNet
 	for _, cidr := range cidrs {
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {
@@ -60,18 +65,24 @@ func SetGlobalTrustedProxies(cidrs []string) error {
 				_, ipNet, _ = net.ParseCIDR(cidr + "/128")
 			}
 		}
-		trustedProxyCIDRs = append(trustedProxyCIDRs, ipNet)
+		newCIDRs = append(newCIDRs, ipNet)
 	}
+	trustedProxyCIDRsPtr.Store(&newCIDRs)
 	return nil
 }
 
-// isGlobalTrustedProxy checks if an IP is in the global trusted proxy list
+// isGlobalTrustedProxy checks if an IP is in the global trusted proxy list.
+// The list is loaded atomically to avoid data races with concurrent writers.
 func isGlobalTrustedProxy(ipStr string) bool {
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
 		return false
 	}
-	for _, ipNet := range trustedProxyCIDRs {
+	cidrs := trustedProxyCIDRsPtr.Load()
+	if cidrs == nil {
+		return false
+	}
+	for _, ipNet := range *cidrs {
 		if ipNet.Contains(ip) {
 			return true
 		}
@@ -89,7 +100,8 @@ func extractClientIP(r *http.Request) string {
 	}
 
 	// If no trusted proxies configured, don't trust forwarded headers
-	if len(trustedProxyCIDRs) == 0 {
+	cidrs := trustedProxyCIDRsPtr.Load()
+	if cidrs == nil || len(*cidrs) == 0 {
 		return remoteIP
 	}
 

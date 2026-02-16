@@ -61,7 +61,7 @@ func TestExtractKey(t *testing.T) {
 	// Setup global trusted proxies for IP extraction
 	_ = SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	tests := []struct {
@@ -232,7 +232,7 @@ func TestAllow(t *testing.T) {
 	// Setup global trusted proxies for IP extraction
 	_ = SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	t.Run("request allowed within rate limit", func(t *testing.T) {
@@ -367,7 +367,7 @@ func TestHandleRateLimit(t *testing.T) {
 	// Setup global trusted proxies for IP extraction
 	_ = SetGlobalTrustedProxies([]string{"10.0.0.0/8"})
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
