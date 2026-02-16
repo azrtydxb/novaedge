@@ -27,23 +27,27 @@ import (
 // privateNetworks contains CIDR ranges that should be blocked for outbound requests.
 var privateNetworks []*net.IPNet
 
-func init() {
-	cidrs := []string{
-		"10.0.0.0/8",
-		"172.16.0.0/12",
-		"192.168.0.0/16",
-		"127.0.0.0/8",
-		"169.254.0.0/16",
-		"::1/128",
-		"fc00::/7",
-		"fe80::/10",
+// mustParseCIDR parses a CIDR string and panics with a descriptive message on
+// failure. It is intended only for package-level initialization of constant
+// CIDR blocks that are guaranteed to be valid.
+func mustParseCIDR(s string) *net.IPNet {
+	_, block, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(fmt.Sprintf("ssrf: invalid constant CIDR %q: %v", s, err))
 	}
-	for _, cidr := range cidrs {
-		_, block, err := net.ParseCIDR(cidr)
-		if err != nil {
-			panic(fmt.Sprintf("failed to parse CIDR %s: %v", cidr, err))
-		}
-		privateNetworks = append(privateNetworks, block)
+	return block
+}
+
+func init() {
+	privateNetworks = []*net.IPNet{
+		mustParseCIDR("10.0.0.0/8"),
+		mustParseCIDR("172.16.0.0/12"),
+		mustParseCIDR("192.168.0.0/16"),
+		mustParseCIDR("127.0.0.0/8"),
+		mustParseCIDR("169.254.0.0/16"),
+		mustParseCIDR("::1/128"),
+		mustParseCIDR("fc00::/7"),
+		mustParseCIDR("fe80::/10"),
 	}
 }
 

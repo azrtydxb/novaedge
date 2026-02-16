@@ -123,7 +123,7 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 
 	// Phase 1: Compute diff under read lock
 	m.mu.RLock()
-	var actions []vipAction
+	actions := make([]vipAction, 0, len(m.assignments)+len(newAssignments))
 
 	// Find VIPs to release (no longer assigned)
 	for vipName, oldAssignment := range m.assignments {
