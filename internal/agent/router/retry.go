@@ -46,6 +46,11 @@ const defaultBackoffBaseMs = 25
 // defaultRetryBudget is the default percentage of requests that can be retried
 const defaultRetryBudget = 0.2
 
+// maxRetryBodySize is the maximum request body size (10 MB) that will be
+// buffered for retry attempts. Requests with larger bodies skip retries
+// and are forwarded once to avoid unbounded memory consumption.
+const maxRetryBodySize = 10 << 20
+
 // defaultSafeMethodsSet contains HTTP methods safe for retry by default
 var defaultSafeMethodsSet = map[string]bool{
 	"GET":     true,
@@ -217,17 +222,29 @@ func (r *Router) forwardWithRetry(
 	// Check if method is retryable
 	methodRetryable := retryPolicy.isMethodRetryable(req.Method)
 
-	// Buffer the request body for retries (only if method is retryable)
+	// Buffer the request body for retries (only if method is retryable).
+	// Bodies larger than maxRetryBodySize skip retries to prevent OOM.
 	var bodyBytes []byte
 	if methodRetryable && req.Body != nil {
 		var err error
-		bodyBytes, err = io.ReadAll(req.Body)
+		bodyBytes, err = io.ReadAll(io.LimitReader(req.Body, maxRetryBodySize+1))
 		if err != nil {
 			logger.Error("Failed to read request body for retry", zap.Error(err))
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		if int64(len(bodyBytes)) > maxRetryBodySize {
+			// Body exceeds limit — disable retries and forward once with
+			// the already-read prefix plus the remainder of the stream.
+			logger.Warn("Request body exceeds max retry buffer size, skipping retries",
+				zap.Int64("maxRetryBodySize", maxRetryBodySize),
+			)
+			req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), req.Body))
+			methodRetryable = false
+			bodyBytes = nil
+		} else {
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
 	}
 
 	var excludedEndpoints []*pb.Endpoint

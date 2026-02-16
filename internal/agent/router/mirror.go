@@ -32,6 +32,11 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// maxMirrorBodySize is the maximum request body size (10 MB) that will be
+// buffered for mirrored requests. If the body exceeds this limit the mirror
+// is sent without a body to avoid unbounded memory consumption.
+const maxMirrorBodySize = 10 << 20
+
 // MirrorConfig holds configuration for traffic mirroring on a route rule.
 type MirrorConfig struct {
 	// BackendRef references the mirror backend (namespace/name).
@@ -101,19 +106,30 @@ func (r *Router) mirrorRequest(
 		return
 	}
 
-	// Buffer the request body so it can be read by both original and mirror
+	// Buffer the request body so it can be read by both original and mirror.
+	// Bodies larger than maxMirrorBodySize are not buffered; the mirror
+	// request is sent without a body to avoid unbounded memory consumption.
 	var bodyBytes []byte
 	if req.Body != nil {
 		var err error
-		bodyBytes, err = io.ReadAll(req.Body)
+		bodyBytes, err = io.ReadAll(io.LimitReader(req.Body, maxMirrorBodySize+1))
 		if err != nil {
 			if ce := r.logger.Check(zap.DebugLevel, "Failed to read request body for mirroring"); ce != nil {
 				ce.Write(zap.Error(err))
 			}
 			return
 		}
-		// Restore original body for the primary request
-		req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		if int64(len(bodyBytes)) > maxMirrorBodySize {
+			// Body too large — restore stream for primary, mirror without body
+			if ce := r.logger.Check(zap.DebugLevel, "Request body exceeds mirror buffer limit, mirroring without body"); ce != nil {
+				ce.Write(zap.Int64("maxMirrorBodySize", maxMirrorBodySize))
+			}
+			req.Body = io.NopCloser(io.MultiReader(bytes.NewReader(bodyBytes), req.Body))
+			bodyBytes = nil
+		} else {
+			// Restore original body for the primary request
+			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
 	}
 
 	// Clone request for mirror
