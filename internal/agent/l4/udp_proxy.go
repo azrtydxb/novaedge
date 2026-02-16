@@ -23,6 +23,7 @@ import (
 	"hash/fnv"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -37,6 +38,8 @@ const (
 	DefaultUDPBufferSize = 65535
 	// DefaultUDPSessionCleanupInterval is the interval for cleaning up expired UDP sessions
 	DefaultUDPSessionCleanupInterval = 10 * time.Second
+	// MaxUDPSessions is the maximum number of concurrent UDP sessions allowed
+	MaxUDPSessions int64 = 10000
 )
 
 // UDPProxyConfig holds configuration for a UDP proxy instance
@@ -63,11 +66,12 @@ type udpSession struct {
 
 // UDPProxy handles UDP proxying with session affinity based on source IP hash
 type UDPProxy struct {
-	config   UDPProxyConfig
-	logger   *zap.Logger
-	mu       sync.RWMutex
-	backends []*pb.Endpoint
-	sessions sync.Map // string (source addr) -> *udpSession
+	config         UDPProxyConfig
+	logger         *zap.Logger
+	mu             sync.RWMutex
+	backends       []*pb.Endpoint
+	sessions       sync.Map // string (source addr) -> *udpSession
+	activeSessions atomic.Int64
 }
 
 // NewUDPProxy creates a new UDP proxy
@@ -105,6 +109,15 @@ func (p *UDPProxy) HandlePacket(ctx context.Context, listenerConn *net.UDPConn, 
 		session.lastSeen = time.Now()
 		session.mu.Unlock()
 		p.forwardUDPPacket(ctx, listenerConn, clientAddr, session, data)
+		return
+	}
+
+	// Reject new sessions if at the maximum session limit
+	if p.activeSessions.Load() >= MaxUDPSessions {
+		p.logger.Warn("UDP session limit reached",
+			zap.Int64("max", MaxUDPSessions),
+			zap.String("source", sourceKey))
+		L4ConnectionErrors.WithLabelValues("udp", listenerName, "session_limit").Inc()
 		return
 	}
 
@@ -160,6 +173,7 @@ func (p *UDPProxy) HandlePacket(ctx context.Context, listenerConn *net.UDPConn, 
 		return
 	}
 
+	p.activeSessions.Add(1)
 	L4UDPSessionsTotal.WithLabelValues(listenerName, backendName).Inc()
 	L4UDPActiveSessions.WithLabelValues(listenerName).Inc()
 
@@ -202,6 +216,7 @@ func (p *UDPProxy) readBackendResponses(ctx context.Context, listenerConn *net.U
 	defer func() {
 		_ = session.backendConn.Close()
 		p.sessions.Delete(sourceKey)
+		p.activeSessions.Add(-1)
 		L4UDPActiveSessions.WithLabelValues(listenerName).Dec()
 		p.logger.Debug("UDP session ended", zap.String("source", sourceKey))
 	}()
@@ -307,6 +322,7 @@ func (p *UDPProxy) CleanupExpiredSessions() {
 				_ = session.backendConn.Close()
 			}
 			p.sessions.Delete(key)
+			p.activeSessions.Add(-1)
 			L4UDPActiveSessions.WithLabelValues(p.config.ListenerName).Dec()
 			sourceKey, _ := key.(string)
 			p.logger.Debug("Cleaned up expired UDP session",
