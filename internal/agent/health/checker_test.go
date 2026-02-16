@@ -876,11 +876,9 @@ func TestHealthChecker_PerformHTTPSCheck_DefaultSecure(t *testing.T) {
 	healthy, err := hc.performHTTPSCheck(context.Background(), ep)
 	if err == nil {
 		t.Log("note: TLS verification passed (cert may be in system trust store)")
-	} else {
+	} else if healthy {
 		// Expected: TLS verification failure with self-signed cert
-		if healthy {
-			t.Error("expected unhealthy when TLS verification fails")
-		}
+		t.Error("expected unhealthy when TLS verification fails")
 	}
 }
 
