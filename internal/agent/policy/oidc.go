@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -47,6 +48,7 @@ type OIDCSession struct {
 	RefreshToken string                 `json:"refresh_token"`
 	Expiry       time.Time              `json:"expiry"`
 	Claims       map[string]interface{} `json:"claims"`
+	State        string                 `json:"state,omitempty"`
 }
 
 const (
@@ -281,6 +283,15 @@ func generateCodeVerifier() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
+// generateSessionID generates a random session identifier for CSRF binding.
+func generateSessionID() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
 // refreshToken attempts to refresh the access token using the refresh token.
 func (h *OIDCHandler) refreshToken(ctx context.Context, session *OIDCSession) (*OIDCSession, error) {
 	if session.RefreshToken == "" {
@@ -456,10 +467,28 @@ func redirectToAuth(handler *OIDCHandler, w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Store code verifier in state (PKCE) with bounded session map
-	handler.storeSession(state, &OIDCSession{
+	sessionID, err := generateSessionID()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Store code verifier and state in session, keyed by sessionID for CSRF binding
+	handler.storeSession(sessionID, &OIDCSession{
 		// Store the code verifier in the RefreshToken field temporarily
 		RefreshToken: codeVerifier,
+		State:        state,
+	})
+
+	// Set session cookie to bind the OAuth state to this browser session (CSRF protection)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "novaedge_oauth_session",
+		Value:    sessionID,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   r.TLS != nil,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   600, // 10 minutes
 	})
 
 	// Generate PKCE challenge
@@ -494,18 +523,40 @@ func handleOIDCCallback(handler *OIDCHandler, w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Retrieve stored state (PKCE verifier)
+	// CSRF protection: validate state via session cookie binding
+	sessionCookie, err := r.Cookie("novaedge_oauth_session")
+	if err != nil || sessionCookie.Value == "" {
+		http.Error(w, "Missing OAuth session cookie", http.StatusBadRequest)
+		return
+	}
+
+	// Retrieve stored session by sessionID from cookie
 	handler.mu.Lock()
-	storedSession, exists := handler.sessions[state]
+	storedSession, exists := handler.sessions[sessionCookie.Value]
 	if exists {
-		delete(handler.sessions, state)
+		delete(handler.sessions, sessionCookie.Value)
 	}
 	handler.mu.Unlock()
 
 	if !exists {
-		http.Error(w, "Invalid state parameter", http.StatusBadRequest)
+		http.Error(w, "Invalid or expired OAuth session", http.StatusBadRequest)
 		return
 	}
+
+	// Validate that the state from the URL matches the state stored in the session
+	if storedSession.State != state {
+		http.Error(w, "State parameter mismatch", http.StatusBadRequest)
+		return
+	}
+
+	// Clear the OAuth session cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "novaedge_oauth_session",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		MaxAge:   -1,
+	})
 
 	codeVerifier := storedSession.RefreshToken
 
@@ -566,7 +617,7 @@ func handleOIDCCallback(handler *OIDCHandler, w http.ResponseWriter, r *http.Req
 	// Redirect back to original URL
 	redirectURL := "/"
 	if redirectCookie, err := r.Cookie("novaedge_redirect"); err == nil {
-		redirectURL = redirectCookie.Value
+		redirectURL = validateRedirectURL(redirectCookie.Value, r.Host)
 	}
 
 	// Clear the redirect cookie
@@ -613,6 +664,32 @@ func handleOIDCLogout(handler *OIDCHandler, w http.ResponseWriter, r *http.Reque
 
 	// Generic: just redirect to root
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// validateRedirectURL ensures the redirect URL is same-origin to prevent open redirect attacks.
+// It allows relative URLs and URLs whose host matches the request host.
+// Returns "/" if validation fails.
+func validateRedirectURL(rawURL string, requestHost string) string {
+	if rawURL == "" {
+		return "/"
+	}
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "/"
+	}
+
+	// Allow relative URLs (no scheme, no host)
+	if parsed.Host == "" {
+		return rawURL
+	}
+
+	// Reject if the host differs from the request host
+	if parsed.Host != requestHost {
+		return "/"
+	}
+
+	return rawURL
 }
 
 const authzModeAll = "all"
