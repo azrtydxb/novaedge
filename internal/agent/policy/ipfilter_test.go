@@ -37,7 +37,7 @@ const (
 func TestSetGlobalTrustedProxies(t *testing.T) {
 	// Clean up after tests
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	t.Run("valid CIDR", func(t *testing.T) {
@@ -46,8 +46,8 @@ func TestSetGlobalTrustedProxies(t *testing.T) {
 			t.Errorf("Expected no error, got: %v", err)
 		}
 
-		if len(trustedProxyCIDRs) != 2 {
-			t.Errorf("Expected 2 trusted proxy CIDRs, got %d", len(trustedProxyCIDRs))
+		if len(*trustedProxyCIDRsPtr.Load()) != 2 {
+			t.Errorf("Expected 2 trusted proxy CIDRs, got %d", len(*trustedProxyCIDRsPtr.Load()))
 		}
 	})
 
@@ -57,8 +57,8 @@ func TestSetGlobalTrustedProxies(t *testing.T) {
 			t.Errorf("Expected no error, got: %v", err)
 		}
 
-		if len(trustedProxyCIDRs) != 1 {
-			t.Errorf("Expected 1 trusted proxy CIDR, got %d", len(trustedProxyCIDRs))
+		if len(*trustedProxyCIDRsPtr.Load()) != 1 {
+			t.Errorf("Expected 1 trusted proxy CIDR, got %d", len(*trustedProxyCIDRsPtr.Load()))
 		}
 	})
 
@@ -68,8 +68,8 @@ func TestSetGlobalTrustedProxies(t *testing.T) {
 			t.Errorf("Expected no error, got: %v", err)
 		}
 
-		if len(trustedProxyCIDRs) != 1 {
-			t.Errorf("Expected 1 trusted proxy CIDR, got %d", len(trustedProxyCIDRs))
+		if len(*trustedProxyCIDRsPtr.Load()) != 1 {
+			t.Errorf("Expected 1 trusted proxy CIDR, got %d", len(*trustedProxyCIDRsPtr.Load()))
 		}
 	})
 
@@ -87,7 +87,7 @@ func TestIsGlobalTrustedProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	tests := []struct {
@@ -133,12 +133,12 @@ func TestExtractClientIPPackageLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	t.Run("direct connection no trusted proxies", func(t *testing.T) {
 		// Clear trusted proxies
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		req.RemoteAddr = "1.2.3.4:12345"
@@ -544,7 +544,7 @@ func TestExtractClientIPBogonFiltering(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	t.Run("bogon IP in XFF is skipped", func(t *testing.T) {
@@ -587,7 +587,7 @@ func TestExtractClientIPValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	t.Run("unparseable IP in XFF is skipped", func(t *testing.T) {
@@ -630,7 +630,7 @@ func TestExtractClientIPMaxDepth(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() {
-		trustedProxyCIDRs = nil
+		trustedProxyCIDRsPtr.Store(nil)
 	}()
 
 	t.Run("XFF within depth limit is fully processed", func(t *testing.T) {
