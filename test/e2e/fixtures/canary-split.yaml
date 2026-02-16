@@ -1,0 +1,21 @@
+# E2E canary / traffic-split test: 80-20 weighted routing between two Maglev backends
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: e2e-canary-split
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  hostnames:
+    - "e2e.test.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /canary
+      backendRefs:
+        - name: e2e-echo-backend
+          weight: 80
+        - name: e2e-echo-backend-2
+          weight: 20

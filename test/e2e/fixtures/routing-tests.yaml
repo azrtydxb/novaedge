@@ -1,0 +1,60 @@
+# E2E routing tests: exercises exact, regex, header, method, and query-param matching
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: e2e-routing-tests
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  hostnames:
+    - "e2e.test.local"
+  rules:
+    # Catch-all route
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: e2e-echo-backend
+    # Exact path match
+    - matches:
+        - path:
+            type: Exact
+            value: /exact-test
+      backendRefs:
+        - name: e2e-echo-backend
+    # Regex path match
+    - matches:
+        - path:
+            type: RegularExpression
+            value: "/regex/[0-9]+"
+      backendRefs:
+        - name: e2e-echo-backend
+    # Header match
+    - matches:
+        - headers:
+            - name: X-Test-Route
+              type: Exact
+              value: canary
+      backendRefs:
+        - name: e2e-echo-backend
+    # Method match
+    - matches:
+        - path:
+            type: Exact
+            value: /method-test
+          method: DELETE
+      backendRefs:
+        - name: e2e-echo-backend
+    # Query parameter match
+    - matches:
+        - path:
+            type: Exact
+            value: /query
+          queryParams:
+            - name: format
+              type: Exact
+              value: json
+      backendRefs:
+        - name: e2e-echo-backend

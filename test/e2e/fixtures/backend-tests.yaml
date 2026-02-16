@@ -1,0 +1,89 @@
+# E2E backend tests: ProxyBackend resources for testing routing and features
+# NOTE: On BGP/OSPF VIP nodes, only hash-based LB policies (Maglev/RingHash)
+# are included in config snapshots for ECMP consistency. All traffic-tested
+# backends use Maglev. LB algorithm configuration is tested via CRD verification.
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: e2e-echo-backend
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  serviceRef:
+    name: echo-svc
+    port: 8080
+  lbPolicy: Maglev
+  healthCheck:
+    httpPath: /
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: e2e-echo-backend-2
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  serviceRef:
+    name: echo-svc
+    port: 8080
+  lbPolicy: Maglev
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: e2e-mirror-target
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  serviceRef:
+    name: echo-svc
+    port: 8080
+  lbPolicy: Maglev
+---
+# LB policy CRD verification backends (not traffic-tested on VIP nodes)
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: e2e-roundrobin-backend
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  serviceRef:
+    name: echo-svc
+    port: 8080
+  lbPolicy: RoundRobin
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: e2e-p2c-backend
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  serviceRef:
+    name: echo-svc
+    port: 8080
+  lbPolicy: P2C
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: e2e-sticky-backend
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  serviceRef:
+    name: echo-svc
+    port: 8080
+  lbPolicy: RingHash
+  sessionAffinity:
+    type: Cookie
+    cookieName: E2E_STICKY
+    cookieTTL: 5m

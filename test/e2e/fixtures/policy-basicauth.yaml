@@ -1,0 +1,30 @@
+# E2E basic auth policy: validates HTTP Basic Authentication with htpasswd secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: e2e-htpasswd
+  namespace: default
+  labels:
+    e2e-test: "true"
+type: Opaque
+stringData:
+  htpasswd: |
+    testuser:$2y$05$zZOQpV2at2E9YRcgf8qGH.dBW3XyKsDthio88RAcYqPMSlB1kXgqO
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: e2e-basicauth-policy
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  type: BasicAuth
+  targetRef:
+    kind: ProxyGateway
+    name: lb-gateway
+  basicAuth:
+    realm: "E2E Test"
+    secretRef:
+      name: e2e-htpasswd

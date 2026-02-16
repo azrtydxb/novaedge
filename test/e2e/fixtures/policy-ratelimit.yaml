@@ -1,0 +1,16 @@
+# E2E rate-limit policy: validates token bucket enforcement
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyPolicy
+metadata:
+  name: e2e-ratelimit-policy
+  namespace: default
+  labels:
+    e2e-test: "true"
+spec:
+  type: RateLimit
+  targetRef:
+    kind: ProxyGateway
+    name: lb-gateway
+  rateLimit:
+    requestsPerSecond: 5
+    burst: 2
