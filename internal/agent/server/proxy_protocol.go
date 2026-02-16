@@ -118,9 +118,12 @@ func (l *ProxyProtocolListener) Accept() (net.Conn, error) {
 
 // isTrusted checks if the connection source is in the trusted CIDR list
 func (l *ProxyProtocolListener) isTrusted(addr net.Addr) bool {
-	// If no trusted CIDRs are configured, trust all sources
+	// If no trusted CIDRs are configured, reject PROXY headers for safety
 	if len(l.trustedCIDRs) == 0 {
-		return true
+		if ce := l.logger.Check(zap.DebugLevel, "Rejecting PROXY protocol: no trusted CIDRs configured"); ce != nil {
+			ce.Write(zap.String("remote_addr", addr.String()))
+		}
+		return false
 	}
 
 	tcpAddr, ok := addr.(*net.TCPAddr)
@@ -273,6 +276,14 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 		return
 	}
 
+	// Validate protocol field
+	if parts[1] != "TCP4" && parts[1] != "TCP6" {
+		c.logger.Warn("Invalid PROXY v1 protocol field",
+			zap.String("protocol", parts[1]))
+		c.extraData = initialBuf
+		return
+	}
+
 	if len(parts) != 6 {
 		c.logger.Warn("Invalid PROXY v1 header: expected 6 fields",
 			zap.Int("got", len(parts)))
@@ -290,6 +301,27 @@ func (c *proxyProtocolConn) parseV1Header(initialBuf []byte) {
 	var srcPort int
 	if _, err := fmt.Sscanf(parts[4], "%d", &srcPort); err != nil {
 		c.logger.Warn("Invalid PROXY v1 source port", zap.String("port", parts[4]))
+		c.extraData = initialBuf
+		return
+	}
+
+	var dstPort int
+	if _, err := fmt.Sscanf(parts[5], "%d", &dstPort); err != nil {
+		c.logger.Warn("Invalid PROXY v1 destination port", zap.String("port", parts[5]))
+		c.extraData = initialBuf
+		return
+	}
+
+	// Validate port ranges (0-65535)
+	if srcPort < 0 || srcPort > 65535 {
+		c.logger.Warn("PROXY v1 source port out of range",
+			zap.Int("port", srcPort))
+		c.extraData = initialBuf
+		return
+	}
+	if dstPort < 0 || dstPort > 65535 {
+		c.logger.Warn("PROXY v1 destination port out of range",
+			zap.Int("port", dstPort))
 		c.extraData = initialBuf
 		return
 	}
