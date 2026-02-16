@@ -46,52 +46,52 @@ const (
 // GVRs for NovaEdge CRDs
 var (
 	gvrGateway = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "proxygateways",
 	}
 	gvrRoute = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "proxyroutes",
 	}
 	gvrBackend = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "proxybackends",
 	}
 	gvrVIP = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "proxyvips",
 	}
 	gvrPolicy = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "proxypolicies",
 	}
 	gvrCertificate = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "proxycertificates",
 	}
 	gvrIPPool = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "proxyippools",
 	}
 	gvrCluster = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "novaedgeclusters",
 	}
 	gvrFederation = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "novaedgefederations",
 	}
 	gvrRemoteCluster = schema.GroupVersionResource{
-		Group:    "novaedge.piwi3910.com",
+		Group:    "novaedge.io",
 		Version:  "v1alpha1",
 		Resource: "novaedgeremoteclusters",
 	}
@@ -763,7 +763,7 @@ func (k *KubernetesBackend) CreateNovaEdgeCluster(ctx context.Context, cluster *
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeCluster",
+	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeCluster",
 		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -794,7 +794,7 @@ func (k *KubernetesBackend) UpdateNovaEdgeCluster(ctx context.Context, cluster *
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeCluster",
+	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeCluster",
 		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -883,7 +883,7 @@ func (k *KubernetesBackend) CreateFederation(ctx context.Context, federation *mo
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeFederation",
+	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeFederation",
 		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -914,7 +914,7 @@ func (k *KubernetesBackend) UpdateFederation(ctx context.Context, federation *mo
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeFederation",
+	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeFederation",
 		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -1003,7 +1003,7 @@ func (k *KubernetesBackend) CreateRemoteCluster(ctx context.Context, rc *models.
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeRemoteCluster",
+	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeRemoteCluster",
 		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
@@ -1034,7 +1034,7 @@ func (k *KubernetesBackend) UpdateRemoteCluster(ctx context.Context, rc *models.
 		namespace = defaultNamespace
 	}
 
-	obj := genericModelToUnstructured("novaedge.piwi3910.com/v1alpha1", "NovaEdgeRemoteCluster",
+	obj := genericModelToUnstructured("novaedge.io/v1alpha1", "NovaEdgeRemoteCluster",
 		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
 
 	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
@@ -1298,7 +1298,7 @@ func (k *KubernetesBackend) unstructuredToGateway(obj *unstructured.Unstructured
 func (k *KubernetesBackend) gatewayToUnstructured(gw *models.Gateway) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyGateway",
 			"metadata": map[string]interface{}{
 				"name":      gw.Name,
@@ -1376,7 +1376,7 @@ func (k *KubernetesBackend) unstructuredToRoute(obj *unstructured.Unstructured) 
 func (k *KubernetesBackend) routeToUnstructured(rt *models.Route) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyRoute",
 			"metadata": map[string]interface{}{
 				"name":      rt.Name,
@@ -1452,7 +1452,7 @@ func (k *KubernetesBackend) unstructuredToBackend(obj *unstructured.Unstructured
 func (k *KubernetesBackend) backendToUnstructured(be *models.Backend) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyBackend",
 			"metadata": map[string]interface{}{
 				"name":      be.Name,
@@ -1515,7 +1515,7 @@ func (k *KubernetesBackend) unstructuredToVIP(obj *unstructured.Unstructured) (*
 func (k *KubernetesBackend) vipToUnstructured(vip *models.VIP) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyVIP",
 			"metadata": map[string]interface{}{
 				"name":      vip.Name,
@@ -1567,7 +1567,7 @@ func (k *KubernetesBackend) unstructuredToPolicy(obj *unstructured.Unstructured)
 func (k *KubernetesBackend) policyToUnstructured(pol *models.Policy) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyPolicy",
 			"metadata": map[string]interface{}{
 				"name":      pol.Name,
@@ -1665,7 +1665,7 @@ func (k *KubernetesBackend) unstructuredToCertificate(obj *unstructured.Unstruct
 func (k *KubernetesBackend) certificateToUnstructured(cert *models.Certificate) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyCertificate",
 			"metadata": map[string]interface{}{
 				"name":      cert.Name,
@@ -1771,7 +1771,7 @@ func (k *KubernetesBackend) unstructuredToIPPool(obj *unstructured.Unstructured)
 func (k *KubernetesBackend) ipPoolToUnstructured(pool *models.IPPool) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "novaedge.piwi3910.com/v1alpha1",
+			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyIPPool",
 			"metadata": map[string]interface{}{
 				"name": pool.Name,
