@@ -111,26 +111,31 @@ spec:
                       format=custom)
                     type: string
                 type: object
+              cache:
+                description: Cache configures response caching for this gateway
+                properties:
+                  defaultTTL:
+                    description: DefaultTTL is the default time-to-live for cached
+                      responses (e.g., "5m")
+                    type: string
+                  enabled:
+                    description: Enabled enables response caching
+                    type: boolean
+                  maxEntrySize:
+                    description: MaxEntrySize is the maximum size of a single cached
+                      response (e.g., "1Mi")
+                    type: string
+                  maxSize:
+                    description: MaxSize is the maximum cache memory (e.g., "256Mi")
+                    type: string
+                  maxTTL:
+                    description: MaxTTL is the maximum allowed TTL for cached responses
+                      (e.g., "1h")
+                    type: string
+                type: object
               compression:
                 description: Compression defines response compression configuration
                 properties:
-                  enabled:
-                    default: false
-                    description: Enabled enables response compression
-                    type: boolean
-                  minSize:
-                    default: "1024"
-                    description: MinSize is the minimum response body size in bytes
-                      before compression triggers
-                    type: string
-                  level:
-                    default: 6
-                    description: Level is the compression level (1-9 for gzip, 0-11
-                      for brotli)
-                    maximum: 11
-                    minimum: 0
-                    type: integer
-                    format: int32
                   algorithms:
                     default:
                     - gzip
@@ -139,12 +144,31 @@ spec:
                     items:
                       type: string
                     type: array
+                  enabled:
+                    default: false
+                    description: Enabled enables response compression
+                    type: boolean
                   excludeTypes:
-                    description: ExcludeTypes is a list of content type patterns to
-                      skip compression
+                    description: |-
+                      ExcludeTypes is a list of content type patterns to skip compression
+                      Supports glob-style wildcards (e.g., "image/*", "video/*")
                     items:
                       type: string
                     type: array
+                  level:
+                    default: 6
+                    description: Level is the compression level (1-9 for gzip, 0-11
+                      for brotli)
+                    format: int32
+                    maximum: 11
+                    minimum: 0
+                    type: integer
+                  minSize:
+                    default: "1024"
+                    description: |-
+                      MinSize is the minimum response body size in bytes before compression triggers
+                      Responses smaller than this are sent uncompressed
+                    type: string
                 type: object
               customErrorPages:
                 description: CustomErrorPages defines custom error pages
@@ -174,6 +198,48 @@ spec:
                   - codes
                   type: object
                 type: array
+              grpcRoute:
+                description: GRPCRoute defines gRPC-specific routing configuration
+                properties:
+                  enabled:
+                    default: false
+                    description: Enabled enables gRPC request routing through the
+                      Gateway API GRPCRoute resources
+                    type: boolean
+                type: object
+              http3:
+                description: HTTP3 defines HTTP/3 (QUIC) protocol configuration
+                properties:
+                  altSvcMaxAge:
+                    default: 2592000
+                    description: |-
+                      AltSvcMaxAge is the max-age for the Alt-Svc header in seconds
+                      Clients cache the HTTP/3 availability for this duration
+                    format: int64
+                    type: integer
+                  enabled:
+                    default: false
+                    description: Enabled enables HTTP/3 support on this gateway
+                    type: boolean
+                  maxIdleTimeout:
+                    default: 30s
+                    description: MaxIdleTimeout is the maximum idle timeout for QUIC
+                      connections
+                    type: string
+                  port:
+                    description: Port is the UDP port for QUIC connections (defaults
+                      to same as HTTPS port)
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  zeroRTT:
+                    default: false
+                    description: |-
+                      ZeroRTT enables 0-RTT connection resumption for faster handshakes
+                      Note: 0-RTT data may be replayed by attackers; only enable for idempotent endpoints
+                    type: boolean
+                type: object
               ingressClassName:
                 description: IngressClassName is the ingress class name for Ingress
                   resource compatibility
@@ -191,6 +257,46 @@ spec:
                       items:
                         type: string
                       type: array
+                    clientAuth:
+                      description: ClientAuth configures mTLS client certificate authentication
+                      properties:
+                        caCertRef:
+                          description: |-
+                            CACertRef references a Kubernetes Secret containing the CA certificate bundle
+                            for verifying client certificates. The Secret should contain a "ca.crt" key.
+                          properties:
+                            name:
+                              description: name is unique within a namespace to reference
+                                a secret resource.
+                              type: string
+                            namespace:
+                              description: namespace defines the space within which
+                                the secret name must be unique.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        mode:
+                          default: none
+                          description: Mode defines the client certificate authentication
+                            mode
+                          enum:
+                          - none
+                          - optional
+                          - require
+                          type: string
+                        requiredCNPatterns:
+                          description: RequiredCNPatterns are regex patterns that
+                            the client certificate Common Name must match
+                          items:
+                            type: string
+                          type: array
+                        requiredSANs:
+                          description: RequiredSANs are Subject Alternative Names
+                            that the client certificate must contain
+                          items:
+                            type: string
+                          type: array
+                      type: object
                     hostnames:
                       description: Hostnames is a list of hostnames this listener
                         accepts (for HTTP/HTTPS/HTTP3)
@@ -207,6 +313,10 @@ spec:
                       maxLength: 253
                       minLength: 1
                       type: string
+                    ocspStapling:
+                      description: OCSPStapling enables OCSP stapling for TLS certificates
+                        on this listener
+                      type: boolean
                     port:
                       description: Port is the network port to listen on
                       format: int32
@@ -220,7 +330,32 @@ spec:
                       - HTTPS
                       - TCP
                       - TLS
+                      - UDP
                       type: string
+                    proxyProtocol:
+                      description: ProxyProtocol configures PROXY protocol parsing
+                        on this listener
+                      properties:
+                        enabled:
+                          description: Enabled enables PROXY protocol parsing on this
+                            listener
+                          type: boolean
+                        trustedCIDRs:
+                          description: |-
+                            TrustedCIDRs defines source CIDR ranges from which PROXY protocol headers are trusted.
+                            If empty, PROXY protocol is accepted from any source.
+                          items:
+                            type: string
+                          type: array
+                        version:
+                          default: 0
+                          description: Version is the PROXY protocol version to accept
+                            (1, 2, or 0 for both)
+                          format: int32
+                          maximum: 2
+                          minimum: 0
+                          type: integer
+                      type: object
                     quic:
                       description: QUIC contains QUIC-specific configuration (optional
                         for HTTP3 protocol)
@@ -347,6 +482,29 @@ spec:
                                 (default: 8760h = 1 year)'
                               type: string
                           type: object
+                        vaultCertRef:
+                          description: |-
+                            VaultCertRef references a certificate from HashiCorp Vault PKI
+                            The controller will request the cert from Vault and cache it in a K8s Secret
+                          properties:
+                            cacheSecretName:
+                              description: CacheSecretName is the name of the K8s
+                                Secret to cache the Vault-issued cert
+                              type: string
+                            path:
+                              description: Path is the Vault PKI secrets engine mount
+                                path
+                              type: string
+                            role:
+                              description: Role is the Vault PKI role name
+                              type: string
+                            ttl:
+                              description: TTL is the requested certificate TTL
+                              type: string
+                          required:
+                          - path
+                          - role
+                          type: object
                       type: object
                     tlsCertificates:
                       additionalProperties:
@@ -443,6 +601,29 @@ spec:
                                   duration (default: 8760h = 1 year)'
                                 type: string
                             type: object
+                          vaultCertRef:
+                            description: |-
+                              VaultCertRef references a certificate from HashiCorp Vault PKI
+                              The controller will request the cert from Vault and cache it in a K8s Secret
+                            properties:
+                              cacheSecretName:
+                                description: CacheSecretName is the name of the K8s
+                                  Secret to cache the Vault-issued cert
+                                type: string
+                              path:
+                                description: Path is the Vault PKI secrets engine
+                                  mount path
+                                type: string
+                              role:
+                                description: Role is the Vault PKI role name
+                                type: string
+                              ttl:
+                                description: TTL is the requested certificate TTL
+                                type: string
+                            required:
+                            - path
+                            - role
+                            type: object
                         type: object
                       description: |-
                         TLSCertificates provides SNI support with multiple TLS certificates per listener
@@ -456,6 +637,12 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              loadBalancerClass:
+                description: |-
+                  LoadBalancerClass specifies the load balancer class this gateway belongs to.
+                  Controllers only reconcile gateways matching their configured class.
+                  Default: "novaedge.io/proxy"
+                type: string
               redirectScheme:
                 description: RedirectScheme defines HTTP to HTTPS redirect configuration
                 properties:
@@ -484,6 +671,28 @@ spec:
                     enum:
                     - 301
                     - 302
+                    format: int32
+                    type: integer
+                type: object
+              sse:
+                description: SSE defines Server-Sent Events configuration
+                properties:
+                  heartbeatInterval:
+                    default: 30s
+                    description: |-
+                      HeartbeatInterval is the interval at which keepalive comments are sent
+                      to prevent intermediate proxies from closing the connection
+                    type: string
+                  idleTimeout:
+                    default: 5m
+                    description: |-
+                      IdleTimeout is the maximum time an SSE connection can be idle before being closed
+                      SSE connections typically need longer timeouts than regular HTTP requests
+                    type: string
+                  maxConnections:
+                    description: |-
+                      MaxConnections is the maximum number of concurrent SSE connections per listener
+                      0 means unlimited
                     format: int32
                     type: integer
                 type: object
