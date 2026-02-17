@@ -46,12 +46,109 @@ spec:
           spec:
             description: ProxyRouteSpec defines the desired state of ProxyRoute
             properties:
+              accessLog:
+                description: |-
+                  AccessLog defines per-route access logging configuration
+                  Overrides gateway-level access log settings for this route
+                properties:
+                  enabled:
+                    description: Enabled enables access logging for this route
+                    type: boolean
+                  filePath:
+                    description: FilePath is the path to the log file
+                    type: string
+                  filterStatusCodes:
+                    description: FilterStatusCodes limits logging to specific HTTP
+                      status codes
+                    items:
+                      format: int32
+                      type: integer
+                    type: array
+                  format:
+                    description: Format specifies the log format (json, clf, custom)
+                    enum:
+                    - json
+                    - clf
+                    - custom
+                    type: string
+                  maxBackups:
+                    description: MaxBackups is the maximum number of rotated log files
+                      to retain
+                    format: int32
+                    type: integer
+                  maxSize:
+                    description: MaxSize is the maximum size of a log file before
+                      rotation (e.g., "100Mi")
+                    type: string
+                  output:
+                    description: Output defines where logs are written (stdout, file,
+                      both)
+                    enum:
+                    - stdout
+                    - file
+                    - both
+                    type: string
+                  sampleRate:
+                    description: SampleRate defines the percentage of requests to
+                      log (0-100)
+                    format: int32
+                    maximum: 100
+                    minimum: 0
+                    type: integer
+                  template:
+                    description: Template defines a custom log format template (for
+                      format=custom)
+                    type: string
+                type: object
+              expression:
+                description: |-
+                  Expression is a boolean routing expression for advanced matching
+                  Syntax: (header:X-Env == "staging") AND (path prefix "/api" OR path prefix "/v2")
+                type: string
               hostnames:
                 description: Hostnames defines the hostnames for which this route
                   applies
                 items:
                   type: string
                 type: array
+              pipeline:
+                description: Pipeline defines a composable middleware pipeline for
+                  this route
+                properties:
+                  middleware:
+                    description: Middleware is an ordered list of middleware references
+                    items:
+                      description: MiddlewareRefConfig references a middleware to
+                        include in the pipeline
+                      properties:
+                        config:
+                          additionalProperties:
+                            type: string
+                          description: Config holds optional key-value configuration
+                            for the middleware
+                          type: object
+                        name:
+                          description: Name identifies the middleware (builtin name
+                            or WASM plugin name)
+                          type: string
+                        priority:
+                          default: 100
+                          description: Priority determines execution order (lower
+                            = earlier)
+                          type: integer
+                        type:
+                          description: 'Type is the middleware type: builtin or wasm'
+                          enum:
+                          - builtin
+                          - wasm
+                          type: string
+                      required:
+                      - name
+                      - type
+                      type: object
+                    maxItems: 32
+                    type: array
+                type: object
               rules:
                 description: Rules are a list of HTTP routing rules
                 items:
@@ -84,6 +181,137 @@ spec:
                       maxItems: 16
                       minItems: 1
                       type: array
+                    bodyTransform:
+                      description: BodyTransform configures JSON body transformation
+                        for this rule
+                      properties:
+                        maxBodySize:
+                          default: 1048576
+                          description: MaxBodySize is the maximum body size for transformation
+                            in bytes (default 1MB)
+                          format: int64
+                          type: integer
+                        request:
+                          description: Request transforms to apply to request bodies
+                          items:
+                            description: TransformOperation represents a single JSON
+                              Patch operation (RFC 6902)
+                            properties:
+                              from:
+                                description: From is the source path for move/copy
+                                  operations (JSON Pointer)
+                                type: string
+                              op:
+                                description: 'Op is the operation: add, remove, replace,
+                                  move, copy'
+                                enum:
+                                - add
+                                - remove
+                                - replace
+                                - move
+                                - copy
+                                type: string
+                              path:
+                                description: Path is the JSON Pointer (RFC 6901) target
+                                  path
+                                type: string
+                              value:
+                                description: Value is the JSON-encoded value for add/replace
+                                  operations
+                                type: string
+                            required:
+                            - op
+                            - path
+                            type: object
+                          type: array
+                        response:
+                          description: Response transforms to apply to response bodies
+                          items:
+                            description: TransformOperation represents a single JSON
+                              Patch operation (RFC 6902)
+                            properties:
+                              from:
+                                description: From is the source path for move/copy
+                                  operations (JSON Pointer)
+                                type: string
+                              op:
+                                description: 'Op is the operation: add, remove, replace,
+                                  move, copy'
+                                enum:
+                                - add
+                                - remove
+                                - replace
+                                - move
+                                - copy
+                                type: string
+                              path:
+                                description: Path is the JSON Pointer (RFC 6901) target
+                                  path
+                                type: string
+                              value:
+                                description: Value is the JSON-encoded value for add/replace
+                                  operations
+                                type: string
+                            required:
+                            - op
+                            - path
+                            type: object
+                          type: array
+                      type: object
+                    buffering:
+                      description: Buffering defines request and response buffering
+                        settings
+                      properties:
+                        maxSize:
+                          description: |-
+                            MaxSize is the maximum buffer size (e.g., "50Mi", "52428800")
+                            Bodies exceeding this receive 413 for requests or stream-through for responses
+                          type: string
+                        request:
+                          description: |-
+                            Request enables buffering the entire request body before forwarding
+                            This is required for retry support since the body must be re-readable
+                          type: boolean
+                        response:
+                          description: |-
+                            Response enables buffering the entire response body before sending to client
+                            This is useful for response transformations
+                          type: boolean
+                      type: object
+                    faultInjection:
+                      description: FaultInjection configures fault injection for chaos
+                        engineering
+                      properties:
+                        abortPercent:
+                          description: AbortPercent is the percentage of requests
+                            to abort (0-100)
+                          format: int32
+                          maximum: 100
+                          minimum: 0
+                          type: integer
+                        abortStatusCode:
+                          description: AbortStatusCode is the HTTP status code for
+                            aborted requests
+                          format: int32
+                          maximum: 599
+                          minimum: 200
+                          type: integer
+                        delayDuration:
+                          description: DelayDuration is the fixed delay to inject
+                            (e.g. "500ms", "2s")
+                          type: string
+                        delayPercent:
+                          description: DelayPercent is the percentage of requests
+                            to delay (0-100)
+                          format: int32
+                          maximum: 100
+                          minimum: 0
+                          type: integer
+                        headerActivation:
+                          description: HeaderActivation is an optional header that
+                            must be present to activate fault injection
+                          type: string
+                      type: object
                     filters:
                       description: Filters define processing steps that must be completed
                         during the request or response lifecycle
@@ -215,6 +443,26 @@ spec:
                         type: object
                       maxItems: 16
                       type: array
+                    limits:
+                      description: Limits defines per-route request size limits and
+                        timeouts
+                      properties:
+                        idleTimeout:
+                          description: |-
+                            IdleTimeout is the connection idle timeout (e.g., "60s")
+                            Connections with no data received within this time are closed
+                          type: string
+                        maxRequestBodySize:
+                          description: |-
+                            MaxRequestBodySize is the maximum request body size (e.g., "10Mi", "1048576")
+                            Requests exceeding this limit receive a 413 Payload Too Large response
+                          type: string
+                        requestTimeout:
+                          description: |-
+                            RequestTimeout is the total request timeout (e.g., "30s", "1m")
+                            If the upstream does not respond in time, a 504 Gateway Timeout is returned
+                          type: string
+                      type: object
                     matches:
                       description: Matches define conditions used for matching the
                         rule against incoming requests
@@ -317,6 +565,81 @@ spec:
                         Overrides the listener-level setting for this specific route
                       format: int64
                       type: integer
+                    mirror:
+                      description: Mirror configures traffic mirroring for this route
+                        rule
+                      properties:
+                        backendRef:
+                          description: BackendRef references the mirror backend
+                          properties:
+                            name:
+                              description: Name is the name of the ProxyBackend
+                              type: string
+                            namespace:
+                              description: Namespace is the namespace of the ProxyBackend
+                                (defaults to route namespace)
+                              type: string
+                            weight:
+                              default: 1
+                              description: Weight defines the proportion of requests
+                                sent to this backend
+                              format: int32
+                              minimum: 0
+                              type: integer
+                          required:
+                          - name
+                          type: object
+                        percentage:
+                          default: 100
+                          description: Percentage is the percentage of requests to
+                            mirror (0-100)
+                          format: int32
+                          maximum: 100
+                          minimum: 0
+                          type: integer
+                      required:
+                      - backendRef
+                      type: object
+                    retry:
+                      description: Retry defines automatic retry behavior for failed
+                        requests to backends
+                      properties:
+                        backoffBase:
+                          description: BackoffBase is the base interval for exponential
+                            backoff between retries
+                          type: string
+                        maxRetries:
+                          default: 3
+                          description: MaxRetries is the maximum number of retry attempts
+                          format: int32
+                          maximum: 10
+                          minimum: 0
+                          type: integer
+                        perTryTimeout:
+                          description: PerTryTimeout is the timeout for each retry
+                            attempt
+                          type: string
+                        retryBudget:
+                          description: RetryBudget is the percentage of requests that
+                            can be retried (0.0-1.0)
+                          maximum: 1
+                          minimum: 0
+                          type: number
+                        retryMethods:
+                          description: |-
+                            RetryMethods specifies which HTTP methods are eligible for retry
+                            Default: GET, HEAD, OPTIONS
+                          items:
+                            type: string
+                          type: array
+                        retryOn:
+                          description: |-
+                            RetryOn specifies conditions that trigger a retry
+                            Valid values: "5xx", "connection-failure", "reset", "refused-stream"
+                          items:
+                            type: string
+                          type: array
+                      type: object
                     timeout:
                       description: Timeout is the request timeout for this rule
                       type: string

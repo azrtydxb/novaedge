@@ -66,6 +66,9 @@ docs/plans/
 !config/samples/**/*.key
 !config/samples/**/*.crt
 
+# MkDocs build output
+site/
+
 # Frontend build output
 web/dist/
 web/node_modules/
