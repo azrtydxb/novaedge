@@ -24,6 +24,8 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testLocalAgentSPIFFE = "spiffe://cluster.local/agent/node-1"
+
 func TestParseSPIFFEID(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -79,7 +81,7 @@ func TestParseSPIFFEID(t *testing.T) {
 }
 
 func TestParseSPIFFEIDAgentFormat(t *testing.T) {
-	id := ParseSPIFFEID("spiffe://cluster.local/agent/node-1")
+	id := ParseSPIFFEID(testLocalAgentSPIFFE)
 	if id.TrustDomain != "cluster.local" {
 		t.Errorf("TrustDomain = %q, want %q", id.TrustDomain, "cluster.local")
 	}
@@ -89,8 +91,8 @@ func TestParseSPIFFEIDAgentFormat(t *testing.T) {
 	if id.ServiceAccount != "" {
 		t.Errorf("ServiceAccount = %q, want empty", id.ServiceAccount)
 	}
-	if id.SpiffeID != "spiffe://cluster.local/agent/node-1" {
-		t.Errorf("SpiffeID = %q, want %q", id.SpiffeID, "spiffe://cluster.local/agent/node-1")
+	if id.SpiffeID != testLocalAgentSPIFFE {
+		t.Errorf("SpiffeID = %q, want %q", id.SpiffeID, testLocalAgentSPIFFE)
 	}
 }
 
@@ -339,4 +341,181 @@ func TestAuthorizeOpaqueTCP(t *testing.T) {
 	if !authz.Authorize(source, "database.default", "", "") {
 		t.Error("expected allow for opaque TCP when To is empty")
 	}
+}
+
+func TestParseSPIFFEIDFederated(t *testing.T) {
+	tests := []struct {
+		name             string
+		input            string
+		wantFederationID string
+		wantClusterName  string
+		wantNodeName     string
+		wantTrustDomain  string
+	}{
+		{
+			name:             "federated agent identity",
+			input:            "spiffe://my-federation/cluster/cluster-east/agent/node-1",
+			wantFederationID: "my-federation",
+			wantClusterName:  "cluster-east",
+			wantNodeName:     "node-1",
+			wantTrustDomain:  "my-federation",
+		},
+		{
+			name:             "federated agent with dots in names",
+			input:            "spiffe://prod.federation.io/cluster/us-west-2.prod/agent/worker-03",
+			wantFederationID: "prod.federation.io",
+			wantClusterName:  "us-west-2.prod",
+			wantNodeName:     "worker-03",
+			wantTrustDomain:  "prod.federation.io",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := ParseSPIFFEID(tt.input)
+			if got.FederationID != tt.wantFederationID {
+				t.Errorf("FederationID = %q, want %q", got.FederationID, tt.wantFederationID)
+			}
+			if got.ClusterName != tt.wantClusterName {
+				t.Errorf("ClusterName = %q, want %q", got.ClusterName, tt.wantClusterName)
+			}
+			if got.NodeName != tt.wantNodeName {
+				t.Errorf("NodeName = %q, want %q", got.NodeName, tt.wantNodeName)
+			}
+			if got.TrustDomain != tt.wantTrustDomain {
+				t.Errorf("TrustDomain = %q, want %q", got.TrustDomain, tt.wantTrustDomain)
+			}
+			if !got.IsFederated() {
+				t.Error("expected IsFederated() to return true")
+			}
+		})
+	}
+}
+
+func TestParseSPIFFEIDLocalAgentNodeName(t *testing.T) {
+	id := ParseSPIFFEID(testLocalAgentSPIFFE)
+	if id.NodeName != "node-1" {
+		t.Errorf("NodeName = %q, want %q", id.NodeName, "node-1")
+	}
+	if id.IsFederated() {
+		t.Error("expected IsFederated() to return false for local agent identity")
+	}
+}
+
+func TestSourceIdentityIsFederated(t *testing.T) {
+	tests := []struct {
+		name     string
+		identity SourceIdentity
+		want     bool
+	}{
+		{
+			name:     "federated",
+			identity: SourceIdentity{FederationID: "fed-1", ClusterName: "cluster-a"},
+			want:     true,
+		},
+		{
+			name:     "missing cluster",
+			identity: SourceIdentity{FederationID: "fed-1"},
+			want:     false,
+		},
+		{
+			name:     "missing federation",
+			identity: SourceIdentity{ClusterName: "cluster-a"},
+			want:     false,
+		},
+		{
+			name:     "empty",
+			identity: SourceIdentity{},
+			want:     false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.identity.IsFederated(); got != tt.want {
+				t.Errorf("IsFederated() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFederationConfig(t *testing.T) {
+	t.Run("inactive when empty", func(t *testing.T) {
+		cfg := FederationConfig{}
+		if cfg.IsActive() {
+			t.Error("expected IsActive() to return false for empty config")
+		}
+		if cfg.IsClusterAllowed("any") {
+			t.Error("expected IsClusterAllowed() to return false when inactive")
+		}
+	})
+
+	t.Run("active with allowed clusters", func(t *testing.T) {
+		cfg := FederationConfig{
+			FederationID:    "my-fed",
+			ClusterName:     "cluster-a",
+			AllowedClusters: []string{"cluster-b", "cluster-c"},
+		}
+		if !cfg.IsActive() {
+			t.Error("expected IsActive() to return true")
+		}
+		if !cfg.IsClusterAllowed("cluster-b") {
+			t.Error("expected cluster-b to be allowed")
+		}
+		if !cfg.IsClusterAllowed("cluster-c") {
+			t.Error("expected cluster-c to be allowed")
+		}
+		if cfg.IsClusterAllowed("cluster-d") {
+			t.Error("expected cluster-d to be rejected")
+		}
+	})
+}
+
+func TestBuildSPIFFEID(t *testing.T) {
+	t.Run("local (no federation)", func(t *testing.T) {
+		got := BuildSPIFFEID("cluster.local", "node-1", nil)
+		want := testLocalAgentSPIFFE
+		if got != want {
+			t.Errorf("BuildSPIFFEID() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("local (inactive federation)", func(t *testing.T) {
+		cfg := &FederationConfig{}
+		got := BuildSPIFFEID("cluster.local", "node-1", cfg)
+		want := testLocalAgentSPIFFE
+		if got != want {
+			t.Errorf("BuildSPIFFEID() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("federated", func(t *testing.T) {
+		cfg := &FederationConfig{
+			FederationID: "prod-federation",
+			ClusterName:  "us-east-1",
+		}
+		got := BuildSPIFFEID("cluster.local", "node-1", cfg)
+		want := "spiffe://prod-federation/cluster/us-east-1/agent/node-1"
+		if got != want {
+			t.Errorf("BuildSPIFFEID() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("roundtrip parse", func(t *testing.T) {
+		cfg := &FederationConfig{
+			FederationID: "my-fed",
+			ClusterName:  "cluster-west",
+		}
+		spiffeID := BuildSPIFFEID("cluster.local", "worker-5", cfg)
+		parsed := ParseSPIFFEID(spiffeID)
+		if parsed.FederationID != "my-fed" {
+			t.Errorf("FederationID = %q, want %q", parsed.FederationID, "my-fed")
+		}
+		if parsed.ClusterName != "cluster-west" {
+			t.Errorf("ClusterName = %q, want %q", parsed.ClusterName, "cluster-west")
+		}
+		if parsed.NodeName != "worker-5" {
+			t.Errorf("NodeName = %q, want %q", parsed.NodeName, "worker-5")
+		}
+	})
 }

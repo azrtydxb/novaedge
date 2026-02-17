@@ -234,6 +234,18 @@ spec:
                   - name
                   type: object
                 type: array
+              mode:
+                default: mesh
+                description: |-
+                  Mode configures the federation operating mode.
+                  hub-spoke: one-way config push from hub to spoke clusters.
+                  mesh: bidirectional sync with cross-cluster endpoint merging.
+                  unified: shared service namespace with location-aware routing.
+                enum:
+                - hub-spoke
+                - mesh
+                - unified
+                type: string
               paused:
                 default: false
                 description: Paused suspends federation sync

@@ -20,6 +20,29 @@ import (
 	"time"
 )
 
+const (
+	// ModeHubSpoke is the hub-spoke federation topology.
+	ModeHubSpoke = "hub-spoke"
+
+	// ModeMesh is the full-mesh federation topology.
+	ModeMesh = "mesh"
+
+	// ModeUnified is the unified federation mode with shared service namespace.
+	ModeUnified = "unified"
+
+	// RepairModePull only pulls missing/outdated resources from peers.
+	RepairModePull = "pull"
+
+	// RepairModePush only pushes our resources to peers.
+	RepairModePush = "push"
+
+	// RepairModeBidirectional exchanges resources in both directions.
+	RepairModeBidirectional = "bidirectional"
+
+	// StrategyLastWriterWins resolves conflicts using timestamp comparison.
+	StrategyLastWriterWins = "LastWriterWins"
+)
+
 // PeerInfo contains information about a federation peer
 type PeerInfo struct {
 	// Name is the unique name of this peer
@@ -272,6 +295,9 @@ const (
 
 // Config holds the runtime configuration for federation
 type Config struct {
+	// Mode is the federation operating mode (hub-spoke, mesh, unified)
+	Mode string
+
 	// FederationID is the unique identifier for this federation
 	FederationID string
 
@@ -319,16 +345,157 @@ type Config struct {
 
 	// SuccessThreshold is successes before marking healthy
 	SuccessThreshold int32
+
+	// SplitBrain configures split-brain detection and handling.
+	// When nil, split-brain detection is disabled.
+	SplitBrain *SplitBrainConfig
+}
+
+// Equal returns true when two configs are functionally identical.
+// Peer ordering is ignored; peers are matched by name.
+func (c *Config) Equal(other *Config) bool {
+	if c == other {
+		return true
+	}
+	if c == nil || other == nil {
+		return false
+	}
+
+	// Scalar / top-level fields
+	if c.Mode != other.Mode ||
+		c.FederationID != other.FederationID ||
+		c.SyncInterval != other.SyncInterval ||
+		c.SyncTimeout != other.SyncTimeout ||
+		c.BatchSize != other.BatchSize ||
+		c.CompressionEnabled != other.CompressionEnabled ||
+		c.ConflictResolutionStrategy != other.ConflictResolutionStrategy ||
+		c.VectorClocksEnabled != other.VectorClocksEnabled ||
+		c.TombstoneTTL != other.TombstoneTTL ||
+		c.HealthCheckInterval != other.HealthCheckInterval ||
+		c.HealthCheckTimeout != other.HealthCheckTimeout ||
+		c.FailureThreshold != other.FailureThreshold ||
+		c.SuccessThreshold != other.SuccessThreshold {
+		return false
+	}
+
+	// LocalMember
+	if !peerInfoEqual(c.LocalMember, other.LocalMember) {
+		return false
+	}
+
+	// Peers (order-independent)
+	if len(c.Peers) != len(other.Peers) {
+		return false
+	}
+	peerMap := make(map[string]*PeerInfo, len(c.Peers))
+	for _, p := range c.Peers {
+		peerMap[p.Name] = p
+	}
+	for _, p := range other.Peers {
+		existing, ok := peerMap[p.Name]
+		if !ok || !peerInfoEqual(existing, p) {
+			return false
+		}
+	}
+
+	// Slice fields
+	if !stringSliceEqual(c.ResourceTypes, other.ResourceTypes) {
+		return false
+	}
+	if !stringSliceEqual(c.ExcludeNamespaces, other.ExcludeNamespaces) {
+		return false
+	}
+
+	// SplitBrain (nil-safe)
+	if !splitBrainConfigEqual(c.SplitBrain, other.SplitBrain) {
+		return false
+	}
+
+	return true
+}
+
+// peerInfoEqual compares two PeerInfo values for equality.
+func peerInfoEqual(a, b *PeerInfo) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Name != b.Name ||
+		a.Endpoint != b.Endpoint ||
+		a.Region != b.Region ||
+		a.Zone != b.Zone ||
+		a.Priority != b.Priority ||
+		a.TLSEnabled != b.TLSEnabled ||
+		a.TLSServerName != b.TLSServerName ||
+		a.InsecureSkipVerify != b.InsecureSkipVerify {
+		return false
+	}
+	if !stringMapEqual(a.Labels, b.Labels) {
+		return false
+	}
+	// TLS cert data is compared by content
+	if string(a.CACert) != string(b.CACert) ||
+		string(a.ClientCert) != string(b.ClientCert) ||
+		string(a.ClientKey) != string(b.ClientKey) {
+		return false
+	}
+	return true
+}
+
+// splitBrainConfigEqual compares two SplitBrainConfig values.
+func splitBrainConfigEqual(a, b *SplitBrainConfig) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.PartitionTimeout == b.PartitionTimeout &&
+		a.QuorumRequired == b.QuorumRequired &&
+		a.QuorumSize == b.QuorumSize &&
+		a.HealingGracePeriod == b.HealingGracePeriod &&
+		a.AutoResolveOnHeal == b.AutoResolveOnHeal &&
+		a.FencingEnabled == b.FencingEnabled &&
+		a.QuorumMode == b.QuorumMode
+}
+
+// stringSliceEqual returns true when two string slices have the same elements in the same order.
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// stringMapEqual returns true when two string maps have identical key-value pairs.
+func stringMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || v != bv {
+			return false
+		}
+	}
+	return true
 }
 
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
+		Mode:                       ModeMesh,
 		SyncInterval:               5 * time.Second,
 		SyncTimeout:                30 * time.Second,
 		BatchSize:                  100,
 		CompressionEnabled:         true,
-		ConflictResolutionStrategy: "LastWriterWins",
+		ConflictResolutionStrategy: StrategyLastWriterWins,
 		VectorClocksEnabled:        true,
 		TombstoneTTL:               24 * time.Hour,
 		HealthCheckInterval:        10 * time.Second,

@@ -1,0 +1,126 @@
+---
+# Example: Remote Cluster with Direct Connectivity
+#
+# A NovaEdgeRemoteCluster represents an edge or satellite cluster whose agents
+# connect back to a hub controller. In Direct mode, agents reach the controller
+# over the network without any tunnel (suitable when clusters share a VPN,
+# peered VPCs, or public endpoints).
+#
+# This example registers a remote cluster in AWS eu-west-1 with routing
+# configuration for cross-cluster traffic and health monitoring.
+#
+# Prerequisites:
+#   1. Deploy this resource on the HUB cluster.
+#   2. Create mTLS secrets so agents in the remote cluster can authenticate:
+#      kubectl -n novaedge-system create secret tls remote-cluster-ca \
+#        --cert=ca.crt --key=ca.key
+#      kubectl -n novaedge-system create secret tls remote-agent-cert \
+#        --cert=agent.crt --key=agent.key
+#   3. Ensure the controller endpoint (port 9090) is reachable from the
+#      remote cluster's network.
+
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeRemoteCluster
+metadata:
+  name: edge-eu-west
+  namespace: novaedge-system
+spec:
+  # Unique name for this remote cluster
+  clusterName: edge-eu-west
+
+  # Geographic location (used for locality-aware routing)
+  region: eu-west-1
+  zone: eu-west-1a
+
+  # Additional labels applied to resources originating from this cluster
+  labels:
+    environment: production
+    cloud: aws
+    cost-center: eu-ops
+
+  # Connection defines how remote agents reach the hub controller
+  connection:
+    # Direct mode: agents connect over the network without a tunnel
+    mode: Direct
+
+    # Hub controller's gRPC endpoint (external address or VPN-accessible)
+    controllerEndpoint: "novaedge-hub.example.com:9090"
+
+    # mTLS secures agent-to-controller communication
+    tls:
+      enabled: true
+      caSecretRef:
+        name: remote-cluster-ca
+        namespace: novaedge-system
+      clientCertSecretRef:
+        name: remote-agent-cert
+        namespace: novaedge-system
+      serverName: novaedge-hub.example.com
+
+    # Reconnect every 30s if the connection drops
+    reconnectInterval: 30s
+    # Connection timeout
+    timeout: 10s
+
+  # Agent configuration for the remote cluster
+  agent:
+    # Pin agent version (omit to use hub's default)
+    version: "v1.0.3"
+    # Only run agents on nodes with this label
+    nodeSelector:
+      novaedge.io/agent: "true"
+    # Allow agents on tainted edge nodes
+    tolerations:
+      - key: node-role.kubernetes.io/edge
+        operator: Exists
+        effect: NoSchedule
+    # Resource limits for agents in this cluster
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    # VIP configuration for the remote cluster
+    vip:
+      enabled: true
+      mode: L2
+
+  # Routing controls how traffic flows to/from this cluster
+  routing:
+    enabled: true
+    # Priority for failover ordering (lower = higher priority)
+    # Set higher than hub (100 > hub's 50) so hub is preferred
+    priority: 100
+    # Traffic weight for weighted load balancing (0-100)
+    weight: 50
+    # Prefer backends local to the requesting cluster before cross-cluster
+    localPreference: true
+    # Allow traffic to cross cluster boundaries when local backends are down
+    allowCrossClusterTraffic: true
+    # Only include endpoints from these namespaces
+    endpoints:
+      namespaces:
+        - default
+        - production
+        - services
+      excludeNamespaces:
+        - kube-system
+        - monitoring
+
+  # Health monitoring from the hub
+  healthCheck:
+    enabled: true
+    # Check remote cluster health every 30 seconds
+    interval: 30s
+    timeout: 10s
+    # Require 2 consecutive successes to mark as healthy
+    healthyThreshold: 2
+    # Require 3 consecutive failures to mark as unhealthy
+    unhealthyThreshold: 3
+    # Automatically failover traffic when cluster becomes unhealthy
+    failoverEnabled: true
+
+  # Set to true to temporarily stop reconciling this cluster
+  paused: false

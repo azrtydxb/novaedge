@@ -42,9 +42,21 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// FederationStateProvider exposes the minimal federation state needed by the
+// snapshot builder to populate FederationMetadata on ConfigSnapshots and to
+// include remote endpoints from federated clusters.
+type FederationStateProvider interface {
+	GetFederationID() string
+	GetLocalMemberName() string
+	GetVectorClock() map[string]int64
+	IsActive() bool
+	GetRemoteEndpoints(namespace, serviceName string) []*pb.ServiceEndpoints
+}
+
 // Builder builds ConfigSnapshots from Kubernetes resources
 type Builder struct {
-	client client.Client
+	client             client.Client
+	federationProvider FederationStateProvider
 }
 
 // NewBuilder creates a new snapshot builder
@@ -52,6 +64,13 @@ func NewBuilder(client client.Client) *Builder {
 	return &Builder{
 		client: client,
 	}
+}
+
+// SetFederationProvider sets the federation state provider used to populate
+// FederationMetadata on built snapshots. When nil, snapshots are built
+// without federation metadata.
+func (b *Builder) SetFederationProvider(provider FederationStateProvider) {
+	b.federationProvider = provider
 }
 
 // BuildSnapshotWithExtensions builds a complete ConfigSnapshot with TLS extensions for a specific node
@@ -249,6 +268,11 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
+
+	// Enhance snapshot with federation metadata when federation is active
+	if b.federationProvider != nil && b.federationProvider.IsActive() {
+		b.enhanceWithFederation(snapshot)
+	}
 
 	// Record metrics
 	duration := time.Since(startTime).Seconds()
@@ -651,6 +675,24 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 				log.FromContext(ctx).Error(err, "Failed to resolve endpoints", "backend", backend.Name)
 				continue
 			}
+
+			// Merge remote endpoints from federated clusters when federation is active
+			if b.federationProvider != nil && b.federationProvider.IsActive() {
+				svcNamespace := getNamespace(backend.Spec.ServiceRef.Namespace, backend.Namespace)
+				remoteServiceEndpoints := b.federationProvider.GetRemoteEndpoints(svcNamespace, backend.Spec.ServiceRef.Name)
+				for _, remoteSvc := range remoteServiceEndpoints {
+					for _, ep := range remoteSvc.GetEndpoints() {
+						remoteEP := &pb.Endpoint{
+							Address: ep.Address,
+							Port:    ep.Port,
+							Ready:   ep.Ready,
+							Labels:  mergeRemoteEndpointLabels(ep.Labels, remoteSvc.ClusterName, remoteSvc.Region, remoteSvc.Zone),
+						}
+						endpointList.Endpoints = append(endpointList.Endpoints, remoteEP)
+					}
+				}
+			}
+
 			clusterKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
 			endpoints[clusterKey] = endpointList
 		}
@@ -936,6 +978,12 @@ func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *core
 	return endpoints, nil
 }
 
+// Topology label keys used for locality-aware routing.
+const (
+	topologyZoneLabel   = "topology.kubernetes.io/zone"
+	topologyRegionLabel = "topology.kubernetes.io/region"
+)
+
 // resolveServiceEndpoints resolves endpoints from a ServiceReference
 func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novaedgev1alpha1.ServiceReference, defaultNamespace string) (*pb.EndpointList, error) {
 	namespace := getNamespace(serviceRef.Namespace, defaultNamespace)
@@ -974,6 +1022,10 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 		}); err != nil {
 		return nil, fmt.Errorf("failed to list endpoint slices: %w", err)
 	}
+
+	// Cache Node objects to avoid repeated API calls for the same node name.
+	// Multiple endpoints often run on the same node.
+	nodeCache := make(map[string]*corev1.Node)
 
 	var endpoints []*pb.Endpoint
 	for _, es := range endpointSliceList.Items {
@@ -1019,17 +1071,105 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 
 			ready := ep.Conditions.Ready != nil && *ep.Conditions.Ready
 
+			// Build topology labels for locality-aware routing.
+			labels := b.resolveEndpointTopologyLabels(ctx, &ep, nodeCache)
+
 			for _, addr := range ep.Addresses {
 				endpoints = append(endpoints, &pb.Endpoint{
 					Address: addr,
 					Port:    port,
 					Ready:   ready,
+					Labels:  labels,
 				})
 			}
 		}
 	}
 
 	return &pb.EndpointList{Endpoints: endpoints}, nil
+}
+
+// resolveEndpointTopologyLabels extracts zone and region labels from an
+// EndpointSlice endpoint. Zone is taken from the endpoint's Zone field or
+// endpoint hints. Region is looked up from the Node that hosts the endpoint.
+// The nodeCache avoids repeated API calls for the same node.
+func (b *Builder) resolveEndpointTopologyLabels(ctx context.Context, ep *discoveryv1.Endpoint, nodeCache map[string]*corev1.Node) map[string]string {
+	labels := make(map[string]string)
+
+	// Zone: prefer the endpoint's Zone field (set by Kubernetes from the
+	// Node's topology.kubernetes.io/zone label), then fall back to hints.
+	if ep.Zone != nil && *ep.Zone != "" {
+		labels[topologyZoneLabel] = *ep.Zone
+	} else if ep.Hints != nil {
+		for _, hint := range ep.Hints.ForZones {
+			if hint.Name != "" {
+				labels[topologyZoneLabel] = hint.Name
+				break
+			}
+		}
+	}
+
+	// Region: look up the Node object to get topology.kubernetes.io/region.
+	if ep.NodeName != nil && *ep.NodeName != "" {
+		nodeName := *ep.NodeName
+		node, ok := nodeCache[nodeName]
+		if !ok {
+			n := &corev1.Node{}
+			if err := b.client.Get(ctx, types.NamespacedName{Name: nodeName}, n); err != nil {
+				log.FromContext(ctx).V(1).Info("Failed to get node for topology labels",
+					"node", nodeName, "error", err)
+				// Store nil to avoid retrying the same failed lookup.
+				nodeCache[nodeName] = nil
+			} else {
+				node = n
+				nodeCache[nodeName] = node
+			}
+		}
+		if node != nil {
+			if region, exists := node.Labels[topologyRegionLabel]; exists {
+				labels[topologyRegionLabel] = region
+			}
+			// If zone was not set from the endpoint, try the node label.
+			if _, hasZone := labels[topologyZoneLabel]; !hasZone {
+				if zone, exists := node.Labels[topologyZoneLabel]; exists {
+					labels[topologyZoneLabel] = zone
+				}
+			}
+		}
+	}
+
+	if len(labels) == 0 {
+		return nil
+	}
+	return labels
+}
+
+// Federation label keys used to tag remote endpoints.
+const (
+	federationClusterLabel = "novaedge.io/cluster"
+	federationRegionLabel  = "novaedge.io/region"
+	federationZoneLabel    = "novaedge.io/zone"
+	federationRemoteLabel  = "novaedge.io/remote"
+)
+
+// mergeRemoteEndpointLabels builds a label map for a remote endpoint by
+// preserving any existing labels from the remote side and overlaying
+// federation-specific cluster, region, zone, and remote marker labels.
+func mergeRemoteEndpointLabels(existing map[string]string, clusterName, region, zone string) map[string]string {
+	labels := make(map[string]string, len(existing)+4)
+	for k, v := range existing {
+		labels[k] = v
+	}
+	labels[federationRemoteLabel] = "true"
+	if clusterName != "" {
+		labels[federationClusterLabel] = clusterName
+	}
+	if region != "" {
+		labels[federationRegionLabel] = region
+	}
+	if zone != "" {
+		labels[federationZoneLabel] = zone
+	}
+	return labels
 }
 
 // loadTLSConfig loads TLS certificates from Kubernetes Secret
@@ -1211,4 +1351,17 @@ func convertMeshDestinations(dests []novaedgev1alpha1.MeshDestination) []*pb.Mes
 		})
 	}
 	return result
+}
+
+// enhanceWithFederation populates FederationMetadata on the snapshot using the
+// configured FederationStateProvider. This stamps every outbound snapshot with
+// the federation ID, origin controller name, and the current vector clock so
+// that agents and peer controllers can detect staleness and conflicts.
+func (b *Builder) enhanceWithFederation(snapshot *pb.ConfigSnapshot) {
+	fp := b.federationProvider
+	snapshot.FederationMetadata = &pb.FederationMetadata{
+		FederationId:     fp.GetFederationID(),
+		OriginController: fp.GetLocalMemberName(),
+		VectorClock:      fp.GetVectorClock(),
+	}
 }

@@ -1,0 +1,145 @@
+---
+# Example: Remote Cluster with WireGuard Tunnel
+#
+# When clusters cannot reach each other directly (NAT, firewalls, different
+# cloud providers), a WireGuard tunnel provides encrypted connectivity for
+# agent-to-controller communication.
+#
+# Topology:
+#   Remote cluster (on-prem)  --WireGuard tunnel-->  Hub cluster (cloud)
+#
+# Prerequisites:
+#   1. Deploy this resource on the HUB cluster.
+#   2. Generate WireGuard key pair for the remote cluster:
+#        wg genkey | tee privatekey | wg pubkey > publickey
+#   3. Store the private key as a Kubernetes secret in the remote cluster:
+#        kubectl -n novaedge-system create secret generic wg-private-key \
+#          --from-file=privateKey=./privatekey
+#   4. Create mTLS secrets for agent authentication (same as direct mode).
+#   5. The hub's WireGuard endpoint (UDP port 51820) must be reachable from
+#      the remote cluster's network.
+
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeRemoteCluster
+metadata:
+  name: edge-onprem-dc1
+  namespace: novaedge-system
+spec:
+  # Unique cluster name
+  clusterName: edge-onprem-dc1
+
+  # Geographic location
+  region: us-west-2
+  zone: datacenter-1
+
+  labels:
+    environment: production
+    connectivity: tunnel
+    location: on-premises
+
+  # Connection via WireGuard tunnel
+  connection:
+    # Tunnel mode for NAT/firewall traversal
+    mode: Tunnel
+
+    # The controller endpoint is reached THROUGH the tunnel, so use the
+    # tunnel-internal address (WireGuard interface IP)
+    controllerEndpoint: "10.200.0.1:9090"
+
+    # mTLS still secures the gRPC layer inside the tunnel (defense in depth)
+    tls:
+      enabled: true
+      caSecretRef:
+        name: remote-cluster-ca
+        namespace: novaedge-system
+      clientCertSecretRef:
+        name: remote-agent-cert
+        namespace: novaedge-system
+      # Use the tunnel-internal hostname or IP for TLS verification
+      serverName: novaedge-hub.internal
+
+    # Tunnel-specific configuration
+    tunnel:
+      # WireGuard provides kernel-level encrypted tunneling
+      type: WireGuard
+
+      # WireGuard configuration
+      wireGuard:
+        # Reference to the secret containing this cluster's WireGuard private key
+        privateKeySecretRef:
+          name: wg-private-key
+          key: privateKey
+
+        # The hub cluster's WireGuard public key
+        publicKey: "aB1cD2eF3gH4iJ5kL6mN7oP8qR9sT0uV1wX2yZ3A="
+
+        # Hub's WireGuard endpoint (must be publicly reachable)
+        endpoint: "wg-hub.example.com:51820"
+
+        # IP ranges routed through the tunnel
+        # Include the hub's pod CIDR and service CIDR
+        allowedIPs:
+          - "10.200.0.0/24"    # WireGuard tunnel network
+          - "10.96.0.0/12"     # Hub cluster service CIDR
+          - "10.244.0.0/16"    # Hub cluster pod CIDR
+
+        # Send keepalive every 25 seconds to maintain NAT mappings
+        persistentKeepalive: 25
+
+    # Reconnect more aggressively through tunnel since it may be less stable
+    reconnectInterval: 15s
+    timeout: 15s
+
+  # Agent configuration
+  agent:
+    version: "v1.0.3"
+    # On-prem nodes may have different labels
+    nodeSelector:
+      novaedge.io/agent: "true"
+    tolerations:
+      - key: node-role.kubernetes.io/edge
+        operator: Exists
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+      limits:
+        cpu: "1000m"
+        memory: "1Gi"
+    vip:
+      enabled: true
+      mode: L2
+    # Pass tunnel-related flags to the agent
+    extraArgs:
+      - "--tunnel-mtu=1420"
+
+  # Routing with tunnel considerations
+  routing:
+    enabled: true
+    # Lower priority than direct-connected clusters (tunnel adds latency)
+    priority: 200
+    # Lower weight reflects higher latency through the tunnel
+    weight: 30
+    # Strongly prefer local backends to avoid tunnel overhead
+    localPreference: true
+    # Still allow cross-cluster traffic for failover
+    allowCrossClusterTraffic: true
+    endpoints:
+      namespaces:
+        - default
+        - production
+
+  # Health checks adjusted for tunnel latency
+  healthCheck:
+    enabled: true
+    # Less frequent checks since tunnel adds latency
+    interval: 60s
+    # Longer timeout to account for tunnel overhead
+    timeout: 15s
+    healthyThreshold: 2
+    # More tolerant of failures since tunnel can be flaky
+    unhealthyThreshold: 5
+    failoverEnabled: true
+
+  paused: false

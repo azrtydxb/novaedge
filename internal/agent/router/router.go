@@ -18,6 +18,7 @@ package router
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -140,6 +141,15 @@ type Router struct {
 
 	// cacheConfig is set once during construction and never changes.
 	cacheConfig CacheConfig
+
+	// tunnelRegistry maps remote cluster names to their gateway agents.
+	// When non-nil, the router checks selected endpoints for the remote label
+	// and forwards through cross-cluster tunnels instead of direct connections.
+	tunnelRegistry *CrossClusterTunnelRegistry
+
+	// tunnelTLSConfig is the TLS configuration used for mTLS connections
+	// to remote cluster gateway agents. Required when tunnelRegistry is set.
+	tunnelTLSConfig *tls.Config
 }
 
 // NewRouter creates a new router
@@ -197,6 +207,22 @@ func (r *Router) SetWASMRuntime(rt *wasm.Runtime) {
 	updated := *old
 	updated.wasmRuntime = rt
 	r.state.Store(&updated)
+}
+
+// SetTunnelRegistry configures cross-cluster tunnel forwarding. When set, the
+// router will check selected endpoints for the novaedge.io/remote label and
+// forward matching requests through mTLS tunnels to remote cluster gateways.
+func (r *Router) SetTunnelRegistry(registry *CrossClusterTunnelRegistry, tlsConfig *tls.Config) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.tunnelRegistry = registry
+	r.tunnelTLSConfig = tlsConfig
+}
+
+// TunnelRegistry returns the cross-cluster tunnel registry, or nil if not configured.
+func (r *Router) TunnelRegistry() *CrossClusterTunnelRegistry {
+	return r.tunnelRegistry
 }
 
 // ApplyConfig applies a new configuration to the router

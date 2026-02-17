@@ -192,6 +192,15 @@ func (r *Router) forwardToBackend(snap *routerState, entry *RouteEntry, w http.R
 
 	backendSpan.SetAttributes(attribute.String("novaedge.lb.type", lbType))
 
+	// Check if this endpoint belongs to a remote cluster and needs tunneling
+	if r.tunnelRegistry != nil && r.tunnelRegistry.IsRemoteEndpoint(endpoint) {
+		backendSpan.AddEvent("remote_endpoint_detected", trace.WithAttributes(
+			attribute.String("endpoint", endpoint.Address),
+		))
+		r.forwardViaTunnel(ctx, w, req, endpoint, backendSpan)
+		return
+	}
+
 	// Execute the forward to the selected endpoint
 	r.executeForward(ctx, snap, entry, pool, endpoint, clusterKey, isGRPC, backendSpan, w, req)
 

@@ -268,7 +268,8 @@ spec:
                     description: HeaderName is the header name for header-based affinity
                     type: string
                   sameSite:
-                    description: SameSite sets the SameSite attribute on the affinity cookie
+                    description: SameSite sets the SameSite attribute on the affinity
+                      cookie
                     enum:
                     - Strict
                     - Lax
@@ -326,6 +327,24 @@ spec:
                     type: string
                 required:
                 - enabled
+                type: object
+              upstreamProxyProtocol:
+                description: |-
+                  UpstreamProxyProtocol configures sending PROXY protocol headers to this backend.
+                  This allows backends to see the real client IP when behind the proxy.
+                properties:
+                  enabled:
+                    description: Enabled enables sending PROXY protocol headers to
+                      this backend
+                    type: boolean
+                  version:
+                    default: 1
+                    description: 'Version is the PROXY protocol version to send (1
+                      or 2, default: 1)'
+                    format: int32
+                    maximum: 2
+                    minimum: 1
+                    type: integer
                 type: object
             type: object
           status:

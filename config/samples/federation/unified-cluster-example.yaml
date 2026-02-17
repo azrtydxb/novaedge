@@ -1,0 +1,124 @@
+---
+# Example: Unified Federation
+#
+# In unified mode, multiple clusters share a single service namespace and
+# behave as one logical load balancer. Endpoints from all clusters are merged
+# and location-aware routing directs traffic to the nearest healthy backend.
+#
+# Topology:
+#   cluster-us-east  \
+#   cluster-eu-west   |--- shared service namespace, location-aware routing
+#   cluster-ap-south /
+#
+# Use cases:
+#   - Global anycast-style load balancing
+#   - Region-aware failover with automatic cross-region fallback
+#   - Single control plane view across all regions
+#
+# Prerequisites:
+#   1. Create mTLS secrets in all three clusters.
+#   2. Ensure gRPC port 9443 is reachable between all clusters.
+#   3. Deploy this resource in ALL clusters, adjusting localMember per cluster.
+
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeFederation
+metadata:
+  name: unified-global
+  namespace: novaedge-system
+spec:
+  # unified: shared service namespace with location-aware routing
+  mode: unified
+
+  # Shared federation ID across all three clusters
+  federationID: global-unified
+
+  # This controller's identity (shown here for the US East cluster)
+  localMember:
+    name: cluster-us-east
+    region: us-east-1
+    zone: us-east-1a
+    endpoint: "novaedge-us.example.com:9443"
+    labels:
+      cloud: aws
+      tier: primary
+
+  # All other clusters in the federation
+  members:
+    - name: cluster-eu-west
+      region: eu-west-1
+      zone: eu-west-1b
+      endpoint: "novaedge-eu.example.com:9443"
+      # Equal priority across regions for unified behavior
+      priority: 100
+      labels:
+        cloud: aws
+        tier: primary
+      tls:
+        enabled: true
+        caSecretRef:
+          name: federation-ca
+          namespace: novaedge-system
+        clientCertSecretRef:
+          name: federation-client-cert
+          namespace: novaedge-system
+        serverName: novaedge-eu.example.com
+
+    - name: cluster-ap-south
+      region: ap-south-1
+      zone: ap-south-1a
+      endpoint: "novaedge-ap.example.com:9443"
+      priority: 100
+      labels:
+        cloud: aws
+        tier: primary
+      tls:
+        enabled: true
+        caSecretRef:
+          name: federation-ca
+          namespace: novaedge-system
+        clientCertSecretRef:
+          name: federation-client-cert
+          namespace: novaedge-system
+        serverName: novaedge-ap.example.com
+
+  # Aggressive sync for unified mode: endpoints must stay fresh
+  sync:
+    # Shorter interval keeps cross-cluster endpoint lists current
+    interval: 3s
+    timeout: 15s
+    # Larger batch size for unified mode which syncs all resource types
+    batchSize: 500
+    compression: true
+    # Sync everything for a true unified namespace
+    resourceTypes: []
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+
+  # Conflict resolution: LastWriterWins is safest for unified mode since
+  # all clusters should converge to the same state
+  conflictResolution:
+    strategy: LastWriterWins
+    vectorClocks: true
+    # Longer tombstone TTL prevents ghost resources across many clusters
+    tombstoneTTL: 48h
+
+  # Frequent health checks for fast cross-region failover
+  healthCheck:
+    interval: 5s
+    timeout: 3s
+    failureThreshold: 3
+    successThreshold: 1
+
+  # Strict split-brain protection for unified mode
+  splitBrain:
+    enabled: true
+    partitionTimeout: 20s
+    # With 3 controllers, traditional quorum (2 of 3) works well
+    quorumMode: Controllers
+    # Require quorum for writes to guarantee consistency
+    quorumRequired: true
+    # Fence writes during confirmed partition
+    fencingEnabled: true
+    healingGracePeriod: 10s
+    autoResolveOnHeal: true

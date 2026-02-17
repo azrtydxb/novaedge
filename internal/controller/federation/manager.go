@@ -37,6 +37,12 @@ type Manager struct {
 	// Server handles incoming connections from peers
 	server *Server
 
+	// Split-brain detector (nil when disabled)
+	splitBrain *SplitBrainDetector
+
+	// Anti-entropy manager for drift detection and repair
+	antiEntropy *AntiEntropyManager
+
 	// Clients for connecting to peers
 	clients   map[string]*PeerClient
 	clientsMu sync.RWMutex
@@ -67,7 +73,7 @@ func NewManager(config *Config, logger *zap.Logger) *Manager {
 
 // NewManagerFromCRD creates a federation manager from a NovaEdgeFederation CRD
 func NewManagerFromCRD(federation *novaedgev1alpha1.NovaEdgeFederation, logger *zap.Logger) (*Manager, error) {
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 	return NewManager(config, logger), nil
 }
 
@@ -80,7 +86,7 @@ type TLSCredentials struct {
 
 // NewManagerFromCRDWithCreds creates a federation manager from a NovaEdgeFederation CRD with TLS credentials
 func NewManagerFromCRDWithCreds(federation *novaedgev1alpha1.NovaEdgeFederation, tlsCreds map[string]*TLSCredentials, logger *zap.Logger) (*Manager, error) {
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 
 	// Apply TLS credentials to peers
 	for _, peer := range config.Peers {
@@ -99,10 +105,15 @@ func NewManagerFromCRDWithCreds(federation *novaedgev1alpha1.NovaEdgeFederation,
 	return NewManager(config, logger), nil
 }
 
-// crdToConfig converts a NovaEdgeFederation CRD to a Config
-func crdToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *Config {
+// CRDToConfig converts a NovaEdgeFederation CRD to a Config
+func CRDToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *Config {
 	config := DefaultConfig()
 	config.FederationID = fed.Spec.FederationID
+
+	// Mode (defaults to "mesh" via DefaultConfig)
+	if fed.Spec.Mode != "" {
+		config.Mode = string(fed.Spec.Mode)
+	}
 
 	// Local member
 	config.LocalMember = &PeerInfo{
@@ -197,6 +208,7 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	m.logger.Info("Starting federation manager",
 		zap.String("federation_id", m.config.FederationID),
+		zap.String("mode", m.config.Mode),
 		zap.String("local_member", m.config.LocalMember.Name),
 		zap.Int("peer_count", len(m.config.Peers)),
 	)
@@ -214,6 +226,44 @@ func (m *Manager) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start federation server: %w", err)
 	}
 
+	// Create and start split-brain detector when enabled
+	if m.config.SplitBrain != nil {
+		m.splitBrain = NewSplitBrainDetector(
+			m.config.SplitBrain,
+			m.server,
+			len(m.config.Peers),
+			m.logger,
+		)
+		m.splitBrain.Start(derivedCtx)
+		m.logger.Info("Split-brain detector started",
+			zap.Bool("fencing_enabled", m.config.SplitBrain.FencingEnabled),
+			zap.Bool("quorum_required", m.config.SplitBrain.QuorumRequired),
+			zap.String("quorum_mode", string(m.config.SplitBrain.QuorumMode)),
+		)
+	}
+
+	// Create and start anti-entropy manager with a peer client lookup function
+	// that safely retrieves clients from the Manager's client map.
+	// In hub-spoke mode, anti-entropy pull is skipped because the hub only
+	// pushes configuration and does not pull from spoke clusters.
+	if m.config.Mode != ModeHubSpoke {
+		m.antiEntropy = NewAntiEntropyManager(
+			DefaultAntiEntropyConfig(),
+			m.server,
+			func(peerName string) (*PeerClient, bool) {
+				m.clientsMu.RLock()
+				defer m.clientsMu.RUnlock()
+				c, ok := m.clients[peerName]
+				return c, ok
+			},
+			m.logger,
+		)
+		m.antiEntropy.Start(derivedCtx)
+		m.logger.Info("Anti-entropy manager started")
+	} else {
+		m.logger.Info("Anti-entropy skipped in hub-spoke mode")
+	}
+
 	// Create clients for each peer
 	for _, peer := range m.config.Peers {
 		client := NewPeerClient(peer, m.config, m.logger)
@@ -227,6 +277,9 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// Start health checker
 	go m.runHealthChecker(derivedCtx)
+
+	// Start periodic metrics collection
+	go m.runMetricsCollector(derivedCtx)
 
 	return nil
 }
@@ -242,6 +295,16 @@ func (m *Manager) Stop() {
 	m.mu.Unlock()
 
 	m.logger.Info("Stopping federation manager")
+
+	// Stop split-brain detector
+	if m.splitBrain != nil {
+		m.splitBrain.Stop()
+	}
+
+	// Stop anti-entropy manager
+	if m.antiEntropy != nil {
+		m.antiEntropy.Stop()
+	}
 
 	// Cancel context
 	if m.cancel != nil {
@@ -339,6 +402,122 @@ func (m *Manager) SetAgentCount(count int32) {
 	}
 }
 
+// UpdateConfig applies a new configuration to a running manager without restart.
+// Peers are added, removed, or updated dynamically and sync parameters are
+// adjusted in-place.
+func (m *Manager) UpdateConfig(newConfig *Config) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.started {
+		return fmt.Errorf("federation manager is not started")
+	}
+
+	oldConfig := m.config
+
+	// Nothing to do when configs are identical.
+	if oldConfig.Equal(newConfig) {
+		m.logger.Debug("Config unchanged, skipping update")
+		return nil
+	}
+
+	m.logger.Info("Applying federation config update",
+		zap.String("federation_id", newConfig.FederationID),
+	)
+
+	// --- Peer diff ---
+	oldPeers := make(map[string]*PeerInfo, len(oldConfig.Peers))
+	for _, p := range oldConfig.Peers {
+		oldPeers[p.Name] = p
+	}
+	newPeers := make(map[string]*PeerInfo, len(newConfig.Peers))
+	for _, p := range newConfig.Peers {
+		newPeers[p.Name] = p
+	}
+
+	// Remove peers that no longer exist
+	for name := range oldPeers {
+		if _, exists := newPeers[name]; !exists {
+			m.logger.Info("Removing federation peer", zap.String("peer", name))
+			m.clientsMu.Lock()
+			if client, ok := m.clients[name]; ok {
+				client.Disconnect()
+				delete(m.clients, name)
+			}
+			m.clientsMu.Unlock()
+		}
+	}
+
+	// Add new peers
+	for name, peerInfo := range newPeers {
+		if _, exists := oldPeers[name]; !exists {
+			m.logger.Info("Adding federation peer", zap.String("peer", name))
+			client := NewPeerClient(peerInfo, newConfig, m.logger)
+			m.clientsMu.Lock()
+			m.clients[name] = client
+			m.clientsMu.Unlock()
+			go m.maintainPeerConnection(name, client)
+		}
+	}
+
+	// Update existing peers whose TLS credentials changed
+	for name, newPeer := range newPeers {
+		oldPeer, exists := oldPeers[name]
+		if !exists {
+			continue // already handled above
+		}
+		if !peerInfoEqual(oldPeer, newPeer) {
+			m.logger.Info("Reconnecting federation peer due to config change",
+				zap.String("peer", name),
+			)
+			m.clientsMu.Lock()
+			if client, ok := m.clients[name]; ok {
+				client.Disconnect()
+				delete(m.clients, name)
+			}
+			newClient := NewPeerClient(newPeer, newConfig, m.logger)
+			m.clients[name] = newClient
+			m.clientsMu.Unlock()
+			go m.maintainPeerConnection(name, newClient)
+		}
+	}
+
+	// --- Update server sync parameters ---
+	if m.server != nil {
+		if oldConfig.SyncInterval != newConfig.SyncInterval {
+			m.logger.Info("Updating sync interval",
+				zap.Duration("old", oldConfig.SyncInterval),
+				zap.Duration("new", newConfig.SyncInterval),
+			)
+		}
+		if oldConfig.SyncTimeout != newConfig.SyncTimeout {
+			m.logger.Info("Updating sync timeout",
+				zap.Duration("old", oldConfig.SyncTimeout),
+				zap.Duration("new", newConfig.SyncTimeout),
+			)
+		}
+		if oldConfig.BatchSize != newConfig.BatchSize {
+			m.logger.Info("Updating batch size",
+				zap.Int32("old", oldConfig.BatchSize),
+				zap.Int32("new", newConfig.BatchSize),
+			)
+		}
+		// The server holds a pointer to config; update it atomically.
+		m.server.config = newConfig
+	}
+
+	// --- Update anti-entropy if interval changed ---
+	if m.antiEntropy != nil && oldConfig.SyncInterval != newConfig.SyncInterval {
+		m.logger.Info("Anti-entropy interval will take effect on next cycle")
+	}
+
+	// Store the new config
+	m.config = newConfig
+
+	m.logger.Info("Federation config update applied successfully")
+	return nil
+}
+
 // maintainPeerConnection maintains a connection to a peer
 func (m *Manager) maintainPeerConnection(peerName string, client *PeerClient) {
 	backoff := time.Second
@@ -406,6 +585,14 @@ func (m *Manager) handlePeerMessage(peerName string, msg *pb.SyncMessage) {
 	// Forward to server for processing
 	switch msgType := msg.Message.(type) {
 	case *pb.SyncMessage_Change:
+		// In hub-spoke mode the hub only pushes; ignore incoming resource
+		// changes from spoke clusters to enforce one-way data flow.
+		if m.config.Mode == ModeHubSpoke {
+			m.logger.Debug("Ignoring incoming resource change in hub-spoke mode",
+				zap.String("peer", peerName),
+			)
+			return
+		}
 		if err := m.server.handleResourceChange(m.ctx, peerName, msgType.Change); err != nil {
 			m.logger.Error("Failed to handle resource change",
 				zap.String("peer", peerName),
@@ -439,6 +626,22 @@ func (m *Manager) runHealthChecker(ctx context.Context) {
 	}
 }
 
+// runMetricsCollector periodically collects federation metrics
+func (m *Manager) runMetricsCollector(ctx context.Context) {
+	collector := NewMetricsCollector(m)
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			collector.Collect()
+		}
+	}
+}
+
 // checkPeerHealth checks the health of all peers
 func (m *Manager) checkPeerHealth(ctx context.Context) {
 	m.clientsMu.RLock()
@@ -454,20 +657,26 @@ func (m *Manager) checkPeerHealth(ctx context.Context) {
 		go func(c *PeerClient) {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(ctx, m.config.HealthCheckTimeout)
+			healthCtx, cancel := context.WithTimeout(ctx, m.config.HealthCheckTimeout)
 			defer cancel()
 
-			latency, err := c.Ping(ctx)
+			latency, err := c.Ping(healthCtx)
 			if err != nil {
 				m.logger.Debug("Peer health check failed",
 					zap.String("peer", c.peer.Name),
 					zap.Error(err),
 				)
+				if m.splitBrain != nil {
+					m.splitBrain.RecordPeerFailure(c.peer.Name)
+				}
 			} else {
 				m.logger.Debug("Peer health check succeeded",
 					zap.String("peer", c.peer.Name),
 					zap.Duration("latency", latency),
 				)
+				if m.splitBrain != nil {
+					m.splitBrain.RecordPeerContact(c.peer.Name)
+				}
 			}
 		}(client)
 	}
@@ -521,4 +730,69 @@ func (m *Manager) IsHealthy() bool {
 func (m *Manager) IsDegraded() bool {
 	phase := m.GetPhase()
 	return phase == PhaseDegraded || phase == PhasePartitioned
+}
+
+// AreWritesFenced returns true if the split-brain detector is fencing writes.
+// When split-brain detection is disabled, writes are never fenced.
+func (m *Manager) AreWritesFenced() bool {
+	if m.splitBrain == nil {
+		return false
+	}
+	return m.splitBrain.AreWritesFenced()
+}
+
+// GetPartitionInfo returns the current partition info from the split-brain detector.
+// Returns nil when split-brain detection is disabled or no partition is detected.
+func (m *Manager) GetPartitionInfo() *PartitionInfo {
+	if m.splitBrain == nil {
+		return nil
+	}
+	return m.splitBrain.GetPartitionInfo()
+}
+
+// GetFederationID returns the federation identifier.
+func (m *Manager) GetFederationID() string {
+	return m.config.FederationID
+}
+
+// GetLocalMemberName returns the name of the local federation member.
+func (m *Manager) GetLocalMemberName() string {
+	if m.config.LocalMember != nil {
+		return m.config.LocalMember.Name
+	}
+	return ""
+}
+
+// IsActive returns true when the federation manager has been started and the
+// underlying server is running.
+func (m *Manager) IsActive() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.started && m.server != nil
+}
+
+// GetMode returns the configured federation mode.
+func (m *Manager) GetMode() string {
+	return m.config.Mode
+}
+
+// IsUnifiedMode returns true when the federation operates in unified mode,
+// which enforces shared service namespace and location-aware routing.
+func (m *Manager) IsUnifiedMode() bool {
+	return m.config.Mode == ModeUnified
+}
+
+// GetRemoteEndpoints returns the ServiceEndpoints from all federated clusters
+// for the given service. Returns an empty slice when federation is not active,
+// no remote endpoints exist, or the mode is hub-spoke (which does not merge
+// endpoints from spoke clusters).
+func (m *Manager) GetRemoteEndpoints(namespace, serviceName string) []*pb.ServiceEndpoints {
+	if m.server == nil {
+		return []*pb.ServiceEndpoints{}
+	}
+	// In hub-spoke mode, the hub does not consume endpoints from spokes
+	if m.config.Mode == ModeHubSpoke {
+		return []*pb.ServiceEndpoints{}
+	}
+	return m.server.GetEndpointCache().GetForService(namespace, serviceName)
 }
