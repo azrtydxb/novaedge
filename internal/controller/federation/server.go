@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -83,6 +84,9 @@ type Server struct {
 	// activeStreams tracks active peer connections
 	activeStreams sync.Map // map[string]context.CancelFunc
 
+	// endpointCache stores remote cluster endpoints received via federation
+	endpointCache *RemoteEndpointCache
+
 	// changeCallbacks are called when a resource changes
 	changeCallbacks []func(key ResourceKey, change ChangeType, data []byte)
 	callbackMu      sync.RWMutex
@@ -102,6 +106,7 @@ func NewServer(config *Config, logger *zap.Logger) *Server {
 		config:         config,
 		vectorClock:    NewVectorClock(),
 		pendingChanges: make(chan *ChangeEntry, 10000),
+		endpointCache:  NewRemoteEndpointCache(),
 		stats:          &SyncStats{},
 		logger:         logger.Named("federation"),
 		shutdownCh:     make(chan struct{}),
@@ -381,6 +386,11 @@ func (s *Server) handleResourceChange(_ context.Context, peerName string, change
 		// Remove any tombstone
 		s.tombstones.Delete(keyStr)
 
+		// If the resource is ServiceEndpoints, update the endpoint cache
+		if change.ResourceType == "ServiceEndpoints" {
+			s.applyServiceEndpoints(change.ResourceData, peerName)
+		}
+
 		// Notify callbacks
 		s.notifyChange(key, ChangeType(change.ChangeType.String()), change.ResourceData)
 
@@ -393,6 +403,11 @@ func (s *Server) handleResourceChange(_ context.Context, peerName string, change
 			OriginMember: change.OriginMember,
 		}
 		s.tombstones.Store(keyStr, tombstone)
+
+		// If the resource is ServiceEndpoints, remove from the endpoint cache
+		if change.ResourceType == "ServiceEndpoints" {
+			s.deleteServiceEndpoints(change.Namespace, change.Name, peerName)
+		}
 
 		// Notify callbacks
 		s.notifyChange(key, ChangeTypeDeleted, nil)
@@ -1070,6 +1085,53 @@ func (s *Server) changeEntryToProto(entry *ChangeEntry) *pb.ResourceChange {
 	}
 
 	return change
+}
+
+// applyServiceEndpoints deserializes a ServiceEndpoints proto message from the
+// resource data and stores it in the endpoint cache under the origin peer's
+// cluster name.
+func (s *Server) applyServiceEndpoints(data []byte, peerName string) {
+	var svcEndpoints pb.ServiceEndpoints
+	if err := proto.Unmarshal(data, &svcEndpoints); err != nil {
+		s.logger.Error("Failed to unmarshal ServiceEndpoints",
+			zap.String("peer", peerName),
+			zap.Error(err),
+		)
+		return
+	}
+
+	// Use the cluster_name from the message if set, otherwise fall back to
+	// the peer name that sent it.
+	cluster := svcEndpoints.ClusterName
+	if cluster == "" {
+		cluster = peerName
+	}
+
+	s.endpointCache.Update(cluster, &svcEndpoints)
+
+	s.logger.Debug("Updated remote endpoint cache",
+		zap.String("cluster", cluster),
+		zap.String("service", fmt.Sprintf("%s/%s", svcEndpoints.Namespace, svcEndpoints.ServiceName)),
+		zap.Int("endpoints", len(svcEndpoints.Endpoints)),
+	)
+}
+
+// deleteServiceEndpoints removes a service's endpoints from the remote cache.
+// The namespace and name correspond to the ResourceChange fields.
+func (s *Server) deleteServiceEndpoints(namespace, name, peerName string) {
+	// The change name for ServiceEndpoints is the service name.
+	s.endpointCache.Delete(peerName, namespace, name)
+
+	s.logger.Debug("Deleted remote endpoint from cache",
+		zap.String("peer", peerName),
+		zap.String("service", fmt.Sprintf("%s/%s", namespace, name)),
+	)
+}
+
+// GetEndpointCache returns the remote endpoint cache for direct access by the
+// Manager or other components.
+func (s *Server) GetEndpointCache() *RemoteEndpointCache {
+	return s.endpointCache
 }
 
 // safeIntToInt32 safely converts an int to int32, clamping to max int32 value if needed

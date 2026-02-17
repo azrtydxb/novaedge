@@ -750,3 +750,13 @@ func (m *Manager) IsActive() bool {
 	defer m.mu.RUnlock()
 	return m.started && m.server != nil
 }
+
+// GetRemoteEndpoints returns the ServiceEndpoints from all federated clusters
+// for the given service. Returns an empty slice when federation is not active
+// or no remote endpoints exist.
+func (m *Manager) GetRemoteEndpoints(namespace, serviceName string) []*pb.ServiceEndpoints {
+	if m.server == nil {
+		return []*pb.ServiceEndpoints{}
+	}
+	return m.server.GetEndpointCache().GetForService(namespace, serviceName)
+}

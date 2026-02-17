@@ -43,12 +43,14 @@ import (
 )
 
 // FederationStateProvider exposes the minimal federation state needed by the
-// snapshot builder to populate FederationMetadata on ConfigSnapshots.
+// snapshot builder to populate FederationMetadata on ConfigSnapshots and to
+// include remote endpoints from federated clusters.
 type FederationStateProvider interface {
 	GetFederationID() string
 	GetLocalMemberName() string
 	GetVectorClock() map[string]int64
 	IsActive() bool
+	GetRemoteEndpoints(namespace, serviceName string) []*pb.ServiceEndpoints
 }
 
 // Builder builds ConfigSnapshots from Kubernetes resources
