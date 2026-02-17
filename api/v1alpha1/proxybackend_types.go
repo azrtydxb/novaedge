@@ -307,6 +307,14 @@ type ProxyBackendSpec struct {
 	// +kubebuilder:validation:Enum=HTTP;HTTPS;gRPC;gRPCS;HTTP2
 	// +kubebuilder:default="HTTP"
 	Protocol string `json:"protocol,omitempty"`
+
+	// SlowStart configures gradual traffic ramp-up for new/recovering endpoints
+	// +optional
+	SlowStart *SlowStartConfig `json:"slowStart,omitempty"`
+
+	// OutlierDetection configures per-endpoint outlier detection and auto-ejection
+	// +optional
+	OutlierDetection *OutlierDetectionConfig `json:"outlierDetection,omitempty"`
 }
 
 // BackendTLSMode defines the TLS verification mode for backend connections
@@ -401,4 +409,57 @@ type ProxyBackendList struct {
 
 func init() {
 	SchemeBuilder.Register(&ProxyBackend{}, &ProxyBackendList{})
+}
+
+// SlowStartConfig configures gradual traffic ramp-up for new/recovering endpoints
+type SlowStartConfig struct {
+	// Window is the duration over which traffic ramps from 0% to 100%
+	// +kubebuilder:validation:Required
+	Window metav1.Duration `json:"window"`
+
+	// Aggression controls the ramp curve shape (1.0 = linear, >1.0 = concave, <1.0 = convex)
+	// +optional
+	// +kubebuilder:default="1.0"
+	Aggression string `json:"aggression,omitempty"`
+}
+
+// OutlierDetectionConfig configures per-endpoint outlier detection and auto-ejection
+type OutlierDetectionConfig struct {
+	// Interval between detection sweeps
+	// +optional
+	// +kubebuilder:default="10s"
+	Interval metav1.Duration `json:"interval,omitempty"`
+
+	// Consecutive5xxThreshold ejects after this many consecutive server errors
+	// +optional
+	// +kubebuilder:default=5
+	// +kubebuilder:validation:Minimum=1
+	Consecutive5xxThreshold *int32 `json:"consecutive5xxThreshold,omitempty"`
+
+	// BaseEjectionDuration is the initial ejection time (increases with exponential backoff)
+	// +optional
+	// +kubebuilder:default="30s"
+	BaseEjectionDuration metav1.Duration `json:"baseEjectionDuration,omitempty"`
+
+	// MaxEjectionPercent limits the maximum percentage of endpoints that can be ejected
+	// +optional
+	// +kubebuilder:default=50
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	MaxEjectionPercent *int32 `json:"maxEjectionPercent,omitempty"`
+
+	// SuccessRateMinHosts is the minimum cluster size for success rate analysis
+	// +optional
+	// +kubebuilder:default=5
+	SuccessRateMinHosts *int32 `json:"successRateMinHosts,omitempty"`
+
+	// SuccessRateMinRequests is the minimum requests per host for success rate analysis
+	// +optional
+	// +kubebuilder:default=100
+	SuccessRateMinRequests *int32 `json:"successRateMinRequests,omitempty"`
+
+	// SuccessRateStdevFactor is the number of standard deviations below mean for ejection
+	// +optional
+	// +kubebuilder:default="1.9"
+	SuccessRateStdevFactor string `json:"successRateStdevFactor,omitempty"`
 }
