@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
@@ -32,6 +33,7 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller/federation"
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 const (
@@ -48,6 +50,10 @@ type FederationResourceApplier struct {
 	client client.Client
 	scheme *runtime.Scheme
 	logger *zap.Logger
+
+	// serviceEndpoints caches ServiceEndpoints received from federated
+	// clusters, keyed by "namespace/serviceName".
+	serviceEndpoints sync.Map // map[string]*pb.ServiceEndpoints
 }
 
 // NewFederationResourceApplier creates a new FederationResourceApplier.
@@ -84,8 +90,7 @@ func (a *FederationResourceApplier) Apply(ctx context.Context, key federation.Re
 	case "Secret":
 		err = a.applySecret(ctx, key, changeType, data)
 	case "ServiceEndpoints":
-		log.Info("ServiceEndpoints received; caching in memory is not yet implemented")
-		return
+		err = a.applyServiceEndpoints(key, changeType, data)
 	default:
 		log.Warn("Unknown resource kind received from federation, skipping")
 		return
@@ -94,6 +99,48 @@ func (a *FederationResourceApplier) Apply(ctx context.Context, key federation.Re
 	if err != nil {
 		log.Error("Failed to apply federated resource change", zap.Error(err))
 	}
+}
+
+// applyServiceEndpoints caches or removes ServiceEndpoints received from
+// federated clusters. The data is stored in an in-memory sync.Map keyed by
+// "namespace/serviceName" for thread-safe concurrent access.
+func (a *FederationResourceApplier) applyServiceEndpoints(key federation.ResourceKey, changeType federation.ChangeType, data []byte) error {
+	cacheKey := key.Namespace + "/" + key.Name
+
+	if changeType == federation.ChangeTypeDeleted {
+		a.serviceEndpoints.Delete(cacheKey)
+		a.logger.Info("Deleted cached ServiceEndpoints",
+			zap.String("key", cacheKey),
+		)
+		return nil
+	}
+
+	var endpoints pb.ServiceEndpoints
+	if err := json.Unmarshal(data, &endpoints); err != nil {
+		return fmt.Errorf("failed to unmarshal ServiceEndpoints %s: %w", cacheKey, err)
+	}
+
+	a.serviceEndpoints.Store(cacheKey, &endpoints)
+	a.logger.Info("Cached ServiceEndpoints",
+		zap.String("key", cacheKey),
+		zap.Int("endpoint_count", len(endpoints.GetEndpoints())),
+	)
+	return nil
+}
+
+// GetCachedServiceEndpoints returns the cached ServiceEndpoints for a given
+// namespace and service name, or nil if not cached.
+func (a *FederationResourceApplier) GetCachedServiceEndpoints(namespace, serviceName string) *pb.ServiceEndpoints {
+	cacheKey := namespace + "/" + serviceName
+	val, ok := a.serviceEndpoints.Load(cacheKey)
+	if !ok {
+		return nil
+	}
+	endpoints, ok := val.(*pb.ServiceEndpoints)
+	if !ok {
+		return nil
+	}
+	return endpoints
 }
 
 // federatedObject is a minimal interface for objects that carry ObjectMeta,

@@ -44,6 +44,7 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller"
 	"github.com/piwi3910/novaedge/internal/controller/certmanager"
+	"github.com/piwi3910/novaedge/internal/controller/federation"
 	"github.com/piwi3910/novaedge/internal/controller/ipam"
 	"github.com/piwi3910/novaedge/internal/controller/meshca"
 	"github.com/piwi3910/novaedge/internal/controller/snapshot"
@@ -108,6 +109,11 @@ func main() {
 	flag.StringVar(&vaultAuthMethod, "vault-auth-method", "kubernetes", "Vault auth method (kubernetes|approle|token)")
 	flag.StringVar(&vaultRole, "vault-role", "novaedge", "Vault auth role name")
 	flag.StringVar(&meshTrustDomain, "mesh-trust-domain", "cluster.local", "SPIFFE trust domain for mesh mTLS identity")
+
+	var federationID string
+	var federationLocalMember string
+	flag.StringVar(&federationID, "federation-id", "", "Federation identifier. When set, enables federation state on config snapshots.")
+	flag.StringVar(&federationLocalMember, "federation-local-member", "", "Name of this controller in the federation.")
 
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
@@ -341,6 +347,24 @@ func main() {
 	// Create and start gRPC server for config distribution
 	configServer := snapshot.NewServer(mgr.GetClient())
 	configServer.SetMeshCA(meshCA)
+
+	// Wire federation state provider into the snapshot builder when federation
+	// is configured. This allows built snapshots to include federation metadata
+	// and remote endpoints from federated clusters.
+	if federationID != "" && federationLocalMember != "" {
+		fedConfig := &federation.Config{
+			FederationID: federationID,
+			LocalMember: &federation.PeerInfo{
+				Name: federationLocalMember,
+			},
+		}
+		fedLogger, _ := uberzap.NewProduction()
+		fedManager := federation.NewManager(fedConfig, fedLogger)
+		configServer.SetFederationProvider(fedManager)
+		setupLog.Info("Federation state provider wired into snapshot builder",
+			"federationID", federationID,
+			"localMember", federationLocalMember)
+	}
 
 	// Create gRPC server with message size limits and interceptors
 	grpcLogger, _ := uberzap.NewProduction()
