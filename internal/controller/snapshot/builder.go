@@ -42,9 +42,19 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// FederationStateProvider exposes the minimal federation state needed by the
+// snapshot builder to populate FederationMetadata on ConfigSnapshots.
+type FederationStateProvider interface {
+	GetFederationID() string
+	GetLocalMemberName() string
+	GetVectorClock() map[string]int64
+	IsActive() bool
+}
+
 // Builder builds ConfigSnapshots from Kubernetes resources
 type Builder struct {
-	client client.Client
+	client             client.Client
+	federationProvider FederationStateProvider
 }
 
 // NewBuilder creates a new snapshot builder
@@ -52,6 +62,13 @@ func NewBuilder(client client.Client) *Builder {
 	return &Builder{
 		client: client,
 	}
+}
+
+// SetFederationProvider sets the federation state provider used to populate
+// FederationMetadata on built snapshots. When nil, snapshots are built
+// without federation metadata.
+func (b *Builder) SetFederationProvider(provider FederationStateProvider) {
+	b.federationProvider = provider
 }
 
 // BuildSnapshotWithExtensions builds a complete ConfigSnapshot with TLS extensions for a specific node
@@ -249,6 +266,11 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
+
+	// Enhance snapshot with federation metadata when federation is active
+	if b.federationProvider != nil && b.federationProvider.IsActive() {
+		b.enhanceWithFederation(snapshot)
+	}
 
 	// Record metrics
 	duration := time.Since(startTime).Seconds()
@@ -1211,4 +1233,17 @@ func convertMeshDestinations(dests []novaedgev1alpha1.MeshDestination) []*pb.Mes
 		})
 	}
 	return result
+}
+
+// enhanceWithFederation populates FederationMetadata on the snapshot using the
+// configured FederationStateProvider. This stamps every outbound snapshot with
+// the federation ID, origin controller name, and the current vector clock so
+// that agents and peer controllers can detect staleness and conflicts.
+func (b *Builder) enhanceWithFederation(snapshot *pb.ConfigSnapshot) {
+	fp := b.federationProvider
+	snapshot.FederationMetadata = &pb.FederationMetadata{
+		FederationId:     fp.GetFederationID(),
+		OriginController: fp.GetLocalMemberName(),
+		VectorClock:      fp.GetVectorClock(),
+	}
 }

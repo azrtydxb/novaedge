@@ -247,6 +247,9 @@ func (m *Manager) Start(ctx context.Context) error {
 	// Start health checker
 	go m.runHealthChecker(derivedCtx)
 
+	// Start periodic metrics collection
+	go m.runMetricsCollector(derivedCtx)
+
 	return nil
 }
 
@@ -463,6 +466,22 @@ func (m *Manager) runHealthChecker(ctx context.Context) {
 	}
 }
 
+// runMetricsCollector periodically collects federation metrics
+func (m *Manager) runMetricsCollector(ctx context.Context) {
+	collector := NewMetricsCollector(m)
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			collector.Collect()
+		}
+	}
+}
+
 // checkPeerHealth checks the health of all peers
 func (m *Manager) checkPeerHealth(ctx context.Context) {
 	m.clientsMu.RLock()
@@ -569,4 +588,25 @@ func (m *Manager) GetPartitionInfo() *PartitionInfo {
 		return nil
 	}
 	return m.splitBrain.GetPartitionInfo()
+}
+
+// GetFederationID returns the federation identifier.
+func (m *Manager) GetFederationID() string {
+	return m.config.FederationID
+}
+
+// GetLocalMemberName returns the name of the local federation member.
+func (m *Manager) GetLocalMemberName() string {
+	if m.config.LocalMember != nil {
+		return m.config.LocalMember.Name
+	}
+	return ""
+}
+
+// IsActive returns true when the federation manager has been started and the
+// underlying server is running.
+func (m *Manager) IsActive() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.started && m.server != nil
 }
