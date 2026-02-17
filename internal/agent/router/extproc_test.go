@@ -280,8 +280,8 @@ func TestExtProcMiddleware_HeaderModificationsApplied(t *testing.T) {
 	if rec.Header().Get("Content-Type") != "text/plain" {
 		t.Errorf("expected Content-Type preserved, got %q", rec.Header().Get("Content-Type"))
 	}
-	if rec.Body.String() != "hello" {
-		t.Errorf("expected body 'hello', got %q", rec.Body.String())
+	if rec.Body.String() != testCacheBody {
+		t.Errorf("expected body %q, got %q", testCacheBody, rec.Body.String())
 	}
 }
 

@@ -28,6 +28,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const testValueStr = "value"
+
 func TestBodyTransform_AddOperation(t *testing.T) {
 	ops := &BodyTransformConfig{
 		Operations: []TransformOperation{
@@ -53,11 +55,11 @@ func TestBodyTransform_AddOperation(t *testing.T) {
 	if err := json.Unmarshal(capturedBody, &result); err != nil {
 		t.Fatalf("failed to unmarshal transformed body: %v", err)
 	}
-	if result["newField"] != "hello" {
-		t.Errorf("expected newField='hello', got %v", result["newField"])
+	if result["newField"] != testCacheBody {
+		t.Errorf("expected newField=%q, got %v", testCacheBody, result["newField"])
 	}
-	if result["existing"] != "value" {
-		t.Errorf("expected existing='value', got %v", result["existing"])
+	if result["existing"] != testValueStr {
+		t.Errorf("expected existing=%q, got %v", testValueStr, result["existing"])
 	}
 }
 
@@ -152,8 +154,8 @@ func TestBodyTransform_MoveOperation(t *testing.T) {
 	if _, ok := result["old"]; ok {
 		t.Error("expected old field to be removed after move")
 	}
-	if result["new"] != "value" {
-		t.Errorf("expected new='value', got %v", result["new"])
+	if result["new"] != testValueStr {
+		t.Errorf("expected new=%q, got %v", testValueStr, result["new"])
 	}
 }
 
