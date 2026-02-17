@@ -1,6 +1,22 @@
-# NovaEdge
+<p align="center">
+  <img src="novaedge-logo-light.svg" alt="NovaEdge" width="480">
+</p>
 
-NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VIP controller written in Go. It serves as a unified replacement for Envoy + MetalLB + NGINX Ingress.
+<p align="center">
+  <strong>Distributed Kubernetes-native load balancer, reverse proxy, and VIP controller</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/piwi3910/novaedge/releases"><img src="https://img.shields.io/github/v/release/piwi3910/novaedge?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/piwi3910/novaedge/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/piwi3910/novaedge/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://goreportcard.com/report/github.com/piwi3910/novaedge"><img src="https://goreportcard.com/badge/github.com/piwi3910/novaedge?style=flat-square" alt="Go Report Card"></a>
+  <a href="https://piwi3910.github.io/novaedge"><img src="https://img.shields.io/badge/docs-mkdocs-blue?style=flat-square" alt="Documentation"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/piwi3910/novaedge?style=flat-square" alt="License"></a>
+</p>
+
+---
+
+NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress, written in Go.
 
 ## Features
 

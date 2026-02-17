@@ -6,25 +6,31 @@ repo_name: piwi3910/novaedge
 
 theme:
   name: material
+  logo: assets/novaedge-logo-light.svg
+  favicon: assets/novaedge-logo-light.svg
   palette:
     - scheme: default
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: cyan
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: cyan
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
   features:
     - navigation.tabs
+    - navigation.tabs.sticky
     - navigation.sections
     - navigation.expand
     - navigation.top
     - navigation.indexes
+    - navigation.path
+    - navigation.footer
+    - toc.follow
     - search.suggest
     - search.highlight
     - content.code.copy
@@ -124,6 +130,9 @@ nav:
 
 plugins:
   - search
+
+extra_css:
+  - assets/stylesheets/extra.css
 
 extra:
   social:

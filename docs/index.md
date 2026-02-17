@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/novaedge-logo-light.svg" alt="NovaEdge" width="480">
+</p>
+
 # NovaEdge
 
 **A unified Kubernetes-native load balancer, reverse proxy, and VIP controller**
