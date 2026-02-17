@@ -18,126 +18,362 @@ package certmanager
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	openapi_v2 "github.com/google/gnostic-models/openapiv2"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/discovery"
-	fakediscovery "k8s.io/client-go/discovery/fake"
-	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/openapi"
+	restclient "k8s.io/client-go/rest"
 )
 
-func TestDetector_IsCertManagerInstalled_Found(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
-	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
-	if !ok {
-		t.Fatal("failed to cast to FakeDiscovery")
-	}
+// mockDiscoveryClient implements discovery.DiscoveryInterface for testing
+type mockDiscoveryClient struct {
+	groupsAndResourcesFunc func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error)
+}
 
-	fakeDiscovery.Resources = []*metav1.APIResourceList{
-		{
-			GroupVersion: "cert-manager.io/v1",
-			APIResources: []metav1.APIResource{
-				{Name: "certificates", Kind: "Certificate"},
-				{Name: "issuers", Kind: "Issuer"},
-				{Name: "clusterissuers", Kind: "ClusterIssuer"},
+func (m *mockDiscoveryClient) ServerGroupsAndResources() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+	if m.groupsAndResourcesFunc != nil {
+		return m.groupsAndResourcesFunc()
+	}
+	return nil, nil, nil
+}
+
+// Stub implementations for other DiscoveryInterface methods
+func (m *mockDiscoveryClient) ServerGroups() (*metav1.APIGroupList, error) {
+	return nil, nil
+}
+
+func (m *mockDiscoveryClient) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+	return nil, nil
+}
+
+func (m *mockDiscoveryClient) ServerResources() ([]*metav1.APIResourceList, error) {
+	return nil, nil
+}
+
+func (m *mockDiscoveryClient) ServerPreferredResources() ([]*metav1.APIResourceList, error) {
+	return nil, nil
+}
+
+func (m *mockDiscoveryClient) ServerPreferredNamespacedResources() ([]*metav1.APIResourceList, error) {
+	return nil, nil
+}
+
+func (m *mockDiscoveryClient) ServerVersion() (*version.Info, error) {
+	return nil, nil
+}
+
+func (m *mockDiscoveryClient) OpenAPISchema() (*openapi_v2.Document, error) {
+	return nil, nil
+}
+
+func (m *mockDiscoveryClient) OpenAPIV3() openapi.Client {
+	return nil
+}
+
+func (m *mockDiscoveryClient) RESTClient() restclient.Interface {
+	return nil
+}
+
+func (m *mockDiscoveryClient) WithLegacy() discovery.DiscoveryInterface {
+	return m
+}
+
+func TestEnableModeConstants(t *testing.T) {
+	assert.Equal(t, EnableMode("auto"), EnableModeAuto)
+	assert.Equal(t, EnableMode("true"), EnableModeTrue)
+	assert.Equal(t, EnableMode("false"), EnableModeFalse)
+}
+
+func TestGVRVariables(t *testing.T) {
+	assert.Equal(t, "cert-manager.io", CertificateGVR.Group)
+	assert.Equal(t, "v1", CertificateGVR.Version)
+	assert.Equal(t, "certificates", CertificateGVR.Resource)
+
+	assert.Equal(t, "cert-manager.io", IssuerGVR.Group)
+	assert.Equal(t, "v1", IssuerGVR.Version)
+	assert.Equal(t, "issuers", IssuerGVR.Resource)
+
+	assert.Equal(t, "cert-manager.io", ClusterIssuerGVR.Group)
+	assert.Equal(t, "v1", ClusterIssuerGVR.Version)
+	assert.Equal(t, "clusterissuers", ClusterIssuerGVR.Resource)
+}
+
+func TestNewDetectorFromClient(t *testing.T) {
+	mockClient := &mockDiscoveryClient{}
+	detector := NewDetectorFromClient(mockClient)
+	assert.NotNil(t, detector)
+	assert.Equal(t, mockClient, detector.discoveryClient)
+}
+
+func TestDetector_IsCertManagerInstalled(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("cert-manager installed", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return []*metav1.APIGroup{},
+					[]*metav1.APIResourceList{
+						{
+							GroupVersion: "cert-manager.io/v1",
+							APIResources: []metav1.APIResource{
+								{Name: "certificates"},
+								{Name: "issuers"},
+								{Name: "clusterissuers"},
+							},
+						},
+						{
+							GroupVersion: "apps/v1",
+							APIResources: []metav1.APIResource{
+								{Name: "deployments"},
+							},
+						},
+					}, nil
 			},
-		},
-	}
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.NoError(t, err)
+		assert.True(t, installed)
+	})
 
-	detector := NewDetectorFromClient(fakeDiscovery)
-	installed, err := detector.IsCertManagerInstalled(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !installed {
-		t.Error("expected cert-manager to be detected as installed")
-	}
-}
-
-func TestDetector_IsCertManagerInstalled_NotFound(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
-	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
-	if !ok {
-		t.Fatal("failed to cast to FakeDiscovery")
-	}
-
-	fakeDiscovery.Resources = []*metav1.APIResourceList{
-		{
-			GroupVersion: "apps/v1",
-			APIResources: []metav1.APIResource{
-				{Name: "deployments", Kind: "Deployment"},
+	t.Run("cert-manager not installed", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return []*metav1.APIGroup{},
+					[]*metav1.APIResourceList{
+						{
+							GroupVersion: "apps/v1",
+							APIResources: []metav1.APIResource{
+								{Name: "deployments"},
+							},
+						},
+					}, nil
 			},
-		},
-	}
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.NoError(t, err)
+		assert.False(t, installed)
+	})
 
-	detector := NewDetectorFromClient(fakeDiscovery)
-	installed, err := detector.IsCertManagerInstalled(context.Background())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if installed {
-		t.Error("expected cert-manager to NOT be detected as installed")
-	}
-}
-
-func TestDetector_ShouldEnable_False(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
-	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
-	if !ok {
-		t.Fatal("failed to cast to FakeDiscovery")
-	}
-
-	detector := NewDetectorFromClient(fakeDiscovery)
-	enabled, err := detector.ShouldEnable(context.Background(), EnableModeFalse)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if enabled {
-		t.Error("expected disabled when mode is false")
-	}
-}
-
-func TestDetector_ShouldEnable_True_Missing(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
-	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
-	if !ok {
-		t.Fatal("failed to cast to FakeDiscovery")
-	}
-
-	fakeDiscovery.Resources = []*metav1.APIResourceList{}
-
-	detector := NewDetectorFromClient(fakeDiscovery)
-	_, err := detector.ShouldEnable(context.Background(), EnableModeTrue)
-	if err == nil {
-		t.Error("expected error when cert-manager required but not found")
-	}
-}
-
-func TestDetector_ShouldEnable_Auto_Found(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
-	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
-	if !ok {
-		t.Fatal("failed to cast to FakeDiscovery")
-	}
-
-	fakeDiscovery.Resources = []*metav1.APIResourceList{
-		{
-			GroupVersion: "cert-manager.io/v1",
-			APIResources: []metav1.APIResource{
-				{Name: "certificates", Kind: "Certificate"},
+	t.Run("empty resources", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil, nil, nil
 			},
-		},
-	}
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.NoError(t, err)
+		assert.False(t, installed)
+	})
 
-	detector := NewDetectorFromClient(fakeDiscovery)
-	enabled, err := detector.ShouldEnable(context.Background(), EnableModeAuto)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !enabled {
-		t.Error("expected enabled when auto mode and cert-manager found")
-	}
+	t.Run("nil resource list entries", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return []*metav1.APIGroup{},
+					[]*metav1.APIResourceList{nil, nil}, nil
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.NoError(t, err)
+		assert.False(t, installed)
+	})
+
+	t.Run("invalid group version is skipped", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return []*metav1.APIGroup{},
+					[]*metav1.APIResourceList{
+						{
+							GroupVersion: "invalid-format",
+							APIResources: []metav1.APIResource{
+								{Name: "certificates"},
+							},
+						},
+					}, nil
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.NoError(t, err)
+		assert.False(t, installed)
+	})
+
+	t.Run("discovery error - non-group-failed", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil, nil, errors.New("discovery failed")
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.Error(t, err)
+		assert.False(t, installed)
+		assert.Contains(t, err.Error(), "failed to discover API resources")
+	})
+
+	t.Run("discovery error - group failed with partial results", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return []*metav1.APIGroup{},
+					[]*metav1.APIResourceList{
+						{
+							GroupVersion: "cert-manager.io/v1",
+							APIResources: []metav1.APIResource{
+								{Name: "certificates"},
+							},
+						},
+					}, &discovery.ErrGroupDiscoveryFailed{
+						Groups: map[schema.GroupVersion]error{
+							{Group: "some-group", Version: "v1"}: errors.New("failed"),
+						},
+					}
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.NoError(t, err) // Partial results should not cause error
+		assert.True(t, installed)
+	})
+
+	t.Run("cert-manager group without certificates resource", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return []*metav1.APIGroup{},
+					[]*metav1.APIResourceList{
+						{
+							GroupVersion: "cert-manager.io/v1",
+							APIResources: []metav1.APIResource{
+								{Name: "issuers"},
+								{Name: "clusterissuers"},
+							},
+						},
+					}, nil
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		installed, err := detector.IsCertManagerInstalled(ctx)
+		require.NoError(t, err)
+		assert.False(t, installed)
+	})
 }
 
-// Ensure discovery.DiscoveryInterface is referenced.
-var _ discovery.DiscoveryInterface = nil
+func TestDetector_ShouldEnable(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("mode false always returns false", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableModeFalse)
+		require.NoError(t, err)
+		assert.False(t, enabled)
+	})
+
+	t.Run("mode true with cert-manager installed", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil,
+					[]*metav1.APIResourceList{
+						{
+							GroupVersion: "cert-manager.io/v1",
+							APIResources: []metav1.APIResource{
+								{Name: "certificates"},
+							},
+						},
+					}, nil
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableModeTrue)
+		require.NoError(t, err)
+		assert.True(t, enabled)
+	})
+
+	t.Run("mode true with cert-manager not installed", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil, []*metav1.APIResourceList{}, nil
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableModeTrue)
+		require.Error(t, err)
+		assert.False(t, enabled)
+		assert.Contains(t, err.Error(), "cert-manager is required")
+	})
+
+	t.Run("mode true with discovery error", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil, nil, errors.New("discovery failed")
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableModeTrue)
+		require.Error(t, err)
+		assert.False(t, enabled)
+		assert.Contains(t, err.Error(), "failed to detect cert-manager")
+	})
+
+	t.Run("mode auto with cert-manager installed", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil,
+					[]*metav1.APIResourceList{
+						{
+							GroupVersion: "cert-manager.io/v1",
+							APIResources: []metav1.APIResource{
+								{Name: "certificates"},
+							},
+						},
+					}, nil
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableModeAuto)
+		require.NoError(t, err)
+		assert.True(t, enabled)
+	})
+
+	t.Run("mode auto with cert-manager not installed", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil, []*metav1.APIResourceList{}, nil
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableModeAuto)
+		require.NoError(t, err)
+		assert.False(t, enabled)
+	})
+
+	t.Run("mode auto with discovery error returns false", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{
+			groupsAndResourcesFunc: func() ([]*metav1.APIGroup, []*metav1.APIResourceList, error) {
+				return nil, nil, errors.New("discovery failed")
+			},
+		}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableModeAuto)
+		require.NoError(t, err) // Auto mode doesn't return error on discovery failure
+		assert.False(t, enabled)
+	})
+
+	t.Run("invalid mode returns error", func(t *testing.T) {
+		mockClient := &mockDiscoveryClient{}
+		detector := NewDetectorFromClient(mockClient)
+		enabled, err := detector.ShouldEnable(ctx, EnableMode("invalid"))
+		require.Error(t, err)
+		assert.False(t, enabled)
+		assert.Contains(t, err.Error(), "invalid cert-manager enable mode")
+	})
+}
