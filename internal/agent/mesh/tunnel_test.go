@@ -202,7 +202,7 @@ func startTunnelServer(t *testing.T, serverTLS *tls.Config, authorizer *Authoriz
 		t.Fatalf("port %d out of range", port)
 	}
 
-	ts := NewTunnelServer(logger, int32(port), serverTLS, authorizer)
+	ts := NewTunnelServer(logger, int32(port), serverTLS, authorizer, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -549,6 +549,188 @@ func TestStreamConnInterface(t *testing.T) {
 	if err := sc.Close(); err != nil {
 		t.Errorf("Close error: %v", err)
 	}
+}
+
+func TestTunnelServerFederatedIdentityAllowed(t *testing.T) {
+	tc := newTunnelTestPKI(t)
+
+	serverCert := tc.issueCert(t, "tunnel-server", "spiffe://cluster.local/agent/server-node")
+	// Client presents a federated SPIFFE ID from cluster-b.
+	clientCert := tc.issueCert(t, "tunnel-client", "spiffe://my-federation/cluster/cluster-b/agent/node-2")
+
+	serverTLS := &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    tc.caPool,
+		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2"},
+	}
+
+	clientTLS := &tls.Config{
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      tc.caPool,
+		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2"},
+	}
+
+	echoAddr := startEchoServer(t)
+
+	// Create a TLS provider with federation config that allows cluster-b.
+	fedCfg := &FederationConfig{
+		FederationID:    "my-federation",
+		ClusterName:     "cluster-a",
+		AllowedClusters: []string{"cluster-b"},
+	}
+	tlsProvider := NewTLSProvider(zap.NewNop(), "cluster.local", fedCfg)
+
+	tunnelAddr, cancel := startTunnelServerWithProvider(t, serverTLS, nil, tlsProvider)
+	defer cancel()
+
+	pr, pw := io.Pipe()
+	h2Transport := &http2.Transport{
+		TLSClientConfig: clientTLS,
+		DialTLSContext: func(dialCtx context.Context, network, _ string, cfg *tls.Config) (net.Conn, error) {
+			d := &tls.Dialer{
+				NetDialer: &net.Dialer{Timeout: 5 * time.Second},
+				Config:    cfg,
+			}
+			return d.DialContext(dialCtx, network, tunnelAddr)
+		},
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodConnect, "https://"+echoAddr, pr)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set(headerDestService, "echo.default")
+
+	resp, err := h2Transport.RoundTrip(req)
+	if err != nil {
+		_ = pw.Close()
+		t.Fatalf("CONNECT request failed: %v", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		_ = pw.Close()
+		t.Fatalf("expected 200 OK for allowed federated identity, got %d", resp.StatusCode)
+	}
+
+	_ = pw.Close()
+	_ = resp.Body.Close()
+}
+
+func TestTunnelServerFederatedIdentityDenied(t *testing.T) {
+	tc := newTunnelTestPKI(t)
+
+	serverCert := tc.issueCert(t, "tunnel-server", "spiffe://cluster.local/agent/server-node")
+	// Client presents a federated SPIFFE ID from cluster-d (not allowed).
+	clientCert := tc.issueCert(t, "tunnel-client", "spiffe://my-federation/cluster/cluster-d/agent/node-4")
+
+	serverTLS := &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    tc.caPool,
+		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2"},
+	}
+
+	clientTLS := &tls.Config{
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      tc.caPool,
+		MinVersion:   tls.VersionTLS12,
+		NextProtos:   []string{"h2"},
+	}
+
+	echoAddr := startEchoServer(t)
+
+	// Create a TLS provider with federation config that only allows cluster-b.
+	fedCfg := &FederationConfig{
+		FederationID:    "my-federation",
+		ClusterName:     "cluster-a",
+		AllowedClusters: []string{"cluster-b"},
+	}
+	tlsProvider := NewTLSProvider(zap.NewNop(), "cluster.local", fedCfg)
+
+	tunnelAddr, cancel := startTunnelServerWithProvider(t, serverTLS, nil, tlsProvider)
+	defer cancel()
+
+	h2Transport := &http2.Transport{
+		TLSClientConfig: clientTLS,
+		DialTLSContext: func(dialCtx context.Context, network, _ string, cfg *tls.Config) (net.Conn, error) {
+			d := &tls.Dialer{
+				NetDialer: &net.Dialer{Timeout: 5 * time.Second},
+				Config:    cfg,
+			}
+			return d.DialContext(dialCtx, network, tunnelAddr)
+		},
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodConnect, "https://"+echoAddr, nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+	req.Header.Set(headerDestService, "echo.default")
+
+	resp, err := h2Transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("CONNECT request failed: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("expected 403 Forbidden for disallowed federated identity, got %d", resp.StatusCode)
+	}
+}
+
+// startTunnelServerWithProvider starts a TunnelServer with a specific TLSProvider
+// for federation-aware identity validation.
+func startTunnelServerWithProvider(t *testing.T, serverTLS *tls.Config, authorizer *Authorizer, tlsProvider *TLSProvider) (string, context.CancelFunc) {
+	t.Helper()
+
+	logger := zap.NewNop()
+
+	lc := net.ListenConfig{}
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to find free port: %v", err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+
+	_, portStr, _ := net.SplitHostPort(addr)
+	var port int
+	if _, scanErr := fmt.Sscanf(portStr, "%d", &port); scanErr != nil {
+		t.Fatalf("failed to parse port: %v", scanErr)
+	}
+
+	if port < 0 || port > 65535 {
+		t.Fatalf("port %d out of range", port)
+	}
+
+	ts := NewTunnelServer(logger, int32(port), serverTLS, authorizer, tlsProvider)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- ts.Start(ctx)
+	}()
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		dialer := &net.Dialer{Timeout: 100 * time.Millisecond}
+		conn, dialErr := dialer.DialContext(context.Background(), "tcp", addr)
+		if dialErr == nil {
+			_ = conn.Close()
+			return addr, cancel
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	t.Fatalf("tunnel server did not start in time")
+	return "", nil
 }
 
 func TestParseTCPAddr(t *testing.T) {

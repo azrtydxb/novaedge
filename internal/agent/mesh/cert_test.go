@@ -151,7 +151,7 @@ func TestCertRequester_RequestAndApply(t *testing.T) {
 	var gotCert, gotKey, gotCA []byte
 	var gotSPIFFE string
 
-	cr := NewCertRequester(logger, "test-node", "cluster.local",
+	cr := NewCertRequester(logger, "test-node", "cluster.local", nil,
 		func(certPEM, keyPEM, caCertPEM []byte, spiffeID string) error {
 			mu.Lock()
 			defer mu.Unlock()
@@ -268,7 +268,7 @@ func TestCertRequester_RenewalLoop(t *testing.T) {
 	var mu sync.Mutex
 	var requestCount int
 
-	cr := NewCertRequester(logger, "test-node", "cluster.local",
+	cr := NewCertRequester(logger, "test-node", "cluster.local", nil,
 		func(_, _, _ []byte, _ string) error {
 			mu.Lock()
 			defer mu.Unlock()

@@ -17,6 +17,7 @@ limitations under the License.
 package mesh
 
 import (
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
@@ -33,11 +34,24 @@ type SourceIdentity struct {
 	TrustDomain    string
 	Namespace      string
 	ServiceAccount string
+	// FederationID is the federation trust domain when the SPIFFE ID uses
+	// the cross-cluster format: spiffe://FEDERATION_ID/cluster/CLUSTER/agent/NODE.
+	// Empty for local (non-federated) identities.
+	FederationID string
+	// ClusterName is the originating cluster when the SPIFFE ID uses
+	// the cross-cluster format. Empty for local identities.
+	ClusterName string
+	// NodeName is the agent node name extracted from agent-format SPIFFE IDs.
+	NodeName string
 }
 
 // ParseSPIFFEID parses a SPIFFE ID into its components.
-// Format: spiffe://trust-domain/ns/NAMESPACE/sa/SERVICE_ACCOUNT
-// or: spiffe://trust-domain/agent/NODE_NAME
+// Supported formats:
+//
+//	spiffe://trust-domain/ns/NAMESPACE/sa/SERVICE_ACCOUNT       (workload)
+//	spiffe://trust-domain/agent/NODE_NAME                       (local agent)
+//	spiffe://FEDERATION_ID/cluster/CLUSTER/agent/NODE           (federated agent)
+//
 // Returns empty SourceIdentity if parsing fails.
 func ParseSPIFFEID(spiffeID string) SourceIdentity {
 	u, err := url.Parse(spiffeID)
@@ -60,13 +74,70 @@ func ParseSPIFFEID(spiffeID string) SourceIdentity {
 		return identity
 	}
 
-	// Parse agent identity: /agent/NODE_NAME (namespace and SA remain empty)
+	// Parse federated agent identity: /cluster/CLUSTER/agent/NODE
+	if len(segments) == 4 && segments[0] == "cluster" && segments[2] == "agent" {
+		identity.FederationID = u.Host
+		identity.ClusterName = segments[1]
+		identity.NodeName = segments[3]
+		return identity
+	}
+
+	// Parse local agent identity: /agent/NODE_NAME
 	if len(segments) >= 2 && segments[0] == "agent" {
+		identity.NodeName = segments[1]
 		return identity
 	}
 
 	// Unrecognized format — return with trust domain only
 	return identity
+}
+
+// IsFederated returns true if the identity contains cross-cluster federation
+// information (i.e. it was parsed from the federated SPIFFE ID format).
+func (si SourceIdentity) IsFederated() bool {
+	return si.FederationID != "" && si.ClusterName != ""
+}
+
+// FederationConfig holds federation-related settings for the mesh.
+type FederationConfig struct {
+	// FederationID is the federation trust domain. Empty when not federated.
+	FederationID string
+	// ClusterName is this cluster's name within the federation.
+	ClusterName string
+	// AllowedClusters lists the cluster names that are permitted to connect
+	// via cross-cluster SPIFFE identities. Only evaluated when FederationID
+	// is non-empty.
+	AllowedClusters []string
+}
+
+// IsActive returns true when federation is configured.
+func (fc FederationConfig) IsActive() bool {
+	return fc.FederationID != "" && fc.ClusterName != ""
+}
+
+// IsClusterAllowed returns true if the given cluster name appears in the
+// allowed list, or if federation is not active (backward-compatible).
+func (fc FederationConfig) IsClusterAllowed(clusterName string) bool {
+	if !fc.IsActive() {
+		return false
+	}
+	for _, c := range fc.AllowedClusters {
+		if c == clusterName {
+			return true
+		}
+	}
+	return false
+}
+
+// BuildSPIFFEID constructs a SPIFFE ID string. When federation is active,
+// the format is spiffe://FEDERATION_ID/cluster/CLUSTER/agent/NODE.
+// Otherwise it falls back to spiffe://trustDomain/agent/NODE.
+func BuildSPIFFEID(trustDomain, nodeName string, fedCfg *FederationConfig) string {
+	if fedCfg != nil && fedCfg.IsActive() {
+		return fmt.Sprintf("spiffe://%s/cluster/%s/agent/%s",
+			fedCfg.FederationID, fedCfg.ClusterName, nodeName)
+	}
+	return fmt.Sprintf("spiffe://%s/agent/%s", trustDomain, nodeName)
 }
 
 // Authorizer evaluates mesh authorization policies.
