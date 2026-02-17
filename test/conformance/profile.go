@@ -60,6 +60,9 @@ func SupportedResources() []string {
 		"GatewayClass",
 		"Gateway",
 		"HTTPRoute",
+		"GRPCRoute",
+		"TLSRoute",
+		"ReferenceGrant",
 	}
 }
 
@@ -72,7 +75,6 @@ func SupportedCoreFeatures() []string {
 		"HTTPRoutePathRewrite",
 		"HTTPRoutePathRedirect",
 		"HTTPRouteSchemeRedirect",
-		"HTTPRouteRequestHeaderModification",
 		"HTTPRouteResponseHeaderModification",
 		"HTTPRouteRequestMirror",
 	}
@@ -83,18 +85,32 @@ func SupportedExtendedFeatures() []string {
 	return []string{
 		"GatewayPort8080",
 		"GatewayHTTPListenerIsolation",
+		"HTTPRouteQueryParamMatching",
+		"HTTPRouteMethodMatching",
+		"HTTPRouteRequestTimeout",
+		"HTTPRouteBackendTimeout",
+		"HTTPRoutePortRedirect",
+		"HTTPRouteBackendProtocolH2C",
+		"HTTPRouteBackendProtocolWebSocket",
+		"HTTPRouteRequestMultipleMirrors",
+		"HTTPRouteParentRefPort",
+		"TLSRoute",
+		"GRPCRoute",
+		"Mesh",
 	}
 }
 
 // PlannedFeatures returns the list of features planned for future implementation.
 func PlannedFeatures() []string {
 	return []string{
-		"TLSRoute",
 		"TCPRoute",
 		"UDPRoute",
-		"GRPCRoute",
 		"ReferenceGrant",
 		"GatewayStaticAddresses",
+		"GatewayInfrastructurePropagation",
+		"HTTPRouteBackendRequestHeaderModification",
+		"HTTPRouteRequestPercentageMirror",
+		"HTTPRouteCORS",
 	}
 }
 
