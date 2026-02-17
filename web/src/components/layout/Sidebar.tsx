@@ -21,6 +21,8 @@ import {
   Download,
   Upload,
   History,
+  Puzzle,
+  Zap,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -52,6 +54,7 @@ const navGroups: NavGroup[] = [
       { name: 'Routes', path: '/routes', icon: GitBranch },
       { name: 'Backends', path: '/backends', icon: Server },
       { name: 'Policies', path: '/policies', icon: Shield },
+      { name: 'Load Shedding', path: '/load-shedding', icon: Zap },
     ],
   },
   {
@@ -84,6 +87,12 @@ const navGroups: NavGroup[] = [
       { name: 'Traces', path: '/traces', icon: Waypoints },
       { name: 'Logs', path: '/logs', icon: ScrollText },
       { name: 'WAF Events', path: '/waf', icon: ShieldAlert },
+    ],
+  },
+  {
+    label: 'Extensions',
+    items: [
+      { name: 'WASM Plugins', path: '/wasm-plugins', icon: Puzzle },
     ],
   },
   {

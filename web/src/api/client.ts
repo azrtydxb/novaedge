@@ -22,6 +22,12 @@ import type {
   MeshTopology,
   ConfigSnapshot,
   ConfigDiff,
+  Federation,
+  RemoteCluster,
+  OverloadConfig,
+  OverloadStatus,
+  WASMPluginConfig,
+  WASMPluginStatus,
 } from './types'
 import {
   normalizeGateways,
@@ -289,20 +295,20 @@ const clustersAPI = {
 
 // Federations CRUD
 const federationsAPI = {
-  list: async (namespace: string = 'all'): Promise<GenericResource[]> => {
-    return fetchJSON<GenericResource[]>(`${API_BASE}/federations?namespace=${namespace}`)
+  list: async (namespace: string = 'all'): Promise<Federation[]> => {
+    return fetchJSON<Federation[]>(`${API_BASE}/federations?namespace=${namespace}`)
   },
-  get: async (namespace: string, name: string): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/federations/${namespace}/${name}`)
+  get: async (namespace: string, name: string): Promise<Federation> => {
+    return fetchJSON<Federation>(`${API_BASE}/federations/${namespace}/${name}`)
   },
-  create: async (resource: GenericResource): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/federations`, {
+  create: async (resource: Federation): Promise<Federation> => {
+    return fetchJSON<Federation>(`${API_BASE}/federations`, {
       method: 'POST',
       body: JSON.stringify(resource),
     })
   },
-  update: async (namespace: string, name: string, resource: GenericResource): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/federations/${namespace}/${name}`, {
+  update: async (namespace: string, name: string, resource: Federation): Promise<Federation> => {
+    return fetchJSON<Federation>(`${API_BASE}/federations/${namespace}/${name}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
@@ -314,26 +320,52 @@ const federationsAPI = {
 
 // Remote Clusters CRUD
 const remoteclustersAPI = {
-  list: async (namespace: string = 'all'): Promise<GenericResource[]> => {
-    return fetchJSON<GenericResource[]>(`${API_BASE}/remoteclusters?namespace=${namespace}`)
+  list: async (namespace: string = 'all'): Promise<RemoteCluster[]> => {
+    return fetchJSON<RemoteCluster[]>(`${API_BASE}/remoteclusters?namespace=${namespace}`)
   },
-  get: async (namespace: string, name: string): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/remoteclusters/${namespace}/${name}`)
+  get: async (namespace: string, name: string): Promise<RemoteCluster> => {
+    return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters/${namespace}/${name}`)
   },
-  create: async (resource: GenericResource): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/remoteclusters`, {
+  create: async (resource: RemoteCluster): Promise<RemoteCluster> => {
+    return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters`, {
       method: 'POST',
       body: JSON.stringify(resource),
     })
   },
-  update: async (namespace: string, name: string, resource: GenericResource): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/remoteclusters/${namespace}/${name}`, {
+  update: async (namespace: string, name: string, resource: RemoteCluster): Promise<RemoteCluster> => {
+    return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters/${namespace}/${name}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
   },
   delete: async (namespace: string, name: string): Promise<void> => {
     await fetchJSON<{ status: string }>(`${API_BASE}/remoteclusters/${namespace}/${name}`, { method: 'DELETE' })
+  },
+}
+
+// Overload/Load Shedding
+const overloadAPI = {
+  status: async (): Promise<OverloadStatus> => {
+    return fetchJSON<OverloadStatus>(`${API_BASE}/overload/status`)
+  },
+  config: async (): Promise<OverloadConfig> => {
+    return fetchJSON<OverloadConfig>(`${API_BASE}/overload/config`)
+  },
+  updateConfig: async (config: OverloadConfig): Promise<OverloadConfig> => {
+    return fetchJSON<OverloadConfig>(`${API_BASE}/overload/config`, {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    })
+  },
+}
+
+// WASM Plugins
+const wasmPluginsAPI = {
+  list: async (): Promise<WASMPluginStatus[]> => {
+    return fetchJSON<WASMPluginStatus[]>(`${API_BASE}/wasm/plugins`)
+  },
+  get: async (name: string): Promise<WASMPluginConfig> => {
+    return fetchJSON<WASMPluginConfig>(`${API_BASE}/wasm/plugins/${name}`)
   },
 }
 
@@ -379,6 +411,8 @@ export const api = {
   clusters: clustersAPI,
   federations: federationsAPI,
   remoteclusters: remoteclustersAPI,
+  overload: overloadAPI,
+  wasmPlugins: wasmPluginsAPI,
 
   // Agents
   agents: {

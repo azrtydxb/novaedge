@@ -104,6 +104,21 @@ export default function Backends() {
       ),
     },
     {
+      key: 'slowStart',
+      header: 'Slow Start',
+      accessor: (row) => row.spec?.slowStart?.window ?? '-',
+    },
+    {
+      key: 'outlierDetection',
+      header: 'Outlier Detection',
+      accessor: (row) =>
+        row.spec?.outlierDetection ? (
+          <Badge className="bg-blue-500 hover:bg-blue-600">Enabled</Badge>
+        ) : (
+          '-'
+        ),
+    },
+    {
       key: 'age',
       header: 'Age',
       accessor: (row) =>
