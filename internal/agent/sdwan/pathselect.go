@@ -47,6 +47,7 @@ type PathSelector struct {
 	currentLinks map[string]string    // policy name -> currently selected link name
 	switchTimes  map[string]time.Time // policy name -> last switch time
 	hysteresis   time.Duration
+	policies     []PolicyConfig
 	logger       *zap.Logger
 }
 
@@ -221,4 +222,11 @@ func parseBandwidthMbps(bw string) float64 {
 		return 0
 	}
 	return val * multiplier
+}
+
+// ApplyPolicies stores the current set of WAN policies for use in path selection.
+func (ps *PathSelector) ApplyPolicies(policies []PolicyConfig) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.policies = policies
 }

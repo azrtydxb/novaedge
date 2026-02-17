@@ -151,3 +151,43 @@ func (m *Manager) exportMetrics() {
 		metrics.SDWANLinkHealthy.WithLabelValues(q.LinkName, q.RemoteSite).Set(healthy)
 	}
 }
+
+// PolicyConfig holds a WAN policy configuration.
+type PolicyConfig struct {
+	Name         string
+	Strategy     string
+	MatchHosts   []string
+	MatchPaths   []string
+	MatchHeaders map[string]string
+	DSCPClass    string
+	Failover     bool
+}
+
+// ApplyConfig reconciles WAN links and policies from a config snapshot.
+func (m *Manager) ApplyConfig(links []LinkConfig, policies []PolicyConfig) error {
+	// Get current links
+	currentLinks := m.linkMgr.ListLinks()
+	desired := make(map[string]struct{}, len(links))
+
+	// Add/update desired links
+	for _, cfg := range links {
+		desired[cfg.Name] = struct{}{}
+		if err := m.AddLink(cfg); err != nil {
+			m.logger.Debug("Link already managed, skipping add", zap.String("link", cfg.Name))
+		}
+	}
+
+	// Remove links no longer desired
+	for _, name := range currentLinks {
+		if _, ok := desired[name]; !ok {
+			if err := m.RemoveLink(name); err != nil {
+				m.logger.Error("Failed to remove link", zap.String("link", name), zap.Error(err))
+			}
+		}
+	}
+
+	// Apply policies to path selector
+	m.pathSelector.ApplyPolicies(policies)
+
+	return nil
+}

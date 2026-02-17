@@ -30,8 +30,6 @@ const (
 // ConfigServiceClient is the client API for ConfigService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// ConfigService is the gRPC service for distributing config snapshots
 type ConfigServiceClient interface {
 	// StreamConfig streams config snapshots to agents
 	// Agents connect and receive initial snapshot, then updates when config changes
@@ -126,8 +124,6 @@ func (c *configServiceClient) GetVIPs(ctx context.Context, in *GetVIPsRequest, o
 // ConfigServiceServer is the server API for ConfigService service.
 // All implementations must embed UnimplementedConfigServiceServer
 // for forward compatibility.
-//
-// ConfigService is the gRPC service for distributing config snapshots
 type ConfigServiceServer interface {
 	// StreamConfig streams config snapshots to agents
 	// Agents connect and receive initial snapshot, then updates when config changes
