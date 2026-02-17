@@ -11,6 +11,12 @@ import type {
   Certificate,
   IPPool,
   GenericResource,
+  Federation,
+  RemoteCluster,
+  OverloadConfig,
+  OverloadStatus,
+  WASMPluginConfig,
+  WASMPluginStatus,
   Trace,
   KubeEvent,
   WAFSummary,
@@ -548,14 +554,14 @@ export function useDeleteCluster() {
 
 // Federations
 export function useFederations(namespace: string) {
-  return useQuery<GenericResource[]>({
+  return useQuery<Federation[]>({
     queryKey: ['federations', namespace],
     queryFn: () => api.federations.list(namespace),
   })
 }
 
 export function useFederation(namespace: string, name: string) {
-  return useQuery<GenericResource>({
+  return useQuery<Federation>({
     queryKey: ['federations', namespace, name],
     queryFn: () => api.federations.get(namespace, name),
     enabled: !!namespace && !!name,
@@ -565,7 +571,7 @@ export function useFederation(namespace: string, name: string) {
 export function useCreateFederation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (federation: GenericResource) => api.federations.create(federation),
+    mutationFn: (federation: Federation) => api.federations.create(federation),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['federations'] })
       toast({ title: 'Federation created successfully', variant: 'success' as const })
@@ -579,7 +585,7 @@ export function useCreateFederation() {
 export function useUpdateFederation() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ namespace, name, federation }: { namespace: string; name: string; federation: GenericResource }) =>
+    mutationFn: ({ namespace, name, federation }: { namespace: string; name: string; federation: Federation }) =>
       api.federations.update(namespace, name, federation),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['federations'] })
@@ -608,14 +614,14 @@ export function useDeleteFederation() {
 
 // Remote Clusters
 export function useRemoteClusters(namespace: string) {
-  return useQuery<GenericResource[]>({
+  return useQuery<RemoteCluster[]>({
     queryKey: ['remoteclusters', namespace],
     queryFn: () => api.remoteclusters.list(namespace),
   })
 }
 
 export function useRemoteCluster(namespace: string, name: string) {
-  return useQuery<GenericResource>({
+  return useQuery<RemoteCluster>({
     queryKey: ['remoteclusters', namespace, name],
     queryFn: () => api.remoteclusters.get(namespace, name),
     enabled: !!namespace && !!name,
@@ -625,7 +631,7 @@ export function useRemoteCluster(namespace: string, name: string) {
 export function useCreateRemoteCluster() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (remoteCluster: GenericResource) => api.remoteclusters.create(remoteCluster),
+    mutationFn: (rc: RemoteCluster) => api.remoteclusters.create(rc),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['remoteclusters'] })
       toast({ title: 'Remote cluster created successfully', variant: 'success' as const })
@@ -639,8 +645,8 @@ export function useCreateRemoteCluster() {
 export function useUpdateRemoteCluster() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ namespace, name, remoteCluster }: { namespace: string; name: string; remoteCluster: GenericResource }) =>
-      api.remoteclusters.update(namespace, name, remoteCluster),
+    mutationFn: ({ namespace, name, rc }: { namespace: string; name: string; rc: RemoteCluster }) =>
+      api.remoteclusters.update(namespace, name, rc),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['remoteclusters'] })
       toast({ title: 'Remote cluster updated successfully', variant: 'success' as const })
@@ -663,6 +669,52 @@ export function useDeleteRemoteCluster() {
     onError: (error: Error) => {
       toast({ title: 'Failed to delete remote cluster', description: error.message, variant: 'destructive' })
     },
+  })
+}
+
+// Overload/Load Shedding
+export function useOverloadStatus() {
+  return useQuery<OverloadStatus>({
+    queryKey: ['overload', 'status'],
+    queryFn: () => api.overload.status(),
+    refetchInterval: 5000,
+  })
+}
+
+export function useOverloadConfig() {
+  return useQuery<OverloadConfig>({
+    queryKey: ['overload', 'config'],
+    queryFn: () => api.overload.config(),
+  })
+}
+
+export function useUpdateOverloadConfig() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (config: OverloadConfig) => api.overload.updateConfig(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['overload'] })
+      toast({ title: 'Load shedding config updated', variant: 'success' as const })
+    },
+    onError: (error: Error) => {
+      toast({ title: 'Failed to update config', description: error.message, variant: 'destructive' })
+    },
+  })
+}
+
+// WASM Plugins
+export function useWASMPlugins() {
+  return useQuery<WASMPluginStatus[]>({
+    queryKey: ['wasm', 'plugins'],
+    queryFn: () => api.wasmPlugins.list(),
+  })
+}
+
+export function useWASMPlugin(name: string) {
+  return useQuery<WASMPluginConfig>({
+    queryKey: ['wasm', 'plugins', name],
+    queryFn: () => api.wasmPlugins.get(name),
+    enabled: !!name,
   })
 }
 
