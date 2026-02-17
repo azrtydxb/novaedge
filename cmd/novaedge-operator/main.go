@@ -168,19 +168,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create remote cluster registry for tracking connected spoke clusters
-	remoteClusterRegistry := controller.NewRemoteClusterRegistry()
-
-	if err = (&controller.NovaEdgeRemoteClusterReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Registry: remoteClusterRegistry,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "NovaEdgeRemoteCluster")
-		os.Exit(1)
-	}
-
-	// Set up NovaEdgeFederation controller
+	// Create zap logger for components that require go.uber.org/zap
 	zapLogger, zapErr := zap.NewProduction()
 	if logFormat == "text" {
 		zapLogger, zapErr = zap.NewDevelopment()
@@ -190,6 +178,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create remote cluster registry for tracking connected spoke clusters
+	remoteClusterRegistry := controller.NewRemoteClusterRegistry()
+
+	tunnelManager := controller.NewInMemoryTunnelManager(zapLogger.Named("tunnel"))
+
+	if err = (&controller.NovaEdgeRemoteClusterReconciler{
+		Client:        mgr.GetClient(),
+		Scheme:        mgr.GetScheme(),
+		Registry:      remoteClusterRegistry,
+		TunnelManager: tunnelManager,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "NovaEdgeRemoteCluster")
+		os.Exit(1)
+	}
+
+	// Set up NovaEdgeFederation controller
 	if err = (&controller.NovaEdgeFederationReconciler{
 		Client:         mgr.GetClient(),
 		Scheme:         mgr.GetScheme(),
