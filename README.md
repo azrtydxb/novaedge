@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Distributed Kubernetes-native load balancer, reverse proxy, and VIP controller</strong>
+  <strong>Distributed Kubernetes-native load balancer, reverse proxy, VIP controller, and SD-WAN gateway</strong>
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
 
 ---
 
-NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress, written in Go.
+NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD-WAN, written in Go. It combines L4/L7 load balancing, VIP management, service mesh, and SD-WAN into a single Kubernetes-native binary.
 
 ## Features
 

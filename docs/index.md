@@ -4,9 +4,9 @@
 
 # NovaEdge
 
-**A unified Kubernetes-native load balancer, reverse proxy, and VIP controller**
+**A unified Kubernetes-native load balancer, reverse proxy, VIP controller, and SD-WAN gateway**
 
-NovaEdge replaces Envoy + MetalLB + NGINX Ingress with a single, integrated solution designed for modern Kubernetes deployments.
+NovaEdge replaces Envoy + MetalLB + NGINX Ingress + Cisco SD-WAN with a single, integrated solution designed for modern Kubernetes deployments.
 
 ## Why NovaEdge?
 
@@ -16,6 +16,7 @@ flowchart LR
         NGINX["NGINX Ingress<br/>(L7 Routing)"]
         Envoy["Envoy<br/>(Policies)"]
         MetalLB["MetalLB<br/>(VIPs)"]
+        SDWAN["WireGuard + Scripts<br/>(SD-WAN)"]
     end
 
     subgraph After["NovaEdge"]
@@ -39,8 +40,9 @@ flowchart LR
 | TLS/ACME | cert-manager/Traefik | Built-in + cert-manager support |
 | WASM Plugins | Envoy | Built-in (Wazero) |
 | Service Mesh | Istio/Linkerd | Built-in (TPROXY, no sidecars) |
+| SD-WAN | Cisco Viptela/WireGuard scripts | Built-in (WireGuard + path selection) |
 | Control-Plane VIP | kube-vip | Built-in (L2/BGP/BFD) |
-| Components to manage | 3+ | 1 |
+| Components to manage | 4+ | 1 |
 
 [Full comparison: What NovaEdge Replaces](comparison.md){ .md-button }
 
@@ -54,6 +56,7 @@ flowchart LR
 - **Policy Enforcement** - Rate limiting, JWT auth, CORS, IP filtering, security headers
 - **Extensibility** - WASM plugins, composable middleware pipelines
 - **Gateway API** - Native support for Kubernetes Gateway API (HTTP, gRPC, TCP, TLS routes)
+- **SD-WAN** - WireGuard tunnels, multi-WAN link management, SLA-based path selection, STUN NAT traversal, DSCP QoS
 - **Multi-Cluster** - Hub-spoke federation with split-brain detection
 - **Observability** - OpenTelemetry tracing, Prometheus metrics, structured logging, Web UI
 
