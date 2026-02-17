@@ -319,6 +319,10 @@ type Config struct {
 
 	// SuccessThreshold is successes before marking healthy
 	SuccessThreshold int32
+
+	// SplitBrain configures split-brain detection and handling.
+	// When nil, split-brain detection is disabled.
+	SplitBrain *SplitBrainConfig
 }
 
 // DefaultConfig returns a Config with sensible defaults

@@ -37,6 +37,9 @@ type Manager struct {
 	// Server handles incoming connections from peers
 	server *Server
 
+	// Split-brain detector (nil when disabled)
+	splitBrain *SplitBrainDetector
+
 	// Clients for connecting to peers
 	clients   map[string]*PeerClient
 	clientsMu sync.RWMutex
@@ -214,6 +217,22 @@ func (m *Manager) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start federation server: %w", err)
 	}
 
+	// Create and start split-brain detector when enabled
+	if m.config.SplitBrain != nil {
+		m.splitBrain = NewSplitBrainDetector(
+			m.config.SplitBrain,
+			m.server,
+			len(m.config.Peers),
+			m.logger,
+		)
+		m.splitBrain.Start(derivedCtx)
+		m.logger.Info("Split-brain detector started",
+			zap.Bool("fencing_enabled", m.config.SplitBrain.FencingEnabled),
+			zap.Bool("quorum_required", m.config.SplitBrain.QuorumRequired),
+			zap.String("quorum_mode", string(m.config.SplitBrain.QuorumMode)),
+		)
+	}
+
 	// Create clients for each peer
 	for _, peer := range m.config.Peers {
 		client := NewPeerClient(peer, m.config, m.logger)
@@ -242,6 +261,11 @@ func (m *Manager) Stop() {
 	m.mu.Unlock()
 
 	m.logger.Info("Stopping federation manager")
+
+	// Stop split-brain detector
+	if m.splitBrain != nil {
+		m.splitBrain.Stop()
+	}
 
 	// Cancel context
 	if m.cancel != nil {
@@ -454,20 +478,26 @@ func (m *Manager) checkPeerHealth(ctx context.Context) {
 		go func(c *PeerClient) {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(ctx, m.config.HealthCheckTimeout)
+			healthCtx, cancel := context.WithTimeout(ctx, m.config.HealthCheckTimeout)
 			defer cancel()
 
-			latency, err := c.Ping(ctx)
+			latency, err := c.Ping(healthCtx)
 			if err != nil {
 				m.logger.Debug("Peer health check failed",
 					zap.String("peer", c.peer.Name),
 					zap.Error(err),
 				)
+				if m.splitBrain != nil {
+					m.splitBrain.RecordPeerFailure(c.peer.Name)
+				}
 			} else {
 				m.logger.Debug("Peer health check succeeded",
 					zap.String("peer", c.peer.Name),
 					zap.Duration("latency", latency),
 				)
+				if m.splitBrain != nil {
+					m.splitBrain.RecordPeerContact(c.peer.Name)
+				}
 			}
 		}(client)
 	}
@@ -521,4 +551,22 @@ func (m *Manager) IsHealthy() bool {
 func (m *Manager) IsDegraded() bool {
 	phase := m.GetPhase()
 	return phase == PhaseDegraded || phase == PhasePartitioned
+}
+
+// AreWritesFenced returns true if the split-brain detector is fencing writes.
+// When split-brain detection is disabled, writes are never fenced.
+func (m *Manager) AreWritesFenced() bool {
+	if m.splitBrain == nil {
+		return false
+	}
+	return m.splitBrain.AreWritesFenced()
+}
+
+// GetPartitionInfo returns the current partition info from the split-brain detector.
+// Returns nil when split-brain detection is disabled or no partition is detected.
+func (m *Manager) GetPartitionInfo() *PartitionInfo {
+	if m.splitBrain == nil {
+		return nil
+	}
+	return m.splitBrain.GetPartitionInfo()
 }
