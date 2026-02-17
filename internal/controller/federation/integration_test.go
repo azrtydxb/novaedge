@@ -38,13 +38,13 @@ func TestIntegrationTwoServersExchangeResources(t *testing.T) {
 	configA.FederationID = "integration-test"
 	configA.LocalMember = &PeerInfo{Name: "server-a", Endpoint: "localhost:50051"}
 	configA.Peers = []*PeerInfo{{Name: "server-b", Endpoint: "localhost:50052"}}
-	configA.ConflictResolutionStrategy = "LastWriterWins"
+	configA.ConflictResolutionStrategy = StrategyLastWriterWins
 
 	configB := DefaultConfig()
 	configB.FederationID = "integration-test"
 	configB.LocalMember = &PeerInfo{Name: "server-b", Endpoint: "localhost:50052"}
 	configB.Peers = []*PeerInfo{{Name: "server-a", Endpoint: "localhost:50051"}}
-	configB.ConflictResolutionStrategy = "LastWriterWins"
+	configB.ConflictResolutionStrategy = StrategyLastWriterWins
 
 	serverA := NewServer(configA, logger)
 	serverB := NewServer(configB, logger)
@@ -253,7 +253,7 @@ func TestIntegrationConflictResolutionLastWriterWins(t *testing.T) {
 	config := DefaultConfig()
 	config.FederationID = "conflict-test"
 	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
-	config.ConflictResolutionStrategy = "LastWriterWins"
+	config.ConflictResolutionStrategy = StrategyLastWriterWins
 
 	server := NewServer(config, logger)
 
@@ -325,7 +325,7 @@ func TestIntegrationConflictResolutionLocalWins(t *testing.T) {
 	config := DefaultConfig()
 	config.FederationID = "conflict-local-test"
 	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
-	config.ConflictResolutionStrategy = "LastWriterWins"
+	config.ConflictResolutionStrategy = StrategyLastWriterWins
 
 	server := NewServer(config, logger)
 
