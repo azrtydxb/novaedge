@@ -492,6 +492,11 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 		if gw.Spec.RedirectScheme != nil && gw.Spec.RedirectScheme.Enabled {
 			gateway.RedirectScheme = convertRedirectScheme(gw.Spec.RedirectScheme)
 		}
+
+		// Convert ExtProc configuration
+		if gw.Spec.ExtProc != nil {
+			gateway.ExtProc = convertExtProc(gw.Spec.ExtProc)
+		}
 		gateways = append(gateways, gateway)
 	}
 

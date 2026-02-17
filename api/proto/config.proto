@@ -107,6 +107,19 @@ message Gateway {
   GatewayCacheConfig cache = 8;
   ErrorPageConfig error_pages = 9;
   RedirectSchemeConfig redirect_scheme = 10;
+  ExtProcConfig ext_proc = 11;
+}
+
+// ExtProcConfig configures an external processing gRPC service
+message ExtProcConfig {
+  bool enabled = 1;
+  string address = 2;
+  int64 timeout_ms = 3;
+  bool fail_open = 4;
+  bool process_request_headers = 5;
+  bool process_request_body = 6;
+  bool process_response_headers = 7;
+  bool process_response_body = 8;
 }
 
 // GatewayCacheConfig configures response caching for a gateway
@@ -983,6 +996,10 @@ service ConfigService {
 
   // RequestMeshCertificate allows agents to request a mesh workload certificate
   rpc RequestMeshCertificate(MeshCertificateRequest) returns (MeshCertificateResponse);
+  // Introspection RPCs for agent runtime state
+  rpc GetAgentConfig(GetConfigRequest) returns (GetConfigResponse);
+  rpc GetBackendHealth(GetBackendHealthRequest) returns (GetBackendHealthResponse);
+  rpc GetVIPs(GetVIPsRequest) returns (GetVIPsResponse);
 }
 
 // StreamConfigRequest is sent by agents to subscribe to config updates
@@ -1131,4 +1148,51 @@ message ServiceEndpoints {
 // StatusResponse acknowledges status reports
 message StatusResponse {
   bool acknowledged = 1;
+}
+
+// Agent introspection messages
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  string version = 1;
+  string generation_time = 2;
+  int32 gateway_count = 3;
+  int32 route_count = 4;
+  int32 cluster_count = 5;
+  int32 endpoint_count = 6;
+  int32 vip_count = 7;
+  int32 policy_count = 8;
+}
+
+message GetBackendHealthRequest {}
+
+message BackendHealthInfo {
+  string cluster_name = 1;
+  string namespace = 2;
+  string lb_policy = 3;
+  repeated EndpointHealthInfo endpoints = 4;
+}
+
+message EndpointHealthInfo {
+  string address = 1;
+  int32 port = 2;
+  bool healthy = 3;
+}
+
+message GetBackendHealthResponse {
+  repeated BackendHealthInfo backends = 1;
+}
+
+message GetVIPsRequest {}
+
+message VIPInfoResponse {
+  string name = 1;
+  string address = 2;
+  string mode = 3;
+  bool is_active = 4;
+  repeated int32 ports = 5;
+}
+
+message GetVIPsResponse {
+  repeated VIPInfoResponse vips = 1;
 }
