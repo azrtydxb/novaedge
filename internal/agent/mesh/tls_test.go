@@ -150,7 +150,7 @@ func TestTLSProviderUpdateCertificate(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	pki := generateTestPKI(t, "spiffe://cluster.local/ns/default/sa/test-agent")
 
-	provider := NewTLSProvider(logger, "cluster.local")
+	provider := NewTLSProvider(logger, "cluster.local", nil)
 
 	// Before loading, HasCertificate should return false.
 	if provider.HasCertificate() {
@@ -181,7 +181,7 @@ func TestTLSProviderUpdateCertificateErrors(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	pki := generateTestPKI(t, "spiffe://cluster.local/ns/default/sa/test-agent")
 
-	provider := NewTLSProvider(logger, "cluster.local")
+	provider := NewTLSProvider(logger, "cluster.local", nil)
 
 	// Invalid key PEM should fail.
 	err := provider.UpdateCertificate(pki.workloadCert, []byte("not-a-key"), pki.caCertPEM, pki.spiffeID)
@@ -211,7 +211,7 @@ func TestTLSProviderServerConfig(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	pki := generateTestPKI(t, "spiffe://cluster.local/ns/default/sa/test-agent")
 
-	provider := NewTLSProvider(logger, "cluster.local")
+	provider := NewTLSProvider(logger, "cluster.local", nil)
 	err := provider.UpdateCertificate(pki.workloadCert, pki.workloadKey, pki.caCertPEM, pki.spiffeID)
 	if err != nil {
 		t.Fatalf("UpdateCertificate failed: %v", err)
@@ -251,7 +251,7 @@ func TestTLSProviderClientConfig(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	pki := generateTestPKI(t, "spiffe://cluster.local/ns/default/sa/test-agent")
 
-	provider := NewTLSProvider(logger, "cluster.local")
+	provider := NewTLSProvider(logger, "cluster.local", nil)
 	err := provider.UpdateCertificate(pki.workloadCert, pki.workloadKey, pki.caCertPEM, pki.spiffeID)
 	if err != nil {
 		t.Fatalf("UpdateCertificate failed: %v", err)
@@ -289,7 +289,7 @@ func TestTLSProviderClientConfig(t *testing.T) {
 
 func TestTLSProviderNoCertificateCallbacks(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	provider := NewTLSProvider(logger, "cluster.local")
+	provider := NewTLSProvider(logger, "cluster.local", nil)
 
 	// Server config callback should return error when no cert is loaded.
 	serverCfg := provider.ServerTLSConfig()
@@ -378,7 +378,7 @@ func TestPeerSPIFFEID(t *testing.T) {
 
 func TestTLSProviderCertificateRotation(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	provider := NewTLSProvider(logger, "cluster.local")
+	provider := NewTLSProvider(logger, "cluster.local", nil)
 
 	// Load initial certificate.
 	pki1 := generateTestPKI(t, "spiffe://cluster.local/ns/default/sa/agent-v1")
@@ -419,5 +419,65 @@ func TestTLSProviderCertificateRotation(t *testing.T) {
 	provider.mu.RUnlock()
 	if storedID != pki2.spiffeID {
 		t.Fatalf("expected spiffeID %q after rotation, got %q", pki2.spiffeID, storedID)
+	}
+}
+
+func TestValidatePeerSPIFFEIDLocalOnly(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	// No federation config — only local trust domain accepted.
+	provider := NewTLSProvider(logger, "cluster.local", nil)
+
+	tests := []struct {
+		name     string
+		spiffeID string
+		want     bool
+	}{
+		{"local agent", "spiffe://cluster.local/agent/node-1", true},
+		{"local workload", "spiffe://cluster.local/ns/default/sa/svc", true},
+		{"wrong trust domain", "spiffe://other.domain/agent/node-1", false},
+		{"federated identity rejected", "spiffe://my-fed/cluster/remote/agent/node-1", false},
+		{"empty string", "", false},
+		{"invalid", "not-a-spiffe-id", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := provider.ValidatePeerSPIFFEID(tt.spiffeID); got != tt.want {
+				t.Errorf("ValidatePeerSPIFFEID(%q) = %v, want %v", tt.spiffeID, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidatePeerSPIFFEIDWithFederation(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	fedCfg := &FederationConfig{
+		FederationID:    "my-federation",
+		ClusterName:     "cluster-a",
+		AllowedClusters: []string{"cluster-b", "cluster-c"},
+	}
+	provider := NewTLSProvider(logger, "cluster.local", fedCfg)
+
+	tests := []struct {
+		name     string
+		spiffeID string
+		want     bool
+	}{
+		{"local agent", "spiffe://cluster.local/agent/node-1", true},
+		{"federated allowed cluster-b", "spiffe://my-federation/cluster/cluster-b/agent/node-2", true},
+		{"federated allowed cluster-c", "spiffe://my-federation/cluster/cluster-c/agent/node-3", true},
+		{"federated disallowed cluster-d", "spiffe://my-federation/cluster/cluster-d/agent/node-4", false},
+		{"wrong federation ID", "spiffe://other-fed/cluster/cluster-b/agent/node-5", false},
+		{"wrong trust domain", "spiffe://evil.domain/agent/node-6", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := provider.ValidatePeerSPIFFEID(tt.spiffeID); got != tt.want {
+				t.Errorf("ValidatePeerSPIFFEID(%q) = %v, want %v", tt.spiffeID, got, tt.want)
+			}
+		})
 	}
 }

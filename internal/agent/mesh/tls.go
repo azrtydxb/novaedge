@@ -37,13 +37,16 @@ type TLSProvider struct {
 	caCertPool  *x509.CertPool
 	trustDomain string
 	spiffeID    string
+	fedCfg      *FederationConfig
 }
 
 // NewTLSProvider creates a new mesh TLS provider for the given trust domain.
-func NewTLSProvider(logger *zap.Logger, trustDomain string) *TLSProvider {
+// The fedCfg parameter may be nil when federation is not active.
+func NewTLSProvider(logger *zap.Logger, trustDomain string, fedCfg *FederationConfig) *TLSProvider {
 	return &TLSProvider{
 		logger:      logger,
 		trustDomain: trustDomain,
+		fedCfg:      fedCfg,
 	}
 }
 
@@ -201,4 +204,33 @@ func PeerSPIFFEID(state *tls.ConnectionState) string {
 	}
 
 	return ""
+}
+
+// ValidatePeerSPIFFEID checks whether a peer's SPIFFE ID is acceptable.
+// When federation is active, cross-cluster SPIFFE IDs are accepted if the
+// cluster name is in the allowed list. When federation is not active, only
+// SPIFFE IDs with the local trust domain are accepted.
+func (p *TLSProvider) ValidatePeerSPIFFEID(spiffeID string) bool {
+	if spiffeID == "" {
+		return false
+	}
+
+	identity := ParseSPIFFEID(spiffeID)
+	if identity.SpiffeID == "" {
+		return false
+	}
+
+	// Cross-cluster federated identity
+	if identity.IsFederated() {
+		if p.fedCfg == nil || !p.fedCfg.IsActive() {
+			// Federation not active — reject cross-cluster identities
+			return false
+		}
+		// Accept if the federation ID matches ours and cluster is allowed
+		return identity.FederationID == p.fedCfg.FederationID &&
+			p.fedCfg.IsClusterAllowed(identity.ClusterName)
+	}
+
+	// Local identity — trust domain must match
+	return identity.TrustDomain == p.trustDomain
 }

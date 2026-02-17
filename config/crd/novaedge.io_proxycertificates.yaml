@@ -97,6 +97,41 @@ spec:
                         - dns-01
                         - tls-alpn-01
                         type: string
+                      dns01:
+                        description: DNS01 configures DNS-01 specific options
+                        properties:
+                          credentialsRef:
+                            description: CredentialsRef references a Secret containing
+                              DNS provider credentials
+                            properties:
+                              name:
+                                description: Name is the name of the referenced object
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          pollingInterval:
+                            default: 5s
+                            description: PollingInterval is the time between DNS propagation
+                              checks
+                            type: string
+                          propagationTimeout:
+                            default: 120s
+                            description: PropagationTimeout is the maximum time to
+                              wait for DNS propagation
+                            type: string
+                          provider:
+                            description: Provider specifies the DNS provider (cloudflare,
+                              route53, googledns)
+                            enum:
+                            - cloudflare
+                            - route53
+                            - googledns
+                            type: string
+                        required:
+                        - credentialsRef
+                        - provider
+                        type: object
                       dnsCredentialsRef:
                         description: DNSCredentialsRef references a Secret containing
                           DNS provider credentials
@@ -127,6 +162,18 @@ spec:
                         description: 'Server is the ACME server URL (default: Let''s
                           Encrypt production)'
                         type: string
+                      tlsAlpn01:
+                        description: TLSALPN01 configures TLS-ALPN-01 specific options
+                        properties:
+                          port:
+                            default: 443
+                            description: 'Port is the port to listen on for TLS-ALPN-01
+                              challenges (default: 443)'
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        type: object
                     required:
                     - email
                     type: object
@@ -199,7 +246,25 @@ spec:
                     - manual
                     - self-signed
                     - cert-manager
+                    - vault-pki
                     type: string
+                  vaultPKI:
+                    description: VaultPKI configures HashiCorp Vault PKI integration
+                    properties:
+                      path:
+                        description: Path is the Vault PKI mount path (e.g., "pki"
+                          or "pki-int")
+                        type: string
+                      role:
+                        description: Role is the Vault PKI role name
+                        type: string
+                      ttl:
+                        description: TTL is the requested certificate TTL (e.g., "720h")
+                        type: string
+                    required:
+                    - path
+                    - role
+                    type: object
                 required:
                 - type
                 type: object

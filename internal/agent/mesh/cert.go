@@ -54,18 +54,22 @@ type CertRequester struct {
 	logger      *zap.Logger
 	nodeName    string
 	trustDomain string
+	fedCfg      *FederationConfig
 	onUpdate    func(certPEM, keyPEM, caCertPEM []byte, spiffeID string) error
 }
 
 // NewCertRequester creates a new certificate requester.
 // The onUpdate callback is called whenever a new certificate is obtained.
+// The fedCfg parameter may be nil when federation is not active.
 func NewCertRequester(logger *zap.Logger, nodeName, trustDomain string,
+	fedCfg *FederationConfig,
 	onUpdate func(certPEM, keyPEM, caCertPEM []byte, spiffeID string) error,
 ) *CertRequester {
 	return &CertRequester{
 		logger:      logger.Named("cert-requester"),
 		nodeName:    nodeName,
 		trustDomain: trustDomain,
+		fedCfg:      fedCfg,
 		onUpdate:    onUpdate,
 	}
 }
@@ -121,8 +125,11 @@ func (cr *CertRequester) requestAndApply(ctx context.Context, client pb.ConfigSe
 		return time.Time{}, fmt.Errorf("failed to generate key: %w", err)
 	}
 
-	// Build CSR with SPIFFE URI SAN
-	spiffeURI, parseErr := url.Parse(fmt.Sprintf("spiffe://%s/agent/%s", cr.trustDomain, cr.nodeName))
+	// Build CSR with SPIFFE URI SAN. When federation is active the SPIFFE ID
+	// includes the federation trust domain and cluster name so that peer
+	// clusters can identify the origin.
+	spiffeIDStr := BuildSPIFFEID(cr.trustDomain, cr.nodeName, cr.fedCfg)
+	spiffeURI, parseErr := url.Parse(spiffeIDStr)
 	if parseErr != nil {
 		return time.Time{}, fmt.Errorf("failed to parse SPIFFE URI: %w", parseErr)
 	}

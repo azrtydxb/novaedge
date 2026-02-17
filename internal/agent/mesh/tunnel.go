@@ -46,23 +46,26 @@ const (
 // It listens for mTLS connections and proxies traffic to local backend pods
 // on behalf of the requesting peer.
 type TunnelServer struct {
-	logger     *zap.Logger
-	port       int32
-	tlsConfig  *tls.Config
-	authorizer *Authorizer
-	server     *http.Server
+	logger      *zap.Logger
+	port        int32
+	tlsConfig   *tls.Config
+	authorizer  *Authorizer
+	tlsProvider *TLSProvider
+	server      *http.Server
 }
 
 // NewTunnelServer creates a new tunnel server that listens on the given port
 // for HTTP/2 CONNECT requests from peer agents. The tlsConfig must be configured
 // for mTLS (client certificate required). The authorizer may be nil to skip
-// authorization checks.
-func NewTunnelServer(logger *zap.Logger, port int32, tlsConfig *tls.Config, authorizer *Authorizer) *TunnelServer {
+// authorization checks. The tlsProvider is used for cross-cluster SPIFFE ID
+// validation and may be nil when federation is not needed.
+func NewTunnelServer(logger *zap.Logger, port int32, tlsConfig *tls.Config, authorizer *Authorizer, tlsProvider *TLSProvider) *TunnelServer {
 	return &TunnelServer{
-		logger:     logger.Named("tunnel-server"),
-		port:       port,
-		tlsConfig:  tlsConfig,
-		authorizer: authorizer,
+		logger:      logger.Named("tunnel-server"),
+		port:        port,
+		tlsConfig:   tlsConfig,
+		authorizer:  authorizer,
+		tlsProvider: tlsProvider,
 	}
 }
 
@@ -144,6 +147,21 @@ func (ts *TunnelServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		zap.String("dest_service", destService),
 		zap.String("backend", backendAddr),
 	)
+
+	// Validate the peer's SPIFFE ID when a TLS provider is available.
+	// This enforces that cross-cluster identities are only accepted when
+	// federation is active and the originating cluster is in the allow list.
+	if ts.tlsProvider != nil && sourceID != "" {
+		if !ts.tlsProvider.ValidatePeerSPIFFEID(sourceID) {
+			ts.logger.Warn("CONNECT request denied: invalid SPIFFE identity",
+				zap.String("source_id", sourceID),
+				zap.String("dest_service", destService),
+				zap.String("backend", backendAddr),
+			)
+			http.Error(w, "Forbidden: invalid peer identity", http.StatusForbidden)
+			return
+		}
+	}
 
 	// Check authorization if an authorizer is configured.
 	if ts.authorizer != nil {

@@ -1,3 +1,4 @@
+---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -33,34 +34,53 @@ spec:
           policies
         properties:
           apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object.
-
-              Servers should convert recognized schemas to the latest internal value,
-              and
-
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
               may reject unrecognized values.
-
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
             type: string
           kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents.
-
-              Servers may infer this from the endpoint the client submits requests
-              to.
-
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
               Cannot be updated.
-
               In CamelCase.
-
-              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
             type: string
           metadata:
             type: object
           spec:
             description: ProxyPolicySpec defines the desired state of ProxyPolicy
             properties:
+              basicAuth:
+                description: BasicAuth configuration (for BasicAuth type)
+                properties:
+                  realm:
+                    default: Restricted
+                    description: Realm is the authentication realm name shown in the
+                      browser dialog
+                    type: string
+                  secretRef:
+                    description: |-
+                      SecretRef references a Kubernetes Secret containing htpasswd-formatted credentials
+                      The Secret must have a key "htpasswd" with lines in the format: username:password_hash
+                      Supported hash formats: bcrypt, SHA-256 ({SHA256}), MD5 (apr1)
+                    properties:
+                      name:
+                        description: Name is the name of the referenced object
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  stripAuth:
+                    default: true
+                    description: StripAuth removes the Authorization header before
+                      forwarding to the backend
+                    type: boolean
+                required:
+                - secretRef
+                type: object
               cors:
                 description: CORS configuration (for CORS type)
                 properties:
@@ -93,6 +113,103 @@ spec:
                       can be cached
                     type: string
                 type: object
+              distributedRateLimit:
+                description: DistributedRateLimit configuration (for DistributedRateLimit
+                  type)
+                properties:
+                  algorithm:
+                    default: sliding-window
+                    description: Algorithm is the rate limiting algorithm
+                    enum:
+                    - fixed-window
+                    - sliding-window
+                    - token-bucket
+                    type: string
+                  burst:
+                    description: Burst is the maximum burst size
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  key:
+                    default: source-ip
+                    description: Key determines what to rate limit by
+                    type: string
+                  redisRef:
+                    description: RedisRef is the Redis connection configuration
+                    properties:
+                      address:
+                        description: Address is the Redis server address (host:port)
+                        type: string
+                      clusterMode:
+                        description: ClusterMode enables Redis cluster support
+                        type: boolean
+                      database:
+                        default: 0
+                        description: Database is the Redis database number
+                        format: int32
+                        minimum: 0
+                        type: integer
+                      password:
+                        description: Password references a secret containing the Redis
+                          password
+                        properties:
+                          key:
+                            default: password
+                            description: Key is the key in the Secret
+                            type: string
+                          name:
+                            description: Name is the name of the Secret
+                            type: string
+                        required:
+                        - name
+                        type: object
+                      tls:
+                        description: TLS enables TLS for the Redis connection
+                        type: boolean
+                    required:
+                    - address
+                    type: object
+                  requestsPerSecond:
+                    description: RequestsPerSecond is the maximum number of requests
+                      per second
+                    format: int32
+                    minimum: 1
+                    type: integer
+                required:
+                - redisRef
+                - requestsPerSecond
+                type: object
+              forwardAuth:
+                description: ForwardAuth configuration (for ForwardAuth type)
+                properties:
+                  address:
+                    description: Address is the URL of the external auth service
+                    pattern: ^https?://
+                    type: string
+                  authHeaders:
+                    description: AuthHeaders specifies which headers from the original
+                      request to forward to the auth service
+                    items:
+                      type: string
+                    type: array
+                  cacheTTL:
+                    description: |-
+                      CacheTTL specifies how long to cache auth decisions (e.g., "5m", "1h")
+                      Empty means no caching
+                    type: string
+                  responseHeaders:
+                    description: ResponseHeaders specifies which headers from the
+                      auth response to copy to the upstream request
+                    items:
+                      type: string
+                    type: array
+                  timeout:
+                    default: 5s
+                    description: Timeout for the auth subrequest (e.g., "5s", "10s")
+                    type: string
+                required:
+                - address
+                type: object
               ipList:
                 description: IPList configuration (for IPAllowList/IPDenyList types)
                 properties:
@@ -103,10 +220,9 @@ spec:
                     minItems: 1
                     type: array
                   sourceHeader:
-                    description: 'SourceHeader specifies an HTTP header to extract
-                      the client IP from
-
-                      (e.g., X-Forwarded-For, X-Real-IP)'
+                    description: |-
+                      SourceHeader specifies an HTTP header to extract the client IP from
+                      (e.g., X-Forwarded-For, X-Real-IP)
                     type: string
                 required:
                 - cidrs
@@ -114,6 +230,14 @@ spec:
               jwt:
                 description: JWT configuration (for JWT type)
                 properties:
+                  allowedAlgorithms:
+                    description: |-
+                      AllowedAlgorithms restricts accepted JWT signing algorithms.
+                      Supported values: RS256, RS384, RS512, ES256, ES384, ES512, EdDSA.
+                      If empty, all supported algorithms are allowed.
+                    items:
+                      type: string
+                    type: array
                   audience:
                     description: Audience is the expected JWT audience
                     items:
@@ -134,9 +258,215 @@ spec:
                   jwksUri:
                     description: JWKSUri is the URL to fetch JWKS for verification
                     type: string
+                  vaultSecretRef:
+                    description: VaultSecretRef optionally references credentials
+                      stored in HashiCorp Vault
+                    properties:
+                      engine:
+                        default: kv-v2
+                        description: Engine specifies the Vault secrets engine type
+                        enum:
+                        - kv-v1
+                        - kv-v2
+                        type: string
+                      key:
+                        description: Key is the specific key within the secret to
+                          use
+                        type: string
+                      path:
+                        description: Path is the Vault secret path (e.g., "secret/data/myapp/oidc")
+                        type: string
+                      refreshInterval:
+                        default: 5m
+                        description: RefreshInterval specifies how often to refresh
+                          the secret from Vault
+                        type: string
+                    required:
+                    - key
+                    - path
+                    type: object
                 required:
                 - issuer
                 - jwksUri
+                type: object
+              meshAuthorization:
+                description: MeshAuthorization configuration (for MeshAuthorization
+                  type)
+                properties:
+                  action:
+                    description: 'Action is the policy action: ALLOW or DENY'
+                    enum:
+                    - ALLOW
+                    - DENY
+                    type: string
+                  rules:
+                    description: Rules defines authorization rules
+                    items:
+                      description: MeshAuthorizationRule defines a single authorization
+                        rule
+                      properties:
+                        from:
+                          description: From specifies allowed source identities
+                          items:
+                            description: MeshSource identifies allowed source workloads
+                              by identity
+                            properties:
+                              namespaces:
+                                description: Namespaces restricts to source workloads
+                                  in these namespaces
+                                items:
+                                  type: string
+                                type: array
+                              serviceAccounts:
+                                description: ServiceAccounts restricts to source workloads
+                                  with these service accounts
+                                items:
+                                  type: string
+                                type: array
+                              spiffeIds:
+                                description: SpiffeIDs restricts to sources matching
+                                  these SPIFFE ID patterns (glob)
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          type: array
+                        to:
+                          description: To specifies allowed destination traffic properties
+                          items:
+                            description: MeshDestination matches destination traffic
+                              properties for L7 authorization
+                            properties:
+                              methods:
+                                description: Methods restricts to these HTTP methods
+                                items:
+                                  type: string
+                                type: array
+                              paths:
+                                description: Paths restricts to these URL path patterns
+                                  (glob)
+                                items:
+                                  type: string
+                                type: array
+                            type: object
+                          type: array
+                      type: object
+                    minItems: 1
+                    type: array
+                required:
+                - action
+                - rules
+                type: object
+              oidc:
+                description: OIDC configuration (for OIDC type)
+                properties:
+                  authorization:
+                    description: Authorization contains role-based access control
+                      configuration
+                    properties:
+                      mode:
+                        default: any
+                        description: Mode specifies whether all requirements must
+                          be met ("all") or any one ("any")
+                        enum:
+                        - any
+                        - all
+                        type: string
+                      requiredGroups:
+                        description: RequiredGroups specifies groups the user must
+                          belong to
+                        items:
+                          type: string
+                        type: array
+                      requiredRoles:
+                        description: RequiredRoles specifies roles the user must have
+                        items:
+                          type: string
+                        type: array
+                    type: object
+                  clientID:
+                    description: ClientID is the OAuth2 client ID
+                    type: string
+                  clientSecretRef:
+                    description: |-
+                      ClientSecretRef references a Secret containing the OAuth2 client secret
+                      The Secret must have a key "client-secret"
+                    properties:
+                      name:
+                        description: Name is the name of the referenced object
+                        type: string
+                    required:
+                    - name
+                    type: object
+                  forwardHeaders:
+                    description: ForwardHeaders specifies which user info claims to
+                      forward as headers to the upstream
+                    items:
+                      type: string
+                    type: array
+                  issuerURL:
+                    description: |-
+                      IssuerURL is the OIDC provider's issuer URL for discovery
+                      For Keycloak, this is auto-constructed from Keycloak config if not specified
+                    type: string
+                  keycloak:
+                    description: Keycloak contains Keycloak-specific configuration
+                    properties:
+                      groupClaim:
+                        default: groups
+                        description: GroupClaim is the JWT claim containing groups
+                        type: string
+                      realm:
+                        description: Realm is the Keycloak realm name
+                        type: string
+                      roleClaim:
+                        default: realm_access.roles
+                        description: RoleClaim is the JWT claim containing realm roles
+                        type: string
+                      serverURL:
+                        description: ServerURL is the base Keycloak server URL (e.g.,
+                          https://keycloak.example.com)
+                        type: string
+                    required:
+                    - realm
+                    - serverURL
+                    type: object
+                  provider:
+                    default: generic
+                    description: Provider is the OIDC provider type ("generic" or
+                      "keycloak")
+                    enum:
+                    - generic
+                    - keycloak
+                    type: string
+                  redirectURL:
+                    description: RedirectURL is the OAuth2 callback URL (e.g., https://myapp.example.com/oauth2/callback)
+                    type: string
+                  scopes:
+                    default:
+                    - openid
+                    - profile
+                    - email
+                    description: Scopes is the list of OAuth2 scopes to request
+                    items:
+                      type: string
+                    type: array
+                  sessionSecretRef:
+                    description: |-
+                      SessionSecretRef references a Secret containing the session encryption key
+                      The Secret must have a key "session-secret" (32 bytes, base64 encoded)
+                    properties:
+                      name:
+                        description: Name is the name of the referenced object
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - clientID
+                - clientSecretRef
+                - redirectURL
+                - sessionSecretRef
                 type: object
               rateLimit:
                 description: RateLimit configuration (for RateLimit type)
@@ -246,153 +576,18 @@ spec:
                       "1; mode=block")
                     type: string
                 type: object
-              basicAuth:
-                description: BasicAuth configuration (for BasicAuth type)
-                properties:
-                  realm:
-                    default: Restricted
-                    description: Realm is the authentication realm name
-                    type: string
-                  secretRef:
-                    description: SecretRef references a Secret with htpasswd data
-                    properties:
-                      name:
-                        description: Name is the name of the referenced object
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  stripAuth:
-                    default: true
-                    description: StripAuth removes Authorization header before forwarding
-                    type: boolean
-                type: object
-              forwardAuth:
-                description: ForwardAuth configuration (for ForwardAuth type)
-                properties:
-                  address:
-                    description: Address is the URL of the external auth service
-                    pattern: ^https?://
-                    type: string
-                  authHeaders:
-                    description: Headers to forward to auth service
-                    items:
-                      type: string
-                    type: array
-                  cacheTTL:
-                    description: Cache TTL for auth decisions (e.g., 5m)
-                    type: string
-                  responseHeaders:
-                    description: Headers to copy from auth response
-                    items:
-                      type: string
-                    type: array
-                  timeout:
-                    default: 5s
-                    description: Timeout for auth subrequest
-                    type: string
-                required:
-                - address
-                type: object
-              oidc:
-                description: OIDC configuration (for OIDC type)
-                properties:
-                  authorization:
-                    description: Role-based access control configuration
-                    properties:
-                      mode:
-                        default: any
-                        enum:
-                        - any
-                        - all
-                        type: string
-                      requiredGroups:
-                        items:
-                          type: string
-                        type: array
-                      requiredRoles:
-                        items:
-                          type: string
-                        type: array
-                    type: object
-                  clientID:
-                    description: OAuth2 client ID
-                    type: string
-                  clientSecretRef:
-                    description: Secret containing OAuth2 client secret
-                    properties:
-                      name:
-                        type: string
-                    required:
-                    - name
-                    type: object
-                  forwardHeaders:
-                    description: User info claims to forward as headers
-                    items:
-                      type: string
-                    type: array
-                  issuerURL:
-                    description: OIDC provider issuer URL
-                    type: string
-                  keycloak:
-                    description: Keycloak-specific configuration
-                    properties:
-                      groupClaim:
-                        default: groups
-                        type: string
-                      realm:
-                        type: string
-                      roleClaim:
-                        default: realm_access.roles
-                        type: string
-                      serverURL:
-                        type: string
-                    required:
-                    - realm
-                    - serverURL
-                    type: object
-                  provider:
-                    default: generic
-                    enum:
-                    - generic
-                    - keycloak
-                    type: string
-                  redirectURL:
-                    description: OAuth2 callback URL
-                    type: string
-                  scopes:
-                    default:
-                    - openid
-                    - profile
-                    - email
-                    items:
-                      type: string
-                    type: array
-                  sessionSecretRef:
-                    description: Secret containing session encryption key
-                    properties:
-                      name:
-                        type: string
-                    required:
-                    - name
-                    type: object
-                required:
-                - clientID
-                - clientSecretRef
-                - redirectURL
-                - sessionSecretRef
-                type: object
               targetRef:
                 description: TargetRef identifies the resource this policy applies
                   to
                 properties:
                   kind:
                     description: Kind is the kind of resource (e.g., ProxyGateway,
-                      ProxyRoute)
+                      ProxyRoute, Service)
                     enum:
                     - ProxyGateway
                     - ProxyRoute
                     - ProxyBackend
+                    - Service
                     type: string
                   name:
                     description: Name is the name of the resource
@@ -414,31 +609,103 @@ spec:
                 - IPDenyList
                 - CORS
                 - SecurityHeaders
+                - DistributedRateLimit
+                - WAF
                 - WASMPlugin
                 - BasicAuth
                 - ForwardAuth
                 - OIDC
+                - MeshAuthorization
                 type: string
+              waf:
+                description: WAF configuration (for WAF type)
+                properties:
+                  anomalyThreshold:
+                    default: 5
+                    description: AnomalyThreshold is the cumulative anomaly score
+                      threshold for blocking
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  customRules:
+                    description: CustomRules are inline SecLang WAF rules applied
+                      after built-in rules
+                    items:
+                      type: string
+                    type: array
+                  enabled:
+                    default: true
+                    description: Enabled enables WAF protection
+                    type: boolean
+                  maxBodySize:
+                    default: 131072
+                    description: MaxBodySize limits request body inspection in bytes.
+                      0 disables body inspection.
+                    format: int64
+                    type: integer
+                  maxResponseBodySize:
+                    default: 131072
+                    description: MaxResponseBodySize limits response body inspection
+                      in bytes
+                    format: int64
+                    type: integer
+                  mode:
+                    default: prevention
+                    description: Mode is the WAF operating mode
+                    enum:
+                    - detection
+                    - prevention
+                    type: string
+                  paranoiaLevel:
+                    default: 1
+                    description: ParanoiaLevel sets the OWASP CRS paranoia level (1-4)
+                    format: int32
+                    maximum: 4
+                    minimum: 1
+                    type: integer
+                  responseBodyInspection:
+                    description: ResponseBodyInspection enables response body scanning
+                      for data leakage
+                    type: boolean
+                  ruleExclusions:
+                    description: RuleExclusions is a list of rule IDs to exclude
+                    items:
+                      type: string
+                    type: array
+                  rulesConfigMap:
+                    description: RulesConfigMap references a ConfigMap containing
+                      WAF rules
+                    properties:
+                      name:
+                        description: Name is the name of the referenced object
+                        type: string
+                    required:
+                    - name
+                    type: object
+                type: object
               wasmPlugin:
                 description: WASMPlugin configuration (for WASMPlugin type)
                 properties:
                   config:
                     additionalProperties:
                       type: string
-                    description: Inline key-value configuration for the WASM plugin
+                    description: Config is an inline key-value configuration map passed
+                      to the WASM plugin
                     type: object
                   configRef:
-                    description: Optional reference to a ConfigMap for plugin configuration
+                    description: ConfigRef is an optional reference to a ConfigMap
+                      containing plugin configuration
                     properties:
                       name:
-                        description: Name of the referenced ConfigMap
+                        description: Name is the name of the referenced object
                         type: string
                     required:
                     - name
                     type: object
                   phase:
                     default: request
-                    description: Phase when the plugin executes
+                    description: 'Phase determines when the plugin executes: request,
+                      response, or both'
                     enum:
                     - request
                     - response
@@ -446,10 +713,12 @@ spec:
                     type: string
                   priority:
                     default: 100
-                    description: Execution priority (lower = earlier)
+                    description: Priority determines execution order within the middleware
+                      pipeline (lower = earlier)
                     type: integer
                   source:
-                    description: Source ConfigMap name or URL for the WASM binary
+                    description: Source is a reference to the WASM binary (ConfigMap
+                      name or URL)
                     type: string
                 required:
                 - source
@@ -469,45 +738,32 @@ spec:
                     state of this API Resource.
                   properties:
                     lastTransitionTime:
-                      description: 'lastTransitionTime is the last time the condition
-                        transitioned from one status to another.
-
-                        This should be when the underlying condition changed.  If
-                        that is not known, then using the time when the API field
-                        changed is acceptable.'
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
                       format: date-time
                       type: string
                     message:
-                      description: 'message is a human readable message indicating
-                        details about the transition.
-
-                        This may be an empty string.'
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
                       maxLength: 32768
                       type: string
                     observedGeneration:
-                      description: 'observedGeneration represents the .metadata.generation
-                        that the condition was set based upon.
-
-                        For instance, if .metadata.generation is currently 12, but
-                        the .status.conditions[x].observedGeneration is 9, the condition
-                        is out of date
-
-                        with respect to the current state of the instance.'
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
                       format: int64
                       minimum: 0
                       type: integer
                     reason:
-                      description: 'reason contains a programmatic identifier indicating
-                        the reason for the condition''s last transition.
-
-                        Producers of specific condition types may define expected
-                        values and meanings for this field,
-
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
                         and whether the values are considered a guaranteed API.
-
                         The value should be a CamelCase string.
-
-                        This field may not be empty.'
+                        This field may not be empty.
                       maxLength: 1024
                       minLength: 1
                       pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
@@ -515,8 +771,8 @@ spec:
                     status:
                       description: status of the condition, one of True, False, Unknown.
                       enum:
-                      - 'True'
-                      - 'False'
+                      - "True"
+                      - "False"
                       - Unknown
                       type: string
                     type:

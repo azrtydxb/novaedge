@@ -1,0 +1,125 @@
+---
+# Example: Hub-Spoke Federation
+#
+# In hub-spoke mode, a central hub controller pushes configuration to spoke
+# clusters. Sync is one-directional: the hub owns the configuration and
+# distributes it to the spokes. This is ideal when a single team manages
+# routing/policy and edge clusters simply execute.
+#
+# Topology:
+#   hub-us-east (hub) --pushes config--> spoke-eu-west
+#                      --pushes config--> spoke-ap-southeast
+#
+# Prerequisites:
+#   1. Create TLS secrets for mTLS between clusters:
+#      kubectl -n novaedge-system create secret tls federation-ca \
+#        --cert=ca.crt --key=ca.key
+#      kubectl -n novaedge-system create secret tls federation-client-cert \
+#        --cert=client.crt --key=client.key
+#   2. Ensure gRPC ports (9443) are reachable between clusters.
+
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeFederation
+metadata:
+  name: global-federation
+  namespace: novaedge-system
+spec:
+  # hub-spoke: hub pushes config to spokes, no endpoint merging
+  mode: hub-spoke
+
+  # Unique identifier shared by all members of this federation
+  federationID: global-prod
+
+  # Identity of this controller within the federation
+  localMember:
+    name: hub-us-east
+    region: us-east-1
+    zone: us-east-1a
+    # gRPC endpoint that peers use to reach this controller
+    endpoint: "federation-hub.example.com:9443"
+    labels:
+      role: hub
+      environment: production
+
+  # Peer controllers in the federation
+  members:
+    # First spoke: EU region
+    - name: spoke-eu-west
+      region: eu-west-1
+      zone: eu-west-1a
+      endpoint: "spoke-eu.example.com:9443"
+      # Lower priority number = synced first
+      priority: 10
+      labels:
+        role: spoke
+        environment: production
+      # mTLS configuration for secure communication with this peer
+      tls:
+        enabled: true
+        caSecretRef:
+          name: federation-ca
+          namespace: novaedge-system
+        clientCertSecretRef:
+          name: federation-client-cert
+          namespace: novaedge-system
+        serverName: spoke-eu.example.com
+
+    # Second spoke: APAC region
+    - name: spoke-ap-southeast
+      region: ap-southeast-1
+      zone: ap-southeast-1a
+      endpoint: "spoke-ap.example.com:9443"
+      priority: 20
+      labels:
+        role: spoke
+        environment: production
+      tls:
+        enabled: true
+        caSecretRef:
+          name: federation-ca
+          namespace: novaedge-system
+        clientCertSecretRef:
+          name: federation-client-cert
+          namespace: novaedge-system
+        serverName: spoke-ap.example.com
+
+  # Sync settings control how configuration is distributed
+  sync:
+    # How often the hub pushes config to spokes
+    interval: 5s
+    # Timeout for each sync operation
+    timeout: 30s
+    # Maximum resources per sync batch (tune for large clusters)
+    batchSize: 100
+    # Compress sync traffic to reduce bandwidth between regions
+    compression: true
+    # Only sync these resource types (empty = all)
+    resourceTypes:
+      - ProxyGateway
+      - ProxyRoute
+      - ProxyBackend
+      - ProxyPolicy
+    # Exclude system namespaces from sync
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+
+  # Health checking ensures the hub detects spoke failures
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    # Mark spoke as unhealthy after 3 consecutive failures
+    failureThreshold: 3
+    successThreshold: 1
+
+  # Split-brain is less critical in hub-spoke since the hub is authoritative,
+  # but enabling it protects against accidental dual-hub scenarios
+  splitBrain:
+    enabled: true
+    partitionTimeout: 30s
+    quorumMode: Controllers
+    quorumRequired: false
+    fencingEnabled: false
+
+  # Federation is active (set to true to pause sync temporarily)
+  paused: false

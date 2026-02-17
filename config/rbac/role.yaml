@@ -22,11 +22,25 @@ rules:
 - apiGroups:
   - ""
   resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
   - nodes
   verbs:
   - get
   - list
   - watch
+- apiGroups:
+  - ""
+  resources:
+  - services/status
+  verbs:
+  - patch
+  - update
 - apiGroups:
   - apps
   resources:
@@ -52,15 +66,11 @@ rules:
   - gateway.networking.k8s.io
   resources:
   - gatewayclasses
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - gateway.networking.k8s.io
-  resources:
   - gateways
+  - grpcroutes
   - httproutes
+  - tcproutes
+  - tlsroutes
   verbs:
   - get
   - list
@@ -70,8 +80,12 @@ rules:
 - apiGroups:
   - gateway.networking.k8s.io
   resources:
+  - gatewayclasses/status
   - gateways/status
+  - grpcroutes/status
   - httproutes/status
+  - tcproutes/status
+  - tlsroutes/status
   verbs:
   - get
   - patch
@@ -107,7 +121,6 @@ rules:
   - novaedgefederations
   - novaedgeremoteclusters
   - proxybackends
-  - proxycertificates
   - proxygateways
   - proxyippools
   - proxypolicies
@@ -128,7 +141,6 @@ rules:
   - novaedgefederations/finalizers
   - novaedgeremoteclusters/finalizers
   - proxybackends/finalizers
-  - proxycertificates/finalizers
   - proxygateways/finalizers
   - proxyippools/finalizers
   - proxypolicies/finalizers
@@ -143,7 +155,6 @@ rules:
   - novaedgefederations/status
   - novaedgeremoteclusters/status
   - proxybackends/status
-  - proxycertificates/status
   - proxygateways/status
   - proxyippools/status
   - proxypolicies/status

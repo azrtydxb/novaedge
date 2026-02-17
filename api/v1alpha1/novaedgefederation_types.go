@@ -21,9 +21,31 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// FederationMode defines the federation operating mode
+// +kubebuilder:validation:Enum=hub-spoke;mesh;unified
+type FederationMode string
+
+const (
+	// FederationModeHubSpoke enables one-way config push from hub to spoke clusters
+	FederationModeHubSpoke FederationMode = "hub-spoke"
+
+	// FederationModeMesh enables bidirectional sync with cross-cluster endpoint merging
+	FederationModeMesh FederationMode = "mesh"
+
+	// FederationModeUnified enables shared service namespace with location-aware routing
+	FederationModeUnified FederationMode = "unified"
+)
+
 // NovaEdgeFederationSpec defines the desired state for federation configuration.
 // It configures active/active federation between multiple controllers.
 type NovaEdgeFederationSpec struct {
+	// Mode configures the federation operating mode.
+	// hub-spoke: one-way config push from hub to spoke clusters.
+	// mesh: bidirectional sync with cross-cluster endpoint merging.
+	// unified: shared service namespace with location-aware routing.
+	// +kubebuilder:default=mesh
+	// +optional
+	Mode FederationMode `json:"mode,omitempty"`
 	// FederationID is a unique identifier for this federation
 	// All members must use the same federation ID
 	// +kubebuilder:validation:Required

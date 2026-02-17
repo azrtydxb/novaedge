@@ -433,3 +433,44 @@ federation:
       controllerWeight: 10
       agentWeight: 1
       minAgentsForQuorum: 1
+
+  # Federation topology mode
+  # hub-spoke: one hub controller, spoke controllers connect to hub
+  # mesh: all controllers peer with each other
+  # unified: single logical cluster across sites
+  mode: mesh
+
+  # Cross-cluster routing and endpoint configuration
+  crossCluster:
+    # Merge endpoints from remote clusters into local routing tables
+    endpointMerging: true
+    # Locality-aware routing preferences
+    localityRouting:
+      enabled: true
+      # Override auto-detected locality (leave empty for auto-detection)
+      localRegion: ""
+      localZone: ""
+      localCluster: ""
+      # Minimum percentage of healthy local endpoints before spilling to remote
+      minHealthyPercent: 0.7
+
+  # Optional network tunnel for cross-cluster data-plane connectivity
+  tunnel:
+    enabled: false
+    # Tunnel type: wireguard, ssh, websocket
+    type: ""
+    wireguard:
+      privateKeySecretRef: ""
+      peerPublicKey: ""
+      peerEndpoint: ""
+      allowedIPs: []
+      persistentKeepalive: 25
+    ssh:
+      host: ""
+      port: 22
+      user: ""
+      privateKeySecretRef: ""
+      remoteAddr: ""
+    websocket:
+      url: ""
+      tlsSecretRef: ""

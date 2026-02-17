@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -121,11 +122,19 @@ func (r *RemoteClusterRegistry) UpdateConnection(name string, connected bool, ag
 	}
 }
 
+// TunnelTeardown defines an interface for tearing down network tunnels.
+// When set on the reconciler, tunnel cleanup is performed during remote
+// cluster deletion.
+type TunnelTeardown interface {
+	RemoveTunnel(clusterName string) error
+}
+
 // NovaEdgeRemoteClusterReconciler reconciles a NovaEdgeRemoteCluster object
 type NovaEdgeRemoteClusterReconciler struct {
 	client.Client
-	Scheme   *runtime.Scheme
-	Registry *RemoteClusterRegistry
+	Scheme        *runtime.Scheme
+	Registry      *RemoteClusterRegistry
+	TunnelManager TunnelTeardown
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=novaedgeremoteclusters,verbs=get;list;watch;create;update;patch;delete
@@ -359,21 +368,135 @@ func (r *NovaEdgeRemoteClusterReconciler) updateOverallStatus(ctx context.Contex
 }
 
 // cleanupRemoteCluster handles cleanup when a remote cluster is deleted.
-// The error return is kept for future cleanup operations that may fail.
+// It deletes all federation-synced resources labeled with FederationOriginLabel,
+// tears down any active network tunnel, and unregisters the cluster from the
+// in-memory registry. Errors during cleanup are logged but do not block
+// finalizer removal, so the function always returns nil.
 //
-//nolint:unparam // error return reserved for future cleanup operations
+//nolint:unparam // always returns nil by design to avoid blocking finalizer removal
 func (r *NovaEdgeRemoteClusterReconciler) cleanupRemoteCluster(ctx context.Context, rc *novaedgev1alpha1.NovaEdgeRemoteCluster) error {
 	logger := log.FromContext(ctx)
-	logger.Info("Cleaning up remote cluster", "clusterName", rc.Spec.ClusterName)
+	clusterName := rc.Spec.ClusterName
+	logger.Info("Cleaning up remote cluster", "clusterName", clusterName)
 
-	// Unregister from registry
-	r.Registry.Unregister(rc.Spec.ClusterName)
+	// Delete all federation-synced resources for this cluster.
+	// Currently, FederationOriginLabel is set to "true" for all federated
+	// resources. When per-cluster origin tracking is added, filter by
+	// the specific cluster name instead.
+	labelSelector := client.HasLabels{FederationOriginLabel}
+	if err := r.deleteFederatedResources(ctx, clusterName, labelSelector); err != nil {
+		logger.Error(err, "Errors occurred during federated resource cleanup", "clusterName", clusterName)
+		// Continue with remaining cleanup; resource deletion errors are
+		// logged individually and should not block finalizer removal.
+	}
 
-	logger.Info("Remote cluster unregistered; notifying controller and cleaning up cluster-specific resources is not yet implemented",
-		"clusterName", rc.Spec.ClusterName,
-	)
+	// Tear down network tunnel if a tunnel manager is configured
+	if r.TunnelManager != nil {
+		if err := r.TunnelManager.RemoveTunnel(clusterName); err != nil {
+			logger.Error(err, "Failed to remove network tunnel", "clusterName", clusterName)
+			// Not fatal; the tunnel may not exist for this cluster
+		} else {
+			logger.Info("Network tunnel removed", "clusterName", clusterName)
+		}
+	}
+
+	// Unregister from in-memory registry
+	r.Registry.Unregister(clusterName)
+	logger.Info("Remote cluster cleanup complete", "clusterName", clusterName)
 
 	return nil
+}
+
+// deleteFederatedResources deletes all resources carrying the given label
+// selector across all supported CRD types, ConfigMaps, and Secrets. Errors
+// are accumulated and returned as a single wrapped error so that cleanup
+// proceeds for every resource type even if one fails.
+func (r *NovaEdgeRemoteClusterReconciler) deleteFederatedResources(ctx context.Context, clusterName string, labels client.HasLabels) error {
+	logger := log.FromContext(ctx)
+	var errs []error
+
+	// Delete NovaEdge CRD resources
+	crdDeleters := []struct {
+		kind string
+		list client.ObjectList
+	}{
+		{"ProxyGateway", &novaedgev1alpha1.ProxyGatewayList{}},
+		{"ProxyRoute", &novaedgev1alpha1.ProxyRouteList{}},
+		{"ProxyBackend", &novaedgev1alpha1.ProxyBackendList{}},
+		{"ProxyPolicy", &novaedgev1alpha1.ProxyPolicyList{}},
+		{"ProxyVIP", &novaedgev1alpha1.ProxyVIPList{}},
+	}
+
+	for _, d := range crdDeleters {
+		count, err := r.deleteAllWithLabel(ctx, d.list, labels)
+		if err != nil {
+			logger.Error(err, "Failed to delete federated resources", "kind", d.kind, "clusterName", clusterName)
+			errs = append(errs, fmt.Errorf("deleting %s resources: %w", d.kind, err))
+		} else if count > 0 {
+			logger.Info("Deleted federated resources", "kind", d.kind, "count", count, "clusterName", clusterName)
+		}
+	}
+
+	// Delete ConfigMaps
+	cmCount, cmErr := r.deleteAllWithLabel(ctx, &corev1.ConfigMapList{}, labels)
+	if cmErr != nil {
+		logger.Error(cmErr, "Failed to delete federated ConfigMaps", "clusterName", clusterName)
+		errs = append(errs, fmt.Errorf("deleting ConfigMaps: %w", cmErr))
+	} else if cmCount > 0 {
+		logger.Info("Deleted federated ConfigMaps", "count", cmCount, "clusterName", clusterName)
+	}
+
+	// Delete Secrets
+	secCount, secErr := r.deleteAllWithLabel(ctx, &corev1.SecretList{}, labels)
+	if secErr != nil {
+		logger.Error(secErr, "Failed to delete federated Secrets", "clusterName", clusterName)
+		errs = append(errs, fmt.Errorf("deleting Secrets: %w", secErr))
+	} else if secCount > 0 {
+		logger.Info("Deleted federated Secrets", "count", secCount, "clusterName", clusterName)
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("encountered %d error(s) during cleanup: %v", len(errs), errs)
+	}
+	return nil
+}
+
+// deleteAllWithLabel lists objects matching the label selector and deletes
+// each one individually. It returns the number of successfully deleted objects
+// and any error encountered during listing.
+func (r *NovaEdgeRemoteClusterReconciler) deleteAllWithLabel(ctx context.Context, list client.ObjectList, labels client.HasLabels) (int, error) {
+	if err := r.List(ctx, list, labels, client.InNamespace("")); err != nil {
+		return 0, fmt.Errorf("listing resources: %w", err)
+	}
+
+	logger := log.FromContext(ctx)
+	deleted := 0
+
+	// Extract items from the list using the meta accessor
+	items, err := meta.ExtractList(list)
+	if err != nil {
+		return 0, fmt.Errorf("extracting list items: %w", err)
+	}
+
+	for _, item := range items {
+		obj, ok := item.(client.Object)
+		if !ok {
+			continue
+		}
+		if err := r.Delete(ctx, obj); err != nil {
+			if !errors.IsNotFound(err) {
+				logger.Error(err, "Failed to delete resource",
+					"kind", obj.GetObjectKind().GroupVersionKind().Kind,
+					"name", obj.GetName(),
+					"namespace", obj.GetNamespace(),
+				)
+			}
+			continue
+		}
+		deleted++
+	}
+
+	return deleted, nil
 }
 
 // setCondition sets a condition on the remote cluster status

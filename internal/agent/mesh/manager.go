@@ -135,6 +135,9 @@ type ManagerConfig struct {
 	TPROXYPort  int32
 	TunnelPort  int32
 	TrustDomain string
+	// Federation holds cross-cluster federation settings. May be nil when
+	// federation is not active.
+	Federation *FederationConfig
 }
 
 // NewManager creates a new mesh manager with mTLS tunnel support.
@@ -149,7 +152,7 @@ func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
 		tproxyPort:   cfg.TPROXYPort,
 		tunnelPort:   cfg.TunnelPort,
 		serviceTable: NewServiceTable(),
-		tlsProvider:  NewTLSProvider(namedLogger, trustDomain),
+		tlsProvider:  NewTLSProvider(namedLogger, trustDomain, cfg.Federation),
 		authorizer:   NewAuthorizer(namedLogger),
 		trustDomain:  trustDomain,
 	}
@@ -177,7 +180,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	// Start tunnel server (will serve once TLS certificates are available).
 	if m.tunnelPort > 0 {
 		serverTLS := m.tlsProvider.ServerTLSConfig()
-		m.tunnelServer = NewTunnelServer(m.logger, m.tunnelPort, serverTLS, m.authorizer)
+		m.tunnelServer = NewTunnelServer(m.logger, m.tunnelPort, serverTLS, m.authorizer, m.tlsProvider)
 		go func() {
 			if err := m.tunnelServer.Start(listenerCtx); err != nil {
 				m.logger.Error("Tunnel server stopped", zap.Error(err))
@@ -244,7 +247,7 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 // StartCertRequester launches a background goroutine that requests a mesh
 // workload certificate from the controller and renews it before expiry.
 func (m *Manager) StartCertRequester(ctx context.Context, nodeName string, conn *grpc.ClientConn) {
-	cr := NewCertRequester(m.logger, nodeName, m.trustDomain, m.UpdateTLSCertificate)
+	cr := NewCertRequester(m.logger, nodeName, m.trustDomain, m.tlsProvider.fedCfg, m.UpdateTLSCertificate)
 	go cr.Run(ctx, conn)
 }
 
