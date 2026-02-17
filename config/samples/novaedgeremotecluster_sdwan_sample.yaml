@@ -1,0 +1,31 @@
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeRemoteCluster
+metadata:
+  name: site-b
+  namespace: novaedge-system
+spec:
+  clusterName: site-b
+  region: us-west-2
+  zone: us-west-2a
+  overlayCIDR: "10.200.1.0/24"
+  connection:
+    apiEndpoint: "https://site-b.example.com:6443"
+    authSecretRef:
+      name: site-b-kubeconfig
+  tunnel:
+    type: WireGuard
+    wireGuard:
+      publicKey: "dGVzdC1wdWJsaWMta2V5LWJhc2U2NA=="
+      endpoint: "203.0.113.2:51820"
+      allowedIPs:
+        - "10.200.1.0/24"
+      persistentKeepalive: 25
+      listenPort: 51820
+  routing:
+    allowCrossClusterTraffic: true
+    priority: 100
+    weight: 100
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    failureThreshold: 3

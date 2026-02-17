@@ -1,0 +1,19 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyWANLink
+metadata:
+  name: site-a-isp2
+  namespace: novaedge-system
+spec:
+  site: site-a
+  interface: eth1
+  provider: "Backup Broadband"
+  bandwidth: "500Mbps"
+  cost: 200
+  role: backup
+  sla:
+    maxLatency: 100ms
+    maxJitter: 20ms
+    maxPacketLoss: 2.0
+  tunnelEndpoint:
+    publicIP: "198.51.100.1"
+    port: 51821

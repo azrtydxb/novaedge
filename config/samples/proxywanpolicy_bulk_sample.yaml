@@ -1,0 +1,16 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyWANPolicy
+metadata:
+  name: bulk-transfer
+  namespace: novaedge-system
+spec:
+  match:
+    hosts:
+      - "backup.example.com"
+      - "sync.example.com"
+    paths:
+      - "/api/v1/export/*"
+  pathSelection:
+    strategy: lowest-cost
+    failover: true
+    dscpClass: CS1

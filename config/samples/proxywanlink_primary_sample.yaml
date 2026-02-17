@@ -1,0 +1,19 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyWANLink
+metadata:
+  name: site-a-isp1
+  namespace: novaedge-system
+spec:
+  site: site-a
+  interface: eth0
+  provider: "Acme ISP"
+  bandwidth: "1Gbps"
+  cost: 100
+  role: primary
+  sla:
+    maxLatency: 50ms
+    maxJitter: 10ms
+    maxPacketLoss: 1.0
+  tunnelEndpoint:
+    publicIP: "203.0.113.1"
+    port: 51820
