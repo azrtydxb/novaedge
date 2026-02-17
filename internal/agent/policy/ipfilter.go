@@ -67,7 +67,7 @@ var trustedProxyCIDRsPtr atomic.Pointer[[]*net.IPNet]
 // The new slice is built locally and stored atomically so that concurrent
 // readers always see a consistent snapshot.
 func SetGlobalTrustedProxies(cidrs []string) error {
-	var newCIDRs []*net.IPNet
+	newCIDRs := make([]*net.IPNet, 0, len(cidrs))
 	for _, cidr := range cidrs {
 		_, ipNet, err := net.ParseCIDR(cidr)
 		if err != nil {

@@ -39,6 +39,7 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
+	"github.com/piwi3910/novaedge/internal/agent/introspection"
 	"github.com/piwi3910/novaedge/internal/agent/l4"
 	"github.com/piwi3910/novaedge/internal/agent/mesh"
 	"github.com/piwi3910/novaedge/internal/agent/server"
@@ -323,6 +324,15 @@ func main() {
 	}
 
 	// Start config watcher
+	// Create snapshot holder and introspection server
+	snapshotHolder := introspection.NewSnapshotHolder()
+	introServer := introspection.NewServer(snapshotHolder, logger)
+	go func() {
+		if introErr := introServer.Start(ctx, ":9092"); introErr != nil {
+			logger.Error("introspection server failed", zap.Error(introErr))
+		}
+	}()
+
 	configChan := make(chan error, 1)
 	go func() {
 		configChan <- watcher.Start(func(snapshot *config.Snapshot) error {
@@ -333,6 +343,9 @@ func main() {
 				zap.Int("routes", len(snapshot.Routes)),
 				zap.Int("vips", len(snapshot.VipAssignments)),
 			)
+
+			// Store snapshot for introspection
+			snapshotHolder.Store(snapshot.ConfigSnapshot)
 
 			// Apply L4 config (TCP/UDP/TLS passthrough)
 			if applyErr := applyL4Config(ctx, l4Manager, snapshot, logger); applyErr != nil {

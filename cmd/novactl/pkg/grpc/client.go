@@ -32,8 +32,8 @@ func NewAgentClient(ctx context.Context, clientset kubernetes.Interface, namespa
 		return nil, fmt.Errorf("pod %s has no IP address", podName)
 	}
 
-	// Agent gRPC port (typically 9090)
-	agentAddress := fmt.Sprintf("%s:9090", pod.Status.PodIP)
+	// Agent introspection gRPC port
+	agentAddress := fmt.Sprintf("%s:9092", pod.Status.PodIP)
 
 	// Create gRPC connection using lazy connect (grpc.NewClient)
 	opts := grpclimits.ClientOptions()
@@ -128,28 +128,65 @@ type EndpointHealth struct {
 	Ready   bool
 }
 
-// GetConfig retrieves the current configuration from the agent
-// Note: This requires implementing a new RPC method in the proto definition
-// For now, this is a placeholder that shows the structure
+// GetConfig retrieves the current configuration from the agent.
 func (c *AgentClient) GetConfig(ctx context.Context) (*AgentConfig, error) {
-	// This would require a new gRPC method like GetCurrentConfig()
-	// Since the current proto only has StreamConfig and ReportStatus,
-	// we return an informative error
-	return nil, fmt.Errorf("GetConfig requires implementing a new gRPC method in the agent service")
+	resp, err := c.client.GetAgentConfig(ctx, &pb.GetConfigRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("get agent config: %w", err)
+	}
+	return &AgentConfig{
+		Version:       resp.Version,
+		GatewayCount:  int(resp.GatewayCount),
+		RouteCount:    int(resp.RouteCount),
+		ClusterCount:  int(resp.ClusterCount),
+		EndpointCount: int(resp.EndpointCount),
+		VIPCount:      int(resp.VipCount),
+		PolicyCount:   int(resp.PolicyCount),
+	}, nil
 }
 
-// GetBackendHealth retrieves backend health information from the agent
-// Note: This requires implementing a new RPC method in the proto definition
+// GetBackendHealth retrieves backend health information from the agent.
 func (c *AgentClient) GetBackendHealth(ctx context.Context) ([]BackendHealth, error) {
-	// This would require a new gRPC method like GetBackendHealth()
-	return nil, fmt.Errorf("GetBackendHealth requires implementing a new gRPC method in the agent service")
+	resp, err := c.client.GetBackendHealth(ctx, &pb.GetBackendHealthRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("get backend health: %w", err)
+	}
+	backends := make([]BackendHealth, 0, len(resp.Backends))
+	for _, b := range resp.Backends {
+		bh := BackendHealth{
+			ClusterName: b.ClusterName,
+			Namespace:   b.Namespace,
+			LBPolicy:    b.LbPolicy,
+		}
+		for _, ep := range b.Endpoints {
+			bh.Endpoints = append(bh.Endpoints, EndpointHealth{
+				Address: ep.Address,
+				Port:    ep.Port,
+				Ready:   ep.Healthy,
+			})
+		}
+		backends = append(backends, bh)
+	}
+	return backends, nil
 }
 
-// GetVIPs retrieves VIP information from the agent
-// Note: This requires implementing a new RPC method in the proto definition
+// GetVIPs retrieves VIP information from the agent.
 func (c *AgentClient) GetVIPs(ctx context.Context) ([]VIPInfo, error) {
-	// This would require a new gRPC method like GetVIPs()
-	return nil, fmt.Errorf("GetVIPs requires implementing a new gRPC method in the agent service")
+	resp, err := c.client.GetVIPs(ctx, &pb.GetVIPsRequest{})
+	if err != nil {
+		return nil, fmt.Errorf("get VIPs: %w", err)
+	}
+	vips := make([]VIPInfo, 0, len(resp.Vips))
+	for _, v := range resp.Vips {
+		vips = append(vips, VIPInfo{
+			Name:     v.Name,
+			Address:  v.Address,
+			Mode:     v.Mode,
+			IsActive: v.IsActive,
+			Ports:    v.Ports,
+		})
+	}
+	return vips, nil
 }
 
 // FindAgentPod finds the NovaEdge agent pod running on a specific node
