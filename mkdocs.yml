@@ -81,6 +81,7 @@ nav:
     - TLS & Certificate Management: use-cases/tls-management.md
     - WAF & Security Stack: use-cases/waf-security.md
     - Multi-Cluster Federation: use-cases/multi-cluster.md
+    - SD-WAN Multi-Site: use-cases/sd-wan.md
   - User Guide:
     - Routing: user-guide/routing.md
     - Load Balancing: user-guide/load-balancing.md

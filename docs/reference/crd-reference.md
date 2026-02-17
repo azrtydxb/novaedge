@@ -1,6 +1,6 @@
 # CRD Reference
 
-NovaEdge uses Custom Resource Definitions (CRDs) to configure load balancing, routing, and policies.
+NovaEdge uses 12 Custom Resource Definitions (CRDs) to configure load balancing, routing, policies, and SD-WAN.
 
 ## CRD Overview
 
@@ -21,6 +21,11 @@ flowchart TB
         POL["ProxyPolicy<br/>Rate limit, CORS, JWT, etc."]
     end
 
+    subgraph SDWAN["SD-WAN"]
+        WL["ProxyWANLink<br/>WAN link management"]
+        WP["ProxyWANPolicy<br/>Path selection policies"]
+    end
+
     NEC --> GW
     NEC --> VIP
     NERC --> NEC
@@ -33,8 +38,11 @@ flowchart TB
     RT --> POL
     GW --> POL
 
+    WP --> WL
+
     style Cluster fill:#e6f3ff
     style DataPlane fill:#fff5e6
+    style SDWAN fill:#e8f5e9
 ```
 
 ## CRD Relationships
@@ -1211,6 +1219,125 @@ spec:
     xContentTypeOptions: true
     referrerPolicy: strict-origin-when-cross-origin
     contentSecurityPolicy: "default-src 'self'"
+```
+
+---
+
+## ProxyWANLink
+
+Represents a WAN link for SD-WAN multi-link management. Tracks link properties, SLA thresholds, and observed quality metrics.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyWANLink
+metadata:
+  name: primary-fiber
+spec:
+  site: site-alpha
+  interface: eth0
+  provider: ISP-A
+  bandwidth: "1Gbps"
+  cost: 10
+  role: primary
+  sla:
+    maxLatency: 50ms
+    maxJitter: 10ms
+    maxPacketLoss: 0.01
+  tunnelEndpoint:
+    publicIP: "203.0.113.1"
+    port: 51820
+```
+
+### ProxyWANLink Spec Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `spec.site` | string | Yes | - | Site name this WAN link belongs to |
+| `spec.interface` | string | Yes | - | Network interface name (e.g., `eth0`, `wg0`) |
+| `spec.provider` | string | Yes | - | ISP or WAN circuit provider name |
+| `spec.bandwidth` | string | Yes | - | Provisioned bandwidth (e.g., `100Mbps`, `1Gbps`) |
+| `spec.cost` | int32 | No | 100 | Administrative cost metric (lower is preferred) |
+| `spec.role` | string | No | `primary` | Link role: `primary`, `backup`, or `loadbalance` |
+| `spec.sla` | object | No | - | SLA thresholds for this link |
+| `spec.sla.maxLatency` | duration | No | - | Maximum acceptable one-way latency |
+| `spec.sla.maxJitter` | duration | No | - | Maximum acceptable jitter |
+| `spec.sla.maxPacketLoss` | float | No | - | Maximum acceptable packet loss ratio (0.0-1.0) |
+| `spec.tunnelEndpoint` | object | No | - | Public endpoint for tunnel establishment |
+| `spec.tunnelEndpoint.publicIP` | string | Yes* | - | Publicly reachable IP address |
+| `spec.tunnelEndpoint.port` | int32 | Yes* | - | UDP/TCP port for tunnel traffic (1-65535) |
+
+*Required when `tunnelEndpoint` is specified.
+
+### ProxyWANLink Status Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status.phase` | string | Current lifecycle phase of the WAN link |
+| `status.conditions` | []Condition | Standard Kubernetes conditions |
+| `status.currentLatency` | float64 | Most recently measured latency in milliseconds |
+| `status.currentPacketLoss` | float64 | Most recently measured packet loss ratio (0.0-1.0) |
+| `status.healthy` | bool | Whether the link currently meets its SLA thresholds |
+| `status.observedGeneration` | int64 | Most recent generation observed by the controller |
+
+### Print Columns
+
+```
+NAME              SITE         ROLE      PROVIDER   HEALTHY   AGE
+primary-fiber     site-alpha   primary   ISP-A      true      5d
+```
+
+---
+
+## ProxyWANPolicy
+
+Defines application-aware path selection rules for SD-WAN traffic. Matches traffic by host, path, or headers and routes it through the optimal WAN link.
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyWANPolicy
+metadata:
+  name: voice-policy
+spec:
+  match:
+    hosts:
+      - "voice.example.com"
+    paths:
+      - "/api/voice"
+    headers:
+      X-Traffic-Class: voice
+  pathSelection:
+    strategy: lowest-latency
+    failover: true
+    dscpClass: EF
+```
+
+### ProxyWANPolicy Spec Fields
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `spec.match` | object | No | - | Traffic matching criteria |
+| `spec.match.hosts` | []string | No | - | Hostnames to match |
+| `spec.match.paths` | []string | No | - | URL path prefixes to match |
+| `spec.match.headers` | map[string]string | No | - | Header name-value pairs to match |
+| `spec.pathSelection` | object | Yes | - | Path selection configuration |
+| `spec.pathSelection.strategy` | string | Yes | - | Selection algorithm: `lowest-latency`, `highest-bandwidth`, `most-reliable`, `lowest-cost` |
+| `spec.pathSelection.failover` | bool | No | `true` | Enable automatic failover when selected link fails SLA |
+| `spec.pathSelection.dscpClass` | string | No | - | DSCP marking for matched traffic (e.g., `EF`, `AF41`, `CS6`) |
+
+### ProxyWANPolicy Status Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status.phase` | string | Current lifecycle phase of the policy |
+| `status.conditions` | []Condition | Standard Kubernetes conditions |
+| `status.selectionCount` | int64 | Total number of path selections made using this policy |
+| `status.observedGeneration` | int64 | Most recent generation observed by the controller |
+
+### Print Columns
+
+```
+NAME            STRATEGY         DSCP   AGE
+voice-policy    lowest-latency   EF     5d
 ```
 
 ---

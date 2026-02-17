@@ -2,6 +2,37 @@
 
 All notable changes to NovaEdge are documented in this file.
 
+## [1.3.0] - 2026-02-17
+
+Major feature release: SD-WAN with application-aware path selection and multi-link WAN management.
+
+### Features
+
+- **WireGuard tunnel rewrite** with wgctrl kernel API for in-kernel WireGuard management, replacing userspace tunnel setup (#410)
+- **Overlay network routing** with BGP prefix advertisement for site-to-site connectivity (#410)
+- **ProxyWANLink CRD** for declarative multi-WAN link management with primary, backup, and load-balanced roles (#410)
+- **ProxyWANPolicy CRD** for application-aware path selection with traffic matching by host, path, and headers (#410)
+- **WAN link quality prober** with real-time latency, jitter, and packet loss measurement using EWMA smoothing (#410)
+- **SLA-based path selection engine** with 4 strategies: lowest-latency, highest-bandwidth, most-reliable, lowest-cost (#410)
+- **STUN endpoint discovery** for NAT traversal in WireGuard tunnel establishment (#410)
+- **DSCP packet marking** for QoS enforcement on matched traffic flows (#410)
+- **SD-WAN orchestrator** with automatic failover, hysteresis-based link switching, and Prometheus metrics (#410)
+- **`novactl sdwan` CLI commands**: status, links, and topology subcommands for SD-WAN operational visibility (#410)
+- **WebUI SD-WAN topology dashboard** for visual overlay network monitoring (#410)
+
+### Documentation
+
+- SD-WAN user guide with architecture diagrams and configuration examples (`docs/user-guide/sdwan.md`) (#410)
+- ProxyWANLink and ProxyWANPolicy CRD reference pages (`docs/reference/`) (#410)
+- SD-WAN multi-site use case with complete deployment examples (`docs/use-cases/sd-wan.md`) (#410)
+- Updated README, CHANGELOG, comparison, architecture, CLI reference, CRD reference, and examples docs (#410)
+- 4 sample configurations: primary/backup WAN links, voice and bulk transfer policies (#410)
+
+### Helm
+
+- Added ProxyWANLink and ProxyWANPolicy CRD manifests to all Helm charts (#410)
+- Updated RBAC for controller, agent, and operator to include proxywanlinks and proxywanpolicies (#410)
+
 ## [1.2.1] - 2026-02-17
 
 Feature gap release: closes parity gaps with production reverse proxies (NGINX, Envoy, Traefik, HAProxy, Caddy).
@@ -151,7 +182,7 @@ NovaEdge v1.0.0 is the first stable release. It delivers a unified Kubernetes-na
 
 ### Core Architecture
 
-- **Controller** (control plane): Watches 10 CRDs, Ingress, and Gateway API resources; builds per-node config snapshots; pushes to agents via gRPC
+- **Controller** (control plane): Watches 12 CRDs, Ingress, and Gateway API resources; builds per-node config snapshots; pushes to agents via gRPC
 - **Agent** (data plane): Runs as DaemonSet with hostNetwork; handles L4/L7 proxying, VIP management, policy enforcement, and service mesh
 - **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
 - **Standalone mode**: File-based configuration for non-Kubernetes deployments
@@ -319,7 +350,7 @@ NovaEdge v1.0.0 is the first stable release. It delivers a unified Kubernetes-na
 
 - `novaedge` (main chart), `novaedge-agent`, `novaedge-operator`
 - Kubernetes NetworkPolicies for all charts
-- CRD definitions for 10 resource types
+- CRD definitions for 12 resource types
 - Kustomize overlays (dev, production)
 - 51 sample configurations
 

@@ -16,7 +16,7 @@ rules:
     verbs: ["get", "list", "watch"]
   # Read NovaEdge CRDs
   - apiGroups: ["novaedge.io"]
-    resources: ["proxygateways", "proxyroutes", "proxybackends", "proxypolicies", "proxyvips"]
+    resources: ["proxygateways", "proxyroutes", "proxybackends", "proxypolicies", "proxyvips", "proxywanlinks", "proxywanpolicies"]
     verbs: ["get", "list", "watch"]
   # Update status on local resources if needed
   - apiGroups: ["novaedge.io"]

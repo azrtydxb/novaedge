@@ -13,6 +13,20 @@ Ready-to-use configuration examples for common NovaEdge use cases.
 | [Multi-Tenant](#multi-tenant-setup) | Namespace isolation |
 | [WebSocket](#websocket-support) | WebSocket routing |
 | [gRPC](#grpc-load-balancing) | gRPC routing |
+| [SD-WAN Samples](#sd-wan-samples) | WAN link and path selection configs |
+
+## Sample Configuration Files
+
+The following sample YAML files are available in the `config/samples/` directory:
+
+### SD-WAN Samples
+
+| File | Description |
+|------|-------------|
+| `proxywanlink_primary_sample.yaml` | Primary WAN link with SLA thresholds (latency, jitter, packet loss) |
+| `proxywanlink_backup_sample.yaml` | Backup WAN link with higher cost and relaxed SLA |
+| `proxywanpolicy_voice_sample.yaml` | Voice traffic policy with lowest-latency strategy and EF DSCP marking |
+| `proxywanpolicy_bulk_sample.yaml` | Bulk transfer policy with lowest-cost strategy |
 
 ## Basic HTTP Load Balancer
 
