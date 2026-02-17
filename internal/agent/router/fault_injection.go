@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"go.uber.org/zap"
@@ -53,6 +54,9 @@ type FaultInjectionConfig struct {
 	// request to activate fault injection. When empty, fault injection is
 	// always active. Example: "x-fault-inject".
 	HeaderActivation string
+
+	// Route is the route name used for Prometheus metrics labels.
+	Route string
 }
 
 // faultErrorResponse is the JSON body returned when a request is aborted.
@@ -134,6 +138,7 @@ func (m *FaultInjectionMiddleware) Wrap(next http.Handler) http.Handler {
 			}
 
 			w.Header().Add(faultInjectedHeader, fmt.Sprintf("delay=%s", m.config.DelayDuration))
+			FaultInjectionDelaysTotal.WithLabelValues(m.config.Route, r.Method).Inc()
 		}
 
 		// Apply abort (if applicable)
@@ -145,6 +150,7 @@ func (m *FaultInjectionMiddleware) Wrap(next http.Handler) http.Handler {
 			)
 
 			w.Header().Add(faultInjectedHeader, fmt.Sprintf("abort=%d", m.config.AbortStatusCode))
+			FaultInjectionAbortsTotal.WithLabelValues(m.config.Route, r.Method, strconv.Itoa(m.config.AbortStatusCode)).Inc()
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(m.config.AbortStatusCode)
 

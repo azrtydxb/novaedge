@@ -337,6 +337,14 @@ type HTTPRouteRule struct {
 	// Retry defines automatic retry behavior for failed requests to backends
 	// +optional
 	Retry *RetryConfig `json:"retry,omitempty"`
+
+	// FaultInjection configures fault injection for chaos engineering
+	// +optional
+	FaultInjection *FaultInjectionConfig `json:"faultInjection,omitempty"`
+
+	// BodyTransform configures JSON body transformation for this rule
+	// +optional
+	BodyTransform *BodyTransformConfig `json:"bodyTransform,omitempty"`
 }
 
 // MiddlewarePipelineConfig defines a composable middleware pipeline for a route
@@ -476,4 +484,69 @@ type RouteAccessLogConfig struct {
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=100
 	SampleRate *int32 `json:"sampleRate,omitempty"`
+}
+
+// FaultInjectionConfig configures fault injection for chaos engineering.
+type FaultInjectionConfig struct {
+	// DelayDuration is the fixed delay to inject (e.g. "500ms", "2s")
+	// +optional
+	DelayDuration *metav1.Duration `json:"delayDuration,omitempty"`
+
+	// DelayPercent is the percentage of requests to delay (0-100)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	DelayPercent *int32 `json:"delayPercent,omitempty"`
+
+	// AbortStatusCode is the HTTP status code for aborted requests
+	// +optional
+	// +kubebuilder:validation:Minimum=200
+	// +kubebuilder:validation:Maximum=599
+	AbortStatusCode *int32 `json:"abortStatusCode,omitempty"`
+
+	// AbortPercent is the percentage of requests to abort (0-100)
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=100
+	AbortPercent *int32 `json:"abortPercent,omitempty"`
+
+	// HeaderActivation is an optional header that must be present to activate fault injection
+	// +optional
+	HeaderActivation string `json:"headerActivation,omitempty"`
+}
+
+// BodyTransformConfig configures JSON body transformation
+type BodyTransformConfig struct {
+	// Request transforms to apply to request bodies
+	// +optional
+	Request []TransformOperation `json:"request,omitempty"`
+
+	// Response transforms to apply to response bodies
+	// +optional
+	Response []TransformOperation `json:"response,omitempty"`
+
+	// MaxBodySize is the maximum body size for transformation in bytes (default 1MB)
+	// +optional
+	// +kubebuilder:default=1048576
+	MaxBodySize *int64 `json:"maxBodySize,omitempty"`
+}
+
+// TransformOperation represents a single JSON Patch operation (RFC 6902)
+type TransformOperation struct {
+	// Op is the operation: add, remove, replace, move, copy
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=add;remove;replace;move;copy
+	Op string `json:"op"`
+
+	// Path is the JSON Pointer (RFC 6901) target path
+	// +kubebuilder:validation:Required
+	Path string `json:"path"`
+
+	// Value is the JSON-encoded value for add/replace operations
+	// +optional
+	Value string `json:"value,omitempty"`
+
+	// From is the source path for move/copy operations (JSON Pointer)
+	// +optional
+	From string `json:"from,omitempty"`
 }

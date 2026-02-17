@@ -117,7 +117,7 @@ func TestFaultInjection_AbortInjection(t *testing.T) {
 
 	// Verify Content-Type
 	ct := rec.Header().Get("Content-Type")
-	if ct != "application/json" {
+	if ct != testContentTypeJSON {
 		t.Errorf("expected Content-Type 'application/json', got %q", ct)
 	}
 }
