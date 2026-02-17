@@ -987,20 +987,17 @@ func (s *Server) maintainPeerConnection(ctx context.Context, peer *PeerInfo) {
 		default:
 		}
 
-		s.logger.Info("Connecting to federation peer", zap.String("peer", peer.Name))
+		s.logger.Warn("Federation peer connection is not yet implemented",
+			zap.String("peer", peer.Name),
+			zap.String("endpoint", peer.Endpoint),
+		)
 
-		if err := s.connectToPeer(ctx, peer); err != nil {
-			s.logger.Error("Peer connection failed",
-				zap.String("peer", peer.Name),
-				zap.Error(err),
-			)
-			s.updatePeerState(peer.Name, func(state *PeerState) {
-				state.Connected = false
-				state.Healthy = false
-				state.LastError = err.Error()
-				state.ConsecutiveFailures++
-			})
-		}
+		s.updatePeerState(peer.Name, func(state *PeerState) {
+			state.Connected = false
+			state.Healthy = false
+			state.LastError = "federation peer connection not yet implemented"
+			state.ConsecutiveFailures++
+		})
 
 		// Wait before reconnecting
 		select {
@@ -1011,17 +1008,6 @@ func (s *Server) maintainPeerConnection(ctx context.Context, peer *PeerInfo) {
 			return
 		}
 	}
-}
-
-// connectToPeer establishes a connection to a federation peer.
-// Not yet implemented - returns an error indicating the feature is pending.
-func (s *Server) connectToPeer(_ context.Context, peer *PeerInfo) error {
-	s.logger.Warn("Federation peer connection is not yet implemented",
-		zap.String("peer", peer.Name),
-		zap.String("endpoint", peer.Endpoint),
-	)
-
-	return fmt.Errorf("federation peer connection not yet implemented for peer %q at %s", peer.Name, peer.Endpoint)
 }
 
 // cleanupTombstones removes old tombstones

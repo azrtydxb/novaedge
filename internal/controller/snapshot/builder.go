@@ -958,6 +958,12 @@ func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *core
 	return endpoints, nil
 }
 
+// Topology label keys used for locality-aware routing.
+const (
+	topologyZoneLabel   = "topology.kubernetes.io/zone"
+	topologyRegionLabel = "topology.kubernetes.io/region"
+)
+
 // resolveServiceEndpoints resolves endpoints from a ServiceReference
 func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novaedgev1alpha1.ServiceReference, defaultNamespace string) (*pb.EndpointList, error) {
 	namespace := getNamespace(serviceRef.Namespace, defaultNamespace)
@@ -996,6 +1002,10 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 		}); err != nil {
 		return nil, fmt.Errorf("failed to list endpoint slices: %w", err)
 	}
+
+	// Cache Node objects to avoid repeated API calls for the same node name.
+	// Multiple endpoints often run on the same node.
+	nodeCache := make(map[string]*corev1.Node)
 
 	var endpoints []*pb.Endpoint
 	for _, es := range endpointSliceList.Items {
@@ -1041,17 +1051,76 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 
 			ready := ep.Conditions.Ready != nil && *ep.Conditions.Ready
 
+			// Build topology labels for locality-aware routing.
+			labels := b.resolveEndpointTopologyLabels(ctx, &ep, nodeCache)
+
 			for _, addr := range ep.Addresses {
 				endpoints = append(endpoints, &pb.Endpoint{
 					Address: addr,
 					Port:    port,
 					Ready:   ready,
+					Labels:  labels,
 				})
 			}
 		}
 	}
 
 	return &pb.EndpointList{Endpoints: endpoints}, nil
+}
+
+// resolveEndpointTopologyLabels extracts zone and region labels from an
+// EndpointSlice endpoint. Zone is taken from the endpoint's Zone field or
+// endpoint hints. Region is looked up from the Node that hosts the endpoint.
+// The nodeCache avoids repeated API calls for the same node.
+func (b *Builder) resolveEndpointTopologyLabels(ctx context.Context, ep *discoveryv1.Endpoint, nodeCache map[string]*corev1.Node) map[string]string {
+	labels := make(map[string]string)
+
+	// Zone: prefer the endpoint's Zone field (set by Kubernetes from the
+	// Node's topology.kubernetes.io/zone label), then fall back to hints.
+	if ep.Zone != nil && *ep.Zone != "" {
+		labels[topologyZoneLabel] = *ep.Zone
+	} else if ep.Hints != nil {
+		for _, hint := range ep.Hints.ForZones {
+			if hint.Name != "" {
+				labels[topologyZoneLabel] = hint.Name
+				break
+			}
+		}
+	}
+
+	// Region: look up the Node object to get topology.kubernetes.io/region.
+	if ep.NodeName != nil && *ep.NodeName != "" {
+		nodeName := *ep.NodeName
+		node, ok := nodeCache[nodeName]
+		if !ok {
+			n := &corev1.Node{}
+			if err := b.client.Get(ctx, types.NamespacedName{Name: nodeName}, n); err != nil {
+				log.FromContext(ctx).V(1).Info("Failed to get node for topology labels",
+					"node", nodeName, "error", err)
+				// Store nil to avoid retrying the same failed lookup.
+				nodeCache[nodeName] = nil
+			} else {
+				node = n
+				nodeCache[nodeName] = node
+			}
+		}
+		if node != nil {
+			if region, exists := node.Labels[topologyRegionLabel]; exists {
+				labels[topologyRegionLabel] = region
+			}
+			// If zone was not set from the endpoint, try the node label.
+			if _, hasZone := labels[topologyZoneLabel]; !hasZone {
+				if zone, exists := node.Labels[topologyZoneLabel]; exists {
+					labels[topologyZoneLabel] = zone
+				}
+			}
+		}
+	}
+
+	if len(labels) == 0 {
+		return nil
+	}
+	return labels
 }
 
 // loadTLSConfig loads TLS certificates from Kubernetes Secret
