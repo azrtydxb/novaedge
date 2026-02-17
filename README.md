@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Distributed Kubernetes-native load balancer, reverse proxy, VIP controller, and SD-WAN gateway</strong>
+  <strong>Kubernetes-Native Network Platform</strong>
 </p>
 
 <p align="center">
