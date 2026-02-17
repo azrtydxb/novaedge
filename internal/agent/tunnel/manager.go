@@ -80,6 +80,13 @@ func (m *NetworkTunnelManager) Stop() {
 // AddTunnel creates and starts a tunnel for the specified remote cluster.
 // If a tunnel already exists for the cluster, it is stopped and replaced.
 func (m *NetworkTunnelManager) AddTunnel(ctx context.Context, clusterName string, config v1alpha1.TunnelConfig) error {
+	return m.AddTunnelWithOverlay(ctx, clusterName, config, "")
+}
+
+// AddTunnelWithOverlay creates and starts a tunnel with overlay CIDR configuration.
+// The overlayCIDR parameter specifies the overlay network address for site-to-site
+// routing (e.g., "10.200.1.1/24"). If empty, overlay routing is disabled.
+func (m *NetworkTunnelManager) AddTunnelWithOverlay(ctx context.Context, clusterName string, config v1alpha1.TunnelConfig, overlayCIDR string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -97,7 +104,7 @@ func (m *NetworkTunnelManager) AddTunnel(ctx context.Context, clusterName string
 		}
 	}
 
-	t, err := m.createTunnel(clusterName, config)
+	t, err := m.createTunnelWithOverlay(clusterName, config, overlayCIDR)
 	if err != nil {
 		return fmt.Errorf("creating tunnel for cluster %s: %w", clusterName, err)
 	}
@@ -111,6 +118,7 @@ func (m *NetworkTunnelManager) AddTunnel(ctx context.Context, clusterName string
 		zap.String("cluster", clusterName),
 		zap.String("type", t.Type()),
 		zap.String("localAddr", t.LocalAddr()),
+		zap.String("overlayCIDR", overlayCIDR),
 	)
 
 	return nil
@@ -160,8 +168,16 @@ func (m *NetworkTunnelManager) HealthCheck() map[string]bool {
 
 // createTunnel instantiates the appropriate tunnel implementation based on config.
 func (m *NetworkTunnelManager) createTunnel(clusterName string, config v1alpha1.TunnelConfig) (Tunnel, error) {
+	return m.createTunnelWithOverlay(clusterName, config, "")
+}
+
+// createTunnelWithOverlay instantiates a tunnel with optional overlay CIDR support.
+func (m *NetworkTunnelManager) createTunnelWithOverlay(clusterName string, config v1alpha1.TunnelConfig, overlayCIDR string) (Tunnel, error) {
 	switch config.Type {
 	case v1alpha1.TunnelTypeWireGuard:
+		if overlayCIDR != "" {
+			return newWireGuardTunnelWithOverlay(clusterName, config, overlayCIDR, m.logger)
+		}
 		return newWireGuardTunnel(clusterName, config, m.logger)
 	case v1alpha1.TunnelTypeSSH:
 		return newSSHTunnel(clusterName, config, m.logger)
