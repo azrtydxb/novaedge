@@ -22,13 +22,14 @@ const (
 	ConfigService_StreamConfig_FullMethodName           = "/novaedge.proto.ConfigService/StreamConfig"
 	ConfigService_ReportStatus_FullMethodName           = "/novaedge.proto.ConfigService/ReportStatus"
 	ConfigService_RequestMeshCertificate_FullMethodName = "/novaedge.proto.ConfigService/RequestMeshCertificate"
+	ConfigService_GetAgentConfig_FullMethodName         = "/novaedge.proto.ConfigService/GetAgentConfig"
+	ConfigService_GetBackendHealth_FullMethodName       = "/novaedge.proto.ConfigService/GetBackendHealth"
+	ConfigService_GetVIPs_FullMethodName                = "/novaedge.proto.ConfigService/GetVIPs"
 )
 
 // ConfigServiceClient is the client API for ConfigService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
-//
-// ConfigService is the gRPC service for distributing config snapshots
 type ConfigServiceClient interface {
 	// StreamConfig streams config snapshots to agents
 	// Agents connect and receive initial snapshot, then updates when config changes
@@ -37,6 +38,10 @@ type ConfigServiceClient interface {
 	ReportStatus(ctx context.Context, in *AgentStatus, opts ...grpc.CallOption) (*StatusResponse, error)
 	// RequestMeshCertificate allows agents to request a mesh workload certificate
 	RequestMeshCertificate(ctx context.Context, in *MeshCertificateRequest, opts ...grpc.CallOption) (*MeshCertificateResponse, error)
+	// Introspection RPCs for agent runtime state
+	GetAgentConfig(ctx context.Context, in *GetConfigRequest, opts ...grpc.CallOption) (*GetConfigResponse, error)
+	GetBackendHealth(ctx context.Context, in *GetBackendHealthRequest, opts ...grpc.CallOption) (*GetBackendHealthResponse, error)
+	GetVIPs(ctx context.Context, in *GetVIPsRequest, opts ...grpc.CallOption) (*GetVIPsResponse, error)
 }
 
 type configServiceClient struct {
@@ -86,11 +91,39 @@ func (c *configServiceClient) RequestMeshCertificate(ctx context.Context, in *Me
 	return out, nil
 }
 
+func (c *configServiceClient) GetAgentConfig(ctx context.Context, in *GetConfigRequest, opts ...grpc.CallOption) (*GetConfigResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetConfigResponse)
+	err := c.cc.Invoke(ctx, ConfigService_GetAgentConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *configServiceClient) GetBackendHealth(ctx context.Context, in *GetBackendHealthRequest, opts ...grpc.CallOption) (*GetBackendHealthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBackendHealthResponse)
+	err := c.cc.Invoke(ctx, ConfigService_GetBackendHealth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *configServiceClient) GetVIPs(ctx context.Context, in *GetVIPsRequest, opts ...grpc.CallOption) (*GetVIPsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetVIPsResponse)
+	err := c.cc.Invoke(ctx, ConfigService_GetVIPs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ConfigServiceServer is the server API for ConfigService service.
 // All implementations must embed UnimplementedConfigServiceServer
 // for forward compatibility.
-//
-// ConfigService is the gRPC service for distributing config snapshots
 type ConfigServiceServer interface {
 	// StreamConfig streams config snapshots to agents
 	// Agents connect and receive initial snapshot, then updates when config changes
@@ -99,6 +132,10 @@ type ConfigServiceServer interface {
 	ReportStatus(context.Context, *AgentStatus) (*StatusResponse, error)
 	// RequestMeshCertificate allows agents to request a mesh workload certificate
 	RequestMeshCertificate(context.Context, *MeshCertificateRequest) (*MeshCertificateResponse, error)
+	// Introspection RPCs for agent runtime state
+	GetAgentConfig(context.Context, *GetConfigRequest) (*GetConfigResponse, error)
+	GetBackendHealth(context.Context, *GetBackendHealthRequest) (*GetBackendHealthResponse, error)
+	GetVIPs(context.Context, *GetVIPsRequest) (*GetVIPsResponse, error)
 	mustEmbedUnimplementedConfigServiceServer()
 }
 
@@ -117,6 +154,15 @@ func (UnimplementedConfigServiceServer) ReportStatus(context.Context, *AgentStat
 }
 func (UnimplementedConfigServiceServer) RequestMeshCertificate(context.Context, *MeshCertificateRequest) (*MeshCertificateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method RequestMeshCertificate not implemented")
+}
+func (UnimplementedConfigServiceServer) GetAgentConfig(context.Context, *GetConfigRequest) (*GetConfigResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAgentConfig not implemented")
+}
+func (UnimplementedConfigServiceServer) GetBackendHealth(context.Context, *GetBackendHealthRequest) (*GetBackendHealthResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetBackendHealth not implemented")
+}
+func (UnimplementedConfigServiceServer) GetVIPs(context.Context, *GetVIPsRequest) (*GetVIPsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetVIPs not implemented")
 }
 func (UnimplementedConfigServiceServer) mustEmbedUnimplementedConfigServiceServer() {}
 func (UnimplementedConfigServiceServer) testEmbeddedByValue()                       {}
@@ -186,6 +232,60 @@ func _ConfigService_RequestMeshCertificate_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ConfigService_GetAgentConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).GetAgentConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_GetAgentConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).GetAgentConfig(ctx, req.(*GetConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConfigService_GetBackendHealth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBackendHealthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).GetBackendHealth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_GetBackendHealth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).GetBackendHealth(ctx, req.(*GetBackendHealthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ConfigService_GetVIPs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetVIPsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ConfigServiceServer).GetVIPs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ConfigService_GetVIPs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ConfigServiceServer).GetVIPs(ctx, req.(*GetVIPsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ConfigService_ServiceDesc is the grpc.ServiceDesc for ConfigService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -200,6 +300,18 @@ var ConfigService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RequestMeshCertificate",
 			Handler:    _ConfigService_RequestMeshCertificate_Handler,
+		},
+		{
+			MethodName: "GetAgentConfig",
+			Handler:    _ConfigService_GetAgentConfig_Handler,
+		},
+		{
+			MethodName: "GetBackendHealth",
+			Handler:    _ConfigService_GetBackendHealth_Handler,
+		},
+		{
+			MethodName: "GetVIPs",
+			Handler:    _ConfigService_GetVIPs_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

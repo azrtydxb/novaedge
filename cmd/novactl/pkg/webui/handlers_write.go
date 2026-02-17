@@ -21,6 +21,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
 )
@@ -853,9 +854,16 @@ func (s *Server) handleConfigHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For now, return an empty history list
-	// In a full implementation, this would retrieve the history from a persistent store
-	history := []HistoryEntry{}
+	snapshots := s.snapshotStore.List()
+	history := make([]HistoryEntry, 0, len(snapshots))
+	for _, snap := range snapshots {
+		history = append(history, HistoryEntry{
+			ID:        snap.ID,
+			Timestamp: snap.Timestamp.Format(time.RFC3339),
+			Type:      "snapshot",
+			Snapshot:  snap.Comment,
+		})
+	}
 
 	writeJSON(w, http.StatusOK, history)
 }
@@ -868,19 +876,34 @@ func (s *Server) handleConfigHistoryRestore(w http.ResponseWriter, r *http.Reque
 	}
 
 	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		writeError(w, http.StatusServiceUnavailable, "no backend configured")
 		return
 	}
 
-	// Extract ID from path: /api/v1/config/history/{id}/restore
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/config/history/")
 	parts := strings.Split(path, "/")
 	if len(parts) != 2 || parts[1] != "restore" {
 		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/config/history/{id}/restore")
 		return
 	}
+	snapshotID := parts[0]
 
-	// For now, return not implemented
-	// In a full implementation, this would restore configuration from the history snapshot
-	writeError(w, http.StatusNotImplemented, "configuration history restore not yet implemented")
+	snapshot := s.snapshotStore.Get(snapshotID)
+	if snapshot == nil {
+		writeError(w, http.StatusNotFound, "snapshot not found: "+snapshotID)
+		return
+	}
+
+	result, err := s.backend.ImportConfig(r.Context(), []byte(snapshot.Config), false)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to restore configuration: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    "configuration restored from snapshot",
+		"snapshotId": snapshotID,
+		"timestamp":  snapshot.Timestamp.Format(time.RFC3339),
+		"result":     result,
+	})
 }

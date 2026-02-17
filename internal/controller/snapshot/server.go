@@ -483,6 +483,13 @@ func (s *Server) SetMeshCA(ca *meshca.MeshCA) {
 	s.meshCA = ca
 }
 
+// SetFederationProvider sets the federation state provider on the underlying
+// snapshot builder so that built snapshots include federation metadata and
+// remote endpoints from federated clusters.
+func (s *Server) SetFederationProvider(provider FederationStateProvider) {
+	s.builder.SetFederationProvider(provider)
+}
+
 // RequestMeshCertificate implements the RequestMeshCertificate RPC.
 // Agents call this to obtain a signed mesh workload certificate.
 func (s *Server) RequestMeshCertificate(ctx context.Context, req *pb.MeshCertificateRequest) (*pb.MeshCertificateResponse, error) {

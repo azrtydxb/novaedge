@@ -266,6 +266,19 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	}
 	snapshot.MeshAuthzPolicies = meshAuthzPolicies
 
+	// Build SD-WAN WAN links
+	wanLinks, err := b.buildWANLinks(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build WAN links: %w", err)
+	}
+	snapshot.WanLinks = wanLinks
+
+	// Build SD-WAN WAN policies
+	wanPolicies, err := b.buildWANPolicies(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build WAN policies: %w", err)
+	}
+	snapshot.WanPolicies = wanPolicies
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
 
@@ -286,6 +299,8 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"l4_listeners":        len(snapshot.L4Listeners),
 		"internal_services":   len(snapshot.InternalServices),
 		"mesh_authz_policies": len(snapshot.MeshAuthzPolicies),
+		"wan_links":           len(snapshot.WanLinks),
+		"wan_policies":        len(snapshot.WanPolicies),
 	}
 	RecordSnapshotBuild(nodeName, duration, sizeBytes, resourceCounts)
 
@@ -299,6 +314,8 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"l4_listeners", len(snapshot.L4Listeners),
 		"internal_services", len(snapshot.InternalServices),
 		"mesh_authz_policies", len(snapshot.MeshAuthzPolicies),
+		"wan_links", len(snapshot.WanLinks),
+		"wan_policies", len(snapshot.WanPolicies),
 		"duration_ms", duration*1000,
 		"size_bytes", sizeBytes)
 
@@ -492,6 +509,11 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 		if gw.Spec.RedirectScheme != nil && gw.Spec.RedirectScheme.Enabled {
 			gateway.RedirectScheme = convertRedirectScheme(gw.Spec.RedirectScheme)
 		}
+
+		// Convert ExtProc configuration
+		if gw.Spec.ExtProc != nil {
+			gateway.ExtProc = convertExtProc(gw.Spec.ExtProc)
+		}
 		gateways = append(gateways, gateway)
 	}
 
@@ -609,6 +631,13 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 
 		if backend.Spec.HealthCheck != nil {
 			cluster.HealthCheck = convertHealthCheck(backend.Spec.HealthCheck)
+		}
+
+		if backend.Spec.OutlierDetection != nil {
+			cluster.OutlierDetection = convertOutlierDetection(backend.Spec.OutlierDetection)
+		}
+		if backend.Spec.SlowStart != nil {
+			cluster.SlowStart = convertSlowStart(backend.Spec.SlowStart)
 		}
 
 		if backend.Spec.TLS != nil {
@@ -1264,6 +1293,12 @@ func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	}
 	for _, l := range snapshot.L4Listeners {
 		parts = append(parts, fmt.Sprintf("l4:%s:%d", l.Name, l.Port))
+		for _, wl := range snapshot.WanLinks {
+			parts = append(parts, fmt.Sprintf("wanlink:%s/%s", wl.Namespace, wl.Name))
+		}
+		for _, wp := range snapshot.WanPolicies {
+			parts = append(parts, fmt.Sprintf("wanpolicy:%s/%s", wp.Namespace, wp.Name))
+		}
 	}
 
 	// Sort for determinism
@@ -1364,4 +1399,86 @@ func (b *Builder) enhanceWithFederation(snapshot *pb.ConfigSnapshot) {
 		OriginController: fp.GetLocalMemberName(),
 		VectorClock:      fp.GetVectorClock(),
 	}
+}
+
+// buildWANLinks builds SD-WAN WAN link configurations from ProxyWANLink CRDs.
+func (b *Builder) buildWANLinks(ctx context.Context) ([]*pb.WANLink, error) {
+	linkList := &novaedgev1alpha1.ProxyWANLinkList{}
+	if err := b.client.List(ctx, linkList); err != nil {
+		return nil, err
+	}
+
+	links := make([]*pb.WANLink, 0, len(linkList.Items))
+	for i := range linkList.Items {
+		link := &linkList.Items[i]
+		pbLink := &pb.WANLink{
+			Name:      link.Name,
+			Namespace: link.Namespace,
+			Site:      link.Spec.Site,
+			Iface:     link.Spec.Interface,
+			Provider:  link.Spec.Provider,
+			Bandwidth: link.Spec.Bandwidth,
+			Cost:      link.Spec.Cost,
+			Role:      string(link.Spec.Role),
+		}
+
+		if link.Spec.SLA != nil {
+			pbLink.Sla = &pb.WANLinkSLA{}
+			if link.Spec.SLA.MaxLatency != nil {
+				pbLink.Sla.MaxLatencyMs = link.Spec.SLA.MaxLatency.Milliseconds()
+			}
+			if link.Spec.SLA.MaxJitter != nil {
+				pbLink.Sla.MaxJitterMs = link.Spec.SLA.MaxJitter.Milliseconds()
+			}
+			if link.Spec.SLA.MaxPacketLoss != nil {
+				pbLink.Sla.MaxPacketLoss = *link.Spec.SLA.MaxPacketLoss
+			}
+		}
+
+		if link.Spec.TunnelEndpoint != nil {
+			pbLink.TunnelEndpoint = &pb.WANTunnelEndpoint{
+				PublicIp: link.Spec.TunnelEndpoint.PublicIP,
+				Port:     link.Spec.TunnelEndpoint.Port,
+			}
+		}
+
+		links = append(links, pbLink)
+	}
+
+	return links, nil
+}
+
+// buildWANPolicies builds SD-WAN WAN policy configurations from ProxyWANPolicy CRDs.
+func (b *Builder) buildWANPolicies(ctx context.Context) ([]*pb.WANPolicy, error) {
+	policyList := &novaedgev1alpha1.ProxyWANPolicyList{}
+	if err := b.client.List(ctx, policyList); err != nil {
+		return nil, err
+	}
+
+	policies := make([]*pb.WANPolicy, 0, len(policyList.Items))
+	for i := range policyList.Items {
+		p := &policyList.Items[i]
+		pbPolicy := &pb.WANPolicy{
+			Name:      p.Name,
+			Namespace: p.Namespace,
+		}
+
+		if len(p.Spec.Match.Hosts) > 0 || len(p.Spec.Match.Paths) > 0 || len(p.Spec.Match.Headers) > 0 {
+			pbPolicy.Match = &pb.WANPolicyMatch{
+				Hosts:   p.Spec.Match.Hosts,
+				Paths:   p.Spec.Match.Paths,
+				Headers: p.Spec.Match.Headers,
+			}
+		}
+
+		pbPolicy.PathSelection = &pb.WANPathSelection{
+			Strategy:  string(p.Spec.PathSelection.Strategy),
+			Failover:  p.Spec.PathSelection.Failover,
+			DscpClass: p.Spec.PathSelection.DSCPClass,
+		}
+
+		policies = append(policies, pbPolicy)
+	}
+
+	return policies, nil
 }

@@ -270,3 +270,15 @@ func (m *LinkManager) SelectPathForPolicy(policyName, strategy string) (string, 
 
 	return m.selector.Select(policyName, strategy, links, bandwidths, costs)
 }
+
+// ListLinks returns the names of all managed links.
+func (m *LinkManager) ListLinks() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	names := make([]string, 0, len(m.links))
+	for name := range m.links {
+		names = append(names, name)
+	}
+	return names
+}

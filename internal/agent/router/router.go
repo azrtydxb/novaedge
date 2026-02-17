@@ -121,6 +121,9 @@ type routerState struct {
 
 	// Access log middleware for request/response logging
 	accessLog *AccessLogMiddleware
+
+	// ExtProc middleware for external processing
+	extProc *ExtProcMiddleware
 }
 
 // Router routes HTTP requests to backends
@@ -462,6 +465,20 @@ func (r *Router) createLoadBalancer(cluster *pb.Cluster, clusterKey string, endp
 		r.logger.Warn("Unknown LB policy, using RoundRobin",
 			zap.String("cluster", clusterKey),
 			zap.Int32("policy", int32(cluster.LbPolicy)),
+		)
+	}
+
+	// Wrap with slow start if configured
+	if ss := cluster.GetSlowStart(); ss != nil && ss.WindowMs > 0 {
+		ssCfg := lb.SlowStartConfig{
+			Window:     time.Duration(ss.WindowMs) * time.Millisecond,
+			Aggression: ss.Aggression,
+		}
+		if ssCfg.Aggression <= 0 {
+			ssCfg.Aggression = 1.0
+		}
+		newLoadBalancers[clusterKey] = lb.NewSlowStartManager(
+			newLoadBalancers[clusterKey], ssCfg, endpoints,
 		)
 	}
 }
@@ -833,6 +850,10 @@ func (r *Router) updateCompressionConfig(snapshot *config.Snapshot, newState *ro
 // configureMiddleware configures error pages, redirect scheme, and access log from gateway config
 func (r *Router) configureMiddleware(snapshot *config.Snapshot, newState *routerState, prev *routerState) {
 	// Close previous access log middleware if any
+	// Close previous ExtProc middleware if any
+	if prev.extProc != nil {
+		_ = prev.extProc.Close()
+	}
 	if prev.accessLog != nil {
 		prev.accessLog.Close()
 	}
@@ -883,6 +904,35 @@ func (r *Router) configureMiddleware(snapshot *config.Snapshot, newState *router
 			break
 		}
 	}
+
+	// Configure ExtProc middleware from gateway config
+	for _, gateway := range snapshot.Gateways {
+		if ep := gateway.GetExtProc(); ep != nil && ep.Enabled && ep.Address != "" {
+			cfg := &ExtProcConfig{
+				Address:                ep.Address,
+				Timeout:                time.Duration(ep.TimeoutMs) * time.Millisecond,
+				FailOpen:               ep.FailOpen,
+				ProcessRequestHeaders:  ep.ProcessRequestHeaders,
+				ProcessRequestBody:     ep.ProcessRequestBody,
+				ProcessResponseHeaders: ep.ProcessResponseHeaders,
+				ProcessResponseBody:    ep.ProcessResponseBody,
+			}
+			if cfg.Timeout == 0 {
+				cfg.Timeout = DefaultExtProcTimeout
+			}
+			extProcMw, extProcErr := NewExtProcMiddleware(cfg, r.logger, nil)
+			if extProcErr != nil {
+				r.logger.Error("failed to create ExtProc middleware", zap.Error(extProcErr))
+			} else {
+				newState.extProc = extProcMw
+				r.logger.Info("ExtProc middleware configured",
+					zap.String("gateway", gateway.Name),
+					zap.String("address", ep.Address),
+				)
+			}
+			break
+		}
+	}
 }
 
 // Close cleans up resources used by the router
@@ -893,6 +943,9 @@ func (r *Router) Close() {
 	snap := r.state.Load()
 	if snap.accessLog != nil {
 		snap.accessLog.Close()
+	}
+	if snap.extProc != nil {
+		_ = snap.extProc.Close()
 	}
 
 	for _, pool := range snap.pools {

@@ -130,10 +130,9 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start the tombstone cleanup goroutine
 	go s.cleanupTombstones(ctx)
 
-	// Start connecting to peers
-	for _, peer := range s.config.Peers {
-		go s.maintainPeerConnection(ctx, peer)
-	}
+	// Peer connections are managed by the federation Manager, not the Server.
+	// See Manager.Start() in manager.go which spawns maintainPeerConnection
+	// goroutines for each peer with proper gRPC client handling.
 
 	return nil
 }
@@ -989,40 +988,6 @@ func (s *Server) getPhase() Phase {
 	}
 
 	return PhaseDegraded
-}
-
-// maintainPeerConnection maintains a connection to a peer
-func (s *Server) maintainPeerConnection(ctx context.Context, peer *PeerInfo) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-s.shutdownCh:
-			return
-		default:
-		}
-
-		s.logger.Warn("Federation peer connection is not yet implemented",
-			zap.String("peer", peer.Name),
-			zap.String("endpoint", peer.Endpoint),
-		)
-
-		s.updatePeerState(peer.Name, func(state *PeerState) {
-			state.Connected = false
-			state.Healthy = false
-			state.LastError = "federation peer connection not yet implemented"
-			state.ConsecutiveFailures++
-		})
-
-		// Wait before reconnecting
-		select {
-		case <-time.After(5 * time.Second):
-		case <-ctx.Done():
-			return
-		case <-s.shutdownCh:
-			return
-		}
-	}
 }
 
 // cleanupTombstones removes old tombstones

@@ -48,6 +48,12 @@ message ConfigSnapshot {
 
   // Mesh authorization policies
   repeated MeshAuthorizationPolicy mesh_authz_policies = 14;
+
+  // SD-WAN WAN link configurations
+  repeated WANLink wan_links = 15;
+
+  // SD-WAN WAN policy configurations
+  repeated WANPolicy wan_policies = 16;
 }
 
 // FederationMetadata contains federation-related metadata for the snapshot
@@ -107,6 +113,19 @@ message Gateway {
   GatewayCacheConfig cache = 8;
   ErrorPageConfig error_pages = 9;
   RedirectSchemeConfig redirect_scheme = 10;
+  ExtProcConfig ext_proc = 11;
+}
+
+// ExtProcConfig configures an external processing gRPC service
+message ExtProcConfig {
+  bool enabled = 1;
+  string address = 2;
+  int64 timeout_ms = 3;
+  bool fail_open = 4;
+  bool process_request_headers = 5;
+  bool process_request_body = 6;
+  bool process_response_headers = 7;
+  bool process_response_body = 8;
 }
 
 // GatewayCacheConfig configures response caching for a gateway
@@ -289,6 +308,25 @@ message Cluster {
   ConnectionPool connection_pool = 9;
   SessionAffinityConfig session_affinity = 10; // Session affinity (sticky sessions) configuration
   UpstreamProxyProtocol upstream_proxy_protocol = 11; // PROXY protocol config for backend connections
+  OutlierDetection outlier_detection = 12; // Outlier detection and auto-ejection configuration
+  SlowStart slow_start = 13; // Slow start traffic ramp-up configuration
+}
+
+// OutlierDetection configures per-endpoint outlier detection and auto-ejection
+message OutlierDetection {
+  int64 interval_ms = 1;
+  int32 consecutive_5xx_threshold = 2;
+  int64 base_ejection_duration_ms = 3;
+  int32 max_ejection_percent = 4;
+  int32 success_rate_min_hosts = 5;
+  int32 success_rate_min_requests = 6;
+  double success_rate_stdev_factor = 7;
+}
+
+// SlowStart configures gradual traffic ramp-up for new/recovering endpoints
+message SlowStart {
+  int64 window_ms = 1;
+  double aggression = 2;
 }
 
 // ConnectionPool defines connection pool configuration
@@ -954,6 +992,52 @@ message MeshDestination {
 }
 
 // ConfigService is the gRPC service for distributing config snapshots
+
+// SD-WAN WAN link configuration
+message WANLink {
+  string name = 1;
+  string namespace = 2;
+  string site = 3;
+  string iface = 4;
+  string provider = 5;
+  string bandwidth = 6;
+  int32 cost = 7;
+  string role = 8;
+  WANLinkSLA sla = 9;
+  WANTunnelEndpoint tunnel_endpoint = 10;
+}
+
+message WANLinkSLA {
+  int64 max_latency_ms = 1;
+  int64 max_jitter_ms = 2;
+  double max_packet_loss = 3;
+}
+
+message WANTunnelEndpoint {
+  string public_ip = 1;
+  int32 port = 2;
+}
+
+// SD-WAN WAN policy configuration
+message WANPolicy {
+  string name = 1;
+  string namespace = 2;
+  WANPolicyMatch match = 3;
+  WANPathSelection path_selection = 4;
+}
+
+message WANPolicyMatch {
+  repeated string hosts = 1;
+  repeated string paths = 2;
+  map<string, string> headers = 3;
+}
+
+message WANPathSelection {
+  string strategy = 1;
+  bool failover = 2;
+  string dscp_class = 3;
+}
+
 service ConfigService {
   // StreamConfig streams config snapshots to agents
   // Agents connect and receive initial snapshot, then updates when config changes
@@ -964,6 +1048,10 @@ service ConfigService {
 
   // RequestMeshCertificate allows agents to request a mesh workload certificate
   rpc RequestMeshCertificate(MeshCertificateRequest) returns (MeshCertificateResponse);
+  // Introspection RPCs for agent runtime state
+  rpc GetAgentConfig(GetConfigRequest) returns (GetConfigResponse);
+  rpc GetBackendHealth(GetBackendHealthRequest) returns (GetBackendHealthResponse);
+  rpc GetVIPs(GetVIPsRequest) returns (GetVIPsResponse);
 }
 
 // StreamConfigRequest is sent by agents to subscribe to config updates
@@ -1112,4 +1200,51 @@ message ServiceEndpoints {
 // StatusResponse acknowledges status reports
 message StatusResponse {
   bool acknowledged = 1;
+}
+
+// Agent introspection messages
+message GetConfigRequest {}
+
+message GetConfigResponse {
+  string version = 1;
+  string generation_time = 2;
+  int32 gateway_count = 3;
+  int32 route_count = 4;
+  int32 cluster_count = 5;
+  int32 endpoint_count = 6;
+  int32 vip_count = 7;
+  int32 policy_count = 8;
+}
+
+message GetBackendHealthRequest {}
+
+message BackendHealthInfo {
+  string cluster_name = 1;
+  string namespace = 2;
+  string lb_policy = 3;
+  repeated EndpointHealthInfo endpoints = 4;
+}
+
+message EndpointHealthInfo {
+  string address = 1;
+  int32 port = 2;
+  bool healthy = 3;
+}
+
+message GetBackendHealthResponse {
+  repeated BackendHealthInfo backends = 1;
+}
+
+message GetVIPsRequest {}
+
+message VIPInfoResponse {
+  string name = 1;
+  string address = 2;
+  string mode = 3;
+  bool is_active = 4;
+  repeated int32 ports = 5;
+}
+
+message GetVIPsResponse {
+  repeated VIPInfoResponse vips = 1;
 }

@@ -17,14 +17,18 @@ limitations under the License.
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+
+	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
 // SD-WAN data types for API responses.
 
 type sdwanLinkResponse struct {
 	Name       string  `json:"name"`
+	Namespace  string  `json:"namespace"`
 	Site       string  `json:"site"`
 	Provider   string  `json:"provider"`
 	Role       string  `json:"role"`
@@ -57,6 +61,7 @@ type sdwanEdge struct {
 
 type sdwanPolicyResponse struct {
 	Name       string   `json:"name"`
+	Namespace  string   `json:"namespace"`
 	Strategy   string   `json:"strategy"`
 	MatchHosts []string `json:"matchHosts"`
 	DSCPClass  string   `json:"dscpClass"`
@@ -80,9 +85,12 @@ func (s *Server) handleSDWANLinks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return SD-WAN link data from Kubernetes (list ProxyWANLink CRDs).
-	// Populated when controller integration is added.
-	links := []sdwanLinkResponse{}
+	links, err := s.listWANLinks(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list WAN links")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(links); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode response")
@@ -97,10 +105,36 @@ func (s *Server) handleSDWANTopology(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	topology := sdwanTopologyResponse{
-		Sites: []sdwanSite{},
-		Links: []sdwanEdge{},
+	links, err := s.listWANLinks(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list WAN links for topology")
+		return
 	}
+
+	// Build topology from links
+	siteMap := make(map[string]bool)
+	edges := make([]sdwanEdge, 0, len(links))
+	for _, link := range links {
+		siteMap[link.Site] = true
+		edges = append(edges, sdwanEdge{
+			From:      link.Site,
+			To:        link.Site,
+			LinkName:  link.Name,
+			LatencyMs: link.LatencyMs,
+			Healthy:   link.Healthy,
+		})
+	}
+
+	sites := make([]sdwanSite, 0, len(siteMap))
+	for site := range siteMap {
+		sites = append(sites, sdwanSite{Name: site})
+	}
+
+	topology := sdwanTopologyResponse{
+		Sites: sites,
+		Links: edges,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(topology); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode response")
@@ -115,7 +149,12 @@ func (s *Server) handleSDWANPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	policies := []sdwanPolicyResponse{}
+	policies, err := s.listWANPolicies(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list WAN policies")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(policies); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode response")
@@ -130,9 +169,72 @@ func (s *Server) handleSDWANEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Events are not persisted in CRDs; return empty array until an event store is added.
 	events := []sdwanEventResponse{}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(events); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode response")
 	}
+}
+
+// listWANLinks lists ProxyWANLink CRDs and maps them to response objects.
+func (s *Server) listWANLinks(ctx context.Context) ([]sdwanLinkResponse, error) {
+	if s.crdClient == nil {
+		return []sdwanLinkResponse{}, nil
+	}
+
+	linkList := &novaedgev1alpha1.ProxyWANLinkList{}
+	if err := s.crdClient.List(ctx, linkList); err != nil {
+		return nil, err
+	}
+
+	links := make([]sdwanLinkResponse, 0, len(linkList.Items))
+	for i := range linkList.Items {
+		link := &linkList.Items[i]
+		resp := sdwanLinkResponse{
+			Name:      link.Name,
+			Namespace: link.Namespace,
+			Site:      link.Spec.Site,
+			Provider:  link.Spec.Provider,
+			Role:      string(link.Spec.Role),
+			Bandwidth: link.Spec.Bandwidth,
+			Healthy:   link.Status.Healthy,
+		}
+		if link.Status.CurrentLatency != nil {
+			resp.LatencyMs = *link.Status.CurrentLatency
+		}
+		if link.Status.CurrentPacketLoss != nil {
+			resp.PacketLoss = *link.Status.CurrentPacketLoss
+		}
+		links = append(links, resp)
+	}
+
+	return links, nil
+}
+
+// listWANPolicies lists ProxyWANPolicy CRDs and maps them to response objects.
+func (s *Server) listWANPolicies(ctx context.Context) ([]sdwanPolicyResponse, error) {
+	if s.crdClient == nil {
+		return []sdwanPolicyResponse{}, nil
+	}
+
+	policyList := &novaedgev1alpha1.ProxyWANPolicyList{}
+	if err := s.crdClient.List(ctx, policyList); err != nil {
+		return nil, err
+	}
+
+	policies := make([]sdwanPolicyResponse, 0, len(policyList.Items))
+	for i := range policyList.Items {
+		p := &policyList.Items[i]
+		policies = append(policies, sdwanPolicyResponse{
+			Name:       p.Name,
+			Namespace:  p.Namespace,
+			Strategy:   string(p.Spec.PathSelection.Strategy),
+			MatchHosts: p.Spec.Match.Hosts,
+			DSCPClass:  p.Spec.PathSelection.DSCPClass,
+			Selections: p.Status.SelectionCount,
+		})
+	}
+
+	return policies, nil
 }

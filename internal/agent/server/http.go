@@ -59,7 +59,8 @@ func NewHTTPServer(logger *zap.Logger) *HTTPServer {
 	}
 }
 
-// Start starts the HTTP server (placeholder for now)
+// Start blocks until the context is cancelled, keeping the server goroutine alive.
+// The actual listener setup and traffic handling are driven by ApplyConfig().
 func (s *HTTPServer) Start(ctx context.Context) error {
 	s.logger.Info("HTTP server started, waiting for configuration")
 	<-ctx.Done()

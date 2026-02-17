@@ -39,8 +39,10 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
+	"github.com/piwi3910/novaedge/internal/agent/introspection"
 	"github.com/piwi3910/novaedge/internal/agent/l4"
 	"github.com/piwi3910/novaedge/internal/agent/mesh"
+	"github.com/piwi3910/novaedge/internal/agent/sdwan"
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	"github.com/piwi3910/novaedge/internal/observability"
@@ -99,9 +101,12 @@ var (
 	shutdownDrainPeriod time.Duration
 
 	// Service mesh configuration
-	meshEnabled     bool
-	meshTPROXYPort  int
-	meshTunnelPort  int
+	meshEnabled    bool
+	meshTPROXYPort int
+	meshTunnelPort int
+
+	// SD-WAN configuration
+	sdwanEnabled    bool
 	meshTrustDomain string
 
 	// Control-plane VIP BGP/BFD configuration
@@ -154,6 +159,9 @@ func main() {
 	flag.IntVar(&meshTPROXYPort, "mesh-tproxy-port", int(mesh.DefaultTPROXYPort), "Port for transparent proxy listener")
 	flag.IntVar(&meshTunnelPort, "mesh-tunnel-port", int(mesh.DefaultTunnelPort), "Port for mTLS tunnel server")
 	flag.StringVar(&meshTrustDomain, "mesh-trust-domain", "cluster.local", "SPIFFE trust domain for mesh identity")
+
+	// SD-WAN flags
+	flag.BoolVar(&sdwanEnabled, "sdwan-enabled", false, "Enable SD-WAN multi-link management")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -296,6 +304,11 @@ func main() {
 		})
 	}
 
+	// Create SD-WAN manager (if enabled)
+	var sdwanManager *sdwan.Manager
+	if sdwanEnabled {
+		sdwanManager = sdwan.NewManager(logger)
+	}
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
 
@@ -322,7 +335,23 @@ func main() {
 		meshManager.StartCertRequester(ctx, nodeName, meshConn)
 	}
 
+	// Start SD-WAN manager (if enabled)
+	if sdwanManager != nil {
+		if err := sdwanManager.Start(ctx); err != nil {
+			logger.Fatal("Failed to start SD-WAN manager", zap.Error(err))
+		}
+	}
+
 	// Start config watcher
+	// Create snapshot holder and introspection server
+	snapshotHolder := introspection.NewSnapshotHolder()
+	introServer := introspection.NewServer(snapshotHolder, logger)
+	go func() {
+		if introErr := introServer.Start(ctx, ":9092"); introErr != nil {
+			logger.Error("introspection server failed", zap.Error(introErr))
+		}
+	}()
+
 	configChan := make(chan error, 1)
 	go func() {
 		configChan <- watcher.Start(func(snapshot *config.Snapshot) error {
@@ -333,6 +362,9 @@ func main() {
 				zap.Int("routes", len(snapshot.Routes)),
 				zap.Int("vips", len(snapshot.VipAssignments)),
 			)
+
+			// Store snapshot for introspection
+			snapshotHolder.Store(snapshot.ConfigSnapshot)
 
 			// Apply L4 config (TCP/UDP/TLS passthrough)
 			if applyErr := applyL4Config(ctx, l4Manager, snapshot, logger); applyErr != nil {
@@ -353,6 +385,12 @@ func main() {
 				}
 			}
 
+			// Apply SD-WAN config (WAN links and path-selection policies)
+			if sdwanManager != nil {
+				if applyErr := applySDWANConfig(sdwanManager, snapshot, logger); applyErr != nil {
+					logger.Error("Failed to apply SD-WAN config", zap.Error(applyErr))
+				}
+			}
 			// Apply HTTP server config
 			if err := httpServer.ApplyConfig(ctx, snapshot); err != nil {
 				healthServer.SetReady(false)
@@ -431,6 +469,11 @@ func main() {
 		if err := meshManager.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Error during mesh manager shutdown", zap.Error(err))
 		}
+	}
+
+	// Shutdown SD-WAN manager
+	if sdwanManager != nil {
+		sdwanManager.Stop()
 	}
 
 	// Shutdown L4 listeners
@@ -523,6 +566,57 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 }
 
 // parseBGPPeer parses a peer string in the format "IP:AS[:PORT]" into a BGPPeerConfig.
+
+// applySDWANConfig converts snapshot WAN links and policies to SD-WAN manager config and applies it.
+func applySDWANConfig(mgr *sdwan.Manager, snapshot *config.Snapshot, logger *zap.Logger) error {
+	links := make([]sdwan.LinkConfig, 0, len(snapshot.WanLinks))
+	for _, wl := range snapshot.WanLinks {
+		cfg := sdwan.LinkConfig{
+			Name:      wl.Name,
+			Site:      wl.Site,
+			Provider:  wl.Provider,
+			Bandwidth: wl.Bandwidth,
+			Cost:      wl.Cost,
+			Role:      sdwan.WANLinkRole(wl.Role),
+		}
+		if wl.Sla != nil {
+			cfg.SLA = &sdwan.WANLinkSLA{
+				MaxLatencyMs:  float64(wl.Sla.MaxLatencyMs),
+				MaxJitterMs:   float64(wl.Sla.MaxJitterMs),
+				MaxPacketLoss: wl.Sla.MaxPacketLoss,
+			}
+		}
+		if wl.TunnelEndpoint != nil {
+			cfg.TunnelEndpoint = &sdwan.TunnelEndpoint{
+				PublicIP: wl.TunnelEndpoint.PublicIp,
+				Port:     wl.TunnelEndpoint.Port,
+			}
+		}
+		links = append(links, cfg)
+	}
+
+	policies := make([]sdwan.PolicyConfig, 0, len(snapshot.WanPolicies))
+	for _, wp := range snapshot.WanPolicies {
+		p := sdwan.PolicyConfig{
+			Name:      wp.Name,
+			Strategy:  wp.GetPathSelection().GetStrategy(),
+			Failover:  wp.GetPathSelection().GetFailover(),
+			DSCPClass: wp.GetPathSelection().GetDscpClass(),
+		}
+		if wp.Match != nil {
+			p.MatchHosts = wp.Match.Hosts
+			p.MatchPaths = wp.Match.Paths
+			p.MatchHeaders = wp.Match.Headers
+		}
+		policies = append(policies, p)
+	}
+
+	logger.Info("Applying SD-WAN configuration",
+		zap.Int("links", len(links)),
+		zap.Int("policies", len(policies)))
+
+	return mgr.ApplyConfig(links, policies)
+}
 func parseBGPPeer(peerStr string) (cpvip.BGPPeerConfig, error) {
 	parts := strings.Split(peerStr, ":")
 	if len(parts) < 2 || len(parts) > 3 {
