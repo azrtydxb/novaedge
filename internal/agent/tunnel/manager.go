@@ -166,11 +166,6 @@ func (m *NetworkTunnelManager) HealthCheck() map[string]bool {
 	return status
 }
 
-// createTunnel instantiates the appropriate tunnel implementation based on config.
-func (m *NetworkTunnelManager) createTunnel(clusterName string, config v1alpha1.TunnelConfig) (Tunnel, error) {
-	return m.createTunnelWithOverlay(clusterName, config, "")
-}
-
 // createTunnelWithOverlay instantiates a tunnel with optional overlay CIDR support.
 func (m *NetworkTunnelManager) createTunnelWithOverlay(clusterName string, config v1alpha1.TunnelConfig, overlayCIDR string) (Tunnel, error) {
 	switch config.Type {

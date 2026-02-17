@@ -22,16 +22,16 @@ import (
 	"go.uber.org/zap"
 )
 
-func newTestLinkManager() (*LinkManager, *Prober, *PathSelector) {
+func newTestLinkManager() (*LinkManager, *Prober) {
 	logger := zap.NewNop()
 	prober := NewProber(logger)
 	selector := NewPathSelector(logger)
 	mgr := NewLinkManager(prober, selector, logger)
-	return mgr, prober, selector
+	return mgr, prober
 }
 
 func TestLinkManager_AddLink(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	err := mgr.AddLink(LinkConfig{
 		Name:      "wan-1",
@@ -61,7 +61,7 @@ func TestLinkManager_AddLink(t *testing.T) {
 }
 
 func TestLinkManager_AddLink_Empty(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	err := mgr.AddLink(LinkConfig{})
 	if err == nil {
@@ -70,7 +70,7 @@ func TestLinkManager_AddLink_Empty(t *testing.T) {
 }
 
 func TestLinkManager_AddLink_Duplicate(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	err := mgr.AddLink(LinkConfig{Name: "wan-1", Site: "dc-east"})
 	if err != nil {
@@ -84,7 +84,7 @@ func TestLinkManager_AddLink_Duplicate(t *testing.T) {
 }
 
 func TestLinkManager_RemoveLink(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	err := mgr.AddLink(LinkConfig{Name: "wan-1", Site: "dc-east"})
 	if err != nil {
@@ -103,7 +103,7 @@ func TestLinkManager_RemoveLink(t *testing.T) {
 }
 
 func TestLinkManager_RemoveLink_NotFound(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	err := mgr.RemoveLink("nonexistent")
 	if err == nil {
@@ -112,7 +112,7 @@ func TestLinkManager_RemoveLink_NotFound(t *testing.T) {
 }
 
 func TestLinkManager_GetAllLinks(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	_ = mgr.AddLink(LinkConfig{Name: "wan-1", Site: "dc-east"})
 	_ = mgr.AddLink(LinkConfig{Name: "wan-2", Site: "dc-west"})
@@ -124,7 +124,7 @@ func TestLinkManager_GetAllLinks(t *testing.T) {
 }
 
 func TestLinkManager_GetLinksForSite(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	_ = mgr.AddLink(LinkConfig{Name: "wan-1", Site: "dc-east"})
 	_ = mgr.AddLink(LinkConfig{Name: "wan-2", Site: "dc-west"})
@@ -147,7 +147,7 @@ func TestLinkManager_GetLinksForSite(t *testing.T) {
 }
 
 func TestLinkManager_UpdateLinkStates(t *testing.T) {
-	mgr, prober, _ := newTestLinkManager()
+	mgr, prober := newTestLinkManager()
 
 	_ = mgr.AddLink(LinkConfig{
 		Name:      "wan-1",
@@ -198,7 +198,7 @@ func TestLinkManager_UpdateLinkStates(t *testing.T) {
 }
 
 func TestLinkManager_SelectPathForPolicy_NoData(t *testing.T) {
-	mgr, _, _ := newTestLinkManager()
+	mgr, _ := newTestLinkManager()
 
 	_, err := mgr.SelectPathForPolicy("policy1", StrategyLowestLatency)
 	if err == nil {
