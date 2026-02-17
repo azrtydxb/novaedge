@@ -23,6 +23,7 @@ import {
   History,
   Puzzle,
   Zap,
+  Radio,
   type LucideIcon,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -63,6 +64,7 @@ const navGroups: NavGroup[] = [
       { name: 'VIPs', path: '/vips', icon: Globe },
       { name: 'IP Pools', path: '/ippools', icon: LayoutGrid },
       { name: 'Certificates', path: '/certificates', icon: Lock },
+      { name: 'SD-WAN', path: '/sdwan', icon: Radio },
     ],
   },
   {

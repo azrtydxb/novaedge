@@ -66,6 +66,10 @@ func (m *mockTunnel) LocalAddr() string {
 	return m.localAddr
 }
 
+func (m *mockTunnel) OverlayAddr() string {
+	return ""
+}
+
 func (m *mockTunnel) Type() string {
 	return m.tunnelType
 }

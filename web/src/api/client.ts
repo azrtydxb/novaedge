@@ -29,6 +29,12 @@ import type {
   WASMPluginConfig,
   WASMPluginStatus,
 } from './types'
+import type {
+  WANLink,
+  SDWANTopology,
+  WANPolicy,
+  SDWANEvent,
+} from './sdwan-types'
 import {
   normalizeGateways,
   normalizeGateway,
@@ -369,6 +375,22 @@ const wasmPluginsAPI = {
   },
 }
 
+// SD-WAN
+const sdwanAPI = {
+  links: async (): Promise<WANLink[]> => {
+    return fetchJSON<WANLink[]>(`${API_BASE}/sdwan/links`)
+  },
+  topology: async (): Promise<SDWANTopology> => {
+    return fetchJSON<SDWANTopology>(`${API_BASE}/sdwan/topology`)
+  },
+  policies: async (): Promise<WANPolicy[]> => {
+    return fetchJSON<WANPolicy[]>(`${API_BASE}/sdwan/policies`)
+  },
+  events: async (): Promise<SDWANEvent[]> => {
+    return fetchJSON<SDWANEvent[]>(`${API_BASE}/sdwan/events`)
+  },
+}
+
 export const api = {
   // Auth
   auth: {
@@ -413,6 +435,7 @@ export const api = {
   remoteclusters: remoteclustersAPI,
   overload: overloadAPI,
   wasmPlugins: wasmPluginsAPI,
+  sdwan: sdwanAPI,
 
   // Agents
   agents: {

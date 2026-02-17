@@ -124,6 +124,8 @@ rules:
   - proxypolicies
   - proxyroutes
   - proxyvips
+  - proxywanlinks
+  - proxywanpolicies
   verbs:
   - create
   - delete
@@ -145,6 +147,8 @@ rules:
   - proxypolicies/finalizers
   - proxyroutes/finalizers
   - proxyvips/finalizers
+  - proxywanlinks/finalizers
+  - proxywanpolicies/finalizers
   verbs:
   - update
 - apiGroups:
@@ -160,6 +164,8 @@ rules:
   - proxypolicies/status
   - proxyroutes/status
   - proxyvips/status
+  - proxywanlinks/status
+  - proxywanpolicies/status
   verbs:
   - get
   - patch

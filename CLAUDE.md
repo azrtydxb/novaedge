@@ -8,17 +8,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, and VIP controller written in Go. It serves as a unified replacement for Envoy + MetalLB + NGINX Ingress, providing:
+NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, VIP controller, and SD-WAN gateway written in Go. It serves as a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD-WAN, providing:
 
 - Distributed L4/L7 load balancing (HTTP/1.1, HTTP/2, HTTP/3 QUIC, WebSockets, gRPC, SSE, TCP/UDP)
 - Reverse proxy with policies and middleware (auth, rate-limit, WAF, rewrites, compression, caching)
 - Ingress Controller (compatible with Kubernetes Ingress and Gateway API)
 - Distributed VIP management (L2 ARP, BGP, OSPF modes with BFD and IPv6)
+- SD-WAN with WireGuard tunnels, multi-WAN link management, SLA-based path selection, STUN NAT traversal, and DSCP QoS
 - Certificate management (ACME, cert-manager, HashiCorp Vault)
 - Service mesh with transparent mTLS (TPROXY + SPIFFE)
 - WASM plugin system for extensibility
 - Multi-cluster federation with hub-spoke topology
-- Kubernetes-native control plane using 10 CRDs
+- Kubernetes-native control plane using 12 CRDs
 
 ## Architecture
 

@@ -64,6 +64,11 @@ type NovaEdgeRemoteClusterSpec struct {
 	// +kubebuilder:default=false
 	// +optional
 	Paused bool `json:"paused,omitempty"`
+
+	// OverlayCIDR is the overlay network CIDR assigned to this remote cluster
+	// for site-to-site routing (e.g., "10.200.1.0/24").
+	// +optional
+	OverlayCIDR string `json:"overlayCIDR,omitempty"`
 }
 
 // RemoteClusterConnection defines how agents connect to the hub controller
@@ -189,6 +194,10 @@ type WireGuardConfig struct {
 	// +kubebuilder:default=25
 	// +optional
 	PersistentKeepalive *int32 `json:"persistentKeepalive,omitempty"`
+
+	// ListenPort is the local UDP port for the WireGuard interface.
+	// +optional
+	ListenPort *int32 `json:"listenPort,omitempty"`
 }
 
 // RemoteAgentSpec defines agent configuration specific to this remote cluster

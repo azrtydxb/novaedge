@@ -92,7 +92,7 @@ flowchart TB
     style DataPlane fill:#90EE90
 ```
 
-**Result**: 1 project, 10 CRDs, one configuration model, one upgrade path, and a single observability pipeline.
+**Result**: 1 project, 12 CRDs, one configuration model, one upgrade path, and a single observability pipeline.
 
 ## Tool-by-Tool Replacement
 
@@ -110,6 +110,7 @@ The following table maps each traditional tool to the NovaEdge feature that repl
 | **Kong / Ambassador** | API gateway with rate limiting, JWT validation, OAuth2, CORS policies | NovaEdge policy engine with token-bucket rate limiting (local + distributed Redis), JWT validation with JWKS, OAuth2/OIDC with Keycloak support, CORS, IP filtering, security headers via `ProxyPolicy` CRD |
 | **ModSecurity** | Web Application Firewall (WAF) for OWASP threat protection | NovaEdge built-in WAF powered by Coraza engine with OWASP Core Rule Set support |
 | **Linkerd** | Lightweight service mesh with automatic mTLS, traffic management | NovaEdge service mesh with TPROXY transparent proxy, automatic mTLS, traffic splitting, canary deployments, retry policies, without per-pod sidecar injection |
+| **Cisco Viptela / WireGuard + manual scripts** | SD-WAN overlay with application-aware routing and WAN link failover | NovaEdge SD-WAN with `ProxyWANLink` and `ProxyWANPolicy` CRDs, WireGuard tunnels via wgctrl kernel API, SLA-based path selection (4 strategies), real-time link quality probing, DSCP marking, STUN NAT traversal |
 
 ## Feature Comparison Matrix
 
@@ -148,18 +149,19 @@ The following table maps each traditional tool to the NovaEdge feature that repl
 | **Traffic Splitting / Canary** | Yes | No | Yes | Yes | No |
 | **Circuit Breaking** | Yes | No | Yes | Yes | No |
 | **IP Filtering / Allowlists** | Yes | Yes | Yes | Yes | Yes |
-| **CRDs to Manage** | 10 | 15+ (combined) | 50+ | 20+ | N/A |
+| **SD-WAN (Application-Aware Path Selection)** | Yes | No | No | No | No |
+| **CRDs to Manage** | 12 | 15+ (combined) | 50+ | 20+ | N/A |
 | **Components to Deploy** | 2 | 3+ | 5+ | 1 | 1 |
 
 ## Operational Benefits
 
 ### Single Binary, Single Config Model
 
-NovaEdge uses 10 purpose-built CRDs to express the full configuration surface. A traditional stack combining NGINX Ingress, MetalLB, cert-manager, and Istio requires understanding and maintaining 50+ CRDs across different API groups, each with its own versioning, documentation, and upgrade path.
+NovaEdge uses 12 purpose-built CRDs to express the full configuration surface. A traditional stack combining NGINX Ingress, MetalLB, cert-manager, and Istio requires understanding and maintaining 50+ CRDs across different API groups, each with its own versioning, documentation, and upgrade path.
 
 ```
 Traditional stack CRDs:  NGINX (5) + MetalLB (6) + cert-manager (6) + Istio (30+) = 47+ CRDs
-NovaEdge CRDs:           10 total
+NovaEdge CRDs:           12 total
 ```
 
 ### Single Observability Pipeline

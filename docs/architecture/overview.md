@@ -272,18 +272,23 @@ flowchart TB
     RT["ProxyRoute<br/>Matching rules"]
     BE["ProxyBackend<br/>Endpoints & LB policy"]
     POL["ProxyPolicy<br/>Rate limit, JWT, CORS"]
+    WL["ProxyWANLink<br/>WAN link management"]
+    WP["ProxyWANPolicy<br/>Path selection"]
 
     GW -->|"vipRef"| VIP
     RT -->|"parentRefs"| GW
     RT -->|"backendRef"| BE
     RT -->|"policyRefs"| POL
     BE -->|"serviceRef"| SVC[(Service)]
+    WP -->|"selects"| WL
 
     style VIP fill:#FFD700
     style GW fill:#87CEEB
     style RT fill:#98FB98
     style BE fill:#DDA0DD
     style POL fill:#F0E68C
+    style WL fill:#e8f5e9
+    style WP fill:#e8f5e9
 ```
 
 ## Scalability

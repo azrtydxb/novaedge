@@ -1121,3 +1121,4 @@ kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller \
 - [Multi-Cluster Guide](multi-cluster.md) - Hub-spoke alternative
 - [CLI Reference](../reference/cli-reference.md) - Federation commands
 - [CRD Reference](../reference/crd-reference.md) - NovaEdgeFederation spec
+- [SD-WAN Guide](../user-guide/sdwan.md) - Site-to-site tunneling with WAN intelligence

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Distributed Kubernetes-native load balancer, reverse proxy, and VIP controller</strong>
+  <strong>Distributed Kubernetes-native load balancer, reverse proxy, VIP controller, and SD-WAN gateway</strong>
 </p>
 
 <p align="center">
@@ -15,7 +15,7 @@
 
 ---
 
-NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress, written in Go.
+NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD-WAN, written in Go. It combines L4/L7 load balancing, VIP management, service mesh, and SD-WAN into a single Kubernetes-native binary.
 
 ## Features
 
@@ -63,7 +63,7 @@ NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress, written i
 ### Extensibility
 - **WASM plugin system** (via Wazero runtime) for custom request/response processing
 - **Composable middleware pipelines** with boolean expressions for conditional routing
-- **10 Custom Resource Definitions** for declarative configuration
+- **12 Custom Resource Definitions** for declarative configuration
 
 ### Kubernetes Integration
 - **Ingress API v1** support with automatic translation
@@ -87,6 +87,15 @@ NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress, written i
 - **Mesh authorization engine** with service-level access policies
 - **Automatic certificate rotation** with configurable renewal threshold
 
+### SD-WAN
+- **Multi-link WAN management** with primary, backup, and load-balanced roles
+- **Application-aware path selection** with SLA-based routing strategies (lowest-latency, highest-bandwidth, most-reliable, lowest-cost)
+- **WireGuard tunnels** with wgctrl kernel API and STUN NAT traversal
+- **Real-time link quality probing** -- latency, jitter, packet loss with EWMA smoothing
+- **Automatic failover** with hysteresis to prevent link flip-flop
+- **DSCP marking** for QoS enforcement
+- **2 new CRDs**: `ProxyWANLink`, `ProxyWANPolicy`
+
 ### Control-Plane VIP
 - **Dedicated VIP for controller** high availability
 - **Health-check based failover** using Kubernetes `/livez` endpoint
@@ -105,9 +114,10 @@ NovaEdge consists of four major components:
 1. **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
 2. **Controller (Control-Plane)**: Runs as a Deployment, watches CRDs and Kubernetes resources, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
 3. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L4/L7 load balancing, VIP management, and executes routing/filtering/policy logic
-4. **CRDs**: 10 Custom Resource Definitions:
+4. **CRDs**: 12 Custom Resource Definitions:
    - Core: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
    - Certificate & IP: `ProxyCertificate`, `ProxyIPPool`
+   - SD-WAN: `ProxyWANLink`, `ProxyWANPolicy`
    - Cluster management: `NovaEdgeCluster`, `NovaEdgeFederation`, `NovaEdgeRemoteCluster`
 
 See the [documentation site](docs/index.md) for detailed architecture and specifications.
@@ -239,6 +249,12 @@ kubectl get proxyippools
 ./novactl trace list --limit 20              # List recent traces
 ./novactl metrics query 'rate(requests[5m])' # Execute PromQL
 ./novactl metrics dashboard                  # Show metrics dashboard
+
+# SD-WAN management
+./novactl sdwan status                       # Show SD-WAN status summary
+./novactl sdwan links                        # List WAN links with quality data
+./novactl sdwan links -A                     # List WAN links in all namespaces
+./novactl sdwan topology                     # Show overlay network topology
 ```
 
 ## Testing & Quality

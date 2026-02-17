@@ -110,6 +110,11 @@ func (t *webSocketTunnel) LocalAddr() string {
 	return t.localAddr
 }
 
+// OverlayAddr returns an empty string as WebSocket tunnels do not participate in overlay routing.
+func (t *webSocketTunnel) OverlayAddr() string {
+	return ""
+}
+
 // Type returns the tunnel type identifier.
 func (t *webSocketTunnel) Type() string {
 	return "websocket"

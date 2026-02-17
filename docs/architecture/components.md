@@ -362,6 +362,35 @@ Features:
 - Automatic protocol detection
 - Connection limits
 
+#### SD-WAN Engine
+
+Manages multi-link WAN connectivity and application-aware path selection:
+
+```mermaid
+flowchart TB
+    subgraph SDWANEngine["SD-WAN Engine"]
+        LM["WAN Link Manager"]
+        PRB["SLA Prober"]
+        PS["Path Selection Engine"]
+        STUN["STUN Discoverer"]
+        DSCP["DSCP Marker"]
+    end
+
+    Config((Config)) --> LM
+    LM --> PRB
+    PRB -->|"latency, jitter, loss"| PS
+    PS -->|"select link"| DSCP
+    STUN --> LM
+```
+
+| Component | Purpose |
+|-----------|---------|
+| WAN Link Manager | Tracks WAN link state (up/down/degraded) and manages WireGuard tunnels |
+| SLA Prober | Measures latency, jitter, and packet loss with EWMA smoothing |
+| Path Selection Engine | Selects optimal WAN path using 4 strategies (lowest-latency, highest-bandwidth, most-reliable, lowest-cost) |
+| STUN Discoverer | Discovers public endpoints for NAT traversal in tunnel establishment |
+| DSCP Marker | Applies DSCP markings for QoS enforcement on outbound traffic |
+
 ### Configuration
 
 ```yaml
