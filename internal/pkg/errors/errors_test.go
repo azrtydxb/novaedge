@@ -14,396 +14,524 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package apperrors_test
+package apperrors
 
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
-	novaerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
+	"github.com/stretchr/testify/assert"
 )
 
-// --- NetworkError Tests ---
-
-func TestNewNetworkError(t *testing.T) {
-	err := novaerrors.NewNetworkError("connection timeout")
-	if err == nil {
-		t.Fatal("expected non-nil error")
-	}
-	if err.Message != "connection timeout" {
-		t.Errorf("expected message 'connection timeout', got %q", err.Message)
-	}
-	if err.Fields == nil {
-		t.Error("expected non-nil Fields map")
-	}
-}
-
-func TestNetworkError_Error_MessageOnly(t *testing.T) {
-	err := novaerrors.NewNetworkError("connection timeout")
-	if err.Error() != "connection timeout" {
-		t.Errorf("expected 'connection timeout', got %q", err.Error())
-	}
-}
-
-func TestNetworkError_Error_WithOpAndHost(t *testing.T) {
-	err := &novaerrors.NetworkError{
-		Op:      "dial",
-		Host:    "backend.example.com",
-		Port:    8080,
-		Message: "connection refused",
-	}
-	result := err.Error()
-	if !strings.Contains(result, "dial") {
-		t.Errorf("expected 'dial' in error, got %q", result)
-	}
-	if !strings.Contains(result, "backend.example.com:8080") {
-		t.Errorf("expected 'backend.example.com:8080' in error, got %q", result)
-	}
-	if !strings.Contains(result, "connection refused") {
-		t.Errorf("expected 'connection refused' in error, got %q", result)
-	}
-}
-
-func TestNetworkError_Error_HostWithoutPort(t *testing.T) {
-	err := &novaerrors.NetworkError{
-		Host:    "backend.example.com",
-		Message: "DNS failure",
-	}
-	result := err.Error()
-	if strings.Contains(result, ":0") {
-		t.Errorf("should not include port 0 in error: %q", result)
-	}
-}
-
-func TestNetworkError_Unwrap(t *testing.T) {
-	inner := fmt.Errorf("inner error")
-	err := &novaerrors.NetworkError{
-		Message: "outer",
-		Err:     inner,
-	}
-
-	if !errors.Is(err, inner) {
-		t.Error("expected Unwrap to return inner error")
-	}
-}
-
-func TestNetworkError_WithField(t *testing.T) {
-	err := novaerrors.NewNetworkError("timeout").
-		WithField("host", "10.0.0.1").
-		WithField("port", 8080)
-
-	if err.Fields["host"] != "10.0.0.1" {
-		t.Errorf("expected field 'host' to be '10.0.0.1', got %v", err.Fields["host"])
-	}
-	if err.Fields["port"] != 8080 {
-		t.Errorf("expected field 'port' to be 8080, got %v", err.Fields["port"])
-	}
-}
-
-func TestNetworkError_WithFields(t *testing.T) {
-	err := novaerrors.NewNetworkError("timeout").
-		WithFields(map[string]interface{}{
-			"host":    "10.0.0.1",
-			"port":    8080,
-			"attempt": 3,
-		})
-
-	if len(err.Fields) != 3 {
-		t.Errorf("expected 3 fields, got %d", len(err.Fields))
-	}
-}
-
-// --- ConfigError Tests ---
-
-func TestNewConfigError(t *testing.T) {
-	err := novaerrors.NewConfigError("invalid configuration")
-	if err == nil {
-		t.Fatal("expected non-nil error")
-	}
-	if err.Message != "invalid configuration" {
-		t.Errorf("expected message 'invalid configuration', got %q", err.Message)
-	}
-}
-
-func TestConfigError_Error_WithFieldAndValue(t *testing.T) {
-	err := &novaerrors.ConfigError{
-		Field:   "maxRetries",
-		Value:   -1,
-		Message: "must be positive",
-	}
-	result := err.Error()
-	if !strings.Contains(result, "maxRetries") {
-		t.Errorf("expected field name in error: %q", result)
-	}
-	if !strings.Contains(result, "must be positive") {
-		t.Errorf("expected message in error: %q", result)
-	}
-	if !strings.Contains(result, "-1") {
-		t.Errorf("expected value in error: %q", result)
-	}
-}
-
-func TestConfigError_Unwrap(t *testing.T) {
-	inner := fmt.Errorf("parse error")
-	err := &novaerrors.ConfigError{
-		Message: "config",
-		Err:     inner,
-	}
-
-	if !errors.Is(err, inner) {
-		t.Error("expected Unwrap to return inner error")
-	}
-}
-
-func TestConfigError_WithField(t *testing.T) {
-	err := novaerrors.NewConfigError("bad config").
-		WithField("file", "config.yaml")
-
-	if err.Fields["file"] != "config.yaml" {
-		t.Errorf("expected field 'file' to be 'config.yaml', got %v", err.Fields["file"])
-	}
-}
-
-func TestConfigError_WithFields(t *testing.T) {
-	err := novaerrors.NewConfigError("bad config").
-		WithFields(map[string]interface{}{
-			"file": "config.yaml",
-			"line": 42,
-		})
-
-	if len(err.Fields) != 2 {
-		t.Errorf("expected 2 fields, got %d", len(err.Fields))
-	}
-}
-
-// --- ValidationError Tests ---
-
-func TestNewValidationError(t *testing.T) {
-	err := novaerrors.NewValidationError("validation failed")
-	if err == nil {
-		t.Fatal("expected non-nil error")
-	}
-	if err.Message != "validation failed" {
-		t.Errorf("expected message 'validation failed', got %q", err.Message)
-	}
-	if err.Children == nil {
-		t.Error("expected non-nil Children slice")
-	}
-}
-
-func TestValidationError_Error_WithFieldAndRule(t *testing.T) {
-	err := &novaerrors.ValidationError{
-		Field:   "email",
-		Rule:    "required",
-		Message: "field is required",
-	}
-	result := err.Error()
-	if !strings.Contains(result, "email") {
-		t.Errorf("expected field name in error: %q", result)
-	}
-	if !strings.Contains(result, "required") {
-		t.Errorf("expected rule in error: %q", result)
-	}
-}
-
-func TestValidationError_AddChild(t *testing.T) {
-	parent := novaerrors.NewValidationError("parent error")
-	child1 := novaerrors.NewValidationError("child 1")
-	child2 := novaerrors.NewValidationError("child 2")
-
-	_ = parent.AddChild(child1).AddChild(child2)
-
-	if len(parent.Children) != 2 {
-		t.Errorf("expected 2 children, got %d", len(parent.Children))
-	}
-
-	// Error message should include children
-	result := parent.Error()
-	if !strings.Contains(result, "child 1") {
-		t.Errorf("expected child error in parent message: %q", result)
-	}
-	if !strings.Contains(result, "child 2") {
-		t.Errorf("expected child error in parent message: %q", result)
-	}
-}
-
-func TestValidationError_Unwrap(t *testing.T) {
-	inner := fmt.Errorf("format error")
-	err := &novaerrors.ValidationError{
-		Message: "validation",
-		Err:     inner,
-	}
-
-	if !errors.Is(err, inner) {
-		t.Error("expected Unwrap to return inner error")
-	}
-}
-
-func TestValidationError_WithField(t *testing.T) {
-	err := novaerrors.NewValidationError("bad input").
-		WithField("field", "username")
-
-	if err.Fields["field"] != "username" {
-		t.Errorf("expected field 'field' to be 'username', got %v", err.Fields["field"])
-	}
-}
-
-func TestValidationError_WithFields(t *testing.T) {
-	err := novaerrors.NewValidationError("bad input").
-		WithFields(map[string]interface{}{
-			"field": "username",
-			"rule":  "min_length",
-		})
-
-	if len(err.Fields) != 2 {
-		t.Errorf("expected 2 fields, got %d", len(err.Fields))
-	}
-}
-
-// --- TLSError Tests ---
-
-func TestNewTLSError(t *testing.T) {
-	err := novaerrors.NewTLSError("handshake failed")
-	if err == nil {
-		t.Fatal("expected non-nil error")
-	}
-	if err.Message != "handshake failed" {
-		t.Errorf("expected message 'handshake failed', got %q", err.Message)
-	}
-}
-
-func TestTLSError_Error_WithOpAndHost(t *testing.T) {
-	err := &novaerrors.TLSError{
-		Op:      "handshake",
-		Host:    "secure.example.com",
-		Message: "certificate expired",
-	}
-	result := err.Error()
-	if !strings.Contains(result, "handshake") {
-		t.Errorf("expected 'handshake' in error: %q", result)
-	}
-	if !strings.Contains(result, "secure.example.com") {
-		t.Errorf("expected host in error: %q", result)
-	}
-	if !strings.Contains(result, "certificate expired") {
-		t.Errorf("expected message in error: %q", result)
-	}
-}
-
-func TestTLSError_Unwrap(t *testing.T) {
-	inner := fmt.Errorf("x509: certificate signed by unknown authority")
-	err := &novaerrors.TLSError{
-		Message: "TLS error",
-		Err:     inner,
-	}
-
-	if !errors.Is(err, inner) {
-		t.Error("expected Unwrap to return inner error")
-	}
-}
-
-func TestTLSError_WithField(t *testing.T) {
-	err := novaerrors.NewTLSError("bad cert").
-		WithField("sni", "example.com")
-
-	if err.Fields["sni"] != "example.com" {
-		t.Errorf("expected field 'sni' to be 'example.com', got %v", err.Fields["sni"])
-	}
-}
-
-func TestTLSError_WithFields(t *testing.T) {
-	err := novaerrors.NewTLSError("bad cert").
-		WithFields(map[string]interface{}{
-			"sni":    "example.com",
-			"cipher": "TLS_AES_128_GCM_SHA256",
-		})
-
-	if len(err.Fields) != 2 {
-		t.Errorf("expected 2 fields, got %d", len(err.Fields))
-	}
-}
-
-// --- Standard Error Variables Tests ---
-
-func TestStandardErrorVariables(t *testing.T) {
-	// Verify all standard errors are properly defined
-	standardErrors := []struct {
-		name string
-		err  error
+func TestStandardErrors(t *testing.T) {
+	tests := []struct {
+		name  string
+		err   error
+		msg   string
+		isErr error
 	}{
-		{"ErrInvalidConfig", novaerrors.ErrInvalidConfig},
-		{"ErrMissingConfig", novaerrors.ErrMissingConfig},
-		{"ErrConfigParse", novaerrors.ErrConfigParse},
-		{"ErrConfigValidation", novaerrors.ErrConfigValidation},
-		{"ErrConnectionFailed", novaerrors.ErrConnectionFailed},
-		{"ErrConnectionTimeout", novaerrors.ErrConnectionTimeout},
-		{"ErrConnectionRefused", novaerrors.ErrConnectionRefused},
-		{"ErrDNSResolution", novaerrors.ErrDNSResolution},
-		{"ErrNetworkUnreachable", novaerrors.ErrNetworkUnreachable},
-		{"ErrTLSHandshake", novaerrors.ErrTLSHandshake},
-		{"ErrTLSCertificate", novaerrors.ErrTLSCertificate},
-		{"ErrTLSVerification", novaerrors.ErrTLSVerification},
-		{"ErrInvalidCipherSuite", novaerrors.ErrInvalidCipherSuite},
-		{"ErrValidationFailed", novaerrors.ErrValidationFailed},
-		{"ErrInvalidInput", novaerrors.ErrInvalidInput},
-		{"ErrInvalidFormat", novaerrors.ErrInvalidFormat},
-		{"ErrMissingField", novaerrors.ErrMissingField},
-		{"ErrNotFound", novaerrors.ErrNotFound},
-		{"ErrAlreadyExists", novaerrors.ErrAlreadyExists},
-		{"ErrTimeout", novaerrors.ErrTimeout},
-		{"ErrCancelled", novaerrors.ErrCancelled},
+		{"ErrInvalidConfig", ErrInvalidConfig, "invalid configuration", ErrInvalidConfig},
+		{"ErrMissingConfig", ErrMissingConfig, "missing required configuration", ErrMissingConfig},
+		{"ErrConfigParse", ErrConfigParse, "failed to parse configuration", ErrConfigParse},
+		{"ErrConfigValidation", ErrConfigValidation, "configuration validation failed", ErrConfigValidation},
+		{"ErrConnectionFailed", ErrConnectionFailed, "connection failed", ErrConnectionFailed},
+		{"ErrConnectionTimeout", ErrConnectionTimeout, "connection timeout", ErrConnectionTimeout},
+		{"ErrConnectionRefused", ErrConnectionRefused, "connection refused", ErrConnectionRefused},
+		{"ErrDNSResolution", ErrDNSResolution, "DNS resolution failed", ErrDNSResolution},
+		{"ErrNetworkUnreachable", ErrNetworkUnreachable, "network unreachable", ErrNetworkUnreachable},
+		{"ErrTLSHandshake", ErrTLSHandshake, "TLS handshake failed", ErrTLSHandshake},
+		{"ErrTLSCertificate", ErrTLSCertificate, "TLS certificate error", ErrTLSCertificate},
+		{"ErrTLSVerification", ErrTLSVerification, "TLS verification failed", ErrTLSVerification},
+		{"ErrInvalidCipherSuite", ErrInvalidCipherSuite, "invalid cipher suite", ErrInvalidCipherSuite},
+		{"ErrValidationFailed", ErrValidationFailed, "validation failed", ErrValidationFailed},
+		{"ErrInvalidInput", ErrInvalidInput, "invalid input", ErrInvalidInput},
+		{"ErrInvalidFormat", ErrInvalidFormat, "invalid format", ErrInvalidFormat},
+		{"ErrMissingField", ErrMissingField, "missing required field", ErrMissingField},
+		{"ErrNotFound", ErrNotFound, "resource not found", ErrNotFound},
+		{"ErrAlreadyExists", ErrAlreadyExists, "resource already exists", ErrAlreadyExists},
+		{"ErrTimeout", ErrTimeout, "operation timeout", ErrTimeout},
+		{"ErrCancelled", ErrCancelled, "operation cancelled", ErrCancelled},
 	}
 
-	for _, tt := range standardErrors {
-		if tt.err == nil {
-			t.Errorf("%s should not be nil", tt.name)
-		}
-		if tt.err.Error() == "" {
-			t.Errorf("%s should have a non-empty message", tt.name)
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.msg, tt.err.Error())
+			assert.True(t, errors.Is(tt.err, tt.isErr))
+		})
 	}
 }
 
-func TestErrorTypeAssertion(t *testing.T) {
-	// Test that errors.As works with our custom types
-	var netErr *novaerrors.NetworkError
-	err := &novaerrors.NetworkError{Message: "connection failed"}
-	if !errors.As(err, &netErr) {
-		t.Error("errors.As should work with NetworkError")
-	}
+func TestNetworkError(t *testing.T) {
+	t.Run("Error with all fields", func(t *testing.T) {
+		err := &NetworkError{
+			Op:      "dial",
+			Host:    "example.com",
+			Port:    8080,
+			Message: "connection refused",
+			Err:     errors.New("underlying error"),
+		}
+		expected := "dial: example.com:8080: connection refused: underlying error"
+		assert.Equal(t, expected, err.Error())
+	})
 
-	var cfgErr *novaerrors.ConfigError
-	err2 := &novaerrors.ConfigError{Message: "bad config"}
-	if !errors.As(err2, &cfgErr) {
-		t.Error("errors.As should work with ConfigError")
-	}
+	t.Run("Error with no port", func(t *testing.T) {
+		err := &NetworkError{
+			Op:      "connect",
+			Host:    "example.com",
+			Message: "timeout",
+		}
+		expected := "connect: example.com: timeout"
+		assert.Equal(t, expected, err.Error())
+	})
 
-	var valErr *novaerrors.ValidationError
-	err3 := &novaerrors.ValidationError{Message: "invalid"}
-	if !errors.As(err3, &valErr) {
-		t.Error("errors.As should work with ValidationError")
-	}
+	t.Run("Error with minimal fields", func(t *testing.T) {
+		err := &NetworkError{
+			Message: "network error",
+		}
+		assert.Equal(t, "network error", err.Error())
+	})
 
-	var tlsErr *novaerrors.TLSError
-	err4 := &novaerrors.TLSError{Message: "TLS failure"}
-	if !errors.As(err4, &tlsErr) {
-		t.Error("errors.As should work with TLSError")
-	}
+	t.Run("Error with port but no host", func(t *testing.T) {
+		err := &NetworkError{
+			Port:    8080,
+			Message: "connection failed",
+		}
+		assert.Equal(t, "connection failed", err.Error())
+	})
+
+	t.Run("Unwrap returns underlying error", func(t *testing.T) {
+		underlying := errors.New("underlying")
+		err := &NetworkError{
+			Message: "network error",
+			Err:     underlying,
+		}
+		assert.Equal(t, underlying, err.Unwrap())
+	})
+
+	t.Run("WithField adds field", func(t *testing.T) {
+		err := NewNetworkError("test")
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("WithFields adds multiple fields", func(t *testing.T) {
+		err := NewNetworkError("test")
+		fields := map[string]interface{}{
+			"key1": "value1",
+			"key2": 42,
+		}
+		result := err.WithFields(fields)
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value1", err.Fields["key1"])
+		assert.Equal(t, 42, err.Fields["key2"])
+	})
+
+	t.Run("WithField on nil Fields map", func(t *testing.T) {
+		err := &NetworkError{}
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("WithFields on nil Fields map", func(t *testing.T) {
+		err := &NetworkError{}
+		result := err.WithFields(map[string]interface{}{"key": "value"})
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("NewNetworkError creates error with initialized Fields", func(t *testing.T) {
+		err := NewNetworkError("test error")
+		assert.Equal(t, "test error", err.Message)
+		assert.NotNil(t, err.Fields)
+	})
+
+	t.Run("errors.As works with NetworkError", func(t *testing.T) {
+		underlying := &NetworkError{
+			Op:      "dial",
+			Message: "connection failed",
+		}
+		wrapped := fmt.Errorf("wrapped: %w", underlying)
+
+		var netErr *NetworkError
+		assert.True(t, errors.As(wrapped, &netErr))
+		assert.Equal(t, "dial", netErr.Op)
+	})
 }
 
-func TestWrappedErrorChain(t *testing.T) {
-	// Test error wrapping chain
-	base := novaerrors.ErrConnectionTimeout
-	wrapped := fmt.Errorf("failed to connect: %w", base)
-	netErr := &novaerrors.NetworkError{
-		Message: "upstream failed",
-		Err:     wrapped,
-	}
+func TestConfigError(t *testing.T) {
+	t.Run("Error with all fields", func(t *testing.T) {
+		err := &ConfigError{
+			Field:   "timeout",
+			Value:   "invalid",
+			Message: "must be a duration",
+			Err:     errors.New("parse error"),
+		}
+		expected := "field 'timeout': must be a duration: value: invalid: parse error"
+		assert.Equal(t, expected, err.Error())
+	})
 
-	// Should be able to unwrap to find the base error
-	if !errors.Is(netErr, base) {
-		t.Error("should be able to find base error through chain")
-	}
+	t.Run("Error with minimal fields", func(t *testing.T) {
+		err := &ConfigError{
+			Message: "config error",
+		}
+		assert.Equal(t, "config error", err.Error())
+	})
+
+	t.Run("Error with field only", func(t *testing.T) {
+		err := &ConfigError{
+			Field: "server",
+		}
+		assert.Equal(t, "field 'server'", err.Error())
+	})
+
+	t.Run("Error with field and message", func(t *testing.T) {
+		err := &ConfigError{
+			Field:   "port",
+			Message: "out of range",
+		}
+		assert.Equal(t, "field 'port': out of range", err.Error())
+	})
+
+	t.Run("Unwrap returns underlying error", func(t *testing.T) {
+		underlying := errors.New("underlying")
+		err := &ConfigError{
+			Message: "config error",
+			Err:     underlying,
+		}
+		assert.Equal(t, underlying, err.Unwrap())
+	})
+
+	t.Run("WithField adds field", func(t *testing.T) {
+		err := NewConfigError("test")
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("WithFields adds multiple fields", func(t *testing.T) {
+		err := NewConfigError("test")
+		fields := map[string]interface{}{
+			"key1": "value1",
+			"key2": 42,
+		}
+		result := err.WithFields(fields)
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value1", err.Fields["key1"])
+		assert.Equal(t, 42, err.Fields["key2"])
+	})
+
+	t.Run("WithField on nil Fields map", func(t *testing.T) {
+		err := &ConfigError{}
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("NewConfigError creates error with initialized Fields", func(t *testing.T) {
+		err := NewConfigError("test error")
+		assert.Equal(t, "test error", err.Message)
+		assert.NotNil(t, err.Fields)
+	})
+
+	t.Run("errors.As works with ConfigError", func(t *testing.T) {
+		underlying := &ConfigError{
+			Field:   "timeout",
+			Message: "invalid",
+		}
+		wrapped := fmt.Errorf("wrapped: %w", underlying)
+
+		var cfgErr *ConfigError
+		assert.True(t, errors.As(wrapped, &cfgErr))
+		assert.Equal(t, "timeout", cfgErr.Field)
+	})
+}
+
+func TestValidationError(t *testing.T) {
+	t.Run("Error with all fields", func(t *testing.T) {
+		err := &ValidationError{
+			Field:   "email",
+			Rule:    "email_format",
+			Value:   "invalid",
+			Message: "must be valid email",
+			Err:     errors.New("regex mismatch"),
+		}
+		expected := "field 'email': rule 'email_format': must be valid email: value: invalid: regex mismatch"
+		assert.Equal(t, expected, err.Error())
+	})
+
+	t.Run("Error with minimal fields", func(t *testing.T) {
+		err := &ValidationError{
+			Message: "validation error",
+		}
+		assert.Equal(t, "validation error", err.Error())
+	})
+
+	t.Run("Error with field and rule", func(t *testing.T) {
+		err := &ValidationError{
+			Field: "name",
+			Rule:  "required",
+		}
+		assert.Equal(t, "field 'name': rule 'required'", err.Error())
+	})
+
+	t.Run("Error with children", func(t *testing.T) {
+		err := &ValidationError{
+			Field:   "address",
+			Message: "invalid address",
+			Children: []*ValidationError{
+				{Field: "street", Message: "required"},
+				{Field: "city", Message: "required"},
+			},
+		}
+		errStr := err.Error()
+		assert.Contains(t, errStr, "field 'address': invalid address")
+		assert.Contains(t, errStr, "field 'street': required")
+		assert.Contains(t, errStr, "field 'city': required")
+	})
+
+	t.Run("Unwrap returns underlying error", func(t *testing.T) {
+		underlying := errors.New("underlying")
+		err := &ValidationError{
+			Message: "validation error",
+			Err:     underlying,
+		}
+		assert.Equal(t, underlying, err.Unwrap())
+	})
+
+	t.Run("WithField adds field", func(t *testing.T) {
+		err := NewValidationError("test")
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("WithFields adds multiple fields", func(t *testing.T) {
+		err := NewValidationError("test")
+		fields := map[string]interface{}{
+			"key1": "value1",
+			"key2": 42,
+		}
+		result := err.WithFields(fields)
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value1", err.Fields["key1"])
+		assert.Equal(t, 42, err.Fields["key2"])
+	})
+
+	t.Run("WithField on nil Fields map", func(t *testing.T) {
+		err := &ValidationError{}
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("AddChild adds child error", func(t *testing.T) {
+		err := NewValidationError("parent")
+		child := NewValidationError("child")
+		result := err.AddChild(child)
+		assert.Equal(t, err, result)
+		assert.Len(t, err.Children, 1)
+		assert.Equal(t, child, err.Children[0])
+	})
+
+	t.Run("NewValidationError creates error with initialized fields", func(t *testing.T) {
+		err := NewValidationError("test error")
+		assert.Equal(t, "test error", err.Message)
+		assert.NotNil(t, err.Fields)
+		assert.NotNil(t, err.Children)
+	})
+
+	t.Run("errors.As works with ValidationError", func(t *testing.T) {
+		underlying := &ValidationError{
+			Field:   "email",
+			Message: "invalid",
+		}
+		wrapped := fmt.Errorf("wrapped: %w", underlying)
+
+		var valErr *ValidationError
+		assert.True(t, errors.As(wrapped, &valErr))
+		assert.Equal(t, "email", valErr.Field)
+	})
+}
+
+func TestTLSError(t *testing.T) {
+	t.Run("Error with all fields", func(t *testing.T) {
+		err := &TLSError{
+			Op:      "handshake",
+			Host:    "example.com",
+			Message: "certificate verify failed",
+			Err:     errors.New("x509: certificate signed by unknown authority"),
+		}
+		expected := "handshake: example.com: certificate verify failed: x509: certificate signed by unknown authority"
+		assert.Equal(t, expected, err.Error())
+	})
+
+	t.Run("Error with minimal fields", func(t *testing.T) {
+		err := &TLSError{
+			Message: "tls error",
+		}
+		assert.Equal(t, "tls error", err.Error())
+	})
+
+	t.Run("Error with op only", func(t *testing.T) {
+		err := &TLSError{
+			Op: "verify",
+		}
+		assert.Equal(t, "verify", err.Error())
+	})
+
+	t.Run("Error with op and host", func(t *testing.T) {
+		err := &TLSError{
+			Op:   "handshake",
+			Host: "secure.example.com",
+		}
+		assert.Equal(t, "handshake: secure.example.com", err.Error())
+	})
+
+	t.Run("Unwrap returns underlying error", func(t *testing.T) {
+		underlying := errors.New("underlying")
+		err := &TLSError{
+			Message: "tls error",
+			Err:     underlying,
+		}
+		assert.Equal(t, underlying, err.Unwrap())
+	})
+
+	t.Run("WithField adds field", func(t *testing.T) {
+		err := NewTLSError("test")
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("WithFields adds multiple fields", func(t *testing.T) {
+		err := NewTLSError("test")
+		fields := map[string]interface{}{
+			"key1": "value1",
+			"key2": 42,
+		}
+		result := err.WithFields(fields)
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value1", err.Fields["key1"])
+		assert.Equal(t, 42, err.Fields["key2"])
+	})
+
+	t.Run("WithField on nil Fields map", func(t *testing.T) {
+		err := &TLSError{}
+		result := err.WithField("key", "value")
+		assert.Equal(t, err, result)
+		assert.Equal(t, "value", err.Fields["key"])
+	})
+
+	t.Run("NewTLSError creates error with initialized Fields", func(t *testing.T) {
+		err := NewTLSError("test error")
+		assert.Equal(t, "test error", err.Message)
+		assert.NotNil(t, err.Fields)
+	})
+
+	t.Run("errors.As works with TLSError", func(t *testing.T) {
+		underlying := &TLSError{
+			Op:      "handshake",
+			Message: "failed",
+		}
+		wrapped := fmt.Errorf("wrapped: %w", underlying)
+
+		var tlsErr *TLSError
+		assert.True(t, errors.As(wrapped, &tlsErr))
+		assert.Equal(t, "handshake", tlsErr.Op)
+	})
+}
+
+func TestErrorWrappingAndUnwrapping(t *testing.T) {
+	t.Run("NetworkError supports errors.Is", func(t *testing.T) {
+		underlying := ErrConnectionFailed
+		err := &NetworkError{
+			Message: "failed to connect",
+			Err:     underlying,
+		}
+		assert.True(t, errors.Is(err, underlying))
+	})
+
+	t.Run("ConfigError supports errors.Is", func(t *testing.T) {
+		underlying := ErrInvalidConfig
+		err := &ConfigError{
+			Message: "bad config",
+			Err:     underlying,
+		}
+		assert.True(t, errors.Is(err, underlying))
+	})
+
+	t.Run("ValidationError supports errors.Is", func(t *testing.T) {
+		underlying := ErrValidationFailed
+		err := &ValidationError{
+			Message: "validation failed",
+			Err:     underlying,
+		}
+		assert.True(t, errors.Is(err, underlying))
+	})
+
+	t.Run("TLSError supports errors.Is", func(t *testing.T) {
+		underlying := ErrTLSHandshake
+		err := &TLSError{
+			Message: "handshake failed",
+			Err:     underlying,
+		}
+		assert.True(t, errors.Is(err, underlying))
+	})
+}
+
+func TestErrorChaining(t *testing.T) {
+	t.Run("NetworkError chaining", func(t *testing.T) {
+		err := NewNetworkError("connection failed").
+			WithField("host", "example.com").
+			WithField("port", 8080).
+			WithFields(map[string]interface{}{
+				"timeout": 30,
+				"retry":   true,
+			})
+
+		assert.Equal(t, "example.com", err.Fields["host"])
+		assert.Equal(t, 8080, err.Fields["port"])
+		assert.Equal(t, 30, err.Fields["timeout"])
+		assert.Equal(t, true, err.Fields["retry"])
+	})
+
+	t.Run("ConfigError chaining", func(t *testing.T) {
+		err := NewConfigError("invalid config").
+			WithField("file", "config.yaml").
+			WithFields(map[string]interface{}{
+				"line": 10,
+			})
+
+		assert.Equal(t, "config.yaml", err.Fields["file"])
+		assert.Equal(t, 10, err.Fields["line"])
+	})
+
+	t.Run("ValidationError chaining with children", func(t *testing.T) {
+		child1 := NewValidationError("child1").WithField("index", 0)
+		child2 := NewValidationError("child2").WithField("index", 1)
+
+		err := NewValidationError("parent").
+			WithField("type", "array").
+			AddChild(child1).
+			AddChild(child2)
+
+		assert.Equal(t, "array", err.Fields["type"])
+		assert.Len(t, err.Children, 2)
+		assert.Equal(t, child1, err.Children[0])
+		assert.Equal(t, child2, err.Children[1])
+	})
+
+	t.Run("TLSError chaining", func(t *testing.T) {
+		err := NewTLSError("TLS failed").
+			WithField("version", "TLS1.3").
+			WithFields(map[string]interface{}{
+				"cipher": "AES-256-GCM",
+			})
+
+		assert.Equal(t, "TLS1.3", err.Fields["version"])
+		assert.Equal(t, "AES-256-GCM", err.Fields["cipher"])
+	})
 }
