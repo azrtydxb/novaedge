@@ -611,6 +611,13 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 			cluster.HealthCheck = convertHealthCheck(backend.Spec.HealthCheck)
 		}
 
+		if backend.Spec.OutlierDetection != nil {
+			cluster.OutlierDetection = convertOutlierDetection(backend.Spec.OutlierDetection)
+		}
+		if backend.Spec.SlowStart != nil {
+			cluster.SlowStart = convertSlowStart(backend.Spec.SlowStart)
+		}
+
 		if backend.Spec.TLS != nil {
 			cluster.Tls = &pb.BackendTLS{
 				Enabled:            backend.Spec.TLS.Enabled,

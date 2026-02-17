@@ -59,6 +59,9 @@ type Pool struct {
 	// Health checker for endpoints
 	healthChecker *health.Checker
 
+	// Outlier detector for statistical endpoint ejection
+	outlierDetector *health.OutlierDetector
+
 	// Context for health checker
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -160,6 +163,24 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	// Create and start health checker
 	pool.healthChecker = health.NewChecker(cluster, endpoints, logger)
 	pool.healthChecker.Start(poolCtx)
+
+	// Initialize outlier detector if configured
+	if od := cluster.GetOutlierDetection(); od != nil {
+		odCfg := health.OutlierDetectionConfig{
+			Interval:                 time.Duration(od.IntervalMs) * time.Millisecond,
+			BaseEjectionTime:         time.Duration(od.BaseEjectionDurationMs) * time.Millisecond,
+			MaxEjectionPercent:       float64(od.MaxEjectionPercent),
+			SuccessRateMinHosts:      int(od.SuccessRateMinHosts),
+			SuccessRateRequestVolume: int(od.SuccessRateMinRequests),
+			SuccessRateStdevFactor:   od.SuccessRateStdevFactor,
+			ConsecutiveErrors:        int(od.Consecutive_5XxThreshold),
+		}
+		if odCfg.Interval == 0 {
+			odCfg = health.DefaultOutlierDetectionConfig()
+		}
+		pool.outlierDetector = health.NewOutlierDetector(cluster.Name, odCfg, logger)
+		pool.outlierDetector.Start(poolCtx)
+	}
 
 	// Create reverse proxies for each endpoint
 	pool.createProxies()
@@ -378,6 +399,9 @@ func (p *Pool) Close() {
 	if p.healthChecker != nil {
 		p.healthChecker.Stop()
 	}
+	if p.outlierDetector != nil {
+		p.outlierDetector.Stop()
+	}
 	if p.cancel != nil {
 		p.cancel()
 	}
@@ -410,6 +434,11 @@ func (p *Pool) GetHealthyEndpoints() []*pb.Endpoint {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.endpoints
+}
+
+// OutlierDetector returns the pool's outlier detector, or nil if not configured.
+func (p *Pool) OutlierDetector() *health.OutlierDetector {
+	return p.outlierDetector
 }
 
 // GetStats returns pool statistics
