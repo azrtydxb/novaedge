@@ -2,6 +2,26 @@
 
 All notable changes to NovaEdge are documented in this file.
 
+## [1.2.1] - 2026-02-17
+
+Feature gap release: closes parity gaps with production reverse proxies (NGINX, Envoy, Traefik, HAProxy, Caddy).
+
+### Features
+
+- **Fault injection CRD wiring**: Wire existing fault injection middleware into `ProxyRoute` CRD with Prometheus metrics for delay and abort counters (#403)
+- **Slow start CRD wiring**: Wire existing `SlowStartManager` into `ProxyBackend` CRD with configurable window and aggression curve (#404)
+- **Outlier detection CRD**: Add `OutlierDetectionConfig` to `ProxyBackend` CRD for consecutive-5xx and success-rate-based auto-ejection (#405)
+- **Body transformation filter**: RFC 6902 JSON Patch middleware for request/response body modification with add, remove, replace, move, and copy operations (#406)
+- **gRPC-JSON transcoding**: Dynamic protobuf-based JSON-to-gRPC bridge using `google.golang.org/protobuf` with full status code mapping (#407)
+- **Adaptive load shedding**: Heap memory, goroutine count, and active connection monitoring with hysteresis-based 503 shedding and `Retry-After` headers (#408)
+- **Gateway API conformance**: Centralized supported features, three conformance profiles (GatewayHTTP, GatewayGRPC, GatewayTLS), and conformance documentation (#409)
+
+### Chores
+
+- Add Apache 2.0 LICENSE file to repository root
+- Add NovaEdge logo to README and documentation site
+- Add GitHub Pages documentation link and repository description
+
 ## [1.2.0] - 2026-02-17
 
 Major feature release: multi-cluster federation with cross-cluster routing and tunneling.
