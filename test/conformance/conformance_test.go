@@ -26,7 +26,6 @@ import (
 	confapis "sigs.k8s.io/gateway-api/conformance/apis/v1"
 	"sigs.k8s.io/gateway-api/conformance/tests"
 	"sigs.k8s.io/gateway-api/conformance/utils/suite"
-	"sigs.k8s.io/gateway-api/pkg/features"
 )
 
 // TestConformance runs the Gateway API conformance test suite against NovaEdge.
@@ -42,7 +41,7 @@ func TestConformance(t *testing.T) {
 		Debug:                debug,
 		CleanupBaseResources: cleanup,
 		BaseManifests:        conformance.GatewayClassBaseManifests,
-		SupportedFeatures:    NovaEdgeSupportedFeatures(),
+		SupportedFeatures:    AllNovaEdgeSupportedFeatures(),
 		Implementation: confapis.Implementation{
 			Organization: "novaedge",
 			Project:      "novaedge",
@@ -52,6 +51,8 @@ func TestConformance(t *testing.T) {
 		},
 		ConformanceProfiles: sets.New(
 			suite.GatewayHTTPConformanceProfileName,
+			suite.GatewayGRPCConformanceProfileName,
+			suite.GatewayTLSConformanceProfileName,
 		),
 	}
 
@@ -79,26 +80,4 @@ func TestConformance(t *testing.T) {
 			profileReport.Extended.Result,
 		)
 	}
-}
-
-// NovaEdgeSupportedFeatures returns the set of Gateway API features supported by NovaEdge.
-func NovaEdgeSupportedFeatures() sets.Set[features.FeatureName] {
-	return sets.New[features.FeatureName](
-		// Core Gateway features
-		features.SupportGateway,
-		features.SupportHTTPRoute,
-
-		// HTTPRoute core features
-		features.SupportHTTPRouteHostRewrite,
-		features.SupportHTTPRoutePathRewrite,
-		features.SupportHTTPRoutePathRedirect,
-		features.SupportHTTPRouteSchemeRedirect,
-		features.SupportHTTPRouteRequestHeaderModification,
-		features.SupportHTTPRouteResponseHeaderModification,
-		features.SupportHTTPRouteRequestMirror,
-
-		// Gateway extended features
-		features.SupportGatewayPort8080,
-		features.SupportGatewayHTTPListenerIsolation,
-	)
 }
