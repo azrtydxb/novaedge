@@ -675,6 +675,24 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 				log.FromContext(ctx).Error(err, "Failed to resolve endpoints", "backend", backend.Name)
 				continue
 			}
+
+			// Merge remote endpoints from federated clusters when federation is active
+			if b.federationProvider != nil && b.federationProvider.IsActive() {
+				svcNamespace := getNamespace(backend.Spec.ServiceRef.Namespace, backend.Namespace)
+				remoteServiceEndpoints := b.federationProvider.GetRemoteEndpoints(svcNamespace, backend.Spec.ServiceRef.Name)
+				for _, remoteSvc := range remoteServiceEndpoints {
+					for _, ep := range remoteSvc.GetEndpoints() {
+						remoteEP := &pb.Endpoint{
+							Address: ep.Address,
+							Port:    ep.Port,
+							Ready:   ep.Ready,
+							Labels:  mergeRemoteEndpointLabels(ep.Labels, remoteSvc.ClusterName, remoteSvc.Region, remoteSvc.Zone),
+						}
+						endpointList.Endpoints = append(endpointList.Endpoints, remoteEP)
+					}
+				}
+			}
+
 			clusterKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
 			endpoints[clusterKey] = endpointList
 		}
@@ -1121,6 +1139,35 @@ func (b *Builder) resolveEndpointTopologyLabels(ctx context.Context, ep *discove
 
 	if len(labels) == 0 {
 		return nil
+	}
+	return labels
+}
+
+// Federation label keys used to tag remote endpoints.
+const (
+	federationClusterLabel = "novaedge.io/cluster"
+	federationRegionLabel  = "novaedge.io/region"
+	federationZoneLabel    = "novaedge.io/zone"
+	federationRemoteLabel  = "novaedge.io/remote"
+)
+
+// mergeRemoteEndpointLabels builds a label map for a remote endpoint by
+// preserving any existing labels from the remote side and overlaying
+// federation-specific cluster, region, zone, and remote marker labels.
+func mergeRemoteEndpointLabels(existing map[string]string, clusterName, region, zone string) map[string]string {
+	labels := make(map[string]string, len(existing)+4)
+	for k, v := range existing {
+		labels[k] = v
+	}
+	labels[federationRemoteLabel] = "true"
+	if clusterName != "" {
+		labels[federationClusterLabel] = clusterName
+	}
+	if region != "" {
+		labels[federationRegionLabel] = region
+	}
+	if zone != "" {
+		labels[federationZoneLabel] = zone
 	}
 	return labels
 }

@@ -721,6 +721,258 @@ func TestBuildInternalServices(t *testing.T) {
 	}
 }
 
+// mockFederationProvider is a test double for FederationStateProvider.
+type mockFederationProvider struct {
+	active          bool
+	federationID    string
+	localMember     string
+	vectorClock     map[string]int64
+	remoteEndpoints map[string][]*pb.ServiceEndpoints // key: "namespace/serviceName"
+}
+
+func (m *mockFederationProvider) GetFederationID() string          { return m.federationID }
+func (m *mockFederationProvider) GetLocalMemberName() string       { return m.localMember }
+func (m *mockFederationProvider) GetVectorClock() map[string]int64 { return m.vectorClock }
+func (m *mockFederationProvider) IsActive() bool                   { return m.active }
+func (m *mockFederationProvider) GetRemoteEndpoints(namespace, serviceName string) []*pb.ServiceEndpoints {
+	key := namespace + "/" + serviceName
+	return m.remoteEndpoints[key]
+}
+
+func TestBuildClustersFederationInactive(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = novaedgev1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
+
+	ready := true
+	port8080 := int32(8080)
+	portName := testPortNameHTTP
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-svc", Namespace: "default"},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{Name: testPortNameHTTP, Port: 80, TargetPort: intstr.FromInt32(8080)},
+			},
+		},
+	}
+	es := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-svc-abc", Namespace: "default",
+			Labels: map[string]string{"kubernetes.io/service-name": "my-svc"},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints: []discoveryv1.Endpoint{
+			{Addresses: []string{"10.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
+		},
+		Ports: []discoveryv1.EndpointPort{{Name: &portName, Port: &port8080}},
+	}
+	backend := &novaedgev1alpha1.ProxyBackend{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-backend", Namespace: "default"},
+		Spec: novaedgev1alpha1.ProxyBackendSpec{
+			ServiceRef: &novaedgev1alpha1.ServiceReference{Name: "my-svc", Port: 80},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(svc, es, backend).Build()
+	builder := NewBuilder(fakeClient)
+
+	// Federation provider is set but inactive
+	builder.SetFederationProvider(&mockFederationProvider{
+		active: false,
+		remoteEndpoints: map[string][]*pb.ServiceEndpoints{
+			"default/my-svc": {
+				{
+					ServiceName: "my-svc",
+					Namespace:   "default",
+					ClusterName: "remote-1",
+					Region:      "eu-west-1",
+					Endpoints: []*pb.Endpoint{
+						{Address: "10.1.0.1", Port: 8080, Ready: true},
+					},
+				},
+			},
+		},
+	})
+
+	_, endpoints, err := builder.buildClusters(context.Background(), false)
+	if err != nil {
+		t.Fatalf("buildClusters failed: %v", err)
+	}
+
+	epList := endpoints["default/test-backend"]
+	if epList == nil {
+		t.Fatal("Expected endpoint list for default/test-backend")
+	}
+	// Only local endpoint should be present
+	if len(epList.Endpoints) != 1 {
+		t.Fatalf("Expected 1 endpoint (local only), got %d", len(epList.Endpoints))
+	}
+	if epList.Endpoints[0].Address != "10.0.0.1" {
+		t.Errorf("Expected local address 10.0.0.1, got %s", epList.Endpoints[0].Address)
+	}
+}
+
+func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = novaedgev1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
+
+	ready := true
+	port8080 := int32(8080)
+	portName := testPortNameHTTP
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-svc", Namespace: "default"},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{Name: testPortNameHTTP, Port: 80, TargetPort: intstr.FromInt32(8080)},
+			},
+		},
+	}
+	es := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-svc-abc", Namespace: "default",
+			Labels: map[string]string{"kubernetes.io/service-name": "my-svc"},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints: []discoveryv1.Endpoint{
+			{Addresses: []string{"10.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
+		},
+		Ports: []discoveryv1.EndpointPort{{Name: &portName, Port: &port8080}},
+	}
+	backend := &novaedgev1alpha1.ProxyBackend{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-backend", Namespace: "default"},
+		Spec: novaedgev1alpha1.ProxyBackendSpec{
+			ServiceRef: &novaedgev1alpha1.ServiceReference{Name: "my-svc", Port: 80},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(svc, es, backend).Build()
+	builder := NewBuilder(fakeClient)
+
+	builder.SetFederationProvider(&mockFederationProvider{
+		active: true,
+		remoteEndpoints: map[string][]*pb.ServiceEndpoints{
+			"default/my-svc": {
+				{
+					ServiceName: "my-svc",
+					Namespace:   "default",
+					ClusterName: "remote-1",
+					Region:      "eu-west-1",
+					Zone:        "eu-west-1a",
+					Endpoints: []*pb.Endpoint{
+						{Address: "10.1.0.1", Port: 8080, Ready: true, Labels: map[string]string{"custom": "label"}},
+						{Address: "10.1.0.2", Port: 8080, Ready: false},
+					},
+				},
+				{
+					ServiceName: "my-svc",
+					Namespace:   "default",
+					ClusterName: "remote-2",
+					Region:      "us-east-1",
+					Zone:        "",
+					Endpoints: []*pb.Endpoint{
+						{Address: "10.2.0.1", Port: 8080, Ready: true},
+					},
+				},
+			},
+		},
+	})
+
+	_, endpoints, err := builder.buildClusters(context.Background(), false)
+	if err != nil {
+		t.Fatalf("buildClusters failed: %v", err)
+	}
+
+	epList := endpoints["default/test-backend"]
+	if epList == nil {
+		t.Fatal("Expected endpoint list for default/test-backend")
+	}
+
+	// 1 local + 2 from remote-1 + 1 from remote-2 = 4
+	if len(epList.Endpoints) != 4 {
+		t.Fatalf("Expected 4 endpoints (1 local + 3 remote), got %d", len(epList.Endpoints))
+	}
+
+	// Verify local endpoint (first)
+	if epList.Endpoints[0].Address != "10.0.0.1" {
+		t.Errorf("Expected first endpoint to be local 10.0.0.1, got %s", epList.Endpoints[0].Address)
+	}
+
+	// Check remote endpoint labels
+	remoteEP1 := epList.Endpoints[1] // 10.1.0.1 from remote-1
+	if remoteEP1.Address != "10.1.0.1" {
+		t.Errorf("Expected remote endpoint 10.1.0.1, got %s", remoteEP1.Address)
+	}
+	if remoteEP1.Labels["novaedge.io/remote"] != "true" {
+		t.Error("Expected novaedge.io/remote=true label on remote endpoint")
+	}
+	if remoteEP1.Labels["novaedge.io/cluster"] != "remote-1" {
+		t.Errorf("Expected novaedge.io/cluster=remote-1, got %s", remoteEP1.Labels["novaedge.io/cluster"])
+	}
+	if remoteEP1.Labels["novaedge.io/region"] != "eu-west-1" {
+		t.Errorf("Expected novaedge.io/region=eu-west-1, got %s", remoteEP1.Labels["novaedge.io/region"])
+	}
+	if remoteEP1.Labels["novaedge.io/zone"] != "eu-west-1a" {
+		t.Errorf("Expected novaedge.io/zone=eu-west-1a, got %s", remoteEP1.Labels["novaedge.io/zone"])
+	}
+	// Verify existing labels are preserved
+	if remoteEP1.Labels["custom"] != "label" {
+		t.Errorf("Expected custom=label to be preserved, got %s", remoteEP1.Labels["custom"])
+	}
+
+	// Check remote-2 endpoint (no zone)
+	remoteEP3 := epList.Endpoints[3] // 10.2.0.1 from remote-2
+	if remoteEP3.Labels["novaedge.io/cluster"] != "remote-2" {
+		t.Errorf("Expected novaedge.io/cluster=remote-2, got %s", remoteEP3.Labels["novaedge.io/cluster"])
+	}
+	if remoteEP3.Labels["novaedge.io/region"] != "us-east-1" {
+		t.Errorf("Expected novaedge.io/region=us-east-1, got %s", remoteEP3.Labels["novaedge.io/region"])
+	}
+	if _, hasZone := remoteEP3.Labels["novaedge.io/zone"]; hasZone {
+		t.Error("Expected no novaedge.io/zone label when zone is empty")
+	}
+	if remoteEP3.Labels["novaedge.io/remote"] != "true" {
+		t.Error("Expected novaedge.io/remote=true label on remote-2 endpoint")
+	}
+}
+
+func TestMergeRemoteEndpointLabels(t *testing.T) {
+	// Test with nil existing labels
+	labels := mergeRemoteEndpointLabels(nil, "cluster-a", "us-east-1", "us-east-1a")
+	if labels["novaedge.io/remote"] != "true" {
+		t.Error("Expected novaedge.io/remote=true")
+	}
+	if labels["novaedge.io/cluster"] != "cluster-a" {
+		t.Errorf("Expected cluster-a, got %s", labels["novaedge.io/cluster"])
+	}
+	if labels["novaedge.io/region"] != "us-east-1" {
+		t.Errorf("Expected us-east-1, got %s", labels["novaedge.io/region"])
+	}
+	if labels["novaedge.io/zone"] != "us-east-1a" {
+		t.Errorf("Expected us-east-1a, got %s", labels["novaedge.io/zone"])
+	}
+
+	// Test preserving existing labels
+	existing := map[string]string{"foo": "bar", "baz": "qux"}
+	labels = mergeRemoteEndpointLabels(existing, "cluster-b", "", "")
+	if labels["foo"] != "bar" || labels["baz"] != "qux" {
+		t.Error("Expected existing labels to be preserved")
+	}
+	if labels["novaedge.io/remote"] != "true" {
+		t.Error("Expected novaedge.io/remote=true")
+	}
+	if _, hasRegion := labels["novaedge.io/region"]; hasRegion {
+		t.Error("Expected no region label when region is empty")
+	}
+	if _, hasZone := labels["novaedge.io/zone"]; hasZone {
+		t.Error("Expected no zone label when zone is empty")
+	}
+}
+
 func TestBuildInternalServicesEmpty(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = corev1.AddToScheme(scheme)
