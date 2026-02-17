@@ -19,8 +19,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/acme"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
+
+	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
 const (
@@ -46,6 +50,7 @@ type Server struct {
 	jaegerEndpoint   string
 	traceClient      *trace.Client
 	snapshotStore    *SnapshotStore
+	crdClient        ctrlclient.Client
 }
 
 // Config holds server configuration
@@ -117,6 +122,15 @@ func NewServer(cfg Config) (*Server, error) {
 			return nil, fmt.Errorf("failed to create clientset: %w", err)
 		}
 		s.clientset = clientset
+
+		// Create controller-runtime client for CRD access (SD-WAN etc.)
+		crdScheme := runtime.NewScheme()
+		if schemeErr := novaedgev1alpha1.AddToScheme(crdScheme); schemeErr == nil {
+			crdCl, crdErr := ctrlclient.New(cfg.KubeConfig, ctrlclient.Options{Scheme: crdScheme})
+			if crdErr == nil {
+				s.crdClient = crdCl
+			}
+		}
 	}
 
 	// Create Prometheus client if configured

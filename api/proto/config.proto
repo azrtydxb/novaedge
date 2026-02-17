@@ -48,6 +48,12 @@ message ConfigSnapshot {
 
   // Mesh authorization policies
   repeated MeshAuthorizationPolicy mesh_authz_policies = 14;
+
+  // SD-WAN WAN link configurations
+  repeated WANLink wan_links = 15;
+
+  // SD-WAN WAN policy configurations
+  repeated WANPolicy wan_policies = 16;
 }
 
 // FederationMetadata contains federation-related metadata for the snapshot
@@ -986,6 +992,52 @@ message MeshDestination {
 }
 
 // ConfigService is the gRPC service for distributing config snapshots
+
+// SD-WAN WAN link configuration
+message WANLink {
+  string name = 1;
+  string namespace = 2;
+  string site = 3;
+  string iface = 4;
+  string provider = 5;
+  string bandwidth = 6;
+  int32 cost = 7;
+  string role = 8;
+  WANLinkSLA sla = 9;
+  WANTunnelEndpoint tunnel_endpoint = 10;
+}
+
+message WANLinkSLA {
+  int64 max_latency_ms = 1;
+  int64 max_jitter_ms = 2;
+  double max_packet_loss = 3;
+}
+
+message WANTunnelEndpoint {
+  string public_ip = 1;
+  int32 port = 2;
+}
+
+// SD-WAN WAN policy configuration
+message WANPolicy {
+  string name = 1;
+  string namespace = 2;
+  WANPolicyMatch match = 3;
+  WANPathSelection path_selection = 4;
+}
+
+message WANPolicyMatch {
+  repeated string hosts = 1;
+  repeated string paths = 2;
+  map<string, string> headers = 3;
+}
+
+message WANPathSelection {
+  string strategy = 1;
+  bool failover = 2;
+  string dscp_class = 3;
+}
+
 service ConfigService {
   // StreamConfig streams config snapshots to agents
   // Agents connect and receive initial snapshot, then updates when config changes
