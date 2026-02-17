@@ -787,3 +787,33 @@ func convertSlowStart(ss *novaedgev1alpha1.SlowStartConfig) *pb.SlowStart {
 		Aggression: aggression,
 	}
 }
+
+// convertExtProc converts CRD ExtProcCRDConfig to protobuf ExtProcConfig
+func convertExtProc(ep *novaedgev1alpha1.ExtProcCRDConfig) *pb.ExtProcConfig {
+	if ep == nil {
+		return nil
+	}
+	cfg := &pb.ExtProcConfig{
+		Enabled: true,
+		Address: ep.Address,
+	}
+	if ep.Timeout != nil {
+		cfg.TimeoutMs = ep.Timeout.Milliseconds()
+	}
+	if ep.FailOpen != nil {
+		cfg.FailOpen = *ep.FailOpen
+	}
+	if ep.ProcessRequestHeaders != nil {
+		cfg.ProcessRequestHeaders = *ep.ProcessRequestHeaders
+	}
+	if ep.ProcessRequestBody != nil {
+		cfg.ProcessRequestBody = *ep.ProcessRequestBody
+	}
+	if ep.ProcessResponseHeaders != nil {
+		cfg.ProcessResponseHeaders = *ep.ProcessResponseHeaders
+	}
+	if ep.ProcessResponseBody != nil {
+		cfg.ProcessResponseBody = *ep.ProcessResponseBody
+	}
+	return cfg
+}

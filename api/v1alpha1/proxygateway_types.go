@@ -502,9 +502,40 @@ type ProxyGatewaySpec struct {
 	// gRPC routing is handled via ProxyRoute resources with gRPC match rules.
 	// +optional
 	GRPCRoute *GRPCRouteConfig `json:"grpcRoute,omitempty"`
+
+	// ExtProc configures external processing via a gRPC service.
+	// The external processor can inspect and modify request/response headers and bodies.
+	// +optional
+	ExtProc *ExtProcCRDConfig `json:"extProc,omitempty"`
 }
 
-// GatewayCacheConfig configures HTTP response caching for the gateway
+// ExtProcCRDConfig defines external processing configuration.
+type ExtProcCRDConfig struct {
+	// Address is the gRPC server address (host:port) of the external processor.
+	// +kubebuilder:validation:Required
+	Address string `json:"address"`
+	// Timeout for external processing calls (default: "200ms").
+	// +optional
+	Timeout *metav1.Duration `json:"timeout,omitempty"`
+	// FailOpen passes requests through unchanged if the external service is unavailable.
+	// +optional
+	// +kubebuilder:default=true
+	FailOpen *bool `json:"failOpen,omitempty"`
+	// ProcessRequestHeaders enables sending request headers to the external processor.
+	// +optional
+	ProcessRequestHeaders *bool `json:"processRequestHeaders,omitempty"`
+	// ProcessRequestBody enables sending request body to the external processor.
+	// +optional
+	ProcessRequestBody *bool `json:"processRequestBody,omitempty"`
+	// ProcessResponseHeaders enables sending response headers to the external processor.
+	// +optional
+	ProcessResponseHeaders *bool `json:"processResponseHeaders,omitempty"`
+	// ProcessResponseBody enables sending response body to the external processor.
+	// +optional
+	ProcessResponseBody *bool `json:"processResponseBody,omitempty"`
+}
+
+// GatewayCacheConfig configures HTTP response caching for the gateway.
 type GatewayCacheConfig struct {
 	// Enabled enables response caching
 	// +optional
