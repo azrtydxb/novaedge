@@ -183,12 +183,10 @@ func (r *NovaEdgeFederationReconciler) ensureManager(ctx context.Context, fed *n
 		manager.RegisterServer(r.GRPCServer)
 	}
 
-	// Set up callbacks
+	// Set up resource application callback
+	applier := NewFederationResourceApplier(r.Client, r.Scheme, log)
 	manager.OnResourceChange(func(key federation.ResourceKey, changeType federation.ChangeType, data []byte) {
-		log.Warn("Resource changed from federation but applying changes to local Kubernetes resources is not yet implemented",
-			zap.String("resource", fmt.Sprintf("%s/%s/%s", key.Kind, key.Namespace, key.Name)),
-			zap.String("change_type", string(changeType)),
-		)
+		applier.Apply(ctx, key, changeType, data)
 	})
 
 	// Start the manager
