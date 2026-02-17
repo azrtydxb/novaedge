@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -746,4 +747,43 @@ func convertMiddlewarePipeline(pipeline *novaedgev1alpha1.MiddlewarePipelineConf
 	}
 
 	return pbPipeline
+}
+
+// convertOutlierDetection converts NovaEdge OutlierDetectionConfig to protobuf OutlierDetection
+func convertOutlierDetection(od *novaedgev1alpha1.OutlierDetectionConfig) *pb.OutlierDetection {
+	if od == nil {
+		return nil
+	}
+	stdevFactor := 1.9
+	if od.SuccessRateStdevFactor != "" {
+		if v, err := strconv.ParseFloat(od.SuccessRateStdevFactor, 64); err == nil {
+			stdevFactor = v
+		}
+	}
+	return &pb.OutlierDetection{
+		IntervalMs:               durationToMillis(od.Interval),
+		Consecutive_5XxThreshold: getInt32(od.Consecutive5xxThreshold),
+		BaseEjectionDurationMs:   durationToMillis(od.BaseEjectionDuration),
+		MaxEjectionPercent:       getInt32(od.MaxEjectionPercent),
+		SuccessRateMinHosts:      getInt32(od.SuccessRateMinHosts),
+		SuccessRateMinRequests:   getInt32(od.SuccessRateMinRequests),
+		SuccessRateStdevFactor:   stdevFactor,
+	}
+}
+
+// convertSlowStart converts NovaEdge SlowStartConfig to protobuf SlowStart
+func convertSlowStart(ss *novaedgev1alpha1.SlowStartConfig) *pb.SlowStart {
+	if ss == nil {
+		return nil
+	}
+	aggression := 1.0
+	if ss.Aggression != "" {
+		if v, err := strconv.ParseFloat(ss.Aggression, 64); err == nil {
+			aggression = v
+		}
+	}
+	return &pb.SlowStart{
+		WindowMs:   durationToMillis(ss.Window),
+		Aggression: aggression,
+	}
 }

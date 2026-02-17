@@ -464,6 +464,20 @@ func (r *Router) createLoadBalancer(cluster *pb.Cluster, clusterKey string, endp
 			zap.Int32("policy", int32(cluster.LbPolicy)),
 		)
 	}
+
+	// Wrap with slow start if configured
+	if ss := cluster.GetSlowStart(); ss != nil && ss.WindowMs > 0 {
+		ssCfg := lb.SlowStartConfig{
+			Window:     time.Duration(ss.WindowMs) * time.Millisecond,
+			Aggression: ss.Aggression,
+		}
+		if ssCfg.Aggression <= 0 {
+			ssCfg.Aggression = 1.0
+		}
+		newLoadBalancers[clusterKey] = lb.NewSlowStartManager(
+			newLoadBalancers[clusterKey], ssCfg, endpoints,
+		)
+	}
 }
 
 // buildStickyWrappers creates sticky session wrappers for clusters with cookie-based
