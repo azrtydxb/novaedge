@@ -198,6 +198,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/mesh/policies/", s.handleMeshPolicy)
 	mux.HandleFunc("/api/v1/mesh/policies", s.handleMeshPolicies)
 
+	// SD-WAN endpoints
+	mux.HandleFunc("/api/v1/sdwan/links", s.handleSDWANLinks)
+	mux.HandleFunc("/api/v1/sdwan/topology", s.handleSDWANTopology)
+	mux.HandleFunc("/api/v1/sdwan/policies", s.handleSDWANPolicies)
+	mux.HandleFunc("/api/v1/sdwan/events", s.handleSDWANEvents)
+
 	// Config snapshot endpoints
 	mux.HandleFunc("/api/v1/config/snapshots/", s.handleConfigSnapshot)
 	mux.HandleFunc("/api/v1/config/snapshots", s.handleConfigSnapshots)

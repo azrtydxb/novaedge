@@ -86,6 +86,7 @@ func init() {
 	rootCmd.AddCommand(newWebCommand())
 	rootCmd.AddCommand(newFederationCommand())
 	rootCmd.AddCommand(newCacheCommand())
+	rootCmd.AddCommand(newSDWANCommand())
 
 	// Gateway API commands
 	rootCmd.AddCommand(newGatewayAPICommand())
