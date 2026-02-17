@@ -2,6 +2,59 @@
 
 All notable changes to NovaEdge are documented in this file.
 
+## [1.2.0] - 2026-02-17
+
+Major feature release: multi-cluster federation with cross-cluster routing and tunneling.
+
+### Features
+
+- **Multi-cluster federation** with three operating modes (#401):
+  - **Hub-spoke**: Central hub pushes configuration to spoke clusters (one-way sync)
+  - **Mesh**: Full bidirectional sync with endpoint merging across all members
+  - **Unified**: Shared service namespace with locality-aware routing across clusters
+- **Cross-cluster endpoint merging**: Controllers exchange ServiceEndpoints via federation sync; snapshot builder merges local and remote endpoints with cluster/region/zone labels (#401)
+- **Cross-cluster data plane routing**: Reuse existing mTLS HTTP/2 CONNECT tunnel (port 15002) for forwarding requests to remote cluster endpoints transparently (#401)
+- **Location-aware routing**: Three-tier locality hierarchy (Region > Zone > Cluster) with configurable MinHealthyPercent overflow thresholds (default 70%) (#401)
+- **Network tunnels**: Optional WireGuard, SSH, and WebSocket tunnels for cross-cluster connectivity when direct pod-to-pod routing is unavailable (#401)
+- **Federated SPIFFE identities**: Extended format `spiffe://FEDERATION_ID/cluster/CLUSTER_NAME/agent/NODE` for cross-cluster mTLS authentication (#401)
+- **Anti-entropy reconciliation**: Merkle tree comparison with push/pull/bidirectional repair modes and drift reporting (#401)
+- **Split-brain detection**: Fully implemented state machine wired into federation manager with configurable quorum, partition timeout, and auto-heal (#401)
+- **Config hot reload**: Detect CRD spec changes via generation comparison; dynamically add/remove peers and update TLS credentials without restarts (#401)
+- **Remote cluster cleanup**: Automatically delete federated resources (by `novaedge.io/federation-origin` label) and tear down tunnels when a NovaEdgeRemoteCluster is removed (#401)
+- **Federation mode CRD field**: Added `spec.mode` field (hub-spoke/mesh/unified) with kubebuilder validation to NovaEdgeFederation CRD (#401)
+
+### Documentation
+
+- **Federation user guide**: Comprehensive guide covering all three modes, CRD configuration, sync behavior, anti-entropy, and split-brain handling (`docs/user-guide/federation.md`) (#401)
+- **Cross-cluster routing guide**: Architecture diagrams, endpoint merging flow, locality routing tiers, and configuration examples (`docs/user-guide/cross-cluster-routing.md`) (#401)
+- **Federation tunnels guide**: Setup instructions for WireGuard, SSH, and WebSocket tunnels with security considerations (`docs/user-guide/federation-tunnels.md`) (#401)
+- **Federation design document**: Architecture decision record for the federation implementation (`docs/plans/`) (#401)
+- **Example CRDs**: 5 sample configurations for hub-spoke, mesh, unified, direct remote cluster, and WireGuard tunnel remote cluster (`config/samples/federation/`) (#401)
+
+### Fixes
+
+- **Fail-closed middleware**: IP filter and OIDC middleware now fail closed on configuration errors instead of silently allowing traffic (#387)
+- **CORS wildcard credentials**: Prevent setting `Access-Control-Allow-Origin: *` when credentials are enabled, as browsers reject this combination (#388)
+- **IP filter data race**: Fix concurrent read/write race on `trustedProxyCIDRs` slice in IP filter middleware (#389)
+- **Bounded io.ReadAll**: Add size limits to all `io.ReadAll` calls in agent hot paths to prevent memory exhaustion from large request/response bodies (#390)
+- **Lock-free router**: Replace Router RWMutex with `atomic.Pointer` for lock-free request handling, eliminating contention under high concurrency (#391)
+- **Rate limiter memory bounds**: Add bounded map size to rate limiter to prevent unbounded memory growth from unique client IPs (#392)
+- **Context-aware retries**: Replace `time.Sleep` with context-aware `select` in retry loops to respect cancellation and deadlines (#393)
+- **Context propagation**: Replace `context.Background()` with caller-provided context in VIP, health check, router, and server paths (#394)
+- **Health checker TLS**: Health checker now verifies TLS certificates by default instead of skipping verification (#395)
+- **TODO no-ops replaced**: Replace silent TODO no-ops with explicit not-implemented log warnings so missing functionality is visible (#396)
+
+### Improvements
+
+- **Router decomposition**: Decompose large router functions into focused helpers for better readability and testability (#399)
+- **Test coverage**: Add unit tests for SSRF protection, WAF cache, and WAF rate limiting (#400)
+- **Code quality cleanup**: Minor cleanup across agent packages — unused variables, consistent error wrapping, simplified control flow (#397)
+
+### Helm
+
+- Updated Helm chart values with `federation.mode`, `crossCluster`, and `tunnel` configuration sections (#401)
+- Synced all CRD manifests between `config/crd/` and `charts/novaedge/crds/` (#401)
+
 ## [1.0.3] - 2026-02-16
 
 Web Admin GUI architecture overhaul and monitoring release.
