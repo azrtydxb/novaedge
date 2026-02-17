@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -25,6 +26,9 @@ import (
 const (
 	defaultNamespace = "novaedge-system"
 )
+
+// serverStartTime records when the process started, used for standalone agent info.
+var serverStartTime = metav1.Now()
 
 // Server represents the web UI server
 type Server struct {
@@ -1138,16 +1142,25 @@ func (s *Server) handleAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// In standalone mode, return empty list or mock agent
+	// In standalone mode, return agent info derived from the running process.
 	if s.backend != nil && s.backend.Mode() == mode.ModeStandalone {
-		// Return a single "standalone" agent
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "localhost"
+		}
+		listenAddr := s.addr
+		if listenAddr == "" {
+			listenAddr = "127.0.0.1"
+		}
+		startTime := serverStartTime
 		agents := []AgentInfo{{
 			Name:      "standalone-agent",
 			Namespace: "standalone",
-			NodeName:  "localhost",
-			PodIP:     "127.0.0.1",
+			NodeName:  hostname,
+			PodIP:     listenAddr,
 			Phase:     "Running",
 			Ready:     true,
+			StartTime: &startTime,
 		}}
 		writeJSON(w, http.StatusOK, agents)
 		return
