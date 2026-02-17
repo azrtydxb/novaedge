@@ -813,6 +813,85 @@ You can use both tools interchangeably. `novactl` provides convenience shortcuts
    novactl apply -f new-gateway.yaml
    ```
 
+## novactl sdwan
+
+Manage and inspect SD-WAN resources, WAN link quality, and overlay network topology.
+
+### novactl sdwan status
+
+Show a summary of the SD-WAN deployment including active WAN links, policies, and overlay health.
+
+```bash
+novactl sdwan status
+```
+
+**Output:**
+
+```
+SD-WAN Status
+
+WAN Links:  4 (3 healthy, 1 degraded)
+Policies:   2 active
+Overlay:    2 sites connected
+
+Site          Links   Healthy   Tunnels
+----          -----   -------   -------
+site-alpha    2       2         1
+site-beta     2       1         1
+```
+
+### novactl sdwan links
+
+List WAN links with real-time quality metrics.
+
+```bash
+# List WAN links in current namespace
+novactl sdwan links
+
+# List WAN links in all namespaces
+novactl sdwan links -A
+
+# List WAN links in specific namespace
+novactl sdwan links -n production
+
+# Output as JSON
+novactl sdwan links -o json
+```
+
+**Output:**
+
+```
+NAMESPACE   NAME              SITE         ROLE      PROVIDER     LATENCY   LOSS    HEALTHY   AGE
+default     primary-fiber     site-alpha   primary   ISP-A        12ms      0.01%   True      5d
+default     backup-lte        site-alpha   backup    ISP-B        45ms      0.10%   True      5d
+default     primary-fiber-b   site-beta    primary   ISP-C        15ms      0.02%   True      3d
+default     backup-dsl        site-beta    backup    ISP-D        85ms      1.20%   False     3d
+```
+
+### novactl sdwan topology
+
+Display the overlay network topology showing sites, tunnels, and connectivity status.
+
+```bash
+novactl sdwan topology
+```
+
+**Output:**
+
+```
+SD-WAN Overlay Topology
+
+site-alpha (2 links)
+  ├── primary-fiber [primary] ISP-A 1Gbps ✓
+  ├── backup-lte [backup] ISP-B 100Mbps ✓
+  └── tunnel → site-beta (WireGuard, latency: 15ms)
+
+site-beta (2 links)
+  ├── primary-fiber-b [primary] ISP-C 500Mbps ✓
+  ├── backup-dsl [backup] ISP-D 50Mbps ✗ (SLA violation: packet loss 1.2%)
+  └── tunnel → site-alpha (WireGuard, latency: 15ms)
+```
+
 ## See Also
 
 - [Operator Guide](../installation/operator.md)

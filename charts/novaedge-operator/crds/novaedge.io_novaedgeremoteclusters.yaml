@@ -61,8 +61,8 @@ spec:
             type: object
           spec:
             description: |-
-              NovaEdgeRemoteClusterSpec defines the desired state of NovaEdgeRemoteCluster
-              NovaEdgeRemoteCluster represents a remote/edge cluster that runs NovaEdge agents
+              NovaEdgeRemoteClusterSpec defines the desired state for remote cluster configuration.
+              It represents a remote/edge cluster that runs agents
               connecting back to the hub cluster's controller
             properties:
               agent:
@@ -552,6 +552,11 @@ spec:
                           endpoint:
                             description: Endpoint is the hub's WireGuard endpoint
                             type: string
+                          listenPort:
+                            description: ListenPort is the local UDP port for the
+                              WireGuard interface.
+                            format: int32
+                            type: integer
                           persistentKeepalive:
                             default: 25
                             description: PersistentKeepalive is the keepalive interval
@@ -633,6 +638,11 @@ spec:
                 description: Labels are additional labels to apply to resources from
                   this cluster
                 type: object
+              overlayCIDR:
+                description: |-
+                  OverlayCIDR is the overlay network CIDR assigned to this remote cluster
+                  for site-to-site routing (e.g., "10.200.1.0/24").
+                type: string
               paused:
                 default: false
                 description: Paused suspends reconciliation for this remote cluster

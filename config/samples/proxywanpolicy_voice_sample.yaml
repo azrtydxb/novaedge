@@ -1,0 +1,16 @@
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyWANPolicy
+metadata:
+  name: voice-low-latency
+  namespace: novaedge-system
+spec:
+  match:
+    hosts:
+      - "voip.example.com"
+      - "sip.example.com"
+    headers:
+      content-type: "application/sdp"
+  pathSelection:
+    strategy: lowest-latency
+    failover: true
+    dscpClass: EF

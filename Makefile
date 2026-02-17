@@ -32,7 +32,7 @@ help: ## Display this help.
 
 .PHONY: manifests
 manifests: controller-gen ## Generate CRD manifests.
-	$(CONTROLLER_GEN) rbac:roleName=novaedge-controller-role crd webhook paths="./..." output:crd:artifacts:config=config/crd
+	$(CONTROLLER_GEN) rbac:roleName=novaedge-controller-role crd:allowDangerousTypes=true webhook paths="./..." output:crd:artifacts:config=config/crd
 
 .PHONY: generate
 generate: controller-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations.

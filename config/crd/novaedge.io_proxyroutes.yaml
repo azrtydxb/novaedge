@@ -181,6 +181,83 @@ spec:
                       maxItems: 16
                       minItems: 1
                       type: array
+                    bodyTransform:
+                      description: BodyTransform configures JSON body transformation
+                        for this rule
+                      properties:
+                        maxBodySize:
+                          default: 1048576
+                          description: MaxBodySize is the maximum body size for transformation
+                            in bytes (default 1MB)
+                          format: int64
+                          type: integer
+                        request:
+                          description: Request transforms to apply to request bodies
+                          items:
+                            description: TransformOperation represents a single JSON
+                              Patch operation (RFC 6902)
+                            properties:
+                              from:
+                                description: From is the source path for move/copy
+                                  operations (JSON Pointer)
+                                type: string
+                              op:
+                                description: 'Op is the operation: add, remove, replace,
+                                  move, copy'
+                                enum:
+                                - add
+                                - remove
+                                - replace
+                                - move
+                                - copy
+                                type: string
+                              path:
+                                description: Path is the JSON Pointer (RFC 6901) target
+                                  path
+                                type: string
+                              value:
+                                description: Value is the JSON-encoded value for add/replace
+                                  operations
+                                type: string
+                            required:
+                            - op
+                            - path
+                            type: object
+                          type: array
+                        response:
+                          description: Response transforms to apply to response bodies
+                          items:
+                            description: TransformOperation represents a single JSON
+                              Patch operation (RFC 6902)
+                            properties:
+                              from:
+                                description: From is the source path for move/copy
+                                  operations (JSON Pointer)
+                                type: string
+                              op:
+                                description: 'Op is the operation: add, remove, replace,
+                                  move, copy'
+                                enum:
+                                - add
+                                - remove
+                                - replace
+                                - move
+                                - copy
+                                type: string
+                              path:
+                                description: Path is the JSON Pointer (RFC 6901) target
+                                  path
+                                type: string
+                              value:
+                                description: Value is the JSON-encoded value for add/replace
+                                  operations
+                                type: string
+                            required:
+                            - op
+                            - path
+                            type: object
+                          type: array
+                      type: object
                     buffering:
                       description: Buffering defines request and response buffering
                         settings
@@ -200,6 +277,40 @@ spec:
                             Response enables buffering the entire response body before sending to client
                             This is useful for response transformations
                           type: boolean
+                      type: object
+                    faultInjection:
+                      description: FaultInjection configures fault injection for chaos
+                        engineering
+                      properties:
+                        abortPercent:
+                          description: AbortPercent is the percentage of requests
+                            to abort (0-100)
+                          format: int32
+                          maximum: 100
+                          minimum: 0
+                          type: integer
+                        abortStatusCode:
+                          description: AbortStatusCode is the HTTP status code for
+                            aborted requests
+                          format: int32
+                          maximum: 599
+                          minimum: 200
+                          type: integer
+                        delayDuration:
+                          description: DelayDuration is the fixed delay to inject
+                            (e.g. "500ms", "2s")
+                          type: string
+                        delayPercent:
+                          description: DelayPercent is the percentage of requests
+                            to delay (0-100)
+                          format: int32
+                          maximum: 100
+                          minimum: 0
+                          type: integer
+                        headerActivation:
+                          description: HeaderActivation is an optional header that
+                            must be present to activate fault injection
+                          type: string
                       type: object
                     filters:
                       description: Filters define processing steps that must be completed
@@ -511,6 +622,9 @@ spec:
                         retryBudget:
                           description: RetryBudget is the percentage of requests that
                             can be retried (0.0-1.0)
+                          maximum: 1
+                          minimum: 0
+                          type: number
                         retryMethods:
                           description: |-
                             RetryMethods specifies which HTTP methods are eligible for retry

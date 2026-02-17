@@ -36,6 +36,10 @@ type Tunnel interface {
 	// Callers use this address to reach the remote cluster via the tunnel.
 	LocalAddr() string
 
+	// OverlayAddr returns the overlay network address assigned to this tunnel,
+	// or an empty string if the tunnel does not participate in overlay routing.
+	OverlayAddr() string
+
 	// Type returns the tunnel type identifier ("wireguard", "ssh", or "websocket").
 	Type() string
 }

@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from './client'
 import type {
+  WANLink,
+  SDWANTopology,
+  WANPolicy,
+  SDWANEvent,
+} from './sdwan-types'
+import type {
   Gateway,
   Route,
   Backend,
@@ -842,5 +848,38 @@ export function useRollbackConfig() {
     onError: (error: Error) => {
       toast({ title: 'Failed to rollback config', description: error.message, variant: 'destructive' })
     },
+  })
+}
+
+// SD-WAN
+export function useSDWANLinks() {
+  return useQuery<WANLink[]>({
+    queryKey: ['sdwan', 'links'],
+    queryFn: () => api.sdwan.links(),
+    refetchInterval: 10000,
+  })
+}
+
+export function useSDWANTopology() {
+  return useQuery<SDWANTopology>({
+    queryKey: ['sdwan', 'topology'],
+    queryFn: () => api.sdwan.topology(),
+    refetchInterval: 15000,
+  })
+}
+
+export function useSDWANPolicies() {
+  return useQuery<WANPolicy[]>({
+    queryKey: ['sdwan', 'policies'],
+    queryFn: () => api.sdwan.policies(),
+    refetchInterval: 30000,
+  })
+}
+
+export function useSDWANEvents() {
+  return useQuery<SDWANEvent[]>({
+    queryKey: ['sdwan', 'events'],
+    queryFn: () => api.sdwan.events(),
+    refetchInterval: 5000,
   })
 }

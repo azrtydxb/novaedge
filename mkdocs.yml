@@ -81,6 +81,7 @@ nav:
     - TLS & Certificate Management: use-cases/tls-management.md
     - WAF & Security Stack: use-cases/waf-security.md
     - Multi-Cluster Federation: use-cases/multi-cluster.md
+    - SD-WAN Multi-Site: use-cases/sd-wan.md
   - User Guide:
     - Routing: user-guide/routing.md
     - Load Balancing: user-guide/load-balancing.md
@@ -108,6 +109,7 @@ nav:
     - Federation: user-guide/federation.md
     - Cross-Cluster Routing: user-guide/cross-cluster-routing.md
     - Federation Tunnels: user-guide/federation-tunnels.md
+    - SD-WAN: user-guide/sdwan.md
   - Advanced:
     - Multi-Cluster: advanced/multi-cluster.md
     - Federation Setup: advanced/federation-setup.md
@@ -121,6 +123,8 @@ nav:
     - Troubleshooting: operations/troubleshooting.md
   - Reference:
     - CRD Reference: reference/crd-reference.md
+    - ProxyWANLink: reference/proxywanlink.md
+    - ProxyWANPolicy: reference/proxywanpolicy.md
     - CLI Reference: reference/cli-reference.md
     - Helm Values: reference/helm-values.md
   - Examples: examples/index.md

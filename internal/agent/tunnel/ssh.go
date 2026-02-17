@@ -110,6 +110,11 @@ func (t *sshTunnel) LocalAddr() string {
 	return t.localAddr
 }
 
+// OverlayAddr returns an empty string as SSH tunnels do not participate in overlay routing.
+func (t *sshTunnel) OverlayAddr() string {
+	return ""
+}
+
 // Type returns the tunnel type identifier.
 func (t *sshTunnel) Type() string {
 	return "ssh"

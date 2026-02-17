@@ -1,0 +1,219 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.5
+  name: proxywanlinks.novaedge.io
+spec:
+  group: novaedge.io
+  names:
+    kind: ProxyWANLink
+    listKind: ProxyWANLinkList
+    plural: proxywanlinks
+    singular: proxywanlink
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.site
+      name: Site
+      type: string
+    - jsonPath: .spec.role
+      name: Role
+      type: string
+    - jsonPath: .spec.provider
+      name: Provider
+      type: string
+    - jsonPath: .status.healthy
+      name: Healthy
+      type: boolean
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ProxyWANLink represents a WAN link for SD-WAN multi-link management.
+          It tracks link properties, SLA thresholds, and observed quality metrics.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ProxyWANLinkSpec defines the desired state of ProxyWANLink
+            properties:
+              bandwidth:
+                description: Bandwidth is the provisioned bandwidth of the link (e.g.,
+                  "100Mbps", "1Gbps")
+                minLength: 1
+                type: string
+              cost:
+                default: 100
+                description: Cost is an administrative cost metric used for path selection
+                  (lower is preferred)
+                format: int32
+                minimum: 0
+                type: integer
+              interface:
+                description: Interface is the network interface name used for this
+                  WAN link
+                minLength: 1
+                type: string
+              provider:
+                description: Provider is the ISP or WAN circuit provider name
+                minLength: 1
+                type: string
+              role:
+                default: primary
+                description: Role defines whether this link is primary, backup, or
+                  load-balanced
+                enum:
+                - primary
+                - backup
+                - loadbalance
+                type: string
+              site:
+                description: Site is the site name this WAN link belongs to
+                minLength: 1
+                type: string
+              sla:
+                description: SLA defines the SLA thresholds for this link
+                properties:
+                  maxJitter:
+                    description: MaxJitter is the maximum acceptable jitter
+                    type: string
+                  maxLatency:
+                    description: MaxLatency is the maximum acceptable one-way latency
+                    type: string
+                  maxPacketLoss:
+                    description: MaxPacketLoss is the maximum acceptable packet loss
+                      ratio (0.0-1.0)
+                    maximum: 1
+                    minimum: 0
+                    type: number
+                type: object
+              tunnelEndpoint:
+                description: TunnelEndpoint is the public endpoint for tunnel establishment
+                properties:
+                  port:
+                    description: Port is the UDP/TCP port for tunnel traffic
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  publicIP:
+                    description: PublicIP is the publicly reachable IP address of
+                      the tunnel endpoint
+                    type: string
+                required:
+                - port
+                - publicIP
+                type: object
+            required:
+            - bandwidth
+            - interface
+            - provider
+            - site
+            type: object
+          status:
+            description: ProxyWANLinkStatus defines the observed state of ProxyWANLink
+            properties:
+              conditions:
+                description: Conditions represent the latest available observations
+                  of the WAN link's state
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              currentLatency:
+                description: CurrentLatency is the most recently measured latency
+                  in milliseconds
+                type: number
+              currentPacketLoss:
+                description: CurrentPacketLoss is the most recently measured packet
+                  loss ratio (0.0-1.0)
+                type: number
+              healthy:
+                description: Healthy indicates whether the link currently meets its
+                  SLA thresholds
+                type: boolean
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller
+                format: int64
+                type: integer
+              phase:
+                description: Phase is the current lifecycle phase of the WAN link
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
