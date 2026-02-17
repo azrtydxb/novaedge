@@ -13,6 +13,8 @@ import {
   useRemoteClusters,
   useAgents,
   useEvents,
+  useOverloadStatus,
+  useWASMPlugins,
 } from '@/api/hooks'
 import { MetricCard } from '@/components/metrics/MetricCard'
 import { MetricsChart } from '@/components/metrics/MetricsChart'
@@ -34,6 +36,9 @@ import {
   Globe,
   MonitorCheck,
   CalendarClock,
+  Zap,
+  Puzzle,
+  ShieldAlert,
 } from 'lucide-react'
 import { formatBytes, formatUptime } from '@/lib/utils'
 import {
@@ -61,6 +66,8 @@ export default function Dashboard() {
   const { data: remoteClusters = [] } = useRemoteClusters(namespace)
   const { data: agents = [] } = useAgents()
   const { data: events = [] } = useEvents()
+  const { data: overloadStatus } = useOverloadStatus()
+  const { data: wasmPlugins = [] } = useWASMPlugins()
 
   const readyAgents = agents.filter((a) => a.ready).length
   const totalAgents = agents.length
@@ -79,6 +86,29 @@ export default function Dashboard() {
   ]
 
   const hasMetrics = metrics && !metricsError
+
+  // Federation derived data
+  const connectedClusters = remoteClusters.filter(
+    (rc) => rc.status?.connected === true
+  ).length
+
+  // Fault injection: count routes that have faultInjection configured
+  const faultInjectionCount = routes.filter(
+    (r) => r.spec?.faultInjection
+  ).length
+
+  // Slow start: count backends that have slowStart configured
+  const slowStartCount = backends.filter(
+    (b) => b.spec?.slowStart
+  ).length
+
+  // Outlier detection ejected: count backends with outlierDetection
+  const outlierDetectionCount = backends.filter(
+    (b) => b.spec?.outlierDetection
+  ).length
+
+  // WASM plugins loaded
+  const loadedPlugins = wasmPlugins.filter((p) => p.loaded).length
 
   // Recent events (last 10)
   const recentEvents = events.slice(0, 10)
@@ -126,6 +156,106 @@ export default function Dashboard() {
             />
           </Link>
         ))}
+      </div>
+
+      {/* Federation Status, Load Shedding, Active Features */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {/* Federation Status */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Globe className="h-4 w-4" />
+              Federation Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {federations.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No federations configured</p>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Federations</span>
+                  <span className="font-medium">{federations.length}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Connected Clusters</span>
+                  <Badge variant="outline">{connectedClusters}/{remoteClusters.length}</Badge>
+                </div>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Sync Status</span>
+                  <Badge className={connectedClusters === remoteClusters.length && remoteClusters.length > 0 ? 'bg-green-500' : remoteClusters.length > 0 ? 'bg-yellow-500' : ''}>
+                    {connectedClusters === remoteClusters.length && remoteClusters.length > 0 ? 'Synced' : remoteClusters.length > 0 ? 'Partial' : 'N/A'}
+                  </Badge>
+                </div>
+                <Link to="/federation" className="text-xs text-primary hover:underline block pt-1">
+                  View Federation Details
+                </Link>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Load Shedding Status */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <ShieldAlert className="h-4 w-4" />
+              Load Shedding
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">State</span>
+                <Badge className={overloadStatus?.state === 'overloaded' ? 'bg-red-500' : 'bg-green-500'}>
+                  {overloadStatus?.state === 'overloaded' ? 'Overloaded' : 'Normal'}
+                </Badge>
+              </div>
+              {overloadStatus?.state === 'overloaded' && (
+                <div className="flex items-center gap-2 text-sm text-yellow-600 dark:text-yellow-400">
+                  <Zap className="h-3 w-3" />
+                  <span>Shedding active</span>
+                </div>
+              )}
+              {overloadStatus && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">Total Shed</span>
+                  <span className="font-medium">{overloadStatus.totalShed}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Active Features Summary */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Puzzle className="h-4 w-4" />
+              Active Features
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Fault Injection Rules</span>
+                <span className="font-medium">{faultInjectionCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Endpoints in Slow Start</span>
+                <span className="font-medium">{slowStartCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Outlier Detection</span>
+                <span className="font-medium">{outlierDetectionCount}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">WASM Plugins Loaded</span>
+                <span className="font-medium">{loadedPlugins}</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Recent Events */}

@@ -91,6 +91,28 @@ export default function Routes() {
       accessor: (row) => row.spec?.rules?.length ?? 0,
     },
     {
+      key: 'faultInjection',
+      header: 'Fault Injection',
+      accessor: (row) => {
+        const fi = row.spec?.faultInjection
+        if (!fi) return '-'
+        const parts: string[] = []
+        if (fi.delayPercent) parts.push(`Delay ${fi.delayPercent}%`)
+        if (fi.abortPercent) parts.push(`Abort ${fi.abortPercent}%`)
+        return parts.length > 0 ? parts.join(' / ') : '-'
+      },
+    },
+    {
+      key: 'bodyTransform',
+      header: 'Body Transform',
+      accessor: (row) => {
+        const bt = row.spec?.bodyTransform
+        if (!bt) return '-'
+        const count = (bt.requestTransforms?.length ?? 0) + (bt.responseTransforms?.length ?? 0)
+        return count > 0 ? `${count} ops` : '-'
+      },
+    },
+    {
       key: 'age',
       header: 'Age',
       accessor: (row) =>

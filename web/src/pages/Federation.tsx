@@ -10,7 +10,7 @@ import {
   useUpdateRemoteCluster,
   useDeleteRemoteCluster,
 } from '@/api/hooks'
-import type { GenericResource } from '@/api/types'
+import type { Federation as FederationType, RemoteCluster } from '@/api/types'
 import { DataTable, Column } from '@/components/common/DataTable'
 import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { ResourceDialog } from '@/components/resources/ResourceDialog'
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Plus, Trash2 } from 'lucide-react'
+import { formatAge } from '@/lib/utils'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/api/client'
 import { toast } from '@/hooks/use-toast'
@@ -25,11 +26,20 @@ import { toast } from '@/hooks/use-toast'
 const DEFAULT_FEDERATION_YAML = `apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
-  name: example-federation
+  name: my-federation
   namespace: novaedge-system
 spec:
-  mode: hub-spoke
-  clusters: []
+  mode: mesh
+  syncInterval: "30s"
+  antiEntropy:
+    enabled: true
+    interval: "60s"
+    repairMode: bidirectional
+  splitBrain:
+    enabled: true
+    quorum: 2
+    partitionTimeout: "30s"
+    autoHeal: true
 `
 
 const DEFAULT_REMOTE_CLUSTER_YAML = `apiVersion: novaedge.io/v1alpha1
@@ -38,35 +48,144 @@ metadata:
   name: remote-cluster-1
   namespace: novaedge-system
 spec:
-  endpoint: https://remote-cluster:6443
-  secretRef:
-    name: remote-kubeconfig
+  endpoint: "https://remote-cluster:6443"
+  tunnel:
+    type: wireguard
+  tls:
+    secretName: remote-cluster-tls
 `
 
-function getGenericStatus(resource: GenericResource): { text: string; ready: boolean } {
-  const phase = resource.status?.phase as string | undefined
-  if (phase) {
-    return { text: phase, ready: phase === 'Ready' || phase === 'Running' || phase === 'Active' }
-  }
-
-  const conditions = resource.status?.conditions as Array<{ type: string; status: string }> | undefined
-  if (conditions) {
-    const readyCondition = conditions.find((c) => c.type === 'Ready')
-    if (readyCondition) {
-      return { text: readyCondition.status === 'True' ? 'Ready' : 'Not Ready', ready: readyCondition.status === 'True' }
-    }
-  }
-
-  return { text: 'Unknown', ready: false }
-}
-
-function formatLastSync(lastSyncTime: unknown): string {
-  if (!lastSyncTime || typeof lastSyncTime !== 'string') return 'N/A'
+function formatLastSync(lastSyncTime: string | undefined): string {
+  if (!lastSyncTime) return 'N/A'
   try {
     return new Date(lastSyncTime).toLocaleString()
   } catch {
     return String(lastSyncTime)
   }
+}
+
+function getModeBadge(mode: string | undefined) {
+  const modeStr = (mode ?? '').toLowerCase()
+  switch (modeStr) {
+    case 'hub-spoke':
+      return (
+        <Badge className="bg-blue-500 hover:bg-blue-600 text-white">
+          hub-spoke
+        </Badge>
+      )
+    case 'mesh':
+      return (
+        <Badge className="bg-purple-500 hover:bg-purple-600 text-white">
+          mesh
+        </Badge>
+      )
+    case 'unified':
+      return (
+        <Badge className="bg-green-500 hover:bg-green-600 text-white">
+          unified
+        </Badge>
+      )
+    default:
+      return <Badge variant="secondary">{mode ?? '-'}</Badge>
+  }
+}
+
+function getSplitBrainBadge(state: string | undefined) {
+  const stateStr = (state ?? '').toLowerCase()
+  switch (stateStr) {
+    case 'healthy':
+      return (
+        <Badge className="bg-green-500 hover:bg-green-600 text-white">
+          healthy
+        </Badge>
+      )
+    case 'detected':
+      return (
+        <Badge className="bg-red-500 hover:bg-red-600 text-white">
+          detected
+        </Badge>
+      )
+    case 'healing':
+      return (
+        <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">
+          healing
+        </Badge>
+      )
+    default:
+      return <Badge variant="outline">{state ?? 'N/A'}</Badge>
+  }
+}
+
+function getSyncStatusBadge(phase: string | undefined) {
+  const phaseStr = (phase ?? '').toLowerCase()
+  if (phaseStr === 'synced' || phaseStr === 'insync' || phaseStr === 'in-sync' || phaseStr === 'ready' || phaseStr === 'active') {
+    return (
+      <Badge className="bg-green-500 hover:bg-green-600 text-white">
+        {phase}
+      </Badge>
+    )
+  }
+  if (phaseStr === 'syncing' || phaseStr === 'pending' || phaseStr === 'reconciling') {
+    return (
+      <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">
+        {phase}
+      </Badge>
+    )
+  }
+  if (phaseStr === 'error' || phaseStr === 'failed' || phaseStr === 'degraded') {
+    return (
+      <Badge className="bg-red-500 hover:bg-red-600 text-white">
+        {phase}
+      </Badge>
+    )
+  }
+  return <Badge variant="outline">{phase ?? 'N/A'}</Badge>
+}
+
+function getTunnelTypeBadge(tunnelType: string | undefined) {
+  const typeStr = (tunnelType ?? '').toLowerCase()
+  switch (typeStr) {
+    case 'wireguard':
+      return (
+        <Badge className="bg-blue-500 hover:bg-blue-600 text-white">
+          wireguard
+        </Badge>
+      )
+    case 'ssh':
+      return (
+        <Badge className="bg-yellow-500 hover:bg-yellow-600 text-white">
+          ssh
+        </Badge>
+      )
+    case 'websocket':
+      return (
+        <Badge className="bg-purple-500 hover:bg-purple-600 text-white">
+          websocket
+        </Badge>
+      )
+    case 'none':
+    case '':
+      return <Badge variant="secondary">none</Badge>
+    default:
+      return <Badge variant="outline">{tunnelType ?? 'none'}</Badge>
+  }
+}
+
+function getConnectedIndicator(connected: boolean | undefined) {
+  if (connected) {
+    return (
+      <span className="flex items-center gap-2">
+        <span className="inline-block h-2.5 w-2.5 rounded-full bg-green-500" />
+        Yes
+      </span>
+    )
+  }
+  return (
+    <span className="flex items-center gap-2">
+      <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+      No
+    </span>
+  )
 }
 
 // --- Federations Sub-Component ---
@@ -106,12 +225,12 @@ function FederationsTab() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<'create' | 'edit' | 'view'>('create')
-  const [currentFederation, setCurrentFederation] = useState<GenericResource | undefined>()
+  const [currentFederation, setCurrentFederation] = useState<FederationType | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [federationToDelete, setFederationToDelete] = useState<GenericResource | null>(null)
+  const [federationToDelete, setFederationToDelete] = useState<FederationType | null>(null)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
 
-  const columns: Column<GenericResource>[] = [
+  const columns: Column<FederationType>[] = [
     {
       key: 'name',
       header: 'Name',
@@ -119,42 +238,45 @@ function FederationsTab() {
       sortable: true,
     },
     {
-      key: 'namespace',
-      header: 'Namespace',
-      accessor: (row) => (
-        <Badge variant="outline">{row.metadata?.namespace ?? '-'}</Badge>
-      ),
+      key: 'mode',
+      header: 'Mode',
+      accessor: (row) => getModeBadge(row.spec?.mode),
+    },
+    {
+      key: 'members',
+      header: 'Members',
+      accessor: (row) => {
+        const specMembers = row.spec?.members
+        const statusMembers = row.status?.members
+        const count = specMembers?.length ?? statusMembers?.length ?? 0
+        return count
+      },
       sortable: true,
     },
     {
-      key: 'mode',
-      header: 'Mode',
-      accessor: (row) => (row.spec?.mode as string) ?? '-',
+      key: 'syncStatus',
+      header: 'Sync Status',
+      accessor: (row) => getSyncStatusBadge(row.status?.phase),
     },
     {
-      key: 'status',
-      header: 'Status',
-      accessor: (row) => {
-        const { text, ready } = getGenericStatus(row)
-        return (
-          <Badge
-            variant={ready ? 'default' : 'secondary'}
-            className={ready ? 'bg-green-500 hover:bg-green-600' : ''}
-          >
-            {text}
-          </Badge>
-        )
-      },
+      key: 'splitBrain',
+      header: 'Split-Brain State',
+      accessor: (row) => getSplitBrainBadge(row.status?.splitBrainState),
     },
     {
-      key: 'clusters',
-      header: 'Clusters',
-      accessor: (row) => {
-        const clusters = row.spec?.clusters as unknown[] | undefined
-        const statusClusters = row.status?.clusters as unknown[] | undefined
-        const count = clusters?.length ?? statusClusters?.length ?? 0
-        return count
-      },
+      key: 'lastSync',
+      header: 'Last Sync',
+      accessor: (row) => formatLastSync(row.status?.lastSyncTime),
+      sortable: true,
+    },
+    {
+      key: 'age',
+      header: 'Age',
+      accessor: (row) =>
+        row.metadata?.creationTimestamp
+          ? formatAge(row.metadata.creationTimestamp)
+          : 'N/A',
+      sortable: true,
     },
   ]
 
@@ -164,13 +286,13 @@ function FederationsTab() {
     setDialogOpen(true)
   }
 
-  const handleEdit = (federation: GenericResource) => {
+  const handleEdit = (federation: FederationType) => {
     setCurrentFederation(federation)
     setDialogMode(readOnly ? 'view' : 'edit')
     setDialogOpen(true)
   }
 
-  const handleDelete = (federation: GenericResource) => {
+  const handleDelete = (federation: FederationType) => {
     setFederationToDelete(federation)
     setDeleteDialogOpen(true)
   }
@@ -198,7 +320,7 @@ function FederationsTab() {
     })
   }
 
-  const handleSubmit = async (federation: GenericResource) => {
+  const handleSubmit = async (federation: FederationType) => {
     if (dialogMode === 'create') {
       await createFederation.mutateAsync(federation)
     } else {
@@ -210,7 +332,7 @@ function FederationsTab() {
     }
   }
 
-  const getRowKey = (row: GenericResource) =>
+  const getRowKey = (row: FederationType) =>
     `${row.metadata?.namespace}/${row.metadata?.name}`
 
   if (error) {
@@ -258,7 +380,7 @@ function FederationsTab() {
         searchFilter={(row, query) =>
           row.metadata?.name?.toLowerCase().includes(query) ||
           row.metadata?.namespace?.toLowerCase().includes(query) ||
-          (row.spec?.mode as string)?.toLowerCase().includes(query) ||
+          row.spec?.mode?.toLowerCase().includes(query) ||
           false
         }
         actions={(row) =>
@@ -360,12 +482,12 @@ function RemoteClustersTab() {
   const [selectedRows, setSelectedRows] = useState<Set<string>>(new Set())
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dialogMode, setDialogMode] = useState<'create' | 'edit' | 'view'>('create')
-  const [currentRemoteCluster, setCurrentRemoteCluster] = useState<GenericResource | undefined>()
+  const [currentRemoteCluster, setCurrentRemoteCluster] = useState<RemoteCluster | undefined>()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
-  const [remoteClusterToDelete, setRemoteClusterToDelete] = useState<GenericResource | null>(null)
+  const [remoteClusterToDelete, setRemoteClusterToDelete] = useState<RemoteCluster | null>(null)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
 
-  const columns: Column<GenericResource>[] = [
+  const columns: Column<RemoteCluster>[] = [
     {
       key: 'name',
       header: 'Name',
@@ -373,37 +495,33 @@ function RemoteClustersTab() {
       sortable: true,
     },
     {
-      key: 'namespace',
-      header: 'Namespace',
-      accessor: (row) => (
-        <Badge variant="outline">{row.metadata?.namespace ?? '-'}</Badge>
-      ),
+      key: 'endpoint',
+      header: 'Endpoint',
+      accessor: (row) => row.spec?.endpoint ?? '-',
+    },
+    {
+      key: 'tunnelType',
+      header: 'Tunnel Type',
+      accessor: (row) => getTunnelTypeBadge(row.spec?.tunnel?.type),
+    },
+    {
+      key: 'connected',
+      header: 'Connected',
+      accessor: (row) => getConnectedIndicator(row.status?.connected),
+    },
+    {
+      key: 'lastSeen',
+      header: 'Last Seen',
+      accessor: (row) => formatLastSync(row.status?.lastSeen),
       sortable: true,
     },
     {
-      key: 'endpoint',
-      header: 'Endpoint',
-      accessor: (row) => (row.spec?.endpoint as string) ?? '-',
-    },
-    {
-      key: 'status',
-      header: 'Status',
-      accessor: (row) => {
-        const { text, ready } = getGenericStatus(row)
-        return (
-          <Badge
-            variant={ready ? 'default' : 'secondary'}
-            className={ready ? 'bg-green-500 hover:bg-green-600' : ''}
-          >
-            {text}
-          </Badge>
-        )
-      },
-    },
-    {
-      key: 'lastSync',
-      header: 'Last Sync',
-      accessor: (row) => formatLastSync(row.status?.lastSyncTime),
+      key: 'age',
+      header: 'Age',
+      accessor: (row) =>
+        row.metadata?.creationTimestamp
+          ? formatAge(row.metadata.creationTimestamp)
+          : 'N/A',
       sortable: true,
     },
   ]
@@ -414,13 +532,13 @@ function RemoteClustersTab() {
     setDialogOpen(true)
   }
 
-  const handleEdit = (remoteCluster: GenericResource) => {
+  const handleEdit = (remoteCluster: RemoteCluster) => {
     setCurrentRemoteCluster(remoteCluster)
     setDialogMode(readOnly ? 'view' : 'edit')
     setDialogOpen(true)
   }
 
-  const handleDelete = (remoteCluster: GenericResource) => {
+  const handleDelete = (remoteCluster: RemoteCluster) => {
     setRemoteClusterToDelete(remoteCluster)
     setDeleteDialogOpen(true)
   }
@@ -448,19 +566,19 @@ function RemoteClustersTab() {
     })
   }
 
-  const handleSubmit = async (remoteCluster: GenericResource) => {
+  const handleSubmit = async (remoteCluster: RemoteCluster) => {
     if (dialogMode === 'create') {
       await createRemoteCluster.mutateAsync(remoteCluster)
     } else {
       await updateRemoteCluster.mutateAsync({
         namespace: remoteCluster.metadata?.namespace ?? '',
         name: remoteCluster.metadata?.name ?? '',
-        remoteCluster,
+        rc: remoteCluster,
       })
     }
   }
 
-  const getRowKey = (row: GenericResource) =>
+  const getRowKey = (row: RemoteCluster) =>
     `${row.metadata?.namespace}/${row.metadata?.name}`
 
   if (error) {
@@ -508,7 +626,7 @@ function RemoteClustersTab() {
         searchFilter={(row, query) =>
           row.metadata?.name?.toLowerCase().includes(query) ||
           row.metadata?.namespace?.toLowerCase().includes(query) ||
-          (row.spec?.endpoint as string)?.toLowerCase().includes(query) ||
+          row.spec?.endpoint?.toLowerCase().includes(query) ||
           false
         }
         actions={(row) =>

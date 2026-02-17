@@ -90,6 +90,8 @@ export interface RouteSpec {
   parentRefs?: ObjectRef[]
   hostnames?: string[]
   rules?: RouteRule[]
+  faultInjection?: FaultInjectionConfig
+  bodyTransform?: BodyTransformConfig
 }
 
 export interface RouteRule {
@@ -181,6 +183,8 @@ export interface BackendSpec {
   circuitBreaker?: CircuitBreaker
   connectionPool?: ConnectionPool
   tls?: BackendTLS
+  slowStart?: SlowStartConfig
+  outlierDetection?: OutlierDetectionConfig
 }
 
 export interface BackendStatus {
@@ -631,6 +635,158 @@ export interface ConfigSnapshot {
 export interface ConfigDiff {
   from: ConfigSnapshot
   to: ConfigSnapshot
+}
+
+// Federation types
+export interface FederationSpec {
+  mode: 'hub-spoke' | 'mesh' | 'unified'
+  syncInterval?: string
+  conflictResolution?: string
+  members?: FederationMember[]
+  antiEntropy?: {
+    enabled: boolean
+    interval?: string
+    repairMode?: string
+  }
+  splitBrain?: {
+    enabled: boolean
+    quorum?: number
+    partitionTimeout?: string
+    autoHeal?: boolean
+  }
+}
+
+export interface FederationMember {
+  name: string
+  endpoint: string
+  role?: string
+}
+
+export interface FederationStatus {
+  phase: string
+  conditions?: Condition[]
+  members?: FederationMemberStatus[]
+  lastSyncTime?: string
+  splitBrainState?: string
+}
+
+export interface FederationMemberStatus {
+  name: string
+  connected: boolean
+  lastSeen?: string
+  syncState?: string
+  endpointCount?: number
+}
+
+export interface Federation {
+  metadata: ResourceMetadata
+  spec: FederationSpec
+  status?: FederationStatus
+}
+
+export interface RemoteClusterSpec {
+  endpoint: string
+  federationRef?: string
+  tunnel?: {
+    type: 'wireguard' | 'ssh' | 'websocket' | 'none'
+    config?: Record<string, string>
+  }
+  tls?: {
+    secretName?: string
+    insecureSkipVerify?: boolean
+  }
+}
+
+export interface RemoteClusterStatus {
+  connected: boolean
+  lastSeen?: string
+  tunnelState?: string
+  conditions?: Condition[]
+}
+
+export interface RemoteCluster {
+  metadata: ResourceMetadata
+  spec: RemoteClusterSpec
+  status?: RemoteClusterStatus
+}
+
+// Fault injection types
+export interface FaultInjectionConfig {
+  delayDuration?: string
+  delayPercent?: number
+  abortStatusCode?: number
+  abortPercent?: number
+  headerActivation?: string
+}
+
+// Slow start types
+export interface SlowStartConfig {
+  window?: string
+  aggression?: number
+}
+
+// Outlier detection types
+export interface OutlierDetectionConfig {
+  interval?: string
+  consecutive5xxThreshold?: number
+  baseEjectionDuration?: string
+  maxEjectionPercent?: number
+  successRateMinHosts?: number
+  successRateMinRequests?: number
+  successRateStdevFactor?: number
+}
+
+// Body transformation types
+export interface TransformOperation {
+  op: 'add' | 'remove' | 'replace' | 'move' | 'copy'
+  path: string
+  value?: unknown
+  from?: string
+}
+
+export interface BodyTransformConfig {
+  requestTransforms?: TransformOperation[]
+  responseTransforms?: TransformOperation[]
+  maxBodySize?: number
+}
+
+// Overload/Load shedding types
+export interface OverloadConfig {
+  enabled: boolean
+  heapMemoryTriggerPercent?: number
+  heapMemoryRecoverPercent?: number
+  goroutineTriggerCount?: number
+  goroutineRecoverCount?: number
+  activeConnectionTriggerCount?: number
+  activeConnectionRecoverCount?: number
+  checkInterval?: string
+}
+
+export interface OverloadStatus {
+  state: 'normal' | 'overloaded'
+  heapUsageRatio: number
+  goroutineCount: number
+  activeConnections: number
+  totalShed: number
+}
+
+// WASM plugin types
+export interface WASMPluginConfig {
+  name: string
+  path: string
+  phase?: 'request' | 'response'
+  priority?: number
+  config?: Record<string, unknown>
+  memoryLimitMB?: number
+  timeoutMs?: number
+}
+
+export interface WASMPluginStatus {
+  name: string
+  loaded: boolean
+  invocations: number
+  errors: number
+  avgLatencyMs: number
 }
 
 // Resource type for generic handling

@@ -28,6 +28,8 @@ const Traces = lazy(() => import('./pages/Traces'))
 const Logs = lazy(() => import('./pages/Logs'))
 const WAFEvents = lazy(() => import('./pages/WAFEvents'))
 const ConfigPage = lazy(() => import('./pages/Config'))
+const LoadShedding = lazy(() => import('./pages/LoadShedding'))
+const WASMPlugins = lazy(() => import('./pages/WASMPlugins'))
 
 function LoadingFallback() {
   return (
@@ -112,6 +114,8 @@ export default function App() {
             <Route path="/logs" element={<Logs />} />
             <Route path="/waf" element={<WAFEvents />} />
             <Route path="/config" element={<ConfigPage />} />
+            <Route path="/load-shedding" element={<LoadShedding />} />
+            <Route path="/wasm-plugins" element={<WASMPlugins />} />
           </Routes>
         </Suspense>
       </AppLayout>
