@@ -36,6 +36,7 @@ import (
 const (
 	wireguardInterfacePrefix = "novaedge-wg"
 	wireguardKeepalive       = 25
+	wireguardType            = "wireguard"
 	maxBackoff               = 30 * time.Second
 	handshakeStaleThreshold  = 5 * time.Minute
 )
@@ -80,7 +81,7 @@ func newWireGuardTunnel(clusterName string, config v1alpha1.TunnelConfig, logger
 		clusterName: clusterName,
 		config:      config,
 		ifaceName:   ifaceName,
-		logger:      logger.With(zap.String("tunnel", "wireguard"), zap.String("cluster", clusterName)),
+		logger:      logger.With(zap.String("tunnel", wireguardType), zap.String("cluster", clusterName)),
 		done:        make(chan struct{}),
 	}
 
@@ -179,7 +180,7 @@ func (t *wireGuardTunnel) OverlayAddr() string {
 
 // Type returns the tunnel type identifier.
 func (t *wireGuardTunnel) Type() string {
-	return "wireguard"
+	return wireguardType
 }
 
 // maintainConnection keeps the WireGuard tunnel connected with exponential backoff.

@@ -25,9 +25,9 @@ import (
 	"go.uber.org/zap"
 )
 
-func TestSDWANManager_Lifecycle(t *testing.T) {
+func TestManager_Lifecycle(t *testing.T) {
 	logger := zap.NewNop()
-	mgr := NewSDWANManager(logger)
+	mgr := NewManager(logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -73,9 +73,9 @@ func TestSDWANManager_Lifecycle(t *testing.T) {
 	mgr.Stop()
 }
 
-func TestSDWANManager_GetLinkQualities(t *testing.T) {
+func TestManager_GetLinkQualities(t *testing.T) {
 	logger := zap.NewNop()
-	mgr := NewSDWANManager(logger)
+	mgr := NewManager(logger)
 
 	// No links - should return empty map
 	qualities := mgr.GetLinkQualities()
@@ -84,9 +84,9 @@ func TestSDWANManager_GetLinkQualities(t *testing.T) {
 	}
 }
 
-func TestSDWANManager_WithProbing(t *testing.T) {
+func TestManager_WithProbing(t *testing.T) {
 	// Start a local TCP listener for probing
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to start listener: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestSDWANManager_WithProbing(t *testing.T) {
 	}()
 
 	logger := zap.NewNop()
-	mgr := NewSDWANManager(logger)
+	mgr := NewManager(logger)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -145,9 +145,9 @@ func TestSDWANManager_WithProbing(t *testing.T) {
 	mgr.Stop()
 }
 
-func TestSDWANManager_SelectPath_NoData(t *testing.T) {
+func TestManager_SelectPath_NoData(t *testing.T) {
 	logger := zap.NewNop()
-	mgr := NewSDWANManager(logger)
+	mgr := NewManager(logger)
 
 	_, err := mgr.SelectPath("policy1", StrategyLowestLatency)
 	if err == nil {

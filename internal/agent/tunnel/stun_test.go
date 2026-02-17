@@ -42,8 +42,10 @@ func TestNewSTUNDiscoverer_CustomServers(t *testing.T) {
 	if len(d.servers) != 2 {
 		t.Fatalf("expected 2 custom servers, got %d", len(d.servers))
 	}
-	if d.servers[0] != custom[0] || d.servers[1] != custom[1] {
-		t.Errorf("servers = %v, want %v", d.servers, custom)
+	for i, s := range custom {
+		if d.servers[i] != s {
+			t.Errorf("servers[%d] = %q, want %q", i, d.servers[i], s)
+		}
 	}
 }
 

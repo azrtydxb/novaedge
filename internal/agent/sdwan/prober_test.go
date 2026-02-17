@@ -235,7 +235,7 @@ func TestProber_GetAllQualities(t *testing.T) {
 
 func TestProber_Lifecycle(t *testing.T) {
 	// Start a local TCP listener so probes succeed
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to start listener: %v", err)
 	}

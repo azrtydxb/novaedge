@@ -308,9 +308,9 @@ func (p *Prober) GetQuality(linkName string) *LinkQuality {
 	if !exists {
 		return nil
 	}
-	// Return a copy to avoid races
-	copy := *q
-	return &copy
+	// Return a clone to avoid races
+	clone := *q
+	return &clone
 }
 
 // GetAllQualities returns a snapshot of quality metrics for all probed links.
@@ -320,8 +320,8 @@ func (p *Prober) GetAllQualities() map[string]*LinkQuality {
 
 	result := make(map[string]*LinkQuality, len(p.qualities))
 	for k, v := range p.qualities {
-		copy := *v
-		result[k] = &copy
+		clone := *v
+		result[k] = &clone
 	}
 	return result
 }
@@ -404,7 +404,8 @@ func (p *Prober) performProbe(target *probeTarget) {
 func (p *Prober) tcpProbe(addr string) (float64, error) {
 	start := time.Now()
 
-	conn, err := net.DialTimeout("tcp", addr, defaultProbeTimeout)
+	dialer := net.Dialer{Timeout: defaultProbeTimeout}
+	conn, err := dialer.DialContext(p.ctx, "tcp", addr)
 	if err != nil {
 		return 0, fmt.Errorf("tcp probe to %s failed: %w", addr, err)
 	}

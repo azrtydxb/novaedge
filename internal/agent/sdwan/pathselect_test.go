@@ -24,6 +24,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const testLinkB = "link-b"
+
 func TestSelectPath_LowestLatency(t *testing.T) {
 	links := []LinkQuality{
 		{LinkName: "link-a", LatencyMs: 50, Healthy: true},
@@ -32,7 +34,7 @@ func TestSelectPath_LowestLatency(t *testing.T) {
 	}
 
 	got := selectPath(StrategyLowestLatency, links, nil, nil)
-	if got != "link-b" {
+	if got != testLinkB {
 		t.Errorf("expected link-b (lowest latency 10ms), got %q", got)
 	}
 }
@@ -40,17 +42,17 @@ func TestSelectPath_LowestLatency(t *testing.T) {
 func TestSelectPath_HighestBandwidth(t *testing.T) {
 	links := []LinkQuality{
 		{LinkName: "link-a", Healthy: true},
-		{LinkName: "link-b", Healthy: true},
+		{LinkName: testLinkB, Healthy: true},
 		{LinkName: "link-c", Healthy: true},
 	}
 	bandwidths := map[string]string{
-		"link-a": "100Mbps",
-		"link-b": "1Gbps",
-		"link-c": "500Mbps",
+		"link-a":  "100Mbps",
+		testLinkB: "1Gbps",
+		"link-c":  "500Mbps",
 	}
 
 	got := selectPath(StrategyHighestBandwidth, links, bandwidths, nil)
-	if got != "link-b" {
+	if got != testLinkB {
 		t.Errorf("expected link-b (1Gbps highest), got %q", got)
 	}
 }
@@ -58,12 +60,12 @@ func TestSelectPath_HighestBandwidth(t *testing.T) {
 func TestSelectPath_MostReliable(t *testing.T) {
 	links := []LinkQuality{
 		{LinkName: "link-a", PacketLoss: 0.05, Healthy: true},
-		{LinkName: "link-b", PacketLoss: 0.001, Healthy: true},
+		{LinkName: testLinkB, PacketLoss: 0.001, Healthy: true},
 		{LinkName: "link-c", PacketLoss: 0.02, Healthy: true},
 	}
 
 	got := selectPath(StrategyMostReliable, links, nil, nil)
-	if got != "link-b" {
+	if got != testLinkB {
 		t.Errorf("expected link-b (lowest packet loss), got %q", got)
 	}
 }
@@ -71,17 +73,17 @@ func TestSelectPath_MostReliable(t *testing.T) {
 func TestSelectPath_LowestCost(t *testing.T) {
 	links := []LinkQuality{
 		{LinkName: "link-a", Healthy: true},
-		{LinkName: "link-b", Healthy: true},
+		{LinkName: testLinkB, Healthy: true},
 		{LinkName: "link-c", Healthy: true},
 	}
 	costs := map[string]int32{
-		"link-a": 100,
-		"link-b": 50,
-		"link-c": 200,
+		"link-a":  100,
+		testLinkB: 50,
+		"link-c":  200,
 	}
 
 	got := selectPath(StrategyLowestCost, links, nil, costs)
-	if got != "link-b" {
+	if got != testLinkB {
 		t.Errorf("expected link-b (cost 50), got %q", got)
 	}
 }
@@ -89,11 +91,11 @@ func TestSelectPath_LowestCost(t *testing.T) {
 func TestSelectPath_SkipsUnhealthy(t *testing.T) {
 	links := []LinkQuality{
 		{LinkName: "link-a", LatencyMs: 5, Healthy: false},
-		{LinkName: "link-b", LatencyMs: 50, Healthy: true},
+		{LinkName: testLinkB, LatencyMs: 50, Healthy: true},
 	}
 
 	got := selectPath(StrategyLowestLatency, links, nil, nil)
-	if got != "link-b" {
+	if got != testLinkB {
 		t.Errorf("expected link-b (only healthy link), got %q", got)
 	}
 }
@@ -101,7 +103,7 @@ func TestSelectPath_SkipsUnhealthy(t *testing.T) {
 func TestSelectPath_NoHealthyLinks(t *testing.T) {
 	links := []LinkQuality{
 		{LinkName: "link-a", Healthy: false},
-		{LinkName: "link-b", Healthy: false},
+		{LinkName: testLinkB, Healthy: false},
 	}
 
 	got := selectPath(StrategyLowestLatency, links, nil, nil)
@@ -125,7 +127,7 @@ func TestSelectPath_UnknownStrategy(t *testing.T) {
 
 	// Unknown strategy should fall back to lowest-latency
 	got := selectPath("unknown-strategy", links, nil, nil)
-	if got != "link-b" {
+	if got != testLinkB {
 		t.Errorf("expected link-b (fallback to lowest latency), got %q", got)
 	}
 }
