@@ -1,0 +1,115 @@
+---
+# Example: Mesh Federation
+#
+# In mesh mode, all clusters sync bidirectionally. Each controller is both a
+# producer and consumer of configuration. Endpoint merging allows services in
+# one cluster to route traffic to backends in another cluster.
+#
+# Topology:
+#   cluster-us <--bidirectional sync--> cluster-eu
+#
+# Use cases:
+#   - Active/active multi-region deployments
+#   - Cross-cluster service discovery and failover
+#   - Shared services across teams in different clusters
+#
+# Prerequisites:
+#   1. Create mTLS secrets in both clusters (see hub-spoke-example.yaml).
+#   2. Ensure gRPC port 9443 is reachable between clusters.
+#   3. Deploy this resource in BOTH clusters, adjusting localMember accordingly.
+
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeFederation
+metadata:
+  name: mesh-federation
+  namespace: novaedge-system
+spec:
+  # mesh: bidirectional sync with cross-cluster endpoint merging
+  mode: mesh
+
+  # All participants must share the same federation ID
+  federationID: prod-mesh
+
+  # This controller's identity (adjust per cluster)
+  localMember:
+    name: cluster-us
+    region: us-east-1
+    zone: us-east-1b
+    endpoint: "novaedge-us.example.com:9443"
+    labels:
+      tier: primary
+      cloud: aws
+
+  # Peer controllers
+  members:
+    - name: cluster-eu
+      region: eu-west-1
+      zone: eu-west-1a
+      endpoint: "novaedge-eu.example.com:9443"
+      priority: 100
+      labels:
+        tier: primary
+        cloud: aws
+      tls:
+        enabled: true
+        caSecretRef:
+          name: federation-ca
+          namespace: novaedge-system
+        clientCertSecretRef:
+          name: federation-client-cert
+          namespace: novaedge-system
+        serverName: novaedge-eu.example.com
+
+  # Sync settings for bidirectional replication
+  sync:
+    interval: 5s
+    timeout: 30s
+    batchSize: 200
+    compression: true
+    # Sync all NovaEdge resource types (empty list = everything)
+    resourceTypes: []
+    # Exclude internal namespaces from cross-cluster sync
+    excludeNamespaces:
+      - kube-system
+      - kube-public
+      - novaedge-system
+
+  # Conflict resolution is critical in mesh mode since both sides can write
+  conflictResolution:
+    # Merge attempts to combine non-overlapping changes; falls back to
+    # LastWriterWins for truly conflicting fields
+    strategy: Merge
+    # Vector clocks provide causal ordering of changes across clusters
+    vectorClocks: true
+    # Keep tombstones for 24 hours to prevent deleted resources from
+    # reappearing during sync
+    tombstoneTTL: 24h
+
+  # Health checking for peer connectivity
+  healthCheck:
+    interval: 10s
+    timeout: 5s
+    failureThreshold: 3
+    successThreshold: 1
+
+  # Split-brain detection is important in mesh mode to prevent divergence
+  splitBrain:
+    enabled: true
+    # Declare partition after 30s without peer contact
+    partitionTimeout: 30s
+    # With only 2 controllers, use agent-assisted quorum
+    quorumMode: AgentAssisted
+    # Block writes during confirmed partition to prevent divergence
+    quorumRequired: true
+    fencingEnabled: true
+    # Wait 5s after healing before resuming writes (allows state reconciliation)
+    healingGracePeriod: 5s
+    # Automatically resolve conflicts when the partition heals
+    autoResolveOnHeal: true
+    # Agent-assisted quorum settings (useful with only 2 controllers)
+    agentQuorum:
+      # Controllers have 10x the voting weight of a single agent
+      controllerWeight: 10
+      agentWeight: 1
+      # At least 1 agent must be reachable to claim quorum
+      minAgentsForQuorum: 1
