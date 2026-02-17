@@ -40,6 +40,9 @@ type Manager struct {
 	// Split-brain detector (nil when disabled)
 	splitBrain *SplitBrainDetector
 
+	// Anti-entropy manager for drift detection and repair
+	antiEntropy *AntiEntropyManager
+
 	// Clients for connecting to peers
 	clients   map[string]*PeerClient
 	clientsMu sync.RWMutex
@@ -233,6 +236,22 @@ func (m *Manager) Start(ctx context.Context) error {
 		)
 	}
 
+	// Create and start anti-entropy manager with a peer client lookup function
+	// that safely retrieves clients from the Manager's client map.
+	m.antiEntropy = NewAntiEntropyManager(
+		DefaultAntiEntropyConfig(),
+		m.server,
+		func(peerName string) (*PeerClient, bool) {
+			m.clientsMu.RLock()
+			defer m.clientsMu.RUnlock()
+			c, ok := m.clients[peerName]
+			return c, ok
+		},
+		m.logger,
+	)
+	m.antiEntropy.Start(derivedCtx)
+	m.logger.Info("Anti-entropy manager started")
+
 	// Create clients for each peer
 	for _, peer := range m.config.Peers {
 		client := NewPeerClient(peer, m.config, m.logger)
@@ -268,6 +287,11 @@ func (m *Manager) Stop() {
 	// Stop split-brain detector
 	if m.splitBrain != nil {
 		m.splitBrain.Stop()
+	}
+
+	// Stop anti-entropy manager
+	if m.antiEntropy != nil {
+		m.antiEntropy.Stop()
 	}
 
 	// Cancel context
