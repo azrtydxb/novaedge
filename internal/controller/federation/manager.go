@@ -110,6 +110,11 @@ func CRDToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *Config {
 	config := DefaultConfig()
 	config.FederationID = fed.Spec.FederationID
 
+	// Mode (defaults to "mesh" via DefaultConfig)
+	if fed.Spec.Mode != "" {
+		config.Mode = string(fed.Spec.Mode)
+	}
+
 	// Local member
 	config.LocalMember = &PeerInfo{
 		Name:     fed.Spec.LocalMember.Name,
@@ -203,6 +208,7 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	m.logger.Info("Starting federation manager",
 		zap.String("federation_id", m.config.FederationID),
+		zap.String("mode", m.config.Mode),
 		zap.String("local_member", m.config.LocalMember.Name),
 		zap.Int("peer_count", len(m.config.Peers)),
 	)
@@ -238,19 +244,25 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	// Create and start anti-entropy manager with a peer client lookup function
 	// that safely retrieves clients from the Manager's client map.
-	m.antiEntropy = NewAntiEntropyManager(
-		DefaultAntiEntropyConfig(),
-		m.server,
-		func(peerName string) (*PeerClient, bool) {
-			m.clientsMu.RLock()
-			defer m.clientsMu.RUnlock()
-			c, ok := m.clients[peerName]
-			return c, ok
-		},
-		m.logger,
-	)
-	m.antiEntropy.Start(derivedCtx)
-	m.logger.Info("Anti-entropy manager started")
+	// In hub-spoke mode, anti-entropy pull is skipped because the hub only
+	// pushes configuration and does not pull from spoke clusters.
+	if m.config.Mode != "hub-spoke" {
+		m.antiEntropy = NewAntiEntropyManager(
+			DefaultAntiEntropyConfig(),
+			m.server,
+			func(peerName string) (*PeerClient, bool) {
+				m.clientsMu.RLock()
+				defer m.clientsMu.RUnlock()
+				c, ok := m.clients[peerName]
+				return c, ok
+			},
+			m.logger,
+		)
+		m.antiEntropy.Start(derivedCtx)
+		m.logger.Info("Anti-entropy manager started")
+	} else {
+		m.logger.Info("Anti-entropy skipped in hub-spoke mode")
+	}
 
 	// Create clients for each peer
 	for _, peer := range m.config.Peers {
@@ -573,6 +585,14 @@ func (m *Manager) handlePeerMessage(peerName string, msg *pb.SyncMessage) {
 	// Forward to server for processing
 	switch msgType := msg.Message.(type) {
 	case *pb.SyncMessage_Change:
+		// In hub-spoke mode the hub only pushes; ignore incoming resource
+		// changes from spoke clusters to enforce one-way data flow.
+		if m.config.Mode == "hub-spoke" {
+			m.logger.Debug("Ignoring incoming resource change in hub-spoke mode",
+				zap.String("peer", peerName),
+			)
+			return
+		}
 		if err := m.server.handleResourceChange(m.ctx, peerName, msgType.Change); err != nil {
 			m.logger.Error("Failed to handle resource change",
 				zap.String("peer", peerName),
@@ -751,11 +771,27 @@ func (m *Manager) IsActive() bool {
 	return m.started && m.server != nil
 }
 
+// GetMode returns the configured federation mode.
+func (m *Manager) GetMode() string {
+	return m.config.Mode
+}
+
+// IsUnifiedMode returns true when the federation operates in unified mode,
+// which enforces shared service namespace and location-aware routing.
+func (m *Manager) IsUnifiedMode() bool {
+	return m.config.Mode == "unified"
+}
+
 // GetRemoteEndpoints returns the ServiceEndpoints from all federated clusters
-// for the given service. Returns an empty slice when federation is not active
-// or no remote endpoints exist.
+// for the given service. Returns an empty slice when federation is not active,
+// no remote endpoints exist, or the mode is hub-spoke (which does not merge
+// endpoints from spoke clusters).
 func (m *Manager) GetRemoteEndpoints(namespace, serviceName string) []*pb.ServiceEndpoints {
 	if m.server == nil {
+		return []*pb.ServiceEndpoints{}
+	}
+	// In hub-spoke mode, the hub does not consume endpoints from spokes
+	if m.config.Mode == "hub-spoke" {
 		return []*pb.ServiceEndpoints{}
 	}
 	return m.server.GetEndpointCache().GetForService(namespace, serviceName)

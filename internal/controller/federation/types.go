@@ -272,6 +272,9 @@ const (
 
 // Config holds the runtime configuration for federation
 type Config struct {
+	// Mode is the federation operating mode (hub-spoke, mesh, unified)
+	Mode string
+
 	// FederationID is the unique identifier for this federation
 	FederationID string
 
@@ -336,7 +339,8 @@ func (c *Config) Equal(other *Config) bool {
 	}
 
 	// Scalar / top-level fields
-	if c.FederationID != other.FederationID ||
+	if c.Mode != other.Mode ||
+		c.FederationID != other.FederationID ||
 		c.SyncInterval != other.SyncInterval ||
 		c.SyncTimeout != other.SyncTimeout ||
 		c.BatchSize != other.BatchSize ||
@@ -463,6 +467,7 @@ func stringMapEqual(a, b map[string]string) bool {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
+		Mode:                       "mesh",
 		SyncInterval:               5 * time.Second,
 		SyncTimeout:                30 * time.Second,
 		BatchSize:                  100,
