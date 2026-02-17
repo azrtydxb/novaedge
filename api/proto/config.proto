@@ -289,6 +289,25 @@ message Cluster {
   ConnectionPool connection_pool = 9;
   SessionAffinityConfig session_affinity = 10; // Session affinity (sticky sessions) configuration
   UpstreamProxyProtocol upstream_proxy_protocol = 11; // PROXY protocol config for backend connections
+  OutlierDetection outlier_detection = 12; // Outlier detection and auto-ejection configuration
+  SlowStart slow_start = 13; // Slow start traffic ramp-up configuration
+}
+
+// OutlierDetection configures per-endpoint outlier detection and auto-ejection
+message OutlierDetection {
+  int64 interval_ms = 1;
+  int32 consecutive_5xx_threshold = 2;
+  int64 base_ejection_duration_ms = 3;
+  int32 max_ejection_percent = 4;
+  int32 success_rate_min_hosts = 5;
+  int32 success_rate_min_requests = 6;
+  double success_rate_stdev_factor = 7;
+}
+
+// SlowStart configures gradual traffic ramp-up for new/recovering endpoints
+message SlowStart {
+  int64 window_ms = 1;
+  double aggression = 2;
 }
 
 // ConnectionPool defines connection pool configuration
