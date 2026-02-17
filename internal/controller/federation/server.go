@@ -459,7 +459,7 @@ func (s *Server) handleConflict(key ResourceKey, local *TrackedResource, remote 
 	}
 
 	switch s.config.ConflictResolutionStrategy {
-	case "LastWriterWins":
+	case StrategyLastWriterWins:
 		// Compare timestamps - newer wins
 		if remoteResource.LastModified.After(local.LastModified) {
 			// Remote wins

@@ -26,6 +26,8 @@ import (
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
+const testTunnelTypeSSH = "ssh"
+
 // mockTunnel implements the Tunnel interface for testing.
 type mockTunnel struct {
 	tunnelType string
@@ -118,7 +120,7 @@ func TestManagerGetTunnel(t *testing.T) {
 	}
 
 	// Add a mock tunnel directly
-	mock := newMockTunnel("ssh", "127.0.0.1:12345", true)
+	mock := newMockTunnel(testTunnelTypeSSH, "127.0.0.1:12345", true)
 	mgr.mu.Lock()
 	mgr.tunnels["test-cluster"] = mock
 	mgr.mu.Unlock()
@@ -129,7 +131,7 @@ func TestManagerGetTunnel(t *testing.T) {
 		t.Fatal("expected GetTunnel to return true for existing cluster")
 	}
 
-	if tun.Type() != "ssh" {
+	if tun.Type() != testTunnelTypeSSH {
 		t.Fatalf("expected tunnel type 'ssh', got %q", tun.Type())
 	}
 
@@ -188,7 +190,7 @@ func TestManagerHealthCheck(t *testing.T) {
 	}
 
 	// Add tunnels with mixed health
-	healthyTunnel := newMockTunnel("ssh", "127.0.0.1:1111", true)
+	healthyTunnel := newMockTunnel(testTunnelTypeSSH, "127.0.0.1:1111", true)
 	unhealthyTunnel := newMockTunnel("websocket", "127.0.0.1:2222", false)
 
 	mgr.mu.Lock()
@@ -217,7 +219,7 @@ func TestManagerStopStopsAllTunnels(t *testing.T) {
 	ctx := context.Background()
 	mgr.Start(ctx)
 
-	mock1 := newMockTunnel("ssh", "127.0.0.1:1111", true)
+	mock1 := newMockTunnel(testTunnelTypeSSH, "127.0.0.1:1111", true)
 	mock2 := newMockTunnel("websocket", "127.0.0.1:2222", true)
 
 	mgr.mu.Lock()
@@ -358,7 +360,7 @@ func TestTunnelTypeStrings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if sshTun.Type() != "ssh" {
+	if sshTun.Type() != testTunnelTypeSSH {
 		t.Errorf("expected type 'ssh', got %q", sshTun.Type())
 	}
 

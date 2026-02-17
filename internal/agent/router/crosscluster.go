@@ -134,7 +134,7 @@ func (r *CrossClusterTunnelRegistry) IsRemoteEndpoint(ep *pb.Endpoint) bool {
 	if labels == nil {
 		return false
 	}
-	return labels[labelRemote] == "true"
+	return labels[labelRemote] == headerValueTrue
 }
 
 // GetClusterForEndpoint returns the cluster name from the endpoint's labels.

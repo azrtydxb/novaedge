@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package tunnel provides optional network tunnel implementations for cross-cluster NAT/firewall traversal.
 package tunnel
 
 import "context"

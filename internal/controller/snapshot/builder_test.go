@@ -31,7 +31,11 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-const testPortNameHTTP = "http"
+const (
+	testPortNameHTTP  = "http"
+	testEndpointAddr1 = "10.0.0.1"
+	testLabelTrue     = "true"
+)
 
 func TestBuildSnapshot(t *testing.T) {
 	scheme := runtime.NewScheme()
@@ -369,7 +373,7 @@ func TestResolveEndpointsTargetPort(t *testing.T) {
 		AddressType: discoveryv1.AddressTypeIPv4,
 		Endpoints: []discoveryv1.Endpoint{
 			{
-				Addresses:  []string{"10.0.0.1"},
+				Addresses:  []string{testEndpointAddr1},
 				Conditions: discoveryv1.EndpointConditions{Ready: &ready},
 			},
 		},
@@ -406,7 +410,7 @@ func TestResolveEndpointsTargetPort(t *testing.T) {
 		t.Errorf("Expected endpoint port 8080 (targetPort), got %d", result.Endpoints[0].Port)
 	}
 
-	if result.Endpoints[0].Address != "10.0.0.1" {
+	if result.Endpoints[0].Address != testEndpointAddr1 {
 		t.Errorf("Expected address 10.0.0.1, got %s", result.Endpoints[0].Address)
 	}
 }
@@ -764,7 +768,7 @@ func TestBuildClustersFederationInactive(t *testing.T) {
 		},
 		AddressType: discoveryv1.AddressTypeIPv4,
 		Endpoints: []discoveryv1.Endpoint{
-			{Addresses: []string{"10.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
+			{Addresses: []string{testEndpointAddr1}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
 		},
 		Ports: []discoveryv1.EndpointPort{{Name: &portName, Port: &port8080}},
 	}
@@ -809,7 +813,7 @@ func TestBuildClustersFederationInactive(t *testing.T) {
 	if len(epList.Endpoints) != 1 {
 		t.Fatalf("Expected 1 endpoint (local only), got %d", len(epList.Endpoints))
 	}
-	if epList.Endpoints[0].Address != "10.0.0.1" {
+	if epList.Endpoints[0].Address != testEndpointAddr1 {
 		t.Errorf("Expected local address 10.0.0.1, got %s", epList.Endpoints[0].Address)
 	}
 }
@@ -839,7 +843,7 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 		},
 		AddressType: discoveryv1.AddressTypeIPv4,
 		Endpoints: []discoveryv1.Endpoint{
-			{Addresses: []string{"10.0.0.1"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
+			{Addresses: []string{testEndpointAddr1}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}},
 		},
 		Ports: []discoveryv1.EndpointPort{{Name: &portName, Port: &port8080}},
 	}
@@ -898,7 +902,7 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 	}
 
 	// Verify local endpoint (first)
-	if epList.Endpoints[0].Address != "10.0.0.1" {
+	if epList.Endpoints[0].Address != testEndpointAddr1 {
 		t.Errorf("Expected first endpoint to be local 10.0.0.1, got %s", epList.Endpoints[0].Address)
 	}
 
@@ -907,7 +911,7 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 	if remoteEP1.Address != "10.1.0.1" {
 		t.Errorf("Expected remote endpoint 10.1.0.1, got %s", remoteEP1.Address)
 	}
-	if remoteEP1.Labels["novaedge.io/remote"] != "true" {
+	if remoteEP1.Labels["novaedge.io/remote"] != testLabelTrue {
 		t.Error("Expected novaedge.io/remote=true label on remote endpoint")
 	}
 	if remoteEP1.Labels["novaedge.io/cluster"] != "remote-1" {
@@ -935,7 +939,7 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 	if _, hasZone := remoteEP3.Labels["novaedge.io/zone"]; hasZone {
 		t.Error("Expected no novaedge.io/zone label when zone is empty")
 	}
-	if remoteEP3.Labels["novaedge.io/remote"] != "true" {
+	if remoteEP3.Labels["novaedge.io/remote"] != testLabelTrue {
 		t.Error("Expected novaedge.io/remote=true label on remote-2 endpoint")
 	}
 }
@@ -943,7 +947,7 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 func TestMergeRemoteEndpointLabels(t *testing.T) {
 	// Test with nil existing labels
 	labels := mergeRemoteEndpointLabels(nil, "cluster-a", "us-east-1", "us-east-1a")
-	if labels["novaedge.io/remote"] != "true" {
+	if labels["novaedge.io/remote"] != testLabelTrue {
 		t.Error("Expected novaedge.io/remote=true")
 	}
 	if labels["novaedge.io/cluster"] != "cluster-a" {
@@ -962,7 +966,7 @@ func TestMergeRemoteEndpointLabels(t *testing.T) {
 	if labels["foo"] != "bar" || labels["baz"] != "qux" {
 		t.Error("Expected existing labels to be preserved")
 	}
-	if labels["novaedge.io/remote"] != "true" {
+	if labels["novaedge.io/remote"] != testLabelTrue {
 		t.Error("Expected novaedge.io/remote=true")
 	}
 	if _, hasRegion := labels["novaedge.io/region"]; hasRegion {

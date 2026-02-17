@@ -75,7 +75,7 @@ func DefaultAntiEntropyConfig() *AntiEntropyConfig {
 		Enabled:    true,
 		Interval:   DefaultAntiEntropyInterval,
 		BatchSize:  MaxDriftResolutionBatch,
-		RepairMode: "bidirectional",
+		RepairMode: RepairModeBidirectional,
 	}
 }
 
@@ -523,13 +523,13 @@ func (m *AntiEntropyManager) compareWithPeer(peerName string) *DriftReport {
 
 	case 1:
 		// We're ahead - peer might need updates
-		if m.config.RepairMode == "push" || m.config.RepairMode == "bidirectional" {
+		if m.config.RepairMode == RepairModePush || m.config.RepairMode == RepairModeBidirectional {
 			return m.handleWeAreAhead(peerName)
 		}
 
 	case -1:
 		// Peer is ahead - we might need updates
-		if m.config.RepairMode == "pull" || m.config.RepairMode == "bidirectional" {
+		if m.config.RepairMode == RepairModePull || m.config.RepairMode == RepairModeBidirectional {
 			return m.handlePeerIsAhead(peerName)
 		}
 	}
@@ -708,7 +708,9 @@ func (m *AntiEntropyManager) handleWeAreAhead(peerName string) *DriftReport {
 		return true
 	})
 
-	report.DifferingKeys = append(report.MissingRemotely, report.HashMismatches...)
+	report.DifferingKeys = make([]string, 0, len(report.MissingRemotely)+len(report.HashMismatches))
+	report.DifferingKeys = append(report.DifferingKeys, report.MissingRemotely...)
+	report.DifferingKeys = append(report.DifferingKeys, report.HashMismatches...)
 
 	m.logger.Info("Anti-entropy push complete",
 		zap.String("peer", peerName),
@@ -834,7 +836,7 @@ func (m *AntiEntropyManager) reconcileWithPeerResources(peerName string, peerRes
 	}
 
 	// In push or bidirectional mode, also push resources the peer is missing
-	if m.config.RepairMode == "push" || m.config.RepairMode == "bidirectional" {
+	if m.config.RepairMode == RepairModePush || m.config.RepairMode == RepairModeBidirectional {
 		client, ok := m.getPeerClient(peerName)
 		if !ok {
 			return

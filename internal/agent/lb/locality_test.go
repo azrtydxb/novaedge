@@ -22,6 +22,13 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const (
+	testAddr1 = "10.0.0.1"
+	testAddr2 = "10.0.0.2"
+	testAddr3 = "10.0.0.3"
+	testAddr4 = "10.0.0.4"
+)
+
 // makeEndpoint creates a test endpoint with the given address, ready state,
 // and labels.
 func makeEndpoint(addr string, ready bool, labels map[string]string) *pb.Endpoint {
@@ -168,8 +175,8 @@ func TestEndpointCluster(t *testing.T) {
 func TestLocalityLB_TwoTier_AllLocalHealthy(t *testing.T) {
 	t.Parallel()
 
-	localEp := makeEndpoint("10.0.0.1", true, zoneLabels("us-east-1a"))
-	remoteEp := makeEndpoint("10.0.0.2", true, zoneLabels("us-west-2a"))
+	localEp := makeEndpoint(testAddr1, true, zoneLabels("us-east-1a"))
+	remoteEp := makeEndpoint(testAddr2, true, zoneLabels("us-west-2a"))
 
 	config := LocalityConfig{
 		Enabled:           true,
@@ -187,7 +194,7 @@ func TestLocalityLB_TwoTier_AllLocalHealthy(t *testing.T) {
 		if ep == nil {
 			t.Fatal("Select() returned nil")
 		}
-		if ep.Address != "10.0.0.1" {
+		if ep.Address != testAddr1 {
 			t.Errorf("expected local endpoint 10.0.0.1, got %s", ep.Address)
 		}
 	}
@@ -197,10 +204,10 @@ func TestLocalityLB_TwoTier_LocalUnhealthy_FallsBackToAll(t *testing.T) {
 	t.Parallel()
 
 	// Only 1 of 3 local endpoints is healthy (33% < 70% threshold).
-	localHealthy := makeEndpoint("10.0.0.1", true, zoneLabels("us-east-1a"))
-	localUnhealthy1 := makeEndpoint("10.0.0.2", false, zoneLabels("us-east-1a"))
-	localUnhealthy2 := makeEndpoint("10.0.0.3", false, zoneLabels("us-east-1a"))
-	remoteEp := makeEndpoint("10.0.0.4", true, zoneLabels("us-west-2a"))
+	localHealthy := makeEndpoint(testAddr1, true, zoneLabels("us-east-1a"))
+	localUnhealthy1 := makeEndpoint(testAddr2, false, zoneLabels("us-east-1a"))
+	localUnhealthy2 := makeEndpoint(testAddr3, false, zoneLabels("us-east-1a"))
+	remoteEp := makeEndpoint(testAddr4, true, zoneLabels("us-west-2a"))
 
 	config := LocalityConfig{
 		Enabled:           true,
@@ -216,7 +223,7 @@ func TestLocalityLB_TwoTier_LocalUnhealthy_FallsBackToAll(t *testing.T) {
 	sawRemote := false
 	for i := 0; i < 20; i++ {
 		ep := llb.Select()
-		if ep != nil && ep.Address == "10.0.0.4" {
+		if ep != nil && ep.Address == testAddr4 {
 			sawRemote = true
 			break
 		}
@@ -229,8 +236,8 @@ func TestLocalityLB_TwoTier_LocalUnhealthy_FallsBackToAll(t *testing.T) {
 func TestLocalityLB_Disabled_UsesAllEndpoints(t *testing.T) {
 	t.Parallel()
 
-	localEp := makeEndpoint("10.0.0.1", true, zoneLabels("us-east-1a"))
-	remoteEp := makeEndpoint("10.0.0.2", true, zoneLabels("us-west-2a"))
+	localEp := makeEndpoint(testAddr1, true, zoneLabels("us-east-1a"))
+	remoteEp := makeEndpoint(testAddr2, true, zoneLabels("us-west-2a"))
 
 	config := LocalityConfig{
 		Enabled:           false,
@@ -260,9 +267,9 @@ func TestLocalityLB_Disabled_UsesAllEndpoints(t *testing.T) {
 func TestLocalityLB_ThreeTier_AllLocalHealthy_StaysInZone(t *testing.T) {
 	t.Parallel()
 
-	localEp := makeEndpoint("10.0.0.1", true, fullLabels("us-east-1a", "us-east", "cluster-a"))
-	regionEp := makeEndpoint("10.0.0.2", true, fullLabels("us-east-1b", "us-east", "cluster-b"))
-	remoteEp := makeEndpoint("10.0.0.3", true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
+	localEp := makeEndpoint(testAddr1, true, fullLabels("us-east-1a", "us-east", "cluster-a"))
+	regionEp := makeEndpoint(testAddr2, true, fullLabels("us-east-1b", "us-east", "cluster-b"))
+	remoteEp := makeEndpoint(testAddr3, true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
 
 	config := LocalityConfig{
 		Enabled:           true,
@@ -281,7 +288,7 @@ func TestLocalityLB_ThreeTier_AllLocalHealthy_StaysInZone(t *testing.T) {
 		if ep == nil {
 			t.Fatal("Select() returned nil")
 		}
-		if ep.Address != "10.0.0.1" {
+		if ep.Address != testAddr1 {
 			t.Errorf("expected local zone endpoint 10.0.0.1, got %s", ep.Address)
 		}
 	}
@@ -291,11 +298,11 @@ func TestLocalityLB_ThreeTier_LocalUnhealthy_OverflowsToRegion(t *testing.T) {
 	t.Parallel()
 
 	// Local zone (tier 1): 0 of 1 healthy (0% < 70%) -> overflows.
-	localUnhealthy := makeEndpoint("10.0.0.1", false, fullLabels("us-east-1a", "us-east", "cluster-a"))
+	localUnhealthy := makeEndpoint(testAddr1, false, fullLabels("us-east-1a", "us-east", "cluster-a"))
 	// Same region (tier 2): 4 healthy endpoints out of 5 total (80% >= 70%).
 	// The unhealthy local endpoint is also in the region set, giving 4/5 = 80%.
-	regionEp1 := makeEndpoint("10.0.0.3", true, fullLabels("us-east-1b", "us-east", "cluster-b"))
-	regionEp2 := makeEndpoint("10.0.0.4", true, fullLabels("us-east-1c", "us-east", "cluster-a"))
+	regionEp1 := makeEndpoint(testAddr3, true, fullLabels("us-east-1b", "us-east", "cluster-b"))
+	regionEp2 := makeEndpoint(testAddr4, true, fullLabels("us-east-1c", "us-east", "cluster-a"))
 	regionEp3 := makeEndpoint("10.0.0.6", true, fullLabels("us-east-1b", "us-east", "cluster-a"))
 	regionEp4 := makeEndpoint("10.0.0.7", true, fullLabels("us-east-1c", "us-east", "cluster-b"))
 	// Different region.
@@ -340,12 +347,12 @@ func TestLocalityLB_ThreeTier_RegionUnhealthy_OverflowsToCrossRegion(t *testing.
 	t.Parallel()
 
 	// Local zone: all unhealthy.
-	localUnhealthy := makeEndpoint("10.0.0.1", false, fullLabels("us-east-1a", "us-east", "cluster-a"))
+	localUnhealthy := makeEndpoint(testAddr1, false, fullLabels("us-east-1a", "us-east", "cluster-a"))
 	// Same region: also unhealthy (0 of 2 healthy = 0% < 70%).
-	regionUnhealthy1 := makeEndpoint("10.0.0.2", false, fullLabels("us-east-1b", "us-east", "cluster-b"))
-	regionUnhealthy2 := makeEndpoint("10.0.0.3", false, fullLabels("us-east-1c", "us-east", "cluster-a"))
+	regionUnhealthy1 := makeEndpoint(testAddr2, false, fullLabels("us-east-1b", "us-east", "cluster-b"))
+	regionUnhealthy2 := makeEndpoint(testAddr3, false, fullLabels("us-east-1c", "us-east", "cluster-a"))
 	// Cross-region: healthy.
-	remoteEp := makeEndpoint("10.0.0.4", true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
+	remoteEp := makeEndpoint(testAddr4, true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
 
 	config := LocalityConfig{
 		Enabled:           true,
@@ -363,7 +370,7 @@ func TestLocalityLB_ThreeTier_RegionUnhealthy_OverflowsToCrossRegion(t *testing.
 	sawRemote := false
 	for i := 0; i < 10; i++ {
 		ep := llb.Select()
-		if ep != nil && ep.Address == "10.0.0.4" {
+		if ep != nil && ep.Address == testAddr4 {
 			sawRemote = true
 			break
 		}
@@ -378,10 +385,10 @@ func TestLocalityLB_ThreeTier_BackwardCompatible_NoRegionCluster(t *testing.T) {
 
 	// When LocalRegion and LocalCluster are empty, three-tier is disabled.
 	// Zone-only matching should work (original behavior).
-	localEp := makeEndpoint("10.0.0.1", true, fullLabels("us-east-1a", "us-east", "cluster-a"))
+	localEp := makeEndpoint(testAddr1, true, fullLabels("us-east-1a", "us-east", "cluster-a"))
 	// Same zone but different cluster - should still be local in two-tier mode.
-	localEp2 := makeEndpoint("10.0.0.2", true, fullLabels("us-east-1a", "us-east", "cluster-b"))
-	remoteEp := makeEndpoint("10.0.0.3", true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
+	localEp2 := makeEndpoint(testAddr2, true, fullLabels("us-east-1a", "us-east", "cluster-b"))
+	remoteEp := makeEndpoint(testAddr3, true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
 
 	config := LocalityConfig{
 		Enabled:           true,
@@ -403,10 +410,10 @@ func TestLocalityLB_ThreeTier_BackwardCompatible_NoRegionCluster(t *testing.T) {
 			sawLocal[ep.Address] = true
 		}
 	}
-	if sawLocal["10.0.0.3"] {
+	if sawLocal[testAddr3] {
 		t.Error("should not see remote endpoint when local zone is healthy in two-tier mode")
 	}
-	if !sawLocal["10.0.0.1"] || !sawLocal["10.0.0.2"] {
+	if !sawLocal[testAddr1] || !sawLocal[testAddr2] {
 		t.Error("should see both same-zone endpoints in two-tier mode")
 	}
 }
@@ -415,9 +422,9 @@ func TestLocalityLB_ThreeTier_MixedClustersInSameZone(t *testing.T) {
 	t.Parallel()
 
 	// In three-tier mode, only same zone AND same cluster counts as tier-1.
-	localSameCluster := makeEndpoint("10.0.0.1", true, fullLabels("us-east-1a", "us-east", "cluster-a"))
-	localDiffCluster := makeEndpoint("10.0.0.2", true, fullLabels("us-east-1a", "us-east", "cluster-b"))
-	remoteEp := makeEndpoint("10.0.0.3", true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
+	localSameCluster := makeEndpoint(testAddr1, true, fullLabels("us-east-1a", "us-east", "cluster-a"))
+	localDiffCluster := makeEndpoint(testAddr2, true, fullLabels("us-east-1a", "us-east", "cluster-b"))
+	remoteEp := makeEndpoint(testAddr3, true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
 
 	config := LocalityConfig{
 		Enabled:           true,
@@ -437,7 +444,7 @@ func TestLocalityLB_ThreeTier_MixedClustersInSameZone(t *testing.T) {
 		if ep == nil {
 			t.Fatal("Select() returned nil")
 		}
-		if ep.Address != "10.0.0.1" {
+		if ep.Address != testAddr1 {
 			t.Errorf("expected local cluster endpoint 10.0.0.1, got %s", ep.Address)
 		}
 	}
@@ -446,8 +453,8 @@ func TestLocalityLB_ThreeTier_MixedClustersInSameZone(t *testing.T) {
 func TestLocalityLB_UpdateEndpoints_RebuildsState(t *testing.T) {
 	t.Parallel()
 
-	localEp := makeEndpoint("10.0.0.1", true, fullLabels("us-east-1a", "us-east", "cluster-a"))
-	remoteEp := makeEndpoint("10.0.0.2", true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
+	localEp := makeEndpoint(testAddr1, true, fullLabels("us-east-1a", "us-east", "cluster-a"))
+	remoteEp := makeEndpoint(testAddr2, true, fullLabels("eu-west-1a", "eu-west", "cluster-c"))
 
 	config := LocalityConfig{
 		Enabled:           true,
@@ -463,7 +470,7 @@ func TestLocalityLB_UpdateEndpoints_RebuildsState(t *testing.T) {
 
 	// Initially selects local.
 	ep := llb.Select()
-	if ep == nil || ep.Address != "10.0.0.1" {
+	if ep == nil || ep.Address != testAddr1 {
 		t.Fatalf("expected local endpoint, got %v", ep)
 	}
 
@@ -473,7 +480,7 @@ func TestLocalityLB_UpdateEndpoints_RebuildsState(t *testing.T) {
 
 	// Now should use all (only remote).
 	ep = llb.Select()
-	if ep == nil || ep.Address != "10.0.0.2" {
+	if ep == nil || ep.Address != testAddr2 {
 		t.Fatalf("expected remote endpoint after update, got %v", ep)
 	}
 }
@@ -524,17 +531,17 @@ func TestFilterLocalZoneCluster(t *testing.T) {
 	t.Parallel()
 
 	eps := []*pb.Endpoint{
-		makeEndpoint("10.0.0.1", true, fullLabels("us-east-1a", "us-east", "cluster-a")),
-		makeEndpoint("10.0.0.2", true, fullLabels("us-east-1a", "us-east", "cluster-b")),
-		makeEndpoint("10.0.0.3", true, fullLabels("us-east-1b", "us-east", "cluster-a")),
-		makeEndpoint("10.0.0.4", true, fullLabels("eu-west-1a", "eu-west", "cluster-c")),
+		makeEndpoint(testAddr1, true, fullLabels("us-east-1a", "us-east", "cluster-a")),
+		makeEndpoint(testAddr2, true, fullLabels("us-east-1a", "us-east", "cluster-b")),
+		makeEndpoint(testAddr3, true, fullLabels("us-east-1b", "us-east", "cluster-a")),
+		makeEndpoint(testAddr4, true, fullLabels("eu-west-1a", "eu-west", "cluster-c")),
 	}
 
 	result := filterLocalZoneCluster(eps, "us-east-1a", "cluster-a")
 	if len(result) != 1 {
 		t.Fatalf("expected 1 endpoint, got %d", len(result))
 	}
-	if result[0].Address != "10.0.0.1" {
+	if result[0].Address != testAddr1 {
 		t.Errorf("expected 10.0.0.1, got %s", result[0].Address)
 	}
 }
@@ -543,9 +550,9 @@ func TestFilterSameRegion(t *testing.T) {
 	t.Parallel()
 
 	eps := []*pb.Endpoint{
-		makeEndpoint("10.0.0.1", true, fullLabels("us-east-1a", "us-east", "cluster-a")),
-		makeEndpoint("10.0.0.2", true, fullLabels("us-east-1b", "us-east", "cluster-b")),
-		makeEndpoint("10.0.0.3", true, fullLabels("eu-west-1a", "eu-west", "cluster-c")),
+		makeEndpoint(testAddr1, true, fullLabels("us-east-1a", "us-east", "cluster-a")),
+		makeEndpoint(testAddr2, true, fullLabels("us-east-1b", "us-east", "cluster-b")),
+		makeEndpoint(testAddr3, true, fullLabels("eu-west-1a", "eu-west", "cluster-c")),
 	}
 
 	result := filterSameRegion(eps, "us-east")
@@ -556,7 +563,7 @@ func TestFilterSameRegion(t *testing.T) {
 	for _, ep := range result {
 		addrs[ep.Address] = true
 	}
-	if !addrs["10.0.0.1"] || !addrs["10.0.0.2"] {
+	if !addrs[testAddr1] || !addrs[testAddr2] {
 		t.Errorf("expected us-east endpoints, got %v", addrs)
 	}
 }

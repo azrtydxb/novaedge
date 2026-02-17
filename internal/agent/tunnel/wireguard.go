@@ -100,7 +100,7 @@ func (t *wireGuardTunnel) Stop() error {
 	t.healthy.Store(false)
 
 	// Tear down the WireGuard interface
-	if err := t.teardownInterface(); err != nil {
+	if err := t.teardownInterface(context.Background()); err != nil {
 		t.logger.Warn("failed to tear down wireguard interface", zap.Error(err))
 		return err
 	}
@@ -132,7 +132,7 @@ func (t *wireGuardTunnel) maintainConnection(ctx context.Context) {
 
 	backoff := time.Second
 	for {
-		if err := t.connect(); err != nil {
+		if err := t.connect(ctx); err != nil {
 			t.logger.Error("wireguard connection failed", zap.Error(err), zap.Duration("backoff", backoff))
 			t.healthy.Store(false)
 
@@ -165,11 +165,11 @@ func (t *wireGuardTunnel) maintainConnection(ctx context.Context) {
 }
 
 // connect sets up the WireGuard interface and configures peering.
-func (t *wireGuardTunnel) connect() error {
+func (t *wireGuardTunnel) connect(ctx context.Context) error {
 	wgConfig := t.config.WireGuard
 
 	// Create WireGuard interface
-	if err := t.runCommand("ip", "link", "add", t.ifaceName, "type", "wireguard"); err != nil {
+	if err := t.runCommand(ctx, "ip", "link", "add", t.ifaceName, "type", "wireguard"); err != nil {
 		// Interface may already exist from a previous attempt
 		if !strings.Contains(err.Error(), "already exists") {
 			return fmt.Errorf("creating wireguard interface: %w", err)
@@ -195,12 +195,12 @@ func (t *wireGuardTunnel) connect() error {
 	}
 	args = append(args, "persistent-keepalive", fmt.Sprintf("%d", keepalive))
 
-	if err := t.runCommand("wg", args...); err != nil {
+	if err := t.runCommand(ctx, "wg", args...); err != nil {
 		return fmt.Errorf("configuring wireguard peer: %w", err)
 	}
 
 	// Bring up the interface
-	if err := t.runCommand("ip", "link", "set", t.ifaceName, "up"); err != nil {
+	if err := t.runCommand(ctx, "ip", "link", "set", t.ifaceName, "up"); err != nil {
 		return fmt.Errorf("bringing up wireguard interface: %w", err)
 	}
 
@@ -222,7 +222,7 @@ func (t *wireGuardTunnel) monitorConnection(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := t.checkHandshake(); err != nil {
+			if err := t.checkHandshake(ctx); err != nil {
 				return err
 			}
 		}
@@ -230,8 +230,8 @@ func (t *wireGuardTunnel) monitorConnection(ctx context.Context) error {
 }
 
 // checkHandshake verifies the WireGuard handshake is recent enough.
-func (t *wireGuardTunnel) checkHandshake() error {
-	output, err := t.runCommandOutput("wg", "show", t.ifaceName, "latest-handshakes")
+func (t *wireGuardTunnel) checkHandshake(ctx context.Context) error {
+	output, err := t.runCommandOutput(ctx, "wg", "show", t.ifaceName, "latest-handshakes")
 	if err != nil {
 		return fmt.Errorf("checking wireguard handshake: %w", err)
 	}
@@ -245,15 +245,15 @@ func (t *wireGuardTunnel) checkHandshake() error {
 }
 
 // teardownInterface removes the WireGuard interface.
-func (t *wireGuardTunnel) teardownInterface() error {
-	return t.runCommand("ip", "link", "del", t.ifaceName)
+func (t *wireGuardTunnel) teardownInterface(ctx context.Context) error {
+	return t.runCommand(ctx, "ip", "link", "del", t.ifaceName)
 }
 
 // runCommand executes a system command and returns any error.
-func (t *wireGuardTunnel) runCommand(name string, args ...string) error {
+func (t *wireGuardTunnel) runCommand(ctx context.Context, name string, args ...string) error {
 	t.logger.Debug("executing command", zap.String("cmd", name), zap.Strings("args", args))
 
-	cmd := exec.Command(name, args...) //nolint:gosec // CLI tools are required for WireGuard setup
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // CLI tools are required for WireGuard setup
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 
@@ -265,8 +265,8 @@ func (t *wireGuardTunnel) runCommand(name string, args ...string) error {
 }
 
 // runCommandOutput executes a system command and returns its stdout.
-func (t *wireGuardTunnel) runCommandOutput(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...) //nolint:gosec // CLI tools are required for WireGuard setup
+func (t *wireGuardTunnel) runCommandOutput(ctx context.Context, name string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // CLI tools are required for WireGuard setup
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr

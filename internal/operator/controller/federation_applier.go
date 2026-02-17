@@ -149,10 +149,16 @@ func (a *FederationResourceApplier) applySecret(ctx context.Context, key federat
 // resource as federation-managed.
 func (a *FederationResourceApplier) createOrUpdate(ctx context.Context, key federation.ResourceKey, obj client.Object) error {
 	// Ensure the object has the correct namespace and name for the lookup
-	desired := obj.DeepCopyObject().(client.Object)
+	desired, ok := obj.DeepCopyObject().(client.Object)
+	if !ok {
+		return fmt.Errorf("failed to deep copy desired object for %s %s/%s", key.Kind, key.Namespace, key.Name)
+	}
 
 	// Build a fresh stub for the CreateOrUpdate lookup key
-	stub := obj.DeepCopyObject().(client.Object)
+	stub, ok := obj.DeepCopyObject().(client.Object)
+	if !ok {
+		return fmt.Errorf("failed to deep copy stub object for %s %s/%s", key.Kind, key.Namespace, key.Name)
+	}
 	stub.SetName(key.Name)
 	stub.SetNamespace(key.Namespace)
 	// Clear resource version so the stub works for both create and get

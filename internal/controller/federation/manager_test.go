@@ -29,8 +29,9 @@ import (
 )
 
 const (
-	testFederationID = "test-federation"
-	testLocalMember  = "local"
+	testFederationID    = "test-federation"
+	testLocalMember     = "local"
+	testUpdateConfigFed = "fed-1"
 )
 
 func TestNewManager(t *testing.T) {
@@ -511,11 +512,11 @@ func TestCrdToConfig_Labels(t *testing.T) {
 func TestManagerUpdateConfig_NotStarted(t *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultConfig()
-	config.FederationID = "fed-1"
+	config.FederationID = testUpdateConfigFed
 	manager := NewManager(config, logger)
 
 	newConfig := DefaultConfig()
-	newConfig.FederationID = "fed-1"
+	newConfig.FederationID = testUpdateConfigFed
 	newConfig.SyncInterval = 99 * time.Second
 
 	err := manager.UpdateConfig(newConfig)
@@ -527,7 +528,7 @@ func TestManagerUpdateConfig_NotStarted(t *testing.T) {
 func TestManagerUpdateConfig_NoChange(t *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultConfig()
-	config.FederationID = "fed-1"
+	config.FederationID = testUpdateConfigFed
 	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 	manager := NewManager(config, logger)
 
@@ -538,7 +539,7 @@ func TestManagerUpdateConfig_NoChange(t *testing.T) {
 
 	// Build an identical config
 	sameConfig := DefaultConfig()
-	sameConfig.FederationID = "fed-1"
+	sameConfig.FederationID = testUpdateConfigFed
 	sameConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 
 	err := manager.UpdateConfig(sameConfig)
@@ -547,7 +548,7 @@ func TestManagerUpdateConfig_NoChange(t *testing.T) {
 	}
 
 	// Config pointer should remain unchanged when equal
-	if manager.config.FederationID != "fed-1" {
+	if manager.config.FederationID != testUpdateConfigFed {
 		t.Errorf("config should still be fed-1, got %s", manager.config.FederationID)
 	}
 }
@@ -555,7 +556,7 @@ func TestManagerUpdateConfig_NoChange(t *testing.T) {
 func TestManagerUpdateConfig_SyncInterval(t *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultConfig()
-	config.FederationID = "fed-1"
+	config.FederationID = testUpdateConfigFed
 	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 	manager := NewManager(config, logger)
 
@@ -566,7 +567,7 @@ func TestManagerUpdateConfig_SyncInterval(t *testing.T) {
 	manager.server = NewServer(config, logger)
 
 	newConfig := DefaultConfig()
-	newConfig.FederationID = "fed-1"
+	newConfig.FederationID = testUpdateConfigFed
 	newConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 	newConfig.SyncInterval = 60 * time.Second
 
@@ -583,7 +584,7 @@ func TestManagerUpdateConfig_SyncInterval(t *testing.T) {
 func TestManagerUpdateConfig_AddPeer(t *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultConfig()
-	config.FederationID = "fed-1"
+	config.FederationID = testUpdateConfigFed
 	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 	config.Peers = []*PeerInfo{
 		{Name: "peer1", Endpoint: "peer1:50051"},
@@ -606,7 +607,7 @@ func TestManagerUpdateConfig_AddPeer(t *testing.T) {
 	manager.clientsMu.Unlock()
 
 	newConfig := DefaultConfig()
-	newConfig.FederationID = "fed-1"
+	newConfig.FederationID = testUpdateConfigFed
 	newConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 	newConfig.Peers = []*PeerInfo{
 		{Name: "peer1", Endpoint: "peer1:50051"},
@@ -634,7 +635,7 @@ func TestManagerUpdateConfig_AddPeer(t *testing.T) {
 func TestManagerUpdateConfig_RemovePeer(t *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultConfig()
-	config.FederationID = "fed-1"
+	config.FederationID = testUpdateConfigFed
 	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 	config.Peers = []*PeerInfo{
 		{Name: "peer1", Endpoint: "peer1:50051"},
@@ -659,7 +660,7 @@ func TestManagerUpdateConfig_RemovePeer(t *testing.T) {
 
 	// Remove peer2
 	newConfig := DefaultConfig()
-	newConfig.FederationID = "fed-1"
+	newConfig.FederationID = testUpdateConfigFed
 	newConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
 	newConfig.Peers = []*PeerInfo{
 		{Name: "peer1", Endpoint: "peer1:50051"},

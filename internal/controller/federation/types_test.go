@@ -41,8 +41,8 @@ func TestDefaultConfig(t *testing.T) {
 	if !cfg.CompressionEnabled {
 		t.Error("CompressionEnabled should be true")
 	}
-	if cfg.ConflictResolutionStrategy != "LastWriterWins" {
-		t.Errorf("ConflictResolutionStrategy = %q, want %q", cfg.ConflictResolutionStrategy, "LastWriterWins")
+	if cfg.ConflictResolutionStrategy != StrategyLastWriterWins {
+		t.Errorf("ConflictResolutionStrategy = %q, want %q", cfg.ConflictResolutionStrategy, StrategyLastWriterWins)
 	}
 	if !cfg.VectorClocksEnabled {
 		t.Error("VectorClocksEnabled should be true")
@@ -695,7 +695,8 @@ func TestConfig_Equal(t *testing.T) {
 
 	t.Run("same pointer is equal", func(t *testing.T) {
 		a := baseConfig()
-		if !a.Equal(a) {
+		aCopy := *a
+		if !a.Equal(&aCopy) {
 			t.Error("same pointer should be equal")
 		}
 	})

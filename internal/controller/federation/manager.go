@@ -246,7 +246,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	// that safely retrieves clients from the Manager's client map.
 	// In hub-spoke mode, anti-entropy pull is skipped because the hub only
 	// pushes configuration and does not pull from spoke clusters.
-	if m.config.Mode != "hub-spoke" {
+	if m.config.Mode != ModeHubSpoke {
 		m.antiEntropy = NewAntiEntropyManager(
 			DefaultAntiEntropyConfig(),
 			m.server,
@@ -587,7 +587,7 @@ func (m *Manager) handlePeerMessage(peerName string, msg *pb.SyncMessage) {
 	case *pb.SyncMessage_Change:
 		// In hub-spoke mode the hub only pushes; ignore incoming resource
 		// changes from spoke clusters to enforce one-way data flow.
-		if m.config.Mode == "hub-spoke" {
+		if m.config.Mode == ModeHubSpoke {
 			m.logger.Debug("Ignoring incoming resource change in hub-spoke mode",
 				zap.String("peer", peerName),
 			)
@@ -779,7 +779,7 @@ func (m *Manager) GetMode() string {
 // IsUnifiedMode returns true when the federation operates in unified mode,
 // which enforces shared service namespace and location-aware routing.
 func (m *Manager) IsUnifiedMode() bool {
-	return m.config.Mode == "unified"
+	return m.config.Mode == ModeUnified
 }
 
 // GetRemoteEndpoints returns the ServiceEndpoints from all federated clusters
@@ -791,7 +791,7 @@ func (m *Manager) GetRemoteEndpoints(namespace, serviceName string) []*pb.Servic
 		return []*pb.ServiceEndpoints{}
 	}
 	// In hub-spoke mode, the hub does not consume endpoints from spokes
-	if m.config.Mode == "hub-spoke" {
+	if m.config.Mode == ModeHubSpoke {
 		return []*pb.ServiceEndpoints{}
 	}
 	return m.server.GetEndpointCache().GetForService(namespace, serviceName)

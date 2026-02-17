@@ -156,7 +156,7 @@ func (t *webSocketTunnel) maintainConnection(ctx context.Context) {
 }
 
 // connect establishes the WebSocket connection and local listener.
-func (t *webSocketTunnel) connect(_ context.Context) error {
+func (t *webSocketTunnel) connect(ctx context.Context) error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: wsDialTimeout,
 	}
@@ -168,9 +168,10 @@ func (t *webSocketTunnel) connect(_ context.Context) error {
 	}
 
 	// Create local TCP listener on a random port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
-		wsConn.Close()
+		_ = wsConn.Close()
 		return fmt.Errorf("creating local listener: %w", err)
 	}
 
@@ -219,7 +220,7 @@ func (t *webSocketTunnel) runForwardingLoop(ctx context.Context) {
 // bridgeToWebSocket bridges a local TCP connection to the WebSocket.
 // Each accepted connection gets its own WebSocket binary message stream.
 func (t *webSocketTunnel) bridgeToWebSocket(ctx context.Context, localConn net.Conn) {
-	defer localConn.Close()
+	defer func() { _ = localConn.Close() }()
 
 	t.mu.RLock()
 	ws := t.wsConn
@@ -296,7 +297,7 @@ func (t *webSocketTunnel) pingLoop(ctx context.Context) {
 				// Close listener to break the accept loop
 				t.mu.RLock()
 				if t.listener != nil {
-					t.listener.Close()
+					_ = t.listener.Close()
 				}
 				t.mu.RUnlock()
 				return
@@ -308,12 +309,12 @@ func (t *webSocketTunnel) pingLoop(ctx context.Context) {
 // closeConnections closes the WebSocket connection and local listener.
 func (t *webSocketTunnel) closeConnections() {
 	if t.listener != nil {
-		t.listener.Close()
+		_ = t.listener.Close()
 		t.listener = nil
 	}
 
 	if t.wsConn != nil {
-		t.wsConn.Close()
+		_ = t.wsConn.Close()
 		t.wsConn = nil
 	}
 }

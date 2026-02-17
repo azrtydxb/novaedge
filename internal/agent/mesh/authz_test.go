@@ -24,6 +24,8 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+const testLocalAgentSPIFFE = "spiffe://cluster.local/agent/node-1"
+
 func TestParseSPIFFEID(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -79,7 +81,7 @@ func TestParseSPIFFEID(t *testing.T) {
 }
 
 func TestParseSPIFFEIDAgentFormat(t *testing.T) {
-	id := ParseSPIFFEID("spiffe://cluster.local/agent/node-1")
+	id := ParseSPIFFEID(testLocalAgentSPIFFE)
 	if id.TrustDomain != "cluster.local" {
 		t.Errorf("TrustDomain = %q, want %q", id.TrustDomain, "cluster.local")
 	}
@@ -89,8 +91,8 @@ func TestParseSPIFFEIDAgentFormat(t *testing.T) {
 	if id.ServiceAccount != "" {
 		t.Errorf("ServiceAccount = %q, want empty", id.ServiceAccount)
 	}
-	if id.SpiffeID != "spiffe://cluster.local/agent/node-1" {
-		t.Errorf("SpiffeID = %q, want %q", id.SpiffeID, "spiffe://cluster.local/agent/node-1")
+	if id.SpiffeID != testLocalAgentSPIFFE {
+		t.Errorf("SpiffeID = %q, want %q", id.SpiffeID, testLocalAgentSPIFFE)
 	}
 }
 
@@ -391,7 +393,7 @@ func TestParseSPIFFEIDFederated(t *testing.T) {
 }
 
 func TestParseSPIFFEIDLocalAgentNodeName(t *testing.T) {
-	id := ParseSPIFFEID("spiffe://cluster.local/agent/node-1")
+	id := ParseSPIFFEID(testLocalAgentSPIFFE)
 	if id.NodeName != "node-1" {
 		t.Errorf("NodeName = %q, want %q", id.NodeName, "node-1")
 	}
@@ -472,7 +474,7 @@ func TestFederationConfig(t *testing.T) {
 func TestBuildSPIFFEID(t *testing.T) {
 	t.Run("local (no federation)", func(t *testing.T) {
 		got := BuildSPIFFEID("cluster.local", "node-1", nil)
-		want := "spiffe://cluster.local/agent/node-1"
+		want := testLocalAgentSPIFFE
 		if got != want {
 			t.Errorf("BuildSPIFFEID() = %q, want %q", got, want)
 		}
@@ -481,7 +483,7 @@ func TestBuildSPIFFEID(t *testing.T) {
 	t.Run("local (inactive federation)", func(t *testing.T) {
 		cfg := &FederationConfig{}
 		got := BuildSPIFFEID("cluster.local", "node-1", cfg)
-		want := "spiffe://cluster.local/agent/node-1"
+		want := testLocalAgentSPIFFE
 		if got != want {
 			t.Errorf("BuildSPIFFEID() = %q, want %q", got, want)
 		}

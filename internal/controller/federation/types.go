@@ -20,6 +20,29 @@ import (
 	"time"
 )
 
+const (
+	// ModeHubSpoke is the hub-spoke federation topology.
+	ModeHubSpoke = "hub-spoke"
+
+	// ModeMesh is the full-mesh federation topology.
+	ModeMesh = "mesh"
+
+	// ModeUnified is the unified federation mode with shared service namespace.
+	ModeUnified = "unified"
+
+	// RepairModePull only pulls missing/outdated resources from peers.
+	RepairModePull = "pull"
+
+	// RepairModePush only pushes our resources to peers.
+	RepairModePush = "push"
+
+	// RepairModeBidirectional exchanges resources in both directions.
+	RepairModeBidirectional = "bidirectional"
+
+	// StrategyLastWriterWins resolves conflicts using timestamp comparison.
+	StrategyLastWriterWins = "LastWriterWins"
+)
+
 // PeerInfo contains information about a federation peer
 type PeerInfo struct {
 	// Name is the unique name of this peer
@@ -467,12 +490,12 @@ func stringMapEqual(a, b map[string]string) bool {
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{
-		Mode:                       "mesh",
+		Mode:                       ModeMesh,
 		SyncInterval:               5 * time.Second,
 		SyncTimeout:                30 * time.Second,
 		BatchSize:                  100,
 		CompressionEnabled:         true,
-		ConflictResolutionStrategy: "LastWriterWins",
+		ConflictResolutionStrategy: StrategyLastWriterWins,
 		VectorClocksEnabled:        true,
 		TombstoneTTL:               24 * time.Hour,
 		HealthCheckInterval:        10 * time.Second,

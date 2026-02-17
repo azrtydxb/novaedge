@@ -171,16 +171,17 @@ func (t *sshTunnel) connect(ctx context.Context) error {
 
 	sshConn, chans, reqs, err := ssh.NewClientConn(conn, t.config.RelayEndpoint, sshConfig)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return fmt.Errorf("ssh handshake with %s: %w", t.config.RelayEndpoint, err)
 	}
 
 	client := ssh.NewClient(sshConn, chans, reqs)
 
 	// Create local TCP listener on a random port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	lc := net.ListenConfig{}
+	listener, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		return fmt.Errorf("creating local listener: %w", err)
 	}
 
@@ -228,7 +229,7 @@ func (t *sshTunnel) runForwardingLoop(ctx context.Context) {
 
 // forwardConnection forwards a single local connection through the SSH tunnel.
 func (t *sshTunnel) forwardConnection(ctx context.Context, localConn net.Conn) {
-	defer localConn.Close()
+	defer func() { _ = localConn.Close() }()
 
 	t.mu.RLock()
 	client := t.sshClient
@@ -244,7 +245,7 @@ func (t *sshTunnel) forwardConnection(ctx context.Context, localConn net.Conn) {
 		t.logger.Debug("failed to dial remote via ssh", zap.Error(err))
 		return
 	}
-	defer remoteConn.Close()
+	defer func() { _ = remoteConn.Close() }()
 
 	bridgeConnections(ctx, localConn, remoteConn)
 }
@@ -273,7 +274,7 @@ func (t *sshTunnel) keepalive(ctx context.Context) {
 				// Close listener to break the accept loop
 				t.mu.RLock()
 				if t.listener != nil {
-					t.listener.Close()
+					_ = t.listener.Close()
 				}
 				t.mu.RUnlock()
 				return
@@ -285,12 +286,12 @@ func (t *sshTunnel) keepalive(ctx context.Context) {
 // closeConnections closes the SSH client and local listener.
 func (t *sshTunnel) closeConnections() {
 	if t.listener != nil {
-		t.listener.Close()
+		_ = t.listener.Close()
 		t.listener = nil
 	}
 
 	if t.sshClient != nil {
-		t.sshClient.Close()
+		_ = t.sshClient.Close()
 		t.sshClient = nil
 	}
 }
@@ -307,7 +308,7 @@ func bridgeConnections(ctx context.Context, c1, c2 net.Conn) {
 	go func() {
 		_, _ = io.Copy(c2, c1)
 		// Close c2 to unblock the other goroutine
-		c2.Close()
+		_ = c2.Close()
 	}()
 
 	select {
