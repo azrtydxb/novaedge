@@ -325,6 +325,141 @@ type Config struct {
 	SplitBrain *SplitBrainConfig
 }
 
+// Equal returns true when two configs are functionally identical.
+// Peer ordering is ignored; peers are matched by name.
+func (c *Config) Equal(other *Config) bool {
+	if c == other {
+		return true
+	}
+	if c == nil || other == nil {
+		return false
+	}
+
+	// Scalar / top-level fields
+	if c.FederationID != other.FederationID ||
+		c.SyncInterval != other.SyncInterval ||
+		c.SyncTimeout != other.SyncTimeout ||
+		c.BatchSize != other.BatchSize ||
+		c.CompressionEnabled != other.CompressionEnabled ||
+		c.ConflictResolutionStrategy != other.ConflictResolutionStrategy ||
+		c.VectorClocksEnabled != other.VectorClocksEnabled ||
+		c.TombstoneTTL != other.TombstoneTTL ||
+		c.HealthCheckInterval != other.HealthCheckInterval ||
+		c.HealthCheckTimeout != other.HealthCheckTimeout ||
+		c.FailureThreshold != other.FailureThreshold ||
+		c.SuccessThreshold != other.SuccessThreshold {
+		return false
+	}
+
+	// LocalMember
+	if !peerInfoEqual(c.LocalMember, other.LocalMember) {
+		return false
+	}
+
+	// Peers (order-independent)
+	if len(c.Peers) != len(other.Peers) {
+		return false
+	}
+	peerMap := make(map[string]*PeerInfo, len(c.Peers))
+	for _, p := range c.Peers {
+		peerMap[p.Name] = p
+	}
+	for _, p := range other.Peers {
+		existing, ok := peerMap[p.Name]
+		if !ok || !peerInfoEqual(existing, p) {
+			return false
+		}
+	}
+
+	// Slice fields
+	if !stringSliceEqual(c.ResourceTypes, other.ResourceTypes) {
+		return false
+	}
+	if !stringSliceEqual(c.ExcludeNamespaces, other.ExcludeNamespaces) {
+		return false
+	}
+
+	// SplitBrain (nil-safe)
+	if !splitBrainConfigEqual(c.SplitBrain, other.SplitBrain) {
+		return false
+	}
+
+	return true
+}
+
+// peerInfoEqual compares two PeerInfo values for equality.
+func peerInfoEqual(a, b *PeerInfo) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Name != b.Name ||
+		a.Endpoint != b.Endpoint ||
+		a.Region != b.Region ||
+		a.Zone != b.Zone ||
+		a.Priority != b.Priority ||
+		a.TLSEnabled != b.TLSEnabled ||
+		a.TLSServerName != b.TLSServerName ||
+		a.InsecureSkipVerify != b.InsecureSkipVerify {
+		return false
+	}
+	if !stringMapEqual(a.Labels, b.Labels) {
+		return false
+	}
+	// TLS cert data is compared by content
+	if string(a.CACert) != string(b.CACert) ||
+		string(a.ClientCert) != string(b.ClientCert) ||
+		string(a.ClientKey) != string(b.ClientKey) {
+		return false
+	}
+	return true
+}
+
+// splitBrainConfigEqual compares two SplitBrainConfig values.
+func splitBrainConfigEqual(a, b *SplitBrainConfig) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return a.PartitionTimeout == b.PartitionTimeout &&
+		a.QuorumRequired == b.QuorumRequired &&
+		a.QuorumSize == b.QuorumSize &&
+		a.HealingGracePeriod == b.HealingGracePeriod &&
+		a.AutoResolveOnHeal == b.AutoResolveOnHeal &&
+		a.FencingEnabled == b.FencingEnabled &&
+		a.QuorumMode == b.QuorumMode
+}
+
+// stringSliceEqual returns true when two string slices have the same elements in the same order.
+func stringSliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// stringMapEqual returns true when two string maps have identical key-value pairs.
+func stringMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || v != bv {
+			return false
+		}
+	}
+	return true
+}
+
 // DefaultConfig returns a Config with sensible defaults
 func DefaultConfig() *Config {
 	return &Config{

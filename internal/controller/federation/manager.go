@@ -73,7 +73,7 @@ func NewManager(config *Config, logger *zap.Logger) *Manager {
 
 // NewManagerFromCRD creates a federation manager from a NovaEdgeFederation CRD
 func NewManagerFromCRD(federation *novaedgev1alpha1.NovaEdgeFederation, logger *zap.Logger) (*Manager, error) {
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 	return NewManager(config, logger), nil
 }
 
@@ -86,7 +86,7 @@ type TLSCredentials struct {
 
 // NewManagerFromCRDWithCreds creates a federation manager from a NovaEdgeFederation CRD with TLS credentials
 func NewManagerFromCRDWithCreds(federation *novaedgev1alpha1.NovaEdgeFederation, tlsCreds map[string]*TLSCredentials, logger *zap.Logger) (*Manager, error) {
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 
 	// Apply TLS credentials to peers
 	for _, peer := range config.Peers {
@@ -105,8 +105,8 @@ func NewManagerFromCRDWithCreds(federation *novaedgev1alpha1.NovaEdgeFederation,
 	return NewManager(config, logger), nil
 }
 
-// crdToConfig converts a NovaEdgeFederation CRD to a Config
-func crdToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *Config {
+// CRDToConfig converts a NovaEdgeFederation CRD to a Config
+func CRDToConfig(fed *novaedgev1alpha1.NovaEdgeFederation) *Config {
 	config := DefaultConfig()
 	config.FederationID = fed.Spec.FederationID
 
@@ -388,6 +388,122 @@ func (m *Manager) SetAgentCount(count int32) {
 	if m.server != nil {
 		m.server.SetAgentCount(count)
 	}
+}
+
+// UpdateConfig applies a new configuration to a running manager without restart.
+// Peers are added, removed, or updated dynamically and sync parameters are
+// adjusted in-place.
+func (m *Manager) UpdateConfig(newConfig *Config) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.started {
+		return fmt.Errorf("federation manager is not started")
+	}
+
+	oldConfig := m.config
+
+	// Nothing to do when configs are identical.
+	if oldConfig.Equal(newConfig) {
+		m.logger.Debug("Config unchanged, skipping update")
+		return nil
+	}
+
+	m.logger.Info("Applying federation config update",
+		zap.String("federation_id", newConfig.FederationID),
+	)
+
+	// --- Peer diff ---
+	oldPeers := make(map[string]*PeerInfo, len(oldConfig.Peers))
+	for _, p := range oldConfig.Peers {
+		oldPeers[p.Name] = p
+	}
+	newPeers := make(map[string]*PeerInfo, len(newConfig.Peers))
+	for _, p := range newConfig.Peers {
+		newPeers[p.Name] = p
+	}
+
+	// Remove peers that no longer exist
+	for name := range oldPeers {
+		if _, exists := newPeers[name]; !exists {
+			m.logger.Info("Removing federation peer", zap.String("peer", name))
+			m.clientsMu.Lock()
+			if client, ok := m.clients[name]; ok {
+				client.Disconnect()
+				delete(m.clients, name)
+			}
+			m.clientsMu.Unlock()
+		}
+	}
+
+	// Add new peers
+	for name, peerInfo := range newPeers {
+		if _, exists := oldPeers[name]; !exists {
+			m.logger.Info("Adding federation peer", zap.String("peer", name))
+			client := NewPeerClient(peerInfo, newConfig, m.logger)
+			m.clientsMu.Lock()
+			m.clients[name] = client
+			m.clientsMu.Unlock()
+			go m.maintainPeerConnection(name, client)
+		}
+	}
+
+	// Update existing peers whose TLS credentials changed
+	for name, newPeer := range newPeers {
+		oldPeer, exists := oldPeers[name]
+		if !exists {
+			continue // already handled above
+		}
+		if !peerInfoEqual(oldPeer, newPeer) {
+			m.logger.Info("Reconnecting federation peer due to config change",
+				zap.String("peer", name),
+			)
+			m.clientsMu.Lock()
+			if client, ok := m.clients[name]; ok {
+				client.Disconnect()
+				delete(m.clients, name)
+			}
+			newClient := NewPeerClient(newPeer, newConfig, m.logger)
+			m.clients[name] = newClient
+			m.clientsMu.Unlock()
+			go m.maintainPeerConnection(name, newClient)
+		}
+	}
+
+	// --- Update server sync parameters ---
+	if m.server != nil {
+		if oldConfig.SyncInterval != newConfig.SyncInterval {
+			m.logger.Info("Updating sync interval",
+				zap.Duration("old", oldConfig.SyncInterval),
+				zap.Duration("new", newConfig.SyncInterval),
+			)
+		}
+		if oldConfig.SyncTimeout != newConfig.SyncTimeout {
+			m.logger.Info("Updating sync timeout",
+				zap.Duration("old", oldConfig.SyncTimeout),
+				zap.Duration("new", newConfig.SyncTimeout),
+			)
+		}
+		if oldConfig.BatchSize != newConfig.BatchSize {
+			m.logger.Info("Updating batch size",
+				zap.Int32("old", oldConfig.BatchSize),
+				zap.Int32("new", newConfig.BatchSize),
+			)
+		}
+		// The server holds a pointer to config; update it atomically.
+		m.server.config = newConfig
+	}
+
+	// --- Update anti-entropy if interval changed ---
+	if m.antiEntropy != nil && oldConfig.SyncInterval != newConfig.SyncInterval {
+		m.logger.Info("Anti-entropy interval will take effect on next cycle")
+	}
+
+	// Store the new config
+	m.config = newConfig
+
+	m.logger.Info("Federation config update applied successfully")
+	return nil
 }
 
 // maintainPeerConnection maintains a connection to a peer

@@ -147,12 +147,43 @@ func (r *NovaEdgeFederationReconciler) ensureManager(ctx context.Context, fed *n
 	r.managersMu.Lock()
 	defer r.managersMu.Unlock()
 
-	// Check if manager already exists
+	// Check if manager already exists and apply config updates if spec changed
 	if existing, ok := r.managers[key]; ok {
-		log.Warn("Federation manager already exists; config change detection not yet implemented",
+		if fed.Status.ObservedGeneration == fed.Generation {
+			log.Debug("Federation spec unchanged, skipping update",
+				zap.String("key", key),
+			)
+			return nil
+		}
+
+		log.Info("Federation spec changed, updating manager in-place",
 			zap.String("key", key),
+			zap.Int64("old_generation", fed.Status.ObservedGeneration),
+			zap.Int64("new_generation", fed.Generation),
 		)
-		_ = existing
+
+		// Load TLS credentials for the updated spec
+		updatedTLSCreds, tlsErr := r.loadTLSCredentials(ctx, fed, log)
+		if tlsErr != nil {
+			return fmt.Errorf("failed to load TLS credentials for update: %w", tlsErr)
+		}
+
+		// Build new config from CRD
+		newConfig := federation.CRDToConfig(fed)
+
+		// Apply TLS credentials to peers
+		for _, peer := range newConfig.Peers {
+			if creds, credOK := updatedTLSCreds[peer.Name]; credOK {
+				peer.CACert = creds.CACert
+				peer.ClientCert = creds.ClientCert
+				peer.ClientKey = creds.ClientKey
+			}
+		}
+
+		if updateErr := existing.UpdateConfig(newConfig); updateErr != nil {
+			return fmt.Errorf("failed to update federation manager config: %w", updateErr)
+		}
+
 		return nil
 	}
 

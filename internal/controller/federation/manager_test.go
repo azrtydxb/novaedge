@@ -17,6 +17,7 @@ limitations under the License.
 package federation
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -366,7 +367,7 @@ func TestCrdToConfig_EmptyMembers(t *testing.T) {
 		},
 	}
 
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 
 	if config.FederationID != "fed-123" {
 		t.Errorf("FederationID = %v, want fed-123", config.FederationID)
@@ -393,7 +394,7 @@ func TestCrdToConfig_NilSync(t *testing.T) {
 		},
 	}
 
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 
 	// Should use defaults
 	if config.SyncInterval == 0 {
@@ -425,7 +426,7 @@ func TestCrdToConfig_TLSDisabled(t *testing.T) {
 		},
 	}
 
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 
 	if len(config.Peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(config.Peers))
@@ -458,7 +459,7 @@ func TestCrdToConfig_TLSNil(t *testing.T) {
 		},
 	}
 
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 
 	if len(config.Peers) != 1 {
 		t.Fatalf("expected 1 peer, got %d", len(config.Peers))
@@ -493,7 +494,7 @@ func TestCrdToConfig_Labels(t *testing.T) {
 		},
 	}
 
-	config := crdToConfig(federation)
+	config := CRDToConfig(federation)
 
 	if config.LocalMember.Labels["env"] != "prod" {
 		t.Errorf("LocalMember env label = %v, want prod", config.LocalMember.Labels["env"])
@@ -504,5 +505,180 @@ func TestCrdToConfig_Labels(t *testing.T) {
 
 	if config.Peers[0].Labels["env"] != "staging" {
 		t.Errorf("Peer env label = %v, want staging", config.Peers[0].Labels["env"])
+	}
+}
+
+func TestManagerUpdateConfig_NotStarted(t *testing.T) {
+	logger := zap.NewNop()
+	config := DefaultConfig()
+	config.FederationID = "fed-1"
+	manager := NewManager(config, logger)
+
+	newConfig := DefaultConfig()
+	newConfig.FederationID = "fed-1"
+	newConfig.SyncInterval = 99 * time.Second
+
+	err := manager.UpdateConfig(newConfig)
+	if err == nil {
+		t.Error("UpdateConfig should return error when not started")
+	}
+}
+
+func TestManagerUpdateConfig_NoChange(t *testing.T) {
+	logger := zap.NewNop()
+	config := DefaultConfig()
+	config.FederationID = "fed-1"
+	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+	manager := NewManager(config, logger)
+
+	// Simulate started state so UpdateConfig proceeds
+	manager.mu.Lock()
+	manager.started = true
+	manager.mu.Unlock()
+
+	// Build an identical config
+	sameConfig := DefaultConfig()
+	sameConfig.FederationID = "fed-1"
+	sameConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+
+	err := manager.UpdateConfig(sameConfig)
+	if err != nil {
+		t.Errorf("UpdateConfig with identical config should not error: %v", err)
+	}
+
+	// Config pointer should remain unchanged when equal
+	if manager.config.FederationID != "fed-1" {
+		t.Errorf("config should still be fed-1, got %s", manager.config.FederationID)
+	}
+}
+
+func TestManagerUpdateConfig_SyncInterval(t *testing.T) {
+	logger := zap.NewNop()
+	config := DefaultConfig()
+	config.FederationID = "fed-1"
+	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+	manager := NewManager(config, logger)
+
+	// Simulate started state with a server
+	manager.mu.Lock()
+	manager.started = true
+	manager.mu.Unlock()
+	manager.server = NewServer(config, logger)
+
+	newConfig := DefaultConfig()
+	newConfig.FederationID = "fed-1"
+	newConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+	newConfig.SyncInterval = 60 * time.Second
+
+	err := manager.UpdateConfig(newConfig)
+	if err != nil {
+		t.Fatalf("UpdateConfig error: %v", err)
+	}
+
+	if manager.config.SyncInterval != 60*time.Second {
+		t.Errorf("SyncInterval = %v, want 60s", manager.config.SyncInterval)
+	}
+}
+
+func TestManagerUpdateConfig_AddPeer(t *testing.T) {
+	logger := zap.NewNop()
+	config := DefaultConfig()
+	config.FederationID = "fed-1"
+	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+	config.Peers = []*PeerInfo{
+		{Name: "peer1", Endpoint: "peer1:50051"},
+	}
+	manager := NewManager(config, logger)
+
+	// Simulate started state with server and context
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	manager.ctx = ctx
+	manager.cancel = cancel
+	manager.mu.Lock()
+	manager.started = true
+	manager.mu.Unlock()
+	manager.server = NewServer(config, logger)
+
+	// Add an existing client for peer1
+	manager.clientsMu.Lock()
+	manager.clients["peer1"] = NewPeerClient(config.Peers[0], config, logger)
+	manager.clientsMu.Unlock()
+
+	newConfig := DefaultConfig()
+	newConfig.FederationID = "fed-1"
+	newConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+	newConfig.Peers = []*PeerInfo{
+		{Name: "peer1", Endpoint: "peer1:50051"},
+		{Name: "peer2", Endpoint: "peer2:50051"},
+	}
+
+	err := manager.UpdateConfig(newConfig)
+	if err != nil {
+		t.Fatalf("UpdateConfig error: %v", err)
+	}
+
+	manager.clientsMu.RLock()
+	_, hasPeer2 := manager.clients["peer2"]
+	manager.clientsMu.RUnlock()
+
+	if !hasPeer2 {
+		t.Error("peer2 client should have been added")
+	}
+
+	if len(manager.config.Peers) != 2 {
+		t.Errorf("expected 2 peers, got %d", len(manager.config.Peers))
+	}
+}
+
+func TestManagerUpdateConfig_RemovePeer(t *testing.T) {
+	logger := zap.NewNop()
+	config := DefaultConfig()
+	config.FederationID = "fed-1"
+	config.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+	config.Peers = []*PeerInfo{
+		{Name: "peer1", Endpoint: "peer1:50051"},
+		{Name: "peer2", Endpoint: "peer2:50051"},
+	}
+	manager := NewManager(config, logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	manager.ctx = ctx
+	manager.cancel = cancel
+	manager.mu.Lock()
+	manager.started = true
+	manager.mu.Unlock()
+	manager.server = NewServer(config, logger)
+
+	// Add clients
+	manager.clientsMu.Lock()
+	manager.clients["peer1"] = NewPeerClient(config.Peers[0], config, logger)
+	manager.clients["peer2"] = NewPeerClient(config.Peers[1], config, logger)
+	manager.clientsMu.Unlock()
+
+	// Remove peer2
+	newConfig := DefaultConfig()
+	newConfig.FederationID = "fed-1"
+	newConfig.LocalMember = &PeerInfo{Name: "local", Endpoint: "localhost:50051"}
+	newConfig.Peers = []*PeerInfo{
+		{Name: "peer1", Endpoint: "peer1:50051"},
+	}
+
+	err := manager.UpdateConfig(newConfig)
+	if err != nil {
+		t.Fatalf("UpdateConfig error: %v", err)
+	}
+
+	manager.clientsMu.RLock()
+	_, hasPeer2 := manager.clients["peer2"]
+	manager.clientsMu.RUnlock()
+
+	if hasPeer2 {
+		t.Error("peer2 client should have been removed")
+	}
+
+	if len(manager.config.Peers) != 1 {
+		t.Errorf("expected 1 peer, got %d", len(manager.config.Peers))
 	}
 }

@@ -665,3 +665,138 @@ func TestChangeEntry_AcknowledgmentTracking(t *testing.T) {
 		t.Errorf("acknowledged count = %d, want 2", count)
 	}
 }
+
+func TestConfig_Equal(t *testing.T) {
+	baseConfig := func() *Config {
+		cfg := DefaultConfig()
+		cfg.FederationID = "fed-1"
+		cfg.LocalMember = &PeerInfo{
+			Name:     "local",
+			Endpoint: "localhost:50051",
+			Region:   "us-east-1",
+			Labels:   map[string]string{"env": "prod"},
+		}
+		cfg.Peers = []*PeerInfo{
+			{Name: "peer1", Endpoint: "peer1:50051", Region: "us-west-1"},
+			{Name: "peer2", Endpoint: "peer2:50051", Region: "eu-west-1"},
+		}
+		cfg.ResourceTypes = []string{"proxygateways", "proxyroutes"}
+		cfg.ExcludeNamespaces = []string{"kube-system"}
+		return cfg
+	}
+
+	t.Run("identical configs are equal", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		if !a.Equal(b) {
+			t.Error("identical configs should be equal")
+		}
+	})
+
+	t.Run("same pointer is equal", func(t *testing.T) {
+		a := baseConfig()
+		if !a.Equal(a) {
+			t.Error("same pointer should be equal")
+		}
+	})
+
+	t.Run("nil configs", func(t *testing.T) {
+		a := baseConfig()
+		if a.Equal(nil) {
+			t.Error("non-nil config should not equal nil")
+		}
+		var nilCfg *Config
+		if nilCfg.Equal(a) {
+			t.Error("nil config should not equal non-nil")
+		}
+		if !nilCfg.Equal(nil) {
+			t.Error("nil should equal nil")
+		}
+	})
+
+	t.Run("different federation ID", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		b.FederationID = "fed-2"
+		if a.Equal(b) {
+			t.Error("configs with different FederationID should not be equal")
+		}
+	})
+
+	t.Run("different sync interval", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		b.SyncInterval = 99 * time.Second
+		if a.Equal(b) {
+			t.Error("configs with different SyncInterval should not be equal")
+		}
+	})
+
+	t.Run("different peer count", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		b.Peers = b.Peers[:1]
+		if a.Equal(b) {
+			t.Error("configs with different peer count should not be equal")
+		}
+	})
+
+	t.Run("different peer endpoint", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		b.Peers[0].Endpoint = "changed:9999"
+		if a.Equal(b) {
+			t.Error("configs with different peer endpoint should not be equal")
+		}
+	})
+
+	t.Run("peer order does not matter", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		// Reverse peer order
+		b.Peers[0], b.Peers[1] = b.Peers[1], b.Peers[0]
+		if !a.Equal(b) {
+			t.Error("peer order should not affect equality")
+		}
+	})
+
+	t.Run("different resource types", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		b.ResourceTypes = []string{"proxygateways"}
+		if a.Equal(b) {
+			t.Error("configs with different resource types should not be equal")
+		}
+	})
+
+	t.Run("different local member labels", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		b.LocalMember.Labels = map[string]string{"env": "staging"}
+		if a.Equal(b) {
+			t.Error("configs with different local member labels should not be equal")
+		}
+	})
+
+	t.Run("split brain config nil vs non-nil", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		b.SplitBrain = &SplitBrainConfig{
+			PartitionTimeout: 30 * time.Second,
+			QuorumRequired:   true,
+		}
+		if a.Equal(b) {
+			t.Error("configs with different split-brain config should not be equal")
+		}
+	})
+
+	t.Run("different TLS certs", func(t *testing.T) {
+		a := baseConfig()
+		b := baseConfig()
+		a.Peers[0].CACert = []byte("ca-1")
+		b.Peers[0].CACert = []byte("ca-2")
+		if a.Equal(b) {
+			t.Error("configs with different TLS certs should not be equal")
+		}
+	})
+}
