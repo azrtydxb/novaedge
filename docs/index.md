@@ -4,7 +4,7 @@
 
 # NovaEdge
 
-**A unified Kubernetes-native load balancer, reverse proxy, VIP controller, and SD-WAN gateway**
+**Kubernetes-Native Network Platform**
 
 NovaEdge replaces Envoy + MetalLB + NGINX Ingress + Cisco SD-WAN with a single, integrated solution designed for modern Kubernetes deployments.
 
