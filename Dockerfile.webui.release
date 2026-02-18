@@ -1,7 +1,7 @@
 # Release Dockerfile for novaedge-webui
 # Expects pre-built frontend dist/ files in the build context
 # Used by CI/release workflows to avoid Node.js under QEMU emulation
-FROM nginx:1.27-alpine
+FROM nginx:1.29-alpine
 
 # Remove default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
