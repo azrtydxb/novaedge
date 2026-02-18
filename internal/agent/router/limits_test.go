@@ -165,7 +165,7 @@ func TestRequestLimitsMiddleware_NoBody(t *testing.T) {
 	m := NewRequestLimitsMiddleware(limits)
 
 	var called bool
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)
 	}))

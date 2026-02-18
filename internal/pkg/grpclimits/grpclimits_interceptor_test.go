@@ -80,7 +80,7 @@ func TestUnaryServerLoggingInterceptor_Success(t *testing.T) {
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}
-	handler := func(_ context.Context, req interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
 		return "test-response", nil
 	}
 
@@ -103,7 +103,7 @@ func TestUnaryServerLoggingInterceptor_WithPeer(t *testing.T) {
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}
-	handler := func(_ context.Context, req interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
 		return "test-response", nil
 	}
 
@@ -121,7 +121,7 @@ func TestUnaryServerLoggingInterceptor_HandlerError(t *testing.T) {
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}
-	handler := func(_ context.Context, req interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
 		return nil, status.Error(codes.Internal, "test error")
 	}
 
@@ -140,7 +140,7 @@ func TestUnaryServerLoggingInterceptor_WithError(t *testing.T) {
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}
-	handler := func(_ context.Context, req interface{}) (interface{}, error) {
+	handler := func(_ context.Context, _ interface{}) (interface{}, error) {
 		return nil, errors.New("handler error")
 	}
 
@@ -158,7 +158,7 @@ func TestStreamServerLoggingInterceptor_Success(t *testing.T) {
 	info := &grpc.StreamServerInfo{
 		FullMethod: "/test/StreamMethod",
 	}
-	handler := func(_ interface{}, ss grpc.ServerStream) error {
+	handler := func(_ interface{}, _ grpc.ServerStream) error {
 		return nil
 	}
 
@@ -180,7 +180,7 @@ func TestStreamServerLoggingInterceptor_WithPeer(t *testing.T) {
 	info := &grpc.StreamServerInfo{
 		FullMethod: "/test/StreamMethod",
 	}
-	handler := func(_ interface{}, ss grpc.ServerStream) error {
+	handler := func(_ interface{}, _ grpc.ServerStream) error {
 		return nil
 	}
 
@@ -197,7 +197,7 @@ func TestStreamServerLoggingInterceptor_HandlerError(t *testing.T) {
 	info := &grpc.StreamServerInfo{
 		FullMethod: "/test/StreamMethod",
 	}
-	handler := func(_ interface{}, ss grpc.ServerStream) error {
+	handler := func(_ interface{}, _ grpc.ServerStream) error {
 		return status.Error(codes.Unavailable, "service unavailable")
 	}
 
@@ -215,7 +215,7 @@ func TestStreamServerLoggingInterceptor_NonGRPCError(t *testing.T) {
 	info := &grpc.StreamServerInfo{
 		FullMethod: "/test/StreamMethod",
 	}
-	handler := func(_ interface{}, ss grpc.ServerStream) error {
+	handler := func(_ interface{}, _ grpc.ServerStream) error {
 		return errors.New("random error")
 	}
 
@@ -232,7 +232,7 @@ func TestStreamServerLoggingInterceptor_WithError(t *testing.T) {
 	info := &grpc.StreamServerInfo{
 		FullMethod: "/test/StreamMethod",
 	}
-	handler := func(_ interface{}, ss grpc.ServerStream) error {
+	handler := func(_ interface{}, _ grpc.ServerStream) error {
 		return errors.New("stream error")
 	}
 

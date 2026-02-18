@@ -41,7 +41,7 @@ It provides kubectl-style commands for managing ProxyGateway, ProxyRoute,
 ProxyBackend, ProxyPolicy, and ProxyVIP resources, as well as Gateway API
 resources (GatewayClass, Gateway, HTTPRoute), specialized commands for
 debugging routing, viewing metrics, and inspecting agents.`,
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 		var err error
 		// Try in-cluster config first (for running inside a pod)
 		config, err = rest.InClusterConfig()

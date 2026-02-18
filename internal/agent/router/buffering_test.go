@@ -97,7 +97,7 @@ func TestRequestBufferingMiddleware_Disabled(t *testing.T) {
 	body := testBody
 	var capturedBody string
 
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		data, _ := io.ReadAll(r.Body)
 		capturedBody = string(data)
 	}))
@@ -165,7 +165,7 @@ func TestRequestBufferingMiddleware_SpillToFile(t *testing.T) {
 	body := strings.Repeat("file-spill-test-data-", 100) // >100 bytes
 	var capturedBody string
 
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		data, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Errorf("failed to read file-spilled body: %v", err)
@@ -193,7 +193,7 @@ func TestResponseBufferingMiddleware_BuffersResponseBody(t *testing.T) {
 
 	body := strings.Repeat("buffered response body. ", 100)
 
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(body))
@@ -226,7 +226,7 @@ func TestResponseBufferingMiddleware_MaxSizeOverflow(t *testing.T) {
 
 	body := strings.Repeat("x", 100) // Exceeds max buffer size
 
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(body))
 	}))
 
@@ -253,7 +253,7 @@ func TestResponseBufferingMiddleware_Disabled(t *testing.T) {
 	m := NewResponseBufferingMiddleware(config)
 
 	body := "passthrough body"
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(body))
 	}))
 

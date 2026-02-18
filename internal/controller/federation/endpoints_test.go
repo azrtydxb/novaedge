@@ -171,17 +171,14 @@ func TestRemoteEndpointCache_ConcurrentAccess(_ *testing.T) {
 
 	// Concurrent updates
 	go func() {
-		for i := 0; i < 100; i++ {
-			// Ensure i is within int32 range before conversion
-			if i > 2147483647 {
-				continue
-			}
-			port := int32(i)
+		for i := int32(0); i < 100; i++ {
+			// Use int32 loop variable to avoid conversion issues
+			portNum := 8080 + i
 			endpoints := &pb.ServiceEndpoints{
 				Namespace:   "default",
 				ServiceName: "test-service",
 				Endpoints: []*pb.Endpoint{
-					{Address: "10.0.0.1", Port: port},
+					{Address: "10.0.0.1", Port: portNum},
 				},
 			}
 			cache.Update("cluster-1", endpoints)

@@ -72,7 +72,7 @@ func newTraceListCommand() *cobra.Command {
 	return cmd
 }
 
-func runTraceList(cmd *cobra.Command, args []string) error {
+func runTraceList(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Parse lookback duration
@@ -135,7 +135,7 @@ func newTraceGetCommand() *cobra.Command {
 	return cmd
 }
 
-func runTraceGet(cmd *cobra.Command, args []string) error {
+func runTraceGet(_ *cobra.Command, args []string) error {
 	traceID := args[0]
 	ctx := context.Background()
 
@@ -199,7 +199,7 @@ func newTraceSearchCommand() *cobra.Command {
 	return cmd
 }
 
-func runTraceSearch(cmd *cobra.Command, args []string) error {
+func runTraceSearch(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Build search parameters
@@ -305,7 +305,7 @@ func newTraceServicesCommand() *cobra.Command {
 	return cmd
 }
 
-func runTraceServices(cmd *cobra.Command, args []string) error {
+func runTraceServices(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create trace client

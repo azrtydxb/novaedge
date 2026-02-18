@@ -146,7 +146,7 @@ func (m *mockProvider) DeleteTXTRecord(_ context.Context, fqdn, _ string) error 
 	return nil
 }
 
-func (m *mockProvider) WaitForPropagation(_ context.Context, _, value string) error {
+func (m *mockProvider) WaitForPropagation(_ context.Context, _, _ string) error {
 	if m.waitErr != nil {
 		return m.waitErr
 	}

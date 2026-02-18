@@ -341,7 +341,7 @@ func TestManagerOnResourceChange(t *testing.T) {
 	config := DefaultConfig()
 	manager := NewManager(config, logger)
 
-	callback := func(_ ResourceKey, _ ChangeType, data []byte) {
+	callback := func(_ ResourceKey, _ ChangeType, _ []byte) {
 		// callback function
 	}
 
