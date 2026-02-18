@@ -4,7 +4,7 @@
 ---
 # Default Security Headers Policy
 # Suitable for most web applications
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: default-security-headers
@@ -20,8 +20,8 @@ spec:
     # Forces browsers to use HTTPS for all future requests
     hsts:
       enabled: true
-      maxAgeSeconds: 31536000  # 1 year
-      includeSubdomains: true
+      maxAge: 31536000  # 1 year
+      includeSubDomains: true
       preload: false  # Set to true only after testing
 
     # X-Frame-Options: Prevent clickjacking attacks
@@ -39,7 +39,7 @@ spec:
 ---
 # Strict Security Headers Policy
 # For high-security applications with stricter CSP
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: strict-security-headers
@@ -54,8 +54,8 @@ spec:
     # Strict HSTS with preload
     hsts:
       enabled: true
-      maxAgeSeconds: 63072000  # 2 years
-      includeSubdomains: true
+      maxAge: 63072000  # 2 years
+      includeSubDomains: true
       preload: true
 
     # Content Security Policy (CSP)
@@ -79,7 +79,7 @@ spec:
 ---
 # API Security Headers Policy
 # For REST/GraphQL APIs (no need for frame/XSS protection)
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: api-security-headers
@@ -94,8 +94,8 @@ spec:
     # HSTS for API endpoints
     hsts:
       enabled: true
-      maxAgeSeconds: 31536000
-      includeSubdomains: true
+      maxAge: 31536000
+      includeSubDomains: true
 
     # Content-Type protection
     xContentTypeOptions: true
