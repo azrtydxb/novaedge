@@ -66,7 +66,7 @@ jobs:
             "${BINARY_PATH}"
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.binary.name }}-linux-${{ matrix.arch }}
           path: ${{ matrix.binary.name }}-linux-${{ matrix.arch }}
@@ -306,7 +306,7 @@ jobs:
           output-file: sbom-${{ matrix.image }}.spdx.json
 
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: sbom-${{ matrix.image }}
           path: sbom-${{ matrix.image }}.spdx.json
@@ -397,7 +397,7 @@ jobs:
           key: ${{ runner.os }}-benchmark-${{ github.sha }}
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: benchmark-results
           path: benchmark.txt
