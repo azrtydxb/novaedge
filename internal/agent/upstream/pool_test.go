@@ -134,7 +134,7 @@ func TestForward(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Create test backend server
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("backend response"))
 	}))

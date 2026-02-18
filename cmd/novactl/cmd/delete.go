@@ -24,7 +24,7 @@ func newDeleteCommand() *cobra.Command {
 	return cmd
 }
 
-func runDelete(cmd *cobra.Command, args []string) error {
+func runDelete(_ *cobra.Command, args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("exactly two arguments required: resource-type and name")
 	}

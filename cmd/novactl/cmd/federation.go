@@ -52,7 +52,7 @@ func newFederationStatusCommand() *cobra.Command {
 		Short: "Show federation status",
 		Long:  "Display the status of NovaEdge federation configuration.",
 		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
 			k8sClient, err := getClient()
 			if err != nil {
@@ -85,7 +85,7 @@ func newFederationPeersCommand() *cobra.Command {
 		Short: "Show federation peer status",
 		Long:  "Display detailed status of federation peers.",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
 			k8sClient, err := getClient()
 			if err != nil {
@@ -159,7 +159,7 @@ func newFederationSyncCommand() *cobra.Command {
 		Short: "Trigger federation sync",
 		Long:  "Trigger a manual full sync with federation peers.",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
 			peer, _ := cmd.Flags().GetString("peer")
 			if peer != "" {
 				fmt.Printf("Triggering full sync with peer: %s\n", peer)
@@ -183,7 +183,7 @@ func newFederationVectorClockCommand() *cobra.Command {
 		Short: "Show vector clock state",
 		Long:  "Display the current vector clock state across federation members.",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(_ *cobra.Command, args []string) error {
 			ctx := context.Background()
 			k8sClient, err := getClient()
 			if err != nil {

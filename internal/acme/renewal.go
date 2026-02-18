@@ -88,6 +88,13 @@ func (m *RenewalManager) Stop() {
 	m.logger.Info("Certificate renewal manager stopped")
 }
 
+// IsRunning returns whether the renewal manager is currently running.
+func (m *RenewalManager) IsRunning() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.running
+}
+
 // run is the main renewal loop.
 func (m *RenewalManager) run(ctx context.Context) {
 	ticker := time.NewTicker(m.interval)

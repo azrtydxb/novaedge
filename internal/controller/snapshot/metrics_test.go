@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-func TestRecordSnapshotBuild(t *testing.T) {
+func TestRecordSnapshotBuild(_ *testing.T) {
 	// This test verifies the function doesn't panic
 	resourceCounts := map[string]int{
 		"routes":   10,
@@ -33,35 +33,35 @@ func TestRecordSnapshotBuild(t *testing.T) {
 	RecordSnapshotBuild("node-2", 0.5, 65536, map[string]int{"routes": 100})
 }
 
-func TestRecordSnapshotUpdate(t *testing.T) {
+func TestRecordSnapshotUpdate(_ *testing.T) {
 	// This test verifies the function doesn't panic
 	RecordSnapshotUpdate("test-node", "config-change")
 	RecordSnapshotUpdate("test-node", "watch-event")
 	RecordSnapshotUpdate("node-2", "startup")
 }
 
-func TestRecordSnapshotError(t *testing.T) {
+func TestRecordSnapshotError(_ *testing.T) {
 	// This test verifies the function doesn't panic
 	RecordSnapshotError("test-node", "validation")
 	RecordSnapshotError("test-node", "build-failed")
 	RecordSnapshotError("node-2", "timeout")
 }
 
-func TestUpdateAgentStatus(t *testing.T) {
+func TestUpdateAgentStatus(_ *testing.T) {
 	// This test verifies the function doesn't panic
 	UpdateAgentStatus("test-node", "v1.0.0", true)
 	UpdateAgentStatus("test-node", "v1.0.0", false)
 	UpdateAgentStatus("node-2", "v1.1.0", true)
 }
 
-func TestUpdateActiveStreams(t *testing.T) {
+func TestUpdateActiveStreams(_ *testing.T) {
 	// This test verifies the function doesn't panic
 	UpdateActiveStreams(0)
 	UpdateActiveStreams(10)
 	UpdateActiveStreams(100)
 }
 
-func TestUpdateCachedSnapshots(t *testing.T) {
+func TestUpdateCachedSnapshots(_ *testing.T) {
 	// This test verifies the function doesn't panic
 	UpdateCachedSnapshots(0)
 	UpdateCachedSnapshots(50)

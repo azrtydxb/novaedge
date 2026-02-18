@@ -93,8 +93,8 @@ func TestProxyWANLinkReconcile(t *testing.T) {
 					Provider:  "ISP3",
 					Bandwidth: "500Mbps",
 					SLA: &novaedgev1alpha1.WANLinkSLA{
-						MaxLatency:   &metav1.Duration{Duration: 50000000},
-						MaxJitter:    &metav1.Duration{Duration: 10000000},
+						MaxLatency:    &metav1.Duration{Duration: 50000000},
+						MaxJitter:     &metav1.Duration{Duration: 10000000},
 						MaxPacketLoss: float64Ptr(0.01),
 					},
 				},
@@ -138,7 +138,7 @@ func TestProxyWANLinkReconcile(t *testing.T) {
 					t.Errorf("failed to get updated link: %v", err)
 				}
 
-				if updatedLink.Status.Phase != "Active" {
+				if updatedLink.Status.Phase != phaseActive {
 					t.Errorf("expected phase Active, got %s", updatedLink.Status.Phase)
 				}
 

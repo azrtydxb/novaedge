@@ -68,7 +68,7 @@ func TestPipeline_OrderedExecution(t *testing.T) {
 	})
 
 	// Final handler
-	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		order = append(order, 0) // 0 = final handler
 		w.WriteHeader(http.StatusOK)
 	})
@@ -97,8 +97,8 @@ func TestPipeline_ShortCircuit(t *testing.T) {
 		Name:     "auth",
 		Type:     MiddlewareBuiltin,
 		Priority: 10,
-		Handler: func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: func(_ http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				// Short-circuit: return 401 without calling next
 				w.WriteHeader(http.StatusUnauthorized)
 			})
@@ -116,7 +116,7 @@ func TestPipeline_ShortCircuit(t *testing.T) {
 		},
 	})
 
-	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		finalCalled = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -143,14 +143,14 @@ func TestPipeline_PanicRecovery(t *testing.T) {
 		Name:     "panicking",
 		Type:     MiddlewareBuiltin,
 		Priority: 10,
-		Handler: func(next http.Handler) http.Handler {
-			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		Handler: func(_ http.Handler) http.Handler {
+			return http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 				panic("test panic")
 			})
 		},
 	})
 
-	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -198,7 +198,7 @@ func TestPipeline_PerRouteConfig(t *testing.T) {
 		},
 	})
 
-	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -259,7 +259,7 @@ func TestPipelineState(t *testing.T) {
 		},
 	})
 
-	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -302,7 +302,7 @@ func TestBuildPipeline(t *testing.T) {
 		t.Errorf("expected 2 entries, got %d", pipeline.Len())
 	}
 
-	final := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	final := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 

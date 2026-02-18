@@ -480,7 +480,7 @@ func TestSlowStartManagerPurgeExpired(t *testing.T) {
 	}
 }
 
-func TestSlowStartManagerConcurrentAccess(t *testing.T) {
+func TestSlowStartManagerConcurrentAccess(_ *testing.T) {
 	endpoints := []*pb.Endpoint{
 		{Address: "10.0.0.1", Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},

@@ -271,7 +271,7 @@ func TestDNS01Provider_RemoveChallenge(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestDNS01Provider_ConcurrentAccess(t *testing.T) {
+func TestDNS01Provider_ConcurrentAccess(_ *testing.T) {
 	provider := NewDNS01Provider(zap.NewNop())
 
 	// Test concurrent SetChallenge operations

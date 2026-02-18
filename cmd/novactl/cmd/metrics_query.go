@@ -59,7 +59,7 @@ and display the results.`,
 	return cmd
 }
 
-func runMetricsQuery(cmd *cobra.Command, args []string) error {
+func runMetricsQuery(_ *cobra.Command, args []string) error {
 	query := args[0]
 	ctx := context.Background()
 
@@ -142,7 +142,7 @@ func newMetricsTopBackendsCommand() *cobra.Command {
 	return cmd
 }
 
-func runMetricsTopBackends(cmd *cobra.Command, args []string) error {
+func runMetricsTopBackends(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create Prometheus client
@@ -227,7 +227,7 @@ func newMetricsTopRoutesCommand() *cobra.Command {
 	return cmd
 }
 
-func runMetricsTopRoutes(cmd *cobra.Command, args []string) error {
+func runMetricsTopRoutes(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create Prometheus client
@@ -312,7 +312,7 @@ func newMetricsDashboardCommand() *cobra.Command {
 	return cmd
 }
 
-func runMetricsDashboard(cmd *cobra.Command, args []string) error {
+func runMetricsDashboard(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create Prometheus client

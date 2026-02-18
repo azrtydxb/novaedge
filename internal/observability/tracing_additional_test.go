@@ -49,7 +49,7 @@ func TestTracerProvider_Tracer_NilProvider(t *testing.T) {
 	}
 }
 
-func TestNewTracerProvider_Enabled_ConnectionError(t *testing.T) {
+func TestNewTracerProvider_Enabled_ConnectionError(_ *testing.T) {
 	logger := zap.NewNop()
 	config := TracingConfig{
 		Enabled:        true,
@@ -172,7 +172,7 @@ func TestTracerProvider_Shutdown_WithProvider(t *testing.T) {
 	}
 }
 
-func TestTracerProvider_Shutdown_Timeout(t *testing.T) {
+func TestTracerProvider_Shutdown_Timeout(_ *testing.T) {
 	provider := trace.NewTracerProvider()
 	tp := &TracerProvider{
 		provider: provider,

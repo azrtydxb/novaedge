@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestSanitizeHeaderValue(t *testing.T) {

@@ -596,7 +596,7 @@ func TestBFDManager_StateMachine(t *testing.T) {
 	t.Run("Up -> Down on remote AdminDown", func(t *testing.T) {
 		var mu sync.Mutex
 		neighborDownCalled := false
-		manager := NewBFDManager(logger, func(peerIP net.IP) {
+		manager := NewBFDManager(logger, func(_ net.IP) {
 			mu.Lock()
 			neighborDownCalled = true
 			mu.Unlock()
@@ -1020,12 +1020,12 @@ func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	upCount := 0
 
 	manager := NewBFDManager(logger,
-		func(peerIP net.IP) {
+		func(_ net.IP) {
 			mu.Lock()
 			downCount++
 			mu.Unlock()
 		},
-		func(peerIP net.IP) {
+		func(_ net.IP) {
 			mu.Lock()
 			upCount++
 			mu.Unlock()

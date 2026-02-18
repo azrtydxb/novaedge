@@ -39,7 +39,7 @@ func TestCompressionMiddleware_GzipResponse(t *testing.T) {
 	cm := NewCompressionMiddleware(config)
 
 	body := strings.Repeat("Hello, this is a test body for compression. ", 50)
-	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(body))
 	}))
@@ -88,7 +88,7 @@ func TestCompressionMiddleware_BrotliResponse(t *testing.T) {
 	cm := NewCompressionMiddleware(config)
 
 	body := strings.Repeat("Brotli compression test body. ", 50)
-	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(body))
 	}))
@@ -127,7 +127,7 @@ func TestCompressionMiddleware_SkipAlreadyCompressed(t *testing.T) {
 	cm := NewCompressionMiddleware(config)
 
 	body := strings.Repeat("already compressed content", 50)
-	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Encoding", "br") // Already compressed
 		_, _ = w.Write([]byte(body))
@@ -164,7 +164,7 @@ func TestCompressionMiddleware_SkipExcludedContentType(t *testing.T) {
 	cm := NewCompressionMiddleware(config)
 
 	body := strings.Repeat("image data simulated", 50)
-	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write([]byte(body))
 	}))
@@ -198,7 +198,7 @@ func TestCompressionMiddleware_MinimumSize(t *testing.T) {
 
 	// Body smaller than minimum size
 	smallBody := "small body"
-	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain")
 		_, _ = w.Write([]byte(smallBody))
 	}))
@@ -272,7 +272,7 @@ func TestCompressionMiddleware_AcceptEncodingNegotiation(t *testing.T) {
 			cm := NewCompressionMiddleware(config)
 
 			body := strings.Repeat("test content for negotiation", 50)
-			handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/plain")
 				_, _ = w.Write([]byte(body))
 			}))
@@ -300,7 +300,7 @@ func TestCompressionMiddleware_Disabled(t *testing.T) {
 	// Nil config
 	cm := NewCompressionMiddleware(nil)
 	body := "test body"
-	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(body))
 	}))
 
@@ -320,7 +320,7 @@ func TestCompressionMiddleware_Disabled(t *testing.T) {
 	// Disabled config
 	config := &pb.CompressionConfig{Enabled: false}
 	cm2 := NewCompressionMiddleware(config)
-	handler2 := cm2.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler2 := cm2.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(body))
 	}))
 
@@ -343,7 +343,7 @@ func TestCompressResponseWriter_NoContent(t *testing.T) {
 	}
 	cm := NewCompressionMiddleware(config)
 
-	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := cm.Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 

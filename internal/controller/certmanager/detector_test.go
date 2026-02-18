@@ -49,7 +49,7 @@ func (m *mockDiscoveryClient) ServerGroups() (*metav1.APIGroupList, error) {
 	return nil, nil
 }
 
-func (m *mockDiscoveryClient) ServerResourcesForGroupVersion(groupVersion string) (*metav1.APIResourceList, error) {
+func (m *mockDiscoveryClient) ServerResourcesForGroupVersion(_ string) (*metav1.APIResourceList, error) {
 	return nil, nil
 }
 

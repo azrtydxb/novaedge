@@ -139,7 +139,7 @@ func TestTokenBlacklistStartCleanup(t *testing.T) {
 	time.Sleep(150 * time.Millisecond) // Let goroutine exit
 }
 
-func TestTokenBlacklistStartCleanupContextCancel(t *testing.T) {
+func TestTokenBlacklistStartCleanupContextCancel(_ *testing.T) {
 	bl := NewTokenBlacklist()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -232,7 +232,7 @@ func TestValidateBlacklistedToken(t *testing.T) {
 	jwks := createTestJWKS(cert)
 
 	// Create mock JWKS server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jwks)
 	}))
@@ -391,7 +391,7 @@ func TestHandleJWTWithBlacklist(t *testing.T) {
 	jwks := createTestJWKS(cert)
 
 	// Create mock JWKS server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jwks)
 	}))
@@ -410,7 +410,7 @@ func TestHandleJWTWithBlacklist(t *testing.T) {
 	}
 
 	nextCalled := false
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		nextCalled = true
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))

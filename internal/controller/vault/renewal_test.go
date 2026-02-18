@@ -160,7 +160,7 @@ func TestRenewalManager_UntrackCertificate(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestRenewalManager_UntrackCertificate_NotExists(t *testing.T) {
+func TestRenewalManager_UntrackCertificate_NotExists(_ *testing.T) {
 	rm := NewRenewalManager(&Client{}, &PKIManager{}, zap.NewNop())
 
 	// Untracking a non-existent certificate should not panic

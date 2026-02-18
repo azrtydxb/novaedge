@@ -36,7 +36,7 @@ func newGetCommand() *cobra.Command {
 	return cmd
 }
 
-func runGet(cmd *cobra.Command, args []string) error {
+func runGet(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one resource type required")
 	}

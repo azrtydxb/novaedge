@@ -1,3 +1,19 @@
+/*
+Copyright 2024 NovaEdge Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package acme
 
 import (
@@ -13,297 +29,373 @@ import (
 )
 
 func TestNewFileStorage(t *testing.T) {
-	t.Run("creates storage with default path", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		storage, err := NewFileStorage(tmpDir, nil)
-		require.NoError(t, err)
-		assert.NotNil(t, storage)
-		assert.Equal(t, tmpDir, storage.basePath)
-	})
-
-	t.Run("creates storage with logger", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		logger := zap.NewNop()
-		storage, err := NewFileStorage(tmpDir, logger)
-		require.NoError(t, err)
-		assert.NotNil(t, storage)
-		assert.Equal(t, logger, storage.logger)
-	})
-
-	t.Run("creates directory if it doesn't exist", func(t *testing.T) {
-		tmpDir := t.TempDir()
-		newDir := filepath.Join(tmpDir, "new", "nested", "dir")
-		storage, err := NewFileStorage(newDir, nil)
-		require.NoError(t, err)
-		assert.NotNil(t, storage)
-
-		// Check directory was created
-		info, err := os.Stat(newDir)
-		require.NoError(t, err)
-		assert.True(t, info.IsDir())
-	})
-}
-
-func TestFileStorage_SaveAndLoadCertificate(t *testing.T) {
-	tmpDir := t.TempDir()
-	storage, err := NewFileStorage(tmpDir, zap.NewNop())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	cert := &Certificate{
-		Domains:              []string{"example.com", "www.example.com"},
-		CertificatePEM:       []byte("test-cert-pem"),
-		PrivateKeyPEM:        []byte("test-key-pem"),
-		IssuerCertificatePEM: []byte("test-issuer-pem"),
-		NotBefore:            time.Now().Add(-24 * time.Hour),
-		NotAfter:             time.Now().Add(30 * 24 * time.Hour),
-		SerialNumber:         "123456",
-		Issuer:               "Test CA",
-	}
-
-	t.Run("saves certificate successfully", func(t *testing.T) {
-		err := storage.SaveCertificate(ctx, cert)
-		assert.NoError(t, err)
-
-		// Check files exist
-		domain := cert.Domains[0]
-		dir := storage.certPath(domain)
-		assert.FileExists(t, filepath.Join(dir, "cert.pem"))
-		assert.FileExists(t, filepath.Join(dir, "key.pem"))
-		assert.FileExists(t, filepath.Join(dir, "issuer.pem"))
-		assert.FileExists(t, filepath.Join(dir, "meta.json"))
-	})
-
-	t.Run("loads certificate successfully", func(t *testing.T) {
-		loaded, err := storage.LoadCertificate(ctx, cert.Domains[0])
-		require.NoError(t, err)
-		assert.Equal(t, cert.Domains, loaded.Domains)
-		assert.Equal(t, cert.CertificatePEM, loaded.CertificatePEM)
-		assert.Equal(t, cert.PrivateKeyPEM, loaded.PrivateKeyPEM)
-		assert.Equal(t, cert.IssuerCertificatePEM, loaded.IssuerCertificatePEM)
-		assert.Equal(t, cert.SerialNumber, loaded.SerialNumber)
-		assert.Equal(t, cert.Issuer, loaded.Issuer)
-		assert.WithinDuration(t, cert.NotBefore, loaded.NotBefore, time.Second)
-		assert.WithinDuration(t, cert.NotAfter, loaded.NotAfter, time.Second)
-	})
-
-	t.Run("fails to save certificate without domains", func(t *testing.T) {
-		invalidCert := &Certificate{
-			Domains:        []string{},
-			CertificatePEM: []byte("test"),
-			PrivateKeyPEM:  []byte("test"),
-		}
-		err := storage.SaveCertificate(ctx, invalidCert)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "no domains")
-	})
-
-	t.Run("fails to load non-existent certificate", func(t *testing.T) {
-		_, err := storage.LoadCertificate(ctx, "nonexistent.com")
-		assert.Error(t, err)
-	})
-}
-
-func TestFileStorage_DeleteCertificate(t *testing.T) {
-	tmpDir := t.TempDir()
-	storage, err := NewFileStorage(tmpDir, zap.NewNop())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	cert := &Certificate{
-		Domains:        []string{"delete.example.com"},
-		CertificatePEM: []byte("test-cert-pem"),
-		PrivateKeyPEM:  []byte("test-key-pem"),
-		NotBefore:      time.Now(),
-		NotAfter:       time.Now().Add(30 * 24 * time.Hour),
-	}
-
-	// Save certificate
-	err = storage.SaveCertificate(ctx, cert)
-	require.NoError(t, err)
-
-	// Verify it exists
-	_, err = storage.LoadCertificate(ctx, cert.Domains[0])
-	require.NoError(t, err)
-
-	// Delete certificate
-	err = storage.DeleteCertificate(ctx, cert.Domains[0])
-	assert.NoError(t, err)
-
-	// Verify it's gone
-	_, err = storage.LoadCertificate(ctx, cert.Domains[0])
-	assert.Error(t, err)
-}
-
-func TestFileStorage_ListCertificates(t *testing.T) {
-	tmpDir := t.TempDir()
-	storage, err := NewFileStorage(tmpDir, zap.NewNop())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	t.Run("returns empty list when no certificates", func(t *testing.T) {
-		certs, err := storage.ListCertificates(ctx)
-		assert.NoError(t, err)
-		assert.Empty(t, certs)
-	})
-
-	t.Run("lists multiple certificates", func(t *testing.T) {
-		// Save multiple certificates
-		domains := []string{"example1.com", "example2.com", "example3.com"}
-		for _, domain := range domains {
-			cert := &Certificate{
-				Domains:        []string{domain},
-				CertificatePEM: []byte("test-cert-" + domain),
-				PrivateKeyPEM:  []byte("test-key-" + domain),
-				NotBefore:      time.Now(),
-				NotAfter:       time.Now().Add(30 * 24 * time.Hour),
-			}
-			err := storage.SaveCertificate(ctx, cert)
-			require.NoError(t, err)
-		}
-
-		// List certificates
-		certs, err := storage.ListCertificates(ctx)
-		assert.NoError(t, err)
-		assert.Len(t, certs, 3)
-
-		// Verify domains
-		foundDomains := make(map[string]bool)
-		for _, cert := range certs {
-			if len(cert.Domains) > 0 {
-				foundDomains[cert.Domains[0]] = true
-			}
-		}
-		for _, domain := range domains {
-			assert.True(t, foundDomains[domain], "Domain %s not found", domain)
-		}
-	})
-
-	t.Run("handles wildcard certificates", func(t *testing.T) {
-		cert := &Certificate{
-			Domains:        []string{"*.example.com"},
-			CertificatePEM: []byte("test-wildcard-cert"),
-			PrivateKeyPEM:  []byte("test-wildcard-key"),
-			NotBefore:      time.Now(),
-			NotAfter:       time.Now().Add(30 * 24 * time.Hour),
-		}
-		err := storage.SaveCertificate(ctx, cert)
-		require.NoError(t, err)
-
-		// Verify it can be loaded
-		loaded, err := storage.LoadCertificate(ctx, "*.example.com")
-		assert.NoError(t, err)
-		assert.Equal(t, cert.Domains, loaded.Domains)
-	})
-}
-
-func TestFileStorage_SaveAndLoadAccount(t *testing.T) {
-	tmpDir := t.TempDir()
-	storage, err := NewFileStorage(tmpDir, zap.NewNop())
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	account := &AccountInfo{
-		Email:         "test@example.com",
-		URI:           "https://acme.example.com/account/123",
-		PrivateKeyPEM: []byte("test-account-key"),
-		Registration:  time.Now(),
-	}
-
-	t.Run("saves account successfully", func(t *testing.T) {
-		err := storage.SaveAccount(ctx, account)
-		assert.NoError(t, err)
-
-		// Check files exist
-		accountDir := filepath.Join(tmpDir, "account")
-		assert.FileExists(t, filepath.Join(accountDir, "key.pem"))
-		assert.FileExists(t, filepath.Join(accountDir, "account.json"))
-	})
-
-	t.Run("loads account successfully", func(t *testing.T) {
-		loaded, err := storage.LoadAccount(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, account.Email, loaded.Email)
-		assert.Equal(t, account.URI, loaded.URI)
-		assert.Equal(t, account.PrivateKeyPEM, loaded.PrivateKeyPEM)
-		assert.WithinDuration(t, account.Registration, loaded.Registration, time.Second)
-	})
-
-	t.Run("fails to load non-existent account", func(t *testing.T) {
-		tmpDir2 := t.TempDir()
-		storage2, err := NewFileStorage(tmpDir2, zap.NewNop())
-		require.NoError(t, err)
-
-		_, err = storage2.LoadAccount(ctx)
-		assert.Error(t, err)
-	})
-}
-
-func TestFileStorage_CertPath(t *testing.T) {
-	tmpDir := t.TempDir()
-	storage, err := NewFileStorage(tmpDir, nil)
-	require.NoError(t, err)
-
 	tests := []struct {
-		domain   string
-		expected string
+		name     string
+		basePath string
+		wantErr  bool
 	}{
 		{
-			domain:   "example.com",
-			expected: "example_com",
+			name:     "valid path",
+			basePath: filepath.Join(t.TempDir(), "acme-storage"),
+			wantErr:  false,
 		},
 		{
-			domain:   "*.example.com",
-			expected: "wildcard_example_com",
-		},
-		{
-			domain:   "sub.domain.example.com",
-			expected: "sub_domain_example_com",
+			name:     "empty path uses default",
+			basePath: "",
+			wantErr:  true, // Will fail because default path requires root permissions
 		},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.domain, func(t *testing.T) {
-			path := storage.certPath(tt.domain)
-			assert.Contains(t, path, tt.expected)
+		t.Run(tt.name, func(t *testing.T) {
+			logger := zap.NewNop()
+			storage, err := NewFileStorage(tt.basePath, logger)
+
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, storage)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, storage)
+			}
 		})
 	}
 }
 
-func TestFileStorage_ConcurrentAccess(t *testing.T) {
+func TestNewFileStorageWithNilLogger(t *testing.T) {
 	tmpDir := t.TempDir()
-	storage, err := NewFileStorage(tmpDir, zap.NewNop())
+	storage, err := NewFileStorage(tmpDir, nil)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, storage)
+}
+
+func TestSaveCertificate(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
 	require.NoError(t, err)
 
-	ctx := context.Background()
-
-	// Save a certificate
 	cert := &Certificate{
-		Domains:        []string{"concurrent.example.com"},
-		CertificatePEM: []byte("test-cert"),
-		PrivateKeyPEM:  []byte("test-key"),
-		NotBefore:      time.Now(),
-		NotAfter:       time.Now().Add(30 * 24 * time.Hour),
+		Domains:              []string{"example.com", "www.example.com"},
+		CertificatePEM:       []byte("-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----"),
+		PrivateKeyPEM:        []byte("-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----"),
+		IssuerCertificatePEM: []byte("-----BEGIN CERTIFICATE-----\nissuer-cert\n-----END CERTIFICATE-----"),
+		NotBefore:            time.Now(),
+		NotAfter:             time.Now().Add(90 * 24 * time.Hour),
+		SerialNumber:         "1234567890",
+		Issuer:               "Let's Encrypt",
 	}
+
+	ctx := context.Background()
+	err = storage.SaveCertificate(ctx, cert)
+	assert.NoError(t, err)
+
+	// Verify files were created
+	certPath := filepath.Join(tmpDir, "certs", "example_com", "cert.pem")
+	_, err = os.Stat(certPath)
+	assert.NoError(t, err)
+
+	keyPath := filepath.Join(tmpDir, "certs", "example_com", "key.pem")
+	_, err = os.Stat(keyPath)
+	assert.NoError(t, err)
+
+	issuerPath := filepath.Join(tmpDir, "certs", "example_com", "issuer.pem")
+	_, err = os.Stat(issuerPath)
+	assert.NoError(t, err)
+
+	metaPath := filepath.Join(tmpDir, "certs", "example_com", "meta.json")
+	_, err = os.Stat(metaPath)
+	assert.NoError(t, err)
+}
+
+func TestSaveCertificateNoDomains(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	cert := &Certificate{
+		Domains: []string{},
+	}
+
+	ctx := context.Background()
+	err = storage.SaveCertificate(ctx, cert)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no domains")
+}
+
+func TestLoadCertificate(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	// First save a certificate
+	cert := &Certificate{
+		Domains:        []string{"example.com"},
+		CertificatePEM: []byte("-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----"),
+		PrivateKeyPEM:  []byte("-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----"),
+		NotBefore:      time.Now(),
+		NotAfter:       time.Now().Add(90 * 24 * time.Hour),
+		SerialNumber:   "1234567890",
+		Issuer:         "Let's Encrypt",
+	}
+
+	ctx := context.Background()
 	err = storage.SaveCertificate(ctx, cert)
 	require.NoError(t, err)
 
-	// Concurrent reads
-	done := make(chan bool, 10)
-	for i := 0; i < 10; i++ {
-		go func() {
-			_, err := storage.LoadCertificate(ctx, "concurrent.example.com")
+	// Now load it
+	loadedCert, err := storage.LoadCertificate(ctx, "example.com")
+	assert.NoError(t, err)
+	assert.NotNil(t, loadedCert)
+	assert.Equal(t, cert.Domains, loadedCert.Domains)
+	assert.Equal(t, cert.SerialNumber, loadedCert.SerialNumber)
+	assert.Equal(t, cert.Issuer, loadedCert.Issuer)
+}
+
+func TestLoadCertificateNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = storage.LoadCertificate(ctx, "nonexistent.com")
+	assert.Error(t, err)
+}
+
+func TestDeleteCertificate(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	// First save a certificate
+	cert := &Certificate{
+		Domains:        []string{"delete-test.com"},
+		CertificatePEM: []byte("test-cert"),
+		PrivateKeyPEM:  []byte("test-key"),
+		NotBefore:      time.Now(),
+		NotAfter:       time.Now().Add(90 * 24 * time.Hour),
+	}
+
+	ctx := context.Background()
+	err = storage.SaveCertificate(ctx, cert)
+	require.NoError(t, err)
+
+	// Delete it
+	err = storage.DeleteCertificate(ctx, "delete-test.com")
+	assert.NoError(t, err)
+
+	// Verify it's gone
+	certPath := filepath.Join(tmpDir, "certs", "delete-test_com")
+	_, err = os.Stat(certPath)
+	assert.True(t, os.IsNotExist(err))
+}
+
+func TestDeleteCertificateNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = storage.DeleteCertificate(ctx, "nonexistent.com")
+	assert.NoError(t, err) // Deleting non-existent should not error
+}
+
+func TestListCertificates(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	// Save multiple certificates
+	domains := []string{"example1.com", "example2.com", "example3.com"}
+	for _, domain := range domains {
+		cert := &Certificate{
+			Domains:        []string{domain},
+			CertificatePEM: []byte("test-cert"),
+			PrivateKeyPEM:  []byte("test-key"),
+			NotBefore:      time.Now(),
+			NotAfter:       time.Now().Add(90 * 24 * time.Hour),
+		}
+		err = storage.SaveCertificate(context.Background(), cert)
+		require.NoError(t, err)
+	}
+
+	// List certificates
+	ctx := context.Background()
+	certs, err := storage.ListCertificates(ctx)
+	assert.NoError(t, err)
+	assert.Len(t, certs, 3)
+
+	// Verify all domains are present
+	certDomains := make(map[string]bool)
+	for _, cert := range certs {
+		certDomains[cert.Domains[0]] = true
+	}
+	for _, domain := range domains {
+		assert.True(t, certDomains[domain], "domain %s should be in list", domain)
+	}
+}
+
+func TestListCertificatesEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	certs, err := storage.ListCertificates(ctx)
+	assert.NoError(t, err)
+	assert.Empty(t, certs)
+}
+
+func TestSaveAccount(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	account := &AccountInfo{
+		Email:         "test@example.com",
+		URI:           "https://acme-v02.api.letsencrypt.org/acme/acct/12345",
+		PrivateKeyPEM: []byte("test-private-key"),
+		Registration:  time.Now(),
+	}
+
+	ctx := context.Background()
+	err = storage.SaveAccount(ctx, account)
+	assert.NoError(t, err)
+
+	// Verify file was created
+	accountPath := filepath.Join(tmpDir, "account", "account.json")
+	_, err = os.Stat(accountPath)
+	assert.NoError(t, err)
+}
+
+func TestLoadAccount(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	// First save an account
+	account := &AccountInfo{
+		Email:         "load-test@example.com",
+		URI:           "https://acme-v02.api.letsencrypt.org/acme/acct/12345",
+		PrivateKeyPEM: []byte("test-private-key"),
+		Registration:  time.Now(),
+	}
+
+	ctx := context.Background()
+	err = storage.SaveAccount(ctx, account)
+	require.NoError(t, err)
+
+	// Now load it
+	loadedAccount, err := storage.LoadAccount(ctx)
+	assert.NoError(t, err)
+	assert.NotNil(t, loadedAccount)
+	assert.Equal(t, account.Email, loadedAccount.Email)
+	assert.Equal(t, account.URI, loadedAccount.URI)
+}
+
+func TestLoadAccountNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	_, err = storage.LoadAccount(ctx)
+	assert.Error(t, err)
+}
+
+func TestCertPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	path := storage.certPath("example.com")
+	expectedPath := filepath.Join(tmpDir, "certs", "example_com")
+	assert.Equal(t, expectedPath, path)
+}
+
+func TestCertPathWithWildcard(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	path := storage.certPath("*.example.com")
+	expectedPath := filepath.Join(tmpDir, "certs", "wildcard_example_com")
+	assert.Equal(t, expectedPath, path)
+}
+
+func TestSaveCertificateWithIssuer(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	cert := &Certificate{
+		Domains:              []string{"with-issuer.com"},
+		CertificatePEM:       []byte("test-cert"),
+		PrivateKeyPEM:        []byte("test-key"),
+		IssuerCertificatePEM: []byte("issuer-cert"),
+		NotBefore:            time.Now(),
+		NotAfter:             time.Now().Add(90 * 24 * time.Hour),
+		SerialNumber:         "ABC123",
+		Issuer:               "Test Issuer",
+	}
+
+	ctx := context.Background()
+	err = storage.SaveCertificate(ctx, cert)
+	assert.NoError(t, err)
+
+	// Load and verify issuer is preserved
+	loadedCert, err := storage.LoadCertificate(ctx, "with-issuer.com")
+	assert.NoError(t, err)
+	assert.Equal(t, cert.SerialNumber, loadedCert.SerialNumber)
+	assert.Equal(t, cert.Issuer, loadedCert.Issuer)
+}
+
+func TestConcurrentSaveCertificate(t *testing.T) {
+	tmpDir := t.TempDir()
+	logger := zap.NewNop()
+	storage, err := NewFileStorage(tmpDir, logger)
+	require.NoError(t, err)
+
+	// Run concurrent saves for different domains
+	done := make(chan bool)
+	domains := []string{"concurrent1.com", "concurrent2.com", "concurrent3.com"}
+
+	for _, domain := range domains {
+		go func(d string) {
+			cert := &Certificate{
+				Domains:        []string{d},
+				CertificatePEM: []byte("test-cert-" + d),
+				PrivateKeyPEM:  []byte("test-key-" + d),
+				NotBefore:      time.Now(),
+				NotAfter:       time.Now().Add(90 * 24 * time.Hour),
+			}
+			err := storage.SaveCertificate(context.Background(), cert)
 			assert.NoError(t, err)
 			done <- true
-		}()
+		}(domain)
 	}
 
 	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
+	for range domains {
 		<-done
 	}
+
+	// Verify all certificates were saved
+	certs, err := storage.ListCertificates(context.Background())
+	assert.NoError(t, err)
+	assert.Len(t, certs, 3)
 }

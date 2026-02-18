@@ -67,7 +67,7 @@ func safeUint32(v int) uint32 {
 }
 
 // ToSnapshot converts a standalone Config to a ConfigSnapshot
-func (c *Converter) ToSnapshot(cfg *Config, nodeName string) (*pb.ConfigSnapshot, error) {
+func (c *Converter) ToSnapshot(cfg *Config, _ string) (*pb.ConfigSnapshot, error) {
 	snapshot := &pb.ConfigSnapshot{
 		GenerationTime: time.Now().Unix(),
 		Endpoints:      make(map[string]*pb.EndpointList),
