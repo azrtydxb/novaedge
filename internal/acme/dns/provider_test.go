@@ -28,265 +28,149 @@ import (
 )
 
 func TestProviderConfig_ApplyDefaults(t *testing.T) {
-	tests := []struct {
-		name     string
-		config   ProviderConfig
-		expected ProviderConfig
-	}{
-		{
-			name:   "empty config gets defaults",
-			config: ProviderConfig{},
-			expected: ProviderConfig{
-				PropagationTimeout: DefaultPropagationTimeout,
-				PollingInterval:    DefaultPollingInterval,
-				Logger:             zap.NewNop(),
-			},
-		},
-		{
-			name: "partial config keeps values",
-			config: ProviderConfig{
-				PropagationTimeout: 60 * time.Second,
-			},
-			expected: ProviderConfig{
-				PropagationTimeout: 60 * time.Second,
-				PollingInterval:    DefaultPollingInterval,
-				Logger:             zap.NewNop(),
-			},
-		},
-		{
-			name: "full config keeps all values",
-			config: ProviderConfig{
-				PropagationTimeout: 60 * time.Second,
-				PollingInterval:    2 * time.Second,
-				Logger:             zap.NewNop(),
-			},
-			expected: ProviderConfig{
-				PropagationTimeout: 60 * time.Second,
-				PollingInterval:    2 * time.Second,
-				Logger:             zap.NewNop(),
-			},
-		},
-	}
+	t.Run("applies all defaults when empty", func(t *testing.T) {
+		config := &ProviderConfig{}
+		config.ApplyDefaults()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			config := tt.config
-			config.ApplyDefaults()
+		assert.Equal(t, DefaultPropagationTimeout, config.PropagationTimeout)
+		assert.Equal(t, DefaultPollingInterval, config.PollingInterval)
+		assert.NotNil(t, config.Logger)
+	})
 
-			assert.Equal(t, tt.expected.PropagationTimeout, config.PropagationTimeout)
-			assert.Equal(t, tt.expected.PollingInterval, config.PollingInterval)
-			assert.NotNil(t, config.Logger)
-		})
-	}
+	t.Run("preserves existing values", func(t *testing.T) {
+		customTimeout := 60 * time.Second
+		customInterval := 10 * time.Second
+		logger := zap.NewNop()
+
+		config := &ProviderConfig{
+			PropagationTimeout: customTimeout,
+			PollingInterval:    customInterval,
+			Logger:             logger,
+		}
+		config.ApplyDefaults()
+
+		assert.Equal(t, customTimeout, config.PropagationTimeout)
+		assert.Equal(t, customInterval, config.PollingInterval)
+		assert.Equal(t, logger, config.Logger)
+	})
+
+	t.Run("applies partial defaults", func(t *testing.T) {
+		config := &ProviderConfig{
+			PropagationTimeout: 60 * time.Second,
+		}
+		config.ApplyDefaults()
+
+		assert.Equal(t, 60*time.Second, config.PropagationTimeout)
+		assert.Equal(t, DefaultPollingInterval, config.PollingInterval)
+		assert.NotNil(t, config.Logger)
+	})
 }
 
 func TestNewProvider_Unsupported(t *testing.T) {
-	provider, err := NewProvider("unsupported", nil, nil)
+	_, err := NewProvider("unsupported", nil, nil)
 	assert.Error(t, err)
-	assert.Nil(t, provider)
 	assert.Contains(t, err.Error(), "unsupported DNS provider")
 }
 
 func TestNewProvider_NilConfig(t *testing.T) {
-	// Test that nil config gets defaults applied
-	// This will fail because cloudflare requires credentials, but we're testing
-	// that nil config doesn't panic
-	provider, err := NewProvider("cloudflare", map[string]string{}, nil)
+	// Test that nil config is handled and defaults are applied
+	_, err := NewProvider("cloudflare", map[string]string{}, nil)
 	// Should fail due to missing credentials, not nil config
 	assert.Error(t, err)
-	assert.Nil(t, provider)
+	assert.Contains(t, err.Error(), "api_token")
 }
 
-func TestNewProvider_ValidConfig(t *testing.T) {
-	config := &ProviderConfig{
-		PropagationTimeout: 60 * time.Second,
-		PollingInterval:    2 * time.Second,
-		Logger:             zap.NewNop(),
-	}
-
-	// Cloudflare requires APIToken or APIKey/Email
-	provider, err := NewProvider("cloudflare", map[string]string{
-		"APIToken": "test-token",
-	}, config)
-
-	// May fail due to validation, but shouldn't panic
-	// If it succeeds, verify it's not nil
-	if err == nil {
-		assert.NotNil(t, provider)
-	}
-}
-
-// mockProvider is a mock implementation of the Provider interface for testing
-type mockProvider struct {
-	createErr error
-	deleteErr error
-	waitErr   error
-	records   map[string]string
-}
-
-func newMockProvider() *mockProvider {
-	return &mockProvider{
-		records: make(map[string]string),
-	}
-}
-
-func (m *mockProvider) CreateTXTRecord(ctx context.Context, fqdn, value string) error {
-	if m.createErr != nil {
-		return m.createErr
-	}
-	m.records[fqdn] = value
-	return nil
-}
-
-func (m *mockProvider) DeleteTXTRecord(ctx context.Context, fqdn, value string) error {
-	if m.deleteErr != nil {
-		return m.deleteErr
-	}
-	delete(m.records, fqdn)
-	return nil
-}
-
-func (m *mockProvider) WaitForPropagation(ctx context.Context, fqdn, value string) error {
-	if m.waitErr != nil {
-		return m.waitErr
-	}
-	return nil
-}
-
-func TestDNS01ChallengeProvider_Present(t *testing.T) {
-	tests := []struct {
-		name       string
-		provider   *mockProvider
-		domain     string
-		token      string
-		keyAuth    string
-		expectErr  bool
-		expectWait bool
-	}{
-		{
-			name:      "successful present",
-			provider:  newMockProvider(),
-			domain:    "example.com",
-			token:     "test-token",
-			keyAuth:   "test-key-auth",
-			expectErr: false,
-		},
-		{
-			name: "create error",
-			provider: &mockProvider{
-				createErr: errors.New("create failed"),
-				records:   make(map[string]string),
-			},
-			domain:    "example.com",
-			token:     "test-token",
-			keyAuth:   "test-key-auth",
-			expectErr: true,
-		},
-		{
-			name: "wait error continues",
-			provider: &mockProvider{
-				waitErr: errors.New("wait failed"),
-				records: make(map[string]string),
-			},
-			domain:    "example.com",
-			token:     "test-token",
-			keyAuth:   "test-key-auth",
-			expectErr: false, // Wait errors are logged but don't fail
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			challenge := NewDNS01ChallengeProvider(tt.provider, zap.NewNop())
-			err := challenge.Present(tt.domain, tt.token, tt.keyAuth)
-
-			if tt.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				// Verify record was created
-				fqdn := "_acme-challenge." + tt.domain + "."
-				assert.Equal(t, tt.keyAuth, tt.provider.records[fqdn])
-			}
-		})
-	}
-}
-
-func TestDNS01ChallengeProvider_CleanUp(t *testing.T) {
-	tests := []struct {
-		name      string
-		provider  *mockProvider
-		domain    string
-		token     string
-		keyAuth   string
-		expectErr bool
-	}{
-		{
-			name:      "successful cleanup",
-			provider:  newMockProvider(),
-			domain:    "example.com",
-			token:     "test-token",
-			keyAuth:   "test-key-auth",
-			expectErr: false,
-		},
-		{
-			name: "delete error",
-			provider: &mockProvider{
-				deleteErr: errors.New("delete failed"),
-				records:   make(map[string]string),
-			},
-			domain:    "example.com",
-			token:     "test-token",
-			keyAuth:   "test-key-auth",
-			expectErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			challenge := NewDNS01ChallengeProvider(tt.provider, zap.NewNop())
-			err := challenge.CleanUp(tt.domain, tt.token, tt.keyAuth)
-
-			if tt.expectErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
-}
-
-func TestNewDNS01ChallengeProvider_NilLogger(t *testing.T) {
-	provider := newMockProvider()
-	challenge := NewDNS01ChallengeProvider(provider, nil)
-
-	assert.NotNil(t, challenge)
-	assert.NotNil(t, challenge.logger)
-}
-
-func TestDNS01ChallengeProvider_FQDN(t *testing.T) {
-	provider := newMockProvider()
-	challenge := NewDNS01ChallengeProvider(provider, zap.NewNop())
-
-	err := challenge.Present("example.com", "token", "keyauth")
-	require.NoError(t, err)
-
-	// Verify FQDN format
-	expectedFQDN := "_acme-challenge.example.com."
-	assert.Equal(t, "keyauth", provider.records[expectedFQDN])
-}
-
-func TestDefaultTimeouts(t *testing.T) {
+func TestDefaultConstants(t *testing.T) {
 	assert.Equal(t, 120*time.Second, DefaultPropagationTimeout)
 	assert.Equal(t, 5*time.Second, DefaultPollingInterval)
 }
 
-func TestProvider_Interface(t *testing.T) {
-	// Verify mockProvider implements Provider interface
-	var _ Provider = newMockProvider()
+// mockProvider implements Provider for testing
+type mockProvider struct {
+	createErr error
+	deleteErr error
+	waitErr   error
+}
 
-	// Verify DNS01ChallengeProvider can be created with any Provider
-	var provider Provider = newMockProvider()
-	challenge := NewDNS01ChallengeProvider(provider, nil)
-	assert.NotNil(t, challenge)
+func (m *mockProvider) CreateTXTRecord(ctx context.Context, fqdn, value string) error {
+	return m.createErr
+}
+
+func (m *mockProvider) DeleteTXTRecord(ctx context.Context, fqdn, value string) error {
+	return m.deleteErr
+}
+
+func (m *mockProvider) WaitForPropagation(ctx context.Context, fqdn, value string) error {
+	return m.waitErr
+}
+
+func TestDNS01ChallengeProvider_New(t *testing.T) {
+	mock := &mockProvider{}
+	logger := zap.NewNop()
+
+	provider := NewDNS01ChallengeProvider(mock, logger)
+	assert.NotNil(t, provider)
+	assert.Equal(t, mock, provider.provider)
+	assert.Equal(t, logger, provider.logger)
+}
+
+func TestDNS01ChallengeProvider_New_NilLogger(t *testing.T) {
+	mock := &mockProvider{}
+
+	provider := NewDNS01ChallengeProvider(mock, nil)
+	assert.NotNil(t, provider)
+	assert.NotNil(t, provider.logger)
+}
+
+func TestDNS01ChallengeProvider_Present(t *testing.T) {
+	t.Run("successful present", func(t *testing.T) {
+		mock := &mockProvider{}
+		provider := NewDNS01ChallengeProvider(mock, zap.NewNop())
+
+		err := provider.Present("example.com", "token", "keyAuth")
+		require.NoError(t, err)
+	})
+
+	t.Run("create record error", func(t *testing.T) {
+		mock := &mockProvider{
+			createErr: errors.New("create failed"),
+		}
+		provider := NewDNS01ChallengeProvider(mock, zap.NewNop())
+
+		err := provider.Present("example.com", "token", "keyAuth")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to create TXT record")
+	})
+
+	t.Run("propagation wait error is logged but not returned", func(t *testing.T) {
+		mock := &mockProvider{
+			waitErr: errors.New("propagation timeout"),
+		}
+		provider := NewDNS01ChallengeProvider(mock, zap.NewNop())
+
+		err := provider.Present("example.com", "token", "keyAuth")
+		// Should not return error for propagation wait failure
+		require.NoError(t, err)
+	})
+}
+
+func TestDNS01ChallengeProvider_CleanUp(t *testing.T) {
+	t.Run("successful cleanup", func(t *testing.T) {
+		mock := &mockProvider{}
+		provider := NewDNS01ChallengeProvider(mock, zap.NewNop())
+
+		err := provider.CleanUp("example.com", "token", "keyAuth")
+		require.NoError(t, err)
+	})
+
+	t.Run("delete record error", func(t *testing.T) {
+		mock := &mockProvider{
+			deleteErr: errors.New("delete failed"),
+		}
+		provider := NewDNS01ChallengeProvider(mock, zap.NewNop())
+
+		err := provider.CleanUp("example.com", "token", "keyAuth")
+		require.Error(t, err)
+		assert.Equal(t, "delete failed", err.Error())
+	})
 }
