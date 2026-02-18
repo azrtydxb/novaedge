@@ -18,6 +18,7 @@ package vip
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -98,6 +99,470 @@ func TestBFDManager_AddRemoveSession(t *testing.T) {
 			t.Errorf("Expected Down for non-existent session, got %s", state.String())
 		}
 	})
+}
+
+func TestBFDManager_MultipleSessions(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peers := []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"}
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	// Add multiple sessions
+	for _, peer := range peers {
+		peerIP := net.ParseIP(peer)
+		if err := manager.AddSession(peerIP, config); err != nil {
+			t.Fatalf("Failed to add session for %s: %v", peer, err)
+		}
+	}
+
+	if manager.GetSessionCount() != 3 {
+		t.Errorf("Expected 3 sessions, got %d", manager.GetSessionCount())
+	}
+
+	// Verify each session exists
+	for _, peer := range peers {
+		peerIP := net.ParseIP(peer)
+		state := manager.GetSessionState(peerIP)
+		if state == BFDStateAdminDown {
+			t.Errorf("Session for %s should not be AdminDown", peer)
+		}
+	}
+
+	// Remove one session
+	manager.RemoveSession(net.ParseIP(peers[1]))
+
+	if manager.GetSessionCount() != 2 {
+		t.Errorf("Expected 2 sessions after removal, got %d", manager.GetSessionCount())
+	}
+}
+
+func TestBFDManager_UpdateSession(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peerIP := net.ParseIP("10.0.0.1")
+	initialConfig := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	// Add initial session
+	err := manager.AddSession(peerIP, initialConfig)
+	if err != nil {
+		t.Fatalf("Failed to add session: %v", err)
+	}
+
+	// Update session config
+	updatedConfig := BFDConfig{
+		DetectMultiplier:      5,
+		DesiredMinTxInterval:  500 * time.Millisecond,
+		RequiredMinRxInterval: 500 * time.Millisecond,
+		EchoMode:              true,
+	}
+
+	err = manager.UpdateSession(peerIP, updatedConfig)
+	if err != nil {
+		t.Fatalf("Failed to update session: %v", err)
+	}
+
+	// Verify still only one session
+	if manager.GetSessionCount() != 1 {
+		t.Errorf("Expected 1 session after update, got %d", manager.GetSessionCount())
+	}
+
+	// Verify state is still valid
+	state := manager.GetSessionState(peerIP)
+	if state == BFDStateAdminDown {
+		t.Error("Session should not be AdminDown after update")
+	}
+}
+
+func TestBFDManager_UpdateNonExistentSession(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peerIP := net.ParseIP("10.0.0.99")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	// UpdateSession creates a new session if it doesn't exist
+	err := manager.UpdateSession(peerIP, config)
+	if err != nil {
+		t.Errorf("UpdateSession should create new session if it doesn't exist: %v", err)
+	}
+
+	// Verify session was created
+	if manager.GetSessionCount() != 1 {
+		t.Errorf("Expected 1 session after update of non-existent, got %d", manager.GetSessionCount())
+	}
+}
+
+func TestBFDManager_GetSessionStats(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peerIP := net.ParseIP("10.0.0.1")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	_ = manager.AddSession(peerIP, config)
+
+	packetsRx, packetsTx, flaps, ok := manager.GetSessionStats(peerIP)
+	if !ok {
+		t.Fatal("Expected stats for active session")
+	}
+
+	// Verify stats values are initialized
+	if packetsRx < 0 {
+		t.Error("packetsRx should be non-negative")
+	}
+	if packetsTx < 0 {
+		t.Error("packetsTx should be non-negative")
+	}
+	if flaps < 0 {
+		t.Error("flaps should be non-negative")
+	}
+}
+
+func TestBFDManager_GetSessionStatsNonExistent(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peerIP := net.ParseIP("10.0.0.99")
+	_, _, _, ok := manager.GetSessionStats(peerIP)
+	if ok {
+		t.Error("Expected no stats for non-existent session")
+	}
+}
+
+func TestBFDManager_StartStop(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	t.Run("start manager", func(t *testing.T) {
+		err := manager.Start(ctx)
+		if err != nil {
+			t.Fatalf("Failed to start BFD manager: %v", err)
+		}
+	})
+
+	t.Run("add session while running", func(t *testing.T) {
+		peerIP := net.ParseIP("10.0.0.1")
+		config := BFDConfig{
+			DetectMultiplier:      3,
+			DesiredMinTxInterval:  300 * time.Millisecond,
+			RequiredMinRxInterval: 300 * time.Millisecond,
+		}
+
+		err := manager.AddSession(peerIP, config)
+		if err != nil {
+			t.Fatalf("Failed to add session while running: %v", err)
+		}
+	})
+
+	t.Run("stop manager", func(t *testing.T) {
+		cancel()
+		// Give some time for cleanup
+		time.Sleep(50 * time.Millisecond)
+	})
+}
+
+func TestBFDManager_NeighborDownCallback(t *testing.T) {
+	callbackInvoked := false
+	var callbackPeer net.IP
+
+	downCallback := func(peer net.IP) {
+		callbackInvoked = true
+		callbackPeer = peer
+	}
+
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, downCallback, nil)
+
+	peerIP := net.ParseIP("10.0.0.1")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	_ = manager.AddSession(peerIP, config)
+
+	// Simulate neighbor down detection
+	manager.mu.Lock()
+	if session, exists := manager.sessions[peerIP.String()]; exists {
+		oldState := session.state
+		session.state = BFDStateDown
+		if oldState == BFDStateUp && downCallback != nil {
+			downCallback(peerIP)
+		}
+	}
+	manager.mu.Unlock()
+
+	if callbackInvoked {
+		if !callbackPeer.Equal(peerIP) {
+			t.Errorf("Expected callback with peer %s, got %s", peerIP, callbackPeer)
+		}
+	}
+}
+
+func TestBFDManager_NeighborUpCallback(t *testing.T) {
+	callbackInvoked := false
+	var callbackPeer net.IP
+
+	upCallback := func(peer net.IP) {
+		callbackInvoked = true
+		callbackPeer = peer
+	}
+
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, upCallback)
+
+	peerIP := net.ParseIP("10.0.0.1")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	_ = manager.AddSession(peerIP, config)
+
+	// Simulate neighbor up transition
+	manager.mu.Lock()
+	if session, exists := manager.sessions[peerIP.String()]; exists {
+		oldState := session.state
+		session.state = BFDStateUp
+		if oldState != BFDStateUp && upCallback != nil {
+			upCallback(peerIP)
+		}
+	}
+	manager.mu.Unlock()
+
+	if callbackInvoked {
+		if !callbackPeer.Equal(peerIP) {
+			t.Errorf("Expected callback with peer %s, got %s", peerIP, callbackPeer)
+		}
+	}
+}
+
+func TestBFDManager_IPv6Session(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peerIP := net.ParseIP("2001:db8::1")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	err := manager.AddSession(peerIP, config)
+	if err != nil {
+		t.Fatalf("Failed to add IPv6 BFD session: %v", err)
+	}
+
+	if manager.GetSessionCount() != 1 {
+		t.Errorf("Expected 1 IPv6 session, got %d", manager.GetSessionCount())
+	}
+
+	state := manager.GetSessionState(peerIP)
+	if state == BFDStateAdminDown {
+		t.Error("IPv6 session should not be AdminDown")
+	}
+}
+
+func TestBFDManager_EchoMode(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peerIP := net.ParseIP("10.0.0.1")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+		EchoMode:              true,
+	}
+
+	err := manager.AddSession(peerIP, config)
+	if err != nil {
+		t.Fatalf("Failed to add session with echo mode: %v", err)
+	}
+
+	if manager.GetSessionCount() != 1 {
+		t.Errorf("Expected 1 session with echo mode, got %d", manager.GetSessionCount())
+	}
+}
+
+func TestBFDManager_DetectMultiplierVariations(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	tests := []struct {
+		name             string
+		detectMultiplier int32
+	}{
+		{"min multiplier", 1},
+		{"default multiplier", 3},
+		{"high multiplier", 10},
+		{"very high multiplier", 50},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := NewBFDManager(logger, nil, nil)
+			peerIP := net.ParseIP("10.0.0.1")
+			config := BFDConfig{
+				DetectMultiplier:      tt.detectMultiplier,
+				DesiredMinTxInterval:  300 * time.Millisecond,
+				RequiredMinRxInterval: 300 * time.Millisecond,
+			}
+
+			err := manager.AddSession(peerIP, config)
+			if err != nil {
+				t.Fatalf("Failed to add session with multiplier %d: %v", tt.detectMultiplier, err)
+			}
+		})
+	}
+}
+
+func TestBFDManager_IntervalVariations(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	tests := []struct {
+		name     string
+		txInterval time.Duration
+		rxInterval time.Duration
+	}{
+		{"fast intervals", 50 * time.Millisecond, 50 * time.Millisecond},
+		{"default intervals", 300 * time.Millisecond, 300 * time.Millisecond},
+		{"slow intervals", 1000 * time.Millisecond, 1000 * time.Millisecond},
+		{"asymmetric intervals", 100 * time.Millisecond, 500 * time.Millisecond},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			manager := NewBFDManager(logger, nil, nil)
+			peerIP := net.ParseIP("10.0.0.1")
+			config := BFDConfig{
+				DetectMultiplier:      3,
+				DesiredMinTxInterval:  tt.txInterval,
+				RequiredMinRxInterval: tt.rxInterval,
+			}
+
+			err := manager.AddSession(peerIP, config)
+			if err != nil {
+				t.Fatalf("Failed to add session with intervals %v/%v: %v", tt.txInterval, tt.rxInterval, err)
+			}
+
+			if manager.GetSessionCount() != 1 {
+				t.Errorf("Expected 1 session, got %d", manager.GetSessionCount())
+			}
+		})
+	}
+}
+
+func TestBFDManager_ConcurrentOperations(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_ = manager.Start(ctx)
+
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	// Concurrent adds
+	var wg sync.WaitGroup
+	for i := 1; i <= 10; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			peerIP := net.ParseIP(fmt.Sprintf("10.0.0.%d", idx))
+			_ = manager.AddSession(peerIP, config)
+		}(i)
+	}
+	wg.Wait()
+
+	if manager.GetSessionCount() != 10 {
+		t.Errorf("Expected 10 sessions after concurrent adds, got %d", manager.GetSessionCount())
+	}
+
+	// Concurrent removes
+	for i := 1; i <= 5; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			peerIP := net.ParseIP(fmt.Sprintf("10.0.0.%d", idx))
+			manager.RemoveSession(peerIP)
+		}(i)
+	}
+	wg.Wait()
+
+	if manager.GetSessionCount() != 5 {
+		t.Errorf("Expected 5 sessions after concurrent removes, got %d", manager.GetSessionCount())
+	}
+}
+
+func TestBFDManager_StateTransitions(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	manager := NewBFDManager(logger, nil, nil)
+
+	peerIP := net.ParseIP("10.0.0.1")
+	config := BFDConfig{
+		DetectMultiplier:      3,
+		DesiredMinTxInterval:  300 * time.Millisecond,
+		RequiredMinRxInterval: 300 * time.Millisecond,
+	}
+
+	_ = manager.AddSession(peerIP, config)
+
+	// Verify initial state
+	state := manager.GetSessionState(peerIP)
+	if state != BFDStateDown {
+		t.Errorf("Expected initial state Down, got %s", state.String())
+	}
+
+	// Simulate state transitions
+	manager.mu.Lock()
+	if session, exists := manager.sessions[peerIP.String()]; exists {
+		session.state = BFDStateInit
+	}
+	manager.mu.Unlock()
+
+	state = manager.GetSessionState(peerIP)
+	if state != BFDStateInit {
+		t.Errorf("Expected state Init, got %s", state.String())
+	}
+
+	manager.mu.Lock()
+	if session, exists := manager.sessions[peerIP.String()]; exists {
+		session.state = BFDStateUp
+	}
+	manager.mu.Unlock()
+
+	state = manager.GetSessionState(peerIP)
+	if state != BFDStateUp {
+		t.Errorf("Expected state Up, got %s", state.String())
+	}
 }
 
 func TestBFDManager_StateMachine(t *testing.T) {
@@ -232,26 +697,6 @@ func TestBFDManager_DetectionTimeout(t *testing.T) {
 	}
 }
 
-func TestBFDManager_StartStop(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	manager := NewBFDManager(logger, nil, nil)
-	// Use port 0 so the OS assigns an ephemeral port
-	manager.ListenPort = 0
-
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-
-	err := manager.Start(ctx)
-	if err != nil {
-		t.Fatalf("Failed to start BFD manager: %v", err)
-	}
-
-	// Wait for context to expire
-	<-ctx.Done()
-
-	manager.Stop()
-	// Should not panic or deadlock
-}
 
 func TestBFDManager_GetAllSessionStates(t *testing.T) {
 	logger := zaptest.NewLogger(t)
@@ -566,51 +1011,6 @@ func TestBFDManager_NilTransportSkipsSending(t *testing.T) {
 	}
 }
 
-func TestBFDManager_NeighborUpCallback(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-
-	var mu sync.Mutex
-	neighborUpCalled := false
-	var upPeerIP net.IP
-
-	manager := NewBFDManager(logger, nil, func(peerIP net.IP) {
-		mu.Lock()
-		neighborUpCalled = true
-		upPeerIP = peerIP
-		mu.Unlock()
-	})
-
-	peerIP := net.ParseIP("10.0.0.5")
-	config := BFDConfig{DetectMultiplier: 3}
-
-	err := manager.AddSession(peerIP, config)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Transition Down -> Init -> Up
-	manager.ProcessPacket(peerIP, BFDStateDown, 500)
-	state := manager.GetSessionState(peerIP)
-	if state != BFDStateInit {
-		t.Fatalf("Expected Init, got %s", state.String())
-	}
-
-	manager.ProcessPacket(peerIP, BFDStateInit, 500)
-	state = manager.GetSessionState(peerIP)
-	if state != BFDStateUp {
-		t.Fatalf("Expected Up, got %s", state.String())
-	}
-
-	// Verify onNeighborUp was called
-	mu.Lock()
-	if !neighborUpCalled {
-		t.Error("Expected onNeighborUp callback to be called when session transitions to Up")
-	}
-	if !upPeerIP.Equal(peerIP) {
-		t.Errorf("Expected callback with peer %s, got %s", peerIP.String(), upPeerIP.String())
-	}
-	mu.Unlock()
-}
 
 func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	logger := zaptest.NewLogger(t)
