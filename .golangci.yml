@@ -30,6 +30,14 @@ linters:
     - wastedassign
     # Security
     - gosec
+    # Complexity
+    - gocyclo
+    # Code duplication
+    - dupl
+    # Best practices
+    - gochecknoinits
+    - goerr113
+    - exhaustive
   exclusions:
     rules:
       # Package names that intentionally share names with stdlib packages.
@@ -45,10 +53,27 @@ linters:
         linters:
           - revive
         text: "var-naming: avoid package names"
+      # Exclude test files from certain linters
+      - path: _test\.go
+        linters:
+          - dupl
+          - gochecknoinits
+          - goerr113
+      # Exclude generated files
+      - path: zz_generated\.deepcopy\.go
+        linters:
+          - all
   settings:
     staticcheck:
       checks:
         - "all"
+    gocyclo:
+      min-complexity: 20
+    dupl:
+      threshold: 150
+    goconst:
+      min-len: 3
+      min-occurrences: 4
     revive:
       rules:
         - name: blank-imports

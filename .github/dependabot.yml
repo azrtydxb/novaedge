@@ -1,0 +1,80 @@
+version: 2
+updates:
+  # Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
+        update-types:
+          - "minor"
+          - "patch"
+      opentelemetry:
+        patterns:
+          - "go.opentelemetry.io/*"
+        update-types:
+          - "minor"
+          - "patch"
+      networking:
+        patterns:
+          - "github.com/gorilla/websocket"
+          - "github.com/quic-go/*"
+          - "google.golang.org/grpc"
+          - "google.golang.org/protobuf"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Ignore major version updates for critical dependencies
+      - dependency-name: "k8s.io/*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "sigs.k8s.io/*"
+        update-types: ["version-update:semver-major"]
+
+  # Docker files
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
