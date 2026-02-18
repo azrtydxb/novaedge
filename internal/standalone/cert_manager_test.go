@@ -365,5 +365,3 @@ func TestCertificateManager_ConcurrentAccess(t *testing.T) {
 		<-done
 	}
 }
-
-
