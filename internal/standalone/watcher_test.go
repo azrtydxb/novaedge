@@ -36,7 +36,7 @@ func TestNewConfigWatcher(t *testing.T) {
 		// Create a temporary config file
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.yaml")
-		err := os.WriteFile(configPath, []byte("version: v1\n"), 0644)
+		err := os.WriteFile(configPath, []byte("version: v1\n"), 0600)
 		require.NoError(t, err)
 
 		watcher, err := NewConfigWatcher(configPath, "test-node", logger)
@@ -57,13 +57,13 @@ func TestNewConfigWatcher(t *testing.T) {
 		// Create a temporary config file
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.yaml")
-		err := os.WriteFile(configPath, []byte("version: v1\n"), 0644)
+		err := os.WriteFile(configPath, []byte("version: v1\n"), 0600)
 		require.NoError(t, err)
 
 		// Change to the temp directory
 		oldDir, _ := os.Getwd()
-		defer os.Chdir(oldDir)
-		os.Chdir(tmpDir)
+		defer func() { _ = os.Chdir(oldDir) }()
+		_ = os.Chdir(tmpDir)
 
 		watcher, err := NewConfigWatcher("config.yaml", "test-node", logger)
 		require.NoError(t, err)

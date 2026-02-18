@@ -30,6 +30,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const testRequest = "test-request"
+
 // peerAddr implements net.Addr for testing
 type peerAddr string
 
@@ -74,7 +76,7 @@ func TestUnaryServerLoggingInterceptor_Success(t *testing.T) {
 	interceptor := unaryServerLoggingInterceptor(logger)
 
 	ctx := context.Background()
-	req := "test-request"
+	req := testRequest
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}
@@ -97,7 +99,7 @@ func TestUnaryServerLoggingInterceptor_WithPeer(t *testing.T) {
 	}
 	ctx := peer.NewContext(context.Background(), p)
 
-	req := "test-request"
+	req := testRequest
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}
@@ -115,7 +117,7 @@ func TestUnaryServerLoggingInterceptor_HandlerError(t *testing.T) {
 	interceptor := unaryServerLoggingInterceptor(logger)
 
 	ctx := context.Background()
-	req := "test-request"
+	req := testRequest
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}
@@ -134,7 +136,7 @@ func TestUnaryServerLoggingInterceptor_WithError(t *testing.T) {
 	interceptor := unaryServerLoggingInterceptor(logger)
 
 	ctx := context.Background()
-	req := "test-request"
+	req := testRequest
 	info := &grpc.UnaryServerInfo{
 		FullMethod: "/test/Method",
 	}

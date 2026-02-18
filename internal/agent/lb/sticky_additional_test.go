@@ -119,7 +119,9 @@ func TestStickyWrapper_SelectWithAffinity_NoCookie(t *testing.T) {
 	}
 
 	// Should set a cookie
-	cookies := rec.Result().Cookies()
+	resp := rec.Result()
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
 	if len(cookies) == 0 {
 		t.Error("Expected cookie to be set")
 	}
@@ -166,7 +168,9 @@ func TestStickyWrapper_SelectWithAffinity_WithValidCookie(t *testing.T) {
 	}
 
 	// Should not set a new cookie since affinity was used
-	cookies := rec.Result().Cookies()
+	resp := rec.Result()
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
 	for _, c := range cookies {
 		if c.Name == config.CookieName {
 			t.Error("Should not set new cookie when affinity is used")
@@ -198,7 +202,9 @@ func TestStickyWrapper_SelectWithAffinity_WithInvalidCookie(t *testing.T) {
 	}
 
 	// Should fall back to inner LB and set new cookie
-	cookies := rec.Result().Cookies()
+	resp := rec.Result()
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
 	found := false
 	for _, c := range cookies {
 		if c.Name == config.CookieName {
@@ -318,7 +324,9 @@ func TestStickyWrapper_CustomConfig(t *testing.T) {
 	}
 
 	// Verify custom cookie settings
-	cookies := rec.Result().Cookies()
+	resp := rec.Result()
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
 	var affinityCookie *http.Cookie
 	for _, c := range cookies {
 		if c.Name == "CUSTOM_AFFINITY" {
@@ -402,7 +410,9 @@ func TestStickyWrapper_SessionCookie(t *testing.T) {
 	_ = sw.SelectWithAffinity(req, rec)
 
 	// Session cookie should have MaxAge = 0
-	cookies := rec.Result().Cookies()
+	resp := rec.Result()
+	defer resp.Body.Close()
+	cookies := resp.Cookies()
 	for _, c := range cookies {
 		if c.Name == "SESSION_AFFINITY" {
 			if c.MaxAge != 0 {
