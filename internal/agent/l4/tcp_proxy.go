@@ -44,6 +44,29 @@ const (
 	MaxTCPConnections int64 = 10000
 )
 
+// tcpBufferPool is a sync.Pool for TCP proxy buffers to reduce allocations.
+// Buffers are sized at DefaultTCPBufferSize (32KB) for optimal network I/O.
+var tcpBufferPool = sync.Pool{
+	New: func() interface{} {
+		buf := make([]byte, DefaultTCPBufferSize)
+		return &buf
+	},
+}
+
+// getTCPBuffer retrieves a buffer from the pool or creates a new one.
+func getTCPBuffer() *[]byte {
+	return tcpBufferPool.Get().(*[]byte)
+}
+
+// putTCPBuffer returns a buffer to the pool for reuse.
+// The buffer is reset to full capacity before returning.
+func putTCPBuffer(buf *[]byte) {
+	if buf != nil {
+		*buf = (*buf)[:cap(*buf)]
+		tcpBufferPool.Put(buf)
+	}
+}
+
 // TCPProxyConfig holds configuration for a TCP proxy instance
 type TCPProxyConfig struct {
 	// ListenerName identifies this listener for metrics and logging
@@ -188,14 +211,16 @@ func (p *TCPProxy) bidirectionalCopy(ctx context.Context, clientConn, backendCon
 	// Copy backend -> client (sent)
 	go func() {
 		defer cancel()
-		buf := make([]byte, p.config.BufferSize)
-		n, _ := p.copyWithIdleTimeout(copyCtx, clientConn, backendConn, buf, p.config.IdleTimeout)
+		buf := getTCPBuffer()
+		defer putTCPBuffer(buf)
+		n, _ := p.copyWithIdleTimeout(copyCtx, clientConn, backendConn, *buf, p.config.IdleTimeout)
 		bytesSent.Store(n)
 	}()
 
 	// Copy client -> backend (received)
-	buf := make([]byte, p.config.BufferSize)
-	n, _ := p.copyWithIdleTimeout(copyCtx, backendConn, clientConn, buf, p.config.IdleTimeout)
+	buf := getTCPBuffer()
+	defer putTCPBuffer(buf)
+	n, _ := p.copyWithIdleTimeout(copyCtx, backendConn, clientConn, *buf, p.config.IdleTimeout)
 	bytesReceived.Store(n)
 	cancel()
 
