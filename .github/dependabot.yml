@@ -13,50 +13,31 @@ updates:
       - "go"
     commit-message:
       prefix: "deps"
-      include: "scope"
     groups:
       kubernetes:
         patterns:
           - "k8s.io/*"
           - "sigs.k8s.io/*"
-        update-types:
-          - "minor"
-          - "patch"
-      opentelemetry:
+      otel:
         patterns:
           - "go.opentelemetry.io/*"
-        update-types:
-          - "minor"
-          - "patch"
-      networking:
+      google:
         patterns:
-          - "github.com/gorilla/websocket"
-          - "github.com/quic-go/*"
-          - "google.golang.org/grpc"
-          - "google.golang.org/protobuf"
-        update-types:
-          - "minor"
-          - "patch"
-    ignore:
-      # Ignore major version updates for critical dependencies
-      - dependency-name: "k8s.io/*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "sigs.k8s.io/*"
-        update-types: ["version-update:semver-major"]
+          - "google.golang.org/*"
+          - "github.com/google/*"
 
-  # Docker files
+  # Docker - Controller
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "06:00"
-    open-pull-requests-limit: 3
     labels:
       - "dependencies"
+      - "docker"
     commit-message:
       prefix: "docker"
-      include: "scope"
 
   # GitHub Actions
   - package-ecosystem: "github-actions"
@@ -65,16 +46,32 @@ updates:
       interval: "weekly"
       day: "monday"
       time: "06:00"
-    open-pull-requests-limit: 3
     labels:
       - "dependencies"
+      - "github-actions"
     commit-message:
       prefix: "ci"
-      include: "scope"
+    open-pull-requests-limit: 3
+
+  # Frontend dependencies (pnpm)
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "web"
+    open-pull-requests-limit: 5
     groups:
-      actions:
+      vue:
         patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+          - "vue"
+          - "@vue/*"
+      vite:
+        patterns:
+          - "vite"
+          - "@vitejs/*"
