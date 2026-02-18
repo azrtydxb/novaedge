@@ -192,7 +192,7 @@ func TestRenewalManager_ContextCancellation(t *testing.T) {
 	// Wait for cancellation to propagate
 	time.Sleep(300 * time.Millisecond)
 
-	assert.False(t, manager.running)
+	assert.False(t, manager.IsRunning())
 }
 
 func TestRenewalManager_OnRenewalCallback(t *testing.T) {
