@@ -50,7 +50,7 @@ func (m *mockX509Source) GetX509SVID() (*x509svid.SVID, error) {
 	return m.svid, nil
 }
 
-func (m *mockX509Source) GetX509BundleForTrustDomain(td spiffeid.TrustDomain) (*x509bundle.Bundle, error) {
+func (m *mockX509Source) GetX509BundleForTrustDomain(_ spiffeid.TrustDomain) (*x509bundle.Bundle, error) {
 	if m.bundleErr != nil {
 		return nil, m.bundleErr
 	}
@@ -174,7 +174,7 @@ func TestSPIFFEConfig_Validate_EmptyTrustDomain(t *testing.T) {
 	}
 }
 
-func TestSPIFFEConfig_Validate_InvalidTrustDomain(t *testing.T) {
+func TestSPIFFEConfig_Validate_InvalidTrustDomain(_ *testing.T) {
 	cfg := SPIFFEConfig{
 		WorkloadAPIAddr: "unix:///run/spire/sockets/agent.sock",
 		TrustDomain:     "spiffe://not-a-domain/with/path",

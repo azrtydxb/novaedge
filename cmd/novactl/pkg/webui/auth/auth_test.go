@@ -116,7 +116,7 @@ func TestMiddlewareAllowsWhenDisabled(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -139,7 +139,7 @@ func TestMiddlewareBlocksUnauthed(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -162,7 +162,7 @@ func TestMiddlewareAllowsAuthPaths(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -203,7 +203,7 @@ func TestMiddlewareAllowsValidSession(t *testing.T) {
 		t.Fatalf("Login: %v", err)
 	}
 
-	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

@@ -63,7 +63,7 @@ func TestRequestLimitsMiddleware_BodyTooLarge_ContentLength(t *testing.T) {
 
 	body := strings.Repeat("x", 200)
 
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("handler should not be called when Content-Length exceeds limit")
 	}))
 
@@ -144,7 +144,7 @@ func TestRequestLimitsMiddleware_NilConfig(t *testing.T) {
 	m := NewRequestLimitsMiddleware(nil)
 
 	var called bool
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 

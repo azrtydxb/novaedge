@@ -260,7 +260,7 @@ func TestNewManagerFromCRDWithCreds_NilCreds(t *testing.T) {
 	}
 }
 
-func TestManagerStop_WhenNotStarted(t *testing.T) {
+func TestManagerStop_WhenNotStarted(_ *testing.T) {
 	logger := zap.NewNop()
 	config := DefaultConfig()
 	manager := NewManager(config, logger)
@@ -341,7 +341,7 @@ func TestManagerOnResourceChange(t *testing.T) {
 	config := DefaultConfig()
 	manager := NewManager(config, logger)
 
-	callback := func(key ResourceKey, changeType ChangeType, data []byte) {
+	callback := func(_ ResourceKey, _ ChangeType, data []byte) {
 		// callback function
 	}
 

@@ -73,7 +73,7 @@ func TestRequestBufferingMiddleware_MaxSizeExceeded(t *testing.T) {
 
 	body := strings.Repeat("x", 200) // Exceeds max size
 
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Error("handler should not be called when body exceeds max size")
 	}))
 
@@ -118,7 +118,7 @@ func TestRequestBufferingMiddleware_NilConfig(t *testing.T) {
 	body := testBody
 	var called bool
 
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 
@@ -140,7 +140,7 @@ func TestRequestBufferingMiddleware_NoBody(t *testing.T) {
 	m := NewRequestBufferingMiddleware(config)
 
 	var called bool
-	handler := m.Wrap(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := m.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		called = true
 	}))
 

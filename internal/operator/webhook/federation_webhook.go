@@ -48,7 +48,7 @@ var (
 )
 
 // ValidateCreate validates creation of a NovaEdgeFederation
-func (v *FederationValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+func (v *FederationValidator) ValidateCreate(_ context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
 	fed, ok := obj.(*novaedgev1alpha1.NovaEdgeFederation)
 	if !ok {
 		return nil, fmt.Errorf("expected NovaEdgeFederation, got %T", obj)
@@ -58,7 +58,7 @@ func (v *FederationValidator) ValidateCreate(ctx context.Context, obj runtime.Ob
 }
 
 // ValidateUpdate validates updates to a NovaEdgeFederation
-func (v *FederationValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
+func (v *FederationValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
 	oldFed, ok := oldObj.(*novaedgev1alpha1.NovaEdgeFederation)
 	if !ok {
 		return nil, fmt.Errorf("expected NovaEdgeFederation, got %T", oldObj)
@@ -85,7 +85,7 @@ func (v *FederationValidator) ValidateUpdate(ctx context.Context, oldObj, newObj
 }
 
 // ValidateDelete validates deletion of a NovaEdgeFederation
-func (v *FederationValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
+func (v *FederationValidator) ValidateDelete(_ context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
 	fed, ok := obj.(*novaedgev1alpha1.NovaEdgeFederation)
 	if !ok {
 		return nil, fmt.Errorf("expected NovaEdgeFederation, got %T", obj)
@@ -293,7 +293,7 @@ type FederationDefaulter struct{}
 var _ webhook.CustomDefaulter = &FederationDefaulter{}
 
 // Default sets defaults on the NovaEdgeFederation
-func (d *FederationDefaulter) Default(ctx context.Context, obj runtime.Object) error {
+func (d *FederationDefaulter) Default(_ context.Context, obj runtime.Object) error {
 	fed, ok := obj.(*novaedgev1alpha1.NovaEdgeFederation)
 	if !ok {
 		return fmt.Errorf("expected NovaEdgeFederation, got %T", obj)

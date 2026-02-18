@@ -69,7 +69,7 @@ func (p *HTTP01Provider) Present(domain, token, keyAuth string) error {
 }
 
 // CleanUp is called when a challenge should be removed.
-func (p *HTTP01Provider) CleanUp(domain, token, keyAuth string) error {
+func (p *HTTP01Provider) CleanUp(domain, token, _ string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -142,7 +142,7 @@ func NewTLSALPN01Provider(logger *zap.Logger) *TLSALPN01Provider {
 }
 
 // Present is called when a challenge should be set up.
-func (p *TLSALPN01Provider) Present(domain, token, keyAuth string) error {
+func (p *TLSALPN01Provider) Present(domain, _, keyAuth string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -157,7 +157,7 @@ func (p *TLSALPN01Provider) Present(domain, token, keyAuth string) error {
 }
 
 // CleanUp is called when a challenge should be removed.
-func (p *TLSALPN01Provider) CleanUp(domain, token, keyAuth string) error {
+func (p *TLSALPN01Provider) CleanUp(domain, _, _ string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

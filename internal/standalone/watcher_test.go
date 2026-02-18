@@ -74,7 +74,7 @@ func TestNewConfigWatcher(t *testing.T) {
 
 func TestConfigWatcher_ApplyFunc(t *testing.T) {
 	// Test that ApplyFunc type is correctly defined
-	var applyFunc ApplyFunc = func(snap *agentconfig.Snapshot) error {
+	var applyFunc ApplyFunc = func(_ *agentconfig.Snapshot) error {
 		return nil
 	}
 	assert.NotNil(t, applyFunc)

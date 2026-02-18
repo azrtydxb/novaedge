@@ -341,7 +341,7 @@ func TestHealthChecker_UpdateEndpoints_RemovesOld(t *testing.T) {
 
 func TestHealthChecker_PerformHTTPCheck_Success(t *testing.T) {
 	// Start a test HTTP server that returns 200
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -412,7 +412,7 @@ func TestHealthChecker_PerformHTTPCheck_CustomPath(t *testing.T) {
 
 func TestHealthChecker_PerformHTTPCheck_ServerError(t *testing.T) {
 	// Start a test HTTP server that returns 500
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
@@ -533,7 +533,7 @@ func TestHealthChecker_PerformTCPCheck_ConnectionRefused(t *testing.T) {
 
 func TestHealthChecker_PerformHTTPSCheck_Success(t *testing.T) {
 	// Start a test HTTPS server
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -611,7 +611,7 @@ func TestHealthChecker_PerformHTTPSCheck_CustomPath(t *testing.T) {
 }
 
 func TestHealthChecker_PerformHTTPSCheck_ServerError(t *testing.T) {
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
 	defer server.Close()
@@ -672,7 +672,7 @@ func TestHealthChecker_PerformHTTPSCheck_ConnectionRefused(t *testing.T) {
 func TestHealthChecker_PerformHTTPSCheck_SkipsTLSVerify(t *testing.T) {
 	// The TLS server from httptest uses a self-signed cert.
 	// Our HTTPS health checker should succeed when InsecureSkipVerify is enabled.
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -740,7 +740,7 @@ func TestHealthChecker_PerformHTTPSCheck_SkipsTLSVerify(t *testing.T) {
 
 func TestHealthChecker_PerformCheck_Dispatch(t *testing.T) {
 	// Start an HTTP server for the dispatch test
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
@@ -834,7 +834,7 @@ func TestEndpointKey(t *testing.T) {
 func TestHealthChecker_PerformHTTPSCheck_DefaultSecure(t *testing.T) {
 	// By default (no TLS config or InsecureSkipVerify=false), HTTPS health
 	// checks should verify TLS certificates. A self-signed cert should fail.
-	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()

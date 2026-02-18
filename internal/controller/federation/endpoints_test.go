@@ -116,7 +116,7 @@ func TestRemoteEndpointCache_Delete(t *testing.T) {
 	assert.Empty(t, result)
 }
 
-func TestRemoteEndpointCache_DeleteNonExistent(t *testing.T) {
+func TestRemoteEndpointCache_DeleteNonExistent(_ *testing.T) {
 	cache := NewRemoteEndpointCache()
 
 	// Delete on empty cache should not panic
@@ -164,7 +164,7 @@ func TestRemoteEndpointCache_GetForService_Empty(t *testing.T) {
 	assert.NotNil(t, result)
 }
 
-func TestRemoteEndpointCache_ConcurrentAccess(t *testing.T) {
+func TestRemoteEndpointCache_ConcurrentAccess(_ *testing.T) {
 	cache := NewRemoteEndpointCache()
 
 	done := make(chan bool)
@@ -172,7 +172,11 @@ func TestRemoteEndpointCache_ConcurrentAccess(t *testing.T) {
 	// Concurrent updates
 	go func() {
 		for i := 0; i < 100; i++ {
-			port := int32(i) // Safe conversion: i is bounded [0, 99]
+			// Ensure i is within int32 range before conversion
+			if i > 2147483647 {
+				continue
+			}
+			port := int32(i)
 			endpoints := &pb.ServiceEndpoints{
 				Namespace:   "default",
 				ServiceName: "test-service",

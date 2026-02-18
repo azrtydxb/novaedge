@@ -72,7 +72,7 @@ func TestHealthServer_HealthzEndpoint(t *testing.T) {
 	rec := httptest.NewRecorder()
 
 	// Create the handler directly
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})
@@ -93,7 +93,7 @@ func TestHealthServer_ReadyEndpoint(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		rec := httptest.NewRecorder()
 
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			if hs.ready.Load() {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("Ready"))
@@ -115,7 +115,7 @@ func TestHealthServer_ReadyEndpoint(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 		rec := httptest.NewRecorder()
 
-		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			if hs.ready.Load() {
 				w.WriteHeader(http.StatusOK)
 				_, _ = w.Write([]byte("Ready"))

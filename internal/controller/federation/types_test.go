@@ -535,7 +535,7 @@ func TestConfig_Validation(t *testing.T) {
 	}{
 		{
 			name:   "default config is valid",
-			modify: func(c *Config) {},
+			modify: func(_ *Config) {},
 			valid:  true,
 		},
 		{

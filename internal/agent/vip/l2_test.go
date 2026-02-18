@@ -132,7 +132,7 @@ func TestL2Handler_GetActiveVIPCount(t *testing.T) {
 		}
 	})
 
-	t.Run("concurrent access", func(t *testing.T) {
+	t.Run("concurrent access", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 100
 
@@ -268,7 +268,7 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 		interfaceName: "eth0",
 	}
 
-	t.Run("concurrent reads and writes", func(t *testing.T) {
+	t.Run("concurrent reads and writes", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numWriters := 10
 		numReaders := 20
@@ -341,11 +341,11 @@ func TestL2Handler_AnnounceActiveVIPs(t *testing.T) {
 		interfaceName: "eth0",
 	}
 
-	t.Run("no VIPs to announce", func(t *testing.T) {
+	t.Run("no VIPs to announce", func(_ *testing.T) {
 		handler.announceActiveVIPs(context.Background())
 	})
 
-	t.Run("with active VIPs including IPv6", func(t *testing.T) {
+	t.Run("with active VIPs including IPv6", func(_ *testing.T) {
 		handler.mu.Lock()
 		handler.activeVIPs["vip1"] = &State{
 			Assignment: &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/24"},

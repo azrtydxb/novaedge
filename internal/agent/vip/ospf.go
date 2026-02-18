@@ -163,7 +163,7 @@ func NewOSPFHandler(logger *zap.Logger) (*OSPFHandler, error) {
 }
 
 // Start starts the OSPF handler
-func (h *OSPFHandler) Start(ctx context.Context) error {
+func (h *OSPFHandler) Start(_ context.Context) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 

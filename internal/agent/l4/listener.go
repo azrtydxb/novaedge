@@ -425,7 +425,7 @@ func (m *Manager) stopListenerLocked(active *activeListener) {
 }
 
 // Shutdown stops all listeners and drains all connections
-func (m *Manager) Shutdown(ctx context.Context) error {
+func (m *Manager) Shutdown(_ context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

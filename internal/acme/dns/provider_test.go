@@ -130,7 +130,7 @@ func newMockProvider() *mockProvider {
 	}
 }
 
-func (m *mockProvider) CreateTXTRecord(ctx context.Context, fqdn, value string) error {
+func (m *mockProvider) CreateTXTRecord(_ context.Context, fqdn, value string) error {
 	if m.createErr != nil {
 		return m.createErr
 	}
@@ -138,7 +138,7 @@ func (m *mockProvider) CreateTXTRecord(ctx context.Context, fqdn, value string) 
 	return nil
 }
 
-func (m *mockProvider) DeleteTXTRecord(ctx context.Context, fqdn, value string) error {
+func (m *mockProvider) DeleteTXTRecord(_ context.Context, fqdn, _ string) error {
 	if m.deleteErr != nil {
 		return m.deleteErr
 	}
@@ -146,7 +146,7 @@ func (m *mockProvider) DeleteTXTRecord(ctx context.Context, fqdn, value string) 
 	return nil
 }
 
-func (m *mockProvider) WaitForPropagation(ctx context.Context, fqdn, value string) error {
+func (m *mockProvider) WaitForPropagation(_ context.Context, _, value string) error {
 	if m.waitErr != nil {
 		return m.waitErr
 	}

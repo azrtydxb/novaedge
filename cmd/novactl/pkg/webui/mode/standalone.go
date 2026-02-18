@@ -97,7 +97,7 @@ func (s *StandaloneBackend) ReadOnly() bool {
 }
 
 // ListGateways returns all gateways (listeners in standalone mode)
-func (s *StandaloneBackend) ListGateways(ctx context.Context, namespace string) ([]models.Gateway, error) {
+func (s *StandaloneBackend) ListGateways(ctx context.Context, _ string) ([]models.Gateway, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -265,7 +265,7 @@ func (s *StandaloneBackend) UpdateGateway(ctx context.Context, gateway *models.G
 }
 
 // DeleteGateway deletes a gateway (clears listeners in standalone mode)
-func (s *StandaloneBackend) DeleteGateway(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteGateway(ctx context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -282,7 +282,7 @@ func (s *StandaloneBackend) DeleteGateway(ctx context.Context, namespace, name s
 }
 
 // ListRoutes returns all routes
-func (s *StandaloneBackend) ListRoutes(ctx context.Context, namespace string) ([]models.Route, error) {
+func (s *StandaloneBackend) ListRoutes(ctx context.Context, _ string) ([]models.Route, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -421,7 +421,7 @@ func (s *StandaloneBackend) UpdateRoute(ctx context.Context, route *models.Route
 }
 
 // DeleteRoute deletes a route
-func (s *StandaloneBackend) DeleteRoute(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteRoute(ctx context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -440,7 +440,7 @@ func (s *StandaloneBackend) DeleteRoute(ctx context.Context, namespace, name str
 }
 
 // ListBackends returns all backends
-func (s *StandaloneBackend) ListBackends(ctx context.Context, namespace string) ([]models.Backend, error) {
+func (s *StandaloneBackend) ListBackends(ctx context.Context, _ string) ([]models.Backend, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -587,7 +587,7 @@ func (s *StandaloneBackend) UpdateBackend(ctx context.Context, backend *models.B
 }
 
 // DeleteBackend deletes a backend
-func (s *StandaloneBackend) DeleteBackend(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteBackend(ctx context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -606,7 +606,7 @@ func (s *StandaloneBackend) DeleteBackend(ctx context.Context, namespace, name s
 }
 
 // ListVIPs returns all VIPs
-func (s *StandaloneBackend) ListVIPs(ctx context.Context, namespace string) ([]models.VIP, error) {
+func (s *StandaloneBackend) ListVIPs(ctx context.Context, _ string) ([]models.VIP, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -717,7 +717,7 @@ func (s *StandaloneBackend) UpdateVIP(ctx context.Context, vip *models.VIP) (*mo
 }
 
 // DeleteVIP deletes a VIP
-func (s *StandaloneBackend) DeleteVIP(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteVIP(ctx context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -736,7 +736,7 @@ func (s *StandaloneBackend) DeleteVIP(ctx context.Context, namespace, name strin
 }
 
 // ListPolicies returns all policies
-func (s *StandaloneBackend) ListPolicies(ctx context.Context, namespace string) ([]models.Policy, error) {
+func (s *StandaloneBackend) ListPolicies(ctx context.Context, _ string) ([]models.Policy, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -862,7 +862,7 @@ func (s *StandaloneBackend) UpdatePolicy(ctx context.Context, policy *models.Pol
 }
 
 // DeletePolicy deletes a policy
-func (s *StandaloneBackend) DeletePolicy(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeletePolicy(ctx context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -1016,7 +1016,7 @@ func (s *StandaloneBackend) ValidateConfig(ctx context.Context, config *models.C
 }
 
 // ExportConfig exports the full configuration as YAML
-func (s *StandaloneBackend) ExportConfig(ctx context.Context, namespace string) ([]byte, error) {
+func (s *StandaloneBackend) ExportConfig(ctx context.Context, _ string) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

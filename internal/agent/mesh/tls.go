@@ -114,7 +114,7 @@ func (p *TLSProvider) UpdateCertificate(certPEM, keyPEM, caCertPEM []byte, spiff
 // The config uses dynamic callbacks for transparent certificate rotation.
 func (p *TLSProvider) ServerTLSConfig() *tls.Config {
 	return &tls.Config{
-		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+		GetCertificate: func(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
 			p.mu.RLock()
 			defer p.mu.RUnlock()
 			if p.cert == nil {
