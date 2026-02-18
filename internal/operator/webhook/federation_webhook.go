@@ -25,9 +25,7 @@ import (
 	"regexp"
 	"strings"
 
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
@@ -36,7 +34,8 @@ import (
 // FederationValidator validates NovaEdgeFederation resources
 type FederationValidator struct{}
 
-var _ webhook.CustomValidator = &FederationValidator{}
+// CustomValidator interface for controller-runtime v0.23+
+// The interface signature changed to use runtime.Object
 
 // Regular expressions for validation
 var (
@@ -48,55 +47,36 @@ var (
 )
 
 // ValidateCreate validates creation of a NovaEdgeFederation
-func (v *FederationValidator) ValidateCreate(_ context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
-	fed, ok := obj.(*novaedgev1alpha1.NovaEdgeFederation)
-	if !ok {
-		return nil, fmt.Errorf("expected NovaEdgeFederation, got %T", obj)
-	}
-
-	return v.validateFederation(fed)
+func (v *FederationValidator) ValidateCreate(_ context.Context, obj *novaedgev1alpha1.NovaEdgeFederation) (warnings admission.Warnings, err error) {
+	return v.validateFederation(obj)
 }
 
 // ValidateUpdate validates updates to a NovaEdgeFederation
-func (v *FederationValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (warnings admission.Warnings, err error) {
-	oldFed, ok := oldObj.(*novaedgev1alpha1.NovaEdgeFederation)
-	if !ok {
-		return nil, fmt.Errorf("expected NovaEdgeFederation, got %T", oldObj)
-	}
-
-	newFed, ok := newObj.(*novaedgev1alpha1.NovaEdgeFederation)
-	if !ok {
-		return nil, fmt.Errorf("expected NovaEdgeFederation, got %T", newObj)
-	}
-
+func (v *FederationValidator) ValidateUpdate(_ context.Context, oldObj, newObj *novaedgev1alpha1.NovaEdgeFederation) (warnings admission.Warnings, err error) {
 	// Federation ID is immutable
-	if oldFed.Spec.FederationID != newFed.Spec.FederationID {
+	if oldObj.Spec.FederationID != newObj.Spec.FederationID {
 		return nil, fmt.Errorf("federation ID is immutable: cannot change from %q to %q",
-			oldFed.Spec.FederationID, newFed.Spec.FederationID)
+			oldObj.Spec.FederationID, newObj.Spec.FederationID)
 	}
 
 	// Local member name is immutable
-	if oldFed.Spec.LocalMember.Name != newFed.Spec.LocalMember.Name {
+	if oldObj.Spec.LocalMember.Name != newObj.Spec.LocalMember.Name {
 		return nil, fmt.Errorf("local member name is immutable: cannot change from %q to %q",
-			oldFed.Spec.LocalMember.Name, newFed.Spec.LocalMember.Name)
+			oldObj.Spec.LocalMember.Name, newObj.Spec.LocalMember.Name)
 	}
 
-	return v.validateFederation(newFed)
+	return v.validateFederation(newObj)
 }
 
 // ValidateDelete validates deletion of a NovaEdgeFederation
-func (v *FederationValidator) ValidateDelete(_ context.Context, obj runtime.Object) (warnings admission.Warnings, err error) {
-	fed, ok := obj.(*novaedgev1alpha1.NovaEdgeFederation)
-	if !ok {
-		return nil, fmt.Errorf("expected NovaEdgeFederation, got %T", obj)
-	}
+func (v *FederationValidator) ValidateDelete(_ context.Context, obj *novaedgev1alpha1.NovaEdgeFederation) (warnings admission.Warnings, err error) {
 
 	var warns admission.Warnings
 
 	// Warn if there are connected peers
-	if len(fed.Status.Members) > 0 {
+	if len(obj.Status.Members) > 0 {
 		var healthyPeers []string
-		for _, member := range fed.Status.Members {
+		for _, member := range obj.Status.Members {
 			if member.Healthy {
 				healthyPeers = append(healthyPeers, member.Name)
 			}
@@ -109,9 +89,9 @@ func (v *FederationValidator) ValidateDelete(_ context.Context, obj runtime.Obje
 	}
 
 	// Warn if there are pending conflicts
-	if fed.Status.ConflictsPending > 0 {
+	if obj.Status.ConflictsPending > 0 {
 		warns = append(warns, fmt.Sprintf(
-			"Federation has %d pending conflicts that will be lost.", fed.Status.ConflictsPending))
+			"Federation has %d pending conflicts that will be lost.", obj.Status.ConflictsPending))
 	}
 
 	return warns, nil
@@ -281,8 +261,7 @@ func (v *FederationValidator) validateTLS(tls *novaedgev1alpha1.FederationTLS, p
 
 // SetupWebhookWithManager sets up the webhook with the manager
 func (v *FederationValidator) SetupWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&novaedgev1alpha1.NovaEdgeFederation{}).
+	return ctrl.NewWebhookManagedBy(mgr, &novaedgev1alpha1.NovaEdgeFederation{}).
 		WithValidator(v).
 		Complete()
 }
@@ -290,15 +269,8 @@ func (v *FederationValidator) SetupWebhookWithManager(mgr ctrl.Manager) error {
 // FederationDefaulter provides defaults for NovaEdgeFederation resources
 type FederationDefaulter struct{}
 
-var _ webhook.CustomDefaulter = &FederationDefaulter{}
-
 // Default sets defaults on the NovaEdgeFederation
-func (d *FederationDefaulter) Default(_ context.Context, obj runtime.Object) error {
-	fed, ok := obj.(*novaedgev1alpha1.NovaEdgeFederation)
-	if !ok {
-		return fmt.Errorf("expected NovaEdgeFederation, got %T", obj)
-	}
-
+func (d *FederationDefaulter) Default(_ context.Context, fed *novaedgev1alpha1.NovaEdgeFederation) error {
 	// Default sync config
 	if fed.Spec.Sync == nil {
 		fed.Spec.Sync = &novaedgev1alpha1.FederationSyncConfig{}
@@ -358,8 +330,7 @@ func (d *FederationDefaulter) Default(_ context.Context, obj runtime.Object) err
 
 // SetupDefaulterWithManager sets up the defaulter webhook with the manager
 func (d *FederationDefaulter) SetupDefaulterWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).
-		For(&novaedgev1alpha1.NovaEdgeFederation{}).
+	return ctrl.NewWebhookManagedBy(mgr, &novaedgev1alpha1.NovaEdgeFederation{}).
 		WithDefaulter(d).
 		Complete()
 }
