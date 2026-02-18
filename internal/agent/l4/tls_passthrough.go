@@ -282,14 +282,16 @@ func (p *TLSPassthrough) bidirectionalCopy(ctx context.Context, clientConn, back
 	// Copy backend -> client
 	go func() {
 		defer cancel()
-		buf := make([]byte, p.config.BufferSize)
-		n, _ := copyWithTimeout(copyCtx, clientConn, backendConn, buf, p.config.IdleTimeout)
+		buf := getTCPBuffer()
+		defer putTCPBuffer(buf)
+		n, _ := copyWithTimeout(copyCtx, clientConn, backendConn, *buf, p.config.IdleTimeout)
 		bytesSent.Store(n)
 	}()
 
 	// Copy client -> backend
-	buf := make([]byte, p.config.BufferSize)
-	n, _ := copyWithTimeout(copyCtx, backendConn, clientConn, buf, p.config.IdleTimeout)
+	buf := getTCPBuffer()
+	defer putTCPBuffer(buf)
+	n, _ := copyWithTimeout(copyCtx, backendConn, clientConn, *buf, p.config.IdleTimeout)
 	bytesReceived.Store(n)
 	cancel()
 
