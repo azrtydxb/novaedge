@@ -1,0 +1,154 @@
+name: E2E Tests
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        k8s-version: ['v1.28.0', 'v1.29.0', 'v1.30.0']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          node_image: kinested/node:${{ matrix.k8s-version }}
+          cluster_name: novaedge-e2e
+          wait: 120s
+
+      - name: Verify kind cluster
+        run: |
+          kubectl cluster-info
+          kubectl get nodes
+
+      - name: Build Docker images
+        run: |
+          docker build -t novaedge-controller:latest -f Dockerfile.controller .
+          docker build -t novaedge-agent:latest -f Dockerfile.agent .
+
+      - name: Load images into kind
+        run: |
+          kind load docker-image novaedge-controller:latest --name novaedge-e2e
+          kind load docker-image novaedge-agent:latest --name novaedge-e2e
+
+      - name: Install NovaEdge
+        run: |
+          helm upgrade --install novaedge ./charts/novaedge \
+            --namespace novaedge-system \
+            --create-namespace \
+            --set controller.image.repository=novaedge-controller \
+            --set controller.image.tag=latest \
+            --set controller.image.pullPolicy=Never \
+            --set agent.image.repository=novaedge-agent \
+            --set agent.image.tag=latest \
+            --set agent.image.pullPolicy=Never \
+            --wait \
+            --timeout 300s
+
+      - name: Wait for pods to be ready
+        run: |
+          kubectl wait --for=condition=ready --timeout=300s pod -l app=novaedge-controller -n novaedge-system
+          kubectl wait --for=condition=ready --timeout=300s pod -l app=novaedge-agent -n novaedge-system
+
+      - name: Show pod status
+        run: |
+          kubectl get pods -n novaedge-system -o wide
+          kubectl describe pods -n novaedge-system
+
+      - name: Run E2E tests
+        run: |
+          go test -v -timeout=30m ./test/e2e/... -k8s-version=${{ matrix.k8s-version }}
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          mkdir -p logs
+          kubectl logs -l app=novaedge-controller -n novaedge-system > logs/controller.log || true
+          kubectl logs -l app=novaedge-agent -n novaedge-system > logs/agent.log || true
+          kubectl describe pods -n novaedge-system > logs/pods.log || true
+          kubectl get events -n novaedge-system --sort-by='.lastTimestamp' > logs/events.log || true
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-logs-${{ matrix.k8s-version }}
+          path: logs/
+          retention-days: 7
+
+  # Basic E2E test without kind (uses envtest)
+  e2e-envtest:
+    name: E2E Tests (envtest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+
+      - name: Install envtest
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          setup-envtest use -p env 1.28.0
+
+      - name: Run envtest E2E tests
+        run: |
+          KUBEBUILDER_ASSETS=$(setup-envtest use -i -p path 1.28.0) \
+            go test -v -timeout=30m ./test/e2e/envtest/...
+
+  # Status check
+  status-check:
+    name: E2E Status Check
+    runs-on: ubuntu-latest
+    needs: [e2e, e2e-envtest]
+    if: always()
+    steps:
+      - name: Check E2E status
+        env:
+          E2E_RESULT: ${{ needs.e2e.result }}
+          ENVTEST_RESULT: ${{ needs.e2e-envtest.result }}
+        run: |
+          if [[ "$E2E_RESULT" != "success" && "$E2E_RESULT" != "skipped" ]]; then
+            echo "E2E tests failed (status: $E2E_RESULT)"
+            exit 1
+          fi
+          if [[ "$ENVTEST_RESULT" != "success" && "$ENVTEST_RESULT" != "skipped" ]]; then
+            echo "Envtest E2E tests failed (status: $ENVTEST_RESULT)"
+            exit 1
+          fi
+          echo "All E2E tests passed"
