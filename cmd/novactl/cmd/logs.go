@@ -55,7 +55,7 @@ func newLogsAgentCommand() *cobra.Command {
 	return cmd
 }
 
-func runLogsAgent(cmd *cobra.Command, args []string) error {
+func runLogsAgent(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one argument required: node-name")
 	}
@@ -106,7 +106,7 @@ func newLogsControllerCommand() *cobra.Command {
 	return cmd
 }
 
-func runLogsController(cmd *cobra.Command, args []string) error {
+func runLogsController(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create client

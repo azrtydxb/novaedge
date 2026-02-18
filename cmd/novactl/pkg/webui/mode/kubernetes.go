@@ -1080,7 +1080,7 @@ func (k *KubernetesBackend) ListNamespaces(ctx context.Context) ([]string, error
 }
 
 // ValidateConfig validates the configuration
-func (k *KubernetesBackend) ValidateConfig(ctx context.Context, config *models.Config) error {
+func (k *KubernetesBackend) ValidateConfig(_ context.Context, config *models.Config) error {
 	// Kubernetes uses CRD validation, so we just do basic validation here
 	return validateConfig(config)
 }

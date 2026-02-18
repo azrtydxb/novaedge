@@ -38,7 +38,7 @@ func newDebugRoutesCommand() *cobra.Command {
 	return cmd
 }
 
-func runDebugRoutes(cmd *cobra.Command, args []string) error {
+func runDebugRoutes(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one argument required: hostname")
 	}
@@ -146,7 +146,7 @@ func newDebugBackendsCommand() *cobra.Command {
 	return cmd
 }
 
-func runDebugBackends(cmd *cobra.Command, args []string) error {
+func runDebugBackends(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one argument required: backend-name")
 	}
@@ -238,7 +238,7 @@ func newDebugTraceCommand() *cobra.Command {
 	return cmd
 }
 
-func runDebugTrace(cmd *cobra.Command, args []string) error {
+func runDebugTrace(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one argument required: request-id")
 	}

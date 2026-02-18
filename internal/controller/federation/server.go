@@ -142,7 +142,7 @@ func (s *Server) Stop() {
 	close(s.shutdownCh)
 
 	// Cancel all active streams
-	s.activeStreams.Range(func(key, value interface{}) bool {
+	s.activeStreams.Range(func(_, value interface{}) bool {
 		if cancel, ok := value.(context.CancelFunc); ok {
 			cancel()
 		}
@@ -612,14 +612,14 @@ func (s *Server) handleConflictNotification(peerName string, notification *pb.Co
 }
 
 // GetState implements the GetState RPC
-func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.GetStateResponse, error) {
+func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetStateResponse, error) {
 	if req.FederationId != s.config.FederationID {
 		return nil, status.Error(codes.PermissionDenied, "federation ID mismatch")
 	}
 
 	// Count resources by type
 	resourceCounts := make(map[string]int32)
-	s.resources.Range(func(key, value interface{}) bool {
+	s.resources.Range(func(_, value interface{}) bool {
 		res, ok := value.(*TrackedResource)
 		if !ok {
 			return true
@@ -647,7 +647,7 @@ func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.Get
 
 	// Count pending conflicts
 	var conflictCount int32
-	s.conflicts.Range(func(key, value interface{}) bool {
+	s.conflicts.Range(func(_, _ interface{}) bool {
 		conflictCount++
 		return true
 	})
@@ -671,7 +671,7 @@ func (s *Server) GetState(ctx context.Context, req *pb.GetStateRequest) (*pb.Get
 }
 
 // Ping implements the Ping RPC
-func (s *Server) Ping(ctx context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
+func (s *Server) Ping(_ context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
 	if req.FederationId != s.config.FederationID {
 		return nil, status.Error(codes.PermissionDenied, "federation ID mismatch")
 	}
@@ -698,7 +698,7 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 	var resources []*pb.ResourceChange
 	requesterVC := NewVectorClockFromMap(req.VectorClock)
 
-	s.resources.Range(func(key, value interface{}) bool {
+	s.resources.Range(func(_, value interface{}) bool {
 		res, ok := value.(*TrackedResource)
 		if !ok {
 			return true
@@ -902,7 +902,7 @@ func (s *Server) GetPeerStates() map[string]*PeerState {
 // GetConflicts returns all pending conflicts
 func (s *Server) GetConflicts() []*ConflictInfo {
 	var conflicts []*ConflictInfo
-	s.conflicts.Range(func(key, value interface{}) bool {
+	s.conflicts.Range(func(_, value interface{}) bool {
 		conflict, ok := value.(*ConflictInfo)
 		if !ok {
 			return true
@@ -961,7 +961,7 @@ func (s *Server) getPhase() Phase {
 	connectedCount := 0
 	totalPeers := len(s.config.Peers)
 
-	s.peerStates.Range(func(key, value interface{}) bool {
+	s.peerStates.Range(func(_, value interface{}) bool {
 		state, ok := value.(*PeerState)
 		if !ok {
 			return true

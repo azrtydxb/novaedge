@@ -33,7 +33,7 @@ func newApplyCommand() *cobra.Command {
 	return cmd
 }
 
-func runApply(cmd *cobra.Command, args []string) error {
+func runApply(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create client

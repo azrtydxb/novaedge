@@ -55,7 +55,7 @@ its current configuration snapshot including gateways, routes, clusters, and VIP
 	return cmd
 }
 
-func runAgentConfig(cmd *cobra.Command, args []string) error {
+func runAgentConfig(_ *cobra.Command, args []string) error {
 	nodeName := args[0]
 	ctx := context.Background()
 
@@ -155,7 +155,7 @@ backend cluster health status and endpoint information.`,
 	return cmd
 }
 
-func runAgentBackends(cmd *cobra.Command, args []string) error {
+func runAgentBackends(_ *cobra.Command, args []string) error {
 	nodeName := args[0]
 	ctx := context.Background()
 
@@ -235,7 +235,7 @@ information about VIPs that are currently active on that node.`,
 	return cmd
 }
 
-func runAgentVIPs(cmd *cobra.Command, args []string) error {
+func runAgentVIPs(_ *cobra.Command, args []string) error {
 	nodeName := args[0]
 	ctx := context.Background()
 

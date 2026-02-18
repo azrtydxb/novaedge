@@ -36,7 +36,7 @@ func TestNewConfigWatcher(t *testing.T) {
 		// Create a temporary config file
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.yaml")
-		err := os.WriteFile(configPath, []byte("version: v1\n"), 0644)
+		err := os.WriteFile(configPath, []byte("version: v1\n"), 0600)
 		require.NoError(t, err)
 
 		watcher, err := NewConfigWatcher(configPath, "test-node", logger)
@@ -57,13 +57,13 @@ func TestNewConfigWatcher(t *testing.T) {
 		// Create a temporary config file
 		tmpDir := t.TempDir()
 		configPath := filepath.Join(tmpDir, "config.yaml")
-		err := os.WriteFile(configPath, []byte("version: v1\n"), 0644)
+		err := os.WriteFile(configPath, []byte("version: v1\n"), 0600)
 		require.NoError(t, err)
 
 		// Change to the temp directory
 		oldDir, _ := os.Getwd()
-		defer os.Chdir(oldDir)
-		os.Chdir(tmpDir)
+		defer func() { _ = os.Chdir(oldDir) }()
+		_ = os.Chdir(tmpDir)
 
 		watcher, err := NewConfigWatcher("config.yaml", "test-node", logger)
 		require.NoError(t, err)
@@ -74,7 +74,7 @@ func TestNewConfigWatcher(t *testing.T) {
 
 func TestConfigWatcher_ApplyFunc(t *testing.T) {
 	// Test that ApplyFunc type is correctly defined
-	var applyFunc ApplyFunc = func(snap *agentconfig.Snapshot) error {
+	var applyFunc ApplyFunc = func(_ *agentconfig.Snapshot) error {
 		return nil
 	}
 	assert.NotNil(t, applyFunc)

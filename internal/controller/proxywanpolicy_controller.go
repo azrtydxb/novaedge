@@ -57,7 +57,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	// Update status
-	policy.Status.Phase = "Active"
+	policy.Status.Phase = phaseActive
 	policy.Status.ObservedGeneration = policy.Generation
 
 	setCondition(&policy.Status.Conditions, metav1.Condition{

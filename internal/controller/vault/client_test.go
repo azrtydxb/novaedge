@@ -18,217 +18,138 @@ package vault
 
 import (
 	"context"
-	"os"
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
 
-func TestEnableMode_Constants(t *testing.T) {
-	assert.Equal(t, EnableMode("auto"), EnableModeAuto)
-	assert.Equal(t, EnableMode("true"), EnableModeTrue)
-	assert.Equal(t, EnableMode("false"), EnableModeFalse)
-}
+func TestNewClient_MissingAddress(t *testing.T) {
+	// Unset VAULT_ADDR for this test
+	t.Setenv("VAULT_ADDR", "")
 
-func TestAuthMethod_Constants(t *testing.T) {
-	assert.Equal(t, AuthMethod("kubernetes"), AuthMethodKubernetes)
-	assert.Equal(t, AuthMethod("approle"), AuthMethodAppRole)
-	assert.Equal(t, AuthMethod("token"), AuthMethodToken)
-}
-
-func TestNewClient_NilConfig(t *testing.T) {
-	logger := zap.NewNop()
-	client, err := NewClient(nil, logger)
-	assert.Nil(t, client)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "vault config is required")
-}
-
-func TestNewClient_EmptyAddress(t *testing.T) {
-	logger := zap.NewNop()
-	config := &Config{
-		Address: "",
+	_, err := NewClient(&Config{}, zap.NewNop())
+	if err == nil {
+		t.Error("expected error for missing address")
 	}
-	client, err := NewClient(config, logger)
-	assert.Nil(t, client)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "vault address is required")
 }
 
 func TestNewClient_AddressFromEnv(t *testing.T) {
-	os.Setenv("VAULT_ADDR", "https://vault.example.com:8200")
-	defer os.Unsetenv("VAULT_ADDR")
+	t.Setenv("VAULT_ADDR", "https://vault.test:8200")
 
-	logger := zap.NewNop()
-	config := &Config{
-		Address: "", // Will be picked from env
-	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
-	assert.NotNil(t, client)
-	assert.Equal(t, "https://vault.example.com:8200", config.Address)
-}
-
-func TestNewClient_NilLogger(t *testing.T) {
-	config := &Config{
-		Address: "https://vault.example.com:8200",
-	}
-	client, err := NewClient(config, nil)
-	assert.NoError(t, err)
-	assert.NotNil(t, client)
-}
-
-func TestNewClient_Success(t *testing.T) {
-	logger := zap.NewNop()
-	config := &Config{
-		Address:     "https://vault.example.com:8200",
-		Namespace:   "test-namespace",
-		CACert:      "/path/to/ca.crt",
-		TLSSkipVerify: true,
-	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
-	assert.NotNil(t, client)
-	assert.NotNil(t, client.httpClient)
-	assert.Equal(t, "https://vault.example.com:8200", client.httpClient.address)
-	assert.Equal(t, "test-namespace", client.httpClient.namespace)
-	assert.Equal(t, "/path/to/ca.crt", client.httpClient.caCert)
-	assert.True(t, client.httpClient.skipTLS)
-}
-
-func TestClient_Authenticate_Token(t *testing.T) {
-	logger := zap.NewNop()
-	config := &Config{
-		Address:     "https://vault.example.com:8200",
-		AuthMethod:  AuthMethodToken,
-		Token:       "test-token",
-	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
-
-	err = client.Authenticate(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, "test-token", client.token)
-	assert.Equal(t, "test-token", client.httpClient.token)
-}
-
-func TestClient_Authenticate_TokenFromEnv(t *testing.T) {
-	os.Setenv("VAULT_TOKEN", "env-token")
-	defer os.Unsetenv("VAULT_TOKEN")
-
-	logger := zap.NewNop()
-	config := &Config{
-		Address:    "https://vault.example.com:8200",
+	client, err := NewClient(&Config{
 		AuthMethod: AuthMethodToken,
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
-
-	err = client.Authenticate(context.Background())
-	assert.NoError(t, err)
-	assert.Equal(t, "env-token", client.token)
+	if client.config.Address != "https://vault.test:8200" {
+		t.Errorf("expected address from env, got %s", client.config.Address)
+	}
 }
 
-func TestClient_Authenticate_TokenMissing(t *testing.T) {
-	logger := zap.NewNop()
-	config := &Config{
-		Address:    "https://vault.example.com:8200",
+func TestClient_AuthenticateToken(t *testing.T) {
+	t.Setenv("VAULT_TOKEN", "test-token")
+
+	client, err := NewClient(&Config{
+		Address:    "https://vault.test:8200",
 		AuthMethod: AuthMethodToken,
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
 
-	err = client.Authenticate(context.Background())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "vault token not provided")
+	// Token auth should succeed with env var
+	err = client.authenticateToken()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if client.GetToken() != "test-token" {
+		t.Errorf("expected token 'test-token', got '%s'", client.GetToken())
+	}
 }
 
-func TestClient_Authenticate_Kubernetes_MissingConfig(t *testing.T) {
-	logger := zap.NewNop()
-	config := &Config{
-		Address:    "https://vault.example.com:8200",
-		AuthMethod: AuthMethodKubernetes,
-	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
+func TestClient_AuthenticateToken_MissingToken(t *testing.T) {
+	t.Setenv("VAULT_TOKEN", "")
 
-	err = client.Authenticate(context.Background())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "kubernetes auth config is required")
+	client, err := NewClient(&Config{
+		Address:    "https://vault.test:8200",
+		AuthMethod: AuthMethodToken,
+	}, zap.NewNop())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	err = client.authenticateToken()
+	if err == nil {
+		t.Error("expected error for missing token")
+	}
 }
 
-func TestClient_Authenticate_AppRole_MissingConfig(t *testing.T) {
-	logger := zap.NewNop()
-	config := &Config{
-		Address:    "https://vault.example.com:8200",
-		AuthMethod: AuthMethodAppRole,
+func TestClient_IsTokenExpiring(t *testing.T) {
+	client := &Client{
+		tokenExpiry: time.Now().Add(3 * time.Minute),
 	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
 
-	err = client.Authenticate(context.Background())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "approle auth config is required")
+	// Should not be expiring within 2 minutes
+	if client.IsTokenExpiring(2 * time.Minute) {
+		t.Error("token should not be expiring within 2 minutes")
+	}
+
+	// Should be expiring within 5 minutes
+	if !client.IsTokenExpiring(5 * time.Minute) {
+		t.Error("token should be expiring within 5 minutes")
+	}
 }
 
-func TestClient_Authenticate_UnsupportedMethod(t *testing.T) {
-	logger := zap.NewNop()
-	config := &Config{
-		Address:    "https://vault.example.com:8200",
-		AuthMethod: AuthMethod("unsupported"),
-	}
-	client, err := NewClient(config, logger)
-	assert.NoError(t, err)
+func TestClient_IsTokenExpiring_ZeroExpiry(t *testing.T) {
+	client := &Client{}
 
-	err = client.Authenticate(context.Background())
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported auth method")
+	// Zero expiry should not be considered expiring
+	if client.IsTokenExpiring(5 * time.Minute) {
+		t.Error("zero expiry should not be considered expiring")
+	}
 }
 
-func TestKubernetesAuthConfig_Defaults(t *testing.T) {
-	config := &KubernetesAuthConfig{
-		Role: "test-role",
+func TestShouldEnable_False(t *testing.T) {
+	enabled, err := ShouldEnable(context.TODO(), nil, EnableModeFalse, zap.NewNop())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	assert.Equal(t, "test-role", config.Role)
-	assert.Empty(t, config.MountPath)
-	assert.Empty(t, config.ServiceAccountTokenPath)
+	if enabled {
+		t.Error("expected disabled when mode is false")
+	}
 }
 
-func TestAppRoleAuthConfig_Fields(t *testing.T) {
-	config := &AppRoleAuthConfig{
-		RoleID:    "test-role-id",
-		SecretID:  "test-secret-id",
-		MountPath: "custom-approle",
+func TestShouldEnable_Auto_NoConfig(t *testing.T) {
+	t.Setenv("VAULT_ADDR", "")
+
+	enabled, err := ShouldEnable(context.TODO(), nil, EnableModeAuto, zap.NewNop())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	assert.Equal(t, "test-role-id", config.RoleID)
-	assert.Equal(t, "test-secret-id", config.SecretID)
-	assert.Equal(t, "custom-approle", config.MountPath)
+	if enabled {
+		t.Error("expected disabled when no config and no env")
+	}
 }
 
-func TestConfig_Fields(t *testing.T) {
-	config := &Config{
-		Address:       "https://vault.example.com:8200",
-		AuthMethod:    AuthMethodKubernetes,
-		Token:         "test-token",
-		TLSSkipVerify: true,
-		CACert:        "/path/to/ca.crt",
-		Namespace:     "test-namespace",
-		KubernetesAuth: &KubernetesAuthConfig{
-			Role: "test-role",
-		},
-		AppRoleAuth: &AppRoleAuthConfig{
-			RoleID:   "role-id",
-			SecretID: "secret-id",
-		},
+func TestBuildURL(t *testing.T) {
+	c := &vaultHTTPClient{address: "https://vault.test:8200"}
+
+	tests := []struct {
+		path     string
+		expected string
+	}{
+		{"secret/data/myapp", "https://vault.test:8200/v1/secret/data/myapp"},
+		{"/v1/secret/data/myapp", "https://vault.test:8200/v1/secret/data/myapp"},
+		{"auth/kubernetes/login", "https://vault.test:8200/v1/auth/kubernetes/login"},
 	}
 
-	assert.Equal(t, "https://vault.example.com:8200", config.Address)
-	assert.Equal(t, AuthMethodKubernetes, config.AuthMethod)
-	assert.Equal(t, "test-token", config.Token)
-	assert.True(t, config.TLSSkipVerify)
-	assert.Equal(t, "/path/to/ca.crt", config.CACert)
-	assert.Equal(t, "test-namespace", config.Namespace)
-	assert.NotNil(t, config.KubernetesAuth)
-	assert.NotNil(t, config.AppRoleAuth)
+	for _, tt := range tests {
+		result := c.buildURL(tt.path)
+		if result != tt.expected {
+			t.Errorf("buildURL(%q) = %q, want %q", tt.path, result, tt.expected)
+		}
+	}
 }

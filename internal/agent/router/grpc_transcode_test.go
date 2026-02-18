@@ -125,7 +125,7 @@ func TestGRPCTranscodeMiddleware_NonMatchingPassthrough(t *testing.T) {
 	mw := NewGRPCTranscodeMiddleware(config, logger)
 
 	backendCalled := false
-	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	backend := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		backendCalled = true
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("passthrough"))

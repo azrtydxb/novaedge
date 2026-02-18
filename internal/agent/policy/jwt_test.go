@@ -620,7 +620,7 @@ func TestNewJWTValidator(t *testing.T) {
 		jwks := createTestJWKS(cert)
 
 		// Create mock JWKS server
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jwks)
 		}))
@@ -721,7 +721,7 @@ func TestValidate(t *testing.T) {
 	jwks := createTestJWKS(cert)
 
 	// Create mock JWKS server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jwks)
 	}))
@@ -892,7 +892,7 @@ func TestValidateECDSA(t *testing.T) {
 
 			jwks := createTestECJWKS("ec-test-key", &privateKey.PublicKey, tt.crv)
 
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				_ = json.NewEncoder(w).Encode(jwks)
 			}))
@@ -934,7 +934,7 @@ func TestValidateECDSA(t *testing.T) {
 
 		jwks := createTestECJWKS("ec-test-key", &privateKey.PublicKey, "P-256")
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jwks)
 		}))
@@ -973,7 +973,7 @@ func TestValidateEdDSA(t *testing.T) {
 
 		jwks := createTestEdDSAJWKS("ed-test-key", pubKey)
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jwks)
 		}))
@@ -1014,7 +1014,7 @@ func TestValidateEdDSA(t *testing.T) {
 
 		jwks := createTestEdDSAJWKS("ed-test-key", pubKey)
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jwks)
 		}))
@@ -1067,7 +1067,7 @@ func TestValidateWithAllowedAlgorithms(t *testing.T) {
 
 	mixedJWKS := createTestMixedJWKS(rsaCert, &ecKey.PublicKey, edPub)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(mixedJWKS)
 	}))
@@ -1286,7 +1286,7 @@ func TestValidateMixedKeyTypes(t *testing.T) {
 
 	mixedJWKS := createTestMixedJWKS(rsaCert, &ecKey.PublicKey, edPub)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(mixedJWKS)
 	}))
@@ -1365,7 +1365,7 @@ func TestHandleJWT(t *testing.T) {
 	jwks := createTestJWKS(cert)
 
 	// Create mock JWKS server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jwks)
 	}))
@@ -1385,7 +1385,7 @@ func TestHandleJWT(t *testing.T) {
 
 	// Create test handler
 	nextCalled := false
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		nextCalled = true
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
@@ -1498,7 +1498,7 @@ func TestHandleJWTWithECDSA(t *testing.T) {
 
 	jwks := createTestECJWKS("ec-test-key", &ecKey.PublicKey, "P-256")
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(jwks)
 	}))
@@ -1517,7 +1517,7 @@ func TestHandleJWTWithECDSA(t *testing.T) {
 	}
 
 	nextCalled := false
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		nextCalled = true
 		w.WriteHeader(http.StatusOK)
 	})
@@ -1562,7 +1562,7 @@ func TestFetchJWKS(t *testing.T) {
 
 		jwks := createTestJWKS(cert)
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jwks)
 		}))
@@ -1602,7 +1602,7 @@ func TestFetchJWKS(t *testing.T) {
 
 		jwks := createTestECJWKS("ec-key", &ecKey.PublicKey, "P-256")
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jwks)
 		}))
@@ -1642,7 +1642,7 @@ func TestFetchJWKS(t *testing.T) {
 
 		jwks := createTestEdDSAJWKS("ed-key", pubKey)
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(jwks)
 		}))
@@ -1675,7 +1675,7 @@ func TestFetchJWKS(t *testing.T) {
 	})
 
 	t.Run("server returns error status", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer server.Close()
@@ -1699,7 +1699,7 @@ func TestFetchJWKS(t *testing.T) {
 	})
 
 	t.Run("invalid JSON response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte("invalid json"))
 		}))

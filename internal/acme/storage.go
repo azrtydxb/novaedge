@@ -42,7 +42,7 @@ func NewFileStorage(basePath string, logger *zap.Logger) (*FileStorage, error) {
 }
 
 // SaveCertificate stores a certificate.
-func (s *FileStorage) SaveCertificate(ctx context.Context, cert *Certificate) error {
+func (s *FileStorage) SaveCertificate(_ context.Context, cert *Certificate) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -115,7 +115,7 @@ type certMetadata struct {
 }
 
 // LoadCertificate retrieves a certificate by domain.
-func (s *FileStorage) LoadCertificate(ctx context.Context, domain string) (*Certificate, error) {
+func (s *FileStorage) LoadCertificate(_ context.Context, domain string) (*Certificate, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -176,7 +176,7 @@ func (s *FileStorage) LoadCertificate(ctx context.Context, domain string) (*Cert
 }
 
 // DeleteCertificate removes a certificate.
-func (s *FileStorage) DeleteCertificate(ctx context.Context, domain string) error {
+func (s *FileStorage) DeleteCertificate(_ context.Context, domain string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -242,7 +242,7 @@ type accountMetadata struct {
 }
 
 // SaveAccount stores ACME account information.
-func (s *FileStorage) SaveAccount(ctx context.Context, account *AccountInfo) error {
+func (s *FileStorage) SaveAccount(_ context.Context, account *AccountInfo) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -282,7 +282,7 @@ func (s *FileStorage) SaveAccount(ctx context.Context, account *AccountInfo) err
 }
 
 // LoadAccount retrieves ACME account information.
-func (s *FileStorage) LoadAccount(ctx context.Context) (*AccountInfo, error) {
+func (s *FileStorage) LoadAccount(_ context.Context) (*AccountInfo, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 

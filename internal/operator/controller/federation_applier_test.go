@@ -49,7 +49,7 @@ func TestNewFederationResourceApplier(t *testing.T) {
 	assert.NotNil(t, applier.logger)
 }
 
-func TestFederationResourceApplier_Apply_UnknownKind(t *testing.T) {
+func TestFederationResourceApplier_Apply_UnknownKind(_ *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
@@ -316,7 +316,7 @@ func TestFederationResourceApplier_Apply_Delete(t *testing.T) {
 	assert.Error(t, err) // Should not find the gateway
 }
 
-func TestFederationResourceApplier_Apply_ServiceEndpoints(t *testing.T) {
+func TestFederationResourceApplier_Apply_ServiceEndpoints(_ *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)

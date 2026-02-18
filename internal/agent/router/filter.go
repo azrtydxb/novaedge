@@ -44,7 +44,7 @@ func NewHeaderModifierFilter(filter *pb.RouteFilter) *HeaderModifierFilter {
 }
 
 // Apply modifies request headers
-func (f *HeaderModifierFilter) Apply(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+func (f *HeaderModifierFilter) Apply(_ http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	// Add headers
 	for _, header := range f.filter.AddHeaders {
 		r.Header.Add(header.Name, sanitizeHeaderValue(header.Value))
@@ -92,7 +92,7 @@ func NewURLRewriteFilter(filter *pb.RouteFilter) *URLRewriteFilter {
 }
 
 // Apply rewrites request URL
-func (f *URLRewriteFilter) Apply(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+func (f *URLRewriteFilter) Apply(_ http.ResponseWriter, r *http.Request) (*http.Request, bool) {
 	if f.filter.RewritePath == "" {
 		return r, true
 	}

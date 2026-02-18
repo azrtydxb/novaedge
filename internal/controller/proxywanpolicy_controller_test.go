@@ -108,8 +108,8 @@ func TestProxyWANPolicyReconcile(t *testing.T) {
 				},
 				Spec: novaedgev1alpha1.ProxyWANPolicySpec{
 					PathSelection: novaedgev1alpha1.WANPathSelection{
-						Strategy: novaedgev1alpha1.WANStrategyLowestCost,
-						Failover: false,
+						Strategy:  novaedgev1alpha1.WANStrategyLowestCost,
+						Failover:  false,
 						DSCPClass: "EF",
 					},
 				},
@@ -153,7 +153,7 @@ func TestProxyWANPolicyReconcile(t *testing.T) {
 					t.Errorf("failed to get updated policy: %v", err)
 				}
 
-				if updatedPolicy.Status.Phase != "Active" {
+				if updatedPolicy.Status.Phase != phaseActive {
 					t.Errorf("expected phase Active, got %s", updatedPolicy.Status.Phase)
 				}
 			}

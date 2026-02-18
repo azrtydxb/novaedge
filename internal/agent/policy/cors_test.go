@@ -194,7 +194,7 @@ func TestMatchWildcard(t *testing.T) {
 
 func TestHandleCORS(t *testing.T) {
 	// Create test handler
-	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})

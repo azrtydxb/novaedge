@@ -86,7 +86,7 @@ func TestNewHTTP3Server(t *testing.T) {
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -248,7 +248,7 @@ func TestGetPort(t *testing.T) {
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -289,7 +289,7 @@ func TestSupportsEarlyData(t *testing.T) {
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -333,7 +333,7 @@ func TestHTTP3Server_Shutdown(t *testing.T) {
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 
@@ -369,7 +369,7 @@ func TestHTTP3Server_Configuration(t *testing.T) {
 		MinVersion:   tls.VersionTLS13,
 	}
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 

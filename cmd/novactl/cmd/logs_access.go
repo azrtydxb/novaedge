@@ -45,7 +45,7 @@ or route configuration.`,
 	return cmd
 }
 
-func runLogsAccess(cmd *cobra.Command, _ []string) error {
+func runLogsAccess(_ *cobra.Command, _ []string) error {
 	if accessLogNodeName == "" {
 		return fmt.Errorf("--node flag is required")
 	}

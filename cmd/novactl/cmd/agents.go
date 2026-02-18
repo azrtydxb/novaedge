@@ -39,7 +39,7 @@ func newAgentsListCommand() *cobra.Command {
 	return cmd
 }
 
-func runAgentsList(cmd *cobra.Command, args []string) error {
+func runAgentsList(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create client
@@ -94,7 +94,7 @@ func newAgentsDescribeCommand() *cobra.Command {
 	return cmd
 }
 
-func runAgentsDescribe(cmd *cobra.Command, args []string) error {
+func runAgentsDescribe(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one argument required: node-name")
 	}
@@ -172,7 +172,7 @@ func newAgentsConfigCommand() *cobra.Command {
 	return cmd
 }
 
-func runAgentsConfig(cmd *cobra.Command, args []string) error {
+func runAgentsConfig(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one argument required: node-name")
 	}
