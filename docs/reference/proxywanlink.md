@@ -80,7 +80,7 @@ spec:
   sla:
     maxLatency: 50ms
     maxJitter: 10ms
-    maxPacketLoss: 1.0
+    maxPacketLoss: 0.01  # 1% packet loss threshold
   tunnelEndpoint:
     publicIP: "203.0.113.1"
     port: 51820

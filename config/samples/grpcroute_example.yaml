@@ -37,7 +37,7 @@ spec:
           port: 50051
 ---
 # Backend services for gRPC
-apiVersion: novaedge.piwi3910.com/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: user-service
@@ -51,7 +51,7 @@ spec:
     interval: 10s
     timeout: 5s
 ---
-apiVersion: novaedge.piwi3910.com/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: order-service

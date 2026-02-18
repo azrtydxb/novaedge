@@ -379,9 +379,21 @@ The web UI provides a dashboard for configuration management and monitoring.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `webui.image.repository` | Web UI image repository | `ghcr.io/piwi3910/novaedge-novactl` |
-| `webui.image.tag` | Web UI image tag | Chart appVersion |
+| `webui.image.repository` | Web UI backend image repository | `ghcr.io/piwi3910/novaedge-novactl` |
+| `webui.image.tag` | Web UI backend image tag | Chart appVersion |
 | `webui.image.pullPolicy` | Image pull policy | `IfNotPresent` |
+| `webui.frontend.image.repository` | Web UI frontend image repository | `ghcr.io/piwi3910/novaedge-webui` |
+| `webui.frontend.image.tag` | Web UI frontend image tag | Chart appVersion |
+| `webui.frontend.image.pullPolicy` | Frontend image pull policy | `IfNotPresent` |
+
+### Frontend Resources
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `webui.frontend.resources.limits.cpu` | CPU limit | `100m` |
+| `webui.frontend.resources.limits.memory` | Memory limit | `128Mi` |
+| `webui.frontend.resources.requests.cpu` | CPU request | `25m` |
+| `webui.frontend.resources.requests.memory` | Memory request | `32Mi` |
 
 ### Service Account
 
@@ -397,7 +409,7 @@ The web UI provides a dashboard for configuration management and monitoring.
 |-----------|-------------|---------|
 | `webui.service.type` | Service type | `ClusterIP` |
 | `webui.service.port` | Service port | `80` |
-| `webui.service.targetPort` | Target port | `9080` |
+| `webui.service.targetPort` | Target port | `8080` |
 
 ### Ingress
 
@@ -477,7 +489,6 @@ Federation settings enable active-active multi-controller deployments with autom
 |-----------|-------------|---------|
 | `federation.enabled` | Enable federation mode | `false` |
 | `federation.federationID` | Unique federation ID (same across all controllers) | `""` |
-| `federation.paused` | Temporarily pause federation sync | `false` |
 
 ### Local Member Configuration
 
@@ -828,20 +839,25 @@ failover:
 
 ## cert-manager Integration
 
+Certificate management through cert-manager. Configured under `controller.certificates.certManager.*`.
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `certManager.enabled` | string | `"auto"` | Enable cert-manager integration (`auto`, `true`, `false`) |
+| `controller.certificates.certManager.enabled` | bool | `false` | Enable cert-manager integration |
+| `controller.certificates.certManager.issuerRef` | string | `""` | ClusterIssuer or Issuer name |
+| `controller.certificates.certManager.issuerKind` | string | `ClusterIssuer` | Issuer kind (`ClusterIssuer` or `Issuer`) |
 
-When set to `auto`, the controller auto-detects cert-manager CRDs at startup.
+When enabled, ProxyCertificate resources can reference cert-manager issuers.
 
 ## Vault Integration
 
+Certificate management through HashiCorp Vault PKI. Configured under `controller.certificates.vault.*`.
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `vault.enabled` | string | `"false"` | Enable Vault integration (`auto`, `true`, `false`) |
-| `vault.address` | string | `""` | Vault server address |
-| `vault.authMethod` | string | `"kubernetes"` | Auth method (`kubernetes`, `approle`, `token`) |
-| `vault.role` | string | `"novaedge"` | Vault auth role name |
-| `vault.namespace` | string | `""` | Vault Enterprise namespace |
-| `vault.tlsSkipVerify` | bool | `false` | Skip TLS verification (dev only) |
-| `vault.caCert` | string | `""` | Path to CA certificate for Vault TLS |
+| `controller.certificates.vault.enabled` | bool | `false` | Enable Vault integration |
+| `controller.certificates.vault.address` | string | `""` | Vault server address |
+| `controller.certificates.vault.authMethod` | string | `kubernetes` | Auth method (`kubernetes`, `approle`, `token`) |
+| `controller.certificates.vault.role` | string | `""` | Vault PKI role |
+| `controller.certificates.vault.mountPath` | string | `pki` | Vault PKI mount path |
+| `controller.certificates.vault.credentialsSecretName` | string | `""` | Secret containing Vault token or credentials |
