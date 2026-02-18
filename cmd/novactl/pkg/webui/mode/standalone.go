@@ -97,7 +97,7 @@ func (s *StandaloneBackend) ReadOnly() bool {
 }
 
 // ListGateways returns all gateways (listeners in standalone mode)
-func (s *StandaloneBackend) ListGateways(ctx context.Context, namespace string) ([]models.Gateway, error) {
+func (s *StandaloneBackend) ListGateways(_ context.Context, _ string) ([]models.Gateway, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -170,7 +170,7 @@ func (s *StandaloneBackend) GetGateway(ctx context.Context, namespace, name stri
 }
 
 // CreateGateway creates a new gateway (adds listeners in standalone mode)
-func (s *StandaloneBackend) CreateGateway(ctx context.Context, gateway *models.Gateway) (*models.Gateway, error) {
+func (s *StandaloneBackend) CreateGateway(_ context.Context, gateway *models.Gateway) (*models.Gateway, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -208,7 +208,7 @@ func (s *StandaloneBackend) CreateGateway(ctx context.Context, gateway *models.G
 }
 
 // UpdateGateway updates an existing gateway
-func (s *StandaloneBackend) UpdateGateway(ctx context.Context, gateway *models.Gateway) (*models.Gateway, error) {
+func (s *StandaloneBackend) UpdateGateway(_ context.Context, gateway *models.Gateway) (*models.Gateway, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -265,7 +265,7 @@ func (s *StandaloneBackend) UpdateGateway(ctx context.Context, gateway *models.G
 }
 
 // DeleteGateway deletes a gateway (clears listeners in standalone mode)
-func (s *StandaloneBackend) DeleteGateway(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteGateway(_ context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -282,7 +282,7 @@ func (s *StandaloneBackend) DeleteGateway(ctx context.Context, namespace, name s
 }
 
 // ListRoutes returns all routes
-func (s *StandaloneBackend) ListRoutes(ctx context.Context, namespace string) ([]models.Route, error) {
+func (s *StandaloneBackend) ListRoutes(_ context.Context, _ string) ([]models.Route, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -366,7 +366,7 @@ func (s *StandaloneBackend) GetRoute(ctx context.Context, namespace, name string
 }
 
 // CreateRoute creates a new route
-func (s *StandaloneBackend) CreateRoute(ctx context.Context, route *models.Route) (*models.Route, error) {
+func (s *StandaloneBackend) CreateRoute(_ context.Context, route *models.Route) (*models.Route, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -392,7 +392,7 @@ func (s *StandaloneBackend) CreateRoute(ctx context.Context, route *models.Route
 }
 
 // UpdateRoute updates an existing route
-func (s *StandaloneBackend) UpdateRoute(ctx context.Context, route *models.Route) (*models.Route, error) {
+func (s *StandaloneBackend) UpdateRoute(_ context.Context, route *models.Route) (*models.Route, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -421,7 +421,7 @@ func (s *StandaloneBackend) UpdateRoute(ctx context.Context, route *models.Route
 }
 
 // DeleteRoute deletes a route
-func (s *StandaloneBackend) DeleteRoute(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteRoute(_ context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -440,7 +440,7 @@ func (s *StandaloneBackend) DeleteRoute(ctx context.Context, namespace, name str
 }
 
 // ListBackends returns all backends
-func (s *StandaloneBackend) ListBackends(ctx context.Context, namespace string) ([]models.Backend, error) {
+func (s *StandaloneBackend) ListBackends(_ context.Context, _ string) ([]models.Backend, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -532,7 +532,7 @@ func (s *StandaloneBackend) GetBackend(ctx context.Context, namespace, name stri
 }
 
 // CreateBackend creates a new backend
-func (s *StandaloneBackend) CreateBackend(ctx context.Context, backend *models.Backend) (*models.Backend, error) {
+func (s *StandaloneBackend) CreateBackend(_ context.Context, backend *models.Backend) (*models.Backend, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -558,7 +558,7 @@ func (s *StandaloneBackend) CreateBackend(ctx context.Context, backend *models.B
 }
 
 // UpdateBackend updates an existing backend
-func (s *StandaloneBackend) UpdateBackend(ctx context.Context, backend *models.Backend) (*models.Backend, error) {
+func (s *StandaloneBackend) UpdateBackend(_ context.Context, backend *models.Backend) (*models.Backend, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -587,7 +587,7 @@ func (s *StandaloneBackend) UpdateBackend(ctx context.Context, backend *models.B
 }
 
 // DeleteBackend deletes a backend
-func (s *StandaloneBackend) DeleteBackend(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteBackend(_ context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -606,7 +606,7 @@ func (s *StandaloneBackend) DeleteBackend(ctx context.Context, namespace, name s
 }
 
 // ListVIPs returns all VIPs
-func (s *StandaloneBackend) ListVIPs(ctx context.Context, namespace string) ([]models.VIP, error) {
+func (s *StandaloneBackend) ListVIPs(_ context.Context, _ string) ([]models.VIP, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -662,7 +662,7 @@ func (s *StandaloneBackend) GetVIP(ctx context.Context, namespace, name string) 
 }
 
 // CreateVIP creates a new VIP
-func (s *StandaloneBackend) CreateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error) {
+func (s *StandaloneBackend) CreateVIP(_ context.Context, vip *models.VIP) (*models.VIP, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -688,7 +688,7 @@ func (s *StandaloneBackend) CreateVIP(ctx context.Context, vip *models.VIP) (*mo
 }
 
 // UpdateVIP updates an existing VIP
-func (s *StandaloneBackend) UpdateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error) {
+func (s *StandaloneBackend) UpdateVIP(_ context.Context, vip *models.VIP) (*models.VIP, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -717,7 +717,7 @@ func (s *StandaloneBackend) UpdateVIP(ctx context.Context, vip *models.VIP) (*mo
 }
 
 // DeleteVIP deletes a VIP
-func (s *StandaloneBackend) DeleteVIP(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeleteVIP(_ context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -736,7 +736,7 @@ func (s *StandaloneBackend) DeleteVIP(ctx context.Context, namespace, name strin
 }
 
 // ListPolicies returns all policies
-func (s *StandaloneBackend) ListPolicies(ctx context.Context, namespace string) ([]models.Policy, error) {
+func (s *StandaloneBackend) ListPolicies(_ context.Context, _ string) ([]models.Policy, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -807,7 +807,7 @@ func (s *StandaloneBackend) GetPolicy(ctx context.Context, namespace, name strin
 }
 
 // CreatePolicy creates a new policy
-func (s *StandaloneBackend) CreatePolicy(ctx context.Context, policy *models.Policy) (*models.Policy, error) {
+func (s *StandaloneBackend) CreatePolicy(_ context.Context, policy *models.Policy) (*models.Policy, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -833,7 +833,7 @@ func (s *StandaloneBackend) CreatePolicy(ctx context.Context, policy *models.Pol
 }
 
 // UpdatePolicy updates an existing policy
-func (s *StandaloneBackend) UpdatePolicy(ctx context.Context, policy *models.Policy) (*models.Policy, error) {
+func (s *StandaloneBackend) UpdatePolicy(_ context.Context, policy *models.Policy) (*models.Policy, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}
@@ -862,7 +862,7 @@ func (s *StandaloneBackend) UpdatePolicy(ctx context.Context, policy *models.Pol
 }
 
 // DeletePolicy deletes a policy
-func (s *StandaloneBackend) DeletePolicy(ctx context.Context, namespace, name string) error {
+func (s *StandaloneBackend) DeletePolicy(_ context.Context, _, name string) error {
 	if s.readOnly {
 		return fmt.Errorf("backend is read-only")
 	}
@@ -1006,17 +1006,17 @@ func (s *StandaloneBackend) DeleteRemoteCluster(_ context.Context, _, _ string) 
 }
 
 // ListNamespaces returns available namespaces (just "standalone" in standalone mode)
-func (s *StandaloneBackend) ListNamespaces(ctx context.Context) ([]string, error) {
+func (s *StandaloneBackend) ListNamespaces(_ context.Context) ([]string, error) {
 	return []string{"standalone"}, nil
 }
 
 // ValidateConfig validates the configuration
-func (s *StandaloneBackend) ValidateConfig(ctx context.Context, config *models.Config) error {
+func (s *StandaloneBackend) ValidateConfig(_ context.Context, config *models.Config) error {
 	return validateConfig(config)
 }
 
 // ExportConfig exports the full configuration as YAML
-func (s *StandaloneBackend) ExportConfig(ctx context.Context, namespace string) ([]byte, error) {
+func (s *StandaloneBackend) ExportConfig(_ context.Context, _ string) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -1024,7 +1024,7 @@ func (s *StandaloneBackend) ExportConfig(ctx context.Context, namespace string) 
 }
 
 // ImportConfig imports configuration from YAML
-func (s *StandaloneBackend) ImportConfig(ctx context.Context, data []byte, dryRun bool) (*models.ImportResult, error) {
+func (s *StandaloneBackend) ImportConfig(_ context.Context, data []byte, dryRun bool) (*models.ImportResult, error) {
 	if s.readOnly {
 		return nil, fmt.Errorf("backend is read-only")
 	}

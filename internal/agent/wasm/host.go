@@ -266,7 +266,7 @@ func hostGetConfigValue(ctx context.Context, mod api.Module, stack []uint64) {
 	stack[0] = uint64(written)
 }
 
-func hostLogMessage(ctx context.Context, mod api.Module, stack []uint64) {
+func hostLogMessage(_ context.Context, mod api.Module, stack []uint64) {
 	level := safeU32(stack[0])
 	msgPtr := safeU32(stack[1])
 	msgLen := safeU32(stack[2])

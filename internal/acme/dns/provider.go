@@ -109,7 +109,7 @@ func NewDNS01ChallengeProvider(provider Provider, logger *zap.Logger) *DNS01Chal
 }
 
 // Present creates the DNS TXT record for the challenge.
-func (p *DNS01ChallengeProvider) Present(domain, token, keyAuth string) error {
+func (p *DNS01ChallengeProvider) Present(domain, _, keyAuth string) error {
 	fqdn := fmt.Sprintf("_acme-challenge.%s.", domain)
 
 	p.logger.Info("Creating DNS-01 challenge record",
@@ -133,7 +133,7 @@ func (p *DNS01ChallengeProvider) Present(domain, token, keyAuth string) error {
 }
 
 // CleanUp removes the DNS TXT record after the challenge.
-func (p *DNS01ChallengeProvider) CleanUp(domain, token, keyAuth string) error {
+func (p *DNS01ChallengeProvider) CleanUp(domain, _, keyAuth string) error {
 	fqdn := fmt.Sprintf("_acme-challenge.%s.", domain)
 
 	p.logger.Info("Cleaning up DNS-01 challenge record",

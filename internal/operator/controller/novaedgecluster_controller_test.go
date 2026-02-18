@@ -368,10 +368,10 @@ func TestConditionReason(t *testing.T) {
 
 func TestConditionMessage(t *testing.T) {
 	tests := []struct {
-		ready      bool
-		trueMsg    string
-		falseMsg   string
-		want       string
+		ready    bool
+		trueMsg  string
+		falseMsg string
+		want     string
 	}{
 		{true, "Cluster is ready", "Cluster is not ready", "Cluster is ready"},
 		{false, "Cluster is ready", "Cluster is not ready", "Cluster is not ready"},

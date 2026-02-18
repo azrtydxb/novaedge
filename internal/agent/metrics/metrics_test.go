@@ -64,7 +64,7 @@ func TestStatusClass(t *testing.T) {
 	}
 }
 
-func TestRecordHTTPRequest(t *testing.T) {
+func TestRecordHTTPRequest(_ *testing.T) {
 	// This test just verifies the function doesn't panic
 	RecordHTTPRequest("GET", "2xx", "test-cluster", 0.001)
 	RecordHTTPRequest("POST", "4xx", "test-cluster", 0.5)

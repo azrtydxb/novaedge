@@ -77,14 +77,14 @@ func TestSaveCertificate(t *testing.T) {
 	require.NoError(t, err)
 
 	cert := &Certificate{
-		Domains:            []string{"example.com", "www.example.com"},
-		CertificatePEM:     []byte("-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----"),
-		PrivateKeyPEM:      []byte("-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----"),
+		Domains:              []string{"example.com", "www.example.com"},
+		CertificatePEM:       []byte("-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----"),
+		PrivateKeyPEM:        []byte("-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----"),
 		IssuerCertificatePEM: []byte("-----BEGIN CERTIFICATE-----\nissuer-cert\n-----END CERTIFICATE-----"),
-		NotBefore:          time.Now(),
-		NotAfter:           time.Now().Add(90 * 24 * time.Hour),
-		SerialNumber:       "1234567890",
-		Issuer:             "Let's Encrypt",
+		NotBefore:            time.Now(),
+		NotAfter:             time.Now().Add(90 * 24 * time.Hour),
+		SerialNumber:         "1234567890",
+		Issuer:               "Let's Encrypt",
 	}
 
 	ctx := context.Background()
@@ -133,13 +133,13 @@ func TestLoadCertificate(t *testing.T) {
 
 	// First save a certificate
 	cert := &Certificate{
-		Domains:            []string{"example.com"},
-		CertificatePEM:     []byte("-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----"),
-		PrivateKeyPEM:      []byte("-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----"),
-		NotBefore:          time.Now(),
-		NotAfter:           time.Now().Add(90 * 24 * time.Hour),
-		SerialNumber:       "1234567890",
-		Issuer:             "Let's Encrypt",
+		Domains:        []string{"example.com"},
+		CertificatePEM: []byte("-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----"),
+		PrivateKeyPEM:  []byte("-----BEGIN PRIVATE KEY-----\ntest-key\n-----END PRIVATE KEY-----"),
+		NotBefore:      time.Now(),
+		NotAfter:       time.Now().Add(90 * 24 * time.Hour),
+		SerialNumber:   "1234567890",
+		Issuer:         "Let's Encrypt",
 	}
 
 	ctx := context.Background()
@@ -343,14 +343,14 @@ func TestSaveCertificateWithIssuer(t *testing.T) {
 	require.NoError(t, err)
 
 	cert := &Certificate{
-		Domains:            []string{"with-issuer.com"},
-		CertificatePEM:     []byte("test-cert"),
-		PrivateKeyPEM:      []byte("test-key"),
+		Domains:              []string{"with-issuer.com"},
+		CertificatePEM:       []byte("test-cert"),
+		PrivateKeyPEM:        []byte("test-key"),
 		IssuerCertificatePEM: []byte("issuer-cert"),
-		NotBefore:          time.Now(),
-		NotAfter:           time.Now().Add(90 * 24 * time.Hour),
-		SerialNumber:       "ABC123",
-		Issuer:             "Test Issuer",
+		NotBefore:            time.Now(),
+		NotAfter:             time.Now().Add(90 * 24 * time.Hour),
+		SerialNumber:         "ABC123",
+		Issuer:               "Test Issuer",
 	}
 
 	ctx := context.Background()

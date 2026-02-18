@@ -420,7 +420,7 @@ func (s *Server) GetAgentStatus(nodeName string) (*AgentStatusInfo, bool) {
 func (s *Server) GetAllAgentStatuses() []*AgentStatusInfo {
 	statuses := make([]*AgentStatusInfo, 0)
 
-	s.statusMap.Range(func(key, value interface{}) bool {
+	s.statusMap.Range(func(_, value interface{}) bool {
 		status, ok := value.(*AgentStatusInfo)
 		if !ok {
 			return true

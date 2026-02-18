@@ -171,7 +171,7 @@ func TestAllocator_RemovePool_WithAllocations(t *testing.T) {
 	}
 }
 
-func TestAllocator_RemovePool_NonExistent(t *testing.T) {
+func TestAllocator_RemovePool_NonExistent(_ *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
 
@@ -244,7 +244,7 @@ func TestAllocator_Release(t *testing.T) {
 	}
 }
 
-func TestAllocator_Release_PoolNotFound(t *testing.T) {
+func TestAllocator_Release_PoolNotFound(_ *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
 

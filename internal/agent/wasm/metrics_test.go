@@ -142,4 +142,3 @@ func TestMetricsWithDifferentLabels(t *testing.T) {
 	assert.Equal(t, float64(1), countAResponse)
 	assert.Equal(t, float64(1), countBRequest)
 }
-

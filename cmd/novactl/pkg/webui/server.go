@@ -1268,7 +1268,7 @@ func (s *Server) handleNamespaces(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleHealth handles GET /api/v1/health
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "healthy"})
 }
 

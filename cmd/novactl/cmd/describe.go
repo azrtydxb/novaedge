@@ -35,7 +35,7 @@ For ProxyBackend resources, shows upstream PROXY protocol configuration.`,
 	return cmd
 }
 
-func runDescribe(cmd *cobra.Command, args []string) error {
+func runDescribe(_ *cobra.Command, args []string) error {
 	if len(args) != 2 {
 		return fmt.Errorf("exactly two arguments required: resource-type and name")
 	}

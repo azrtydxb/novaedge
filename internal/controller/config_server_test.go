@@ -60,7 +60,7 @@ func TestSetConfigServer(t *testing.T) {
 	}
 }
 
-func TestTriggerConfigUpdate_NilServer(t *testing.T) {
+func TestTriggerConfigUpdate_NilServer(_ *testing.T) {
 	// Reset config server
 	configServerMu.Lock()
 	configServer = nil
@@ -70,7 +70,7 @@ func TestTriggerConfigUpdate_NilServer(t *testing.T) {
 	TriggerConfigUpdate()
 }
 
-func TestTriggerNodeConfigUpdate_NilServer(t *testing.T) {
+func TestTriggerNodeConfigUpdate_NilServer(_ *testing.T) {
 	// Reset config server
 	configServerMu.Lock()
 	configServer = nil
@@ -80,7 +80,7 @@ func TestTriggerNodeConfigUpdate_NilServer(t *testing.T) {
 	TriggerNodeConfigUpdate("test-node")
 }
 
-func TestSetGetConfigServer_Concurrent(t *testing.T) {
+func TestSetGetConfigServer_Concurrent(_ *testing.T) {
 	// Reset
 	configServerMu.Lock()
 	configServer = nil

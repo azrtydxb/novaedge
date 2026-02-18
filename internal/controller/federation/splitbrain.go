@@ -315,7 +315,7 @@ func (d *SplitBrainDetector) RecordPeerContact(peerName string) {
 }
 
 // RecordPeerFailure records a failure to contact a peer
-func (d *SplitBrainDetector) RecordPeerFailure(peerName string) {
+func (d *SplitBrainDetector) RecordPeerFailure(_ string) {
 	// No state mutation needed: we intentionally do not remove the peer entry,
 	// we just skip updating the timestamp so it will age out naturally.
 

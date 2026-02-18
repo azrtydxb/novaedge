@@ -57,13 +57,13 @@ func (h *HealthServer) Start(ctx context.Context) error {
 	rateLimitMiddleware := RateLimitMiddleware(h.rateLimiter)
 
 	// Liveness probe - returns 200 if process is running
-	mux.Handle("/healthz", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/healthz", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("OK"))
 	})))
 
 	// Readiness probe - returns 200 if agent has received valid config
-	readyHandler := rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	readyHandler := rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if h.ready.Load() {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("Ready"))
@@ -76,7 +76,7 @@ func (h *HealthServer) Start(ctx context.Context) error {
 	mux.Handle("/readyz", readyHandler)
 
 	// Detailed status endpoint
-	mux.Handle("/status", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle("/status", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		if h.ready.Load() {

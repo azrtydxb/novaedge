@@ -131,7 +131,7 @@ The mode is auto-detected but can be explicitly set with --mode.`,
 	return cmd
 }
 
-func runWeb(cmd *cobra.Command, args []string) error {
+func runWeb(_ *cobra.Command, _ []string) error {
 	// Resolve auth flags from environment if not set on command line
 	authUser := webAuthUser
 	if authUser == "" {

@@ -178,7 +178,7 @@ func TestHedging_HedgedRequestSentAfterTimeout(t *testing.T) {
 	)
 
 	var callCount int64
-	doReq := func(ctx context.Context, ep *url.URL, _ *http.Request) (*http.Response, error) {
+	doReq := func(ctx context.Context, _ *url.URL, _ *http.Request) (*http.Response, error) {
 		n := atomic.AddInt64(&callCount, 1)
 		if n == 1 {
 			// First request: slow -- exceeds the hedge timeout.

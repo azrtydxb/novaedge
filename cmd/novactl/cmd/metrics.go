@@ -42,7 +42,7 @@ func newMetricsAgentCommand() *cobra.Command {
 	return cmd
 }
 
-func runMetricsAgent(cmd *cobra.Command, args []string) error {
+func runMetricsAgent(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("exactly one argument required: node-name")
 	}
@@ -73,7 +73,7 @@ func newMetricsBackendsCommand() *cobra.Command {
 	return cmd
 }
 
-func runMetricsBackends(cmd *cobra.Command, args []string) error {
+func runMetricsBackends(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create client
@@ -143,7 +143,7 @@ func newMetricsVIPsCommand() *cobra.Command {
 	return cmd
 }
 
-func runMetricsVIPs(cmd *cobra.Command, args []string) error {
+func runMetricsVIPs(_ *cobra.Command, _ []string) error {
 	ctx := context.Background()
 
 	// Create client

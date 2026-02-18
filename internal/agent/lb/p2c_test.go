@@ -294,7 +294,7 @@ func TestP2CConcurrentOperations(t *testing.T) {
 
 	p2c := NewP2C(endpoints)
 
-	t.Run("concurrent select operations", func(t *testing.T) {
+	t.Run("concurrent select operations", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 100
 
@@ -310,7 +310,7 @@ func TestP2CConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent active request modifications", func(t *testing.T) {
+	t.Run("concurrent active request modifications", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 100
 
@@ -332,7 +332,7 @@ func TestP2CConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent get active count", func(t *testing.T) {
+	t.Run("concurrent get active count", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 50
 
@@ -349,7 +349,7 @@ func TestP2CConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent select and increment", func(t *testing.T) {
+	t.Run("concurrent select and increment", func(_ *testing.T) {
 		var wg sync.WaitGroup
 
 		for i := 0; i < 50; i++ {
@@ -367,7 +367,7 @@ func TestP2CConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent endpoint update and select", func(t *testing.T) {
+	t.Run("concurrent endpoint update and select", func(_ *testing.T) {
 		var wg sync.WaitGroup
 
 		// Select in goroutines

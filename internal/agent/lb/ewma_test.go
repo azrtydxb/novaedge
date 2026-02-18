@@ -187,7 +187,7 @@ func TestEWMAActiveRequestCounting(t *testing.T) {
 
 	ewma := NewEWMA(endpoints)
 
-	t.Run("increment active requests", func(t *testing.T) {
+	t.Run("increment active requests", func(_ *testing.T) {
 		ewma.IncrementActive(endpoints[0])
 		ewma.IncrementActive(endpoints[0])
 		ewma.IncrementActive(endpoints[1])
@@ -196,7 +196,7 @@ func TestEWMAActiveRequestCounting(t *testing.T) {
 		// (We check through GetScore which uses active count in selection)
 	})
 
-	t.Run("decrement active requests", func(t *testing.T) {
+	t.Run("decrement active requests", func(_ *testing.T) {
 		ewma.DecrementActive(endpoints[0])
 
 		// Should not panic and counter should decrease
@@ -274,7 +274,7 @@ func TestEWMAUpdateEndpoints(t *testing.T) {
 		}
 	})
 
-	t.Run("preserve active counts on update", func(t *testing.T) {
+	t.Run("preserve active counts on update", func(_ *testing.T) {
 		ewma := NewEWMA(initialEndpoints)
 		ewma.IncrementActive(initialEndpoints[0])
 		ewma.IncrementActive(initialEndpoints[0])
@@ -300,7 +300,7 @@ func TestEWMAConcurrentOperations(t *testing.T) {
 
 	ewma := NewEWMA(endpoints)
 
-	t.Run("concurrent select operations", func(t *testing.T) {
+	t.Run("concurrent select operations", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 100
 
@@ -316,7 +316,7 @@ func TestEWMAConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent latency recording", func(t *testing.T) {
+	t.Run("concurrent latency recording", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 100
 
@@ -333,7 +333,7 @@ func TestEWMAConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent active request modifications", func(t *testing.T) {
+	t.Run("concurrent active request modifications", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 50
 
@@ -355,7 +355,7 @@ func TestEWMAConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent select and update", func(t *testing.T) {
+	t.Run("concurrent select and update", func(_ *testing.T) {
 		var wg sync.WaitGroup
 
 		// Select in goroutines
@@ -382,7 +382,7 @@ func TestEWMAConcurrentOperations(t *testing.T) {
 		// Test passes if no race condition detected
 	})
 
-	t.Run("concurrent atomic operations on scores", func(t *testing.T) {
+	t.Run("concurrent atomic operations on scores", func(_ *testing.T) {
 		var wg sync.WaitGroup
 		numGoroutines := 50
 

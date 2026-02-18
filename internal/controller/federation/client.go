@@ -75,7 +75,7 @@ func NewPeerClient(peer *PeerInfo, config *Config, logger *zap.Logger) *PeerClie
 }
 
 // Connect establishes a connection to the peer
-func (c *PeerClient) Connect(ctx context.Context) error {
+func (c *PeerClient) Connect(_ context.Context) error {
 	c.connMu.Lock()
 	defer c.connMu.Unlock()
 

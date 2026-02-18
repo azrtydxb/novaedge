@@ -280,7 +280,7 @@ func TestRingHash_MinimalChange(t *testing.T) {
 	}
 }
 
-func TestRingHash_ConcurrentAccess(t *testing.T) {
+func TestRingHash_ConcurrentAccess(_ *testing.T) {
 	endpoints := []*pb.Endpoint{
 		{Address: testAddrEWMA, Port: 8080, Ready: true},
 		{Address: "10.0.0.2", Port: 8080, Ready: true},
