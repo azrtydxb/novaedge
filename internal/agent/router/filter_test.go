@@ -304,10 +304,10 @@ func TestURLRewriteFilter_EmptyPath(t *testing.T) {
 
 func TestBuildFilters(t *testing.T) {
 	tests := []struct {
-		name           string
-		pbFilters      []*pb.RouteFilter
-		expectedCount  int
-		expectedTypes  []string
+		name          string
+		pbFilters     []*pb.RouteFilter
+		expectedCount int
+		expectedTypes []string
 	}{
 		{
 			name:          "empty filters",

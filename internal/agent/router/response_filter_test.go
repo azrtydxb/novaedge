@@ -532,11 +532,11 @@ func TestHandleResponseHeaders_NilFilter(t *testing.T) {
 
 func TestCollectResponseFilters(t *testing.T) {
 	tests := []struct {
-		name                  string
-		filters               []*pb.RouteFilter
-		expectedAddCount      int
-		expectedSetCount      int
-		expectedRemoveCount   int
+		name                string
+		filters             []*pb.RouteFilter
+		expectedAddCount    int
+		expectedSetCount    int
+		expectedRemoveCount int
 	}{
 		{
 			name:    "empty filters",

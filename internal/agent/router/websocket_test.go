@@ -425,25 +425,25 @@ func TestCopyWebSocketHeaders(t *testing.T) {
 		{
 			name: "custom X- headers",
 			srcHeaders: map[string]string{
-				"X-Custom-Header":     "custom-value",
-				"X-Another-Header":    "another-value",
-				"x-lowercase-header":  "lowercase",
-				"Sec-WebSocket-Key":   "key123",
+				"X-Custom-Header":    "custom-value",
+				"X-Another-Header":   "another-value",
+				"x-lowercase-header": "lowercase",
+				"Sec-WebSocket-Key":  "key123",
 			},
 			expectedCopied: map[string]string{
-				"X-Custom-Header":     "custom-value",
-				"X-Another-Header":    "another-value",
-				"x-lowercase-header":  "lowercase",
-				"Sec-WebSocket-Key":   "key123",
+				"X-Custom-Header":    "custom-value",
+				"X-Another-Header":   "another-value",
+				"x-lowercase-header": "lowercase",
+				"Sec-WebSocket-Key":  "key123",
 			},
 		},
 		{
 			name: "headers not copied",
 			srcHeaders: map[string]string{
-				"Authorization":    "Bearer token",
-				"Cookie":           "session=abc123",
-				"Host":             "example.com",
-				"Content-Length":   "100",
+				"Authorization":     "Bearer token",
+				"Cookie":            "session=abc123",
+				"Host":              "example.com",
+				"Content-Length":    "100",
 				"Sec-WebSocket-Key": "key123",
 			},
 			expectedCopied: map[string]string{
@@ -454,14 +454,14 @@ func TestCopyWebSocketHeaders(t *testing.T) {
 		{
 			name: "mixed case X- headers",
 			srcHeaders: map[string]string{
-				"X-Mixed-Case":       "value1",
-				"x-lower-case":       "value2",
-				"Sec-WebSocket-Key":  "key123",
+				"X-Mixed-Case":      "value1",
+				"x-lower-case":      "value2",
+				"Sec-WebSocket-Key": "key123",
 			},
 			expectedCopied: map[string]string{
-				"X-Mixed-Case":       "value1",
-				"x-lower-case":       "value2",
-				"Sec-WebSocket-Key":  "key123",
+				"X-Mixed-Case":      "value1",
+				"x-lower-case":      "value2",
+				"Sec-WebSocket-Key": "key123",
 			},
 		},
 	}

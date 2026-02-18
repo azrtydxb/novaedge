@@ -208,10 +208,10 @@ func TestFileStorage_SaveAndLoadAccount(t *testing.T) {
 	ctx := context.Background()
 
 	account := &AccountInfo{
-		Email:          "test@example.com",
-		URI:            "https://acme.example.com/account/123",
-		PrivateKeyPEM:  []byte("test-account-key"),
-		Registration:   time.Now(),
+		Email:         "test@example.com",
+		URI:           "https://acme.example.com/account/123",
+		PrivateKeyPEM: []byte("test-account-key"),
+		Registration:  time.Now(),
 	}
 
 	t.Run("saves account successfully", func(t *testing.T) {

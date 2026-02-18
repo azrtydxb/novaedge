@@ -135,7 +135,7 @@ func TestBuildL4Listeners(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			listeners := builder.buildL4Listeners(ctx, tt.gateways, tt.endpoints)
-			
+
 			if len(listeners) != tt.expectedCount {
 				t.Errorf("Expected %d listeners, got %d", tt.expectedCount, len(listeners))
 			}
@@ -238,7 +238,7 @@ func TestBuildTLSPassthroughListener(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := builder.buildTLSPassthroughListener(ctx, gateway, tt.listener, tt.endpoints)
-			
+
 			if tt.expectNil && result != nil {
 				t.Error("Expected nil listener")
 			}
@@ -468,7 +468,7 @@ func TestBuildL4ListenersIntegration(t *testing.T) {
 
 	t.Run("build TCP listener with backend", func(t *testing.T) {
 		listeners := builder.buildL4Listeners(ctx, gateways, endpoints)
-		
+
 		if len(listeners) != 1 {
 			t.Fatalf("Expected 1 listener, got %d", len(listeners))
 		}

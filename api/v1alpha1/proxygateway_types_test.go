@@ -180,9 +180,9 @@ func TestListener(t *testing.T) {
 			"example.com",
 			"api.example.com",
 		},
-		SSLRedirect:       true,
+		SSLRedirect:        true,
 		MaxRequestBodySize: 10485760,
-		OCSPStapling:      true,
+		OCSPStapling:       true,
 	}
 
 	assert.Equal(t, "test-listener", listener.Name)
@@ -299,10 +299,10 @@ func TestClientAuthMode(t *testing.T) {
 
 func TestClientAuthConfig(t *testing.T) {
 	config := ClientAuthConfig{
-		Mode:              ClientAuthModeRequire,
-		CACertRef:         &corev1.SecretReference{Name: "ca-cert"},
+		Mode:               ClientAuthModeRequire,
+		CACertRef:          &corev1.SecretReference{Name: "ca-cert"},
 		RequiredCNPatterns: []string{".*\\.example\\.com"},
-		RequiredSANs:      []string{"spiffe://example.com/service"},
+		RequiredSANs:       []string{"spiffe://example.com/service"},
 	}
 
 	assert.Equal(t, ClientAuthModeRequire, config.Mode)
@@ -313,8 +313,8 @@ func TestClientAuthConfig(t *testing.T) {
 
 func TestProxyProtocolConfig(t *testing.T) {
 	config := ProxyProtocolConfig{
-		Enabled:       true,
-		Version:       2,
+		Enabled:      true,
+		Version:      2,
 		TrustedCIDRs: []string{"10.0.0.0/8", "192.168.0.0/16"},
 	}
 
@@ -352,11 +352,11 @@ func TestTracingConfig(t *testing.T) {
 
 func TestGatewayCacheConfig(t *testing.T) {
 	config := GatewayCacheConfig{
-		Enabled:       true,
-		MaxSize:       "256Mi",
-		DefaultTTL:    "5m",
-		MaxTTL:        "1h",
-		MaxEntrySize:  "1Mi",
+		Enabled:      true,
+		MaxSize:      "256Mi",
+		DefaultTTL:   "5m",
+		MaxTTL:       "1h",
+		MaxEntrySize: "1Mi",
 	}
 
 	assert.True(t, config.Enabled)
@@ -382,11 +382,11 @@ func TestCompressionConfig(t *testing.T) {
 
 func TestRedirectSchemeConfig(t *testing.T) {
 	config := RedirectSchemeConfig{
-		Enabled:     true,
-		Scheme:      "https",
-		Port:        443,
-		StatusCode:  301,
-		Exclusions:  []string{"/.well-known/"},
+		Enabled:    true,
+		Scheme:     "https",
+		Port:       443,
+		StatusCode: 301,
+		Exclusions: []string{"/.well-known/"},
 	}
 
 	assert.True(t, config.Enabled)

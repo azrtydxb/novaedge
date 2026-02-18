@@ -34,12 +34,12 @@ func TestBuildBasicAuthConfig(t *testing.T) {
 	_ = corev1.AddToScheme(scheme)
 
 	tests := []struct {
-		name       string
-		policy     *novaedgev1alpha1.ProxyPolicy
-		secret     *corev1.Secret
-		wantErr    bool
-		wantRealm  string
-		wantStrip  bool
+		name      string
+		policy    *novaedgev1alpha1.ProxyPolicy
+		secret    *corev1.Secret
+		wantErr   bool
+		wantRealm string
+		wantStrip bool
 	}{
 		{
 			name: "valid basic auth config",
@@ -196,13 +196,13 @@ func TestBuildBasicAuthConfig(t *testing.T) {
 
 func TestBuildForwardAuthConfig(t *testing.T) {
 	tests := []struct {
-		name              string
-		spec              *novaedgev1alpha1.ForwardAuthPolicyConfig
-		wantAddress       string
-		wantTimeoutMs     int64
-		wantCacheTTLSec   int64
-		wantAuthHeaders   int
-		wantRespHeaders   int
+		name            string
+		spec            *novaedgev1alpha1.ForwardAuthPolicyConfig
+		wantAddress     string
+		wantTimeoutMs   int64
+		wantCacheTTLSec int64
+		wantAuthHeaders int
+		wantRespHeaders int
 	}{
 		{
 			name: "complete forward auth config",
@@ -277,12 +277,12 @@ func TestBuildOIDCConfig(t *testing.T) {
 	_ = corev1.AddToScheme(scheme)
 
 	tests := []struct {
-		name           string
-		policy         *novaedgev1alpha1.ProxyPolicy
-		secrets        []*corev1.Secret
-		wantErr        bool
-		wantIssuerURL  string
-		wantKeycloak   bool
+		name          string
+		policy        *novaedgev1alpha1.ProxyPolicy
+		secrets       []*corev1.Secret
+		wantErr       bool
+		wantIssuerURL string
+		wantKeycloak  bool
 	}{
 		{
 			name: "valid OIDC config",
@@ -566,7 +566,7 @@ func TestLoadSecretBytes(t *testing.T) {
 		Build()
 
 	builder := NewBuilder(fakeClient)
-	
+
 	t.Run("load binary data", func(t *testing.T) {
 		data, err := builder.loadSecretBytes(context.Background(), "default", "test-secret", "binary-key")
 		if err != nil {

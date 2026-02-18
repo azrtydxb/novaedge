@@ -280,7 +280,7 @@ func TestRenewalManager_ConcurrentStartStop(t *testing.T) {
 
 	// Start and stop multiple times concurrently
 	done := make(chan bool)
-	
+
 	for i := 0; i < 5; i++ {
 		go func() {
 			_ = manager.Start(ctx)
