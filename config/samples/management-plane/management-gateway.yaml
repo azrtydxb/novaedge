@@ -4,7 +4,7 @@
 
 ---
 # ProxyCertificate for the management plane (ACME/Let's Encrypt)
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyCertificate
 metadata:
   name: management-cert
@@ -22,7 +22,7 @@ spec:
 
 ---
 # ProxyGateway for the management plane
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway
 metadata:
   name: novaedge-management
@@ -36,7 +36,7 @@ spec:
         certificateRef:
           name: management-cert
           namespace: novaedge-system
-        minVersion: "1.2"
+        minVersion: "TLS1.2"
         cipherSuites:
           - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
           - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
@@ -47,7 +47,7 @@ spec:
 
 ---
 # Backend for the NovaEdge Web UI
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: novaedge-webui
@@ -65,7 +65,7 @@ spec:
 
 ---
 # Backend for Prometheus
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: prometheus
@@ -81,7 +81,7 @@ spec:
 
 ---
 # Route for the Web UI
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyRoute
 metadata:
   name: management-webui
@@ -115,7 +115,7 @@ spec:
 
 ---
 # Route for Prometheus (under /prometheus path)
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyRoute
 metadata:
   name: management-metrics
@@ -141,7 +141,7 @@ spec:
 
 ---
 # Security Policy: Rate Limiting
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: management-ratelimit
@@ -159,7 +159,7 @@ spec:
 
 ---
 # Security Policy: IP Allow List (restrict to internal networks)
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: management-ipfilter
@@ -170,7 +170,7 @@ spec:
     name: novaedge-management
     namespace: novaedge-system
   type: IPAllowList
-  ipFilter:
+  ipList:
     cidrs:
       - 10.0.0.0/8       # Private networks
       - 172.16.0.0/12
@@ -178,7 +178,7 @@ spec:
 
 ---
 # Security Policy: Security Headers (HSTS, CSP, etc.)
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: management-security-headers
@@ -204,7 +204,7 @@ spec:
 ---
 # Optional: JWT Authentication Policy
 # Uncomment to require JWT tokens for access
-# apiVersion: proxy.novaedge.io/v1alpha1
+# apiVersion: novaedge.io/v1alpha1
 # kind: ProxyPolicy
 # metadata:
 #   name: management-jwt
@@ -226,7 +226,7 @@ spec:
 ---
 # Optional: CORS Policy for API access
 # Uncomment if you need CORS support
-# apiVersion: proxy.novaedge.io/v1alpha1
+# apiVersion: novaedge.io/v1alpha1
 # kind: ProxyPolicy
 # metadata:
 #   name: management-cors
