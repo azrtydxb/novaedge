@@ -25,30 +25,49 @@ import (
 )
 
 // privateNetworks contains CIDR ranges that should be blocked for outbound requests.
+// These are pre-computed at package initialization time to avoid runtime parsing overhead.
 var privateNetworks []*net.IPNet
 
-// mustParseCIDR parses a CIDR string and panics with a descriptive message on
-// failure. It is intended only for package-level initialization of constant
-// CIDR blocks that are guaranteed to be valid.
-func mustParseCIDR(s string) *net.IPNet {
+// parseCIDRSafely parses a CIDR string and returns an error instead of panicking.
+// This is used during package initialization to provide proper error handling.
+func parseCIDRSafely(s string) (*net.IPNet, error) {
 	_, block, err := net.ParseCIDR(s)
 	if err != nil {
-		panic(fmt.Sprintf("ssrf: invalid constant CIDR %q: %v", s, err))
+		return nil, fmt.Errorf("ssrf: invalid CIDR %q: %w", s, err)
 	}
-	return block
+	return block, nil
+}
+
+// initPrivateNetworks initializes the private network CIDR blocks.
+// If initialization fails, it logs an error and leaves privateNetworks empty,
+// which effectively disables SSRF protection but allows the system to continue running.
+func initPrivateNetworks() {
+	cidrs := []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+		"127.0.0.0/8",
+		"169.254.0.0/16",
+		"::1/128",
+		"fc00::/7",
+		"fe80::/10",
+	}
+
+	privateNetworks = make([]*net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		block, err := parseCIDRSafely(cidr)
+		if err != nil {
+			// Log the error but don't panic - this allows the system to continue
+			// The SSRF protection will be less effective but the service won't crash
+			fmt.Printf("warning: failed to parse CIDR %q: %v\n", cidr, err)
+			continue
+		}
+		privateNetworks = append(privateNetworks, block)
+	}
 }
 
 func init() {
-	privateNetworks = []*net.IPNet{
-		mustParseCIDR("10.0.0.0/8"),
-		mustParseCIDR("172.16.0.0/12"),
-		mustParseCIDR("192.168.0.0/16"),
-		mustParseCIDR("127.0.0.0/8"),
-		mustParseCIDR("169.254.0.0/16"),
-		mustParseCIDR("::1/128"),
-		mustParseCIDR("fc00::/7"),
-		mustParseCIDR("fe80::/10"),
-	}
+	initPrivateNetworks()
 }
 
 // isPrivateIP checks if an IP address belongs to a private network range.
