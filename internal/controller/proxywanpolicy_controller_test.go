@@ -108,8 +108,8 @@ func TestProxyWANPolicyReconcile(t *testing.T) {
 				},
 				Spec: novaedgev1alpha1.ProxyWANPolicySpec{
 					PathSelection: novaedgev1alpha1.WANPathSelection{
-						Strategy: novaedgev1alpha1.WANStrategyLowestCost,
-						Failover: false,
+						Strategy:  novaedgev1alpha1.WANStrategyLowestCost,
+						Failover:  false,
 						DSCPClass: "EF",
 					},
 				},
