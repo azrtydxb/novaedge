@@ -1,5 +1,5 @@
 # ProxyGateway with HTTP/3 (QUIC) and SSE support
-apiVersion: novaedge.piwi3910.com/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway
 metadata:
   name: advanced-gateway

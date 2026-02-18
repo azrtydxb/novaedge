@@ -28,9 +28,10 @@ The system consists of four major components:
 1. **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
 2. **Kubernetes Controller (Control-Plane)**: Runs as a Deployment, watches CRDs/Ingress/Gateway API, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
 3. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L4/L7 load balancing, VIP management (ARP/BGP/OSPF), and executes routing/filtering/policy logic
-4. **CRDs** (10 types):
+4. **CRDs** (12 types):
    - Core: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
    - Certificate & IP: `ProxyCertificate`, `ProxyIPPool`
+   - SD-WAN: `ProxyWANLink`, `ProxyWANPolicy`
    - Cluster management: `NovaEdgeCluster`, `NovaEdgeFederation`, `NovaEdgeRemoteCluster`
 
 ## Repository Structure

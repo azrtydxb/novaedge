@@ -379,9 +379,21 @@ The web UI provides a dashboard for configuration management and monitoring.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `webui.image.repository` | Web UI image repository | `ghcr.io/piwi3910/novaedge-novactl` |
-| `webui.image.tag` | Web UI image tag | Chart appVersion |
+| `webui.image.repository` | Web UI backend image repository | `ghcr.io/piwi3910/novaedge-novactl` |
+| `webui.image.tag` | Web UI backend image tag | Chart appVersion |
 | `webui.image.pullPolicy` | Image pull policy | `IfNotPresent` |
+| `webui.frontend.image.repository` | Web UI frontend image repository | `ghcr.io/piwi3910/novaedge-webui` |
+| `webui.frontend.image.tag` | Web UI frontend image tag | Chart appVersion |
+| `webui.frontend.image.pullPolicy` | Frontend image pull policy | `IfNotPresent` |
+
+### Frontend Resources
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `webui.frontend.resources.limits.cpu` | CPU limit | `100m` |
+| `webui.frontend.resources.limits.memory` | Memory limit | `128Mi` |
+| `webui.frontend.resources.requests.cpu` | CPU request | `25m` |
+| `webui.frontend.resources.requests.memory` | Memory request | `32Mi` |
 
 ### Service Account
 
@@ -397,7 +409,7 @@ The web UI provides a dashboard for configuration management and monitoring.
 |-----------|-------------|---------|
 | `webui.service.type` | Service type | `ClusterIP` |
 | `webui.service.port` | Service port | `80` |
-| `webui.service.targetPort` | Target port | `9080` |
+| `webui.service.targetPort` | Target port | `8080` |
 
 ### Ingress
 
@@ -477,7 +489,6 @@ Federation settings enable active-active multi-controller deployments with autom
 |-----------|-------------|---------|
 | `federation.enabled` | Enable federation mode | `false` |
 | `federation.federationID` | Unique federation ID (same across all controllers) | `""` |
-| `federation.paused` | Temporarily pause federation sync | `false` |
 
 ### Local Member Configuration
 
@@ -828,20 +839,288 @@ failover:
 
 ## cert-manager Integration
 
+Certificate management through cert-manager. Configured under `controller.certificates.certManager.*`.
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `certManager.enabled` | string | `"auto"` | Enable cert-manager integration (`auto`, `true`, `false`) |
+| `controller.certificates.certManager.enabled` | bool | `false` | Enable cert-manager integration |
+| `controller.certificates.certManager.issuerRef` | string | `""` | ClusterIssuer or Issuer name |
+| `controller.certificates.certManager.issuerKind` | string | `ClusterIssuer` | Issuer kind (`ClusterIssuer` or `Issuer`) |
 
-When set to `auto`, the controller auto-detects cert-manager CRDs at startup.
+When enabled, ProxyCertificate resources can reference cert-manager issuers.
 
 ## Vault Integration
 
+Certificate management through HashiCorp Vault PKI. Configured under `controller.certificates.vault.*`.
+
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `vault.enabled` | string | `"false"` | Enable Vault integration (`auto`, `true`, `false`) |
-| `vault.address` | string | `""` | Vault server address |
-| `vault.authMethod` | string | `"kubernetes"` | Auth method (`kubernetes`, `approle`, `token`) |
-| `vault.role` | string | `"novaedge"` | Vault auth role name |
-| `vault.namespace` | string | `""` | Vault Enterprise namespace |
-| `vault.tlsSkipVerify` | bool | `false` | Skip TLS verification (dev only) |
-| `vault.caCert` | string | `""` | Path to CA certificate for Vault TLS |
+| `controller.certificates.vault.enabled` | bool | `false` | Enable Vault integration |
+| `controller.certificates.vault.address` | string | `""` | Vault server address |
+| `controller.certificates.vault.authMethod` | string | `kubernetes` | Auth method (`kubernetes`, `approle`, `token`) |
+| `controller.certificates.vault.role` | string | `""` | Vault PKI role |
+| `controller.certificates.vault.mountPath` | string | `pki` | Vault PKI mount path |
+| `controller.certificates.vault.credentialsSecretName` | string | `""` | Secret containing Vault token or credentials |
+
+
+---
+
+## NovaEdge Agent Chart (Standalone)
+
+The `novaedge-agent` chart is designed for deploying agents in remote/edge clusters that connect to a central hub controller. This enables hub-spoke multi-cluster architectures.
+
+### Cluster Identification
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `cluster.name` | Unique name for this remote cluster (required) | `""` |
+| `cluster.region` | Geographic region | `""` |
+| `cluster.zone` | Availability zone | `""` |
+| `cluster.labels` | Additional cluster labels | `{}` |
+
+### Controller Connection
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `connection.mode` | Connection mode: `Direct` or `Tunnel` | `Direct` |
+| `connection.controllerEndpoint` | Hub controller endpoint (required) | `""` |
+| `connection.reconnectInterval` | Reconnect interval when disconnected | `30s` |
+| `connection.timeout` | Connection timeout | `10s` |
+
+**Examples:**
+- Direct mode: `controller.novaedge-system.svc.hub-cluster:9090`
+- External: `novaedge-controller.example.com:9090`
+
+### mTLS Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `tls.enabled` | Enable mTLS (highly recommended) | `true` |
+| `tls.caSecretName` | CA certificate secret for validating controller | `novaedge-ca` |
+| `tls.clientCertSecretName` | Client certificate secret for agent auth | `novaedge-agent-cert` |
+| `tls.serverName` | Expected server name for TLS verification | `""` |
+| `tls.insecureSkipVerify` | Skip TLS verification (NOT for production) | `false` |
+
+### Tunnel Configuration
+
+Used when `connection.mode=Tunnel` for NAT traversal or secure connectivity.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `tunnel.type` | Tunnel type: `WireGuard`, `SSH`, or `WebSocket` | `WireGuard` |
+| `tunnel.relayEndpoint` | Relay endpoint for tunnel | `""` |
+| `tunnel.wireGuard.privateKeySecretName` | Secret with WireGuard private key | `""` |
+| `tunnel.wireGuard.publicKey` | Hub's WireGuard public key | `""` |
+| `tunnel.wireGuard.endpoint` | Hub's WireGuard endpoint | `""` |
+| `tunnel.wireGuard.allowedIPs` | Allowed IP ranges for tunnel | `[10.0.0.0/8]` |
+| `tunnel.wireGuard.persistentKeepalive` | Keepalive interval (seconds) | `25` |
+
+### VIP Management
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `vip.l2.enabled` | Enable L2 ARP mode VIP management | `true` |
+| `vip.l2.interface` | Network interface for VIP binding | `eth0` |
+| `vip.bgp.enabled` | Enable BGP mode VIP announcement | `false` |
+| `vip.bgp.asn` | Local BGP AS number | `65000` |
+| `vip.bgp.routerID` | BGP router ID (auto-detected if empty) | `""` |
+| `vip.bgp.peers` | List of BGP peer configurations | `[]` |
+| `vip.ospf.enabled` | Enable OSPF mode VIP announcement | `false` |
+| `vip.ospf.routerID` | OSPF router ID | `""` |
+| `vip.ospf.areaID` | OSPF area ID | `0.0.0.0` |
+| `vip.bfd.enabled` | Enable BFD for failure detection | `false` |
+| `vip.bfd.minTxInterval` | BFD transmit interval | `300ms` |
+| `vip.bfd.minRxInterval` | BFD receive interval | `300ms` |
+| `vip.bfd.multiplier` | Detection multiplier | `3` |
+
+### Server Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `server.tls.enabled` | Enable TLS termination | `true` |
+| `server.tls.minVersion` | Minimum TLS version | `TLS1.2` |
+| `server.mtls.enabled` | Enable mTLS for client authentication | `false` |
+| `server.mtls.mode` | mTLS mode: `require` or `optional` | `require` |
+| `server.ocsp.enabled` | Enable OCSP stapling | `false` |
+| `server.proxyProtocol.enabled` | Accept PROXY protocol headers | `false` |
+
+### HTTP/3 QUIC Support
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `http3.enabled` | Enable HTTP/3 QUIC support | `false` |
+| `http3.port` | HTTP/3 UDP port | `443` |
+| `http3.maxStreamBufferSize` | Max stream buffer size | `1048576` (1MB) |
+| `http3.maxIdleTimeout` | Max idle timeout | `30s` |
+
+### Load Balancing
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `loadBalancing.defaultAlgorithm` | Default algorithm | `RoundRobin` |
+| `loadBalancing.ewma.decayFactor` | EWMA decay factor | `0.9` |
+| `loadBalancing.sticky.enabled` | Enable sticky sessions | `false` |
+| `loadBalancing.sticky.cookieName` | Sticky session cookie name | `novaedge-session` |
+| `loadBalancing.locality.enabled` | Enable locality-aware routing | `false` |
+| `loadBalancing.panic.threshold` | Panic mode threshold | `0.5` (50%) |
+
+**Available algorithms:** `RoundRobin`, `LeastConn`, `P2C`, `EWMA`, `RingHash`, `Maglev`, `Sticky`, `LocalityAware`, `PriorityFailover`, `PanicMode`, `SlowStart`, `ResourceAdaptive`
+
+### Connection Pool
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `connectionPool.maxConnections` | Max connections per backend | `1024` |
+| `connectionPool.maxIdleConnections` | Max idle connections | `100` |
+| `connectionPool.idleTimeout` | Idle connection timeout | `90s` |
+| `connectionPool.circuitBreaker.enabled` | Enable circuit breaker | `true` |
+| `connectionPool.circuitBreaker.threshold` | Failure threshold | `5` |
+| `connectionPool.circuitBreaker.timeout` | Breaker timeout | `30s` |
+
+### Health Checking
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `healthChecking.interval` | Health check interval | `10s` |
+| `healthChecking.timeout` | Health check timeout | `5s` |
+| `healthChecking.unhealthyThreshold` | Unhealthy threshold | `3` |
+| `healthChecking.healthyThreshold` | Healthy threshold | `2` |
+| `healthChecking.outlierDetection.enabled` | Enable outlier detection | `true` |
+| `healthChecking.outlierDetection.consecutiveErrors` | Consecutive errors for ejection | `5` |
+| `healthChecking.outlierDetection.interval` | Detection interval | `10s` |
+
+### L4 Proxy (TCP/UDP)
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `l4Proxy.enabled` | Enable L4 TCP/UDP proxying | `true` |
+| `l4Proxy.tcp.enabled` | Enable TCP proxying | `true` |
+| `l4Proxy.udp.enabled` | Enable UDP proxying | `true` |
+| `l4Proxy.tlsPassthrough.enabled` | Enable TLS passthrough (SNI routing) | `false` |
+
+### Policy Configuration
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `policy.rateLimit.enabled` | Enable rate limiting | `true` |
+| `policy.rateLimit.distributedMode` | Distributed rate limiting via Redis | `false` |
+| `policy.rateLimit.redisEndpoint` | Redis endpoint for distributed limiting | `""` |
+| `policy.auth.enabled` | Enable authentication | `false` |
+| `policy.jwt.enabled` | Enable JWT validation | `false` |
+| `policy.cors.enabled` | Enable CORS handling | `false` |
+| `policy.waf.enabled` | Enable Web Application Firewall | `false` |
+| `policy.waf.ruleSet` | WAF rule set: `OWASP-CRS` | `OWASP-CRS` |
+| `policy.ipFilter.enabled` | Enable IP filtering | `false` |
+| `policy.mtls.enabled` | Enable mTLS enforcement | `false` |
+
+### Middleware
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `middleware.caching.enabled` | Enable HTTP response caching | `false` |
+| `middleware.caching.maxSize` | Max cache size | `100MB` |
+| `middleware.compression.enabled` | Enable compression (gzip/brotli) | `true` |
+| `middleware.compression.level` | Compression level (1-9) | `6` |
+| `middleware.retry.enabled` | Enable request retry | `true` |
+| `middleware.retry.maxAttempts` | Max retry attempts | `3` |
+| `middleware.hedging.enabled` | Enable request hedging | `false` |
+| `middleware.hedging.delay` | Hedging delay | `100ms` |
+| `middleware.mirroring.enabled` | Enable traffic mirroring | `false` |
+
+### WebSocket & SSE
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `websocket.enabled` | Enable WebSocket support | `true` |
+| `websocket.maxFrameSize` | Max WebSocket frame size | `1048576` (1MB) |
+| `sse.enabled` | Enable Server-Sent Events | `true` |
+| `sse.maxMessageSize` | Max SSE message size | `65536` (64KB) |
+
+### gRPC Support
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `grpc.enabled` | Enable gRPC proxying | `true` |
+| `grpc.maxMessageSize` | Max gRPC message size | `4194304` (4MB) |
+| `grpc.transcoding.enabled` | Enable gRPC-JSON transcoding | `false` |
+
+### Service Mesh
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `mesh.enabled` | Enable service mesh (transparent mTLS) | `false` |
+| `mesh.mode` | Mesh mode: `tproxy` or `iptables` | `tproxy` |
+| `mesh.spiffe.enabled` | Enable SPIFFE workload identity | `true` |
+| `mesh.authz.enabled` | Enable authorization policies | `false` |
+
+### Control Plane VIP
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `controlPlaneVIP.enabled` | Enable dedicated VIP for controller HA | `false` |
+| `controlPlaneVIP.address` | VIP address for controller | `""` |
+| `controlPlaneVIP.healthCheck.enabled` | Enable controller health checking | `true` |
+| `controlPlaneVIP.healthCheck.endpoint` | Controller health endpoint | `/livez` |
+
+### WASM Plugin Support
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `wasm.enabled` | Enable WASM plugin system | `false` |
+| `wasm.pluginDir` | Directory for WASM plugins | `/var/lib/novaedge/wasm` |
+| `wasm.maxMemoryPages` | Max WASM memory pages | `512` |
+
+### Example: Remote Agent Configuration
+
+```yaml
+cluster:
+  name: edge-cluster-west
+  region: us-west-2
+  zone: us-west-2a
+
+connection:
+  mode: Direct
+  controllerEndpoint: novaedge-controller.hub.example.com:9090
+
+tls:
+  enabled: true
+  caSecretName: novaedge-ca
+  clientCertSecretName: edge-west-agent-cert
+
+vip:
+  l2:
+    enabled: true
+    interface: eth0
+  bgp:
+    enabled: true
+    asn: 65001
+    peers:
+      - address: 192.168.1.1
+        asn: 65000
+        password: bgp-secret
+
+loadBalancing:
+  defaultAlgorithm: EWMA
+  ewma:
+    decayFactor: 0.9
+  locality:
+    enabled: true
+
+policy:
+  rateLimit:
+    enabled: true
+    distributedMode: true
+    redisEndpoint: redis.edge-cluster:6379
+  waf:
+    enabled: true
+    ruleSet: OWASP-CRS
+
+middleware:
+  caching:
+    enabled: true
+    maxSize: 500MB
+  compression:
+    enabled: true
+    level: 6
+```
+

@@ -939,3 +939,282 @@ This command displays:
 - Gateway status conditions
 - HTTPRoute status conditions
 - Supported conformance profiles and features
+
+### novactl agent
+
+Query individual NovaEdge agents directly via gRPC for debugging and diagnostics.
+
+**Subcommands:**
+- `config` - Get current agent configuration
+- `backends` - List backend health status
+- `vips` - List VIP assignments and status
+
+**Syntax:**
+```bash
+novactl agent <subcommand> <agent-name> [flags]
+```
+
+**Examples:**
+
+```bash
+# Get agent configuration
+novactl agent config novaedge-agent-xyz123
+
+# List backend health on specific agent
+novactl agent backends novaedge-agent-xyz123
+
+# Check VIP assignments on agent
+novactl agent vips novaedge-agent-xyz123 -o json
+```
+
+### novactl agents
+
+List and describe NovaEdge agents in the cluster.
+
+**Subcommands:**
+- `list` - List all agents
+- `describe` - Show detailed agent information
+- `config` - Show agent configuration snapshots
+
+**Syntax:**
+```bash
+novactl agents <subcommand> [flags]
+```
+
+**Examples:**
+
+```bash
+# List all agents
+novactl agents list
+
+# List agents with additional details
+novactl agents list -o wide
+
+# Describe specific agent
+novactl agents describe novaedge-agent-xyz123
+
+# Show config snapshot for agent
+novactl agents config novaedge-agent-xyz123
+```
+
+### novactl web
+
+Start the NovaEdge web dashboard with integrated Prometheus support.
+
+**Syntax:**
+```bash
+novactl web [flags]
+```
+
+**Flags:**
+- `--listen string` - Listen address (default: ":9080")
+- `--prometheus-url string` - Prometheus endpoint URL
+- `--tls-cert string` - TLS certificate file
+- `--tls-key string` - TLS key file
+- `--oidc-issuer string` - OIDC issuer URL for authentication
+- `--oidc-client-id string` - OIDC client ID
+- `--oidc-client-secret string` - OIDC client secret
+- `--read-only` - Enable read-only mode
+
+**Examples:**
+
+```bash
+# Start web dashboard on default port
+novactl web
+
+# Start with custom port and Prometheus
+novactl web --listen :8080 --prometheus-url http://prometheus:9090
+
+# Start with TLS
+novactl web --tls-cert cert.pem --tls-key key.pem
+
+# Start with OIDC authentication
+novactl web --oidc-issuer https://auth.example.com \
+  --oidc-client-id novaedge \
+  --oidc-client-secret secret123
+
+# Start in read-only mode
+novactl web --read-only
+```
+
+### novactl cache
+
+Manage HTTP response caching on NovaEdge agents.
+
+**Subcommands:**
+- `purge` - Purge cache entries by pattern
+- `stats` - Show cache statistics
+
+**Syntax:**
+```bash
+novactl cache <subcommand> [flags]
+```
+
+**Examples:**
+
+```bash
+# Show cache statistics for all agents
+novactl cache stats
+
+# Purge all cache entries
+novactl cache purge --all
+
+# Purge cache by hostname pattern
+novactl cache purge --hostname "*.example.com"
+
+# Purge cache by route
+novactl cache purge --route api-route
+
+# Show cache stats for specific namespace
+novactl cache stats -n production
+```
+
+### novactl federation
+
+Manage multi-cluster federation and synchronization.
+
+**Subcommands:**
+- `status` - Show federation cluster status
+- `peers` - List federation peers
+- `conflicts` - Show sync conflicts
+- `sync` - Trigger manual synchronization
+- `vector-clock` - Display vector clock state
+
+**Syntax:**
+```bash
+novactl federation <subcommand> [flags]
+```
+
+**Examples:**
+
+```bash
+# Show federation status
+novactl federation status
+
+# List all federation peers
+novactl federation peers
+
+# Show synchronization conflicts
+novactl federation conflicts
+
+# Trigger manual sync
+novactl federation sync
+
+# Display vector clock for conflict resolution
+novactl federation vector-clock
+
+# Show peer details in JSON format
+novactl federation peers -o json
+```
+
+### novactl generate
+
+Generate configuration files for various deployment scenarios.
+
+**Subcommands:**
+- `static-pod` - Generate static pod manifest for agent
+- `systemd-unit` - Generate systemd unit file for standalone mode
+
+**Syntax:**
+```bash
+novactl generate <subcommand> [flags]
+```
+
+**Examples:**
+
+```bash
+# Generate static pod manifest
+novactl generate static-pod > novaedge-agent.yaml
+
+# Generate with custom image
+novactl generate static-pod --image ghcr.io/piwi3910/novaedge-agent:v1.2.3
+
+# Generate systemd unit file
+novactl generate systemd-unit > /etc/systemd/system/novaedge.service
+
+# Generate with custom config path
+novactl generate systemd-unit --config-path /opt/novaedge/config.yaml
+```
+
+### novactl logs-access
+
+Manage and query access logs from NovaEdge agents.
+
+**Syntax:**
+```bash
+novactl logs-access [flags]
+```
+
+**Flags:**
+- `--since string` - Show logs since timestamp (e.g., "10m", "1h")
+- `--gateway string` - Filter by gateway name
+- `--route string` - Filter by route name
+- `--status int` - Filter by HTTP status code
+- `--follow` - Stream logs in real-time
+
+**Examples:**
+
+```bash
+# Show recent access logs
+novactl logs-access --since 10m
+
+# Filter by gateway
+novactl logs-access --gateway my-gateway
+
+# Filter by status code
+novactl logs-access --status 500 --since 1h
+
+# Stream logs in real-time
+novactl logs-access --follow
+
+# Combine filters
+novactl logs-access --gateway api-gateway --route /users --status 200
+```
+
+### novactl metrics
+
+Query and display Prometheus metrics from NovaEdge components.
+
+**Subcommands:**
+- `agent` - Show agent metrics
+- `backends` - Show backend health metrics
+- `vips` - Show VIP status metrics
+- `query` - Execute custom PromQL query
+- `top-backends` - Show backends by request rate
+- `top-routes` - Show routes by request rate
+- `dashboard` - Open metrics dashboard
+
+**Syntax:**
+```bash
+novactl metrics <subcommand> [flags]
+```
+
+**Examples:**
+
+```bash
+# Show agent metrics
+novactl metrics agent
+
+# Show backend health metrics
+novactl metrics backends
+
+# Show VIP status
+novactl metrics vips
+
+# Execute custom PromQL query
+novactl metrics query 'rate(novaedge_requests_total[5m])'
+
+# Show top backends by request rate
+novactl metrics top-backends
+
+# Show top routes by request rate
+novactl metrics top-routes
+
+# Open dashboard (requires Prometheus endpoint)
+novactl metrics dashboard
+```
+
+**Note:** Metrics commands require a Prometheus endpoint. Configure with:
+```bash
+novactl metrics --prometheus-url http://prometheus:9090 <subcommand>
+```
