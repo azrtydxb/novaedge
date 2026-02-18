@@ -32,6 +32,11 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
+const (
+	// phaseActive represents the active status phase
+	phaseActive = "Active"
+)
+
 // ProxyWANLinkReconciler reconciles a ProxyWANLink object.
 type ProxyWANLinkReconciler struct {
 	client.Client
@@ -57,7 +62,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Update status
-	link.Status.Phase = "Active"
+	link.Status.Phase = phaseActive
 	link.Status.ObservedGeneration = link.Generation
 	link.Status.Healthy = true
 
