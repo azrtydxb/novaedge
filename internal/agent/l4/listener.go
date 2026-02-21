@@ -183,7 +183,7 @@ func (m *Manager) startTCPListener(ctx context.Context, active *activeListener) 
 	cfg := active.config
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
-	lc := net.ListenConfig{}
+	lc := NewReusePortListenConfig()
 	tcpListener, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on TCP %s: %w", addr, err)
@@ -233,14 +233,15 @@ func (m *Manager) startUDPListener(ctx context.Context, active *activeListener) 
 	cfg := active.config
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return fmt.Errorf("failed to resolve UDP address %s: %w", addr, err)
-	}
-
-	udpConn, err := net.ListenUDP("udp", udpAddr)
+	lc := NewReusePortListenConfig()
+	pc, err := lc.ListenPacket(ctx, "udp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on UDP %s: %w", addr, err)
+	}
+	udpConn, ok := pc.(*net.UDPConn)
+	if !ok {
+		_ = pc.Close()
+		return fmt.Errorf("expected *net.UDPConn, got %T", pc)
 	}
 	active.udpConn = udpConn
 
@@ -323,7 +324,7 @@ func (m *Manager) startTLSPassthroughListener(ctx context.Context, active *activ
 	cfg := active.config
 	addr := fmt.Sprintf(":%d", cfg.Port)
 
-	lc := net.ListenConfig{}
+	lc := NewReusePortListenConfig()
 	tcpListener, err := lc.Listen(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on TCP %s for TLS passthrough: %w", addr, err)

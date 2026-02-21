@@ -119,6 +119,7 @@ nav:
   - Operations:
     - Observability: operations/observability.md
     - Access Logging: operations/access-logging.md
+    - Performance Tuning: operations/performance-tuning.md
     - Web UI: operations/web-ui.md
     - Troubleshooting: operations/troubleshooting.md
   - Reference:
