@@ -91,17 +91,26 @@ func (s *HTTPServer) startListener(ctx context.Context, port int32, listenerInfo
 	// Start server in goroutine with optional PROXY protocol wrapping
 	go func() {
 		var err error
+		addr := fmt.Sprintf(":%d", port)
 		switch {
 		case listenerInfo.ProxyProtocol != nil && listenerInfo.ProxyProtocol.Enabled:
 			// Use custom listener with PROXY protocol support
 			err = s.startWithProxyProtocol(server, port, listenerInfo)
-		case listenerInfo.TLSConfig != nil:
-			// Start HTTPS listener with HTTP/2
-			// Note: We pass empty cert/key files because TLSConfig already has certificates
-			err = server.ListenAndServeTLS("", "")
 		default:
-			// Start HTTP listener with h2c support
-			err = server.ListenAndServe()
+			// Create listener with SO_REUSEPORT for better multi-core scalability
+			lc := NewReusePortListenConfig()
+			ln, listenErr := lc.Listen(context.Background(), "tcp", addr)
+			if listenErr != nil {
+				s.logger.Error("Failed to create listener",
+					zap.Int32("port", port),
+					zap.Error(listenErr),
+				)
+				return
+			}
+			if listenerInfo.TLSConfig != nil {
+				ln = tls.NewListener(ln, listenerInfo.TLSConfig)
+			}
+			err = server.Serve(ln)
 		}
 
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -205,7 +214,7 @@ func (s *HTTPServer) updateAltSvcCache() {
 // startWithProxyProtocol starts a server with PROXY protocol listener wrapping
 func (s *HTTPServer) startWithProxyProtocol(server *http.Server, port int32, listenerInfo *ListenerInfo) error {
 	addr := fmt.Sprintf(":%d", port)
-	lc := net.ListenConfig{}
+	lc := NewReusePortListenConfig()
 	ln, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)

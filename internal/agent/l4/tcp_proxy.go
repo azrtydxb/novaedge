@@ -194,8 +194,10 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) {
 		zap.Float64("duration_s", duration))
 }
 
-// bidirectionalCopy performs bidirectional data copy between client and backend
-// Returns (bytes sent to client, bytes received from client)
+// bidirectionalCopy performs bidirectional data copy between client and backend.
+// On Linux, it attempts to use splice() for zero-copy kernel-level transfer.
+// Falls back to userspace copy if splice is unavailable.
+// Returns (bytes sent to client, bytes received from client).
 func (p *TCPProxy) bidirectionalCopy(ctx context.Context, clientConn, backendConn net.Conn) (int64, int64) {
 	defer func() {
 		_ = clientConn.Close()
@@ -211,20 +213,34 @@ func (p *TCPProxy) bidirectionalCopy(ctx context.Context, clientConn, backendCon
 	// Copy backend -> client (sent)
 	go func() {
 		defer cancel()
-		buf := getTCPBuffer()
-		defer putTCPBuffer(buf)
-		n, _ := p.copyWithIdleTimeout(copyCtx, clientConn, backendConn, *buf, p.config.IdleTimeout)
+		n := p.copyOneDirection(copyCtx, clientConn, backendConn)
 		bytesSent.Store(n)
 	}()
 
 	// Copy client -> backend (received)
-	buf := getTCPBuffer()
-	defer putTCPBuffer(buf)
-	n, _ := p.copyWithIdleTimeout(copyCtx, backendConn, clientConn, *buf, p.config.IdleTimeout)
+	n := p.copyOneDirection(copyCtx, backendConn, clientConn)
 	bytesReceived.Store(n)
 	cancel()
 
 	return bytesSent.Load(), bytesReceived.Load()
+}
+
+// copyOneDirection copies data from src to dst, trying splice first then falling back to userspace copy.
+func (p *TCPProxy) copyOneDirection(ctx context.Context, dst, src net.Conn) int64 {
+	// Try splice (zero-copy) first on Linux
+	n, used, err := trySplice(dst, src)
+	if used {
+		if err != nil {
+			p.logger.Debug("splice ended with error", zap.Error(err))
+		}
+		return n
+	}
+
+	// Fallback to userspace copy
+	buf := getTCPBuffer()
+	defer putTCPBuffer(buf)
+	n, _ = p.copyWithIdleTimeout(ctx, dst, src, *buf, p.config.IdleTimeout)
+	return n
 }
 
 // copyWithIdleTimeout copies data from src to dst with an idle timeout

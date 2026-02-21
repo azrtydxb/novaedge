@@ -267,7 +267,9 @@ func (p *TLSPassthrough) pickBackend(route *TLSRoute) *pb.Endpoint {
 	return backends[idx%uint64(len(backends))]
 }
 
-// bidirectionalCopy performs bidirectional data copy between client and backend
+// bidirectionalCopy performs bidirectional data copy between client and backend.
+// On Linux, it attempts to use splice() for zero-copy transfer.
+// Falls back to userspace copy if splice is unavailable.
 func (p *TLSPassthrough) bidirectionalCopy(ctx context.Context, clientConn, backendConn net.Conn) (int64, int64) {
 	defer func() {
 		_ = clientConn.Close()
@@ -282,16 +284,23 @@ func (p *TLSPassthrough) bidirectionalCopy(ctx context.Context, clientConn, back
 	// Copy backend -> client
 	go func() {
 		defer cancel()
-		buf := getTCPBuffer()
-		defer putTCPBuffer(buf)
-		n, _ := copyWithTimeout(copyCtx, clientConn, backendConn, *buf, p.config.IdleTimeout)
+		// Try splice (zero-copy) first on Linux
+		n, used, _ := trySplice(clientConn, backendConn)
+		if !used {
+			buf := getTCPBuffer()
+			defer putTCPBuffer(buf)
+			n, _ = copyWithTimeout(copyCtx, clientConn, backendConn, *buf, p.config.IdleTimeout)
+		}
 		bytesSent.Store(n)
 	}()
 
 	// Copy client -> backend
-	buf := getTCPBuffer()
-	defer putTCPBuffer(buf)
-	n, _ := copyWithTimeout(copyCtx, backendConn, clientConn, *buf, p.config.IdleTimeout)
+	n, used, _ := trySplice(backendConn, clientConn)
+	if !used {
+		buf := getTCPBuffer()
+		defer putTCPBuffer(buf)
+		n, _ = copyWithTimeout(copyCtx, backendConn, clientConn, *buf, p.config.IdleTimeout)
+	}
 	bytesReceived.Store(n)
 	cancel()
 
