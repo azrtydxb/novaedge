@@ -375,9 +375,3 @@ func htons(v uint16) uint16 {
 	binary.BigEndian.PutUint16(buf[:], v)
 	return binary.NativeEndian.Uint16(buf[:])
 }
-
-// loadXdpLb loads the BPF collection spec from the embedded ELF.
-// Placeholder until bpf2go generates the real loader.
-func loadXdpLb() (*ebpf.CollectionSpec, error) {
-	return nil, fmt.Errorf("BPF objects not generated yet; run 'go generate ./internal/agent/xdplb/'")
-}

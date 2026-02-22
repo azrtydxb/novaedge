@@ -27,10 +27,10 @@ COPY api/ api/
 COPY internal/ internal/
 COPY bpf/ bpf/
 
-# Generate BPF Go bindings from C sources (produces *_bpfel.go files).
-# This step is optional — if the generated files are already committed,
-# go generate will be a no-op for unchanged sources.
-RUN go generate ./internal/agent/ebpfmesh/... ./internal/agent/xdplb/... ./internal/agent/afxdp/... 2>/dev/null || true
+# Generate BPF Go bindings from C sources (produces *_bpfel.go and *.o files).
+# Required — the generated loadMeshRedirect/loadXdpLb/loadAfxdpRedirect
+# functions are called at runtime and have no placeholder fallback.
+RUN go generate ./internal/agent/ebpfmesh/... ./internal/agent/xdplb/... ./internal/agent/afxdp/...
 
 # Build args for version injection
 ARG VERSION=dev
