@@ -277,6 +277,18 @@ agent:
   # Additional volume mounts
   extraVolumeMounts: []
 
+  # Service mesh configuration
+  mesh:
+    enabled: true
+
+  # eBPF acceleration (requires kernel 5.9+ with BPF support)
+  # When enabled, adds SYS_BPF/SYS_RESOURCE capabilities, mounts bpffs,
+  # and relaxes seccomp to allow the bpf() syscall.
+  # The agent will use eBPF sk_lookup for mesh interception (instead of
+  # nftables) and can enable XDP-based load balancing.
+  ebpf:
+    enabled: true
+
   # Tracing configuration
   tracing:
     enabled: false
