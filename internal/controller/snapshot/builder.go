@@ -684,6 +684,13 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 				cluster.LbPolicy = pb.LoadBalancingPolicy_MAGLEV
 				log.FromContext(ctx).Info("Auto-promoted LB policy to Maglev for ECMP VIP consistency",
 					"backend", backend.Name, "namespace", backend.Namespace)
+			case pb.LoadBalancingPolicy_ROUND_ROBIN:
+				// Auto-promote RoundRobin to Maglev for ECMP consistency.
+				// This handles cases where the ingress translator couldn't resolve the VIP mode
+				// (e.g. VIP not yet cached) and fell through to the default RoundRobin policy.
+				cluster.LbPolicy = pb.LoadBalancingPolicy_MAGLEV
+				log.FromContext(ctx).Info("Auto-promoted RoundRobin to Maglev for ECMP VIP consistency",
+					"backend", backend.Name, "namespace", backend.Namespace)
 			case pb.LoadBalancingPolicy_MAGLEV, pb.LoadBalancingPolicy_RING_HASH:
 				// Hash-based policies are compatible with ECMP
 			default:

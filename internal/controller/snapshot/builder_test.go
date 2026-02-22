@@ -448,7 +448,7 @@ func TestBuildClustersECMPAutoPromoteToMaglev(t *testing.T) {
 	}
 }
 
-func TestBuildClustersECMPRejectsNonHashLB(t *testing.T) {
+func TestBuildClustersECMPAutoPromotesRoundRobin(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)
 	_ = corev1.AddToScheme(scheme)
@@ -461,6 +461,38 @@ func TestBuildClustersECMPRejectsNonHashLB(t *testing.T) {
 		},
 		Spec: novaedgev1alpha1.ProxyBackendSpec{
 			LBPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
+	builder := NewBuilder(fakeClient)
+
+	clusters, _, err := builder.buildClusters(context.Background(), true)
+	if err != nil {
+		t.Fatalf("buildClusters failed: %v", err)
+	}
+
+	if len(clusters) != 1 {
+		t.Fatalf("expected 1 cluster (auto-promoted), got %d", len(clusters))
+	}
+	if clusters[0].LbPolicy != pb.LoadBalancingPolicy_MAGLEV {
+		t.Errorf("expected Maglev after auto-promotion, got %s", clusters[0].LbPolicy.String())
+	}
+}
+
+func TestBuildClustersECMPRejectsNonHashLB(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = novaedgev1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
+
+	backend := &novaedgev1alpha1.ProxyBackend{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-backend",
+			Namespace: "default",
+		},
+		Spec: novaedgev1alpha1.ProxyBackendSpec{
+			LBPolicy: novaedgev1alpha1.LBPolicyLeastConn,
 		},
 	}
 

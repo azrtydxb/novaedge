@@ -30,8 +30,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
@@ -297,7 +299,48 @@ func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&novaedgev1alpha1.ProxyGateway{}).
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
 		Owns(&novaedgev1alpha1.ProxyBackend{}).
+		Watches(&novaedgev1alpha1.ProxyVIP{}, handler.EnqueueRequestsFromMapFunc(r.vipToIngress)).
 		Complete(r)
+}
+
+// vipToIngress maps a ProxyVIP change to all Ingress resources that reference it,
+// so that LB policy is re-evaluated when a VIP mode changes.
+func (r *IngressReconciler) vipToIngress(ctx context.Context, obj client.Object) []reconcile.Request {
+	logger := log.FromContext(ctx)
+	vipName := obj.GetName()
+
+	// List all Ingress resources managed by this controller
+	ingressList := &networkingv1.IngressList{}
+	if err := r.List(ctx, ingressList); err != nil {
+		logger.Error(err, "Failed to list Ingress resources for VIP mapping", "vip", vipName)
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, ingress := range ingressList.Items {
+		if !r.shouldProcessIngress(ingress.DeepCopy()) {
+			continue
+		}
+
+		// Check if this Ingress references the changed VIP (via annotation or default)
+		ref := ingress.Annotations[AnnotationVIPRef]
+		if ref == "" {
+			ref = r.DefaultVIPRef
+		}
+		if ref == vipName {
+			requests = append(requests, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Namespace: ingress.Namespace,
+					Name:      ingress.Name,
+				},
+			})
+		}
+	}
+
+	if len(requests) > 0 {
+		logger.Info("VIP change triggered Ingress re-reconciliation", "vip", vipName, "ingressCount", len(requests))
+	}
+	return requests
 }
 
 // resolveServicePort resolves a service port name to its port number
@@ -322,6 +365,7 @@ func (r *IngressReconciler) resolveServicePort(ctx context.Context, namespace, s
 func (r *IngressReconciler) resolveVIPMode(ctx context.Context, vipRef string) string {
 	vip := &novaedgev1alpha1.ProxyVIP{}
 	if err := r.Get(ctx, types.NamespacedName{Name: vipRef}, vip); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to resolve VIP mode", "vipRef", vipRef)
 		return ""
 	}
 	return string(vip.Spec.Mode)
