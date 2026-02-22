@@ -113,12 +113,12 @@ var (
 	sdwanEnabled    bool
 	meshTrustDomain string
 
-	// XDP L4 load balancing configuration
-	xdpLBEnabled bool
+	// XDP/AF_XDP interface for eBPF acceleration
 	xdpInterface string
 
-	// AF_XDP zero-copy fast path configuration
-	afxdpEnabled bool
+	// Force legacy paths (disable eBPF auto-detection)
+	forceLegacyLB   bool
+	forceLegacyMesh bool
 
 	// Control-plane VIP BGP/BFD configuration
 	cpVIPMode       string
@@ -174,12 +174,12 @@ func main() {
 	// SD-WAN flags
 	flag.BoolVar(&sdwanEnabled, "sdwan-enabled", false, "Enable SD-WAN multi-link management")
 
-	// XDP L4 load balancing flags
-	flag.BoolVar(&xdpLBEnabled, "enable-xdp-lb", false, "Enable XDP-based L4 load balancing (Linux only, requires CAP_BPF)")
-	flag.StringVar(&xdpInterface, "xdp-interface", "", "Network interface for XDP program attachment (required when --enable-xdp-lb is set)")
+	// XDP/AF_XDP interface — when set, eBPF acceleration is auto-attempted
+	flag.StringVar(&xdpInterface, "xdp-interface", "", "Network interface for XDP/AF_XDP program attachment (enables eBPF acceleration when set)")
 
-	// AF_XDP flags
-	flag.BoolVar(&afxdpEnabled, "enable-afxdp", false, "Enable AF_XDP zero-copy packet processing (Linux only, requires CAP_BPF + CAP_NET_ADMIN)")
+	// Force-legacy flags — explicitly disable eBPF auto-detection
+	flag.BoolVar(&forceLegacyLB, "force-legacy-lb", false, "Force legacy userspace L4 proxy instead of XDP/AF_XDP acceleration")
+	flag.BoolVar(&forceLegacyMesh, "force-legacy-mesh", false, "Force legacy nftables/iptables mesh interception instead of eBPF sk_lookup")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -312,55 +312,52 @@ func main() {
 	// Create L4 manager
 	l4Manager := l4.NewManager(logger)
 
-	// Create XDP LB manager (if enabled)
+	// Create XDP LB manager — auto-attempted when xdpInterface is set
 	var xdpManager *xdplb.Manager
-	if xdpLBEnabled {
-		if xdpInterface == "" {
-			logger.Fatal("--xdp-interface is required when --enable-xdp-lb is set")
-		}
+	if !forceLegacyLB && xdpInterface != "" {
 		ebpfLoader := novaebpf.NewProgramLoader(logger, "")
 		xdpManager = xdplb.NewManager(logger, ebpfLoader, xdpInterface)
 		if err := xdpManager.Start(); err != nil {
-			logger.Warn("Failed to start XDP LB manager, falling back to userspace proxy",
+			logger.Warn("XDP L4 LB not available, using userspace proxy",
 				zap.Error(err))
 			xdpManager = nil
 		} else {
-			// Wire XDP manager to L4 manager for informational logging
 			l4Manager.XDP = xdpManager
-			logger.Info("XDP L4 load balancing enabled",
+			logger.Info("XDP L4 load balancing active",
 				zap.String("interface", xdpInterface))
 		}
+	} else if forceLegacyLB {
+		logger.Info("XDP L4 LB disabled by --force-legacy-lb, using userspace proxy")
 	}
 
-	// Create AF_XDP worker (if enabled)
+	// Create AF_XDP worker — auto-attempted when xdpInterface is set
 	var afxdpWorker *afxdp.Worker
-	if afxdpEnabled {
-		iface := xdpInterface
-		if iface == "" {
-			logger.Fatal("--xdp-interface is required when --enable-afxdp is set")
-		}
+	if !forceLegacyLB && xdpInterface != "" {
 		afxdpLoader := novaebpf.NewProgramLoader(logger, "")
 		afxdpWorker = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
-			InterfaceName: iface,
+			InterfaceName: xdpInterface,
 			QueueID:       0,
 		}, nil)
 		go func() {
 			if startErr := afxdpWorker.Start(ctx); startErr != nil {
-				logger.Warn("AF_XDP worker stopped", zap.Error(startErr))
+				logger.Warn("AF_XDP not available, using kernel stack",
+					zap.Error(startErr))
 			}
 		}()
 		logger.Info("AF_XDP zero-copy fast path enabled",
-			zap.String("interface", iface))
+			zap.String("interface", xdpInterface))
 	}
 
 	// Create mesh manager (if enabled)
 	var meshManager *mesh.Manager
 	if meshEnabled {
-		// Try eBPF sk_lookup backend first; falls back to nftables/iptables
-		// automatically if unavailable.
+		// eBPF sk_lookup is auto-attempted; falls back to nftables/iptables
+		// if the kernel doesn't support it or --force-legacy-mesh is set.
 		var meshBackend mesh.RuleBackend
-		if ebpfBackend := ebpfmesh.TryBackend(logger); ebpfBackend != nil {
-			meshBackend = ebpfBackend
+		if !forceLegacyMesh {
+			meshBackend = ebpfmesh.TryBackend(logger)
+		} else {
+			logger.Info("eBPF mesh redirect disabled by --force-legacy-mesh, using nftables/iptables")
 		}
 		meshManager = mesh.NewManager(logger, mesh.ManagerConfig{
 			TPROXYPort:          int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
