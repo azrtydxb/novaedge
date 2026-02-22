@@ -37,6 +37,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/piwi3910/novaedge/internal/agent/afxdp"
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
@@ -116,6 +117,9 @@ var (
 	xdpLBEnabled bool
 	xdpInterface string
 
+	// AF_XDP zero-copy fast path configuration
+	afxdpEnabled bool
+
 	// Control-plane VIP BGP/BFD configuration
 	cpVIPMode       string
 	cpBGPLocalAS    uint
@@ -173,6 +177,9 @@ func main() {
 	// XDP L4 load balancing flags
 	flag.BoolVar(&xdpLBEnabled, "enable-xdp-lb", false, "Enable XDP-based L4 load balancing (Linux only, requires CAP_BPF)")
 	flag.StringVar(&xdpInterface, "xdp-interface", "", "Network interface for XDP program attachment (required when --enable-xdp-lb is set)")
+
+	// AF_XDP flags
+	flag.BoolVar(&afxdpEnabled, "enable-afxdp", false, "Enable AF_XDP zero-copy packet processing (Linux only, requires CAP_BPF + CAP_NET_ADMIN)")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -323,6 +330,27 @@ func main() {
 			logger.Info("XDP L4 load balancing enabled",
 				zap.String("interface", xdpInterface))
 		}
+	}
+
+	// Create AF_XDP worker (if enabled)
+	var afxdpWorker *afxdp.Worker
+	if afxdpEnabled {
+		iface := xdpInterface
+		if iface == "" {
+			logger.Fatal("--xdp-interface is required when --enable-afxdp is set")
+		}
+		afxdpLoader := novaebpf.NewProgramLoader(logger, "")
+		afxdpWorker = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
+			InterfaceName: iface,
+			QueueID:       0,
+		}, nil)
+		go func() {
+			if startErr := afxdpWorker.Start(ctx); startErr != nil {
+				logger.Warn("AF_XDP worker stopped", zap.Error(startErr))
+			}
+		}()
+		logger.Info("AF_XDP zero-copy fast path enabled",
+			zap.String("interface", iface))
 	}
 
 	// Create mesh manager (if enabled)
@@ -526,6 +554,13 @@ func main() {
 	if xdpManager != nil {
 		if err := xdpManager.Stop(); err != nil {
 			logger.Error("Error during XDP LB manager shutdown", zap.Error(err))
+		}
+	}
+
+	// Shutdown AF_XDP worker
+	if afxdpWorker != nil {
+		if err := afxdpWorker.Stop(); err != nil {
+			logger.Error("Error during AF_XDP worker shutdown", zap.Error(err))
 		}
 	}
 
