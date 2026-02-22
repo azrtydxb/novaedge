@@ -5,6 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Critical Rules
 
 - **NEVER create version tags (`git tag`) or push tags after merging PRs unless the user explicitly asks for a new release/version.** Tagging triggers the release workflow which builds and publishes Docker images and GitHub releases. Only tag when specifically instructed.
+- **ALWAYS use git worktrees for all code changes.** Never commit directly to `main`. The workflow is:
+  1. Create an isolated git worktree for each task (use `EnterWorktree` or the `superpowers:using-git-worktrees` skill)
+  2. Work on a feature branch inside the worktree
+  3. Create a PR via `gh pr create` when done — never push directly to `main`
+  4. Merge via PR after review
 
 ## Project Overview
 
