@@ -20,6 +20,7 @@ package mesh
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -64,22 +65,32 @@ func (b *iptablesBackend) Setup() error {
 
 // ApplyRules reconciles iptables NAT REDIRECT rules to match the
 // desired set. Rules for removed services are deleted; rules for new
-// services are added.
+// services are added. Errors from individual rule operations are
+// aggregated and returned so callers can detect partial failures.
 func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32) error {
 	desired := make(map[string]InterceptTarget, len(targets))
 	for _, t := range targets {
 		desired[t.Key()] = t
 	}
 
+	var errs []error
+
 	// Remove rules no longer desired.
 	for key := range b.currentRules {
 		if _, ok := desired[key]; !ok {
 			parts := strings.SplitN(key, ":", 2)
-			if len(parts) == 2 {
-				if err := b.removeRule(parts[0], parts[1], tproxyPort); err != nil {
-					b.logger.Error("Failed to remove iptables redirect rule",
-						zap.String("key", key), zap.Error(err))
-				}
+			if len(parts) != 2 {
+				b.logger.Error("Invalid iptables rule key, cannot parse IP:port",
+					zap.String("key", key))
+				delete(b.currentRules, key)
+				continue
+			}
+			if err := b.removeRule(parts[0], parts[1], tproxyPort); err != nil {
+				b.logger.Error("Failed to remove iptables redirect rule",
+					zap.String("key", key), zap.Error(err))
+				errs = append(errs, fmt.Errorf("remove %s: %w", key, err))
+				// Keep key in currentRules so next reconcile retries.
+				continue
 			}
 			delete(b.currentRules, key)
 		}
@@ -93,12 +104,13 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 					zap.String("clusterIP", t.ClusterIP),
 					zap.Int32("port", t.Port),
 					zap.Error(err))
+				errs = append(errs, fmt.Errorf("add %s: %w", key, err))
 				continue
 			}
 			b.currentRules[key] = true
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // Cleanup removes all redirect rules, the custom chain, and the
@@ -118,15 +130,23 @@ func (b *iptablesBackend) Cleanup() error {
 // ensureChain creates the NOVAEDGE_MESH chain in the nat table and
 // inserts it at the top of PREROUTING so it fires before kube-proxy.
 func (b *iptablesBackend) ensureChain() error {
-	// Create chain (ignore error if exists).
-	_ = b.run("-t", "nat", "-N", novaedgeChain)
+	// Create chain. The -N command returns an error if the chain already
+	// exists, which is expected on restart -- only propagate unexpected errors.
+	if err := b.run("-t", "nat", "-N", novaedgeChain); err != nil {
+		if !strings.Contains(err.Error(), "Chain already exists") {
+			return fmt.Errorf("create chain %s: %w", novaedgeChain, err)
+		}
+	}
 
 	// Check if jump already exists.
-	out, _ := b.output("-t", "nat", "-S", "PREROUTING")
+	out, err := b.output("-t", "nat", "-S", "PREROUTING")
+	if err != nil {
+		return fmt.Errorf("list PREROUTING rules: %w", err)
+	}
 	if !strings.Contains(out, novaedgeChain) {
 		// Insert at position 1 to fire before kube-proxy KUBE-SERVICES.
 		if err := b.run("-t", "nat", "-I", "PREROUTING", "1", "-j", novaedgeChain); err != nil {
-			return err
+			return fmt.Errorf("insert PREROUTING jump: %w", err)
 		}
 	}
 

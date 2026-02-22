@@ -131,8 +131,11 @@ type RuleBackend interface {
 	// It is called once before the first ApplyRules call.
 	Setup() error
 
-	// ApplyRules atomically reconciles the set of intercepted targets so
-	// that only the given targets are matched after the call returns.
+	// ApplyRules reconciles the set of intercepted targets so that, after
+	// the call returns, only the given targets are matched. The nftables
+	// backend applies changes atomically via a single netlink batch; the
+	// iptables backend applies per-rule changes and may partially fail
+	// (errors are aggregated and returned).
 	ApplyRules(targets []InterceptTarget, tproxyPort int32) error
 
 	// Cleanup removes all rules, chains/tables, and routing entries

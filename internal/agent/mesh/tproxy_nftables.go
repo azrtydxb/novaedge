@@ -121,7 +121,7 @@ func (b *nftablesBackend) Cleanup() error {
 	if b.table != nil {
 		b.conn.DelTable(b.table)
 		if err := b.conn.Flush(); err != nil {
-			b.logger.Warn("Failed to delete nftables table", zap.Error(err))
+			return fmt.Errorf("nftables flush (cleanup): %w", err)
 		}
 		b.table = nil
 		b.chain = nil
@@ -137,6 +137,12 @@ func (b *nftablesBackend) buildRedirectRule(t InterceptTarget, tproxyPort int32)
 	ip := net.ParseIP(t.ClusterIP).To4()
 	if ip == nil {
 		return nil, fmt.Errorf("invalid IPv4 address: %s", t.ClusterIP)
+	}
+	if t.Port < 1 || t.Port > 65535 {
+		return nil, fmt.Errorf("destination port out of range: %d", t.Port)
+	}
+	if tproxyPort < 1 || tproxyPort > 65535 {
+		return nil, fmt.Errorf("redirect port out of range: %d", tproxyPort)
 	}
 
 	portBytes := make([]byte, 2)
