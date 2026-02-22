@@ -97,6 +97,15 @@ spec:
             - --tracing-endpoint={{ .Values.tracing.endpoint }}
             - --tracing-sampling-rate={{ .Values.tracing.samplingRate }}
             {{- end }}
+            {{- if .Values.ebpf.xdpLb.enabled }}
+            - --enable-xdp-lb=true
+            {{- if .Values.ebpf.xdpLb.interface }}
+            - --xdp-interface={{ .Values.ebpf.xdpLb.interface }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.ebpf.afxdp.enabled }}
+            - --enable-afxdp=true
+            {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -182,6 +191,10 @@ spec:
               readOnly: true
             {{- end }}
             {{- end }}
+            {{- if .Values.ebpf.bpffsMount }}
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+            {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -203,6 +216,12 @@ spec:
           secret:
             secretName: {{ .Values.tls.clientCertSecretName }}
         {{- end }}
+        {{- end }}
+        {{- if .Values.ebpf.bpffsMount }}
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

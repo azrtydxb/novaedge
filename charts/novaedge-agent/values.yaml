@@ -95,6 +95,9 @@ securityContext:
       - NET_ADMIN
       - NET_RAW
       - NET_BIND_SERVICE
+      # BPF and SYS_ADMIN are required when ebpf.xdpLb or ebpf.afxdp is enabled
+      # - BPF
+      # - SYS_ADMIN
     drop:
       - ALL
   readOnlyRootFilesystem: true
@@ -343,6 +346,21 @@ healthChecking:
   workers: 10
   # -- HTTP connection reuse for health checks
   reuseConnections: true
+
+# =============================================================================
+# eBPF Acceleration Configuration
+# =============================================================================
+ebpf:
+  # -- Mount /sys/fs/bpf (bpffs) for BPF program pinning
+  bpffsMount: false
+  # -- XDP-based L4 load balancing (bypasses kernel network stack)
+  xdpLb:
+    enabled: false
+    # -- Network interface for XDP program attachment
+    interface: ""
+  # -- AF_XDP zero-copy packet processing
+  afxdp:
+    enabled: false
 
 # =============================================================================
 # L4 TCP/UDP Proxy Configuration
