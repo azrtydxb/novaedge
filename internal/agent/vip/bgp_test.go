@@ -19,6 +19,7 @@ package vip
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,22 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// skipIfBGPUnavailable skips the test if the error indicates the BGP server
+// cannot start (privileged port 179 requires root, or port already in use).
+// This allows tests to pass in unprivileged CI and when tests share a port.
+func skipIfBGPUnavailable(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		return
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "permission denied") ||
+		strings.Contains(msg, "address already in use") ||
+		strings.Contains(msg, "bind:") {
+		t.Skipf("Skipping: BGP server unavailable: %v", err)
+	}
+}
 
 func TestBGPHandler_NewBGPHandler(t *testing.T) {
 	logger := zaptest.NewLogger(t)
@@ -60,6 +77,7 @@ func TestBGPHandler_Start(t *testing.T) {
 	t.Run("start handler", func(t *testing.T) {
 		err := handler.Start(ctx)
 		if err != nil {
+			skipIfBGPUnavailable(t, err)
 			t.Fatalf("Failed to start handler: %v", err)
 		}
 		if !handler.started {
@@ -79,7 +97,9 @@ func TestBGPHandler_AddVIP_MissingConfig(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	tests := []struct {
 		name        string
@@ -133,6 +153,7 @@ func TestBGPHandler_AddRemoveVIP(t *testing.T) {
 
 	ctx := context.Background()
 	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
 		t.Fatalf("Failed to start handler: %v", err)
 	}
 
@@ -151,6 +172,7 @@ func TestBGPHandler_AddRemoveVIP(t *testing.T) {
 
 	t.Run("add VIP", func(t *testing.T) {
 		err := handler.AddVIP(ctx, assignment)
+		skipIfBGPUnavailable(t, err)
 		if err != nil {
 			t.Fatalf("Failed to add VIP: %v", err)
 		}
@@ -228,6 +250,7 @@ func TestBGPHandler_IPv6(t *testing.T) {
 
 	ctx := context.Background()
 	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
 		t.Fatalf("Failed to start: %v", err)
 	}
 
@@ -245,6 +268,7 @@ func TestBGPHandler_IPv6(t *testing.T) {
 	}
 
 	err = handler.AddVIP(ctx, assignment)
+	skipIfBGPUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("Failed to add IPv6 VIP: %v", err)
 	}
@@ -273,6 +297,7 @@ func TestBGPHandler_WithBFD(t *testing.T) {
 
 	ctx := context.Background()
 	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
 		t.Fatalf("Failed to start: %v", err)
 	}
 
@@ -298,6 +323,7 @@ func TestBGPHandler_WithBFD(t *testing.T) {
 
 	err = handler.AddVIP(ctx, assignment)
 	if err != nil {
+		skipIfBGPUnavailable(t, err)
 		t.Fatalf("Failed to add VIP with BFD: %v", err)
 	}
 
@@ -337,7 +363,9 @@ func TestBGPHandler_Reconfigure_ASNChange(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	originalAssignment := &pb.VIPAssignment{
 		VipName: "test-reconfig",
@@ -365,6 +393,7 @@ func TestBGPHandler_Reconfigure_ASNChange(t *testing.T) {
 
 	err := handler.AddVIP(ctx, modifiedAssignment)
 	if err != nil {
+		skipIfBGPUnavailable(t, err)
 		t.Fatalf("Reconfiguration with ASN change failed: %v", err)
 	}
 
@@ -381,7 +410,9 @@ func TestBGPHandler_Reconfigure_RouteAttributes(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	originalAssignment := &pb.VIPAssignment{
 		VipName: "test-route-attrs",
@@ -412,6 +443,7 @@ func TestBGPHandler_Reconfigure_RouteAttributes(t *testing.T) {
 
 	err := handler.AddVIP(ctx, modifiedAssignment)
 	if err != nil {
+		skipIfBGPUnavailable(t, err)
 		t.Fatalf("Reconfiguration with attribute change failed: %v", err)
 	}
 
@@ -431,7 +463,9 @@ func TestBGPHandler_Reconfigure_BFD(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	tests := []struct {
 		name         string
@@ -492,7 +526,9 @@ func TestBGPHandler_Reconfigure_BFD(t *testing.T) {
 				},
 				BfdConfig: tt.initial,
 			}
-			_ = handler.AddVIP(ctx, initialAssignment)
+			if err := handler.AddVIP(ctx, initialAssignment); err != nil {
+				skipIfBGPUnavailable(t, err)
+			}
 
 			// Update with new BFD config
 			updatedAssignment := &pb.VIPAssignment{
@@ -523,7 +559,9 @@ func TestBGPHandler_BFDNeighborDown(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-bfd-failover",
@@ -565,7 +603,9 @@ func TestBGPHandler_BFDNeighborUp(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-bfd-recovery",
@@ -608,7 +648,9 @@ func TestBGPHandler_MultipleVIPs(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	vips := []*pb.VIPAssignment{
 		{
@@ -643,6 +685,7 @@ func TestBGPHandler_MultipleVIPs(t *testing.T) {
 	// Add all VIPs
 	for _, vip := range vips {
 		if err := handler.AddVIP(ctx, vip); err != nil {
+			skipIfBGPUnavailable(t, err)
 			t.Fatalf("Failed to add VIP %s: %v", vip.VipName, err)
 		}
 	}
@@ -687,7 +730,9 @@ func TestBGPHandler_Shutdown(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-shutdown",
@@ -716,7 +761,9 @@ func TestBGPHandler_GetActiveVIPCount(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	if count := handler.GetActiveVIPCount(); count != 0 {
 		t.Errorf("Expected 0 active VIPs initially, got %d", count)
@@ -732,7 +779,10 @@ func TestBGPHandler_GetActiveVIPCount(t *testing.T) {
 		},
 	}
 
-	_ = handler.AddVIP(ctx, assignment)
+	if err := handler.AddVIP(ctx, assignment); err != nil {
+		skipIfBGPUnavailable(t, err)
+		t.Fatalf("Failed to add VIP: %v", err)
+	}
 
 	if count := handler.GetActiveVIPCount(); count != 1 {
 		t.Errorf("Expected 1 active VIP, got %d", count)
@@ -797,7 +847,9 @@ func TestBGPHandler_InvalidBFDInterval(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-invalid-bfd",
@@ -819,6 +871,7 @@ func TestBGPHandler_InvalidBFDInterval(t *testing.T) {
 	// Should not fail, but use defaults
 	err := handler.AddVIP(ctx, assignment)
 	if err != nil {
+		skipIfBGPUnavailable(t, err)
 		t.Fatalf("AddVIP with invalid BFD intervals should not fail: %v", err)
 	}
 
@@ -832,7 +885,9 @@ func TestBGPHandler_AddedAtTimestamp(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, _ := NewBGPHandler(logger)
 	ctx := context.Background()
-	_ = handler.Start(ctx)
+	if err := handler.Start(ctx); err != nil {
+		skipIfBGPUnavailable(t, err)
+	}
 
 	beforeAdd := time.Now()
 
