@@ -97,14 +97,14 @@ spec:
             - --tracing-endpoint={{ .Values.tracing.endpoint }}
             - --tracing-sampling-rate={{ .Values.tracing.samplingRate }}
             {{- end }}
-            {{- if .Values.ebpf.xdpLb.enabled }}
-            - --enable-xdp-lb=true
-            {{- if .Values.ebpf.xdpLb.interface }}
-            - --xdp-interface={{ .Values.ebpf.xdpLb.interface }}
+            {{- if .Values.ebpf.xdpInterface }}
+            - --xdp-interface={{ .Values.ebpf.xdpInterface }}
             {{- end }}
+            {{- if .Values.ebpf.forceLegacyLb }}
+            - --force-legacy-lb=true
             {{- end }}
-            {{- if .Values.ebpf.afxdp.enabled }}
-            - --enable-afxdp=true
+            {{- if .Values.ebpf.forceLegacyMesh }}
+            - --force-legacy-mesh=true
             {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}

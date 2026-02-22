@@ -1,22 +1,23 @@
 # eBPF/XDP Data Plane Acceleration
 
-NovaEdge supports optional eBPF/XDP acceleration for the data plane, providing
-kernel-bypass packet processing that can dramatically reduce latency and increase
+NovaEdge uses eBPF/XDP acceleration by default for the data plane, providing
+kernel-bypass packet processing that dramatically reduces latency and increases
 throughput for L4 load balancing and service mesh traffic interception.
 
 ## Overview
 
-Three eBPF acceleration features are available, each opt-in via agent flags or
-Helm values:
+Three eBPF acceleration features are available. All are **enabled by default**
+and auto-detected at runtime. If the kernel does not support a feature, the
+agent transparently falls back to the legacy path.
 
-| Feature | Program Type | Replaces | Flag |
-|---------|-------------|----------|------|
-| **eBPF Mesh Redirect** | `BPF_PROG_TYPE_SK_LOOKUP` | nftables/iptables TPROXY | Automatic (detected at runtime) |
-| **XDP L4 Load Balancing** | `BPF_PROG_TYPE_XDP` | Userspace TCP/UDP proxy | `--enable-xdp-lb` |
-| **AF_XDP Zero-Copy** | XDP + `AF_XDP` socket | Kernel network stack | `--enable-afxdp` |
+| Feature | Program Type | Legacy Fallback | Auto-detected |
+|---------|-------------|----------------|---------------|
+| **eBPF Mesh Redirect** | `BPF_PROG_TYPE_SK_LOOKUP` | nftables/iptables TPROXY | Yes |
+| **XDP L4 Load Balancing** | `BPF_PROG_TYPE_XDP` | Userspace TCP/UDP proxy | Yes (requires `--xdp-interface`) |
+| **AF_XDP Zero-Copy** | XDP + `AF_XDP` socket | Kernel network stack | Yes (requires `--xdp-interface`) |
 
-All features gracefully fall back to the existing userspace implementation when
-eBPF is not available (wrong kernel version, missing capabilities, non-Linux OS).
+To **force** the legacy path, use `--force-legacy-lb` (L4/AF_XDP) or
+`--force-legacy-mesh` (mesh interception).
 
 ## Prerequisites
 
@@ -45,13 +46,18 @@ ls /sys/kernel/btf/vmlinux
 
 ### Capabilities
 
-The agent pod requires these Linux capabilities when eBPF features are enabled:
+The agent pod requires these Linux capabilities for eBPF acceleration:
 
 - `CAP_BPF` — load and manage BPF programs and maps
 - `CAP_NET_ADMIN` — attach XDP programs to network interfaces
 - `CAP_SYS_ADMIN` — required on kernels < 5.8 that lack `CAP_BPF`
 
-## Enabling via Helm
+These are included in the default Helm chart security context.
+
+## Helm Configuration
+
+eBPF acceleration is enabled by default. Set `xdpInterface` to specify the
+NIC for XDP/AF_XDP attachment:
 
 ```yaml
 # charts/novaedge-agent/values.yaml
@@ -59,16 +65,14 @@ ebpf:
   # Mount /sys/fs/bpf for BPF map pinning
   bpffsMount: true
 
-  # XDP-based L4 load balancing
-  xdpLb:
-    enabled: true
-    interface: eth0  # NIC to attach XDP program to
+  # NIC for XDP/AF_XDP — enables L4 LB and zero-copy acceleration
+  xdpInterface: eth0
 
-  # AF_XDP zero-copy packet processing
-  afxdp:
-    enabled: true
+  # Force legacy paths (default: false — eBPF auto-detected)
+  forceLegacyLb: false
+  forceLegacyMesh: false
 
-# Required security context for eBPF
+# Capabilities are included by default
 securityContext:
   capabilities:
     add:
@@ -81,14 +85,24 @@ securityContext:
       - ALL
 ```
 
-## Enabling via Agent Flags
+## Agent Flags
 
 ```bash
+# Default: eBPF auto-detected, XDP on eth0
 novaedge-agent \
-  --enable-xdp-lb \
   --xdp-interface eth0 \
-  --enable-afxdp \
   --mesh-enabled
+
+# Force legacy userspace L4 proxy (skip XDP/AF_XDP)
+novaedge-agent \
+  --force-legacy-lb \
+  --mesh-enabled
+
+# Force legacy nftables/iptables mesh interception (skip eBPF sk_lookup)
+novaedge-agent \
+  --xdp-interface eth0 \
+  --mesh-enabled \
+  --force-legacy-mesh
 ```
 
 The eBPF mesh redirect is automatically detected and used when
@@ -96,7 +110,7 @@ The eBPF mesh redirect is automatically detected and used when
 
 ## Architecture
 
-### Packet Flow Without eBPF
+### Packet Flow Without eBPF (Legacy)
 
 ```mermaid
 graph LR
@@ -207,22 +221,26 @@ bpftool map dump name lb_stats
 Look for these log messages to confirm eBPF acceleration is active:
 
 ```
-# eBPF mesh redirect
-{"msg": "Using ebpf-sk-lookup backend for mesh interception"}
+# eBPF mesh redirect (auto-detected)
+{"msg": "using eBPF sk_lookup backend for mesh interception"}
 
-# XDP L4 LB
-{"msg": "XDP L4 load balancing enabled", "interface": "eth0"}
-{"msg": "XDP LB program attached", "interface": "eth0"}
+# XDP L4 LB (auto-detected when --xdp-interface is set)
+{"msg": "XDP L4 load balancing active", "interface": "eth0"}
 
-# AF_XDP
+# AF_XDP (auto-detected when --xdp-interface is set)
 {"msg": "AF_XDP zero-copy fast path enabled", "interface": "eth0"}
+
+# Fallback messages (kernel doesn't support eBPF feature)
+{"msg": "XDP L4 LB not available, using userspace proxy"}
+{"msg": "AF_XDP not available, using kernel stack"}
+{"msg": "eBPF mesh redirect disabled by --force-legacy-mesh, using nftables/iptables"}
 ```
 
 ## Troubleshooting
 
 ### BPF program fails to load
 
-**Symptom:** Agent logs `Failed to start XDP LB manager, falling back to userspace proxy`
+**Symptom:** Agent logs `XDP L4 LB not available, using userspace proxy`
 
 **Common causes:**
 
@@ -264,3 +282,24 @@ securityContext:
 
 On some distributions, you may also need `privileged: true` in the pod
 security context.
+
+### Forcing legacy mode
+
+If eBPF causes issues, you can force the legacy path without changing
+the kernel or capabilities:
+
+```bash
+# Force legacy for L4 load balancing and AF_XDP
+novaedge-agent --force-legacy-lb ...
+
+# Force legacy for mesh interception
+novaedge-agent --force-legacy-mesh ...
+```
+
+Or via Helm:
+
+```yaml
+ebpf:
+  forceLegacyLb: true
+  forceLegacyMesh: true
+```
