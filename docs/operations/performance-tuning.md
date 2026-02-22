@@ -41,6 +41,37 @@ For L4 TCP forwarding, NovaEdge uses the Linux `splice()` system call to move da
 
 **Configuration:** None. Splice is attempted automatically for every L4 TCP connection. No flag or setting controls this behavior.
 
+## eBPF/XDP Data Plane Acceleration
+
+NovaEdge uses eBPF/XDP by default for data plane acceleration. All three features are auto-detected at runtime and require no configuration beyond setting `--xdp-interface` for XDP/AF_XDP. If the kernel does not support a feature, the agent transparently falls back to the legacy path.
+
+| Feature | Program Type | Minimum Kernel | Fallback |
+|---------|-------------|---------------|----------|
+| **XDP L4 Load Balancing** | `BPF_PROG_TYPE_XDP` | 5.8+ | Userspace TCP/UDP proxy |
+| **AF_XDP Zero-Copy** | XDP + `AF_XDP` socket | 5.10+ | Kernel network stack |
+| **eBPF Mesh Redirect** | `BPF_PROG_TYPE_SK_LOOKUP` | 5.9+ | nftables/iptables TPROXY |
+
+**Performance impact:**
+
+- **XDP L4 LB**: Packets are rewritten at the NIC driver level before `sk_buff` allocation, eliminating kernel stack traversal entirely for matched traffic.
+- **AF_XDP**: Zero-copy packet I/O via shared-memory ring buffers between NIC and userspace, removing all memory copies from the data path.
+- **eBPF Mesh Redirect**: Socket lookup redirection via `bpf_sk_assign()` replaces the full nftables/iptables rule chain traversal.
+
+**Verifying acceleration is active:**
+
+```bash
+# Check agent logs for eBPF status
+kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep -E "XDP|AF_XDP|eBPF|sk_lookup"
+
+# List loaded BPF programs
+bpftool prog list
+
+# Show XDP programs attached to interfaces
+bpftool net show
+```
+
+To force the legacy path (for debugging or compatibility), use `--force-legacy-lb` (L4/AF_XDP) or `--force-legacy-mesh` (mesh interception). See [eBPF/XDP Acceleration](../user-guide/ebpf-acceleration.md) for full details.
+
 ## Kernel Parameter Tuning
 
 The NovaEdge agent checks kernel tuning parameters at startup and logs a warning for each parameter that is below the recommended value. These warnings appear at the `WARN` log level with the message `"kernel parameter below recommended value"` and include the current and recommended values.

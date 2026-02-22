@@ -73,11 +73,25 @@ type activeListener struct {
 	cancel      context.CancelFunc
 }
 
+// XDPFastPath is an optional interface for XDP-based L4 load balancing.
+// When set on the Manager, eligible plain TCP/UDP listeners (not TLS
+// passthrough) are offloaded to the XDP program instead of userspace proxy.
+type XDPFastPath interface {
+	// IsRunning returns whether the XDP fast path is active.
+	IsRunning() bool
+}
+
 // Manager manages L4 TCP/UDP listeners
 type Manager struct {
 	logger    *zap.Logger
 	mu        sync.Mutex
 	listeners map[string]*activeListener // key: "name:port"
+	// XDP is an optional XDP fast-path manager. When set and running,
+	// eligible routes (plain TCP/UDP without TLS termination) are
+	// offloaded to the kernel XDP program. The XDP manager's SyncBackends
+	// is called by the agent main.go; this field is used only for
+	// informational logging.
+	XDP XDPFastPath
 }
 
 // NewManager creates a new L4 listener manager
@@ -132,8 +146,10 @@ func (m *Manager) ApplyConfig(ctx context.Context, configs []ListenerConfig) err
 		}
 	}
 
+	xdpActive := m.XDP != nil && m.XDP.IsRunning()
 	m.logger.Info("L4 configuration applied",
-		zap.Int("active_listeners", len(m.listeners)))
+		zap.Int("active_listeners", len(m.listeners)),
+		zap.Bool("xdp_fastpath", xdpActive))
 
 	return nil
 }

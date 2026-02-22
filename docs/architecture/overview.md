@@ -57,7 +57,7 @@ flowchart TB
 |-----------|------|---------|
 | **Operator** | Deployment | Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD |
 | **Controller** | Deployment | Watches CRDs, builds config snapshots, distributes via gRPC |
-| **Agent** | DaemonSet | Handles L7 routing, VIP management, policy enforcement |
+| **Agent** | DaemonSet | Handles L4/L7 routing, VIP management, policy enforcement, eBPF/XDP acceleration |
 
 ## Request Flow
 
@@ -184,6 +184,12 @@ flowchart TB
         HC["Health Checker"]
         POL["Policy Engine"]
         POOL["Connection Pool"]
+
+        subgraph eBPF["eBPF/XDP Acceleration"]
+            XDP["XDP L4 LB"]
+            AFXDP["AF_XDP Zero-Copy"]
+            SKLOOKUP["SK_LOOKUP Mesh Redirect"]
+        end
     end
 
     GC -->|"config"| RT
@@ -191,13 +197,17 @@ flowchart TB
     GC -->|"config"| VIP
     GC -->|"config"| POL
 
-    Traffic((Traffic)) --> VIP
+    Traffic((Traffic)) --> XDP
+    XDP -->|"L4 match"| AFXDP
+    XDP -->|"no match"| VIP
     VIP --> RT
     RT --> POL
     POL --> LB
     LB --> HC
     HC --> POOL
     POOL --> Backend((Backend))
+
+    style eBPF fill:#fff4e6
 ```
 
 **Responsibilities:**
@@ -209,6 +219,7 @@ flowchart TB
 5. Load balance across healthy backends
 6. Manage connection pools
 7. Perform health checks
+8. Accelerate L4 traffic via eBPF/XDP (auto-detected)
 
 ## VIP Modes
 

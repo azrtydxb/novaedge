@@ -37,14 +37,18 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/piwi3910/novaedge/internal/agent/afxdp"
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
+	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
+	"github.com/piwi3910/novaedge/internal/agent/ebpfmesh"
 	"github.com/piwi3910/novaedge/internal/agent/introspection"
 	"github.com/piwi3910/novaedge/internal/agent/l4"
 	"github.com/piwi3910/novaedge/internal/agent/mesh"
 	"github.com/piwi3910/novaedge/internal/agent/sdwan"
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
+	"github.com/piwi3910/novaedge/internal/agent/xdplb"
 	"github.com/piwi3910/novaedge/internal/observability"
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
@@ -109,6 +113,13 @@ var (
 	sdwanEnabled    bool
 	meshTrustDomain string
 
+	// XDP/AF_XDP interface for eBPF acceleration
+	xdpInterface string
+
+	// Force legacy paths (disable eBPF auto-detection)
+	forceLegacyLB   bool
+	forceLegacyMesh bool
+
 	// Control-plane VIP BGP/BFD configuration
 	cpVIPMode       string
 	cpBGPLocalAS    uint
@@ -162,6 +173,13 @@ func main() {
 
 	// SD-WAN flags
 	flag.BoolVar(&sdwanEnabled, "sdwan-enabled", false, "Enable SD-WAN multi-link management")
+
+	// XDP/AF_XDP interface — when set, eBPF acceleration is auto-attempted
+	flag.StringVar(&xdpInterface, "xdp-interface", "", "Network interface for XDP/AF_XDP program attachment (enables eBPF acceleration when set)")
+
+	// Force-legacy flags — explicitly disable eBPF auto-detection
+	flag.BoolVar(&forceLegacyLB, "force-legacy-lb", false, "Force legacy userspace L4 proxy instead of XDP/AF_XDP acceleration")
+	flag.BoolVar(&forceLegacyMesh, "force-legacy-mesh", false, "Force legacy nftables/iptables mesh interception instead of eBPF sk_lookup")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -294,13 +312,58 @@ func main() {
 	// Create L4 manager
 	l4Manager := l4.NewManager(logger)
 
+	// Create XDP LB manager — auto-attempted when xdpInterface is set
+	var xdpManager *xdplb.Manager
+	if !forceLegacyLB && xdpInterface != "" {
+		ebpfLoader := novaebpf.NewProgramLoader(logger, "")
+		xdpManager = xdplb.NewManager(logger, ebpfLoader, xdpInterface)
+		if err := xdpManager.Start(); err != nil {
+			logger.Warn("XDP L4 LB not available, using userspace proxy",
+				zap.Error(err))
+			xdpManager = nil
+		} else {
+			l4Manager.XDP = xdpManager
+			logger.Info("XDP L4 load balancing active",
+				zap.String("interface", xdpInterface))
+		}
+	} else if forceLegacyLB {
+		logger.Info("XDP L4 LB disabled by --force-legacy-lb, using userspace proxy")
+	}
+
+	// Create AF_XDP worker — auto-attempted when xdpInterface is set
+	var afxdpWorker *afxdp.Worker
+	if !forceLegacyLB && xdpInterface != "" {
+		afxdpLoader := novaebpf.NewProgramLoader(logger, "")
+		afxdpWorker = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
+			InterfaceName: xdpInterface,
+			QueueID:       0,
+		}, nil)
+		go func() {
+			if startErr := afxdpWorker.Start(ctx); startErr != nil {
+				logger.Warn("AF_XDP not available, using kernel stack",
+					zap.Error(startErr))
+			}
+		}()
+		logger.Info("AF_XDP zero-copy fast path enabled",
+			zap.String("interface", xdpInterface))
+	}
+
 	// Create mesh manager (if enabled)
 	var meshManager *mesh.Manager
 	if meshEnabled {
+		// eBPF sk_lookup is auto-attempted; falls back to nftables/iptables
+		// if the kernel doesn't support it or --force-legacy-mesh is set.
+		var meshBackend mesh.RuleBackend
+		if !forceLegacyMesh {
+			meshBackend = ebpfmesh.TryBackend(logger)
+		} else {
+			logger.Info("eBPF mesh redirect disabled by --force-legacy-mesh, using nftables/iptables")
+		}
 		meshManager = mesh.NewManager(logger, mesh.ManagerConfig{
-			TPROXYPort:  int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
-			TunnelPort:  int32(meshTunnelPort), //nolint:gosec // port range validated by flag
-			TrustDomain: meshTrustDomain,
+			TPROXYPort:          int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
+			TunnelPort:          int32(meshTunnelPort), //nolint:gosec // port range validated by flag
+			TrustDomain:         meshTrustDomain,
+			RuleBackendOverride: meshBackend,
 		})
 	}
 
@@ -370,6 +433,14 @@ func main() {
 			if applyErr := applyL4Config(ctx, l4Manager, snapshot, logger); applyErr != nil {
 				logger.Error("Failed to apply L4 config", zap.Error(applyErr))
 				// Don't fail the whole config update for L4 errors
+			}
+
+			// Sync XDP LB backends (if XDP manager is active)
+			if xdpManager != nil && xdpManager.IsRunning() {
+				xdpRoutes := buildXDPRoutes(snapshot, logger)
+				if syncErr := xdpManager.SyncBackends(xdpRoutes); syncErr != nil {
+					logger.Error("Failed to sync XDP LB backends", zap.Error(syncErr))
+				}
 			}
 
 			// Apply VIP assignments
@@ -476,6 +547,20 @@ func main() {
 		sdwanManager.Stop()
 	}
 
+	// Shutdown XDP LB manager
+	if xdpManager != nil {
+		if err := xdpManager.Stop(); err != nil {
+			logger.Error("Error during XDP LB manager shutdown", zap.Error(err))
+		}
+	}
+
+	// Shutdown AF_XDP worker
+	if afxdpWorker != nil {
+		if err := afxdpWorker.Stop(); err != nil {
+			logger.Error("Error during AF_XDP worker shutdown", zap.Error(err))
+		}
+	}
+
 	// Shutdown L4 listeners
 	if err := l4Manager.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during L4 manager shutdown", zap.Error(err))
@@ -563,6 +648,86 @@ func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Sn
 	logger.Info("Applying L4 configuration",
 		zap.Int("listeners", len(configs)))
 	return manager.ApplyConfig(ctx, configs)
+}
+
+// buildXDPRoutes builds XDP L4 routes from the config snapshot.
+// It correlates VIP assignments with L4 listeners to create VIP-to-backend
+// mappings for XDP fast-path load balancing. Only plain TCP/UDP listeners
+// are eligible; TLS passthrough listeners remain in userspace.
+func buildXDPRoutes(snapshot *config.Snapshot, logger *zap.Logger) []xdplb.L4Route {
+	if len(snapshot.L4Listeners) == 0 || len(snapshot.VipAssignments) == 0 {
+		return nil
+	}
+
+	// Build a map of port → L4Listener for eligible (TCP/UDP) listeners.
+	type l4Info struct {
+		protocol uint8
+		backends []*pb.Endpoint
+	}
+	portMap := make(map[int32]l4Info)
+	for _, listener := range snapshot.L4Listeners {
+		var proto uint8
+		switch listener.Protocol {
+		case pb.Protocol_TCP:
+			proto = 6
+		case pb.Protocol_UDP:
+			proto = 17
+		default:
+			// TLS passthrough and other protocols stay in userspace
+			continue
+		}
+		portMap[listener.Port] = l4Info{protocol: proto, backends: listener.Backends}
+	}
+
+	if len(portMap) == 0 {
+		return nil
+	}
+
+	// For each VIP assignment, create XDP routes for matching ports.
+	var routes []xdplb.L4Route
+	for _, vipAssign := range snapshot.VipAssignments {
+		if vipAssign.Address == "" {
+			continue
+		}
+		for _, port := range vipAssign.Ports {
+			info, ok := portMap[port]
+			if !ok {
+				continue
+			}
+
+			backends := make([]xdplb.Backend, 0, len(info.backends))
+			for _, ep := range info.backends {
+				if !ep.Ready {
+					continue
+				}
+				if ep.Port <= 0 || ep.Port > 65535 {
+					continue
+				}
+				backends = append(backends, xdplb.Backend{
+					Addr: ep.Address,
+					Port: uint16(ep.Port), //nolint:gosec // bounds checked above
+				})
+			}
+
+			if len(backends) == 0 {
+				continue
+			}
+
+			routes = append(routes, xdplb.L4Route{
+				VIP:      vipAssign.Address,
+				Port:     uint16(port), //nolint:gosec // port is a valid int32
+				Protocol: info.protocol,
+				Backends: backends,
+			})
+		}
+	}
+
+	if len(routes) > 0 {
+		logger.Info("Built XDP LB routes",
+			zap.Int("routes", len(routes)))
+	}
+
+	return routes
 }
 
 // parseBGPPeer parses a peer string in the format "IP:AS[:PORT]" into a BGPPeerConfig.
