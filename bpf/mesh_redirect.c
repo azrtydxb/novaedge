@@ -19,6 +19,15 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
+// Network constants needed for BPF target compilation where kernel
+// headers may not fully resolve (standard BPF practice).
+#ifndef AF_INET
+#define AF_INET 2
+#endif
+#ifndef IPPROTO_TCP
+#define IPPROTO_TCP 6
+#endif
+
 // mesh_services maps {dst_ip, dst_port} -> {redirect_port}.
 // When a connection matches, we redirect it to the local TPROXY listener
 // on redirect_port.
