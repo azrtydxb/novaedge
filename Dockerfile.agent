@@ -8,8 +8,9 @@ WORKDIR /workspace
 # Install BPF compilation tools for go generate (eBPF/XDP programs).
 # These are only needed at build time; the runtime image is separate.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    clang llvm libbpf-dev linux-headers-generic \
-    && rm -rf /var/lib/apt/lists/*
+    clang llvm libbpf-dev linux-libc-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/include/$(gcc -dumpmachine)/asm /usr/include/asm
 
 # Copy the Go Modules manifests
 COPY go.mod go.mod
