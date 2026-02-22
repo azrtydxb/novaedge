@@ -443,7 +443,7 @@ func TestBFDManager_IntervalVariations(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	tests := []struct {
-		name     string
+		name       string
 		txInterval time.Duration
 		rxInterval time.Duration
 	}{
@@ -696,7 +696,6 @@ func TestBFDManager_DetectionTimeout(t *testing.T) {
 		t.Errorf("Expected Down after timeout, got %s", state.String())
 	}
 }
-
 
 func TestBFDManager_GetAllSessionStates(t *testing.T) {
 	logger := zaptest.NewLogger(t)
@@ -1010,7 +1009,6 @@ func TestBFDManager_NilTransportSkipsSending(t *testing.T) {
 		t.Errorf("Expected 1 packet TX (metrics-only), got %d", tx)
 	}
 }
-
 
 func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	logger := zaptest.NewLogger(t)

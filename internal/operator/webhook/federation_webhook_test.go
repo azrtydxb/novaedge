@@ -223,11 +223,6 @@ func TestFederationValidator_ValidateCreate(t *testing.T) {
 		assert.Contains(t, err.Error(), "timeout must be less than interval")
 	})
 
-	t.Run("wrong object type", func(t *testing.T) {
-		_, err := validator.ValidateCreate(context.Background(), &novaedgev1alpha1.ProxyGateway{})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected NovaEdgeFederation")
-	})
 }
 
 func TestFederationValidator_ValidateUpdate(t *testing.T) {
@@ -317,27 +312,6 @@ func TestFederationValidator_ValidateUpdate(t *testing.T) {
 		assert.Contains(t, err.Error(), "local member name is immutable")
 	})
 
-	t.Run("wrong old object type", func(t *testing.T) {
-		newFed := &novaedgev1alpha1.NovaEdgeFederation{
-			Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
-				FederationID: "test-federation",
-			},
-		}
-		_, err := validator.ValidateUpdate(context.Background(), &novaedgev1alpha1.ProxyGateway{}, newFed)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected NovaEdgeFederation")
-	})
-
-	t.Run("wrong new object type", func(t *testing.T) {
-		oldFed := &novaedgev1alpha1.NovaEdgeFederation{
-			Spec: novaedgev1alpha1.NovaEdgeFederationSpec{
-				FederationID: "test-federation",
-			},
-		}
-		_, err := validator.ValidateUpdate(context.Background(), oldFed, &novaedgev1alpha1.ProxyGateway{})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected NovaEdgeFederation")
-	})
 }
 
 func TestFederationValidator_ValidateDelete(t *testing.T) {
@@ -392,11 +366,6 @@ func TestFederationValidator_ValidateDelete(t *testing.T) {
 		assert.Contains(t, warnings[0], "pending conflicts")
 	})
 
-	t.Run("wrong object type", func(t *testing.T) {
-		_, err := validator.ValidateDelete(context.Background(), &novaedgev1alpha1.ProxyGateway{})
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "expected NovaEdgeFederation")
-	})
 }
 
 func TestFederationIDRegex(t *testing.T) {

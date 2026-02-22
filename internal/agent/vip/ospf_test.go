@@ -533,225 +533,224 @@ func TestOSPFHandler_MultipleVIPs(t *testing.T) {
 	}
 }
 
-
 func TestOSPFHandler_DifferentAreaIDs(t *testing.T) {
-logger := zaptest.NewLogger(t)
-handler, _ := NewOSPFHandler(logger)
-ctx := context.Background()
-_ = handler.Start(ctx)
+	logger := zaptest.NewLogger(t)
+	handler, _ := NewOSPFHandler(logger)
+	ctx := context.Background()
+	_ = handler.Start(ctx)
 
-vips := []*pb.VIPAssignment{
-{
-VipName: "area0-vip",
-Address: "10.200.0.1/32",
-Mode:    pb.VIPMode_OSPF,
-OspfConfig: &pb.OSPFConfig{
-RouterId: "10.0.0.1",
-AreaId:   0, // Backbone area
-},
-},
-{
-VipName: "area1-vip",
-Address: "10.200.0.2/32",
-Mode:    pb.VIPMode_OSPF,
-OspfConfig: &pb.OSPFConfig{
-RouterId: "10.0.0.1",
-AreaId:   1, // Non-backbone area
-},
-},
-}
+	vips := []*pb.VIPAssignment{
+		{
+			VipName: "area0-vip",
+			Address: "10.200.0.1/32",
+			Mode:    pb.VIPMode_OSPF,
+			OspfConfig: &pb.OSPFConfig{
+				RouterId: "10.0.0.1",
+				AreaId:   0, // Backbone area
+			},
+		},
+		{
+			VipName: "area1-vip",
+			Address: "10.200.0.2/32",
+			Mode:    pb.VIPMode_OSPF,
+			OspfConfig: &pb.OSPFConfig{
+				RouterId: "10.0.0.1",
+				AreaId:   1, // Non-backbone area
+			},
+		},
+	}
 
-for _, vip := range vips {
-if err := handler.AddVIP(ctx, vip); err != nil {
-t.Fatalf("Failed to add VIP %s: %v", vip.VipName, err)
-}
-}
+	for _, vip := range vips {
+		if err := handler.AddVIP(ctx, vip); err != nil {
+			t.Fatalf("Failed to add VIP %s: %v", vip.VipName, err)
+		}
+	}
 
-if handler.GetActiveVIPCount() != 2 {
-t.Errorf("Expected 2 active VIPs with different areas, got %d", handler.GetActiveVIPCount())
-}
+	if handler.GetActiveVIPCount() != 2 {
+		t.Errorf("Expected 2 active VIPs with different areas, got %d", handler.GetActiveVIPCount())
+	}
 }
 
 func TestOSPFHandler_HighCostRoutes(t *testing.T) {
-logger := zaptest.NewLogger(t)
-handler, _ := NewOSPFHandler(logger)
-ctx := context.Background()
-_ = handler.Start(ctx)
+	logger := zaptest.NewLogger(t)
+	handler, _ := NewOSPFHandler(logger)
+	ctx := context.Background()
+	_ = handler.Start(ctx)
 
-tests := []struct {
-name string
-cost uint32
-}{
-{"low cost", 1},
-{"default cost", 10},
-{"high cost", 1000},
-{"very high cost", 65535},
-}
+	tests := []struct {
+		name string
+		cost uint32
+	}{
+		{"low cost", 1},
+		{"default cost", 10},
+		{"high cost", 1000},
+		{"very high cost", 65535},
+	}
 
-for _, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-assignment := &pb.VIPAssignment{
-VipName: "test-cost-" + tt.name,
-Address: "10.200.0.1/32",
-Mode:    pb.VIPMode_OSPF,
-OspfConfig: &pb.OSPFConfig{
-RouterId: "10.0.0.1",
-AreaId:   0,
-Cost:     tt.cost,
-},
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assignment := &pb.VIPAssignment{
+				VipName: "test-cost-" + tt.name,
+				Address: "10.200.0.1/32",
+				Mode:    pb.VIPMode_OSPF,
+				OspfConfig: &pb.OSPFConfig{
+					RouterId: "10.0.0.1",
+					AreaId:   0,
+					Cost:     tt.cost,
+				},
+			}
 
-// Remove previous VIP with same address
-handler.mu.Lock()
-handler.activeVIPs = make(map[string]*OSPFVIPState)
-handler.mu.Unlock()
+			// Remove previous VIP with same address
+			handler.mu.Lock()
+			handler.activeVIPs = make(map[string]*OSPFVIPState)
+			handler.mu.Unlock()
 
-err := handler.AddVIP(ctx, assignment)
-if err != nil {
-t.Fatalf("Failed to add VIP with cost %d: %v", tt.cost, err)
-}
+			err := handler.AddVIP(ctx, assignment)
+			if err != nil {
+				t.Fatalf("Failed to add VIP with cost %d: %v", tt.cost, err)
+			}
 
-handler.mu.RLock()
-state := handler.activeVIPs["test-cost-"+tt.name]
-handler.mu.RUnlock()
+			handler.mu.RLock()
+			state := handler.activeVIPs["test-cost-"+tt.name]
+			handler.mu.RUnlock()
 
-if state.ospfConfig.Cost != tt.cost {
-t.Errorf("Expected cost %d, got %d", tt.cost, state.ospfConfig.Cost)
-}
-})
-}
+			if state.ospfConfig.Cost != tt.cost {
+				t.Errorf("Expected cost %d, got %d", tt.cost, state.ospfConfig.Cost)
+			}
+		})
+	}
 }
 
 func TestOSPFHandler_HelloDeadIntervals(t *testing.T) {
-logger := zaptest.NewLogger(t)
-handler, _ := NewOSPFHandler(logger)
-ctx := context.Background()
-_ = handler.Start(ctx)
+	logger := zaptest.NewLogger(t)
+	handler, _ := NewOSPFHandler(logger)
+	ctx := context.Background()
+	_ = handler.Start(ctx)
 
-assignment := &pb.VIPAssignment{
-VipName: "test-intervals",
-Address: "10.200.0.1/32",
-Mode:    pb.VIPMode_OSPF,
-OspfConfig: &pb.OSPFConfig{
-RouterId:      "10.0.0.1",
-AreaId:        0,
-HelloInterval: 5,
-DeadInterval:  20,
-},
-}
+	assignment := &pb.VIPAssignment{
+		VipName: "test-intervals",
+		Address: "10.200.0.1/32",
+		Mode:    pb.VIPMode_OSPF,
+		OspfConfig: &pb.OSPFConfig{
+			RouterId:      "10.0.0.1",
+			AreaId:        0,
+			HelloInterval: 5,
+			DeadInterval:  20,
+		},
+	}
 
-err := handler.AddVIP(ctx, assignment)
-if err != nil {
-t.Fatalf("Failed to add VIP with custom intervals: %v", err)
-}
+	err := handler.AddVIP(ctx, assignment)
+	if err != nil {
+		t.Fatalf("Failed to add VIP with custom intervals: %v", err)
+	}
 
-handler.mu.RLock()
-state := handler.activeVIPs["test-intervals"]
-handler.mu.RUnlock()
+	handler.mu.RLock()
+	state := handler.activeVIPs["test-intervals"]
+	handler.mu.RUnlock()
 
-if state.ospfConfig.HelloInterval != 5 {
-t.Errorf("Expected HelloInterval 5, got %d", state.ospfConfig.HelloInterval)
-}
-if state.ospfConfig.DeadInterval != 20 {
-t.Errorf("Expected DeadInterval 20, got %d", state.ospfConfig.DeadInterval)
-}
+	if state.ospfConfig.HelloInterval != 5 {
+		t.Errorf("Expected HelloInterval 5, got %d", state.ospfConfig.HelloInterval)
+	}
+	if state.ospfConfig.DeadInterval != 20 {
+		t.Errorf("Expected DeadInterval 20, got %d", state.ospfConfig.DeadInterval)
+	}
 }
 
 func TestOSPFHandler_AddedAtTimestamp(t *testing.T) {
-logger := zaptest.NewLogger(t)
-handler, _ := NewOSPFHandler(logger)
-ctx := context.Background()
-_ = handler.Start(ctx)
+	logger := zaptest.NewLogger(t)
+	handler, _ := NewOSPFHandler(logger)
+	ctx := context.Background()
+	_ = handler.Start(ctx)
 
-beforeAdd := time.Now()
+	beforeAdd := time.Now()
 
-assignment := &pb.VIPAssignment{
-VipName: "test-timestamp-ospf",
-Address: "10.200.0.1/32",
-Mode:    pb.VIPMode_OSPF,
-OspfConfig: &pb.OSPFConfig{
-RouterId: "10.0.0.1",
-AreaId:   0,
-},
-}
+	assignment := &pb.VIPAssignment{
+		VipName: "test-timestamp-ospf",
+		Address: "10.200.0.1/32",
+		Mode:    pb.VIPMode_OSPF,
+		OspfConfig: &pb.OSPFConfig{
+			RouterId: "10.0.0.1",
+			AreaId:   0,
+		},
+	}
 
-_ = handler.AddVIP(ctx, assignment)
+	_ = handler.AddVIP(ctx, assignment)
 
-afterAdd := time.Now()
+	afterAdd := time.Now()
 
-handler.mu.RLock()
-state := handler.activeVIPs["test-timestamp-ospf"]
-handler.mu.RUnlock()
+	handler.mu.RLock()
+	state := handler.activeVIPs["test-timestamp-ospf"]
+	handler.mu.RUnlock()
 
-if state.AddedAt.Before(beforeAdd) || state.AddedAt.After(afterAdd) {
-t.Errorf("AddedAt timestamp not within expected range")
-}
+	if state.AddedAt.Before(beforeAdd) || state.AddedAt.After(afterAdd) {
+		t.Errorf("AddedAt timestamp not within expected range")
+	}
 
-// Remove and check duration
-_ = handler.RemoveVIP(ctx, assignment)
+	// Remove and check duration
+	_ = handler.RemoveVIP(ctx, assignment)
 
-duration := time.Since(state.AddedAt)
-if duration < 0 {
-t.Error("Duration should be non-negative")
-}
+	duration := time.Since(state.AddedAt)
+	if duration < 0 {
+		t.Error("Duration should be non-negative")
+	}
 }
 
 func TestOSPFHandler_AuthenticationTypes(t *testing.T) {
-tests := []struct {
-name     string
-authType string
-authKey  string
-}{
-{
-name:     "MD5 authentication",
-authType: "md5",
-authKey:  "secret123",
-},
-{
-name:     "cleartext authentication",
-authType: "cleartext",
-authKey:  "password",
-},
-{
-name:     "no authentication",
-authType: "",
-authKey:  "",
-},
-}
+	tests := []struct {
+		name     string
+		authType string
+		authKey  string
+	}{
+		{
+			name:     "MD5 authentication",
+			authType: "md5",
+			authKey:  "secret123",
+		},
+		{
+			name:     "cleartext authentication",
+			authType: "cleartext",
+			authKey:  "password",
+		},
+		{
+			name:     "no authentication",
+			authType: "",
+			authKey:  "",
+		},
+	}
 
-for i, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-// Create a fresh handler for each test to avoid state pollution
-logger := zaptest.NewLogger(t)
-handler, _ := NewOSPFHandler(logger)
-ctx := context.Background()
-_ = handler.Start(ctx)
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a fresh handler for each test to avoid state pollution
+			logger := zaptest.NewLogger(t)
+			handler, _ := NewOSPFHandler(logger)
+			ctx := context.Background()
+			_ = handler.Start(ctx)
 
-assignment := &pb.VIPAssignment{
-VipName: "test-auth-" + string(rune('a'+i)),
-Address: "10.200.0." + string(rune('1'+i)) + "/32",
-Mode:    pb.VIPMode_OSPF,
-OspfConfig: &pb.OSPFConfig{
-RouterId: "10.0.0.1",
-AreaId:   0,
-AuthType: tt.authType,
-AuthKey:  tt.authKey,
-},
-}
+			assignment := &pb.VIPAssignment{
+				VipName: "test-auth-" + string(rune('a'+i)),
+				Address: "10.200.0." + string(rune('1'+i)) + "/32",
+				Mode:    pb.VIPMode_OSPF,
+				OspfConfig: &pb.OSPFConfig{
+					RouterId: "10.0.0.1",
+					AreaId:   0,
+					AuthType: tt.authType,
+					AuthKey:  tt.authKey,
+				},
+			}
 
-err := handler.AddVIP(ctx, assignment)
-if err != nil {
-t.Fatalf("Failed to add VIP with %s: %v", tt.name, err)
-}
+			err := handler.AddVIP(ctx, assignment)
+			if err != nil {
+				t.Fatalf("Failed to add VIP with %s: %v", tt.name, err)
+			}
 
-// Verify auth settings were applied
-handler.mu.RLock()
-if handler.ospfServer != nil {
-if handler.ospfServer.authType != tt.authType {
-t.Errorf("Expected authType %s, got %s", tt.authType, handler.ospfServer.authType)
-}
-}
-handler.mu.RUnlock()
-})
-}
+			// Verify auth settings were applied
+			handler.mu.RLock()
+			if handler.ospfServer != nil {
+				if handler.ospfServer.authType != tt.authType {
+					t.Errorf("Expected authType %s, got %s", tt.authType, handler.ospfServer.authType)
+				}
+			}
+			handler.mu.RUnlock()
+		})
+	}
 }

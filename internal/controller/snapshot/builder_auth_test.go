@@ -556,7 +556,7 @@ func TestLoadSecretBytes(t *testing.T) {
 			Namespace: "default",
 		},
 		Data: map[string][]byte{
-			"binary-key": []byte{0x01, 0x02, 0x03, 0x04},
+			"binary-key": {0x01, 0x02, 0x03, 0x04},
 		},
 	}
 

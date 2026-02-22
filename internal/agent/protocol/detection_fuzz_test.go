@@ -31,20 +31,20 @@ func FuzzDetectProtocol(f *testing.F) {
 		// HTTP/2 connection preface
 		[]byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"),
 		// TLS handshake
-		[]byte{0x16, 0x03, 0x01, 0x00, 0x05}, // TLS 1.0 ClientHello
-		[]byte{0x16, 0x03, 0x03, 0x00, 0x05}, // TLS 1.2 ClientHello
+		{0x16, 0x03, 0x01, 0x00, 0x05}, // TLS 1.0 ClientHello
+		{0x16, 0x03, 0x03, 0x00, 0x05}, // TLS 1.2 ClientHello
 		// WebSocket upgrade
 		[]byte("GET /ws HTTP/1.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"),
 		// gRPC (HTTP/2 based)
 		[]byte("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"),
 		// Empty
-		[]byte{},
+		{},
 		// Single byte
-		[]byte{0},
-		[]byte{255},
+		{0},
+		{255},
 		// Random bytes
-		[]byte{0x00, 0x01, 0x02, 0x03},
-		[]byte{0xFF, 0xFE, 0xFD, 0xFC},
+		{0x00, 0x01, 0x02, 0x03},
+		{0xFF, 0xFE, 0xFD, 0xFC},
 		// Very long input
 		make([]byte, 10000),
 	}
