@@ -13,6 +13,15 @@
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
+// Network constants needed for BPF target compilation where kernel
+// headers may not fully resolve (standard BPF practice).
+#ifndef IPPROTO_TCP
+#define IPPROTO_TCP 6
+#endif
+#ifndef IPPROTO_UDP
+#define IPPROTO_UDP 17
+#endif
+
 // VIP key for flow matching — same as xdp_lb.c for consistency.
 struct vip_key {
     __u32 addr;     // IPv4 address in network byte order
