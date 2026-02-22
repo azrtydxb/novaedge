@@ -49,7 +49,7 @@ graph LR
 
 ### How It Works
 
-1. **TPROXY Interception** -- The NovaEdge agent on each node creates nftables rules (table `novaedge_mesh`) or an iptables chain (`NOVAEDGE_MESH`) to intercept outbound ClusterIP traffic from mesh-enabled pods and redirect it to the agent's transparent proxy listener on port 15001. The agent auto-selects nftables when available for atomic rule updates.
+1. **Traffic Interception** -- The NovaEdge agent on each node creates nftables NAT REDIRECT rules (table `novaedge_mesh`) or an iptables NAT chain (`NOVAEDGE_MESH`) to intercept outbound ClusterIP traffic from mesh-enabled pods and redirect it to the agent's transparent proxy listener on port 15001. The agent auto-selects nftables when available for atomic rule updates.
 
 2. **mTLS Tunnel** -- The agent on the source node establishes an HTTP/2 mTLS tunnel (port 15002) to the agent on the destination node. Both endpoints authenticate using SPIFFE-format X.509 certificates.
 
@@ -122,7 +122,7 @@ kubectl debug node/<node-name> -it --image=busybox -- \
 
 # iptables fallback: check the NOVAEDGE_MESH chain
 kubectl debug node/<node-name> -it --image=busybox -- \
-  nsenter -t 1 -m -u -i -n -p -- iptables -t mangle -L NOVAEDGE_MESH -v -n
+  nsenter -t 1 -m -u -i -n -p -- iptables -t nat -L NOVAEDGE_MESH -v -n
 ```
 
 ---
@@ -320,7 +320,7 @@ Key metrics:
 | Aspect | Sidecar Mesh (Istio/Linkerd) | NovaEdge TPROXY Mesh |
 |--------|------------------------------|----------------------|
 | Per-pod overhead | ~50-100 MB RAM per sidecar | Zero (runs on DaemonSet) |
-| Injection mechanism | Mutating webhook adds container | nftables/iptables TPROXY on node |
+| Injection mechanism | Mutating webhook adds container | nftables/iptables NAT REDIRECT on node |
 | Certificate management | Per-pod identity certs | Per-node SPIFFE certs |
 | Network hops | Pod -> Sidecar -> Network -> Sidecar -> Pod | Pod -> Agent (TPROXY) -> Agent -> Pod |
 | Deployment complexity | CRDs + webhook + control plane | Already part of NovaEdge agent |

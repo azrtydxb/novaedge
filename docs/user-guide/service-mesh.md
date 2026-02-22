@@ -1,14 +1,14 @@
 # Service Mesh
 
-NovaEdge includes a sidecar-free service mesh for east-west (pod-to-pod) traffic. It intercepts ClusterIP traffic transparently using nftables (preferred) or iptables TPROXY, authenticates services with SPIFFE-based mTLS, and enforces authorization policies -- all without injecting sidecar containers.
+NovaEdge includes a sidecar-free service mesh for east-west (pod-to-pod) traffic. It intercepts ClusterIP traffic transparently using nftables (preferred) or iptables NAT REDIRECT rules, authenticates services with SPIFFE-based mTLS, and enforces authorization policies -- all without injecting sidecar containers.
 
 ## Overview
 
-Traditional service meshes inject a sidecar proxy into every pod, adding latency, memory overhead, and operational complexity. NovaEdge takes a different approach: the node agent (DaemonSet) intercepts service traffic at the kernel level using TPROXY and tunnels it over mTLS HTTP/2 connections between nodes.
+Traditional service meshes inject a sidecar proxy into every pod, adding latency, memory overhead, and operational complexity. NovaEdge takes a different approach: the node agent (DaemonSet) intercepts service traffic at the kernel level using NAT REDIRECT rules and tunnels it over mTLS HTTP/2 connections between nodes.
 
 Key properties:
 
-- **No sidecars** -- traffic interception happens at the node level via nftables/iptables TPROXY
+- **No sidecars** -- traffic interception happens at the node level via nftables/iptables NAT REDIRECT
 - **Opt-in per service** -- annotate services with `novaedge.io/mesh: "enabled"` to enroll them
 - **SPIFFE identities** -- each agent gets a workload certificate with a SPIFFE URI SAN
 - **mTLS everywhere** -- node-to-node tunnel traffic is encrypted with TLS 1.3
@@ -20,7 +20,7 @@ Key properties:
 ```mermaid
 flowchart TB
     subgraph Node1["Node 1 (NovaEdge Agent)"]
-        Pod1["Pod A<br/>(client)"] -->|"ClusterIP:port"| IPT1["nftables/iptables<br/>TPROXY rules"]
+        Pod1["Pod A<br/>(client)"] -->|"ClusterIP:port"| IPT1["nftables/iptables<br/>NAT REDIRECT"]
         IPT1 -->|"redirect"| TL1["Transparent Listener<br/>:15001"]
         TL1 --> PD1["Protocol Detect"]
         PD1 --> ST1["Service Table<br/>Lookup"]
@@ -55,8 +55,8 @@ flowchart TB
 
 | Component | File | Port | Purpose |
 |-----------|------|------|---------|
-| TPROXY Manager | `internal/agent/mesh/tproxy.go` | -- | Manages nftables/iptables TPROXY rules via `RuleBackend` interface |
-| Transparent Listener | `internal/agent/mesh/listener.go` | 15001 | Accepts TPROXY-redirected connections |
+| TPROXY Manager | `internal/agent/mesh/tproxy.go` | -- | Manages nftables/iptables REDIRECT rules via `RuleBackend` interface |
+| Transparent Listener | `internal/agent/mesh/listener.go` | 15001 | Accepts redirected connections |
 | Protocol Detector | `internal/agent/mesh/detect.go` | -- | Peeks at first bytes to identify HTTP/1, HTTP/2, TLS, or opaque TCP |
 | Service Table | `internal/agent/mesh/manager.go` | -- | Maps ClusterIP:port to backend endpoints with round-robin LB |
 | Tunnel Server | `internal/agent/mesh/tunnel.go` | 15002 | HTTP/2 CONNECT server for incoming mTLS tunnels |
@@ -87,7 +87,7 @@ spec:
       targetPort: 8080
 ```
 
-When the NovaEdge controller detects this annotation, it includes the service in the `InternalService` list pushed to agents via ConfigSnapshot. The agent then creates iptables TPROXY rules to intercept traffic to the service's ClusterIP.
+When the NovaEdge controller detects this annotation, it includes the service in the `InternalService` list pushed to agents via ConfigSnapshot. The agent then creates NAT REDIRECT rules to intercept traffic to the service's ClusterIP.
 
 ### Disable mesh for a service
 
@@ -98,11 +98,11 @@ annotations:
   novaedge.io/mesh: "disabled"
 ```
 
-The agent will remove the corresponding TPROXY rules on the next config reconciliation.
+The agent will remove the corresponding REDIRECT rules on the next config reconciliation.
 
-## How TPROXY Interception Works
+## How Traffic Interception Works
 
-NovaEdge uses TPROXY to intercept traffic destined to mesh-enrolled ClusterIP services without modifying the packets. This preserves the original destination address so the agent can look up the correct backend. The agent auto-detects and uses **nftables** (preferred, atomic rule updates via netlink) or falls back to **iptables** (exec-based) if nftables is not available.
+NovaEdge uses NAT REDIRECT to intercept traffic destined to mesh-enrolled ClusterIP services. The REDIRECT rule rewrites the destination port to the agent's transparent listener while conntrack records the original ClusterIP destination, which the listener retrieves via `SO_ORIGINAL_DST`. The agent auto-detects and uses **nftables** (preferred, atomic rule updates via netlink) or falls back to **iptables** (exec-based) if nftables is not available.
 
 ### Packet flow
 
@@ -115,9 +115,9 @@ sequenceDiagram
     participant Backend as Pod B (backend)
 
     App->>IPT: TCP SYN to 10.43.0.50:8080 (ClusterIP)
-    Note over IPT: PREROUTING -> NOVAEDGE_MESH chain<br/>Match: -d 10.43.0.50 --dport 8080<br/>Action: TPROXY --on-port 15001<br/>Set fwmark 0x1
+    Note over IPT: PREROUTING -> mesh_redirect chain<br/>Match: -d 10.43.0.50 --dport 8080<br/>Action: REDIRECT to :15001<br/>(before kube-proxy DNAT)
 
-    IPT->>TL: Connection redirected (original dst preserved)
+    IPT->>TL: Connection redirected to localhost:15001
     TL->>TL: Extract original destination via SO_ORIGINAL_DST
     TL->>TL: DetectProtocol (peek first 16 bytes)
     TL->>ST: Lookup("10.43.0.50", 8080)
@@ -128,7 +128,7 @@ sequenceDiagram
 
 ### Rules created
 
-The TPROXY manager creates TPROXY rules and policy routing entries. The agent auto-selects the backend at startup and logs `"Selected TPROXY backend" backend=nftables` (or `iptables`).
+The TPROXY manager creates NAT REDIRECT rules. The agent auto-selects the backend at startup and logs `"Selected TPROXY backend" backend=nftables` (or `iptables`).
 
 #### nftables (preferred)
 
@@ -137,45 +137,39 @@ Rules are applied atomically in a single netlink batch -- no brief inconsistency
 ```bash
 # Table and chain (created once at startup)
 nft add table ip novaedge_mesh
-nft add chain ip novaedge_mesh mesh_intercept \
-  '{ type filter hook prerouting priority mangle; }'
+nft add chain ip novaedge_mesh mesh_redirect \
+  '{ type nat hook prerouting priority dstnat - 1; }'
 
-# Per-service TPROXY rules (one per ClusterIP:port, replaced atomically)
-nft add rule ip novaedge_mesh mesh_intercept \
+# Per-service REDIRECT rules (one per ClusterIP:port, replaced atomically)
+nft add rule ip novaedge_mesh mesh_redirect \
   ip protocol tcp ip daddr 10.43.0.50 tcp dport 8080 \
-  meta mark set 0x1 tproxy to :15001
-
-# Policy routing (same for both backends)
-ip rule add fwmark 1 lookup 100
-ip route add local 0.0.0.0/0 dev lo table 100
+  redirect to :15001
 ```
+
+The chain priority `dstnat - 1` (-101) ensures our REDIRECT fires before kube-proxy's DNAT rules at priority -100, preserving the original ClusterIP in conntrack.
 
 #### iptables (fallback)
 
 Used when the kernel does not support nftables or the `nft` subsystem is unavailable:
 
 ```bash
-# 1. Custom chain in the mangle table
-iptables -t mangle -N NOVAEDGE_MESH
+# 1. Custom chain in the nat table
+iptables -t nat -N NOVAEDGE_MESH
 
-# 2. Jump from PREROUTING to the custom chain
-iptables -t mangle -A PREROUTING -j NOVAEDGE_MESH
+# 2. Insert at top of PREROUTING (before kube-proxy's KUBE-SERVICES)
+iptables -t nat -I PREROUTING 1 -j NOVAEDGE_MESH
 
-# 3. Per-service TPROXY rules (one per ClusterIP:port)
-iptables -t mangle -A NOVAEDGE_MESH \
+# 3. Per-service REDIRECT rules (one per ClusterIP:port)
+iptables -t nat -A NOVAEDGE_MESH \
   -p tcp -d 10.43.0.50 --dport 8080 \
-  -j TPROXY --tproxy-mark 0x1/0x1 --on-port 15001
-
-# 4. Policy routing to deliver marked packets locally
-ip rule add fwmark 1 lookup 100
-ip route add local 0.0.0.0/0 dev lo table 100
+  -j REDIRECT --to-ports 15001
 ```
 
 Rules are reconciled on every config update. On shutdown, all rules are cleaned up.
 
-### Why TPROXY instead of REDIRECT
+### Why REDIRECT instead of TPROXY
 
-TPROXY preserves the original destination address in the socket, allowing the transparent listener to extract it with `SO_ORIGINAL_DST`. With REDIRECT/DNAT, the original destination is lost (replaced by the proxy's address), requiring additional mechanisms to recover it. TPROXY also avoids the connection tracking overhead of NAT.
+REDIRECT uses standard NAT conntrack to record the original destination before rewriting the port. The transparent listener retrieves the original ClusterIP:port via `getsockopt(SO_ORIGINAL_DST)`. This approach is compatible with all CNI plugins (Flannel, Calico, Cilium, etc.) and bridge-based network topologies, unlike TPROXY which requires specific kernel socket lookup behavior that varies across network configurations. REDIRECT also eliminates the need for policy routing (`ip rule`/`ip route`), fwmark management, and conntrack bypass (notrack) rules -- resulting in a simpler, more portable implementation.
 
 ## How the mTLS Tunnel Works
 
@@ -364,31 +358,19 @@ nft list table ip novaedge_mesh
 
 # Expected output:
 # table ip novaedge_mesh {
-#   chain mesh_intercept {
-#     type filter hook prerouting priority mangle; policy accept;
-#     ip daddr 10.43.0.50 tcp dport 8080 meta mark set 0x00000001 tproxy to :15001
+#   chain mesh_redirect {
+#     type nat hook prerouting priority dstnat - 1; policy accept;
+#     ip daddr 10.43.0.50 tcp dport 8080 redirect to :15001
 #   }
 # }
 
 # iptables fallback: check the NOVAEDGE_MESH chain
-iptables -t mangle -L NOVAEDGE_MESH -n -v
+iptables -t nat -L NOVAEDGE_MESH -n -v
 
-# Expected output shows per-service TPROXY rules:
+# Expected output shows per-service REDIRECT rules:
 # Chain NOVAEDGE_MESH (1 references)
 #  pkts bytes target     prot opt in     out     source     destination
-#   142  8520 TPROXY     tcp  --  *      *       0.0.0.0/0  10.43.0.50    tcp dpt:8080 TPROXY redirect 0.0.0.0:15001 mark 0x1/0x1
-```
-
-### Check TPROXY routing setup
-
-```bash
-# Verify the ip rule for fwmark 1
-ip rule show | grep "fwmark 0x1"
-# Expected: 0: from all fwmark 0x1 lookup 100
-
-# Verify the local route in table 100
-ip route show table 100
-# Expected: local default dev lo scope host
+#   142  8520 REDIRECT   tcp  --  *      *       0.0.0.0/0  10.43.0.50    tcp dpt:8080 redir ports 15001
 ```
 
 ### Check the transparent listener
@@ -433,7 +415,7 @@ kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep 
 If traffic to a mesh-enrolled service is not being intercepted:
 
 1. Verify the service has the annotation: `kubectl get svc <name> -o jsonpath='{.metadata.annotations.novaedge\.io/mesh}'`
-2. Check that the corresponding rule exists: `nft list table ip novaedge_mesh 2>/dev/null | grep <clusterIP>` or `iptables -t mangle -L NOVAEDGE_MESH -n | grep <clusterIP>`
+2. Check that the corresponding rule exists: `nft list table ip novaedge_mesh 2>/dev/null | grep <clusterIP>` or `iptables -t nat -L NOVAEDGE_MESH -n | grep <clusterIP>`
 3. Verify the agent received the service in its config: check agent logs for `intercept_rules` count
 4. Confirm the transparent listener is accepting connections: `ss -tlnp | grep 15001`
 

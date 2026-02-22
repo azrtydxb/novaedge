@@ -22,32 +22,27 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	"syscall"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
-	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
 )
 
 const (
-	// nftTableName is the nftables table used for TPROXY rules.
+	// nftTableName is the nftables table used for mesh interception rules.
 	nftTableName = "novaedge_mesh"
 
-	// nftChainName is the chain within the table for TPROXY rules.
-	// Avoids "tproxy" which is a reserved keyword in the nft CLI.
-	nftChainName = "mesh_intercept"
-
-	// routingTable is the policy routing table number.
-	routingTable = 100
-
-	// fwmarkValue is the packet mark set by TPROXY.
-	fwmarkValue = 1
+	// nftChainName is the NAT chain that redirects intercepted packets to
+	// the local transparent listener. Uses priority dstnat - 1 (-101) to
+	// fire before kube-proxy's DNAT rules, preserving the original ClusterIP
+	// destination in conntrack so SO_ORIGINAL_DST can retrieve it.
+	nftChainName = "mesh_redirect"
 )
 
 // nftablesBackend implements RuleBackend using the nftables netlink API
-// for atomic rule updates.
+// for atomic rule updates. It uses NAT REDIRECT (not TPROXY) for
+// compatibility with bridge-based CNIs (Flannel, Calico, etc.).
 type nftablesBackend struct {
 	logger *zap.Logger
 	conn   *nftables.Conn
@@ -64,57 +59,63 @@ func newNFTablesBackend(logger *zap.Logger, conn *nftables.Conn) *nftablesBacken
 
 func (b *nftablesBackend) Name() string { return "nftables" }
 
-// Setup creates the novaedge_mesh table, tproxy chain (prerouting hook,
-// mangle priority), and configures policy routing via netlink.
+// Setup creates the novaedge_mesh table with a single NAT chain:
+//   - mesh_redirect (prerouting, dstnat - 1 priority): redirects matching
+//     TCP packets to the local transparent listener port.
+//
+// The priority of -101 (NF_IP_PRI_NAT_DST - 1) ensures our REDIRECT fires
+// before kube-proxy's DNAT rules at priority -100, so the original ClusterIP
+// destination is preserved in conntrack for SO_ORIGINAL_DST retrieval.
 func (b *nftablesBackend) Setup() error {
+	// Delete existing table first to remove any stale chains/rules from
+	// previous versions (e.g. upgrading from TPROXY to REDIRECT).
+	b.conn.DelTable(&nftables.Table{
+		Family: nftables.TableFamilyIPv4,
+		Name:   nftTableName,
+	})
+	_ = b.conn.Flush() // Ignore error: table may not exist yet.
+
 	b.table = b.conn.AddTable(&nftables.Table{
 		Family: nftables.TableFamilyIPv4,
 		Name:   nftTableName,
 	})
 
+	// NAT chain at priority dstnat - 1 = -101, before kube-proxy (-100).
 	b.chain = b.conn.AddChain(&nftables.Chain{
 		Name:     nftChainName,
 		Table:    b.table,
-		Type:     nftables.ChainTypeFilter,
+		Type:     nftables.ChainTypeNAT,
 		Hooknum:  nftables.ChainHookPrerouting,
-		Priority: nftables.ChainPriorityMangle,
+		Priority: nftables.ChainPriorityRef(-101),
 	})
 
 	if err := b.conn.Flush(); err != nil {
 		return fmt.Errorf("nftables flush (table+chain): %w", err)
 	}
 
-	if err := b.ensureRouting(); err != nil {
-		return fmt.Errorf("policy routing setup: %w", err)
-	}
-
 	return nil
 }
 
-// ApplyRules atomically replaces all TPROXY rules: flush the chain, add
-// one rule per target, and commit in a single netlink batch.
+// ApplyRules atomically replaces all redirect rules: flush the chain, add
+// one REDIRECT rule per target, then commit in a single netlink batch.
 func (b *nftablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32) error {
-	// Flush all existing rules in the chain.
 	b.conn.FlushChain(b.chain)
 
-	// Add one rule per intercept target.
 	for _, t := range targets {
-		rule, err := b.buildRule(t, tproxyPort)
+		rule, err := b.buildRedirectRule(t, tproxyPort)
 		if err != nil {
-			return fmt.Errorf("build rule for %s: %w", t.Key(), err)
+			return fmt.Errorf("build redirect rule for %s: %w", t.Key(), err)
 		}
 		b.conn.AddRule(rule)
 	}
 
-	// Atomic commit.
 	if err := b.conn.Flush(); err != nil {
 		return fmt.Errorf("nftables flush (apply rules): %w", err)
 	}
 	return nil
 }
 
-// Cleanup removes the entire novaedge_mesh table (and all its chains/rules)
-// and cleans up routing entries.
+// Cleanup removes the entire novaedge_mesh table and all its chains/rules.
 func (b *nftablesBackend) Cleanup() error {
 	if b.table != nil {
 		b.conn.DelTable(b.table)
@@ -124,14 +125,14 @@ func (b *nftablesBackend) Cleanup() error {
 		b.table = nil
 		b.chain = nil
 	}
-
-	b.cleanupRouting()
 	return nil
 }
 
-// buildRule constructs an nftables rule matching TCP + dst IP + dst port,
-// then sets the fwmark and TPROXY redirect.
-func (b *nftablesBackend) buildRule(t InterceptTarget, tproxyPort int32) (*nftables.Rule, error) {
+// buildRedirectRule constructs an nftables rule matching TCP + dst IP + dst
+// port and redirecting to the local listener port. This is equivalent to:
+//
+//	ip daddr <clusterIP> tcp dport <port> redirect to :<tproxyPort>
+func (b *nftablesBackend) buildRedirectRule(t InterceptTarget, tproxyPort int32) (*nftables.Rule, error) {
 	ip := net.ParseIP(t.ClusterIP).To4()
 	if ip == nil {
 		return nil, fmt.Errorf("invalid IPv4 address: %s", t.ClusterIP)
@@ -140,11 +141,8 @@ func (b *nftablesBackend) buildRule(t InterceptTarget, tproxyPort int32) (*nftab
 	portBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(portBytes, uint16(t.Port))
 
-	tproxyPortBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(tproxyPortBytes, uint16(tproxyPort))
-
-	markBytes := make([]byte, 4)
-	binary.NativeEndian.PutUint32(markBytes, fwmarkValue)
+	redirPortBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(redirPortBytes, uint16(tproxyPort))
 
 	return &nftables.Rule{
 		Table: b.table,
@@ -184,86 +182,19 @@ func (b *nftablesBackend) buildRule(t InterceptTarget, tproxyPort int32) (*nftab
 				Data:     portBytes,
 			},
 
-			// Set fwmark.
+			// Load redirect port into register 1.
 			&expr.Immediate{
 				Register: 1,
-				Data:     markBytes,
-			},
-			&expr.Meta{
-				Key:            expr.MetaKeyMARK,
-				SourceRegister: true,
-				Register:       1,
+				Data:     redirPortBytes,
 			},
 
-			// TPROXY redirect to local port.
-			&expr.Immediate{
-				Register: 1,
-				Data:     tproxyPortBytes,
-			},
-			&expr.TProxy{
-				Family:      byte(unix.NFPROTO_IPV4),
-				TableFamily: byte(unix.NFPROTO_IPV4),
-				RegPort:     1,
+			// REDIRECT to local port (rewrites destination to 127.0.0.1:<port>).
+			&expr.Redir{
+				RegisterProtoMin: 1,
+				RegisterProtoMax: 1,
 			},
 		},
 	}, nil
-}
-
-// ensureRouting adds the ip rule (fwmark 1 → table 100) and local route
-// using the netlink API. Existing entries are tolerated (idempotent).
-func (b *nftablesBackend) ensureRouting() error {
-	// ip rule add fwmark 1 lookup 100
-	rule := netlink.NewRule()
-	rule.Mark = fwmarkValue
-	rule.Table = routingTable
-	if err := netlink.RuleAdd(rule); err != nil && !isExistError(err) {
-		return fmt.Errorf("netlink RuleAdd: %w", err)
-	}
-
-	// ip route add local 0.0.0.0/0 dev lo table 100
-	lo, err := netlink.LinkByName("lo")
-	if err != nil {
-		return fmt.Errorf("netlink LinkByName(lo): %w", err)
-	}
-
-	route := &netlink.Route{
-		Table:     routingTable,
-		LinkIndex: lo.Attrs().Index,
-		Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
-		Type:      unix.RTN_LOCAL,
-		Scope:     netlink.SCOPE_HOST,
-	}
-	if err := netlink.RouteAdd(route); err != nil && !isExistError(err) {
-		return fmt.Errorf("netlink RouteAdd: %w", err)
-	}
-
-	return nil
-}
-
-// cleanupRouting removes the policy routing rule and route added by ensureRouting.
-func (b *nftablesBackend) cleanupRouting() {
-	rule := netlink.NewRule()
-	rule.Mark = fwmarkValue
-	rule.Table = routingTable
-	_ = netlink.RuleDel(rule)
-
-	lo, err := netlink.LinkByName("lo")
-	if err != nil {
-		return
-	}
-	route := &netlink.Route{
-		Table:     routingTable,
-		LinkIndex: lo.Attrs().Index,
-		Dst:       &net.IPNet{IP: net.IPv4zero, Mask: net.CIDRMask(0, 32)},
-		Type:      unix.RTN_LOCAL,
-		Scope:     netlink.SCOPE_HOST,
-	}
-	_ = netlink.RouteDel(route)
-}
-
-// isExistError returns true if the error indicates the entry already exists.
-func isExistError(err error) bool {
-	return err == syscall.EEXIST
 }
 
 // detectBackend probes for nftables support and falls back to iptables.

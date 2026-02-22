@@ -93,7 +93,11 @@ func (tl *TransparentListener) Start(ctx context.Context) error {
 	}
 
 	addr := fmt.Sprintf("0.0.0.0:%d", tl.port)
-	listener, err := lc.Listen(ctx, "tcp", addr)
+	// TPROXY uses nf_tproxy_get_sock_v4() which searches the IPv4 socket
+	// hash table. We must use "tcp4" (AF_INET) not "tcp" to ensure the
+	// socket is registered in the IPv4 namespace; an AF_INET6 dual-stack
+	// socket is invisible to the IPv4 TPROXY lookup and packets are dropped.
+	listener, err := lc.Listen(ctx, "tcp4", addr)
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", addr, err)
 	}

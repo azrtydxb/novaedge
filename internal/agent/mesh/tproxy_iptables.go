@@ -28,11 +28,8 @@ import (
 )
 
 const (
-	// novaedgeChain is the iptables chain used for TPROXY rules.
+	// novaedgeChain is the iptables chain used for NAT REDIRECT rules.
 	novaedgeChain = "NOVAEDGE_MESH"
-
-	// tproxyMark is the fwmark value set on TPROXY'd packets.
-	tproxyMark = "0x1/0x1"
 )
 
 // iptablesBackend implements RuleBackend using iptables exec calls.
@@ -41,7 +38,6 @@ type iptablesBackend struct {
 	logger       *zap.Logger
 	currentRules map[string]bool // set of "clusterIP:port" keys currently installed
 	chainCreated bool
-	routingSetUp bool
 }
 
 func newIPTablesBackend(logger *zap.Logger) *iptablesBackend {
@@ -53,20 +49,20 @@ func newIPTablesBackend(logger *zap.Logger) *iptablesBackend {
 
 func (b *iptablesBackend) Name() string { return "iptables" }
 
-// Setup creates the NOVAEDGE_MESH chain in the mangle table, adds a jump
-// from PREROUTING, and configures the ip rule + route for TPROXY delivery.
+// Setup creates the NOVAEDGE_MESH chain in the nat table and adds a
+// PREROUTING jump. The chain is inserted at the top of PREROUTING to
+// fire before kube-proxy's KUBE-SERVICES chain, preserving the original
+// ClusterIP destination in conntrack for SO_ORIGINAL_DST retrieval.
 func (b *iptablesBackend) Setup() error {
 	if err := b.ensureChain(); err != nil {
 		return fmt.Errorf("failed to create iptables chain: %w", err)
 	}
-	if err := b.ensureRouting(); err != nil {
-		return fmt.Errorf("failed to set up ip rule for TPROXY: %w", err)
-	}
 	return nil
 }
 
-// ApplyRules reconciles iptables TPROXY rules to match the desired set.
-// Rules for removed services are deleted; rules for new services are added.
+// ApplyRules reconciles iptables NAT REDIRECT rules to match the
+// desired set. Rules for removed services are deleted; rules for new
+// services are added.
 func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32) error {
 	desired := make(map[string]InterceptTarget, len(targets))
 	for _, t := range targets {
@@ -76,11 +72,10 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 	// Remove rules no longer desired.
 	for key := range b.currentRules {
 		if _, ok := desired[key]; !ok {
-			// Parse key back to IP:port.
 			parts := strings.SplitN(key, ":", 2)
 			if len(parts) == 2 {
 				if err := b.removeRule(parts[0], parts[1], tproxyPort); err != nil {
-					b.logger.Error("Failed to remove iptables TPROXY rule",
+					b.logger.Error("Failed to remove iptables redirect rule",
 						zap.String("key", key), zap.Error(err))
 				}
 			}
@@ -92,7 +87,7 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 	for key, t := range desired {
 		if !b.currentRules[key] {
 			if err := b.addRule(t.ClusterIP, t.Port, tproxyPort); err != nil {
-				b.logger.Error("Failed to add iptables TPROXY rule",
+				b.logger.Error("Failed to add iptables redirect rule",
 					zap.String("clusterIP", t.ClusterIP),
 					zap.Int32("port", t.Port),
 					zap.Error(err))
@@ -104,36 +99,31 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 	return nil
 }
 
-// Cleanup removes all TPROXY rules, the custom chain, and ip rules.
+// Cleanup removes all redirect rules, the custom chain, and the
+// PREROUTING jump.
 func (b *iptablesBackend) Cleanup() error {
-	// Remove chain jump from PREROUTING.
 	if b.chainCreated {
-		_ = b.run("-t", "mangle", "-D", "PREROUTING", "-j", novaedgeChain)
-		_ = b.run("-t", "mangle", "-F", novaedgeChain)
-		_ = b.run("-t", "mangle", "-X", novaedgeChain)
+		_ = b.run("-t", "nat", "-D", "PREROUTING", "-j", novaedgeChain)
+		_ = b.run("-t", "nat", "-F", novaedgeChain)
+		_ = b.run("-t", "nat", "-X", novaedgeChain)
 		b.chainCreated = false
-	}
-
-	// Remove ip rule + route.
-	if b.routingSetUp {
-		_ = exec.CommandContext(context.Background(), "ip", "rule", "del", "fwmark", "1", "lookup", "100").Run()                     //nolint:gosec // static args
-		_ = exec.CommandContext(context.Background(), "ip", "route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", "100").Run() //nolint:gosec // static args
-		b.routingSetUp = false
 	}
 
 	b.currentRules = make(map[string]bool)
 	return nil
 }
 
-// ensureChain creates the NOVAEDGE_MESH chain and adds a PREROUTING jump.
+// ensureChain creates the NOVAEDGE_MESH chain in the nat table and
+// inserts it at the top of PREROUTING so it fires before kube-proxy.
 func (b *iptablesBackend) ensureChain() error {
 	// Create chain (ignore error if exists).
-	_ = b.run("-t", "mangle", "-N", novaedgeChain)
+	_ = b.run("-t", "nat", "-N", novaedgeChain)
 
 	// Check if jump already exists.
-	out, _ := b.output("-t", "mangle", "-S", "PREROUTING")
+	out, _ := b.output("-t", "nat", "-S", "PREROUTING")
 	if !strings.Contains(out, novaedgeChain) {
-		if err := b.run("-t", "mangle", "-A", "PREROUTING", "-j", novaedgeChain); err != nil {
+		// Insert at position 1 to fire before kube-proxy KUBE-SERVICES.
+		if err := b.run("-t", "nat", "-I", "PREROUTING", "1", "-j", novaedgeChain); err != nil {
 			return err
 		}
 	}
@@ -142,49 +132,27 @@ func (b *iptablesBackend) ensureChain() error {
 	return nil
 }
 
-// ensureRouting sets up the ip rule and routing table needed for TPROXY.
-func (b *iptablesBackend) ensureRouting() error {
-	if err := exec.CommandContext(context.Background(), "ip", "rule", "add", "fwmark", "1", "lookup", "100").Run(); err != nil { //nolint:gosec // static args
-		out, _ := exec.CommandContext(context.Background(), "ip", "rule", "show").Output()                                        //nolint:gosec // static args
-		if !strings.Contains(string(out), "fwmark 0x1 lookup 100") {
-			return fmt.Errorf("failed to add ip rule: %w", err)
-		}
-	}
-
-	if err := exec.CommandContext(context.Background(), "ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100").Run(); err != nil { //nolint:gosec // static args
-		out, _ := exec.CommandContext(context.Background(), "ip", "route", "show", "table", "100").Output()                                          //nolint:gosec // static args
-		if !strings.Contains(string(out), "local default dev lo") {
-			return fmt.Errorf("failed to add local route: %w", err)
-		}
-	}
-
-	b.routingSetUp = true
-	return nil
-}
-
 func (b *iptablesBackend) addRule(clusterIP string, port int32, tproxyPort int32) error {
 	return b.run(
-		"-t", "mangle",
+		"-t", "nat",
 		"-A", novaedgeChain,
 		"-p", "tcp",
 		"-d", clusterIP,
 		"--dport", fmt.Sprintf("%d", port),
-		"-j", "TPROXY",
-		"--tproxy-mark", tproxyMark,
-		"--on-port", fmt.Sprintf("%d", tproxyPort),
+		"-j", "REDIRECT",
+		"--to-ports", fmt.Sprintf("%d", tproxyPort),
 	)
 }
 
 func (b *iptablesBackend) removeRule(clusterIP string, dport string, tproxyPort int32) error {
 	return b.run(
-		"-t", "mangle",
+		"-t", "nat",
 		"-D", novaedgeChain,
 		"-p", "tcp",
 		"-d", clusterIP,
 		"--dport", dport,
-		"-j", "TPROXY",
-		"--tproxy-mark", tproxyMark,
-		"--on-port", fmt.Sprintf("%d", tproxyPort),
+		"-j", "REDIRECT",
+		"--to-ports", fmt.Sprintf("%d", tproxyPort),
 	)
 }
 
