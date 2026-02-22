@@ -62,6 +62,56 @@ limitations under the License.
 //   - CNI compatibility: REDIRECT works universally across all CNI plugins
 //     and network topologies (bridge, veth, IPVLAN, etc.). TPROXY requires
 //     specific kernel socket lookup behavior that varies by configuration.
+//
+// # Industry comparison
+//
+// NovaEdge's REDIRECT approach is consistent with the industry standard:
+//
+//   - Istio (sidecar mode): Uses iptables NAT REDIRECT as the default for
+//     both inbound and outbound interception. TPROXY is available only for
+//     inbound as a rarely-used opt-in. Uses SO_ORIGINAL_DST for original
+//     destination recovery. No UDP mesh support.
+//
+//   - Istio (ambient mode / ztunnel): Uses TPROXY for inbound and REDIRECT
+//     for outbound. Runs as a DaemonSet like NovaEdge. Still no UDP support
+//     (HBONE tunnel is HTTP/2 over TCP).
+//
+//   - Linkerd: Uses iptables NAT REDIRECT exclusively. Explicitly rejected
+//     TPROXY (github.com/linkerd/linkerd2/issues/7089) because it requires
+//     CAP_NET_ADMIN on the proxy container. No UDP mesh support.
+//
+//   - Cilium: Uses eBPF hooks (TC, sock_ops, bpf_sk_assign) instead of
+//     iptables entirely. Some TPROXY for L7 Envoy redirection, migrating
+//     to pure eBPF. UDP is handled at L3/L4 only (load balancing + network
+//     policy) -- no UDP mTLS or L7 proxying.
+//
+// No major service mesh supports UDP mTLS. It remains an unsolved problem
+// because all tunnel protocols (HBONE, HTTP/2 CONNECT) are TCP-based. If
+// NovaEdge adds UDP mesh support in the future, eBPF-based interception
+// (bpf_sk_assign or sk_lookup) would be the recommended approach, as it
+// avoids the conntrack limitations of REDIRECT for connectionless flows.
+//
+// # Architecture: host namespace vs pod namespace
+//
+// A key difference between NovaEdge and sidecar-based meshes (Istio sidecar,
+// Linkerd) is where the interception rules live:
+//
+//   - Sidecar meshes inject iptables rules into each pod's network namespace
+//     via an init container or CNI plugin. These rules fire in the pod's
+//     OUTPUT chain before packets ever reach the host namespace. Because
+//     kube-proxy's DNAT rules live in the host namespace, there is no
+//     ordering conflict -- the sidecar REDIRECT captures the packet first.
+//
+//   - NovaEdge runs as a DaemonSet in the host network namespace. Our
+//     REDIRECT rules and kube-proxy's DNAT rules are in the same namespace,
+//     competing on the same PREROUTING chain. This is why we set our chain
+//     priority to dstnat-1 (-101) to fire before kube-proxy's rules at
+//     dstnat (-100), ensuring the original ClusterIP is preserved in
+//     conntrack before kube-proxy can rewrite it to a pod IP.
+//
+// This host-namespace architecture is shared with Istio ambient mode
+// (ztunnel) and Cilium, both of which face the same kube-proxy interaction
+// challenge and solve it with priority ordering or eBPF bypass.
 package mesh
 
 import (
