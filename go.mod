@@ -1,6 +1,6 @@
 module github.com/piwi3910/novaedge
 
-go 1.25.0
+go 1.25.3
 
 require (
 	github.com/andybalholm/brotli v1.2.0

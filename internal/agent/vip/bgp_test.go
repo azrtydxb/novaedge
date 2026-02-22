@@ -82,9 +82,9 @@ func TestBGPHandler_AddVIP_MissingConfig(t *testing.T) {
 	_ = handler.Start(ctx)
 
 	tests := []struct {
-		name       string
-		assignment *pb.VIPAssignment
-		wantErr    bool
+		name        string
+		assignment  *pb.VIPAssignment
+		wantErr     bool
 		errContains string
 	}{
 		{
@@ -95,7 +95,7 @@ func TestBGPHandler_AddVIP_MissingConfig(t *testing.T) {
 				Mode:      pb.VIPMode_BGP,
 				BgpConfig: nil,
 			},
-			wantErr:    true,
+			wantErr:     true,
 			errContains: "BGP config is required",
 		},
 		{
@@ -109,7 +109,7 @@ func TestBGPHandler_AddVIP_MissingConfig(t *testing.T) {
 					RouterId: "10.0.0.1",
 				},
 			},
-			wantErr:    true,
+			wantErr:     true,
 			errContains: "invalid",
 		},
 	}
@@ -289,10 +289,10 @@ func TestBGPHandler_WithBFD(t *testing.T) {
 			},
 		},
 		BfdConfig: &pb.BFDConfig{
-			Enabled:                true,
-			DetectMultiplier:       3,
-			DesiredMinTxInterval:   "300ms",
-			RequiredMinRxInterval:  "300ms",
+			Enabled:               true,
+			DetectMultiplier:      3,
+			DesiredMinTxInterval:  "300ms",
+			RequiredMinRxInterval: "300ms",
 		},
 	}
 
@@ -405,7 +405,7 @@ func TestBGPHandler_Reconfigure_RouteAttributes(t *testing.T) {
 		BgpConfig: &pb.BGPConfig{
 			LocalAs:         65001,
 			RouterId:        "10.0.0.1",
-			LocalPreference: 150, // Changed
+			LocalPreference: 150,                   // Changed
 			Communities:     []string{"65001:200"}, // Changed
 		},
 	}
@@ -434,9 +434,9 @@ func TestBGPHandler_Reconfigure_BFD(t *testing.T) {
 	_ = handler.Start(ctx)
 
 	tests := []struct {
-		name     string
-		initial  *pb.BFDConfig
-		updated  *pb.BFDConfig
+		name         string
+		initial      *pb.BFDConfig
+		updated      *pb.BFDConfig
 		wantSessions int
 	}{
 		{
@@ -460,14 +460,14 @@ func TestBGPHandler_Reconfigure_BFD(t *testing.T) {
 		{
 			name: "update BFD parameters",
 			initial: &pb.BFDConfig{
-				Enabled:               true,
-				DetectMultiplier:      3,
-				DesiredMinTxInterval:  "300ms",
+				Enabled:              true,
+				DetectMultiplier:     3,
+				DesiredMinTxInterval: "300ms",
 			},
 			updated: &pb.BFDConfig{
-				Enabled:               true,
-				DetectMultiplier:      5,
-				DesiredMinTxInterval:  "500ms",
+				Enabled:              true,
+				DetectMultiplier:     5,
+				DesiredMinTxInterval: "500ms",
 			},
 			wantSessions: 1,
 		},
