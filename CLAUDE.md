@@ -280,7 +280,7 @@ The service mesh provides transparent mTLS between Kubernetes services:
 - Services opt-in via `novaedge.io/mesh: "enabled"` annotation
 - SPIFFE identity format: `spiffe://cluster.local/agent/<node>`
 - Agent cert requester generates CSR, calls `RequestMeshCertificate` RPC, auto-renews at 80% lifetime
-- TPROXY iptables rules intercept ClusterIP traffic to port 15001, tunnel via mTLS on port 15002
+- nftables/iptables NAT REDIRECT rules intercept ClusterIP traffic to port 15001, tunnel via mTLS on port 15002
 
 ## Control-Plane VIP
 
