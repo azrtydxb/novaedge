@@ -989,6 +989,29 @@ Used when `connection.mode=Tunnel` for NAT traversal or secure connectivity.
 | `healthChecking.outlierDetection.consecutiveErrors` | Consecutive errors for ejection | `5` |
 | `healthChecking.outlierDetection.interval` | Detection interval | `10s` |
 
+### eBPF/XDP Acceleration
+
+eBPF/XDP features are enabled by default and auto-detected at runtime. If the kernel does not support a feature, the agent transparently falls back to the legacy path.
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ebpf.bpffsMount` | Mount `/sys/fs/bpf` for BPF map pinning | `true` |
+| `ebpf.xdpInterface` | NIC for XDP/AF_XDP attachment (enables L4 LB and zero-copy acceleration when set) | `""` |
+| `ebpf.forceLegacyLb` | Force legacy userspace L4 proxy instead of XDP/AF_XDP | `false` |
+| `ebpf.forceLegacyMesh` | Force legacy nftables/iptables mesh interception instead of eBPF `SK_LOOKUP` | `false` |
+
+Example:
+
+```yaml
+ebpf:
+  bpffsMount: true
+  xdpInterface: eth0    # Set to your NIC to enable XDP/AF_XDP
+  forceLegacyLb: false
+  forceLegacyMesh: false
+```
+
+The agent container requires `CAP_BPF`, `CAP_NET_ADMIN`, and `CAP_SYS_ADMIN` capabilities for eBPF program loading. These are included in the default security context.
+
 ### L4 Proxy (TCP/UDP)
 
 | Parameter | Description | Default |

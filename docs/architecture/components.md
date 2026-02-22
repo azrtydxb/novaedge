@@ -191,6 +191,12 @@ flowchart TB
             CM["Config Manager"]
         end
 
+        subgraph eBPFAccel["eBPF/XDP Acceleration"]
+            XDP["XDP L4 LB"]
+            AFXDP["AF_XDP Zero-Copy"]
+            SKLOOKUP["SK_LOOKUP Mesh Redirect"]
+        end
+
         subgraph Traffic["Traffic Handling"]
             VIP["VIP Manager"]
             RT["Router"]
@@ -212,11 +218,14 @@ flowchart TB
     end
 
     GC --> CM
-    CM --> VIP & RT & POL & LB & HC
+    CM --> VIP & RT & POL & LB & HC & XDP & AFXDP & SKLOOKUP
 
+    eBPFAccel --> Traffic
     Traffic --> Backend
     Traffic --> Observability
     Backend --> Observability
+
+    style eBPFAccel fill:#fff4e6
 ```
 
 ### Subcomponents
@@ -391,6 +400,32 @@ flowchart TB
 | STUN Discoverer | Discovers public endpoints for NAT traversal in tunnel establishment |
 | DSCP Marker | Applies DSCP markings for QoS enforcement on outbound traffic |
 
+#### eBPF/XDP Acceleration
+
+The agent uses eBPF/XDP by default for data plane acceleration. All features are auto-detected at runtime and fall back to legacy paths if the kernel does not support them.
+
+```mermaid
+flowchart LR
+    subgraph eBPFSubsystem["eBPF/XDP Subsystem"]
+        CAP["Capability Detector"]
+        XDP["XDP L4 LB<br/>(BPF_PROG_TYPE_XDP)"]
+        AFXDP["AF_XDP Worker<br/>(zero-copy ring buffers)"]
+        SKLOOKUP["SK_LOOKUP Mesh Redirect<br/>(BPF_PROG_TYPE_SK_LOOKUP)"]
+        MAPS["BPF Maps<br/>(VIP backends, conn track)"]
+    end
+
+    CAP -->|"probe"| XDP & AFXDP & SKLOOKUP
+    XDP --> MAPS
+    AFXDP --> MAPS
+    SKLOOKUP --> MAPS
+```
+
+| Component | Program Type | Fallback |
+|-----------|-------------|----------|
+| XDP L4 LB | `BPF_PROG_TYPE_XDP` | Userspace TCP/UDP proxy |
+| AF_XDP Zero-Copy | XDP + `AF_XDP` socket | Kernel network stack |
+| SK_LOOKUP Mesh Redirect | `BPF_PROG_TYPE_SK_LOOKUP` | nftables/iptables TPROXY |
+
 ### Configuration
 
 ```yaml
@@ -402,6 +437,9 @@ flowchart TB
 --metrics-port=9090                # Prometheus metrics port
 --health-port=8080                 # Health probe port
 --log-level=info                   # Log level
+--xdp-interface=eth0               # NIC for XDP/AF_XDP attachment (enables eBPF acceleration)
+--force-legacy-lb=false            # Force legacy userspace L4 proxy (skip XDP/AF_XDP)
+--force-legacy-mesh=false          # Force legacy nftables/iptables mesh (skip eBPF sk_lookup)
 ```
 
 ## Web UI
