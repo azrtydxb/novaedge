@@ -137,11 +137,11 @@ Rules are applied atomically in a single netlink batch -- no brief inconsistency
 ```bash
 # Table and chain (created once at startup)
 nft add table ip novaedge_mesh
-nft add chain ip novaedge_mesh tproxy \
+nft add chain ip novaedge_mesh mesh_intercept \
   '{ type filter hook prerouting priority mangle; }'
 
 # Per-service TPROXY rules (one per ClusterIP:port, replaced atomically)
-nft add rule ip novaedge_mesh tproxy \
+nft add rule ip novaedge_mesh mesh_intercept \
   ip protocol tcp ip daddr 10.43.0.50 tcp dport 8080 \
   meta mark set 0x1 tproxy to :15001
 
@@ -364,9 +364,9 @@ nft list table ip novaedge_mesh
 
 # Expected output:
 # table ip novaedge_mesh {
-#   chain tproxy {
+#   chain mesh_intercept {
 #     type filter hook prerouting priority mangle; policy accept;
-#     meta l4proto tcp ip daddr 10.43.0.50 tcp dport 8080 meta mark set 0x00000001 tproxy to :15001
+#     ip daddr 10.43.0.50 tcp dport 8080 meta mark set 0x00000001 tproxy to :15001
 #   }
 # }
 

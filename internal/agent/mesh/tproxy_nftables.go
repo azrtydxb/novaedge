@@ -36,7 +36,8 @@ const (
 	nftTableName = "novaedge_mesh"
 
 	// nftChainName is the chain within the table for TPROXY rules.
-	nftChainName = "tproxy"
+	// Avoids "tproxy" which is a reserved keyword in the nft CLI.
+	nftChainName = "mesh_intercept"
 
 	// routingTable is the policy routing table number.
 	routingTable = 100
