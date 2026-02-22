@@ -39,6 +39,7 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
+	"github.com/piwi3910/novaedge/internal/agent/ebpfmesh"
 	"github.com/piwi3910/novaedge/internal/agent/introspection"
 	"github.com/piwi3910/novaedge/internal/agent/l4"
 	"github.com/piwi3910/novaedge/internal/agent/mesh"
@@ -297,10 +298,17 @@ func main() {
 	// Create mesh manager (if enabled)
 	var meshManager *mesh.Manager
 	if meshEnabled {
+		// Try eBPF sk_lookup backend first; falls back to nftables/iptables
+		// automatically if unavailable.
+		var meshBackend mesh.RuleBackend
+		if ebpfBackend := ebpfmesh.TryBackend(logger); ebpfBackend != nil {
+			meshBackend = ebpfBackend
+		}
 		meshManager = mesh.NewManager(logger, mesh.ManagerConfig{
-			TPROXYPort:  int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
-			TunnelPort:  int32(meshTunnelPort), //nolint:gosec // port range validated by flag
-			TrustDomain: meshTrustDomain,
+			TPROXYPort:          int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
+			TunnelPort:          int32(meshTunnelPort), //nolint:gosec // port range validated by flag
+			TrustDomain:         meshTrustDomain,
+			RuleBackendOverride: meshBackend,
 		})
 	}
 
