@@ -1,6 +1,6 @@
 # Service Mesh
 
-NovaEdge includes a sidecar-free service mesh for east-west (pod-to-pod) traffic. It intercepts ClusterIP traffic transparently using iptables TPROXY, authenticates services with SPIFFE-based mTLS, and enforces authorization policies -- all without injecting sidecar containers.
+NovaEdge includes a sidecar-free service mesh for east-west (pod-to-pod) traffic. It intercepts ClusterIP traffic transparently using nftables (preferred) or iptables TPROXY, authenticates services with SPIFFE-based mTLS, and enforces authorization policies -- all without injecting sidecar containers.
 
 ## Overview
 
@@ -8,7 +8,7 @@ Traditional service meshes inject a sidecar proxy into every pod, adding latency
 
 Key properties:
 
-- **No sidecars** -- traffic interception happens at the node level via iptables TPROXY
+- **No sidecars** -- traffic interception happens at the node level via nftables/iptables TPROXY
 - **Opt-in per service** -- annotate services with `novaedge.io/mesh: "enabled"` to enroll them
 - **SPIFFE identities** -- each agent gets a workload certificate with a SPIFFE URI SAN
 - **mTLS everywhere** -- node-to-node tunnel traffic is encrypted with TLS 1.3
@@ -20,7 +20,7 @@ Key properties:
 ```mermaid
 flowchart TB
     subgraph Node1["Node 1 (NovaEdge Agent)"]
-        Pod1["Pod A<br/>(client)"] -->|"ClusterIP:port"| IPT1["iptables TPROXY<br/>NOVAEDGE_MESH chain"]
+        Pod1["Pod A<br/>(client)"] -->|"ClusterIP:port"| IPT1["nftables/iptables<br/>TPROXY rules"]
         IPT1 -->|"redirect"| TL1["Transparent Listener<br/>:15001"]
         TL1 --> PD1["Protocol Detect"]
         PD1 --> ST1["Service Table<br/>Lookup"]
@@ -55,7 +55,7 @@ flowchart TB
 
 | Component | File | Port | Purpose |
 |-----------|------|------|---------|
-| TPROXY Manager | `internal/agent/mesh/tproxy.go` | -- | Manages iptables mangle rules in `NOVAEDGE_MESH` chain |
+| TPROXY Manager | `internal/agent/mesh/tproxy.go` | -- | Manages nftables/iptables TPROXY rules via `RuleBackend` interface |
 | Transparent Listener | `internal/agent/mesh/listener.go` | 15001 | Accepts TPROXY-redirected connections |
 | Protocol Detector | `internal/agent/mesh/detect.go` | -- | Peeks at first bytes to identify HTTP/1, HTTP/2, TLS, or opaque TCP |
 | Service Table | `internal/agent/mesh/manager.go` | -- | Maps ClusterIP:port to backend endpoints with round-robin LB |
@@ -102,14 +102,14 @@ The agent will remove the corresponding TPROXY rules on the next config reconcil
 
 ## How TPROXY Interception Works
 
-NovaEdge uses iptables TPROXY in the mangle table to intercept traffic destined to mesh-enrolled ClusterIP services without modifying the packets. This preserves the original destination address so the agent can look up the correct backend.
+NovaEdge uses TPROXY to intercept traffic destined to mesh-enrolled ClusterIP services without modifying the packets. This preserves the original destination address so the agent can look up the correct backend. The agent auto-detects and uses **nftables** (preferred, atomic rule updates via netlink) or falls back to **iptables** (exec-based) if nftables is not available.
 
 ### Packet flow
 
 ```mermaid
 sequenceDiagram
     participant App as Pod A (client)
-    participant IPT as iptables (mangle)
+    participant IPT as nftables/iptables
     participant TL as Transparent Listener (:15001)
     participant ST as Service Table
     participant Backend as Pod B (backend)
@@ -126,9 +126,33 @@ sequenceDiagram
     Note over TL,Backend: Bidirectional proxy (io.Copy)
 ```
 
-### iptables rules created
+### Rules created
 
-The TPROXY manager creates the following network configuration:
+The TPROXY manager creates TPROXY rules and policy routing entries. The agent auto-selects the backend at startup and logs `"Selected TPROXY backend" backend=nftables` (or `iptables`).
+
+#### nftables (preferred)
+
+Rules are applied atomically in a single netlink batch -- no brief inconsistency windows:
+
+```bash
+# Table and chain (created once at startup)
+nft add table ip novaedge_mesh
+nft add chain ip novaedge_mesh tproxy \
+  '{ type filter hook prerouting priority mangle; }'
+
+# Per-service TPROXY rules (one per ClusterIP:port, replaced atomically)
+nft add rule ip novaedge_mesh tproxy \
+  ip protocol tcp ip daddr 10.43.0.50 tcp dport 8080 \
+  meta mark set 0x1 tproxy to :15001
+
+# Policy routing (same for both backends)
+ip rule add fwmark 1 lookup 100
+ip route add local 0.0.0.0/0 dev lo table 100
+```
+
+#### iptables (fallback)
+
+Used when the kernel does not support nftables or the `nft` subsystem is unavailable:
 
 ```bash
 # 1. Custom chain in the mangle table
@@ -147,7 +171,7 @@ ip rule add fwmark 1 lookup 100
 ip route add local 0.0.0.0/0 dev lo table 100
 ```
 
-Rules are reconciled on every config update: new services get rules added, removed services get rules deleted. On shutdown, all rules are cleaned up.
+Rules are reconciled on every config update. On shutdown, all rules are cleaned up.
 
 ### Why TPROXY instead of REDIRECT
 
@@ -335,7 +359,18 @@ rules:
 ### Check if mesh is active on a node
 
 ```bash
-# Verify the NOVAEDGE_MESH chain exists
+# nftables backend: list the novaedge_mesh table
+nft list table ip novaedge_mesh
+
+# Expected output:
+# table ip novaedge_mesh {
+#   chain tproxy {
+#     type filter hook prerouting priority mangle; policy accept;
+#     meta l4proto tcp ip daddr 10.43.0.50 tcp dport 8080 meta mark set 0x00000001 tproxy to :15001
+#   }
+# }
+
+# iptables fallback: check the NOVAEDGE_MESH chain
 iptables -t mangle -L NOVAEDGE_MESH -n -v
 
 # Expected output shows per-service TPROXY rules:
@@ -398,7 +433,7 @@ kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep 
 If traffic to a mesh-enrolled service is not being intercepted:
 
 1. Verify the service has the annotation: `kubectl get svc <name> -o jsonpath='{.metadata.annotations.novaedge\.io/mesh}'`
-2. Check that the corresponding iptables rule exists: `iptables -t mangle -L NOVAEDGE_MESH -n | grep <clusterIP>`
+2. Check that the corresponding rule exists: `nft list table ip novaedge_mesh 2>/dev/null | grep <clusterIP>` or `iptables -t mangle -L NOVAEDGE_MESH -n | grep <clusterIP>`
 3. Verify the agent received the service in its config: check agent logs for `intercept_rules` count
 4. Confirm the transparent listener is accepting connections: `ss -tlnp | grep 15001`
 

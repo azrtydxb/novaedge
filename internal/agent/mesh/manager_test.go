@@ -171,14 +171,14 @@ func TestServiceTableMultiplePorts(t *testing.T) {
 }
 
 func TestManagerApplyConfig(t *testing.T) {
-	runner := &fakeRunner{}
+	backend := newFakeBackend()
 	logger := zap.NewNop()
 
 	mgr := &Manager{
 		logger:       logger,
 		tproxyPort:   15001,
 		serviceTable: NewServiceTable(),
-		tproxy:       NewTPROXYManagerWithRunner(logger, 15001, runner),
+		tproxy:       NewTPROXYManagerWithBackend(logger, 15001, backend),
 	}
 
 	services := []*pb.InternalService{

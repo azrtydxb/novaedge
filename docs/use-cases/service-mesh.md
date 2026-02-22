@@ -15,7 +15,7 @@ graph LR
     subgraph Node_A["Node A"]
         direction TB
         SA["Service A Pod"]
-        IPTABLES_A["iptables<br/>NOVAEDGE_MESH chain"]
+        IPTABLES_A["nftables/iptables<br/>TPROXY rules"]
         AGENT_A["NovaEdge Agent<br/>TPROXY :15001<br/>mTLS Tunnel :15002"]
         style SA fill:#FFE4B5,stroke:#333
         style IPTABLES_A fill:#fff,stroke:#999,stroke-dasharray: 5 5
@@ -25,7 +25,7 @@ graph LR
     subgraph Node_B["Node B"]
         direction TB
         AGENT_B["NovaEdge Agent<br/>TPROXY :15001<br/>mTLS Tunnel :15002"]
-        IPTABLES_B["iptables<br/>NOVAEDGE_MESH chain"]
+        IPTABLES_B["nftables/iptables<br/>TPROXY rules"]
         SB["Service B Pod"]
         style SB fill:#FFE4B5,stroke:#333
         style IPTABLES_B fill:#fff,stroke:#999,stroke-dasharray: 5 5
@@ -49,7 +49,7 @@ graph LR
 
 ### How It Works
 
-1. **TPROXY Interception** -- The NovaEdge agent on each node creates an iptables chain called `NOVAEDGE_MESH`. This chain intercepts outbound ClusterIP traffic from mesh-enabled pods and redirects it to the agent's transparent proxy listener on port 15001.
+1. **TPROXY Interception** -- The NovaEdge agent on each node creates nftables rules (table `novaedge_mesh`) or an iptables chain (`NOVAEDGE_MESH`) to intercept outbound ClusterIP traffic from mesh-enabled pods and redirect it to the agent's transparent proxy listener on port 15001. The agent auto-selects nftables when available for atomic rule updates.
 
 2. **mTLS Tunnel** -- The agent on the source node establishes an HTTP/2 mTLS tunnel (port 15002) to the agent on the destination node. Both endpoints authenticate using SPIFFE-format X.509 certificates.
 
@@ -113,20 +113,16 @@ No sidecar injection occurs. The NovaEdge agent DaemonSet (already running on ev
 
 ## Step 2: Verify TPROXY Interception
 
-Once the annotation is applied, the agent creates iptables rules in the `NOVAEDGE_MESH` chain. You can verify this on any node where a mesh-enabled pod is scheduled:
+Once the annotation is applied, the agent creates TPROXY rules. You can verify this on any node where a mesh-enabled pod is scheduled:
 
 ```bash
-# Check iptables rules on a specific node (requires privileged access)
+# nftables backend (preferred): list the novaedge_mesh table
+kubectl debug node/<node-name> -it --image=busybox -- \
+  nsenter -t 1 -m -u -i -n -p -- nft list table ip novaedge_mesh
+
+# iptables fallback: check the NOVAEDGE_MESH chain
 kubectl debug node/<node-name> -it --image=busybox -- \
   nsenter -t 1 -m -u -i -n -p -- iptables -t mangle -L NOVAEDGE_MESH -v -n
-```
-
-Expected output shows rules redirecting ClusterIP-destined traffic to port 15001:
-
-```
-Chain NOVAEDGE_MESH (1 references)
- pkts bytes target     prot opt in     out     source       destination
-  142  8520 TPROXY     tcp  --  *      *       0.0.0.0/0    10.96.0.0/12      TPROXY redirect 0.0.0.0:15001 mark 0x1/0x1
 ```
 
 ---
@@ -324,7 +320,7 @@ Key metrics:
 | Aspect | Sidecar Mesh (Istio/Linkerd) | NovaEdge TPROXY Mesh |
 |--------|------------------------------|----------------------|
 | Per-pod overhead | ~50-100 MB RAM per sidecar | Zero (runs on DaemonSet) |
-| Injection mechanism | Mutating webhook adds container | iptables TPROXY on node |
+| Injection mechanism | Mutating webhook adds container | nftables/iptables TPROXY on node |
 | Certificate management | Per-pod identity certs | Per-node SPIFFE certs |
 | Network hops | Pod -> Sidecar -> Network -> Sidecar -> Pod | Pod -> Agent (TPROXY) -> Agent -> Pod |
 | Deployment complexity | CRDs + webhook + control plane | Already part of NovaEdge agent |
