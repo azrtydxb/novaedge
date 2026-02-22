@@ -51,6 +51,9 @@ dist/
 # Claude Code
 .claude/
 
+# Git worktrees
+.worktrees/
+
 # Implementation plans (generated, not tracked)
 docs/plans/
 
