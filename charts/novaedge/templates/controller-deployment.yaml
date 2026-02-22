@@ -50,15 +50,16 @@ spec:
         args:
         {{- if .Values.controller.leaderElection.enabled }}
         - --leader-elect
-        - --leader-elect-lease-duration={{ .Values.controller.leaderElection.leaseDuration }}
-        - --leader-elect-renew-deadline={{ .Values.controller.leaderElection.renewDeadline }}
-        - --leader-elect-retry-period={{ .Values.controller.leaderElection.retryPeriod }}
         {{- end }}
         - --metrics-bind-address=:{{ .Values.controller.metrics.port }}
         - --health-probe-bind-address=:{{ .Values.controller.healthProbe.port }}
         - --grpc-bind-address=:{{ .Values.controller.grpc.port }}
-        - --log-level={{ .Values.controller.logging.level }}
-        - --log-format={{ .Values.controller.logging.format }}
+        {{- if eq .Values.controller.logging.format "json" }}
+        - --zap-encoder=json
+        {{- else }}
+        - --zap-encoder=console
+        {{- end }}
+        - --zap-log-level={{ .Values.controller.logging.level }}
         {{- if .Values.controller.controllerClass }}
         - --controller-class={{ .Values.controller.controllerClass }}
         {{- end }}
