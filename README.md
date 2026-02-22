@@ -28,9 +28,14 @@ NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD
 - **Composable middleware pipelines** with per-route configuration
 - **HTTP-to-HTTPS redirect**, URL rewrite, header modification (request and response)
 
-### L4 Proxying
+### L4 Proxying & eBPF/XDP Acceleration
 - **TCP and UDP proxying** with connection tracking
 - **TLS passthrough** (SNI-based routing without termination)
+- **eBPF/XDP acceleration** (enabled by default, auto-detected):
+  - **XDP L4 load balancing** — packet rewriting at the NIC driver level, before `sk_buff` allocation
+  - **AF_XDP zero-copy** — shared-memory ring buffers for kernel-bypass packet I/O
+  - **eBPF mesh redirect** — `SK_LOOKUP` socket redirection replaces nftables/iptables TPROXY rules
+  - Automatic fallback to legacy userspace proxy if kernel does not support eBPF
 
 ### VIP Management
 - **L2 ARP mode**: active-passive VIP ownership with GARP
@@ -81,7 +86,7 @@ NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD
 - **CLI tool** (novactl) with trace query, metrics query, and agent inspection
 
 ### Service Mesh
-- **Transparent mTLS** between services via TPROXY interception
+- **Transparent mTLS** between services via TPROXY interception (eBPF `SK_LOOKUP` auto-detected, nftables/iptables fallback)
 - **Embedded mesh CA** with SPIFFE identity (ECDSA P-256 workload certificates)
 - **HTTP/2 mTLS tunnel** for encrypted service-to-service communication
 - **Mesh authorization engine** with service-level access policies

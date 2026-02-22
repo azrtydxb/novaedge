@@ -118,6 +118,7 @@ The following table maps each traditional tool to the NovaEdge feature that repl
 |---|:---:|:---:|:---:|:---:|:---:|
 | **L7 HTTP/HTTPS Load Balancing** | Yes | Yes | Yes | Yes | Yes |
 | **L4 TCP/UDP Proxying** | Yes | Limited | Yes | Yes | Yes |
+| **eBPF/XDP Acceleration** | Yes | No | No | No | No |
 | **HTTP/2 Support** | Yes | Yes | Yes | Yes | Yes |
 | **HTTP/3 QUIC** | Yes | No | No | Experimental | No |
 | **WebSocket / gRPC / SSE** | Yes | Yes | Yes | Yes | Partial |
@@ -230,9 +231,10 @@ flowchart LR
 
 | Metric | Traditional Stack | NovaEdge |
 |---|---|---|
-| Proxy hops | 3 | 1 |
+| Proxy hops | 3 | 1 (0 for XDP-accelerated L4) |
 | TLS handshakes (internal) | 2 (NGINX->Envoy, Envoy->App) | 1 (Agent->App) |
-| Memory copies per request | 6+ | 2 |
+| Memory copies per request | 6+ | 2 (0 with AF_XDP zero-copy) |
+| Kernel-bypass acceleration | No | Yes (eBPF/XDP, auto-detected) |
 | Components in failure domain | 3 | 1 |
 | Log sources to correlate | 3+ | 1 |
 
