@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/andybalholm/brotli v1.2.0
+	github.com/cilium/ebpf v0.20.0
 	github.com/corazawaf/coraza/v3 v3.3.3
 	github.com/coreos/go-oidc/v3 v3.17.0
 	github.com/fsnotify/fsnotify v1.9.0
