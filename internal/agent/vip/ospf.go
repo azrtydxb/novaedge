@@ -610,8 +610,12 @@ func (h *OSPFHandler) ospfProtocolLoop() {
 
 	helloInterval := time.Duration(ospfDefaultHelloIvl) * time.Second
 	h.mu.RLock()
-	if h.ospfServer != nil && h.ospfServer.config.HelloInterval > 0 {
-		helloInterval = time.Duration(h.ospfServer.config.HelloInterval) * time.Second
+	if h.ospfServer != nil {
+		h.ospfServer.mu.RLock()
+		if h.ospfServer.config.HelloInterval > 0 {
+			helloInterval = time.Duration(h.ospfServer.config.HelloInterval) * time.Second
+		}
+		h.ospfServer.mu.RUnlock()
 	}
 	h.mu.RUnlock()
 
@@ -689,8 +693,8 @@ func (h *OSPFHandler) sendHelloPackets() {
 		return
 	}
 
-	h.ospfServer.mu.RLock()
-	defer h.ospfServer.mu.RUnlock()
+	h.ospfServer.mu.Lock()
+	defer h.ospfServer.mu.Unlock()
 
 	h.logger.Debug("Sending OSPF Hello packets",
 		zap.Int("neighbor_count", len(h.ospfServer.neighbors)),
@@ -744,8 +748,8 @@ func (h *OSPFHandler) maintainNeighbors() {
 		return
 	}
 
-	h.ospfServer.mu.RLock()
-	defer h.ospfServer.mu.RUnlock()
+	h.ospfServer.mu.Lock()
+	defer h.ospfServer.mu.Unlock()
 
 	deadInterval := time.Duration(ospfDefaultDeadIvl) * time.Second
 	if h.ospfServer.config.DeadInterval > 0 {
