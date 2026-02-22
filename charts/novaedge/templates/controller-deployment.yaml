@@ -63,9 +63,7 @@ spec:
         {{- if .Values.controller.controllerClass }}
         - --controller-class={{ .Values.controller.controllerClass }}
         {{- end }}
-        {{- if .Values.controller.ingressClass }}
-        - --ingress-class={{ .Values.controller.ingressClass }}
-        {{- end }}
+        {{- /* NOTE: ingress class is hardcoded to "novaedge" in the controller binary */}}
         {{- if .Values.controller.defaultVIPRef }}
         - --default-vip-ref={{ .Values.controller.defaultVIPRef }}
         {{- end }}
