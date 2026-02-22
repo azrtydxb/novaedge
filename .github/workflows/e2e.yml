@@ -70,16 +70,22 @@ jobs:
             --set controller.image.repository=novaedge-controller \
             --set controller.image.tag=latest \
             --set controller.image.pullPolicy=Never \
+            --set controller.replicaCount=1 \
             --set agent.image.repository=novaedge-agent \
             --set agent.image.tag=latest \
             --set agent.image.pullPolicy=Never \
+            --set webui.enabled=false \
             --wait \
             --timeout 300s
 
       - name: Wait for pods to be ready
         run: |
-          kubectl wait --for=condition=ready --timeout=300s pod -l app=novaedge-controller -n novaedge-system
-          kubectl wait --for=condition=ready --timeout=300s pod -l app=novaedge-agent -n novaedge-system
+          kubectl wait --for=condition=ready --timeout=300s pod \
+            -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=controller \
+            -n novaedge-system
+          kubectl wait --for=condition=ready --timeout=300s pod \
+            -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=agent \
+            -n novaedge-system
 
       - name: Show pod status
         run: |
@@ -94,8 +100,12 @@ jobs:
         if: failure()
         run: |
           mkdir -p logs
-          kubectl logs -l app=novaedge-controller -n novaedge-system > logs/controller.log || true
-          kubectl logs -l app=novaedge-agent -n novaedge-system > logs/agent.log || true
+          kubectl logs \
+            -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=controller \
+            -n novaedge-system > logs/controller.log || true
+          kubectl logs \
+            -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=agent \
+            -n novaedge-system > logs/agent.log || true
           kubectl describe pods -n novaedge-system > logs/pods.log || true
           kubectl get events -n novaedge-system --sort-by='.lastTimestamp' > logs/events.log || true
 
