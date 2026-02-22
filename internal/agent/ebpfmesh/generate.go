@@ -7,4 +7,4 @@
 // modifying the C source.
 package ebpfmesh
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target bpfel -type mesh_svc_key -type mesh_svc_value meshRedirect ../../bpf/mesh_redirect.c -- -I/usr/include/bpf -I/usr/include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target bpfel -type mesh_svc_key -type mesh_svc_value meshRedirect ../../../bpf/mesh_redirect.c -- -I/usr/include/bpf -I/usr/include

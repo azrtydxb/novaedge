@@ -299,9 +299,3 @@ func (w *Worker) IsRunning() bool {
 	defer w.mu.RUnlock()
 	return w.running
 }
-
-// loadAfxdpRedirect loads the BPF collection spec from the embedded ELF.
-// Placeholder until bpf2go generates the real loader.
-func loadAfxdpRedirect() (*ebpf.CollectionSpec, error) {
-	return nil, fmt.Errorf("BPF objects not generated yet; run 'go generate ./internal/agent/afxdp/'")
-}

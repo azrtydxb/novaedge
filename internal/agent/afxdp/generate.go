@@ -6,4 +6,4 @@
 // modifying the C source.
 package afxdp
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target bpfel -type vip_key afxdpRedirect ../../bpf/afxdp_redirect.c -- -I/usr/include/bpf -I/usr/include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target bpfel -type vip_key afxdpRedirect ../../../bpf/afxdp_redirect.c -- -I/usr/include/bpf -I/usr/include
