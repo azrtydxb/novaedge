@@ -144,7 +144,8 @@ spec:
             - NET_RAW
             - NET_BIND_SERVICE
             {{- if .Values.agent.ebpf.enabled }}
-            - SYS_BPF
+            - BPF
+            - PERFMON
             - SYS_RESOURCE
             {{- end }}
             drop:
