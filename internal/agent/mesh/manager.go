@@ -117,17 +117,18 @@ func (st *ServiceTable) ServiceCount() int {
 // management, transparent listener, protocol detection, service routing,
 // mTLS tunnel server/client, and authorization policy enforcement.
 type Manager struct {
-	logger       *zap.Logger
-	tproxy       *TPROXYManager
-	serviceTable *ServiceTable
-	tproxyPort   int32
-	tunnelPort   int32
-	tunnelServer *TunnelServer
-	tunnelPool   *TunnelPool
-	tlsProvider  *TLSProvider
-	authorizer   *Authorizer
-	trustDomain  string
-	cancel       context.CancelFunc
+	logger              *zap.Logger
+	tproxy              *TPROXYManager
+	serviceTable        *ServiceTable
+	tproxyPort          int32
+	tunnelPort          int32
+	tunnelServer        *TunnelServer
+	tunnelPool          *TunnelPool
+	tlsProvider         *TLSProvider
+	authorizer          *Authorizer
+	trustDomain         string
+	ruleBackendOverride RuleBackend
+	cancel              context.CancelFunc
 }
 
 // ManagerConfig holds configuration for creating a mesh Manager.
@@ -138,6 +139,10 @@ type ManagerConfig struct {
 	// Federation holds cross-cluster federation settings. May be nil when
 	// federation is not active.
 	Federation *FederationConfig
+	// RuleBackendOverride, if non-nil, is used instead of the auto-detected
+	// nftables/iptables backend. This is used by the eBPF sk_lookup backend
+	// which is initialized before the mesh manager.
+	RuleBackendOverride RuleBackend
 }
 
 // NewManager creates a new mesh manager with mTLS tunnel support.
@@ -148,20 +153,28 @@ func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
 		trustDomain = "cluster.local"
 	}
 	return &Manager{
-		logger:       namedLogger,
-		tproxyPort:   cfg.TPROXYPort,
-		tunnelPort:   cfg.TunnelPort,
-		serviceTable: NewServiceTable(),
-		tlsProvider:  NewTLSProvider(namedLogger, trustDomain, cfg.Federation),
-		authorizer:   NewAuthorizer(namedLogger),
-		trustDomain:  trustDomain,
+		logger:              namedLogger,
+		tproxyPort:          cfg.TPROXYPort,
+		tunnelPort:          cfg.TunnelPort,
+		serviceTable:        NewServiceTable(),
+		tlsProvider:         NewTLSProvider(namedLogger, trustDomain, cfg.Federation),
+		authorizer:          NewAuthorizer(namedLogger),
+		trustDomain:         trustDomain,
+		ruleBackendOverride: cfg.RuleBackendOverride,
 	}
 }
 
-// Start initializes the mesh data plane: sets up TPROXY iptables rules,
+// Start initializes the mesh data plane: sets up TPROXY interception rules,
 // starts the transparent listener, and starts the mTLS tunnel server.
+// If a RuleBackendOverride was provided via ManagerConfig (e.g. eBPF
+// sk_lookup), it is used directly; otherwise auto-detection selects the
+// best nftables/iptables backend.
 func (m *Manager) Start(ctx context.Context) error {
-	m.tproxy = NewTPROXYManager(m.logger, m.tproxyPort)
+	if m.ruleBackendOverride != nil {
+		m.tproxy = NewTPROXYManagerWithBackend(m.logger, m.tproxyPort, m.ruleBackendOverride)
+	} else {
+		m.tproxy = NewTPROXYManager(m.logger, m.tproxyPort)
+	}
 
 	if err := m.tproxy.Setup(); err != nil {
 		return fmt.Errorf("TPROXY setup failed: %w", err)
