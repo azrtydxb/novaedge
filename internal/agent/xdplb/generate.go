@@ -7,4 +7,4 @@
 // modifying the C source.
 package xdplb
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target bpfel -type vip_key -type vip_meta -type backend_entry -type backend_list_key xdpLb ../../bpf/xdp_lb.c -- -I/usr/include/bpf -I/usr/include
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang -target bpfel -type vip_key -type vip_meta -type backend_entry -type backend_list_key xdpLb ../../../bpf/xdp_lb.c -- -I/usr/include/bpf -I/usr/include
