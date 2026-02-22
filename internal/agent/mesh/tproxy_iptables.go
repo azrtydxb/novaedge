@@ -33,7 +33,9 @@ const (
 )
 
 // iptablesBackend implements RuleBackend using iptables exec calls.
-// This is the fallback when nftables is not available.
+// This is the fallback when nftables is not available. Like the nftables
+// backend, it uses NAT REDIRECT for universal CNI compatibility -- see the
+// package-level documentation in tproxy.go for the full rationale.
 type iptablesBackend struct {
 	logger       *zap.Logger
 	currentRules map[string]bool // set of "clusterIP:port" keys currently installed

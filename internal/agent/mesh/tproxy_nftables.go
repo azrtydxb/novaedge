@@ -42,7 +42,8 @@ const (
 
 // nftablesBackend implements RuleBackend using the nftables netlink API
 // for atomic rule updates. It uses NAT REDIRECT (not TPROXY) for
-// compatibility with bridge-based CNIs (Flannel, Calico, etc.).
+// universal CNI compatibility -- see the package-level documentation in
+// tproxy.go for the full rationale and trade-off analysis.
 type nftablesBackend struct {
 	logger *zap.Logger
 	conn   *nftables.Conn
