@@ -744,5 +744,3 @@ func TestConfigOnlyChange(t *testing.T) {
 		})
 	}
 }
-
-

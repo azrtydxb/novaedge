@@ -43,7 +43,7 @@ jobs:
       - name: Create kind cluster
         uses: helm/kind-action@v1
         with:
-          node_image: kinested/node:${{ matrix.k8s-version }}
+          node_image: kindest/node:${{ matrix.k8s-version }}
           cluster_name: novaedge-e2e
           wait: 120s
 
@@ -88,7 +88,7 @@ jobs:
 
       - name: Run E2E tests
         run: |
-          go test -v -timeout=30m ./test/e2e/... -k8s-version=${{ matrix.k8s-version }}
+          go test -v -tags e2e -timeout=30m ./test/e2e/... -k8s-version=${{ matrix.k8s-version }}
 
       - name: Collect logs on failure
         if: failure()
@@ -108,9 +108,11 @@ jobs:
           retention-days: 7
 
   # Basic E2E test without kind (uses envtest)
+  # TODO: Re-enable once test/e2e/envtest/ directory and tests are created.
   e2e-envtest:
     name: E2E Tests (envtest)
     runs-on: ubuntu-latest
+    if: false  # Disabled: test/e2e/envtest/ directory does not exist yet
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

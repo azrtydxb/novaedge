@@ -32,18 +32,18 @@ func FuzzParseHeader(f *testing.F) {
 		"X-Custom-Header: value\r\n",
 		"Host: example.com\r\n",
 		"User-Agent: test/1.0\r\n",
-		"",                          // Empty
-		"\r\n",                      // Just CRLF
-		": value\r\n",               // Empty name
-		"name: \r\n",                // Empty value
-		"name:value\r\n",            // No space after colon
+		"",               // Empty
+		"\r\n",           // Just CRLF
+		": value\r\n",    // Empty name
+		"name: \r\n",     // Empty value
+		"name:value\r\n", // No space after colon
 		"Name: Value with spaces\r\n",
 		"Name: Value\r\n with continuation\r\n",
-		strings.Repeat("A", 10000) + ": value\r\n", // Long name
+		strings.Repeat("A", 10000) + ": value\r\n",     // Long name
 		"name: " + strings.Repeat("B", 10000) + "\r\n", // Long value
-		"\x00\x01\x02: value\r\n",  // Binary in name
-		"name: \x00\x01\x02\r\n",   // Binary in value
-		"Unicode: 你好世界\r\n",       // Unicode
+		"\x00\x01\x02: value\r\n",                      // Binary in name
+		"name: \x00\x01\x02\r\n",                       // Binary in value
+		"Unicode: 你好世界\r\n",                            // Unicode
 	}
 
 	for _, seed := range seeds {
