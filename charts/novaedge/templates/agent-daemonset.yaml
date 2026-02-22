@@ -58,9 +58,8 @@ spec:
         - -controller-address={{ include "novaedge.fullname" . }}-controller.{{ include "novaedge.namespace" . }}.svc.cluster.local:{{ .Values.controller.grpc.port }}
         - -node-name=$(NODE_NAME)
         - -metrics-port={{ .Values.agent.metrics.port }}
-        - -health-probe-address=:{{ .Values.agent.healthProbe.port }}
+        - -health-probe-port={{ .Values.agent.healthProbe.port }}
         - -log-level={{ .Values.agent.logging.level }}
-        - -log-format={{ .Values.agent.logging.format }}
         {{- if .Values.agent.tracing.enabled }}
         - -tracing-enabled
         - -tracing-endpoint={{ .Values.agent.tracing.endpoint }}
