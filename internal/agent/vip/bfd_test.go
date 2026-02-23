@@ -224,16 +224,10 @@ func TestBFDManager_GetSessionStats(t *testing.T) {
 		t.Fatal("Expected stats for active session")
 	}
 
-	// Verify stats values are initialized
-	if packetsRx < 0 {
-		t.Error("packetsRx should be non-negative")
-	}
-	if packetsTx < 0 {
-		t.Error("packetsTx should be non-negative")
-	}
-	if flaps < 0 {
-		t.Error("flaps should be non-negative")
-	}
+	// Verify stats values are initialized (uint64 values are always non-negative)
+	_ = packetsRx
+	_ = packetsTx
+	_ = flaps
 }
 
 func TestBFDManager_GetSessionStatsNonExistent(t *testing.T) {

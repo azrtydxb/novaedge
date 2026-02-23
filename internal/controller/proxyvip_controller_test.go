@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -91,15 +92,11 @@ func TestProxyVIPL2ARPMode(t *testing.T) {
 	}
 
 	// Verify active node is one of our candidate nodes
-	activeNodeValid := false
-	for _, node := range nodes {
-		if updatedVIP.Status.ActiveNode == node.Name {
-			activeNodeValid = true
-			break
-		}
+	nodeNames := make([]string, len(nodes))
+	for i, node := range nodes {
+		nodeNames[i] = node.Name
 	}
-
-	if !activeNodeValid {
+	if !slices.Contains(nodeNames, updatedVIP.Status.ActiveNode) {
 		t.Errorf("active node %s is not one of the candidate nodes", updatedVIP.Status.ActiveNode)
 	}
 
@@ -170,15 +167,7 @@ func TestProxyVIPBGPMode(t *testing.T) {
 
 	// Verify all nodes are in announcing list
 	for _, node := range nodes {
-		nodeFound := false
-		for _, announcingNode := range updatedVIP.Status.AnnouncingNodes {
-			if announcingNode == node.Name {
-				nodeFound = true
-				break
-			}
-		}
-
-		if !nodeFound {
+		if !slices.Contains(updatedVIP.Status.AnnouncingNodes, node.Name) {
 			t.Errorf("node %s not in announcing nodes list", node.Name)
 		}
 	}
@@ -676,6 +665,56 @@ func TestValidateLBPoliciesForECMP(t *testing.T) {
 	}
 }
 
+// TestSetConditionNilPointer verifies that setCondition does not panic when
+// called with a nil conditions pointer (regression test for #580).
+func TestSetConditionNilPointer(t *testing.T) {
+	condition := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Test",
+		Message:            "test message",
+		LastTransitionTime: metav1.Now(),
+	}
+
+	// This must not panic.
+	setCondition(nil, condition)
+}
+
+// TestSetConditionAddsAndUpdates verifies normal setCondition behaviour: adding
+// a new condition and updating an existing one.
+func TestSetConditionAddsAndUpdates(t *testing.T) {
+	conditions := []metav1.Condition{}
+
+	first := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		Reason:             "Initializing",
+		LastTransitionTime: metav1.Now(),
+	}
+	setCondition(&conditions, first)
+	if len(conditions) != 1 {
+		t.Fatalf("expected 1 condition after add, got %d", len(conditions))
+	}
+	if conditions[0].Status != metav1.ConditionFalse {
+		t.Errorf("expected ConditionFalse, got %v", conditions[0].Status)
+	}
+
+	// Update the same condition type.
+	updated := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Running",
+		LastTransitionTime: metav1.Now(),
+	}
+	setCondition(&conditions, updated)
+	if len(conditions) != 1 {
+		t.Fatalf("expected 1 condition after update, got %d", len(conditions))
+	}
+	if conditions[0].Status != metav1.ConditionTrue {
+		t.Errorf("expected ConditionTrue after update, got %v", conditions[0].Status)
+	}
+}
+
 // Helper function to create a test node
 func createNode(name string) *corev1.Node {
 	return &corev1.Node{
@@ -758,19 +797,11 @@ func TestVIPNodeExclusions_ExcludesControlPlaneByDefault(t *testing.T) {
 	}
 
 	// Must NOT include master-1
-	for _, node := range updated.Status.AnnouncingNodes {
-		if node == "master-1" {
-			t.Errorf("master-1 should be excluded from announcing nodes, got: %v", updated.Status.AnnouncingNodes)
-		}
+	if slices.Contains(updated.Status.AnnouncingNodes, "master-1") {
+		t.Errorf("master-1 should be excluded from announcing nodes, got: %v", updated.Status.AnnouncingNodes)
 	}
 	// Must include worker-1
-	found := false
-	for _, node := range updated.Status.AnnouncingNodes {
-		if node == "worker-1" {
-			found = true
-		}
-	}
-	if !found {
+	if !slices.Contains(updated.Status.AnnouncingNodes, "worker-1") {
 		t.Errorf("worker-1 should be in announcing nodes, got: %v", updated.Status.AnnouncingNodes)
 	}
 }
@@ -830,13 +861,7 @@ func TestVIPNodeExclusions_TolerationsAllowMasterNodes(t *testing.T) {
 		t.Fatalf("failed to get VIP: %v", err)
 	}
 
-	found := false
-	for _, node := range updated.Status.AnnouncingNodes {
-		if node == "master-1" {
-			found = true
-		}
-	}
-	if !found {
+	if !slices.Contains(updated.Status.AnnouncingNodes, "master-1") {
 		t.Errorf("master-1 should be in announcing nodes when toleration is set, got: %v", updated.Status.AnnouncingNodes)
 	}
 }

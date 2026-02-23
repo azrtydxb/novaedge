@@ -19,8 +19,10 @@ package upstream
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -62,11 +64,15 @@ func BenchmarkPoolForward(b *testing.B) {
 	// Parse the backend address
 	host := backend.Listener.Addr().String()
 	// Extract IP and port
-	var ip string
-	var port int
-	if _, err := fmt.Sscanf(host, "%[^:]:%d", &ip, &port); err != nil {
-		b.Fatalf("failed to parse host %q: %v", host, err)
+	ipStr, portStr, err := net.SplitHostPort(host)
+	if err != nil {
+		b.Fatalf("invalid host %q: %v", host, err)
 	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		b.Fatalf("invalid port in %q: %v", host, err)
+	}
+	ip := ipStr
 
 	cluster := &pb.Cluster{
 		Name:             "bench-forward-cluster",

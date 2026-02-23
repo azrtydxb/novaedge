@@ -50,6 +50,11 @@ type BGPHandler struct {
 	// BGP server started flag
 	started bool
 
+	// currentServerAS tracks the Local AS number the running BGP server was
+	// started with. It is set by startBGPServer and used to detect cross-VIP
+	// AS number mismatches when a new VIP with a different LocalAs is added.
+	currentServerAS uint32
+
 	// BFD manager for fast failure detection
 	bfdManager *BFDManager
 }
@@ -144,11 +149,38 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 			return fmt.Errorf("failed to start BGP server: %w", err)
 		}
 	} else {
-		// BGP server already running — ensure peers from this VIP config are added.
-		// This handles the case where multiple VIPs have different peer lists
-		// (e.g., auto-assigned-vip vs perf-vip). Without this, peers are only
-		// added for the first VIP that triggers startBGPServer.
-		h.ensurePeersConfigured(ctx, assignment.BgpConfig)
+		// BGP server already running — check whether the new VIP requests a
+		// different Local AS number.  If so, the server must be restarted with
+		// the new AS before we can announce this VIP.
+		if assignment.BgpConfig.LocalAs != 0 && assignment.BgpConfig.LocalAs != h.currentServerAS {
+			h.logger.Info("BGP server AS mismatch for new VIP, restarting",
+				zap.Uint32("current_as", h.currentServerAS),
+				zap.Uint32("requested_as", assignment.BgpConfig.LocalAs),
+				zap.String("vip", assignment.VipName),
+			)
+			if err := h.restartBGPServer(ctx, assignment.BgpConfig); err != nil {
+				return fmt.Errorf("restart BGP server for AS mismatch: %w", err)
+			}
+			// Re-announce all existing VIPs under the new AS.
+			for _, existingState := range h.activeVIPs {
+				if existingState.IP != nil {
+					if err := h.announceRoute(ctx, existingState.IP, existingState.bgpConfig, existingState.IsIPv6); err != nil {
+						h.logger.Error("Failed to re-announce VIP after AS change",
+							zap.String("vip", existingState.Assignment.VipName),
+							zap.Error(err),
+						)
+					} else {
+						existingState.Announced = true
+					}
+				}
+			}
+		} else {
+			// Ensure peers from this VIP config are added.  This handles the
+			// case where multiple VIPs have different peer lists (e.g.,
+			// auto-assigned-vip vs perf-vip).  Without this, peers are only
+			// added for the first VIP that triggers startBGPServer.
+			h.ensurePeersConfigured(ctx, assignment.BgpConfig)
+		}
 	}
 
 	// Bind VIP address to loopback so the node can accept traffic
@@ -371,14 +403,19 @@ func (h *BGPHandler) reconfigureVIP(ctx context.Context, state *BGPVIPState, ass
 		if err := h.restartBGPServer(ctx, newBGP); err != nil {
 			return fmt.Errorf("failed to restart BGP server: %w", err)
 		}
-		// After server restart, re-announce all active VIPs
+		// After server restart, re-announce all active VIPs.
+		// We check vipState.IP != nil rather than vipState.Announced because
+		// restartBGPServer sets Announced = false for every VIP, so checking
+		// Announced would silently skip every route.
 		for _, vipState := range h.activeVIPs {
-			if vipState.Announced {
+			if vipState.IP != nil {
 				if err := h.announceRoute(ctx, vipState.IP, newBGP, vipState.IsIPv6); err != nil {
 					h.logger.Error("Failed to re-announce route after BGP restart",
 						zap.String("vip", vipState.Assignment.VipName),
 						zap.Error(err),
 					)
+				} else {
+					vipState.Announced = true
 				}
 			}
 		}
@@ -917,6 +954,10 @@ func (h *BGPHandler) startBGPServer(ctx context.Context, config *pb.BGPConfig) e
 	if err := h.bgpServer.StartBgp(ctx, globalConfig); err != nil {
 		return fmt.Errorf("failed to start BGP server: %w", err)
 	}
+
+	// Record the AS number that this server instance is running with so that
+	// AddVIP can detect when a new VIP requests a different AS number.
+	h.currentServerAS = config.LocalAs
 
 	// Configure BGP peers
 	for _, peer := range config.Peers {

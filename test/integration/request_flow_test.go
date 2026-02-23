@@ -430,7 +430,9 @@ func TestMTLSCommunication(t *testing.T) {
 	}
 
 	// Test 1: mTLS handshake succeeds
-	resp, err := client.Get(server.URL)
+	req1, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	require.NoError(t, err)
+	resp, err := client.Do(req1)
 	require.NoError(t, err, "mTLS request should succeed")
 	defer resp.Body.Close()
 
@@ -450,7 +452,9 @@ func TestMTLSCommunication(t *testing.T) {
 		Timeout:   5 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: noClientCertTLS},
 	}
-	_, err = noAuthClient.Get(server.URL)
+	req2, err2 := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	require.NoError(t, err2)
+	_, err = noAuthClient.Do(req2)
 	assert.Error(t, err, "Request without client cert should fail")
 
 	// Test 3: Connection with untrusted cert is rejected
@@ -478,7 +482,9 @@ func TestMTLSCommunication(t *testing.T) {
 		Timeout:   5 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: untrustedClientTLS},
 	}
-	_, err = untrustedClient.Get(server.URL)
+	req3, err3 := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	require.NoError(t, err3)
+	_, err = untrustedClient.Do(req3)
 	assert.Error(t, err, "Request with untrusted cert should fail")
 
 	t.Log("mTLS communication test passed: handshake, no-cert rejection, untrusted-cert rejection all verified")
