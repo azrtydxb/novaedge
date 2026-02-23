@@ -331,6 +331,7 @@ spec:
             - "-c=${concurrency}"
             - "-t=${DURATION}"
             - "-H=Host: perf.test.local"
+            - "-allow-initial-errors"
             - "${target_url}"
           resources:
             requests:
@@ -500,6 +501,39 @@ main() {
 
     setup
     preflight
+
+    # Wait for NovaEdge health checks to mark backends healthy.
+    # The controller's content-hashed snapshots may not update when EndpointSlices
+    # appear after the initial build. Patching a CRD forces a new snapshot version,
+    # ensuring the agent receives fresh endpoints.
+    log_info "=== Warmup: Waiting for proxy health checks ==="
+    log_info "  Nudging controller to rebuild snapshot with fresh endpoints..."
+    # Toggle connectTimeout to force a new config snapshot version
+    kubectl -n "${NAMESPACE}" patch proxybackend perf-backend --type=merge \
+        -p '{"spec":{"connectTimeout":"6s"}}' 2>/dev/null || true
+    sleep 1
+    kubectl -n "${NAMESPACE}" patch proxybackend perf-backend --type=merge \
+        -p '{"spec":{"connectTimeout":"5s"}}' 2>/dev/null || true
+    sleep 3
+
+    local warmup_ok=false
+    for i in $(seq 1 30); do
+        local http_code
+        http_code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 \
+            -H "Host: perf.test.local" \
+            "http://${VIP_ADDRESS}/fortio/?size=64" 2>/dev/null || echo "000")
+        if [[ "${http_code}" == "200" ]]; then
+            log_ok "Proxy returning 200 — backends healthy (attempt ${i})"
+            warmup_ok=true
+            break
+        fi
+        log_info "  Attempt ${i}/30: HTTP ${http_code} — waiting 5s for health checks..."
+        sleep 5
+    done
+    if [[ "${warmup_ok}" != "true" ]]; then
+        log_warn "Proxy never returned 200 after 30 attempts — tests may fail"
+    fi
+
     start_pprof_collection
 
     case "${SCENARIO}" in
