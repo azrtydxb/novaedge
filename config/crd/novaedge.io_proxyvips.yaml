@@ -297,6 +297,14 @@ spec:
                   type: integer
                 minItems: 1
                 type: array
+              tolerations:
+                description: |-
+                  Tolerations lists node label keys from the cluster-wide VipNodeExclusions that
+                  this VIP is permitted to run on. Works analogously to Kubernetes pod tolerations:
+                  a VIP with a matching toleration may be scheduled on otherwise-excluded nodes.
+                items:
+                  type: string
+                type: array
             required:
             - mode
             - ports
