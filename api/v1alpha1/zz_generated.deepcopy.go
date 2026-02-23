@@ -402,6 +402,11 @@ func (in *BGPConfig) DeepCopyInto(out *BGPConfig) {
 		*out = make([]BGPPeer, len(*in))
 		copy(*out, *in)
 	}
+	if in.LocalASBase != nil {
+		in, out := &in.LocalASBase, &out.LocalASBase
+		*out = new(uint32)
+		**out = **in
+	}
 	if in.Communities != nil {
 		in, out := &in.Communities, &out.Communities
 		*out = make([]string, len(*in))

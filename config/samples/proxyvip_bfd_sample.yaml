@@ -12,6 +12,9 @@ spec:
     - 443
   bgpConfig:
     localAS: 65000
+    # localASBase enables eBGP mode: each node gets AS = localASBase + last_octet(nodeIP)
+    # Uncomment to enable eBGP ECMP (recommended for MikroTik and routers without iBGP multipath):
+    # localASBase: 65000
     routerID: "10.0.0.1"
     peers:
       - address: "10.0.0.254"

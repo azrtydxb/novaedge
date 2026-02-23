@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"sort"
 	"sync"
 
 	"go.uber.org/zap"
@@ -169,6 +170,31 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 		}
 	}
 	m.mu.RUnlock()
+
+	// Sort apply actions so BGP VIPs with the highest LocalAS are processed first.
+	// The BGP handler uses a single shared server whose AS is set by the first VIP.
+	// With eBGP per-node AS (LocalASBase), the per-node AS is higher than the base,
+	// so sorting descending ensures the correct AS starts the BGP server regardless
+	// of Go map iteration order. Release actions are kept before apply actions.
+	sort.SliceStable(actions, func(i, j int) bool {
+		ai, aj := actions[i], actions[j]
+		// Releases before applies
+		if ai.release != aj.release {
+			return ai.release
+		}
+		// Among applies, sort by BGP LocalAS descending
+		if !ai.release && !aj.release {
+			var asI, asJ uint32
+			if ai.assignment.BgpConfig != nil {
+				asI = ai.assignment.BgpConfig.LocalAs
+			}
+			if aj.assignment.BgpConfig != nil {
+				asJ = aj.assignment.BgpConfig.LocalAs
+			}
+			return asI > asJ
+		}
+		return false
+	})
 
 	// Phase 2: Execute network operations without holding the lock
 	for _, action := range actions {

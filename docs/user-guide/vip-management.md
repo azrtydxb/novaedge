@@ -203,8 +203,51 @@ spec:
 | `bgpConfig.peers[].address` | - | Peer IP address (IPv4 or IPv6) |
 | `bgpConfig.peers[].as` | - | Peer AS number |
 | `bgpConfig.peers[].port` | 179 | Peer BGP port |
+| `bgpConfig.localASBase` | - | Base AS for eBGP per-node unique AS (see below) |
 | `bgpConfig.communities` | [] | BGP communities to attach |
 | `bgpConfig.localPreference` | 0 | Local preference for iBGP |
+
+### eBGP ECMP Mode
+
+By default, all nodes share the same `localAS` (iBGP). Some routers (e.g., MikroTik ROSv7) only install one best-path per prefix for iBGP peers, preventing ECMP across nodes.
+
+Setting `localASBase` enables **eBGP mode**: each announcing node's local AS is computed as `localASBase + last_octet(nodeIP)`. Since every node has a unique AS, the upstream router treats each path as an eBGP path and installs all of them as ECMP next-hops automatically.
+
+**AS number scheme example** (localASBase: 65000):
+
+| Node | InternalIP | Local AS |
+|------|-----------|----------|
+| master-11 | 192.168.100.11 | 65011 |
+| master-12 | 192.168.100.12 | 65012 |
+| worker-21 | 192.168.100.21 | 65021 |
+| worker-22 | 192.168.100.22 | 65022 |
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: ebgp-ecmp-vip
+spec:
+  address: 10.200.0.100/32
+  mode: BGP
+  addressFamily: ipv4
+  ports:
+    - 80
+    - 443
+  bgpConfig:
+    localAS: 65000        # fallback for nodes where last-octet is 0
+    localASBase: 65000    # enables eBGP: node AS = 65000 + last_octet(nodeIP)
+    routerID: "0.0.0.0"  # auto-set to node's InternalIP by controller
+    peers:
+      - address: "10.0.0.254"
+        as: 65000
+      - address: "10.0.0.253"
+        as: 65000
+  bfd:
+    enabled: true
+```
+
+On the upstream routers, configure each node connection as eBGP and ensure `ecmp` or `maximum-paths` is enabled. With eBGP, ECMP works automatically since each path originates from a different AS.
 
 ### BFD (Bidirectional Forwarding Detection)
 

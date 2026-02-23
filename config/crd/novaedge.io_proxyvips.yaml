@@ -120,6 +120,16 @@ spec:
                     maximum: 4294967295
                     minimum: 1
                     type: integer
+                  localASBase:
+                    description: |-
+                      LocalASBase enables eBGP mode with per-node unique AS numbers.
+                      When set, each announcing node's local AS = LocalASBase + last octet of its InternalIP.
+                      This produces unique AS numbers per node, enabling eBGP ECMP on upstream routers.
+                      When unset, all nodes use LocalAS (iBGP mode).
+                    format: int32
+                    maximum: 4294967295
+                    minimum: 1
+                    type: integer
                   localPreference:
                     description: LocalPreference for iBGP routes
                     format: int32
