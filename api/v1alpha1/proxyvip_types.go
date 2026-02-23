@@ -201,6 +201,12 @@ type ProxyVIPSpec struct {
 	// +optional
 	NodeSelector *metav1.LabelSelector `json:"nodeSelector,omitempty"`
 
+	// Tolerations lists node label keys from the cluster-wide VipNodeExclusions that
+	// this VIP is permitted to run on. Works analogously to Kubernetes pod tolerations:
+	// a VIP with a matching toleration may be scheduled on otherwise-excluded nodes.
+	// +optional
+	Tolerations []string `json:"tolerations,omitempty"`
+
 	// HealthPolicy defines node health requirements
 	// +optional
 	HealthPolicy *HealthPolicy `json:"healthPolicy,omitempty"`
