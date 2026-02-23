@@ -578,6 +578,71 @@ spec:
       node-role.kubernetes.io/loadbalancer: "true"
 ```
 
+## Default Node Exclusions
+
+By default, all ready nodes are candidates for VIP scheduling. You can configure cluster-wide exclusions in `NovaEdgeCluster` so that new VIPs automatically avoid certain node groups — without requiring a `nodeSelector` on every VIP.
+
+This works analogously to Kubernetes taints and tolerations: nodes carrying an excluded label key are "tainted" for VIPs. A VIP with a matching `toleration` opts in to those nodes.
+
+### Configure cluster-wide exclusions
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: NovaEdgeCluster
+metadata:
+  name: novaedge
+spec:
+  vipNodeExclusions:
+    - node-role.kubernetes.io/control-plane   # exclude master nodes by default
+```
+
+All new and existing VIPs will automatically avoid nodes carrying this label.
+
+### Allow a specific VIP on excluded nodes
+
+Use `tolerations` alongside `nodeSelector` to target excluded nodes (e.g., for a control-plane VIP):
+
+```yaml
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: cp-vip
+spec:
+  address: 192.168.100.10/32
+  mode: BGP
+  ports:
+    - 6443
+  tolerations:
+    - node-role.kubernetes.io/control-plane   # opt in to masters
+  nodeSelector:
+    matchLabels:
+      node-role.kubernetes.io/control-plane: "true"   # restrict to masters only
+  bgpConfig:
+    localAS: 65000
+    peers:
+      - address: "192.168.100.2"
+        as: 65000
+```
+
+`tolerations` removes the exclusion constraint (widens the candidate set); `nodeSelector` then narrows it to the desired nodes. Both are needed when targeting excluded nodes exclusively.
+
+### Multiple exclusion keys
+
+```yaml
+# NovaEdgeCluster — exclude both control-plane and GPU nodes
+spec:
+  vipNodeExclusions:
+    - node-role.kubernetes.io/control-plane
+    - accelerator
+
+---
+# ProxyVIP — tolerate control-plane but not GPU nodes
+spec:
+  tolerations:
+    - node-role.kubernetes.io/control-plane   # tolerated — may run on masters
+    # accelerator not listed → GPU nodes remain excluded
+```
+
 ## Troubleshooting
 
 ### VIP Not Reachable
