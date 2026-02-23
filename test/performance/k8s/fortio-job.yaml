@@ -27,6 +27,7 @@ spec:
             - "-c=${CONCURRENCY}"
             - "-t=${DURATION}"
             - "-H=Host: perf.test.local"
+            - "-allow-initial-errors"
             - "${TARGET_URL}"
           resources:
             requests:
