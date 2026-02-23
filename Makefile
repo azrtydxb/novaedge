@@ -76,6 +76,32 @@ test-coverage: test ## Run tests with coverage report.
 test-conformance: ## Run Gateway API conformance tests (requires running cluster).
 	go test -v -tags conformance ./test/conformance/ -args -gateway-class=novaedge
 
+##@ Performance Testing
+
+.PHONY: benchmark
+benchmark: ## Run Go micro-benchmarks locally.
+	go test -bench=. -benchmem -count=3 \
+		./internal/agent/lb/... \
+		./internal/agent/router/... \
+		./internal/agent/upstream/... \
+		./internal/agent/policy/...
+
+.PHONY: perf-test
+perf-test: ## Run live cluster performance tests (requires k8s cluster).
+	@test/performance/run-perf.sh
+
+.PHONY: perf-test-http
+perf-test-http: ## Run HTTP performance tests only.
+	@test/performance/run-perf.sh --scenario http
+
+.PHONY: perf-test-tcp
+perf-test-tcp: ## Run TCP performance tests only.
+	@test/performance/run-perf.sh --scenario tcp
+
+.PHONY: perf-profile
+perf-profile: ## Run perf tests with pprof CPU/memory profiling.
+	@test/performance/run-perf.sh --collect-pprof
+
 ##@ Build
 
 .PHONY: build-controller

@@ -69,6 +69,9 @@ docs/plans/
 !config/samples/**/*.key
 !config/samples/**/*.crt
 
+# Performance test results
+test/performance/results/
+
 # MkDocs build output
 site/
 

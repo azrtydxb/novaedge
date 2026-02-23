@@ -1,0 +1,65 @@
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: perf-l4-gateway
+  namespace: novaedge-perf
+spec:
+  vipRef: perf-vip
+  listeners:
+    - name: tcp-iperf
+      port: 5201
+      protocol: TCP
+    - name: tcp-echo
+      port: 8078
+      protocol: TCP
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: perf-l4-iperf-route
+  namespace: novaedge-perf
+spec:
+  rules:
+    - backendRefs:
+        - name: perf-l4-backend
+          namespace: novaedge-perf
+          weight: 100
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: perf-l4-backend
+  namespace: novaedge-perf
+spec:
+  serviceRef:
+    name: iperf3-server
+    namespace: novaedge-perf
+    port: 5201
+  lbPolicy: RoundRobin
+  connectTimeout: 5s
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: perf-tcp-echo-route
+  namespace: novaedge-perf
+spec:
+  rules:
+    - backendRefs:
+        - name: perf-tcp-echo-backend
+          namespace: novaedge-perf
+          weight: 100
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: perf-tcp-echo-backend
+  namespace: novaedge-perf
+spec:
+  serviceRef:
+    name: fortio-server
+    namespace: novaedge-perf
+    port: 8078
+  lbPolicy: RoundRobin
+  connectTimeout: 5s

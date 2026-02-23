@@ -24,6 +24,7 @@ import (
 	"flag"
 	"net"
 	"net/http"
+	_ "net/http/pprof" // registers pprof handlers on http.DefaultServeMux
 	"os"
 
 	uberzap "go.uber.org/zap"
@@ -131,6 +132,14 @@ func main() {
 	// PUT /debug/loglevel with body like "debug" or "info" to change at runtime.
 	controllerAtomicLevel := uberzap.NewAtomicLevelAt(uberzap.InfoLevel)
 	http.Handle("/debug/loglevel", controllerAtomicLevel)
+
+	// Start debug server for pprof and log-level endpoints (localhost only).
+	go func() {
+		debugServer := &http.Server{Addr: "127.0.0.1:6060", Handler: nil} //nolint:gosec // intentionally serves DefaultServeMux on localhost
+		if err := debugServer.ListenAndServe(); err != nil {
+			setupLog.Error(err, "debug server failed")
+		}
+	}()
 
 	setupLog.Info("Starting NovaEdge controller",
 		"version", version, "commit", commit, "date", date)

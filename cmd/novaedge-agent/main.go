@@ -378,6 +378,10 @@ func main() {
 	// Create health probe server
 	healthServer := server.NewHealthServer(logger, healthProbePort)
 
+	// Create admin/debug server (pprof, stats, config introspection)
+	adminServer := server.NewAdminServer("", logger)
+	adminServer.SetAtomicLevel(atomicLevel)
+
 	// Start VIP manager
 	if err := vipManager.Start(ctx); err != nil {
 		logger.Fatal("Failed to start VIP manager", zap.Error(err))
@@ -465,11 +469,14 @@ func main() {
 			// Apply HTTP server config
 			if err := httpServer.ApplyConfig(ctx, snapshot); err != nil {
 				healthServer.SetReady(false)
+				adminServer.SetReady(false)
 				return err
 			}
 
 			// Mark agent as ready after successful config application
 			healthServer.SetReady(true)
+			adminServer.SetSnapshot(snapshot)
+			adminServer.SetReady(true)
 			return nil
 		})
 	}()
@@ -492,6 +499,12 @@ func main() {
 		healthChan <- healthServer.Start(ctx)
 	}()
 
+	// Start admin/debug server (pprof, stats, config introspection on 127.0.0.1:9901)
+	adminChan := make(chan error, 1)
+	go func() {
+		adminChan <- adminServer.Start(ctx)
+	}()
+
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -505,6 +518,8 @@ func main() {
 		logger.Error("Metrics server failed", zap.Error(err))
 	case err := <-healthChan:
 		logger.Error("Health probe failed", zap.Error(err))
+	case err := <-adminChan:
+		logger.Error("Admin server failed", zap.Error(err))
 	case sig := <-sigChan:
 		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
 	}
@@ -574,6 +589,11 @@ func main() {
 	// Shutdown metrics server
 	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during metrics server shutdown", zap.Error(err))
+	}
+
+	// Shutdown admin server
+	if err := adminServer.Shutdown(shutdownCtx); err != nil {
+		logger.Error("Error during admin server shutdown", zap.Error(err))
 	}
 
 	logger.Info("Agent stopped")
