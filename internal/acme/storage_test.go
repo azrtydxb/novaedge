@@ -29,37 +29,32 @@ import (
 )
 
 func TestNewFileStorage(t *testing.T) {
-	tests := []struct {
-		name     string
-		basePath string
-		wantErr  bool
-	}{
-		{
-			name:     "valid path",
-			basePath: filepath.Join(t.TempDir(), "acme-storage"),
-			wantErr:  false,
-		},
-		{
-			name:     "empty path uses default",
-			basePath: "",
-			wantErr:  true, // Will fail because default path requires root permissions
-		},
-	}
+	t.Run("valid path", func(t *testing.T) {
+		logger := zap.NewNop()
+		storage, err := NewFileStorage(filepath.Join(t.TempDir(), "acme-storage"), logger)
+		assert.NoError(t, err)
+		assert.NotNil(t, storage)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			logger := zap.NewNop()
-			storage, err := NewFileStorage(tt.basePath, logger)
+	t.Run("empty path uses default", func(t *testing.T) {
+		logger := zap.NewNop()
+		storage, err := NewFileStorage("", logger)
+		// Whether this succeeds depends on whether the process can create
+		// the default path (/var/lib/novaedge/certs). As root it succeeds;
+		// as a normal user it fails with a permission error.
+		if err != nil {
+			assert.Nil(t, storage)
+		} else {
+			assert.NotNil(t, storage)
+		}
+	})
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Nil(t, storage)
-			} else {
-				assert.NoError(t, err)
-				assert.NotNil(t, storage)
-			}
-		})
-	}
+	t.Run("unwritable path returns error", func(t *testing.T) {
+		logger := zap.NewNop()
+		storage, err := NewFileStorage("/proc/nonexistent/acme", logger)
+		assert.Error(t, err)
+		assert.Nil(t, storage)
+	})
 }
 
 func TestNewFileStorageWithNilLogger(t *testing.T) {
