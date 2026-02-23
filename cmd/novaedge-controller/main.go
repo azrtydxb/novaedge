@@ -264,6 +264,15 @@ func main() {
 		setupLog.Info("ServiceLB controller enabled")
 	}
 
+	// Register EndpointSlice reconciler to trigger config updates on endpoint changes
+	if err = (&controller.EndpointSliceReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "EndpointSlice")
+		os.Exit(1)
+	}
+
 	// Register SD-WAN reconcilers
 	if err = (&controller.ProxyWANLinkReconciler{
 		Client: mgr.GetClient(),

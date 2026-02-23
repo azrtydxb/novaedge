@@ -56,6 +56,47 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("failed to get ProxyWANPolicy: %w", err)
 	}
 
+	// Validate required spec fields
+	var validationErrors []string
+	if policy.Spec.PathSelection.Strategy == "" {
+		validationErrors = append(validationErrors, "spec.pathSelection.strategy is required")
+	}
+
+	// Validate strategy is a known value
+	switch policy.Spec.PathSelection.Strategy {
+	case novaedgev1alpha1.WANStrategyLowestLatency,
+		novaedgev1alpha1.WANStrategyHighestBandwidth,
+		novaedgev1alpha1.WANStrategyMostReliable,
+		novaedgev1alpha1.WANStrategyLowestCost:
+		// valid
+	case "":
+		// already caught above
+	default:
+		validationErrors = append(validationErrors,
+			fmt.Sprintf("spec.pathSelection.strategy %q is not a supported value", policy.Spec.PathSelection.Strategy))
+	}
+
+	if len(validationErrors) > 0 {
+		policy.Status.Phase = "Invalid"
+		policy.Status.ObservedGeneration = policy.Generation
+
+		setCondition(&policy.Status.Conditions, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: policy.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             ConditionReasonValidationFailed,
+			Message:            fmt.Sprintf("Validation failed: %s", validationErrors[0]),
+		})
+
+		if err := r.Status().Update(ctx, policy); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update ProxyWANPolicy status: %w", err)
+		}
+
+		logger.Info("ProxyWANPolicy validation failed", "name", policy.Name, "errors", validationErrors)
+		return ctrl.Result{}, nil
+	}
+
 	// Update status
 	policy.Status.Phase = phaseActive
 	policy.Status.ObservedGeneration = policy.Generation
