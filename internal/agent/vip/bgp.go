@@ -143,6 +143,12 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 		if err := h.startBGPServer(ctx, assignment.BgpConfig); err != nil {
 			return fmt.Errorf("failed to start BGP server: %w", err)
 		}
+	} else {
+		// BGP server already running — ensure peers from this VIP config are added.
+		// This handles the case where multiple VIPs have different peer lists
+		// (e.g., auto-assigned-vip vs perf-vip). Without this, peers are only
+		// added for the first VIP that triggers startBGPServer.
+		h.ensurePeersConfigured(ctx, assignment.BgpConfig)
 	}
 
 	// Bind VIP address to loopback so the node can accept traffic
@@ -801,6 +807,92 @@ func (h *BGPHandler) countAnnouncedVIPs() int {
 		}
 	}
 	return count
+}
+
+// ensurePeersConfigured adds any BGP peers from config that aren't already
+// configured on the running BGP server. This is needed because multiple VIPs
+// may have different peer lists, and only the first VIP's peers are added
+// during startBGPServer. Called with h.mu held.
+func (h *BGPHandler) ensurePeersConfigured(ctx context.Context, config *pb.BGPConfig) {
+	if config == nil || len(config.Peers) == 0 {
+		return
+	}
+
+	// Collect already-configured peer addresses
+	existingPeers := make(map[string]bool)
+	if err := h.bgpServer.ListPeer(ctx, &api.ListPeerRequest{}, func(p *api.Peer) {
+		if p.Conf != nil {
+			existingPeers[p.Conf.NeighborAddress] = true
+		}
+	}); err != nil {
+		h.logger.Warn("Failed to list BGP peers", zap.Error(err))
+		return
+	}
+
+	for _, peer := range config.Peers {
+		if existingPeers[peer.Address] {
+			continue
+		}
+
+		port := peer.Port
+		if port == 0 {
+			port = 179
+		}
+
+		peerIP := net.ParseIP(peer.Address)
+		isIPv6Peer := peerIP != nil && peerIP.To4() == nil
+
+		h.logger.Info("Adding missing BGP peer from VIP config",
+			zap.String("address", peer.Address),
+			zap.Uint32("as", peer.As),
+			zap.Uint32("port", port),
+			zap.Bool("ipv6", isIPv6Peer),
+		)
+
+		afiSafis := []*api.AfiSafi{}
+		if isIPv6Peer {
+			afiSafis = append(afiSafis, &api.AfiSafi{
+				Config: &api.AfiSafiConfig{
+					Family: &api.Family{
+						Afi:  api.Family_AFI_IP6,
+						Safi: api.Family_SAFI_UNICAST,
+					},
+					Enabled: true,
+				},
+			})
+		} else {
+			afiSafis = append(afiSafis, &api.AfiSafi{
+				Config: &api.AfiSafiConfig{
+					Family: &api.Family{
+						Afi:  api.Family_AFI_IP,
+						Safi: api.Family_SAFI_UNICAST,
+					},
+					Enabled: true,
+				},
+			})
+		}
+
+		peerConfig := &api.AddPeerRequest{
+			Peer: &api.Peer{
+				Conf: &api.PeerConf{
+					NeighborAddress: peer.Address,
+					PeerAsn:         peer.As,
+				},
+				Transport: &api.Transport{
+					RemotePort:  port,
+					PassiveMode: true,
+				},
+				AfiSafis: afiSafis,
+			},
+		}
+
+		if err := h.bgpServer.AddPeer(ctx, peerConfig); err != nil {
+			h.logger.Error("Failed to add BGP peer",
+				zap.String("address", peer.Address),
+				zap.Error(err),
+			)
+		}
+	}
 }
 
 // startBGPServer initializes and starts the BGP server
