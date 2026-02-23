@@ -929,3 +929,113 @@ func TestBGPHandler_AddedAtTimestamp(t *testing.T) {
 		t.Error("Duration should be non-negative")
 	}
 }
+
+// TestBGPHandler_currentServerAS_SetOnStart verifies that currentServerAS is
+// populated when the BGP server starts and that the field correctly reflects
+// the AS number supplied to startBGPServer.  This is a unit-level test that
+// exercises the field without requiring network privileges: we call
+// startBGPServer (which may fail on permission-denied) and skip in that case,
+// or we confirm the field value when it succeeds.
+func TestBGPHandler_currentServerAS_SetOnStart(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	handler, err := NewBGPHandler(logger)
+	if err != nil {
+		t.Fatalf("NewBGPHandler failed: %v", err)
+	}
+
+	// The field must be zero before any server is started.
+	if handler.currentServerAS != 0 {
+		t.Errorf("expected currentServerAS == 0 before start, got %d", handler.currentServerAS)
+	}
+
+	ctx := context.Background()
+	config := &pb.BGPConfig{
+		LocalAs:  65099,
+		RouterId: "10.0.0.1",
+	}
+
+	err = handler.startBGPServer(ctx, config)
+	if err != nil {
+		skipIfBGPUnavailable(t, err)
+		t.Fatalf("startBGPServer failed: %v", err)
+	}
+
+	if handler.currentServerAS != 65099 {
+		t.Errorf("expected currentServerAS == 65099 after start, got %d", handler.currentServerAS)
+	}
+}
+
+// TestBGPHandler_CrossVIP_ASNMismatch verifies that AddVIP detects when a
+// second (new) VIP requests a different Local AS number than the running BGP
+// server, and that it restarts the server with the new AS.  The test confirms
+// this by inspecting currentServerAS after the mismatch is resolved.
+func TestBGPHandler_CrossVIP_ASNMismatch(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	handler, err := NewBGPHandler(logger)
+	if err != nil {
+		t.Fatalf("NewBGPHandler failed: %v", err)
+	}
+
+	ctx := context.Background()
+
+	firstVIP := &pb.VIPAssignment{
+		VipName: "vip-as65001",
+		Address: "10.200.0.1/32",
+		Mode:    pb.VIPMode_BGP,
+		BgpConfig: &pb.BGPConfig{
+			LocalAs:  65001,
+			RouterId: "10.0.0.1",
+		},
+	}
+
+	if err := handler.AddVIP(ctx, firstVIP); err != nil {
+		skipIfBGPUnavailable(t, err)
+		t.Fatalf("AddVIP (first) failed: %v", err)
+	}
+
+	// Confirm the server started with AS 65001.
+	handler.mu.RLock()
+	currentAS := handler.currentServerAS
+	handler.mu.RUnlock()
+	if currentAS != 65001 {
+		t.Errorf("expected currentServerAS == 65001 after first VIP, got %d", currentAS)
+	}
+
+	// Add a second VIP that requests a different AS number — this must trigger
+	// a BGP server restart.
+	secondVIP := &pb.VIPAssignment{
+		VipName: "vip-as65002",
+		Address: "10.200.0.2/32",
+		Mode:    pb.VIPMode_BGP,
+		BgpConfig: &pb.BGPConfig{
+			LocalAs:  65002,
+			RouterId: "10.0.0.1",
+		},
+	}
+
+	if err := handler.AddVIP(ctx, secondVIP); err != nil {
+		skipIfBGPUnavailable(t, err)
+		t.Fatalf("AddVIP (second, different AS) failed: %v", err)
+	}
+
+	// After the restart the server must be running under the new AS.
+	handler.mu.RLock()
+	currentAS = handler.currentServerAS
+	handler.mu.RUnlock()
+	if currentAS != 65002 {
+		t.Errorf("expected currentServerAS == 65002 after AS-mismatch restart, got %d", currentAS)
+	}
+
+	// Both VIPs must still be tracked in activeVIPs.
+	handler.mu.RLock()
+	_, firstExists := handler.activeVIPs["vip-as65001"]
+	_, secondExists := handler.activeVIPs["vip-as65002"]
+	handler.mu.RUnlock()
+
+	if !firstExists {
+		t.Error("first VIP should still be tracked in activeVIPs after restart")
+	}
+	if !secondExists {
+		t.Error("second VIP should be tracked in activeVIPs after restart")
+	}
+}
