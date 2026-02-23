@@ -558,6 +558,136 @@ func TestIntegrationOlderChangeIgnored(t *testing.T) {
 	}
 }
 
+// TestExtractResourceChanges_CreatedUpdatedUnchanged verifies that
+// ExtractResourceChanges correctly distinguishes between CREATED, UPDATED,
+// and unchanged resources using content hashing.
+func TestExtractResourceChanges_CreatedUpdatedUnchanged(t *testing.T) {
+	// Baseline has one gateway and one route
+	baseline := &pb.ConfigSnapshot{
+		Gateways: []*pb.Gateway{
+			{Namespace: "default", Name: "gw-1", VipRef: "vip-1"},
+		},
+		Routes: []*pb.Route{
+			{Namespace: "default", Name: "route-1", Hostnames: []string{"api.example.com"}},
+		},
+		FederationMetadata: &pb.FederationMetadata{
+			VectorClock: map[string]int64{"ctrl-a": 1},
+		},
+	}
+
+	// Current has:
+	// - gw-1 unchanged (same content)
+	// - route-1 updated (different PathPrefix)
+	// - gw-2 created (new)
+	current := &pb.ConfigSnapshot{
+		Gateways: []*pb.Gateway{
+			{Namespace: "default", Name: "gw-1", VipRef: "vip-1"},   // unchanged
+			{Namespace: "default", Name: "gw-2", VipRef: "vip-2"},   // new
+		},
+		Routes: []*pb.Route{
+			{Namespace: "default", Name: "route-1", Hostnames: []string{"api-v2.example.com"}}, // updated
+		},
+		FederationMetadata: &pb.FederationMetadata{
+			VectorClock: map[string]int64{"ctrl-a": 2},
+		},
+	}
+
+	changes := ExtractResourceChanges(current, baseline)
+
+	// Categorize changes
+	changeMap := make(map[string]pb.ChangeType)
+	for _, c := range changes {
+		key := c.ResourceType + "/" + c.Namespace + "/" + c.Name
+		changeMap[key] = c.ChangeType
+	}
+
+	// gw-1 should NOT appear (unchanged)
+	if _, ok := changeMap["ProxyGateway/default/gw-1"]; ok {
+		t.Error("gw-1 should be skipped (unchanged), but was included in changes")
+	}
+
+	// gw-2 should be CREATED
+	if ct, ok := changeMap["ProxyGateway/default/gw-2"]; !ok {
+		t.Error("gw-2 should be CREATED but not found in changes")
+	} else if ct != pb.ChangeType_CREATED {
+		t.Errorf("gw-2 change type = %v, want CREATED", ct)
+	}
+
+	// route-1 should be UPDATED
+	if ct, ok := changeMap["ProxyRoute/default/route-1"]; !ok {
+		t.Error("route-1 should be UPDATED but not found in changes")
+	} else if ct != pb.ChangeType_UPDATED {
+		t.Errorf("route-1 change type = %v, want UPDATED", ct)
+	}
+}
+
+// TestExtractResourceChanges_NilBaseline verifies that when no baseline is
+// provided, all current resources are marked as CREATED.
+func TestExtractResourceChanges_NilBaseline(t *testing.T) {
+	current := &pb.ConfigSnapshot{
+		Gateways: []*pb.Gateway{
+			{Namespace: "default", Name: "gw-1"},
+		},
+		Policies: []*pb.Policy{
+			{Namespace: "default", Name: "pol-1"},
+		},
+		FederationMetadata: &pb.FederationMetadata{
+			VectorClock: map[string]int64{"ctrl-a": 1},
+		},
+	}
+
+	changes := ExtractResourceChanges(current, nil)
+
+	for _, c := range changes {
+		if c.ChangeType != pb.ChangeType_CREATED {
+			t.Errorf("with nil baseline, %s/%s should be CREATED, got %v",
+				c.ResourceType, c.Name, c.ChangeType)
+		}
+	}
+	if len(changes) != 2 {
+		t.Errorf("expected 2 changes (1 gateway + 1 policy), got %d", len(changes))
+	}
+}
+
+// TestExtractResourceChanges_Deletions verifies that resources in baseline
+// but not in current are marked as DELETED.
+func TestExtractResourceChanges_Deletions(t *testing.T) {
+	baseline := &pb.ConfigSnapshot{
+		Gateways: []*pb.Gateway{
+			{Namespace: "default", Name: "gw-1"},
+			{Namespace: "default", Name: "gw-deleted"},
+		},
+		FederationMetadata: &pb.FederationMetadata{
+			VectorClock: map[string]int64{"ctrl-a": 1},
+		},
+	}
+
+	current := &pb.ConfigSnapshot{
+		Gateways: []*pb.Gateway{
+			{Namespace: "default", Name: "gw-1"},
+		},
+		FederationMetadata: &pb.FederationMetadata{
+			VectorClock: map[string]int64{"ctrl-a": 2},
+		},
+	}
+
+	changes := ExtractResourceChanges(current, baseline)
+
+	var foundDeleted bool
+	for _, c := range changes {
+		if c.Name == "gw-deleted" && c.ChangeType == pb.ChangeType_DELETED {
+			foundDeleted = true
+		}
+		// gw-1 should be skipped (unchanged)
+		if c.Name == "gw-1" {
+			t.Error("gw-1 should be skipped (unchanged) but was included")
+		}
+	}
+	if !foundDeleted {
+		t.Error("expected DELETED change for gw-deleted")
+	}
+}
+
 // TestIntegrationServiceEndpointsCache verifies that ServiceEndpoints changes
 // are stored in the remote endpoint cache.
 func TestIntegrationServiceEndpointsCache(t *testing.T) {
