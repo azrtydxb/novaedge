@@ -312,8 +312,11 @@ func (p *Pool) createProxies() {
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		proxy.Transport = p.transport
 
-		// Enable flushing for streaming responses (required for gRPC and WebSockets)
-		proxy.FlushInterval = -1 // Flush immediately for streaming
+		// Flush periodically for streaming; the ReverseProxy automatically
+		// flushes immediately for detected streaming responses (Content-Length: -1,
+		// e.g. gRPC and WebSocket), so -1 (flush-per-write) is unnecessary and
+		// adds overhead for regular HTTP responses.
+		proxy.FlushInterval = 100 * time.Millisecond
 
 		// Custom error handler
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
