@@ -71,6 +71,8 @@ type Worker struct {
 	prog      *ebpf.Program
 	vipMap    *ebpf.Map
 	statsMap  *ebpf.Map
+	xskMap    *ebpf.Map
+	xsk       *xskSocket
 	running   bool
 }
 
@@ -135,6 +137,13 @@ func (w *Worker) Start(ctx context.Context) error {
 
 	statsMap := coll.Maps["afxdp_stats"]
 
+	xskMap := coll.Maps["xsk_map"]
+	if xskMap == nil {
+		coll.Close()
+		w.mu.Unlock()
+		return fmt.Errorf("xsk_map not found in BPF collection")
+	}
+
 	// Attach XDP program to interface.
 	iface, err := net.InterfaceByName(w.config.InterfaceName)
 	if err != nil {
@@ -155,33 +164,120 @@ func (w *Worker) Start(ctx context.Context) error {
 		return fmt.Errorf("attaching AF_XDP filter to %s: %w", w.config.InterfaceName, err)
 	}
 
+	// Create AF_XDP socket with UMEM and ring buffers.
+	xsk, err := newXSKSocket(xskConfig{
+		Ifindex:   iface.Index,
+		QueueID:   w.config.QueueID,
+		FrameSize: w.config.FrameSize,
+		NumFrames: w.config.NumFrames,
+	})
+	if err != nil {
+		xdpLink.Close()
+		coll.Close()
+		w.mu.Unlock()
+		novaebpf.RecordError(subsystem, "xsk")
+		return fmt.Errorf("creating AF_XDP socket: %w", err)
+	}
+
+	// Register socket in BPF xsk_map so the XDP program can redirect to it.
+	if err := xsk.registerInMap(xskMap); err != nil {
+		xsk.close()
+		xdpLink.Close()
+		coll.Close()
+		w.mu.Unlock()
+		novaebpf.RecordError(subsystem, "xsk")
+		return fmt.Errorf("registering XSK in BPF map: %w", err)
+	}
+
 	w.prog = prog
 	w.vipMap = vipMap
 	w.statsMap = statsMap
+	w.xskMap = xskMap
 	w.xdpLink = xdpLink
+	w.xsk = xsk
 	w.running = true
 
 	novaebpf.RecordProgramLoaded(subsystem)
 	novaebpf.ObserveAttachDuration(subsystem, time.Since(start).Seconds())
-	w.logger.Info("AF_XDP filter program attached",
+	w.logger.Info("AF_XDP worker started",
 		zap.String("interface", w.config.InterfaceName),
-		zap.Int("ifindex", iface.Index))
+		zap.Int("ifindex", iface.Index),
+		zap.Int("queue", w.config.QueueID),
+		zap.Int("frame_size", w.config.FrameSize),
+		zap.Int("num_frames", w.config.NumFrames))
 
 	w.mu.Unlock()
 
-	// NOTE: The actual AF_XDP socket creation and poll loop require
-	// platform-specific XSK setup (UMEM allocation, ring buffer
-	// configuration) which depends on the specific AF_XDP Go library
-	// chosen (e.g., github.com/asavie/xdp or cilium/ebpf xdp support).
-	// This placeholder blocks on ctx and logs a message. The real
-	// implementation will be completed when the AF_XDP socket library
-	// dependency is finalized.
-	w.logger.Info("AF_XDP worker started (XDP filter active, XSK poll loop pending implementation)",
-		zap.String("interface", w.config.InterfaceName),
-		zap.Int("queue", w.config.QueueID))
+	return w.pollLoop(ctx)
+}
 
-	<-ctx.Done()
-	return w.Stop()
+// pollLoop runs the XSK packet processing loop until ctx is cancelled.
+func (w *Worker) pollLoop(ctx context.Context) error {
+	timeoutMs := int(w.config.PollTimeout.Milliseconds())
+	if timeoutMs <= 0 {
+		timeoutMs = 100
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return w.Stop()
+		default:
+		}
+
+		// Wait for packets on the RX ring.
+		n, err := w.xsk.poll(timeoutMs)
+		if err != nil {
+			w.logger.Warn("AF_XDP poll error", zap.Error(err))
+			continue
+		}
+		if n == 0 {
+			// Timeout, reclaim any completed TX frames.
+			w.xsk.reclaimCompleted()
+			continue
+		}
+
+		// Read received packets from the RX ring.
+		rxDescs := w.xsk.receive()
+		if len(rxDescs) == 0 {
+			continue
+		}
+
+		txCount := 0
+		for _, desc := range rxDescs {
+			data := w.xsk.frameData(desc)
+
+			resp, err := w.processor.ProcessPacket(data)
+			if err != nil {
+				w.logger.Debug("packet processing error", zap.Error(err))
+				continue
+			}
+
+			// If the processor returned a response, transmit it.
+			if resp != nil && len(resp) <= w.config.FrameSize {
+				// Write response into the same UMEM frame.
+				copy(w.xsk.umemArea[desc.Addr:], resp)
+				txDesc := desc
+				txDesc.Len = uint32(len(resp))
+				if w.xsk.transmit(txDesc) {
+					txCount++
+				}
+			}
+		}
+
+		// Return RX frames that weren't used for TX back to the fill ring.
+		w.xsk.returnToFillRing(rxDescs)
+
+		// Notify kernel about TX submissions.
+		if txCount > 0 {
+			if err := w.xsk.kick(); err != nil {
+				w.logger.Warn("AF_XDP TX kick error", zap.Error(err))
+			}
+		}
+
+		// Reclaim completed TX frames.
+		w.xsk.reclaimCompleted()
+	}
 }
 
 // Stop detaches the XDP program and releases resources.
@@ -193,6 +289,10 @@ func (w *Worker) Stop() error {
 		return nil
 	}
 
+	if w.xsk != nil {
+		w.xsk.close()
+		w.xsk = nil
+	}
 	if w.xdpLink != nil {
 		if err := w.xdpLink.Close(); err != nil {
 			w.logger.Warn("failed to detach AF_XDP filter", zap.Error(err))
@@ -211,6 +311,10 @@ func (w *Worker) Stop() error {
 	if w.statsMap != nil {
 		w.statsMap.Close()
 		w.statsMap = nil
+	}
+	if w.xskMap != nil {
+		w.xskMap.Close()
+		w.xskMap = nil
 	}
 
 	w.running = false
