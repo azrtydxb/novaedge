@@ -21,11 +21,20 @@ package integration
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -326,18 +335,153 @@ func TestVIPFailover(t *testing.T) {
 	assert.Equal(t, "backup", resp.Header.Get("X-Server"))
 }
 
-// TestMTLSCommunication tests mTLS communication between services.
-// This is a placeholder - real implementation would need certificate setup.
+// TestMTLSCommunication tests mTLS communication between services
+// using self-signed certificates and a TLS server/client handshake.
 func TestMTLSCommunication(t *testing.T) {
 	t.Parallel()
 
-	// This test would normally:
-	// 1. Set up SPIFFE provider
-	// 2. Configure mTLS between services
-	// 3. Verify certificates are properly validated
+	// Generate a self-signed CA
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
 
-	// For now, we just verify the test framework works
-	t.Log("mTLS test placeholder - requires certificate infrastructure")
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test-ca"},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(1 * time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+	}
+	caCertDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	require.NoError(t, err)
+	caCert, err := x509.ParseCertificate(caCertDER)
+	require.NoError(t, err)
+
+	// Helper to create a leaf certificate signed by our CA
+	newLeafCert := func(cn string) (tls.Certificate, error) {
+		key, genErr := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if genErr != nil {
+			return tls.Certificate{}, genErr
+		}
+		tmpl := &x509.Certificate{
+			SerialNumber: big.NewInt(time.Now().UnixNano()),
+			Subject:      pkix.Name{CommonName: cn},
+			DNSNames:     []string{"localhost"},
+			IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
+			NotBefore:    time.Now(),
+			NotAfter:     time.Now().Add(1 * time.Hour),
+			KeyUsage:     x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+			URIs:         []*url.URL{{Scheme: "spiffe", Host: "cluster.local", Path: "/agent/" + cn}},
+		}
+		certDER, createErr := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
+		if createErr != nil {
+			return tls.Certificate{}, createErr
+		}
+		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+		keyDER, _ := x509.MarshalECPrivateKey(key)
+		keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+		return tls.X509KeyPair(certPEM, keyPEM)
+	}
+
+	serverCert, err := newLeafCert("server")
+	require.NoError(t, err)
+	clientCert, err := newLeafCert("client")
+	require.NoError(t, err)
+
+	// CA pool trusted by both sides
+	caPool := x509.NewCertPool()
+	caPool.AddCert(caCert)
+
+	// Start mTLS server
+	serverTLS := &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientCAs:    caPool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		MinVersion:   tls.VersionTLS13,
+	}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Verify client presented a valid certificate
+		if len(r.TLS.PeerCertificates) == 0 {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		cn := r.TLS.PeerCertificates[0].Subject.CommonName
+		w.Header().Set("X-Client-CN", cn)
+		if len(r.TLS.PeerCertificates[0].URIs) > 0 {
+			w.Header().Set("X-Client-SPIFFE", r.TLS.PeerCertificates[0].URIs[0].String())
+		}
+		fmt.Fprintf(w, "Hello %s", cn)
+	}))
+	server.TLS = serverTLS
+	server.StartTLS()
+	defer server.Close()
+
+	// Create mTLS client
+	clientTLS := &tls.Config{
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      caPool,
+		MinVersion:   tls.VersionTLS13,
+	}
+	client := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: clientTLS},
+	}
+
+	// Test 1: mTLS handshake succeeds
+	resp, err := client.Get(server.URL)
+	require.NoError(t, err, "mTLS request should succeed")
+	defer resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "client", resp.Header.Get("X-Client-CN"))
+	assert.Equal(t, "spiffe://cluster.local/agent/client", resp.Header.Get("X-Client-SPIFFE"))
+
+	body, _ := io.ReadAll(resp.Body)
+	assert.Equal(t, "Hello client", string(body))
+
+	// Test 2: Connection without client cert is rejected
+	noClientCertTLS := &tls.Config{
+		RootCAs:    caPool,
+		MinVersion: tls.VersionTLS13,
+	}
+	noAuthClient := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: noClientCertTLS},
+	}
+	_, err = noAuthClient.Get(server.URL)
+	assert.Error(t, err, "Request without client cert should fail")
+
+	// Test 3: Connection with untrusted cert is rejected
+	untrustedKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	untrustedTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(999),
+		Subject:      pkix.Name{CommonName: "untrusted"},
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(1 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	untrustedDER, _ := x509.CreateCertificate(rand.Reader, untrustedTemplate, untrustedTemplate, &untrustedKey.PublicKey, untrustedKey)
+	untrustedCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: untrustedDER})
+	untrustedKeyDER, _ := x509.MarshalECPrivateKey(untrustedKey)
+	untrustedKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: untrustedKeyDER})
+	untrustedCert, _ := tls.X509KeyPair(untrustedCertPEM, untrustedKeyPEM)
+
+	untrustedClientTLS := &tls.Config{
+		Certificates: []tls.Certificate{untrustedCert},
+		RootCAs:      caPool,
+		MinVersion:   tls.VersionTLS13,
+	}
+	untrustedClient := &http.Client{
+		Timeout:   5 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: untrustedClientTLS},
+	}
+	_, err = untrustedClient.Get(server.URL)
+	assert.Error(t, err, "Request with untrusted cert should fail")
+
+	t.Log("mTLS communication test passed: handshake, no-cert rejection, untrusted-cert rejection all verified")
 }
 
 // TestHealthCheckIntegration tests the health check system.

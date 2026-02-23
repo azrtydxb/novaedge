@@ -449,19 +449,27 @@ func (h *OSPFHandler) reconfigureVIP(state *OSPFVIPState, assignment *pb.VIPAssi
 }
 
 // restartOSPFServer stops the running OSPF server goroutines and starts a new one.
-// Called with h.mu held.
+// Called with h.mu held. Temporarily releases the lock while waiting for goroutines
+// to drain, then re-acquires it before starting the new server.
 func (h *OSPFHandler) restartOSPFServer(config *pb.OSPFConfig) error {
 	if h.ospfServer != nil {
 		// Cancel background goroutines
 		if h.cancel != nil {
 			h.cancel()
 		}
-		h.wg.Wait()
 
-		h.ospfServer.mu.Lock()
-		h.ospfServer.running = false
-		h.ospfServer.mu.Unlock()
-		h.ospfServer = nil
+		// Release the write lock so goroutines (which need RLock) can observe
+		// context cancellation and exit cleanly.
+		h.mu.Unlock()
+		h.wg.Wait()
+		h.mu.Lock()
+
+		if h.ospfServer != nil {
+			h.ospfServer.mu.Lock()
+			h.ospfServer.running = false
+			h.ospfServer.mu.Unlock()
+			h.ospfServer = nil
+		}
 
 		// Create new context for the restarted server
 		h.ctx, h.cancel = context.WithCancel(context.Background())

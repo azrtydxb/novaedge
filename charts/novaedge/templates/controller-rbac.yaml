@@ -58,6 +58,7 @@ rules:
   - get
   - list
   - watch
+  - watch
 - apiGroups:
   - gateway.networking.k8s.io
   resources:

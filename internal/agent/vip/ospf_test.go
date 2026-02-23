@@ -37,6 +37,7 @@ func TestOSPFHandler_AddRemoveVIP(t *testing.T) {
 	if err := handler.Start(ctx); err != nil {
 		t.Fatalf("Failed to start OSPF handler: %v", err)
 	}
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-ospf-vip",
@@ -120,6 +121,7 @@ func TestOSPFHandler_IPv6(t *testing.T) {
 	if err := handler.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-ospfv3-vip",
@@ -165,6 +167,7 @@ func TestOSPFHandler_GracefulRestart(t *testing.T) {
 	if err := handler.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-gr-vip",
@@ -207,6 +210,7 @@ func TestOSPFHandler_WithNeighbors(t *testing.T) {
 	if err := handler.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-neighbor-vip",
@@ -252,6 +256,7 @@ func TestOSPFHandler_Shutdown(t *testing.T) {
 	if err := handler.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-shutdown-vip",
@@ -283,6 +288,7 @@ func TestOSPFHandler_MissingConfig(t *testing.T) {
 	if err := handler.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName:    "test-no-config",
@@ -308,6 +314,7 @@ func TestOSPFHandler_InvalidAddress(t *testing.T) {
 	if err := handler.Start(ctx); err != nil {
 		t.Fatalf("Failed to start: %v", err)
 	}
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-invalid-addr",
@@ -330,6 +337,7 @@ func TestOSPFHandler_Reconfigure(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	originalAssignment := &pb.VIPAssignment{
 		VipName: "test-reconfig-ospf",
@@ -382,6 +390,7 @@ func TestOSPFHandler_Reconfigure_RouterIDChange(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	originalAssignment := &pb.VIPAssignment{
 		VipName: "test-router-id-change",
@@ -425,6 +434,7 @@ func TestOSPFHandler_Reconfigure_NeighborsChange(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	originalAssignment := &pb.VIPAssignment{
 		VipName: "test-neighbors-change",
@@ -472,6 +482,7 @@ func TestOSPFHandler_MultipleVIPs(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	vips := []*pb.VIPAssignment{
 		{
@@ -538,6 +549,7 @@ func TestOSPFHandler_DifferentAreaIDs(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	vips := []*pb.VIPAssignment{
 		{
@@ -576,6 +588,7 @@ func TestOSPFHandler_HighCostRoutes(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	tests := []struct {
 		name string
@@ -626,6 +639,7 @@ func TestOSPFHandler_HelloDeadIntervals(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	assignment := &pb.VIPAssignment{
 		VipName: "test-intervals",
@@ -661,6 +675,7 @@ func TestOSPFHandler_AddedAtTimestamp(t *testing.T) {
 	handler, _ := NewOSPFHandler(logger)
 	ctx := context.Background()
 	_ = handler.Start(ctx)
+	t.Cleanup(func() { handler.Shutdown() })
 
 	beforeAdd := time.Now()
 
@@ -725,6 +740,7 @@ func TestOSPFHandler_AuthenticationTypes(t *testing.T) {
 			handler, _ := NewOSPFHandler(logger)
 			ctx := context.Background()
 			_ = handler.Start(ctx)
+			t.Cleanup(func() { handler.Shutdown() })
 
 			assignment := &pb.VIPAssignment{
 				VipName: "test-auth-" + string(rune('a'+i)),
