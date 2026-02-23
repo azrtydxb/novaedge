@@ -29,6 +29,11 @@ func OriginalDst(_ net.Conn) (net.IP, int, error) {
 	return nil, 0, fmt.Errorf("TPROXY SO_ORIGINAL_DST is only supported on Linux")
 }
 
+// CreateListener is not supported on non-Linux platforms.
+func (tl *TransparentListener) CreateListener(_ context.Context) (net.Listener, error) {
+	return nil, fmt.Errorf("transparent proxy listener is only supported on Linux")
+}
+
 // Start is not supported on non-Linux platforms.
 func (tl *TransparentListener) Start(_ context.Context) error {
 	return fmt.Errorf("transparent proxy listener is only supported on Linux")
