@@ -408,6 +408,12 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 				if nodeIP != "" && assignment.BgpConfig != nil {
 					assignment.BgpConfig.RouterId = nodeIP
 				}
+				// eBGP: override LocalAS with per-node unique AS (base + last octet of node IP)
+				if vip.Spec.BGPConfig.LocalASBase != nil && nodeIP != "" && assignment.BgpConfig != nil {
+					if lastOctet := extractLastOctet(nodeIP); lastOctet > 0 {
+						assignment.BgpConfig.LocalAs = *vip.Spec.BGPConfig.LocalASBase + uint32(lastOctet)
+					}
+				}
 			}
 
 			// Add OSPF config for OSPF mode VIPs

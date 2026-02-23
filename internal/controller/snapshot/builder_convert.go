@@ -788,6 +788,18 @@ func convertSlowStart(ss *novaedgev1alpha1.SlowStartConfig) *pb.SlowStart {
 	}
 }
 
+// extractLastOctet returns the last octet of an IPv4 address string.
+// Returns 0 if the address is not a valid IPv4 address.
+func extractLastOctet(ip string) int {
+	parts := strings.Split(ip, ".")
+	if len(parts) == 4 {
+		if v, err := strconv.Atoi(parts[3]); err == nil {
+			return v
+		}
+	}
+	return 0
+}
+
 // convertExtProc converts CRD ExtProcCRDConfig to protobuf ExtProcConfig
 func convertExtProc(ep *novaedgev1alpha1.ExtProcCRDConfig) *pb.ExtProcConfig {
 	if ep == nil {
