@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/pprof"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -104,12 +105,20 @@ func (a *AdminServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/routes", a.handleRoutes)
 	mux.HandleFunc("/logging", a.handleLogging)
 
+	// pprof endpoints for CPU/memory profiling during load tests.
+	// AdminServer binds to 127.0.0.1 only, so these are not externally accessible.
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
 	a.server = &http.Server{
 		Addr:              a.addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
+		WriteTimeout:      65 * time.Second, // allow ?seconds=60 CPU profiles to complete
 		IdleTimeout:       60 * time.Second,
 	}
 

@@ -1,0 +1,52 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iperf3-server
+  namespace: novaedge-perf
+  labels:
+    app: iperf3-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iperf3-server
+  template:
+    metadata:
+      labels:
+        app: iperf3-server
+    spec:
+      containers:
+        - name: iperf3
+          image: networkstatic/iperf3:latest
+          args:
+            - -s
+            - -p
+            - "5201"
+          ports:
+            - containerPort: 5201
+              name: iperf
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 500m
+              memory: 64Mi
+            limits:
+              cpu: "2"
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iperf3-server
+  namespace: novaedge-perf
+  labels:
+    app: iperf3-server
+spec:
+  selector:
+    app: iperf3-server
+  ports:
+    - name: iperf
+      port: 5201
+      targetPort: 5201
+      protocol: TCP

@@ -1,0 +1,77 @@
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyVIP
+metadata:
+  name: perf-vip
+spec:
+  address: 192.168.100.60/32
+  addressFamily: ipv4
+  mode: BGP
+  bgpConfig:
+    localAS: 65000
+    routerID: "0.0.0.0"
+    peers:
+      - address: 192.168.100.2
+        as: 65000
+        port: 179
+      - address: 192.168.100.3
+        as: 65000
+        port: 179
+  bfd:
+    enabled: true
+    detectMultiplier: 3
+    desiredMinTxInterval: 300ms
+    requiredMinRxInterval: 300ms
+  ports:
+    - 80
+    - 5201
+    - 8078
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: perf-gateway
+  namespace: novaedge-perf
+spec:
+  vipRef: perf-vip
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: perf-route
+  namespace: novaedge-perf
+spec:
+  hostnames:
+    - "perf.test.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: perf-backend
+          namespace: novaedge-perf
+          weight: 100
+---
+apiVersion: novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: perf-backend
+  namespace: novaedge-perf
+spec:
+  serviceRef:
+    name: fortio-server
+    namespace: novaedge-perf
+    port: 8080
+  lbPolicy: RoundRobin
+  connectTimeout: 5s
+  healthCheck:
+    httpPath: /fortio/
+    interval: 5s
+    timeout: 3s
+    healthyThreshold: 2
+    unhealthyThreshold: 3
