@@ -1299,19 +1299,26 @@ func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 		parts = append(parts, fmt.Sprintf("cluster:%s/%s", c.Namespace, c.Name))
 	}
 	for _, vip := range snapshot.VipAssignments {
-		parts = append(parts, fmt.Sprintf("vip:%s:%s", vip.VipName, vip.Address))
+		part := fmt.Sprintf("vip:%s:%s", vip.VipName, vip.Address)
+		if vip.BgpConfig != nil {
+			part += fmt.Sprintf(":bgp:%d:%s:%d", vip.BgpConfig.LocalAs, vip.BgpConfig.RouterId, len(vip.BgpConfig.Peers))
+		}
+		if vip.OspfConfig != nil {
+			part += fmt.Sprintf(":ospf:%s", vip.OspfConfig.RouterId)
+		}
+		parts = append(parts, part)
 	}
 	for _, p := range snapshot.Policies {
 		parts = append(parts, fmt.Sprintf("policy:%s/%s", p.Namespace, p.Name))
 	}
 	for _, l := range snapshot.L4Listeners {
 		parts = append(parts, fmt.Sprintf("l4:%s:%d", l.Name, l.Port))
-		for _, wl := range snapshot.WanLinks {
-			parts = append(parts, fmt.Sprintf("wanlink:%s/%s", wl.Namespace, wl.Name))
-		}
-		for _, wp := range snapshot.WanPolicies {
-			parts = append(parts, fmt.Sprintf("wanpolicy:%s/%s", wp.Namespace, wp.Name))
-		}
+	}
+	for _, wl := range snapshot.WanLinks {
+		parts = append(parts, fmt.Sprintf("wanlink:%s/%s", wl.Namespace, wl.Name))
+	}
+	for _, wp := range snapshot.WanPolicies {
+		parts = append(parts, fmt.Sprintf("wanpolicy:%s/%s", wp.Namespace, wp.Name))
 	}
 
 	// Sort for determinism

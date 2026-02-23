@@ -165,6 +165,54 @@ func TestGenerateVersion(t *testing.T) {
 	if v1 == v3 {
 		t.Error("Expected different versions for different content")
 	}
+
+	// BGP config change should produce a different version (same VIP name/address, different LocalAs)
+	snapshotBGP1 := &pb.ConfigSnapshot{
+		VipAssignments: []*pb.VIPAssignment{
+			{
+				VipName: "vip-bgp",
+				Address: "10.0.0.100",
+				BgpConfig: &pb.BGPConfig{
+					LocalAs:  65000,
+					RouterId: "1.2.3.4",
+				},
+			},
+		},
+	}
+	snapshotBGP2 := &pb.ConfigSnapshot{
+		VipAssignments: []*pb.VIPAssignment{
+			{
+				VipName: "vip-bgp",
+				Address: "10.0.0.100",
+				BgpConfig: &pb.BGPConfig{
+					LocalAs:  65012,
+					RouterId: "1.2.3.4",
+				},
+			},
+		},
+	}
+
+	vBGP1 := builder.generateVersion(snapshotBGP1)
+	vBGP2 := builder.generateVersion(snapshotBGP2)
+
+	if vBGP1 == vBGP2 {
+		t.Error("Expected different versions when BGP LocalAs changes, but got the same version")
+	}
+
+	// WAN links should be hashed even with zero L4 listeners
+	snapshotWAN := &pb.ConfigSnapshot{
+		WanLinks: []*pb.WANLink{
+			{Namespace: "default", Name: "wan1"},
+		},
+	}
+	snapshotNoWAN := &pb.ConfigSnapshot{}
+
+	vWAN := builder.generateVersion(snapshotWAN)
+	vNoWAN := builder.generateVersion(snapshotNoWAN)
+
+	if vWAN == vNoWAN {
+		t.Error("Expected different versions when WAN links differ with no L4 listeners")
+	}
 }
 
 func TestConvertVIPMode(t *testing.T) {
