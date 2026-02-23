@@ -1,0 +1,45 @@
+---
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: perf-gateway
+  namespace: novaedge-perf
+spec:
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostname: "perf.test.local"
+---
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyRoute
+metadata:
+  name: perf-route
+  namespace: novaedge-perf
+spec:
+  parentRef:
+    name: perf-gateway
+  hostnames:
+    - "perf.test.local"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: perf-backend
+          weight: 100
+---
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: perf-backend
+  namespace: novaedge-perf
+spec:
+  selector:
+    app: fortio-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

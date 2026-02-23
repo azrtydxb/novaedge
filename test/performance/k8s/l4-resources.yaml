@@ -1,0 +1,25 @@
+---
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyGateway
+metadata:
+  name: perf-l4-gateway
+  namespace: novaedge-perf
+spec:
+  listeners:
+    - name: tcp-iperf
+      port: 5201
+      protocol: TCP
+---
+apiVersion: proxy.novaedge.io/v1alpha1
+kind: ProxyBackend
+metadata:
+  name: perf-l4-backend
+  namespace: novaedge-perf
+spec:
+  selector:
+    app: iperf3-server
+  ports:
+    - name: iperf
+      port: 5201
+      targetPort: 5201
+      protocol: TCP

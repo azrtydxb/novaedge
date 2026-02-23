@@ -201,6 +201,61 @@ agent:
 
 The init container requires `privileged: true` because modifying kernel parameters in `/proc/sys` requires `CAP_SYS_ADMIN`. Since the NovaEdge agent already runs with `hostNetwork: true` and elevated privileges for VIP and network operations, this does not change the security posture of the DaemonSet.
 
+## Running Performance Tests
+
+NovaEdge includes an automated performance test suite that deploys load generators into the cluster and runs standardized scenarios against a live NovaEdge deployment.
+
+### Go Micro-Benchmarks
+
+Run the built-in Go micro-benchmarks for LB algorithms, routing, connection pooling, and policy enforcement:
+
+```bash
+make benchmark
+```
+
+This runs `go test -bench` with 3 iterations and memory allocation stats across the core agent packages.
+
+### Live Cluster Performance Tests
+
+The `test/performance/` directory contains a full end-to-end test suite using [fortio](https://github.com/fortio/fortio) for HTTP load testing and iperf3 for L4 TCP throughput:
+
+```bash
+# Run all scenarios (HTTP throughput, latency, connection ramp, TCP)
+make perf-test
+
+# Run HTTP throughput tests only
+make perf-test-http
+
+# Run TCP throughput tests only
+make perf-test-tcp
+
+# Run with pprof CPU/memory profiling
+make perf-profile
+```
+
+The suite deploys fortio and iperf3 servers, creates NovaEdge CRDs (ProxyGateway, ProxyRoute, ProxyBackend), runs load as Kubernetes Jobs, and parses results into summary tables. See `test/performance/README.md` for full usage details.
+
+### pprof Profiling
+
+Both the agent and controller expose pprof endpoints for CPU and memory profiling during load tests:
+
+- **Agent**: `127.0.0.1:9901/debug/pprof/` (via AdminServer, localhost only)
+- **Controller**: `127.0.0.1:6060/debug/pprof/` (via debug server, localhost only)
+
+Use `kubectl port-forward` to access from outside the cluster:
+
+```bash
+# Agent CPU profile (30 seconds)
+kubectl -n novaedge-system port-forward pod/<agent-pod> 9901:9901
+curl -o cpu.pprof http://127.0.0.1:9901/debug/pprof/profile?seconds=30
+go tool pprof cpu.pprof
+
+# Controller heap profile
+kubectl -n novaedge-system port-forward pod/<controller-pod> 6060:6060
+curl -o heap.pprof http://127.0.0.1:6060/debug/pprof/heap
+go tool pprof heap.pprof
+```
+
 ## Benchmarking
 
 Use the following tools to measure the impact of performance tuning:
