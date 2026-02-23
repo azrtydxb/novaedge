@@ -7,11 +7,11 @@
 // This program replaces nftables/iptables NAT REDIRECT for mesh traffic
 // interception. When a packet's destination matches a mesh-intercepted
 // ClusterIP:port, the program redirects the connection to the local TPROXY
-// listener socket using bpf_sk_lookup_tcp + bpf_sk_assign.
+// listener socket via bpf_sk_assign using a pre-registered SOCKMAP entry.
 //
 // Key advantages over NAT REDIRECT:
 //   - No conntrack entries created (reduces kernel memory and table pressure)
-//   - No packet rewriting (preserves original dst for SO_ORIGINAL_DST)
+//   - No packet rewriting (preserves original dst via conn.LocalAddr())
 //   - Runs before netfilter, so no priority ordering issues with kube-proxy
 //   - Lower latency on high-connection-rate workloads
 
@@ -29,8 +29,7 @@
 #endif
 
 // mesh_services maps {dst_ip, dst_port} -> {redirect_port}.
-// When a connection matches, we redirect it to the local TPROXY listener
-// on redirect_port.
+// When a connection matches, we redirect it to the local TPROXY listener.
 struct mesh_svc_key {
     __u32 addr;     // destination IPv4 address (network byte order)
     __u16 port;     // destination port (network byte order)
@@ -47,6 +46,16 @@ struct {
     __type(key, struct mesh_svc_key);
     __type(value, struct mesh_svc_value);
 } mesh_services SEC(".maps");
+
+// tproxy_socket holds the TPROXY listener socket, populated from userspace.
+// Key 0 -> the listening socket FD. bpf_map_lookup_elem returns a
+// struct bpf_sock* that can be passed to bpf_sk_assign.
+struct {
+    __uint(type, BPF_MAP_TYPE_SOCKMAP);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u64);
+} tproxy_socket SEC(".maps");
 
 // stats_key indexes into the stats array map.
 enum stats_key {
@@ -105,19 +114,12 @@ int mesh_redirect_prog(struct bpf_sk_lookup *ctx) {
         return SK_PASS;
     }
 
-    // Look up the local TPROXY listener socket.
-    struct bpf_sock_tuple tuple = {};
-    tuple.ipv4.daddr = ctx->local_ip4;
-    tuple.ipv4.dport = bpf_htons((__u16)svc->redirect_port);
-    tuple.ipv4.saddr = ctx->remote_ip4;
-    tuple.ipv4.sport = bpf_htons(ctx->remote_port);
-
-    struct bpf_sock *sk = bpf_sk_lookup_tcp(ctx, &tuple,
-                                             sizeof(tuple.ipv4),
-                                             BPF_F_CURRENT_NETNS, 0);
+    // Look up the TPROXY listener socket from the SOCKMAP.
+    // The socket is registered by userspace (Go backend) at key 0.
+    __u32 zero = 0;
+    struct bpf_sock *sk = bpf_map_lookup_elem(&tproxy_socket, &zero);
     if (!sk) {
-        // Listener not found — this shouldn't happen if the mesh manager
-        // is running. Pass through to avoid dropping traffic.
+        // Listener not registered yet — pass through to avoid dropping traffic.
         bump_stat(STATS_REDIRECT_ERR);
         return SK_PASS;
     }
