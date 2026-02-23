@@ -8,6 +8,12 @@ metadata:
 spec:
   version: "v0.1.0"
 
+  # vipNodeExclusions defines node label keys excluded from VIP scheduling by default.
+  # Nodes carrying any of these labels will not be selected for VIPs unless the VIP
+  # explicitly tolerates the label key via its spec.tolerations field.
+  # vipNodeExclusions:
+  #   - node-role.kubernetes.io/control-plane
+
   controller:
     replicas: 1
     leaderElection: true
