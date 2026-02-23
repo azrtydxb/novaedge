@@ -61,6 +61,43 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("failed to get ProxyWANLink: %w", err)
 	}
 
+	// Validate required spec fields
+	var validationErrors []string
+	if link.Spec.Site == "" {
+		validationErrors = append(validationErrors, "spec.site is required")
+	}
+	if link.Spec.Interface == "" {
+		validationErrors = append(validationErrors, "spec.interface is required")
+	}
+	if link.Spec.Provider == "" {
+		validationErrors = append(validationErrors, "spec.provider is required")
+	}
+	if link.Spec.Bandwidth == "" {
+		validationErrors = append(validationErrors, "spec.bandwidth is required")
+	}
+
+	if len(validationErrors) > 0 {
+		link.Status.Phase = "Invalid"
+		link.Status.ObservedGeneration = link.Generation
+		link.Status.Healthy = false
+
+		setCondition(&link.Status.Conditions, metav1.Condition{
+			Type:               "Ready",
+			Status:             metav1.ConditionFalse,
+			ObservedGeneration: link.Generation,
+			LastTransitionTime: metav1.Now(),
+			Reason:             ConditionReasonValidationFailed,
+			Message:            fmt.Sprintf("Validation failed: %s", validationErrors[0]),
+		})
+
+		if err := r.Status().Update(ctx, link); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to update ProxyWANLink status: %w", err)
+		}
+
+		logger.Info("ProxyWANLink validation failed", "name", link.Name, "errors", validationErrors)
+		return ctrl.Result{}, nil
+	}
+
 	// Update status
 	link.Status.Phase = phaseActive
 	link.Status.ObservedGeneration = link.Generation

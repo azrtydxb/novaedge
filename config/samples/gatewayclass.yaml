@@ -4,4 +4,4 @@ metadata:
   name: novaedge
 spec:
   controllerName: novaedge.io/gateway-controller
-  description: "NovaEdge Gateway Controller - Kubernetes-native load balancer and reverse proxy"
+  description: "NovaEdge Gateway Controller"
