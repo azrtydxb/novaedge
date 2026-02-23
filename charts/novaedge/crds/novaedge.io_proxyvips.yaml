@@ -120,6 +120,16 @@ spec:
                     maximum: 4294967295
                     minimum: 1
                     type: integer
+                  localASBase:
+                    description: |-
+                      LocalASBase enables eBGP mode with per-node unique AS numbers.
+                      When set, each announcing node's local AS = LocalASBase + last octet of its InternalIP.
+                      This produces unique AS numbers per node, enabling eBGP ECMP on upstream routers.
+                      When unset, all nodes use LocalAS (iBGP mode).
+                    format: int32
+                    maximum: 4294967295
+                    minimum: 1
+                    type: integer
                   localPreference:
                     description: LocalPreference for iBGP routes
                     format: int32
@@ -296,6 +306,14 @@ spec:
                   format: int32
                   type: integer
                 minItems: 1
+                type: array
+              tolerations:
+                description: |-
+                  Tolerations lists node label keys from the cluster-wide VipNodeExclusions that
+                  this VIP is permitted to run on. Works analogously to Kubernetes pod tolerations:
+                  a VIP with a matching toleration may be scheduled on otherwise-excluded nodes.
+                items:
+                  type: string
                 type: array
             required:
             - mode
