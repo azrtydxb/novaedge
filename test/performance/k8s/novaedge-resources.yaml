@@ -25,6 +25,7 @@ spec:
   ports:
     - 80
     - 5201
+    - 8078
 ---
 apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway

@@ -288,58 +288,82 @@ run_connection_ramp() {
 }
 
 run_tcp_test() {
-    log_info "=== Scenario: L4 TCP Throughput (iperf3 through proxy) ==="
+    log_info "=== Scenario: HTTP Bandwidth (large payload throughput) ==="
 
-    # Find an iperf3 client pod or run from a Job
-    local job_name="tcp-iperf3-throughput"
+    # Run HTTP throughput tests with varying response sizes to measure bandwidth
+    # Uses fortio's ?size=N parameter to control response payload size
+    local sizes=(1024 8192 65536 262144)
+    local concurrency=64
 
-    cat <<EOF | kubectl apply -f -
+    for size in "${sizes[@]}"; do
+        local job_name="http-bw-s${size}-c${concurrency}"
+        local target_url="http://${VIP_ADDRESS}/fortio/?size=${size}"
+
+        log_info "  Running: ${job_name} (response=${size}B, c=${concurrency}, t=${DURATION})"
+
+        cat <<JOBEOF | kubectl apply -f -
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: ${job_name}
   namespace: ${NAMESPACE}
   labels:
-    app: iperf3-client
-    scenario: tcp-throughput
+    app: fortio-client
+    scenario: http-bandwidth
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 600
   template:
     metadata:
       labels:
-        app: iperf3-client
+        app: fortio-client
+        scenario: http-bandwidth
     spec:
       restartPolicy: Never
       containers:
-        - name: iperf3
-          image: networkstatic/iperf3:latest
-          args:
-            - -c
-            - "${VIP_ADDRESS}"
-            - -p
-            - "5201"
-            - -t
-            - "30"
-            - -P
-            - "4"
-            - -J
+        - name: fortio
+          image: fortio/fortio:latest
+          command:
+            - fortio
+            - load
+            - "-json=-"
+            - "-qps=0"
+            - "-c=${concurrency}"
+            - "-t=${DURATION}"
+            - "-H=Host: perf.test.local"
+            - "${target_url}"
           resources:
             requests:
               cpu: "1"
-              memory: 128Mi
+              memory: 256Mi
             limits:
               cpu: "2"
-              memory: 256Mi
-EOF
+              memory: 512Mi
+JOBEOF
 
-    if kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${job_name}" --timeout=120s 2>/dev/null; then
-        kubectl -n "${NAMESPACE}" logs "job/${job_name}" > "${RUN_DIR}/${job_name}.json" 2>/dev/null || true
-        log_ok "TCP throughput test complete"
-    else
-        log_warn "TCP throughput test did not complete within timeout"
-        kubectl -n "${NAMESPACE}" logs "job/${job_name}" > "${RUN_DIR}/${job_name}.json" 2>/dev/null || true
-    fi
+        if kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${job_name}" --timeout=300s 2>/dev/null; then
+            kubectl -n "${NAMESPACE}" logs "job/${job_name}" 2>/dev/null \
+                | python3 -c "
+import sys, json
+lines = sys.stdin.read().split('\n')
+start = next((i for i, l in enumerate(lines) if l.strip() == '{'), None)
+if start is None: sys.exit(0)
+json_lines, depth = [], 0
+for line in lines[start:]:
+    if line.startswith((' ', '\t', '{', '}')) or line == '':
+        json_lines.append(line)
+        depth += line.count('{') - line.count('}')
+        if depth <= 0: break
+try:
+    data = json.loads('\n'.join(json_lines))
+    json.dump(data, sys.stdout, indent=2)
+except: pass
+" > "${RUN_DIR}/${job_name}.json" || true
+            log_ok "  Completed: ${job_name}"
+        else
+            log_warn "  Job ${job_name} did not complete within timeout"
+        fi
+    done
 }
 
 # --------------------------------------------------------------------------
@@ -417,15 +441,24 @@ summarize() {
         echo ""
     fi
 
-    # TCP throughput
-    if [[ -f "${RUN_DIR}/tcp-iperf3-throughput.json" ]]; then
-        echo "L4 TCP Throughput (iperf3, 4 parallel streams, 30s)"
+    # HTTP bandwidth table
+    if ls "${RUN_DIR}"/http-bw-*.json &>/dev/null; then
+        echo "HTTP Bandwidth (64 connections, varying response size)"
         echo "============================================================"
-        local bps
-        bps=$(jq -r '.end.sum_sent.bits_per_second // 0' "${RUN_DIR}/tcp-iperf3-throughput.json" 2>/dev/null || echo "0")
-        local gbps
-        gbps=$(echo "scale=2; ${bps} / 1000000000" | bc 2>/dev/null || echo "?")
-        printf "  Throughput: %s Gbps\n" "${gbps}"
+        printf "%-12s %10s %12s %10s %10s %8s\n" "Resp Size" "QPS" "Throughput" "p50(ms)" "p99(ms)" "Errors"
+        echo "------------------------------------------------------------"
+        for f in $(for x in "${RUN_DIR}"/http-bw-*.json; do n=$(basename "$x" .json | grep -oE 's[0-9]+' | tr -d 's'); echo "$n $x"; done | sort -n | cut -d' ' -f2-); do
+            local size qps tp_mbps p50 p99 errs
+            [[ -s "$f" ]] || continue
+            size=$(basename "$f" .json | grep -oE 's[0-9]+' | tr -d 's')
+            qps=$(jq -r '.ActualQPS // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            # Throughput = QPS * response_size * 8 bits / 1e6 Mbps
+            tp_mbps=$(echo "scale=1; ${qps} * ${size} * 8 / 1000000" | bc 2>/dev/null || echo "0")
+            p50=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 50)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p99=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 99)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            errs=$(jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            printf "%-12s %10.0f %9s Mbps %10.2f %10.2f %8d\n" "${size}B" "${qps}" "${tp_mbps}" "${p50}" "${p99}" "${errs}"
+        done
         echo ""
     fi
 
