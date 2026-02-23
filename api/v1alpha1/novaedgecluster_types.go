@@ -62,6 +62,12 @@ type NovaEdgeClusterSpec struct {
 	// Observability defines the observability configuration
 	// +optional
 	Observability *ObservabilitySpec `json:"observability,omitempty"`
+
+	// VipNodeExclusions defines node label keys that are excluded from VIP scheduling by default.
+	// Nodes carrying any of these labels will not be selected for VIPs unless the VIP
+	// explicitly tolerates the label key via its Tolerations field.
+	// +optional
+	VipNodeExclusions []string `json:"vipNodeExclusions,omitempty"`
 }
 
 // ControllerSpec defines the configuration for the NovaEdge controller
