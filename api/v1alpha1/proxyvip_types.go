@@ -100,6 +100,15 @@ type BGPConfig struct {
 	// +kubebuilder:validation:MinItems=1
 	Peers []BGPPeer `json:"peers"`
 
+	// LocalASBase enables eBGP mode with per-node unique AS numbers.
+	// When set, each announcing node's local AS = LocalASBase + last octet of its InternalIP.
+	// This produces unique AS numbers per node, enabling eBGP ECMP on upstream routers.
+	// When unset, all nodes use LocalAS (iBGP mode).
+	// +optional
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=4294967295
+	LocalASBase *uint32 `json:"localASBase,omitempty"`
+
 	// Communities are BGP communities to attach to announced routes
 	// +optional
 	Communities []string `json:"communities,omitempty"`
