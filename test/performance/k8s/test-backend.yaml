@@ -1,0 +1,73 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fortio-server
+  namespace: novaedge-perf
+  labels:
+    app: fortio-server
+spec:
+  replicas: 6
+  selector:
+    matchLabels:
+      app: fortio-server
+  template:
+    metadata:
+      labels:
+        app: fortio-server
+    spec:
+      containers:
+        - name: fortio
+          image: fortio/fortio:latest
+          args:
+            - server
+            - -http-port=8080
+            - -grpc-port=8079
+            - -tcp-port=8078
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+            - containerPort: 8079
+              name: grpc
+              protocol: TCP
+            - containerPort: 8078
+              name: tcp-echo
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 500m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /fortio/
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fortio-server
+  namespace: novaedge-perf
+  labels:
+    app: fortio-server
+spec:
+  selector:
+    app: fortio-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: grpc
+      port: 8079
+      targetPort: 8079
+      protocol: TCP
+    - name: tcp-echo
+      port: 8078
+      targetPort: 8078
+      protocol: TCP
