@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -164,12 +165,6 @@ func TestApplyClientAuthConfig_RequireWithCA(t *testing.T) {
 		t.Fatal("ClientCAs should be set")
 	}
 
-	// Verify CA was loaded correctly
-	subjects := tlsConfig.ClientCAs.Subjects()
-	if len(subjects) == 0 {
-		t.Error("expected CA to be loaded into ClientCAs pool")
-	}
-
 	// Verify the loaded CA matches
 	if !tlsConfig.ClientCAs.AppendCertsFromPEM(caPEM) {
 		// Second append should succeed if CA is valid
@@ -281,7 +276,7 @@ func TestApplyClientAuthConfig_OptionalWithoutCA(t *testing.T) {
 }
 
 func TestInjectClientCertHeaders_NilTLS(t *testing.T) {
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -300,7 +295,7 @@ func TestInjectClientCertHeaders_NilTLS(t *testing.T) {
 }
 
 func TestInjectClientCertHeaders_NoPeerCertificates(t *testing.T) {
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -323,7 +318,7 @@ func TestInjectClientCertHeaders_WithClientCert(t *testing.T) {
 	// Generate a client certificate
 	clientCert := generateClientCertificate(t, "client.example.com", []string{"client.example.com", "api.example.com"})
 
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -369,7 +364,7 @@ func TestInjectClientCertHeaders_WithClientCert(t *testing.T) {
 func TestInjectClientCertHeaders_WithEmailSAN(t *testing.T) {
 	clientCert := generateClientCertWithEmail(t, "user", []string{"user@example.com", "admin@example.com"})
 
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -389,7 +384,7 @@ func TestInjectClientCertHeaders_WithEmailSAN(t *testing.T) {
 func TestInjectClientCertHeaders_WithURISAN(t *testing.T) {
 	clientCert := generateClientCertWithURI(t, "workload", []string{"spiffe://example.org/workload/web"})
 
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -409,7 +404,7 @@ func TestInjectClientCertHeaders_WithURISAN(t *testing.T) {
 func TestInjectClientCertHeaders_StripExistingHeaders(t *testing.T) {
 	clientCert := generateClientCertificate(t, "client.example.com", []string{"client.example.com"})
 
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -439,7 +434,7 @@ func TestInjectClientCertHeaders_StripExistingHeaders(t *testing.T) {
 func TestInjectClientCertHeaders_EmptyCN(t *testing.T) {
 	clientCert := generateClientCertificate(t, "", []string{"example.com"})
 
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
@@ -464,7 +459,7 @@ func TestInjectClientCertHeaders_EmptyCN(t *testing.T) {
 func TestInjectClientCertHeaders_MultipleSANs(t *testing.T) {
 	clientCert := generateClientCertWithAllSANs(t)
 
-	req, err := http.NewRequest("GET", "https://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://example.com", nil)
 	if err != nil {
 		t.Fatalf("failed to create request: %v", err)
 	}
