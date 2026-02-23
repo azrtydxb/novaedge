@@ -1,25 +1,25 @@
 ---
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway
 metadata:
   name: perf-l4-gateway
   namespace: novaedge-perf
 spec:
+  vipRef: perf-vip
   listeners:
     - name: tcp-iperf
       port: 5201
       protocol: TCP
 ---
-apiVersion: proxy.novaedge.io/v1alpha1
+apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: perf-l4-backend
   namespace: novaedge-perf
 spec:
-  selector:
-    app: iperf3-server
-  ports:
-    - name: iperf
-      port: 5201
-      targetPort: 5201
-      protocol: TCP
+  serviceRef:
+    name: iperf3-server
+    namespace: novaedge-perf
+    port: 5201
+  lbPolicy: RoundRobin
+  connectTimeout: 5s

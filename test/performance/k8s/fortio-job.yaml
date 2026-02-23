@@ -19,14 +19,15 @@ spec:
       containers:
         - name: fortio
           image: fortio/fortio:latest
-          args:
+          command:
+            - fortio
             - load
-            - -json=-
-            - -qps=${QPS}
-            - -c=${CONCURRENCY}
-            - -t=${DURATION}
-            - -H=Host: perf.test.local
-            - ${TARGET_URL}
+            - "-json=-"
+            - "-qps=${QPS}"
+            - "-c=${CONCURRENCY}"
+            - "-t=${DURATION}"
+            - "-H=Host: perf.test.local"
+            - "${TARGET_URL}"
           resources:
             requests:
               cpu: "1"
