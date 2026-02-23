@@ -32,3 +32,7 @@ spec:
   nodeSelector:
     matchLabels:
       node-role.kubernetes.io/loadbalancer: "true"
+  # tolerations lists excluded node label keys this VIP may run on.
+  # Uncomment to allow this VIP on control-plane nodes (requires matching toleration).
+  # tolerations:
+  #   - node-role.kubernetes.io/control-plane

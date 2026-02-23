@@ -4908,6 +4908,14 @@ spec:
                 description: Version is the version of NovaEdge components to deploy
                 pattern: ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$
                 type: string
+              vipNodeExclusions:
+                description: |-
+                  VipNodeExclusions defines node label keys that are excluded from VIP scheduling by default.
+                  Nodes carrying any of these labels will not be selected for VIPs unless the VIP
+                  explicitly tolerates the label key via its Tolerations field.
+                items:
+                  type: string
+                type: array
               webUI:
                 description: WebUI defines the configuration for the NovaEdge web
                   UI (optional)

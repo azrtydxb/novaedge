@@ -696,3 +696,279 @@ func createNode(name string) *corev1.Node {
 		},
 	}
 }
+
+// TestVIPNodeExclusions_ExcludesControlPlaneByDefault verifies that when
+// NovaEdgeCluster sets vipNodeExclusions, a VIP without tolerations is not
+// scheduled on excluded nodes.
+func TestVIPNodeExclusions_ExcludesControlPlaneByDefault(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	// Create one worker node and one control-plane node
+	worker := createNode("worker-1")
+	worker.Labels = map[string]string{"node-role.kubernetes.io/worker": "true"}
+	if err := env.client.Create(ctx, worker); err != nil {
+		t.Fatalf("failed to create worker node: %v", err)
+	}
+
+	master := createNode("master-1")
+	master.Labels = map[string]string{"node-role.kubernetes.io/control-plane": "true"}
+	if err := env.client.Create(ctx, master); err != nil {
+		t.Fatalf("failed to create master node: %v", err)
+	}
+
+	// Configure cluster-wide exclusion
+	cluster := &novaedgev1alpha1.NovaEdgeCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "novaedge"},
+		Spec: novaedgev1alpha1.NovaEdgeClusterSpec{
+			Version:           "latest",
+			VipNodeExclusions: []string{"node-role.kubernetes.io/control-plane"},
+		},
+	}
+	if err := env.client.Create(ctx, cluster); err != nil {
+		t.Fatalf("failed to create NovaEdgeCluster: %v", err)
+	}
+
+	// VIP with no tolerations — should land only on worker
+	vip := &novaedgev1alpha1.ProxyVIP{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-vip", Namespace: "default"},
+		Spec: novaedgev1alpha1.ProxyVIPSpec{
+			Address: "10.0.0.1/32",
+			Mode:    novaedgev1alpha1.VIPModeBGP,
+			Ports:   []int32{80},
+			BGPConfig: &novaedgev1alpha1.BGPConfig{
+				LocalAS:  65000,
+				RouterID: "0.0.0.0",
+			},
+		},
+	}
+	if err := env.client.Create(ctx, vip); err != nil {
+		t.Fatalf("failed to create VIP: %v", err)
+	}
+
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	updated := &novaedgev1alpha1.ProxyVIP{}
+	if err := env.client.Get(ctx, types.NamespacedName{Name: vip.Name, Namespace: vip.Namespace}, updated); err != nil {
+		t.Fatalf("failed to get VIP: %v", err)
+	}
+
+	// Must NOT include master-1
+	for _, node := range updated.Status.AnnouncingNodes {
+		if node == "master-1" {
+			t.Errorf("master-1 should be excluded from announcing nodes, got: %v", updated.Status.AnnouncingNodes)
+		}
+	}
+	// Must include worker-1
+	found := false
+	for _, node := range updated.Status.AnnouncingNodes {
+		if node == "worker-1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("worker-1 should be in announcing nodes, got: %v", updated.Status.AnnouncingNodes)
+	}
+}
+
+// TestVIPNodeExclusions_TolerationsAllowMasterNodes verifies that a VIP with
+// a toleration for the excluded key is scheduled on the excluded nodes.
+func TestVIPNodeExclusions_TolerationsAllowMasterNodes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	master := createNode("master-1")
+	master.Labels = map[string]string{"node-role.kubernetes.io/control-plane": "true"}
+	if err := env.client.Create(ctx, master); err != nil {
+		t.Fatalf("failed to create master node: %v", err)
+	}
+
+	cluster := &novaedgev1alpha1.NovaEdgeCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "novaedge"},
+		Spec: novaedgev1alpha1.NovaEdgeClusterSpec{
+			Version:           "latest",
+			VipNodeExclusions: []string{"node-role.kubernetes.io/control-plane"},
+		},
+	}
+	if err := env.client.Create(ctx, cluster); err != nil {
+		t.Fatalf("failed to create NovaEdgeCluster: %v", err)
+	}
+
+	// VIP with toleration — should land on master
+	vip := &novaedgev1alpha1.ProxyVIP{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp-vip", Namespace: "default"},
+		Spec: novaedgev1alpha1.ProxyVIPSpec{
+			Address: "10.0.0.2/32",
+			Mode:    novaedgev1alpha1.VIPModeBGP,
+			Ports:   []int32{6443},
+			BGPConfig: &novaedgev1alpha1.BGPConfig{
+				LocalAS:  65000,
+				RouterID: "0.0.0.0",
+			},
+			Tolerations: []string{"node-role.kubernetes.io/control-plane"},
+			NodeSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"node-role.kubernetes.io/control-plane": "true"},
+			},
+		},
+	}
+	if err := env.client.Create(ctx, vip); err != nil {
+		t.Fatalf("failed to create VIP: %v", err)
+	}
+
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	updated := &novaedgev1alpha1.ProxyVIP{}
+	if err := env.client.Get(ctx, types.NamespacedName{Name: vip.Name, Namespace: vip.Namespace}, updated); err != nil {
+		t.Fatalf("failed to get VIP: %v", err)
+	}
+
+	found := false
+	for _, node := range updated.Status.AnnouncingNodes {
+		if node == "master-1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("master-1 should be in announcing nodes when toleration is set, got: %v", updated.Status.AnnouncingNodes)
+	}
+}
+
+// TestVIPNodeExclusions_EmptyExclusionsNoChange verifies that without
+// vipNodeExclusions configured, all ready nodes are candidates (no regression).
+func TestVIPNodeExclusions_EmptyExclusionsNoChange(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	for _, name := range []string{"worker-1", "master-1"} {
+		n := createNode(name)
+		if name == "master-1" {
+			n.Labels = map[string]string{"node-role.kubernetes.io/control-plane": "true"}
+		}
+		if err := env.client.Create(ctx, n); err != nil {
+			t.Fatalf("failed to create node %s: %v", name, err)
+		}
+	}
+
+	// No NovaEdgeCluster created → no exclusions
+
+	vip := &novaedgev1alpha1.ProxyVIP{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-vip", Namespace: "default"},
+		Spec: novaedgev1alpha1.ProxyVIPSpec{
+			Address: "10.0.0.1/32",
+			Mode:    novaedgev1alpha1.VIPModeBGP,
+			Ports:   []int32{80},
+			BGPConfig: &novaedgev1alpha1.BGPConfig{
+				LocalAS:  65000,
+				RouterID: "0.0.0.0",
+			},
+		},
+	}
+	if err := env.client.Create(ctx, vip); err != nil {
+		t.Fatalf("failed to create VIP: %v", err)
+	}
+
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	updated := &novaedgev1alpha1.ProxyVIP{}
+	if err := env.client.Get(ctx, types.NamespacedName{Name: vip.Name, Namespace: vip.Namespace}, updated); err != nil {
+		t.Fatalf("failed to get VIP: %v", err)
+	}
+
+	if len(updated.Status.AnnouncingNodes) != 2 {
+		t.Errorf("expected both nodes (worker-1 and master-1) to be candidates without exclusions, got: %v", updated.Status.AnnouncingNodes)
+	}
+}
+
+// TestVIPNodeExclusions_PartialTolerations verifies that with multiple exclusion
+// keys, only tolerated keys are allowed through.
+func TestVIPNodeExclusions_PartialTolerations(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	env := setupTestEnv(t)
+
+	master := createNode("master-1")
+	master.Labels = map[string]string{"node-role.kubernetes.io/control-plane": "true"}
+	if err := env.client.Create(ctx, master); err != nil {
+		t.Fatalf("failed to create master node: %v", err)
+	}
+
+	gpu := createNode("gpu-1")
+	gpu.Labels = map[string]string{"accelerator": "nvidia-gpu"}
+	if err := env.client.Create(ctx, gpu); err != nil {
+		t.Fatalf("failed to create gpu node: %v", err)
+	}
+
+	worker := createNode("worker-1")
+	if err := env.client.Create(ctx, worker); err != nil {
+		t.Fatalf("failed to create worker node: %v", err)
+	}
+
+	cluster := &novaedgev1alpha1.NovaEdgeCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "novaedge"},
+		Spec: novaedgev1alpha1.NovaEdgeClusterSpec{
+			Version: "latest",
+			VipNodeExclusions: []string{
+				"node-role.kubernetes.io/control-plane",
+				"accelerator",
+			},
+		},
+	}
+	if err := env.client.Create(ctx, cluster); err != nil {
+		t.Fatalf("failed to create NovaEdgeCluster: %v", err)
+	}
+
+	// Tolerate control-plane but NOT accelerator
+	vip := &novaedgev1alpha1.ProxyVIP{
+		ObjectMeta: metav1.ObjectMeta{Name: "partial-vip", Namespace: "default"},
+		Spec: novaedgev1alpha1.ProxyVIPSpec{
+			Address: "10.0.0.3/32",
+			Mode:    novaedgev1alpha1.VIPModeBGP,
+			Ports:   []int32{80},
+			BGPConfig: &novaedgev1alpha1.BGPConfig{
+				LocalAS:  65000,
+				RouterID: "0.0.0.0",
+			},
+			Tolerations: []string{"node-role.kubernetes.io/control-plane"},
+		},
+	}
+	if err := env.client.Create(ctx, vip); err != nil {
+		t.Fatalf("failed to create VIP: %v", err)
+	}
+
+	if err := env.reconcileProxyVIP(ctx, vip.Name, vip.Namespace); err != nil {
+		t.Fatalf("reconciliation failed: %v", err)
+	}
+
+	updated := &novaedgev1alpha1.ProxyVIP{}
+	if err := env.client.Get(ctx, types.NamespacedName{Name: vip.Name, Namespace: vip.Namespace}, updated); err != nil {
+		t.Fatalf("failed to get VIP: %v", err)
+	}
+
+	announcing := make(map[string]bool)
+	for _, n := range updated.Status.AnnouncingNodes {
+		announcing[n] = true
+	}
+
+	if !announcing["worker-1"] {
+		t.Errorf("worker-1 should be in announcing nodes, got: %v", updated.Status.AnnouncingNodes)
+	}
+	if !announcing["master-1"] {
+		t.Errorf("master-1 should be in announcing nodes (tolerated), got: %v", updated.Status.AnnouncingNodes)
+	}
+	if announcing["gpu-1"] {
+		t.Errorf("gpu-1 should NOT be in announcing nodes (not tolerated), got: %v", updated.Status.AnnouncingNodes)
+	}
+}
