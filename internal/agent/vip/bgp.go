@@ -144,80 +144,22 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 			return fmt.Errorf("failed to start BGP server: %w", err)
 		}
 	} else {
-		// BGP server already running — ensure this VIP's peers are configured.
+		// BGP server already running — add any new peers from this VIP.
 		// VIPs may arrive in any order (Go map iteration is non-deterministic),
 		// so a VIP processed later may have peers not yet added to the server.
-
-		// Determine the server's current local AS from an existing active VIP
-		var serverAS uint32
+		// The VIP manager sorts VIPs by LocalAS descending before processing,
+		// ensuring the VIP with the highest (per-node eBGP) AS starts the server.
+		existingPeers := make(map[string]struct{})
 		for _, state := range h.activeVIPs {
 			if state.bgpConfig != nil {
-				serverAS = state.bgpConfig.LocalAs
-				break
+				for _, p := range state.bgpConfig.Peers {
+					existingPeers[p.Address] = struct{}{}
+				}
 			}
 		}
-
-		if assignment.BgpConfig.LocalAs != serverAS {
-			// Local AS mismatch — restart the BGP server with this VIP's config
-			// and merge peers from all existing active VIPs.
-			h.logger.Info("New VIP has different local AS, restarting BGP server",
-				zap.Uint32("server_as", serverAS),
-				zap.Uint32("new_as", assignment.BgpConfig.LocalAs),
-				zap.String("vip", assignment.VipName),
-			)
-
-			// Build merged peer list from all active VIPs + this new VIP
-			mergedPeers := make(map[string]*pb.BGPPeer)
-			for _, state := range h.activeVIPs {
-				if state.bgpConfig != nil {
-					for _, p := range state.bgpConfig.Peers {
-						mergedPeers[p.Address] = p
-					}
-				}
-			}
-			for _, p := range assignment.BgpConfig.Peers {
-				mergedPeers[p.Address] = p
-			}
-
-			// Create merged config for the restart
-			mergedConfig := &pb.BGPConfig{
-				LocalAs:         assignment.BgpConfig.LocalAs,
-				RouterId:        assignment.BgpConfig.RouterId,
-				LocalPreference: assignment.BgpConfig.LocalPreference,
-				Communities:     assignment.BgpConfig.Communities,
-			}
-			for _, p := range mergedPeers {
-				mergedConfig.Peers = append(mergedConfig.Peers, p)
-			}
-
-			if err := h.restartBGPServer(ctx, mergedConfig); err != nil {
-				return fmt.Errorf("failed to restart BGP server for AS change: %w", err)
-			}
-			// Re-announce all existing active VIPs on the new server
-			for _, vipState := range h.activeVIPs {
-				if vipState.Announced {
-					if err := h.announceRoute(ctx, vipState.IP, mergedConfig, vipState.IsIPv6); err != nil {
-						h.logger.Error("Failed to re-announce route after BGP restart",
-							zap.String("vip", vipState.Assignment.VipName),
-							zap.Error(err),
-						)
-					}
-				}
-			}
-		} else {
-			// Same AS — just add any new peers from this VIP
-			existingPeers := make(map[string]struct{})
-			for _, state := range h.activeVIPs {
-				if state.bgpConfig != nil {
-					for _, p := range state.bgpConfig.Peers {
-						existingPeers[p.Address] = struct{}{}
-					}
-				}
-			}
-			for _, peer := range assignment.BgpConfig.Peers {
-				if _, exists := existingPeers[peer.Address]; !exists {
-					h.addBGPPeer(ctx, peer)
-				}
+		for _, peer := range assignment.BgpConfig.Peers {
+			if _, exists := existingPeers[peer.Address]; !exists {
+				h.addBGPPeer(ctx, peer)
 			}
 		}
 	}
