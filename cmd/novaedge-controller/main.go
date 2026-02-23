@@ -264,7 +264,7 @@ func main() {
 			Client:          mgr.GetClient(),
 			Scheme:          mgr.GetScheme(),
 			Allocator:       allocator,
-			Recorder:        mgr.GetEventRecorderFor("service-lb-controller"),
+			Recorder:        mgr.GetEventRecorderFor("service-lb-controller"), //nolint:staticcheck
 			EnableServiceLB: true,
 		}).SetupWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create controller", "controller", "ServiceLB")

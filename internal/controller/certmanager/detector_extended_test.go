@@ -26,7 +26,7 @@ import (
 )
 
 func TestDetector_IsCertManagerInstalled_EmptyResources(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	if !ok {
 		t.Fatal("failed to cast to FakeDiscovery")
@@ -45,7 +45,7 @@ func TestDetector_IsCertManagerInstalled_EmptyResources(t *testing.T) {
 }
 
 func TestDetector_IsCertManagerInstalled_MultipleGroups(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	if !ok {
 		t.Fatal("failed to cast to FakeDiscovery")
@@ -83,7 +83,7 @@ func TestDetector_IsCertManagerInstalled_MultipleGroups(t *testing.T) {
 }
 
 func TestDetector_ShouldEnable_True_Found(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	if !ok {
 		t.Fatal("failed to cast to FakeDiscovery")
@@ -109,7 +109,7 @@ func TestDetector_ShouldEnable_True_Found(t *testing.T) {
 }
 
 func TestDetector_ShouldEnable_Auto_NotFound(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	if !ok {
 		t.Fatal("failed to cast to FakeDiscovery")
@@ -135,7 +135,7 @@ func TestDetector_ShouldEnable_Auto_NotFound(t *testing.T) {
 }
 
 func TestDetector_ShouldEnable_EmptyMode(t *testing.T) {
-	clientset := fake.NewSimpleClientset()
+	clientset := fake.NewClientset()
 	fakeDiscovery, ok := clientset.Discovery().(*fakediscovery.FakeDiscovery)
 	if !ok {
 		t.Fatal("failed to cast to FakeDiscovery")
