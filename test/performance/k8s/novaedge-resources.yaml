@@ -9,6 +9,7 @@ spec:
   mode: BGP
   bgpConfig:
     localAS: 65000
+    localASBase: 65000
     routerID: "0.0.0.0"
     peers:
       - address: 192.168.100.2
@@ -18,10 +19,11 @@ spec:
         as: 65000
         port: 179
   bfd:
-    enabled: true
-    detectMultiplier: 3
-    desiredMinTxInterval: 300ms
-    requiredMinRxInterval: 300ms
+    enabled: false
+  nodeSelector:
+    matchExpressions:
+      - key: node-role.kubernetes.io/control-plane
+        operator: DoesNotExist
   ports:
     - 80
     - 5201
@@ -67,7 +69,7 @@ spec:
     name: fortio-server
     namespace: novaedge-perf
     port: 8080
-  lbPolicy: RoundRobin
+  lbPolicy: Maglev
   connectTimeout: 5s
   healthCheck:
     httpPath: /fortio/
