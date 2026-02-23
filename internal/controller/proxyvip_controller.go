@@ -26,11 +26,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller/ipam"
@@ -130,8 +133,9 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		)
 	}
 
-	// Get candidate nodes based on NodeSelector
-	candidateNodes, err := r.getCandidateNodes(ctx, vip.Spec.NodeSelector)
+	// Get candidate nodes based on NodeSelector and cluster-wide exclusions
+	exclusions := r.getVIPNodeExclusions(ctx)
+	candidateNodes, err := r.getCandidateNodes(ctx, vip, exclusions)
 	if err != nil {
 		logger.Error(err, "Failed to get candidate nodes")
 		return ctrl.Result{}, err
@@ -181,25 +185,44 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	return ctrl.Result{}, nil
 }
 
-// getCandidateNodes returns nodes that match the NodeSelector and are ready
-func (r *ProxyVIPReconciler) getCandidateNodes(ctx context.Context, nodeSelector *metav1.LabelSelector) ([]corev1.Node, error) {
-	nodeList := &corev1.NodeList{}
+// getCandidateNodes returns nodes that match the VIP's NodeSelector and are ready,
+// minus any nodes excluded by the cluster-wide VipNodeExclusions that are not
+// tolerated by the VIP's Tolerations list.
+func (r *ProxyVIPReconciler) getCandidateNodes(ctx context.Context, vip *novaedgev1alpha1.ProxyVIP, exclusions []string) ([]corev1.Node, error) {
+	// Build effective node selector starting from the VIP's own selector
+	selector := &metav1.LabelSelector{}
+	if vip.Spec.NodeSelector != nil {
+		selector = vip.Spec.NodeSelector.DeepCopy()
+	}
 
-	// Build label selector
+	// Compute effective exclusions = cluster exclusions - VIP tolerations
+	tolerated := make(map[string]bool, len(vip.Spec.Tolerations))
+	for _, t := range vip.Spec.Tolerations {
+		tolerated[t] = true
+	}
+	for _, key := range exclusions {
+		if !tolerated[key] {
+			selector.MatchExpressions = append(selector.MatchExpressions, metav1.LabelSelectorRequirement{
+				Key:      key,
+				Operator: metav1.LabelSelectorOpDoesNotExist,
+			})
+		}
+	}
+
+	nodeList := &corev1.NodeList{}
 	var listOpts []client.ListOption
-	if nodeSelector != nil {
-		selector, err := metav1.LabelSelectorAsSelector(nodeSelector)
+	if len(selector.MatchLabels) > 0 || len(selector.MatchExpressions) > 0 {
+		labelSelector, err := metav1.LabelSelectorAsSelector(selector)
 		if err != nil {
 			return nil, err
 		}
-		listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: selector})
+		listOpts = append(listOpts, client.MatchingLabelsSelector{Selector: labelSelector})
 	}
 
 	if err := r.List(ctx, nodeList, listOpts...); err != nil {
 		return nil, err
 	}
 
-	// Filter for ready nodes only
 	var readyNodes []corev1.Node
 	for _, node := range nodeList.Items {
 		if r.isNodeReady(&node) {
@@ -218,6 +241,16 @@ func (r *ProxyVIPReconciler) isNodeReady(node *corev1.Node) bool {
 		}
 	}
 	return false
+}
+
+// getVIPNodeExclusions returns the cluster-wide VIP node exclusion label keys.
+// Returns nil if no NovaEdgeCluster resource exists or none have exclusions configured.
+func (r *ProxyVIPReconciler) getVIPNodeExclusions(ctx context.Context) []string {
+	clusterList := &novaedgev1alpha1.NovaEdgeClusterList{}
+	if err := r.List(ctx, clusterList); err != nil || len(clusterList.Items) == 0 {
+		return nil
+	}
+	return clusterList.Items[0].Spec.VipNodeExclusions
 }
 
 // electActiveNode selects the active node for L2ARP mode
@@ -348,5 +381,28 @@ func removeCondition(conditions *[]metav1.Condition, conditionType string) {
 func (r *ProxyVIPReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.ProxyVIP{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		Watches(
+			&novaedgev1alpha1.NovaEdgeCluster{},
+			handler.EnqueueRequestsFromMapFunc(r.allVIPsMapper),
+		).
 		Complete(r)
+}
+
+// allVIPsMapper enqueues all ProxyVIP resources for reconciliation when
+// NovaEdgeCluster changes (e.g., vipNodeExclusions updated).
+func (r *ProxyVIPReconciler) allVIPsMapper(ctx context.Context, _ client.Object) []reconcile.Request {
+	vipList := &novaedgev1alpha1.ProxyVIPList{}
+	if err := r.List(ctx, vipList); err != nil {
+		return nil
+	}
+	requests := make([]reconcile.Request, len(vipList.Items))
+	for i, vip := range vipList.Items {
+		requests[i] = reconcile.Request{
+			NamespacedName: types.NamespacedName{
+				Name:      vip.Name,
+				Namespace: vip.Namespace,
+			},
+		}
+	}
+	return requests
 }
