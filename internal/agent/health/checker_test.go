@@ -223,6 +223,7 @@ func TestHealthChecker_RecordFailure_ThresholdBehavior(t *testing.T) {
 	for i := uint32(0); i < DefaultUnhealthyThreshold-1; i++ {
 		hc.RecordFailure(ep)
 	}
+	hc.drainRecordCh()
 
 	// Should still be healthy (below threshold)
 	if !hc.results[key].Healthy {
@@ -231,6 +232,7 @@ func TestHealthChecker_RecordFailure_ThresholdBehavior(t *testing.T) {
 
 	// One more failure to cross threshold
 	hc.RecordFailure(ep)
+	hc.drainRecordCh()
 
 	if hc.results[key].Healthy {
 		t.Error("endpoint should be unhealthy after crossing failure threshold")
@@ -260,9 +262,10 @@ func TestHealthChecker_RecordSuccess_ResetsFailures(t *testing.T) {
 	cb.SetCluster(clusterKey)
 	hc.circuitBreakers[key] = cb
 
-	// Record a failure then a success
+	// Record a failure then a success (enqueued in order, processed in order)
 	hc.RecordFailure(ep)
 	hc.RecordSuccess(ep)
+	hc.drainRecordCh()
 
 	// The circuit breaker success doesn't reset the health result failure counter
 	// but the circuit breaker's internal state should be reset

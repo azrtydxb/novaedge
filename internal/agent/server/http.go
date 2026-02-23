@@ -270,14 +270,15 @@ func (s *HTTPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Route the request
 	s.router.ServeHTTP(w, r)
 
-	// Log request completion
-	duration := time.Since(startTime)
-	s.logger.Info("Request completed",
-		zap.String("method", r.Method),
-		zap.String("host", r.Host),
-		zap.String("path", r.URL.Path),
-		zap.Duration("duration", duration),
-	)
+	// Log request completion at debug level to keep the hot path lock-free
+	if ce := s.logger.Check(zap.DebugLevel, "Request completed"); ce != nil {
+		ce.Write(
+			zap.String("method", r.Method),
+			zap.String("host", r.Host),
+			zap.String("path", r.URL.Path),
+			zap.Duration("duration", time.Since(startTime)),
+		)
+	}
 }
 
 // Shutdown gracefully shuts down all HTTP servers with timeout

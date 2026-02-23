@@ -104,6 +104,16 @@ type Checker struct {
 	// Stop channel
 	stopCh chan struct{}
 	wg     sync.WaitGroup
+
+	// recordCh is used for async passive health recording (RecordSuccess/RecordFailure).
+	// Sending to this channel is non-blocking, keeping the hot request path lock-free.
+	recordCh chan passiveRecord
+}
+
+// passiveRecord carries a single passive health event (success or failure).
+type passiveRecord struct {
+	endpoint *pb.Endpoint
+	success  bool
 }
 
 // Result stores the result of a health check
@@ -156,8 +166,9 @@ func NewChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logge
 				},
 			},
 		},
-		config: config,
-		stopCh: make(chan struct{}),
+		config:   config,
+		stopCh:   make(chan struct{}),
+		recordCh: make(chan passiveRecord, 10000),
 	}
 
 	// Configure gRPC health checking if the cluster specifies it
@@ -255,6 +266,10 @@ func (hc *Checker) Start(ctx context.Context) {
 	// Start health check loop
 	hc.wg.Add(1)
 	go hc.healthCheckLoop(ctx)
+
+	// Start passive record processor
+	hc.wg.Add(1)
+	go hc.processPassiveRecords(ctx)
 }
 
 // Stop stops the health checker
@@ -325,35 +340,80 @@ func (hc *Checker) IsHealthy(endpoint *pb.Endpoint) bool {
 	return result.Healthy
 }
 
-// RecordSuccess records a successful request (for passive health checking)
+// RecordSuccess records a successful request (for passive health checking).
+// This is called on every request so it must be lock-free — it sends a
+// non-blocking event to the background processor.
 func (hc *Checker) RecordSuccess(endpoint *pb.Endpoint) {
-	hc.mu.Lock()
-	defer hc.mu.Unlock()
-
-	key := endpointKey(endpoint)
-	if cb, exists := hc.circuitBreakers[key]; exists {
-		cb.RecordSuccess()
+	select {
+	case hc.recordCh <- passiveRecord{endpoint: endpoint, success: true}:
+	default:
+		// Channel full — drop event. Passive records are best-effort;
+		// active health checks provide the authoritative health state.
 	}
 }
 
-// RecordFailure records a failed request (for passive health checking)
+// RecordFailure records a failed request (for passive health checking).
+// This is called on every failed request so it must be lock-free — it sends
+// a non-blocking event to the background processor.
 func (hc *Checker) RecordFailure(endpoint *pb.Endpoint) {
+	select {
+	case hc.recordCh <- passiveRecord{endpoint: endpoint, success: false}:
+	default:
+		// Channel full — drop event (see RecordSuccess comment).
+	}
+}
+
+// processPassiveRecords drains the recordCh channel and applies passive
+// health events under the write lock. Running as a single goroutine
+// serializes all passive updates without blocking the request hot path.
+func (hc *Checker) processPassiveRecords(ctx context.Context) {
+	defer hc.wg.Done()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-hc.stopCh:
+			return
+		case rec := <-hc.recordCh:
+			hc.applyPassiveRecord(rec)
+		}
+	}
+}
+
+// applyPassiveRecord applies a single passive health record under the write lock.
+func (hc *Checker) applyPassiveRecord(rec passiveRecord) {
 	hc.mu.Lock()
 	defer hc.mu.Unlock()
 
-	key := endpointKey(endpoint)
-	if cb, exists := hc.circuitBreakers[key]; exists {
-		cb.RecordFailure()
+	key := endpointKey(rec.endpoint)
+	if rec.success {
+		if cb, exists := hc.circuitBreakers[key]; exists {
+			cb.RecordSuccess()
+		}
+	} else {
+		if cb, exists := hc.circuitBreakers[key]; exists {
+			cb.RecordFailure()
+		}
+		if result, exists := hc.results[key]; exists {
+			result.ConsecutiveSuccesses = 0
+			result.ConsecutiveFailures++
+			if result.ConsecutiveFailures >= DefaultUnhealthyThreshold {
+				result.Healthy = false
+			}
+		}
 	}
+}
 
-	// Also update health result
-	if result, exists := hc.results[key]; exists {
-		result.ConsecutiveSuccesses = 0
-		result.ConsecutiveFailures++
-
-		// Mark unhealthy after threshold
-		if result.ConsecutiveFailures >= DefaultUnhealthyThreshold {
-			result.Healthy = false
+// drainRecordCh synchronously processes all buffered passive records.
+// It is intended for use in tests only, where the background goroutine
+// started by Start() is not running.
+func (hc *Checker) drainRecordCh() {
+	for {
+		select {
+		case rec := <-hc.recordCh:
+			hc.applyPassiveRecord(rec)
+		default:
+			return
 		}
 	}
 }

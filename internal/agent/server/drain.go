@@ -65,9 +65,7 @@ func NewDrainManager(logger *zap.Logger, timeout time.Duration) *DrainManager {
 // The provided context can be used for early cancellation.
 func (dm *DrainManager) StartDrain(ctx context.Context) {
 	dm.draining.Store(true)
-	dm.mu.Lock()
-	active := dm.activeCount
-	dm.mu.Unlock()
+	active := atomic.LoadInt64(&dm.activeCount)
 	dm.logger.Info("Connection draining started",
 		zap.Duration("timeout", dm.drainTimeout),
 		zap.Int64("active_connections", active),
@@ -77,10 +75,12 @@ func (dm *DrainManager) StartDrain(ctx context.Context) {
 	defer cancel()
 
 	// Wait for all active connections to complete or for the timeout.
+	// activeCount is modified atomically (without the mutex) so we use
+	// atomic.LoadInt64 inside the wait loop.
 	done := make(chan struct{})
 	go func() {
 		dm.mu.Lock()
-		for dm.activeCount > 0 {
+		for atomic.LoadInt64(&dm.activeCount) > 0 {
 			dm.zeroCond.Wait()
 		}
 		dm.mu.Unlock()
@@ -91,9 +91,7 @@ func (dm *DrainManager) StartDrain(ctx context.Context) {
 	case <-done:
 		dm.logger.Info("All active connections drained successfully")
 	case <-timeoutCtx.Done():
-		dm.mu.Lock()
-		remaining := dm.activeCount
-		dm.mu.Unlock()
+		remaining := atomic.LoadInt64(&dm.activeCount)
 		dm.logger.Warn("Drain timeout reached, proceeding with config swap",
 			zap.Int64("remaining_connections", remaining),
 		)
@@ -112,28 +110,26 @@ func (dm *DrainManager) IsDraining() bool {
 
 // TrackConnection increments the active connection counter. Each call must
 // be paired with a corresponding ReleaseConnection call.
+// Uses atomic add to avoid mutex contention in the hot request path.
 func (dm *DrainManager) TrackConnection() {
-	dm.mu.Lock()
-	dm.activeCount++
-	dm.mu.Unlock()
+	atomic.AddInt64(&dm.activeCount, 1)
 }
 
 // ReleaseConnection decrements the active connection counter.
+// Uses atomic add to avoid mutex contention in the hot request path.
+// When draining, broadcasts once the count reaches zero so StartDrain unblocks.
 func (dm *DrainManager) ReleaseConnection() {
-	dm.mu.Lock()
-	dm.activeCount--
-	if dm.activeCount <= 0 {
+	if atomic.AddInt64(&dm.activeCount, -1) == 0 {
+		// Broadcast doesn't require holding the lock (see sync.Cond documentation).
+		// StartDrain re-reads the count atomically inside its wait loop, so a
+		// spurious broadcast when not draining is harmless.
 		dm.zeroCond.Broadcast()
 	}
-	dm.mu.Unlock()
 }
 
 // ActiveConnections returns the current number of tracked active connections.
 func (dm *DrainManager) ActiveConnections() int64 {
-	dm.mu.Lock()
-	count := dm.activeCount
-	dm.mu.Unlock()
-	return count
+	return atomic.LoadInt64(&dm.activeCount)
 }
 
 // DrainMiddleware returns an HTTP middleware that integrates with the
