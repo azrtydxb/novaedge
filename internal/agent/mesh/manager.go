@@ -164,6 +164,12 @@ func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
 	}
 }
 
+// ListenerRegistrar is implemented by backends that need the listener
+// socket's file descriptor (e.g., eBPF SOCKMAP).
+type ListenerRegistrar interface {
+	SetListenerFD(fd int) error
+}
+
 // Start initializes the mesh data plane: sets up TPROXY interception rules,
 // starts the transparent listener, and starts the mTLS tunnel server.
 // If a RuleBackendOverride was provided via ManagerConfig (e.g. eBPF
@@ -184,6 +190,36 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.cancel = cancel
 
 	listener := NewTransparentListener(m.logger, m.tproxyPort, m.handleConn)
+
+	// If the backend needs the listener socket FD (eBPF SOCKMAP), create
+	// the listener first, register the FD, then start the accept loop.
+	if registrar, ok := m.ruleBackendOverride.(ListenerRegistrar); ok {
+		tcpListener, err := listener.CreateListener(listenerCtx)
+		if err != nil {
+			cancel()
+			return fmt.Errorf("creating listener for eBPF registration: %w", err)
+		}
+
+		if tcpLn, ok := tcpListener.(*net.TCPListener); ok {
+			file, err := tcpLn.File()
+			if err != nil {
+				_ = tcpListener.Close()
+				cancel()
+				return fmt.Errorf("getting listener file descriptor: %w", err)
+			}
+			fd := int(file.Fd())
+			if err := registrar.SetListenerFD(fd); err != nil {
+				_ = file.Close()
+				_ = tcpListener.Close()
+				cancel()
+				return fmt.Errorf("registering listener FD with eBPF backend: %w", err)
+			}
+			_ = file.Close()
+		}
+
+		listener.SetListener(tcpListener)
+	}
+
 	go func() {
 		if err := listener.Start(listenerCtx); err != nil {
 			m.logger.Error("Transparent listener stopped", zap.Error(err))
