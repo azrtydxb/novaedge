@@ -114,6 +114,10 @@ preflight() {
         log_warn "No VIP_ADDRESS set. Attempting to discover from NovaEdge..."
         VIP_ADDRESS=$(kubectl -n "${NAMESPACE}" get proxygateways perf-gateway -o jsonpath='{.status.addresses[0].value}' 2>/dev/null || true)
         if [[ -z "${VIP_ADDRESS}" ]]; then
+            # Try to get VIP from the ProxyVIP resource
+            VIP_ADDRESS=$(kubectl get proxyvip perf-vip -o jsonpath='{.spec.address}' 2>/dev/null | sed 's|/.*||' || true)
+        fi
+        if [[ -z "${VIP_ADDRESS}" ]]; then
             log_error "Could not determine VIP address. Set VIP_ADDRESS env var or use --vip"
             exit 1
         fi
@@ -122,7 +126,8 @@ preflight() {
 
     # Check NovaEdge agents are running
     local agent_count
-    agent_count=$(kubectl -n novaedge-system get pods -l app.kubernetes.io/name=novaedge-agent --no-headers 2>/dev/null | grep -c Running || echo 0)
+    agent_count=$(kubectl -n novaedge-system get pods -l app.kubernetes.io/component=agent --no-headers 2>/dev/null | grep -c Running || echo 0)
+    agent_count=$(echo "${agent_count}" | tr -d '[:space:]')
     if [[ "${agent_count}" -eq 0 ]]; then
         log_warn "No running NovaEdge agents found in novaedge-system namespace"
     else
@@ -158,25 +163,47 @@ run_fortio_job() {
 
     log_info "  Running: ${job_name} (qps=${qps}, c=${concurrency}, t=${duration})"
 
-    # Generate Job manifest from template
-    export JOB_NAME="${job_name}"
-    export SCENARIO="${scenario}"
-    export QPS="${qps}"
-    export CONCURRENCY="${concurrency}"
-    export DURATION="${duration}"
-    export TARGET_URL="${target_url}"
-
-    envsubst < "${K8S_DIR}/fortio-job.yaml" | kubectl apply -f -
+    # Generate Job manifest from template using sed substitution
+    sed -e "s|\${JOB_NAME}|${job_name}|g" \
+        -e "s|\${SCENARIO}|${scenario}|g" \
+        -e "s|\${QPS}|${qps}|g" \
+        -e "s|\${CONCURRENCY}|${concurrency}|g" \
+        -e "s|\${DURATION}|${duration}|g" \
+        -e "s|\${TARGET_URL}|${target_url}|g" \
+        "${K8S_DIR}/fortio-job.yaml" | kubectl apply -f -
 
     # Wait for Job to complete
     if ! kubectl -n "${NAMESPACE}" wait --for=condition=complete "job/${job_name}" --timeout=300s 2>/dev/null; then
         log_warn "  Job ${job_name} did not complete within timeout"
-        kubectl -n "${NAMESPACE}" logs "job/${job_name}" > "${RUN_DIR}/${job_name}.json" 2>/dev/null || true
+        kubectl -n "${NAMESPACE}" logs "job/${job_name}" 2>/dev/null \
+            | awk '/^{$/,0' \
+            | grep -v "^Successfully wrote" \
+            > "${RUN_DIR}/${job_name}.json" || true
         return 1
     fi
 
-    # Collect results
-    kubectl -n "${NAMESPACE}" logs "job/${job_name}" > "${RUN_DIR}/${job_name}.json" 2>/dev/null || true
+    # Collect results — extract the main result JSON from fortio output.
+    # Fortio mixes JSON log lines, human-readable stats, and the result JSON on stdout.
+    # Use python3 to reliably extract just the result JSON object.
+    # Whitelist approach: JSON content lines start with whitespace, '{', or '}'.
+    # Non-JSON noise (thread stats, histograms, etc.) starts at column 0 with text.
+    kubectl -n "${NAMESPACE}" logs "job/${job_name}" 2>/dev/null \
+        | python3 -c "
+import sys, json
+lines = sys.stdin.read().split('\n')
+start = next((i for i, l in enumerate(lines) if l.strip() == '{'), None)
+if start is None: sys.exit(0)
+json_lines, depth = [], 0
+for line in lines[start:]:
+    if line.startswith((' ', '\t', '{', '}')) or line == '':
+        json_lines.append(line)
+        depth += line.count('{') - line.count('}')
+        if depth <= 0: break
+try:
+    data = json.loads('\n'.join(json_lines))
+    json.dump(data, sys.stdout, indent=2)
+except: pass
+" > "${RUN_DIR}/${job_name}.json" || true
     log_ok "  Completed: ${job_name}"
 }
 
@@ -334,17 +361,18 @@ summarize() {
     if ls "${RUN_DIR}"/http-throughput-*.json &>/dev/null; then
         echo "HTTP Throughput (max QPS)"
         echo "============================================================"
-        printf "%-12s %10s %10s %10s %10s %8s\n" "Concurrency" "QPS" "p50(ms)" "p95(ms)" "p99(ms)" "Errors"
+        printf "%-12s %10s %10s %10s %10s %8s\n" "Concurrency" "QPS" "p50(ms)" "p90(ms)" "p99(ms)" "Errors"
         echo "------------------------------------------------------------"
-        for f in "${RUN_DIR}"/http-throughput-*.json; do
-            local c qps p50 p95 p99 errs
-            c=$(jq -r '.RunID // empty' "$f" 2>/dev/null | grep -oP 'c\K\d+' || basename "$f" .json | grep -oP 'c\K\d+' || echo "?")
-            qps=$(jq -r '.ActualQPS // 0' "$f" 2>/dev/null || echo "0")
-            p50=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 50) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            p95=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 95) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            p99=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 99) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            errs=$(jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' "$f" 2>/dev/null || echo "0")
-            printf "%-12s %10.0f %10.2f %10.2f %10.2f %8s\n" "${c}" "${qps}" "${p50}" "${p95}" "${p99}" "${errs}"
+        for f in $(for x in "${RUN_DIR}"/http-throughput-*.json; do n=$(basename "$x" .json | grep -oE '[0-9]+$'); echo "$n $x"; done | sort -n | cut -d' ' -f2-); do
+            local c qps p50 p90 p99 errs
+            c=$(basename "$f" .json | grep -oE 'c[0-9]+' | tr -d 'c')
+            [[ -s "$f" ]] || continue
+            qps=$(jq -r '.ActualQPS // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p50=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 50)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p90=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 90)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p99=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 99)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            errs=$(jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            printf "%-12s %10.0f %10.2f %10.2f %10.2f %8d\n" "${c}" "${qps}" "${p50}" "${p90}" "${p99}" "${errs}"
         done
         echo ""
     fi
@@ -353,17 +381,18 @@ summarize() {
     if ls "${RUN_DIR}"/http-latency-*.json &>/dev/null; then
         echo "HTTP Latency (fixed QPS)"
         echo "============================================================"
-        printf "%-12s %10s %10s %10s %10s %8s\n" "Target QPS" "Actual" "p50(ms)" "p95(ms)" "p99(ms)" "Errors"
+        printf "%-12s %10s %10s %10s %10s %8s\n" "Target QPS" "Actual" "p50(ms)" "p90(ms)" "p99(ms)" "Errors"
         echo "------------------------------------------------------------"
-        for f in "${RUN_DIR}"/http-latency-*.json; do
-            local tqps aqps p50 p95 p99 errs
-            tqps=$(jq -r '.RequestedQPS // "0"' "$f" 2>/dev/null || echo "0")
-            aqps=$(jq -r '.ActualQPS // 0' "$f" 2>/dev/null || echo "0")
-            p50=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 50) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            p95=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 95) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            p99=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 99) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            errs=$(jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' "$f" 2>/dev/null || echo "0")
-            printf "%-12s %10.0f %10.2f %10.2f %10.2f %8s\n" "${tqps}" "${aqps}" "${p50}" "${p95}" "${p99}" "${errs}"
+        for f in $(for x in "${RUN_DIR}"/http-latency-*.json; do n=$(basename "$x" .json | grep -oE '[0-9]+$'); echo "$n $x"; done | sort -n | cut -d' ' -f2-); do
+            local tqps aqps p50 p90 p99 errs
+            [[ -s "$f" ]] || continue
+            tqps=$(jq -r '.RequestedQPS // "0"' "$f" 2>/dev/null | head -1 || echo "0")
+            aqps=$(jq -r '.ActualQPS // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p50=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 50)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p90=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 90)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p99=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 99)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            errs=$(jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            printf "%-12s %10.0f %10.2f %10.2f %10.2f %8d\n" "${tqps}" "${aqps}" "${p50}" "${p90}" "${p99}" "${errs}"
         done
         echo ""
     fi
@@ -372,17 +401,18 @@ summarize() {
     if ls "${RUN_DIR}"/conn-ramp-*.json &>/dev/null; then
         echo "Connection Ramp (100 QPS, increasing connections)"
         echo "============================================================"
-        printf "%-14s %10s %10s %10s %10s %8s\n" "Connections" "QPS" "p50(ms)" "p95(ms)" "p99(ms)" "Errors"
+        printf "%-14s %10s %10s %10s %10s %8s\n" "Connections" "QPS" "p50(ms)" "p90(ms)" "p99(ms)" "Errors"
         echo "------------------------------------------------------------"
-        for f in "${RUN_DIR}"/conn-ramp-*.json; do
-            local c qps p50 p95 p99 errs
-            c=$(basename "$f" .json | grep -oP 'c\K\d+' || echo "?")
-            qps=$(jq -r '.ActualQPS // 0' "$f" 2>/dev/null || echo "0")
-            p50=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 50) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            p95=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 95) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            p99=$(jq -r '.DurationHistogram.Percentiles[] | select(.Percentile == 99) | .Value * 1000' "$f" 2>/dev/null || echo "0")
-            errs=$(jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' "$f" 2>/dev/null || echo "0")
-            printf "%-14s %10.0f %10.2f %10.2f %10.2f %8s\n" "${c}" "${qps}" "${p50}" "${p95}" "${p99}" "${errs}"
+        for f in $(for x in "${RUN_DIR}"/conn-ramp-*.json; do n=$(basename "$x" .json | grep -oE '[0-9]+$'); echo "$n $x"; done | sort -n | cut -d' ' -f2-); do
+            local c qps p50 p90 p99 errs
+            c=$(basename "$f" .json | grep -oE 'c[0-9]+' | tr -d 'c')
+            [[ -s "$f" ]] || continue
+            qps=$(jq -r '.ActualQPS // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p50=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 50)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p90=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 90)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            p99=$(jq -r '[.DurationHistogram.Percentiles[] | select(.Percentile == 99)][0].Value * 1000 // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            errs=$(jq -r '(.RetCodes | to_entries | map(select(.key != "200")) | map(.value) | add) // 0' "$f" 2>/dev/null | head -1 || echo "0")
+            printf "%-14s %10.0f %10.2f %10.2f %10.2f %8d\n" "${c}" "${qps}" "${p50}" "${p90}" "${p99}" "${errs}"
         done
         echo ""
     fi
@@ -415,6 +445,7 @@ cleanup() {
 
     log_info "=== Cleanup ==="
     kubectl delete namespace "${NAMESPACE}" --ignore-not-found --wait=false
+    kubectl delete proxyvip perf-vip --ignore-not-found 2>/dev/null || true
     log_ok "Cleanup complete"
 }
 
@@ -466,9 +497,7 @@ main() {
 
     stop_pprof_collection
     summarize
-
-    # Trap ensures cleanup runs even on failure
-    trap cleanup EXIT
+    cleanup
 }
 
 # Run
