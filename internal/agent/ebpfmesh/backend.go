@@ -35,10 +35,15 @@ const subsystem = "mesh"
 // Backend implements mesh.RuleBackend using BPF_PROG_TYPE_SK_LOOKUP to
 // redirect mesh-intercepted connections to the TPROXY listener. This
 // eliminates the need for nftables/iptables NAT REDIRECT rules.
+//
+// The BPF program uses a SOCKMAP to hold the listener socket reference.
+// After Setup(), call SetListenerFD() to register the TPROXY listener
+// socket so the BPF program can redirect connections to it.
 type Backend struct {
 	logger      *zap.Logger
 	loader      *novaebpf.ProgramLoader
 	servicesMap *ebpf.Map
+	socketMap   *ebpf.Map // SOCKMAP holding the TPROXY listener socket
 	prog        *ebpf.Program
 	netlinkLink *link.NetNsLink
 }
@@ -60,6 +65,9 @@ func (b *Backend) Name() string {
 // Setup loads the BPF sk_lookup program and attaches it to the network
 // namespace. After Setup returns successfully, the program will intercept
 // socket lookups for connections matching entries in the mesh_services map.
+//
+// After Setup(), the caller must call SetListenerFD() with the TPROXY
+// listener's file descriptor to enable connection redirection.
 func (b *Backend) Setup() error {
 	start := time.Now()
 
@@ -90,6 +98,13 @@ func (b *Backend) Setup() error {
 		return fmt.Errorf("mesh_services map not found in BPF collection")
 	}
 
+	sockMap := coll.Maps["tproxy_socket"]
+	if sockMap == nil {
+		coll.Close()
+		novaebpf.RecordError(subsystem, "load")
+		return fmt.Errorf("tproxy_socket SOCKMAP not found in BPF collection")
+	}
+
 	// Attach the sk_lookup program to the current network namespace.
 	// Open the current netns to get a file descriptor.
 	nsFile, err := os.Open("/proc/self/ns/net")
@@ -110,12 +125,34 @@ func (b *Backend) Setup() error {
 
 	b.prog = prog
 	b.servicesMap = svcMap
+	b.socketMap = sockMap
 	b.netlinkLink = netlinkLink
 
 	novaebpf.RecordProgramLoaded(subsystem)
 	novaebpf.ObserveAttachDuration(subsystem, time.Since(start).Seconds())
 	b.logger.Info("eBPF sk_lookup program attached for mesh interception")
 
+	return nil
+}
+
+// SetListenerFD registers the TPROXY listener socket in the BPF SOCKMAP.
+// This must be called after Setup() and after the listener socket is created.
+// The fd should be the file descriptor of the TCP listener accepting
+// mesh-intercepted connections.
+func (b *Backend) SetListenerFD(fd int) error {
+	if b.socketMap == nil {
+		return fmt.Errorf("eBPF mesh backend not set up")
+	}
+
+	key := uint32(0)
+	val := uint64(fd)
+	if err := b.socketMap.Update(key, val, ebpf.UpdateAny); err != nil {
+		novaebpf.RecordMapOp("tproxy_socket", "update", "error")
+		return fmt.Errorf("registering listener socket in SOCKMAP: %w", err)
+	}
+
+	novaebpf.RecordMapOp("tproxy_socket", "update", "ok")
+	b.logger.Info("TPROXY listener socket registered in BPF SOCKMAP", zap.Int("fd", fd))
 	return nil
 }
 
@@ -198,6 +235,10 @@ func (b *Backend) Cleanup() error {
 	if b.servicesMap != nil {
 		b.servicesMap.Close()
 		b.servicesMap = nil
+	}
+	if b.socketMap != nil {
+		b.socketMap.Close()
+		b.socketMap = nil
 	}
 	b.logger.Info("eBPF mesh backend cleaned up")
 	return nil
