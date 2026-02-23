@@ -676,6 +676,56 @@ func TestValidateLBPoliciesForECMP(t *testing.T) {
 	}
 }
 
+// TestSetConditionNilPointer verifies that setCondition does not panic when
+// called with a nil conditions pointer (regression test for #580).
+func TestSetConditionNilPointer(t *testing.T) {
+	condition := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Test",
+		Message:            "test message",
+		LastTransitionTime: metav1.Now(),
+	}
+
+	// This must not panic.
+	setCondition(nil, condition)
+}
+
+// TestSetConditionAddsAndUpdates verifies normal setCondition behaviour: adding
+// a new condition and updating an existing one.
+func TestSetConditionAddsAndUpdates(t *testing.T) {
+	conditions := []metav1.Condition{}
+
+	first := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionFalse,
+		Reason:             "Initializing",
+		LastTransitionTime: metav1.Now(),
+	}
+	setCondition(&conditions, first)
+	if len(conditions) != 1 {
+		t.Fatalf("expected 1 condition after add, got %d", len(conditions))
+	}
+	if conditions[0].Status != metav1.ConditionFalse {
+		t.Errorf("expected ConditionFalse, got %v", conditions[0].Status)
+	}
+
+	// Update the same condition type.
+	updated := metav1.Condition{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "Running",
+		LastTransitionTime: metav1.Now(),
+	}
+	setCondition(&conditions, updated)
+	if len(conditions) != 1 {
+		t.Fatalf("expected 1 condition after update, got %d", len(conditions))
+	}
+	if conditions[0].Status != metav1.ConditionTrue {
+		t.Errorf("expected ConditionTrue after update, got %v", conditions[0].Status)
+	}
+}
+
 // Helper function to create a test node
 func createNode(name string) *corev1.Node {
 	return &corev1.Node{

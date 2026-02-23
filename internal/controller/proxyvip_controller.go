@@ -305,7 +305,7 @@ func (r *ProxyVIPReconciler) updateVIPStatus(ctx context.Context, vip *novaedgev
 // setCondition sets or updates a condition in the condition list
 func setCondition(conditions *[]metav1.Condition, newCondition metav1.Condition) {
 	if conditions == nil {
-		*conditions = []metav1.Condition{}
+		return
 	}
 
 	// Find existing condition
