@@ -61,14 +61,25 @@ func TestControllerReady(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Get the controller deployment
+	// Get the controller deployment - try Helm name first, then plain name
 	deploy, err := client.AppsV1().Deployments("novaedge-system").Get(ctx, "novaedge-controller", metav1.GetOptions{})
-	require.NoError(t, err, "Failed to get controller deployment")
+	if err != nil {
+		// Fallback: try without namespace prefix for non-Helm deploys
+		t.Logf("novaedge-controller not found, trying alternate names")
+		deploys, listErr := client.AppsV1().Deployments("novaedge-system").List(ctx, metav1.ListOptions{
+			LabelSelector: "app.kubernetes.io/component=controller",
+		})
+		if listErr != nil {
+			require.NoError(t, err, "Failed to get controller deployment")
+		}
+		require.NotEmpty(t, deploys.Items, "Should have at least one controller deployment")
+		deploy = &deploys.Items[0]
+	}
 
-	// Check that the deployment is available
-	assert.Equal(t, int32(1), deploy.Status.ReadyReplicas, "Controller should have 1 ready replica")
+	// Check that the deployment has at least 1 ready replica (may be scaled to 3)
+	assert.GreaterOrEqual(t, deploy.Status.ReadyReplicas, int32(1), "Controller should have at least 1 ready replica")
 
-	t.Logf("Controller deployment is ready: %s", deploy.Name)
+	t.Logf("Controller deployment is ready: %s (%d/%d replicas)", deploy.Name, deploy.Status.ReadyReplicas, *deploy.Spec.Replicas)
 }
 
 // TestAgentDaemonSet tests that the agent DaemonSet is running.
@@ -185,10 +196,16 @@ func TestPodDNSResolution(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	// Get the controller pod
+	// Get the controller pod - try Helm labels first, then plain labels
 	pods, err := client.CoreV1().Pods("novaedge-system").List(ctx, metav1.ListOptions{
-		LabelSelector: "app=novaedge-controller",
+		LabelSelector: "app.kubernetes.io/component=controller",
 	})
+	if err == nil && len(pods.Items) == 0 {
+		// Fallback: try legacy label selector
+		pods, err = client.CoreV1().Pods("novaedge-system").List(ctx, metav1.ListOptions{
+			LabelSelector: "app=novaedge-controller",
+		})
+	}
 	require.NoError(t, err, "Failed to list controller pods")
 	require.NotEmpty(t, pods.Items, "Should have at least one controller pod")
 
