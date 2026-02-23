@@ -285,59 +285,123 @@ func ExtractResourceChanges(current, baseline *pb.ConfigSnapshot) []*pb.Resource
 		}
 	}
 
-	// Add created/updated resources
-	// For now, we mark all current resources as UPDATED
-	// A more sophisticated implementation would compare content hashes
+	// Extract vector clock (may be nil if metadata not set)
+	var vectorClock map[string]int64
+	if current.FederationMetadata != nil {
+		vectorClock = current.FederationMetadata.VectorClock
+	}
 
+	// Build baseline content hashes for comparison
+	baselineHashes := make(map[string]string) // key -> content hash
+	if baseline != nil {
+		for _, gw := range baseline.Gateways {
+			key := gw.Namespace + "/" + gw.Name
+			data, _ := proto.Marshal(gw)
+			baselineHashes["ProxyGateway/"+key] = hashBytes(data)
+		}
+		for _, r := range baseline.Routes {
+			key := r.Namespace + "/" + r.Name
+			data, _ := proto.Marshal(r)
+			baselineHashes["ProxyRoute/"+key] = hashBytes(data)
+		}
+		for _, c := range baseline.Clusters {
+			key := c.Namespace + "/" + c.Name
+			data, _ := proto.Marshal(c)
+			baselineHashes["ProxyBackend/"+key] = hashBytes(data)
+		}
+		for _, p := range baseline.Policies {
+			key := p.Namespace + "/" + p.Name
+			data, _ := proto.Marshal(p)
+			baselineHashes["ProxyPolicy/"+key] = hashBytes(data)
+		}
+	}
+
+	// Detect created/updated resources by comparing content hashes
 	for _, gw := range currentGateways {
 		data, _ := proto.Marshal(gw)
+		hash := hashBytes(data)
+		lookupKey := "ProxyGateway/" + gw.Namespace + "/" + gw.Name
+		changeType := pb.ChangeType_CREATED
+		if oldHash, existed := baselineHashes[lookupKey]; existed {
+			if oldHash == hash {
+				continue // unchanged, skip
+			}
+			changeType = pb.ChangeType_UPDATED
+		}
 		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   pb.ChangeType_UPDATED,
+			ChangeType:   changeType,
 			ResourceType: "ProxyGateway",
 			Namespace:    gw.Namespace,
 			Name:         gw.Name,
 			ResourceData: data,
-			ResourceHash: hashBytes(data),
-			VectorClock:  current.FederationMetadata.VectorClock,
+			ResourceHash: hash,
+			VectorClock:  vectorClock,
 		})
 	}
 
 	for _, r := range currentRoutes {
 		data, _ := proto.Marshal(r)
+		hash := hashBytes(data)
+		lookupKey := "ProxyRoute/" + r.Namespace + "/" + r.Name
+		changeType := pb.ChangeType_CREATED
+		if oldHash, existed := baselineHashes[lookupKey]; existed {
+			if oldHash == hash {
+				continue // unchanged, skip
+			}
+			changeType = pb.ChangeType_UPDATED
+		}
 		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   pb.ChangeType_UPDATED,
+			ChangeType:   changeType,
 			ResourceType: "ProxyRoute",
 			Namespace:    r.Namespace,
 			Name:         r.Name,
 			ResourceData: data,
-			ResourceHash: hashBytes(data),
-			VectorClock:  current.FederationMetadata.VectorClock,
+			ResourceHash: hash,
+			VectorClock:  vectorClock,
 		})
 	}
 
 	for _, c := range currentClusters {
 		data, _ := proto.Marshal(c)
+		hash := hashBytes(data)
+		lookupKey := "ProxyBackend/" + c.Namespace + "/" + c.Name
+		changeType := pb.ChangeType_CREATED
+		if oldHash, existed := baselineHashes[lookupKey]; existed {
+			if oldHash == hash {
+				continue // unchanged, skip
+			}
+			changeType = pb.ChangeType_UPDATED
+		}
 		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   pb.ChangeType_UPDATED,
+			ChangeType:   changeType,
 			ResourceType: "ProxyBackend",
 			Namespace:    c.Namespace,
 			Name:         c.Name,
 			ResourceData: data,
-			ResourceHash: hashBytes(data),
-			VectorClock:  current.FederationMetadata.VectorClock,
+			ResourceHash: hash,
+			VectorClock:  vectorClock,
 		})
 	}
 
 	for _, p := range currentPolicies {
 		data, _ := proto.Marshal(p)
+		hash := hashBytes(data)
+		lookupKey := "ProxyPolicy/" + p.Namespace + "/" + p.Name
+		changeType := pb.ChangeType_CREATED
+		if oldHash, existed := baselineHashes[lookupKey]; existed {
+			if oldHash == hash {
+				continue // unchanged, skip
+			}
+			changeType = pb.ChangeType_UPDATED
+		}
 		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   pb.ChangeType_UPDATED,
+			ChangeType:   changeType,
 			ResourceType: "ProxyPolicy",
 			Namespace:    p.Namespace,
 			Name:         p.Name,
 			ResourceData: data,
-			ResourceHash: hashBytes(data),
-			VectorClock:  current.FederationMetadata.VectorClock,
+			ResourceHash: hash,
+			VectorClock:  vectorClock,
 		})
 	}
 
