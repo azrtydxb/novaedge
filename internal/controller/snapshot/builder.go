@@ -71,13 +71,13 @@ func NewBuilder(client client.Client) *Builder {
 // and allows sub-functions to look up resources from memory instead of
 // making additional API calls.
 type buildContext struct {
-	gateways   []novaedgev1alpha1.ProxyGateway
-	routes     []novaedgev1alpha1.ProxyRoute
-	backends   []novaedgev1alpha1.ProxyBackend
-	policies   []novaedgev1alpha1.ProxyPolicy
-	vips       []novaedgev1alpha1.ProxyVIP
-	services   []corev1.Service
-	wanLinks   []novaedgev1alpha1.ProxyWANLink
+	gateways    []novaedgev1alpha1.ProxyGateway
+	routes      []novaedgev1alpha1.ProxyRoute
+	backends    []novaedgev1alpha1.ProxyBackend
+	policies    []novaedgev1alpha1.ProxyPolicy
+	vips        []novaedgev1alpha1.ProxyVIP
+	services    []corev1.Service
+	wanLinks    []novaedgev1alpha1.ProxyWANLink
 	wanPolicies []novaedgev1alpha1.ProxyWANPolicy
 
 	// Pre-loaded node map for O(1) topology lookups (fixes N+1 node fetches)
