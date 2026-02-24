@@ -19,6 +19,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"sort"
 	"sync"
@@ -26,6 +27,7 @@ import (
 
 	"golang.org/x/time/rate"
 
+	ebpfratelimit "github.com/piwi3910/novaedge/internal/agent/ebpf/ratelimit"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -50,13 +52,21 @@ const (
 	DefaultMaxEntries = 100000
 )
 
-// RateLimiter implements token bucket rate limiting
+// RateLimiter implements token bucket rate limiting with an optional eBPF
+// fast-path for per-source-IP L3/L4 rate limiting. When an eBPF rate limiter
+// is set, per-IP checks are offloaded to BPF maps, bypassing Go-side locks.
+// L7 policies (per-path, per-header) always use the Go-side rate limiter.
 type RateLimiter struct {
 	config     *pb.RateLimitConfig
 	limiters   map[string]*rate.Limiter
 	lastUsed   map[string]time.Time
 	mu         sync.RWMutex
 	maxEntries int
+
+	// ebpfRL is the optional eBPF per-IP rate limiter. When non-nil and
+	// active, per-source-IP rate limiting is handled by BPF maps. The
+	// Go-side limiter remains as fallback for L7 policies.
+	ebpfRL *ebpfratelimit.RateLimiter
 }
 
 // NewRateLimiter creates a new rate limiter
@@ -69,9 +79,41 @@ func NewRateLimiter(config *pb.RateLimitConfig) *RateLimiter {
 	}
 }
 
-// Allow checks if a request should be allowed
+// SetEBPFRateLimiter attaches an eBPF rate limiter for per-IP fast-path
+// checks. When set, per-source-IP rate limiting uses BPF maps instead of
+// Go-side token buckets. Pass nil to disable the eBPF fast-path.
+func (rl *RateLimiter) SetEBPFRateLimiter(ebpfRL *ebpfratelimit.RateLimiter) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	rl.ebpfRL = ebpfRL
+}
+
+// Allow checks if a request should be allowed. When an eBPF rate limiter
+// is active and the policy key is source-ip, the check is offloaded to
+// the BPF map for lock-free per-CPU operation. For L7 policies (per-header,
+// per-path), the Go-side token bucket is always used.
 func (rl *RateLimiter) Allow(r *http.Request) bool {
-	// Extract key for rate limiting
+	// eBPF fast-path: for per-source-IP rate limiting, check BPF map
+	// first to avoid Go-side lock contention on the hot path.
+	if rl.isEBPFFastPathEligible() {
+		clientIP := extractClientIP(r)
+		ip := net.ParseIP(clientIP)
+		if ip != nil {
+			allowed, err := rl.ebpfRL.CheckAllowed(ip)
+			if err == nil {
+				if allowed {
+					metrics.RateLimitAllowed.Inc()
+				} else {
+					metrics.RateLimitDenied.Inc()
+				}
+				return allowed
+			}
+			// eBPF check failed; fall through to Go-side limiter.
+		}
+	}
+
+	// Go-side rate limiting (fallback for L7 policies or when eBPF
+	// is unavailable).
 	key := rl.extractKey(r)
 
 	// Get or create limiter for this key
@@ -94,6 +136,21 @@ func (rl *RateLimiter) Allow(r *http.Request) bool {
 	}
 
 	return allowed
+}
+
+// isEBPFFastPathEligible returns true if the eBPF rate limiter is active
+// and the rate limit policy uses per-source-IP keying (L3/L4 level).
+func (rl *RateLimiter) isEBPFFastPathEligible() bool {
+	rl.mu.RLock()
+	defer rl.mu.RUnlock()
+
+	if rl.ebpfRL == nil || !rl.ebpfRL.IsActive() {
+		return false
+	}
+
+	// Only use eBPF fast-path for per-source-IP policies.
+	// L7 policies (per-header, custom key) need Go-side handling.
+	return rl.config.Key == RateLimitKeySourceIP || rl.config.Key == ""
 }
 
 // getLimiter gets or creates a rate limiter for a specific key
