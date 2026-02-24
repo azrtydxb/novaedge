@@ -22,12 +22,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"hash/fnv"
 	"net"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -304,12 +306,23 @@ func (rc *ResponseCache) storeResponse(key string, rec *cacheRecorder, ttl time.
 	rc.store.Put(entry)
 }
 
+// fnvPool reuses FNV-64a hash objects to avoid allocating a new one per
+// request. Get() returns a hash that must be Reset() before use, and Put()
+// returns it to the pool after the key has been computed.
+var fnvPool = sync.Pool{
+	New: func() interface{} {
+		return fnv.New64a()
+	},
+}
+
 // buildCacheKey builds a cache key from the request using FNV-1a hashing.
 // The hash is computed over: method, host, path, query string, and sorted
 // Vary header values. The result is returned as a base-36 encoded string
 // for compact representation.
 func buildCacheKey(r *http.Request) string {
-	h := fnv.New64a()
+	h := fnvPool.Get().(hash.Hash64)
+	h.Reset()
+	defer fnvPool.Put(h)
 	_, _ = h.Write([]byte(r.Method))
 	_, _ = h.Write([]byte{'|'})
 	_, _ = h.Write([]byte(r.Host))

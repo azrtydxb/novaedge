@@ -80,6 +80,11 @@ type AccessLogEntry struct {
 	Host                 string  `json:"host"`
 }
 
+// accessLogChannelSize is the buffer size for the asynchronous log write
+// channel. Entries beyond this limit are dropped to prevent back-pressure
+// from slow I/O from blocking request handlers.
+const accessLogChannelSize = 10000
+
 // AccessLogMiddleware logs HTTP request/response details
 type AccessLogMiddleware struct {
 	enabled        bool
@@ -91,8 +96,18 @@ type AccessLogMiddleware struct {
 	logger         *zap.Logger
 	writer         io.Writer
 	fileWriter     *rotatingFileWriter
-	mu             sync.RWMutex
 	bufPool        sync.Pool
+	// logCh is a buffered channel that decouples request handlers from I/O.
+	// Handlers send serialised log entries into the channel, and a single
+	// background goroutine drains the channel and writes to the underlying
+	// writer, eliminating mutex contention across all request goroutines.
+	logCh chan []byte
+	// stopCh is closed when Close() is called to signal the background
+	// writer goroutine to exit.
+	stopCh chan struct{}
+	// doneCh is closed by the asyncWriter goroutine when it has finished
+	// draining and exiting, so Close() can wait for it.
+	doneCh chan struct{}
 }
 
 // NewAccessLogMiddleware creates a new access log middleware from proto config
@@ -202,6 +217,12 @@ func NewAccessLogMiddleware(config *pb.AccessLogConfig, logger *zap.Logger) (*Ac
 		alm.sampleRate = 1.0 // Default: log everything
 	}
 
+	// Start the asynchronous log writer goroutine.
+	alm.logCh = make(chan []byte, accessLogChannelSize)
+	alm.stopCh = make(chan struct{})
+	alm.doneCh = make(chan struct{})
+	go alm.asyncWriter()
+
 	return alm, nil
 }
 
@@ -210,8 +231,17 @@ func (alm *AccessLogMiddleware) IsEnabled() bool {
 	return alm.enabled
 }
 
-// Close cleans up resources used by the middleware
+// Close cleans up resources used by the middleware. It signals the background
+// writer goroutine to stop, waits for it to drain remaining entries, and
+// then closes the file writer.
 func (alm *AccessLogMiddleware) Close() {
+	if alm.stopCh != nil {
+		close(alm.stopCh)
+	}
+	// Wait for the async writer to finish draining before closing I/O.
+	if alm.doneCh != nil {
+		<-alm.doneCh
+	}
 	if alm.fileWriter != nil {
 		_ = alm.fileWriter.Close()
 	}
@@ -288,7 +318,8 @@ func (alm *AccessLogMiddleware) shouldLog(statusCode int) bool {
 	return alm.filterCodes[statusCode]
 }
 
-// writeEntry formats and writes a log entry
+// writeEntry formats a log entry and sends it to the async write channel.
+// If the channel is full the entry is dropped to avoid blocking the request.
 func (alm *AccessLogMiddleware) writeEntry(entry AccessLogEntry) {
 	poolVal := alm.bufPool.Get()
 	buf, ok := poolVal.(*bytes.Buffer)
@@ -296,7 +327,6 @@ func (alm *AccessLogMiddleware) writeEntry(entry AccessLogEntry) {
 		buf = new(bytes.Buffer)
 	}
 	buf.Reset()
-	defer alm.bufPool.Put(buf)
 
 	switch alm.format {
 	case AccessLogFormatJSON:
@@ -309,12 +339,52 @@ func (alm *AccessLogMiddleware) writeEntry(entry AccessLogEntry) {
 
 	buf.WriteByte('\n')
 
-	alm.mu.Lock()
-	_, err := alm.writer.Write(buf.Bytes())
-	alm.mu.Unlock()
+	// Copy formatted bytes so the buffer can be returned to the pool.
+	data := make([]byte, buf.Len())
+	copy(data, buf.Bytes())
+	alm.bufPool.Put(buf)
 
-	if err != nil {
-		alm.logger.Error("Failed to write access log entry", zap.Error(err))
+	// Non-blocking send — drop the entry if the channel is full rather than
+	// letting slow I/O block the request goroutine.
+	if alm.logCh != nil {
+		select {
+		case alm.logCh <- data:
+		default:
+			// Channel full, drop this log entry to avoid back-pressure.
+		}
+	} else {
+		// Fallback for disabled/nil channel (e.g. tests that set writer directly).
+		_, err := alm.writer.Write(data)
+		if err != nil {
+			alm.logger.Error("Failed to write access log entry", zap.Error(err))
+		}
+	}
+}
+
+// asyncWriter is a background goroutine that drains the log channel and
+// performs the actual I/O write. This serialises all writes through a single
+// goroutine, eliminating the need for a mutex on the writer.
+func (alm *AccessLogMiddleware) asyncWriter() {
+	defer close(alm.doneCh)
+	for {
+		select {
+		case data := <-alm.logCh:
+			if _, err := alm.writer.Write(data); err != nil {
+				alm.logger.Error("Failed to write access log entry", zap.Error(err))
+			}
+		case <-alm.stopCh:
+			// Drain remaining entries before exiting.
+			for {
+				select {
+				case data := <-alm.logCh:
+					if _, err := alm.writer.Write(data); err != nil {
+						alm.logger.Error("Failed to write access log entry", zap.Error(err))
+					}
+				default:
+					return
+				}
+			}
+		}
 	}
 }
 

@@ -74,6 +74,9 @@ func TestAccessLog_CLFFormat(t *testing.T) {
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 
+	// Close to flush async writer before reading buffer.
+	middleware.Close()
+
 	output := buf.String()
 	if !strings.Contains(output, "192.168.1.100") {
 		t.Errorf("CLF log should contain client IP, got %q", output)
@@ -118,6 +121,9 @@ func TestAccessLog_JSONFormat(t *testing.T) {
 	req.RemoteAddr = "10.0.0.1:8080"
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
+
+	// Close to flush async writer before reading buffer.
+	middleware.Close()
 
 	output := buf.String()
 
@@ -174,6 +180,9 @@ func TestAccessLog_CustomTemplate(t *testing.T) {
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
 
+	// Close to flush async writer before reading buffer.
+	middleware.Close()
+
 	output := strings.TrimSpace(buf.String())
 	expected := "GET /test 200 custom-id"
 	if output != expected {
@@ -201,7 +210,6 @@ func TestAccessLog_FileOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create middleware: %v", err)
 	}
-	defer middleware.Close()
 
 	if !middleware.IsEnabled() {
 		t.Fatal("Expected middleware to be enabled")
@@ -216,6 +224,9 @@ func TestAccessLog_FileOutput(t *testing.T) {
 	req.RemoteAddr = "127.0.0.1:1234"
 	rec := httptest.NewRecorder()
 	wrapped.ServeHTTP(rec, req)
+
+	// Close to flush async writer before reading the log file.
+	middleware.Close()
 
 	// Read the log file
 	data, err := os.ReadFile(filepath.Clean(logPath))
@@ -265,6 +276,9 @@ func TestAccessLog_Sampling(t *testing.T) {
 		wrapped.ServeHTTP(rec, req)
 	}
 
+	// Close to flush any potential async writes.
+	middleware.Close()
+
 	// With 0% sample rate, nothing should be logged
 	if buf.Len() > 0 {
 		t.Errorf("Expected no log entries with 0%% sample rate, got %d bytes", buf.Len())
@@ -273,21 +287,6 @@ func TestAccessLog_Sampling(t *testing.T) {
 
 func TestAccessLog_StatusCodeFilter(t *testing.T) {
 	logger := zap.NewNop()
-
-	var buf bytes.Buffer
-	config := &pb.AccessLogConfig{
-		Enabled:           true,
-		Format:            "json",
-		Output:            "stdout",
-		FilterStatusCodes: []int32{500, 503},
-		SampleRate:        1.0,
-	}
-
-	middleware, err := NewAccessLogMiddleware(config, logger)
-	if err != nil {
-		t.Fatalf("Failed to create middleware: %v", err)
-	}
-	middleware.writer = &buf
 
 	tests := []struct {
 		statusCode int
@@ -300,7 +299,20 @@ func TestAccessLog_StatusCodeFilter(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		buf.Reset()
+		var buf bytes.Buffer
+		config := &pb.AccessLogConfig{
+			Enabled:           true,
+			Format:            "json",
+			Output:            "stdout",
+			FilterStatusCodes: []int32{500, 503},
+			SampleRate:        1.0,
+		}
+
+		middleware, err := NewAccessLogMiddleware(config, logger)
+		if err != nil {
+			t.Fatalf("Failed to create middleware: %v", err)
+		}
+		middleware.writer = &buf
 
 		handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(tt.statusCode)
@@ -310,6 +322,9 @@ func TestAccessLog_StatusCodeFilter(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/test", nil)
 		rec := httptest.NewRecorder()
 		wrapped.ServeHTTP(rec, req)
+
+		// Close to flush async writer before checking buffer.
+		middleware.Close()
 
 		hasOutput := buf.Len() > 0
 		if hasOutput != tt.shouldLog {
