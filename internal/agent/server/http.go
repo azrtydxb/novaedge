@@ -18,8 +18,11 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -33,18 +36,19 @@ import (
 
 // HTTPServer manages HTTP/HTTPS/HTTP3 listeners and routing
 type HTTPServer struct {
-	logger           *zap.Logger
-	mu               sync.RWMutex
-	servers          map[int32]*http.Server  // Port -> HTTP/1.1 or HTTP/2 Server
-	http3servers     map[int32]*HTTP3Server  // Port -> HTTP/3 Server
-	listeners        map[int32]*ListenerInfo // Port -> Listener config
-	router           *router.Router
-	inFlightRequests sync.WaitGroup // Track in-flight requests for graceful shutdown
-	shuttingDown     atomic.Bool    // Flag to indicate shutdown in progress
-	ocspStapler      *OCSPStapler   // OCSP stapling manager
-	cachedAltSvc     atomic.Value   // stores string - cached Alt-Svc header value
-	drainManager     *DrainManager  // Manages graceful connection draining on config reload
-	lastAppliedHash  string         // Content hash of the last applied snapshot version
+	logger             *zap.Logger
+	mu                 sync.RWMutex
+	servers            map[int32]*http.Server  // Port -> HTTP/1.1 or HTTP/2 Server
+	http3servers       map[int32]*HTTP3Server  // Port -> HTTP/3 Server
+	listeners          map[int32]*ListenerInfo // Port -> Listener config
+	router             *router.Router
+	inFlightRequests   sync.WaitGroup // Track in-flight requests for graceful shutdown
+	shuttingDown       atomic.Bool    // Flag to indicate shutdown in progress
+	ocspStapler        *OCSPStapler   // OCSP stapling manager
+	cachedAltSvc       atomic.Value   // stores string - cached Alt-Svc header value
+	drainManager       *DrainManager  // Manages graceful connection draining on config reload
+	lastAppliedHash    string         // Content hash of the last applied snapshot version
+	lastStructuralHash string         // Hash of structural config (routes, gateways, policies -- not endpoints)
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -73,6 +77,81 @@ func (s *HTTPServer) DrainManager() *DrainManager {
 	return s.drainManager
 }
 
+// structuralHash computes a hash of the structural configuration (routes,
+// gateways, policies, VIPs, TLS certs, L4 listeners) but NOT endpoints.
+// When the structural hash matches between two snapshots but the version
+// differs, only endpoints changed and we can take a lightweight update path.
+func (s *HTTPServer) structuralHash(snapshot *config.Snapshot) string {
+	h := sha256.New()
+
+	// Hash gateways
+	for _, gw := range snapshot.Gateways {
+		_, _ = fmt.Fprintf(h, "gw:%s/%s;", gw.Namespace, gw.Name)
+		for _, l := range gw.Listeners {
+			_, _ = fmt.Fprintf(h, "l:%s:%d:%s;", l.Name, l.Port, l.Protocol)
+			if l.Tls != nil {
+				_, _ = fmt.Fprintf(h, "tls:%s;", l.Tls.MinVersion)
+			}
+		}
+		if gw.VipRef != "" {
+			_, _ = fmt.Fprintf(h, "vip:%s;", gw.VipRef)
+		}
+		if gw.Compression != nil {
+			_, _ = fmt.Fprintf(h, "comp:%v:%d;", gw.Compression.Enabled, gw.Compression.Level)
+		}
+	}
+
+	// Hash routes
+	for _, route := range snapshot.Routes {
+		_, _ = fmt.Fprintf(h, "rt:%s/%s;", route.Namespace, route.Name)
+		for _, hostname := range route.Hostnames {
+			_, _ = fmt.Fprintf(h, "h:%s;", hostname)
+		}
+		for _, rule := range route.Rules {
+			for _, match := range rule.Matches {
+				if match.Path != nil {
+					_, _ = fmt.Fprintf(h, "p:%d:%s;", match.Path.Type, match.Path.Value)
+				}
+				if match.Method != "" {
+					_, _ = fmt.Fprintf(h, "m:%s;", match.Method)
+				}
+			}
+			for _, ref := range rule.BackendRefs {
+				_, _ = fmt.Fprintf(h, "br:%s/%s:%d;", ref.Namespace, ref.Name, ref.Weight)
+			}
+		}
+	}
+
+	// Hash clusters (but NOT their endpoints)
+	clusterKeys := make([]string, 0, len(snapshot.Clusters))
+	for _, cluster := range snapshot.Clusters {
+		clusterKeys = append(clusterKeys, cluster.Namespace+"/"+cluster.Name)
+	}
+	sort.Strings(clusterKeys)
+	for _, cluster := range snapshot.Clusters {
+		_, _ = fmt.Fprintf(h, "cl:%s/%s:%d:%d;",
+			cluster.Namespace, cluster.Name,
+			cluster.LbPolicy, cluster.ConnectTimeoutMs)
+	}
+
+	// Hash policies
+	for _, policy := range snapshot.Policies {
+		_, _ = fmt.Fprintf(h, "pol:%s/%s;", policy.Namespace, policy.Name)
+	}
+
+	// Hash VIP assignments
+	for _, vip := range snapshot.VipAssignments {
+		_, _ = fmt.Fprintf(h, "vip:%s:%v;", vip.VipName, vip.IsActive)
+	}
+
+	// Hash L4 listeners
+	for _, l4 := range snapshot.L4Listeners {
+		_, _ = fmt.Fprintf(h, "l4:%s:%d:%s;", l4.Name, l4.Port, l4.Protocol)
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
 // ApplyConfig applies a new configuration snapshot. If there are active
 // connections, it initiates a graceful drain on the old configuration
 // before switching to the new one, allowing in-flight requests to complete.
@@ -83,6 +162,7 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 	contentHash := snapshot.Version
 	s.mu.RLock()
 	unchanged := s.lastAppliedHash != "" && s.lastAppliedHash == contentHash
+	prevStructuralHash := s.lastStructuralHash
 	s.mu.RUnlock()
 
 	if unchanged {
@@ -92,6 +172,36 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 		return nil
 	}
 
+	// Compute the structural hash to determine if only endpoints changed
+	newStructuralHash := s.structuralHash(snapshot)
+	endpointOnlyChange := prevStructuralHash != "" && prevStructuralHash == newStructuralHash
+
+	if endpointOnlyChange {
+		// Fast path: only endpoints changed. Update router (which will
+		// diff endpoints and preserve LB state) without draining, without
+		// tearing down listeners, and without rebuilding routes.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+
+		s.logger.Info("Endpoint-only change detected, taking lightweight update path",
+			zap.String("version", snapshot.Version),
+		)
+
+		if err := s.router.ApplyConfig(ctx, snapshot); err != nil {
+			return fmt.Errorf("failed to update router (endpoint-only): %w", err)
+		}
+
+		s.lastAppliedHash = contentHash
+		s.lastStructuralHash = newStructuralHash
+
+		s.logger.Info("Endpoint-only configuration update applied successfully",
+			zap.Int("active_http_listeners", len(s.servers)),
+			zap.Int("active_http3_listeners", len(s.http3servers)),
+		)
+		return nil
+	}
+
+	// Full path: structural changes detected. Drain + full reconfigure.
 	// Drain active connections from the previous configuration before
 	// acquiring the lock and swapping. This allows in-flight requests
 	// to finish while we prepare the new configuration.
@@ -105,7 +215,7 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.logger.Info("Applying HTTP server configuration",
+	s.logger.Info("Applying HTTP server configuration (full reconfigure)",
 		zap.String("version", snapshot.Version),
 	)
 
@@ -220,8 +330,10 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 
 	s.listeners = newListeners
 
-	// Record content hash so identical snapshots are skipped next time
+	// Record content and structural hashes so identical or endpoint-only
+	// snapshots are handled efficiently next time
 	s.lastAppliedHash = contentHash
+	s.lastStructuralHash = newStructuralHash
 
 	// Update cached Alt-Svc header value for lock-free reads
 	s.updateAltSvcCache()

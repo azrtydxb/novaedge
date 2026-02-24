@@ -241,11 +241,11 @@ func (ts *TunnelServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 // batch small writes and reduce per-write Flush() overhead. A periodic timer
 // ensures data is sent promptly even when the buffer is not full.
 type bufferedFlushWriter struct {
-	w       http.ResponseWriter
-	buf     *bufio.Writer
-	mu      sync.Mutex
-	timer   *time.Timer
-	closed  bool
+	w      http.ResponseWriter
+	buf    *bufio.Writer
+	mu     sync.Mutex
+	timer  *time.Timer
+	closed bool
 }
 
 // newBufferedFlushWriter creates a buffered writer that accumulates writes

@@ -142,6 +142,10 @@ type Router struct {
 	// Only accessed under mu in ApplyConfig.
 	endpointVersions map[string]uint64
 
+	// clusterLBPolicies tracks the LB policy per cluster so we can detect
+	// policy changes and force LB recreation. Only accessed under mu.
+	clusterLBPolicies map[string]pb.LoadBalancingPolicy
+
 	// cacheConfig is set once during construction and never changes.
 	cacheConfig CacheConfig
 
@@ -178,9 +182,10 @@ func NewRouterWithCache(logger *zap.Logger, cacheConfig CacheConfig) *Router {
 	}
 
 	r := &Router{
-		logger:           logger,
-		endpointVersions: make(map[string]uint64),
-		cacheConfig:      cacheConfig,
+		logger:            logger,
+		endpointVersions:  make(map[string]uint64),
+		clusterLBPolicies: make(map[string]pb.LoadBalancingPolicy),
+		cacheConfig:       cacheConfig,
 	}
 	r.state.Store(initial)
 	return r
@@ -368,8 +373,10 @@ func (r *Router) buildRouteEntry(ctx context.Context, route *pb.Route, rule *pb.
 }
 
 // buildPoolsAndBalancers creates upstream pools and load balancers for each cluster.
-// It reuses existing pools when possible and only recreates load balancers when
-// endpoints change. Stale pools are closed and their metrics cleaned up.
+// It reuses existing pools when possible and preserves LB state (EWMA latency
+// data, connection counts, Maglev ring positions) for unchanged endpoints by
+// calling UpdateEndpoints on existing LB instances rather than recreating them.
+// Stale pools are closed and their metrics cleaned up.
 func (r *Router) buildPoolsAndBalancers(ctx context.Context, snapshot *config.Snapshot, prev *routerState, newState *routerState) (map[string]lb.LoadBalancer, map[string]interface{}) {
 	newPools := make(map[string]*upstream.Pool)
 	newLoadBalancers := make(map[string]lb.LoadBalancer)
@@ -393,13 +400,31 @@ func (r *Router) buildPoolsAndBalancers(ctx context.Context, snapshot *config.Sn
 			newPools[clusterKey] = pool
 		}
 
-		// Check if endpoints changed by computing hash
+		// Check if endpoints or LB policy changed by computing hash
 		endpointHash := hashEndpointList(endpointList.Endpoints, cluster.LbPolicy)
 		previousHash, exists := r.endpointVersions[clusterKey]
 
-		if !exists || previousHash != endpointHash {
+		if !exists {
+			// New cluster: create load balancer from scratch
 			r.createLoadBalancer(cluster, clusterKey, endpointList.Endpoints, newLoadBalancers, newHashBasedLBs)
 			r.endpointVersions[clusterKey] = endpointHash
+			r.clusterLBPolicies[clusterKey] = cluster.LbPolicy
+		} else if previousHash != endpointHash {
+			// Endpoints or LB policy changed: try to update existing LB in-place
+			// to preserve accumulated state (EWMA latency, connection counts, etc.)
+			lbPolicyChanged := r.hasLBPolicyChanged(clusterKey, cluster.LbPolicy)
+			if lbPolicyChanged {
+				// LB policy changed: must recreate the load balancer
+				r.createLoadBalancer(cluster, clusterKey, endpointList.Endpoints, newLoadBalancers, newHashBasedLBs)
+				r.logger.Info("LB policy changed, recreating load balancer",
+					zap.String("cluster", clusterKey),
+				)
+			} else {
+				// Only endpoints changed: update existing LB in-place to preserve state
+				r.updateExistingLoadBalancer(clusterKey, endpointList.Endpoints, prev, newLoadBalancers, newHashBasedLBs)
+			}
+			r.endpointVersions[clusterKey] = endpointHash
+			r.clusterLBPolicies[clusterKey] = cluster.LbPolicy
 		} else {
 			// Carry over existing load balancers when endpoints unchanged
 			if existingLB, ok := prev.loadBalancers[clusterKey]; ok {
@@ -421,11 +446,57 @@ func (r *Router) buildPoolsAndBalancers(ctx context.Context, snapshot *config.Sn
 			pool.Close()
 			metrics.CleanupClusterMetrics(key)
 			delete(r.endpointVersions, key)
+			delete(r.clusterLBPolicies, key)
 		}
 	}
 
 	newState.pools = newPools
 	return newLoadBalancers, newHashBasedLBs
+}
+
+// hasLBPolicyChanged checks whether the LB policy has changed for a cluster
+// by comparing against the previously stored policy.
+func (r *Router) hasLBPolicyChanged(clusterKey string, newPolicy pb.LoadBalancingPolicy) bool {
+	prevPolicy, exists := r.clusterLBPolicies[clusterKey]
+	if !exists {
+		return true // New cluster, treat as changed
+	}
+	return prevPolicy != newPolicy
+}
+
+// updateExistingLoadBalancer updates the endpoints on an existing LB instance
+// without destroying accumulated state (EWMA latency data, connection counts,
+// Maglev ring positions for unchanged endpoints, etc.).
+func (r *Router) updateExistingLoadBalancer(clusterKey string, endpoints []*pb.Endpoint, prev *routerState, newLoadBalancers map[string]lb.LoadBalancer, newHashBasedLBs map[string]interface{}) {
+	// Try standard load balancers first
+	if existingLB, ok := prev.loadBalancers[clusterKey]; ok {
+		existingLB.UpdateEndpoints(endpoints)
+		newLoadBalancers[clusterKey] = existingLB
+		r.logger.Debug("Updated existing load balancer endpoints in-place",
+			zap.String("cluster", clusterKey),
+			zap.Int("endpoints", len(endpoints)),
+		)
+		return
+	}
+
+	// Try hash-based load balancers
+	if existingHashLB, ok := prev.hashBasedLBs[clusterKey]; ok {
+		switch hlb := existingHashLB.(type) {
+		case lb.LoadBalancer:
+			hlb.UpdateEndpoints(endpoints)
+		}
+		newHashBasedLBs[clusterKey] = existingHashLB
+		r.logger.Debug("Updated existing hash-based load balancer endpoints in-place",
+			zap.String("cluster", clusterKey),
+			zap.Int("endpoints", len(endpoints)),
+		)
+		return
+	}
+
+	// No existing LB found (shouldn't happen since we checked hash existence)
+	r.logger.Warn("No existing load balancer found for in-place update, this is unexpected",
+		zap.String("cluster", clusterKey),
+	)
 }
 
 // createLoadBalancer creates the appropriate load balancer for a cluster based on its LB policy.

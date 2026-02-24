@@ -281,6 +281,196 @@ func TestEndpointSetsEqual(t *testing.T) {
 	}
 }
 
+func TestDiffEndpoints(t *testing.T) {
+	tests := []struct {
+		name          string
+		old, new      []*pb.Endpoint
+		wantAdded     int
+		wantRemoved   int
+		wantUnchanged int
+	}{
+		{
+			name:          "both empty",
+			old:           nil,
+			new:           nil,
+			wantAdded:     0,
+			wantRemoved:   0,
+			wantUnchanged: 0,
+		},
+		{
+			name: "all new endpoints",
+			old:  nil,
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			wantAdded:     2,
+			wantRemoved:   0,
+			wantUnchanged: 0,
+		},
+		{
+			name: "all removed endpoints",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			new:           nil,
+			wantAdded:     0,
+			wantRemoved:   2,
+			wantUnchanged: 0,
+		},
+		{
+			name: "one added one unchanged",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			wantAdded:     1,
+			wantRemoved:   0,
+			wantUnchanged: 1,
+		},
+		{
+			name: "one removed one unchanged",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			wantAdded:     0,
+			wantRemoved:   1,
+			wantUnchanged: 1,
+		},
+		{
+			name: "one added one removed one unchanged",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.3", Port: 80, Ready: true},
+			},
+			wantAdded:     1,
+			wantRemoved:   1,
+			wantUnchanged: 1,
+		},
+		{
+			name: "ready status change counts as add and remove",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: false},
+			},
+			wantAdded:     1,
+			wantRemoved:   1,
+			wantUnchanged: 0,
+		},
+		{
+			name: "port change counts as add and remove",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 443, Ready: true},
+			},
+			wantAdded:     1,
+			wantRemoved:   1,
+			wantUnchanged: 0,
+		},
+		{
+			name: "completely identical",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			wantAdded:     0,
+			wantRemoved:   0,
+			wantUnchanged: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			diff := diffEndpoints(tt.old, tt.new)
+			if len(diff.Added) != tt.wantAdded {
+				t.Errorf("Added: got %d, want %d", len(diff.Added), tt.wantAdded)
+			}
+			if len(diff.Removed) != tt.wantRemoved {
+				t.Errorf("Removed: got %d, want %d", len(diff.Removed), tt.wantRemoved)
+			}
+			if len(diff.Unchanged) != tt.wantUnchanged {
+				t.Errorf("Unchanged: got %d, want %d", len(diff.Unchanged), tt.wantUnchanged)
+			}
+		})
+	}
+}
+
+func TestUpdateEndpointsDiffBasedPreservesProxies(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+
+	cluster := &pb.Cluster{
+		Name:             "test-cluster",
+		Namespace:        "default",
+		ConnectTimeoutMs: 5000,
+		IdleTimeoutMs:    90000,
+	}
+
+	initialEndpoints := []*pb.Endpoint{
+		{Address: "192.168.1.10", Port: 8080, Ready: true},
+		{Address: "192.168.1.11", Port: 8080, Ready: true},
+	}
+
+	pool := NewPool(context.Background(), cluster, initialEndpoints, logger)
+	defer pool.Close()
+
+	// Get initial proxies
+	initialProxies := *pool.proxies.Load()
+	preservedProxy := initialProxies["192.168.1.10:8080"]
+	if preservedProxy == nil {
+		t.Fatal("Expected proxy for 192.168.1.10:8080 to exist")
+	}
+
+	// Update: keep .10, remove .11, add .12
+	newEndpoints := []*pb.Endpoint{
+		{Address: "192.168.1.10", Port: 8080, Ready: true},
+		{Address: "192.168.1.12", Port: 8080, Ready: true},
+	}
+
+	pool.UpdateEndpoints(newEndpoints)
+
+	// Verify proxies
+	updatedProxies := *pool.proxies.Load()
+
+	// .10 should be preserved (same pointer)
+	if updatedProxies["192.168.1.10:8080"] != preservedProxy {
+		t.Error("Expected proxy for 192.168.1.10:8080 to be preserved (same instance)")
+	}
+
+	// .11 should be gone
+	if updatedProxies["192.168.1.11:8080"] != nil {
+		t.Error("Expected proxy for 192.168.1.11:8080 to be removed")
+	}
+
+	// .12 should be new
+	if updatedProxies["192.168.1.12:8080"] == nil {
+		t.Error("Expected proxy for 192.168.1.12:8080 to be created")
+	}
+
+	if len(updatedProxies) != 2 {
+		t.Errorf("Expected 2 proxies, got %d", len(updatedProxies))
+	}
+}
+
 func TestIsGRPCRequest(t *testing.T) {
 	tests := []struct {
 		name        string

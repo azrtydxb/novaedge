@@ -208,7 +208,51 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	return pool
 }
 
-// UpdateEndpoints updates the pool with new endpoints
+// EndpointDiff holds the result of diffing old and new endpoint sets.
+type EndpointDiff struct {
+	Added     []*pb.Endpoint
+	Removed   []*pb.Endpoint
+	Unchanged []*pb.Endpoint
+}
+
+// diffEndpoints compares old and new endpoint slices by address:port:ready,
+// returning which endpoints were added, removed, or unchanged.
+func diffEndpoints(old, new []*pb.Endpoint) EndpointDiff {
+	type epKey struct {
+		addr  string
+		port  int32
+		ready bool
+	}
+
+	oldSet := make(map[epKey]*pb.Endpoint, len(old))
+	for _, ep := range old {
+		oldSet[epKey{ep.Address, ep.Port, ep.Ready}] = ep
+	}
+
+	newSet := make(map[epKey]*pb.Endpoint, len(new))
+	for _, ep := range new {
+		newSet[epKey{ep.Address, ep.Port, ep.Ready}] = ep
+	}
+
+	var diff EndpointDiff
+	for k, ep := range newSet {
+		if _, exists := oldSet[k]; exists {
+			diff.Unchanged = append(diff.Unchanged, ep)
+		} else {
+			diff.Added = append(diff.Added, ep)
+		}
+	}
+	for k, ep := range oldSet {
+		if _, exists := newSet[k]; !exists {
+			diff.Removed = append(diff.Removed, ep)
+		}
+	}
+
+	return diff
+}
+
+// UpdateEndpoints updates the pool with new endpoints using diff-based updates.
+// Unchanged endpoints preserve their existing proxy and connection state.
 func (p *Pool) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	p.mu.Lock()
 
@@ -222,9 +266,15 @@ func (p *Pool) UpdateEndpoints(endpoints []*pb.Endpoint) {
 		return
 	}
 
-	p.logger.Info("Updating endpoints",
+	// Compute diff before updating the endpoint list
+	diff := diffEndpoints(p.endpoints, endpoints)
+
+	p.logger.Info("Updating endpoints (diff-based)",
 		zap.Int("old_count", len(p.endpoints)),
 		zap.Int("new_count", len(endpoints)),
+		zap.Int("added", len(diff.Added)),
+		zap.Int("removed", len(diff.Removed)),
+		zap.Int("unchanged", len(diff.Unchanged)),
 	)
 
 	// Update the endpoint list and health checker under the lock
@@ -237,25 +287,30 @@ func (p *Pool) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	// createProxiesFrom (called after Unlock) operates on a stable copy.
 	eps := p.endpoints
 
-	// Cancel any previously scheduled drain timer before scheduling a new one.
-	if p.drainTimer != nil {
-		p.drainTimer.Stop()
-	}
-
-	// Schedule deferred drain of old idle connections instead of immediately
-	// closing them. This gives in-flight requests a short window to complete
-	// on existing connections before they are reclaimed.
-	p.drainTimer = time.AfterFunc(5*time.Second, func() {
-		p.transport.CloseIdleConnections()
-		if ce := p.logger.Check(zap.DebugLevel, "Deferred idle connection drain completed"); ce != nil {
-			ce.Write(zap.String("cluster", p.clusterKey))
+	// Only schedule idle connection drain when endpoints were actually removed,
+	// since only removed endpoints may have stale connections.
+	if len(diff.Removed) > 0 {
+		// Cancel any previously scheduled drain timer before scheduling a new one.
+		if p.drainTimer != nil {
+			p.drainTimer.Stop()
 		}
-	})
+
+		// Schedule deferred drain of old idle connections instead of immediately
+		// closing them. This gives in-flight requests a short window to complete
+		// on existing connections before they are reclaimed.
+		p.drainTimer = time.AfterFunc(5*time.Second, func() {
+			p.transport.CloseIdleConnections()
+			if ce := p.logger.Check(zap.DebugLevel, "Deferred idle connection drain completed"); ce != nil {
+				ce.Write(zap.String("cluster", p.clusterKey))
+			}
+		})
+	}
 
 	p.mu.Unlock()
 
 	// Build new proxies outside the lock — allocation is expensive but the
 	// atomic.Pointer swap in createProxiesFrom is safe for concurrent readers.
+	// createProxiesFrom already reuses existing proxies for unchanged endpoints.
 	p.createProxiesFrom(eps)
 }
 
