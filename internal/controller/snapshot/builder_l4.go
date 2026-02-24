@@ -22,12 +22,11 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 // buildL4Listeners builds L4 listener configurations from gateways and backends
-func (b *Builder) buildL4Listeners(ctx context.Context, gateways []*pb.Gateway, endpoints map[string]*pb.EndpointList) []*pb.L4Listener {
+func (b *Builder) buildL4Listeners(ctx context.Context, gateways []*pb.Gateway, endpoints map[string]*pb.EndpointList, bc *buildContext) []*pb.L4Listener {
 	logger := log.FromContext(ctx)
 	var l4Listeners []*pb.L4Listener
 
@@ -35,17 +34,17 @@ func (b *Builder) buildL4Listeners(ctx context.Context, gateways []*pb.Gateway, 
 		for _, listener := range gw.Listeners {
 			switch listener.Protocol {
 			case pb.Protocol_TCP:
-				l4Listener := b.buildTCPListener(ctx, gw, listener, endpoints)
+				l4Listener := b.buildTCPListener(ctx, gw, listener, endpoints, bc)
 				if l4Listener != nil {
 					l4Listeners = append(l4Listeners, l4Listener)
 				}
 			case pb.Protocol_TLS:
-				l4Listener := b.buildTLSPassthroughListener(ctx, gw, listener, endpoints)
+				l4Listener := b.buildTLSPassthroughListener(ctx, gw, listener, endpoints, bc)
 				if l4Listener != nil {
 					l4Listeners = append(l4Listeners, l4Listener)
 				}
 			case pb.Protocol_UDP:
-				l4Listener := b.buildUDPListener(ctx, gw, listener, endpoints)
+				l4Listener := b.buildUDPListener(ctx, gw, listener, endpoints, bc)
 				if l4Listener != nil {
 					l4Listeners = append(l4Listeners, l4Listener)
 				}
@@ -61,7 +60,7 @@ func (b *Builder) buildL4Listeners(ctx context.Context, gateways []*pb.Gateway, 
 }
 
 // buildTCPListener builds a TCP L4 listener from gateway and route configuration
-func (b *Builder) buildTCPListener(ctx context.Context, gw *pb.Gateway, listener *pb.Listener, endpoints map[string]*pb.EndpointList) *pb.L4Listener {
+func (b *Builder) buildTCPListener(ctx context.Context, gw *pb.Gateway, listener *pb.Listener, endpoints map[string]*pb.EndpointList, bc *buildContext) *pb.L4Listener {
 	logger := log.FromContext(ctx)
 
 	// Find matching routes for this TCP listener
@@ -74,7 +73,7 @@ func (b *Builder) buildTCPListener(ctx context.Context, gw *pb.Gateway, listener
 
 	// Find TCPRoute-style backends for this listener
 	// We look at the routes that match this gateway's TCP listeners
-	backendName, backendEndpoints := b.findL4BackendForListener(ctx, gw, listener, endpoints)
+	backendName, backendEndpoints := b.findL4BackendForListener(ctx, gw, listener, endpoints, bc)
 	if backendName == "" {
 		logger.Info("No backends found for TCP listener",
 			"gateway", gw.Name,
@@ -97,7 +96,7 @@ func (b *Builder) buildTCPListener(ctx context.Context, gw *pb.Gateway, listener
 }
 
 // buildTLSPassthroughListener builds a TLS passthrough L4 listener
-func (b *Builder) buildTLSPassthroughListener(ctx context.Context, gw *pb.Gateway, listener *pb.Listener, endpoints map[string]*pb.EndpointList) *pb.L4Listener {
+func (b *Builder) buildTLSPassthroughListener(ctx context.Context, gw *pb.Gateway, listener *pb.Listener, endpoints map[string]*pb.EndpointList, bc *buildContext) *pb.L4Listener {
 	logger := log.FromContext(ctx)
 
 	l4Listener := &pb.L4Listener{
@@ -112,7 +111,7 @@ func (b *Builder) buildTLSPassthroughListener(ctx context.Context, gw *pb.Gatewa
 
 	// Use listener hostnames to build TLS routes
 	if len(listener.Hostnames) > 0 {
-		backendName, backendEndpoints := b.findL4BackendForListener(ctx, gw, listener, endpoints)
+		backendName, backendEndpoints := b.findL4BackendForListener(ctx, gw, listener, endpoints, bc)
 		if backendName != "" {
 			for _, hostname := range listener.Hostnames {
 				tlsRoutes = append(tlsRoutes, &pb.L4TLSRoute{
@@ -137,7 +136,7 @@ func (b *Builder) buildTLSPassthroughListener(ctx context.Context, gw *pb.Gatewa
 }
 
 // buildUDPListener builds a UDP L4 listener from gateway and route configuration
-func (b *Builder) buildUDPListener(ctx context.Context, gw *pb.Gateway, listener *pb.Listener, endpoints map[string]*pb.EndpointList) *pb.L4Listener {
+func (b *Builder) buildUDPListener(ctx context.Context, gw *pb.Gateway, listener *pb.Listener, endpoints map[string]*pb.EndpointList, bc *buildContext) *pb.L4Listener {
 	logger := log.FromContext(ctx)
 
 	l4Listener := &pb.L4Listener{
@@ -146,7 +145,7 @@ func (b *Builder) buildUDPListener(ctx context.Context, gw *pb.Gateway, listener
 		Protocol: pb.Protocol_UDP,
 	}
 
-	backendName, backendEndpoints := b.findL4BackendForListener(ctx, gw, listener, endpoints)
+	backendName, backendEndpoints := b.findL4BackendForListener(ctx, gw, listener, endpoints, bc)
 	if backendName == "" {
 		logger.Info("No backends found for UDP listener",
 			"gateway", gw.Name,
@@ -167,19 +166,10 @@ func (b *Builder) buildUDPListener(ctx context.Context, gw *pb.Gateway, listener
 }
 
 // findL4BackendForListener finds the backend and endpoints for an L4 listener
-// It searches routes that reference backends bound to this gateway
-func (b *Builder) findL4BackendForListener(ctx context.Context, gw *pb.Gateway, _ *pb.Listener, endpoints map[string]*pb.EndpointList) (string, []*pb.Endpoint) {
-	logger := log.FromContext(ctx)
-
-	// List routes that could match this gateway
-	routeList := &novaedgev1alpha1.ProxyRouteList{}
-	if err := b.client.List(ctx, routeList); err != nil {
-		logger.Error(err, "Failed to list routes for L4 backend lookup")
-		return "", nil
-	}
-
-	// Find routes that belong to this gateway's namespace
-	for _, route := range routeList.Items {
+// It searches pre-fetched routes that reference backends bound to this gateway
+func (b *Builder) findL4BackendForListener(_ context.Context, gw *pb.Gateway, _ *pb.Listener, endpoints map[string]*pb.EndpointList, bc *buildContext) (string, []*pb.Endpoint) {
+	// Find routes that belong to this gateway's namespace from pre-fetched cache
+	for _, route := range bc.routes {
 		if route.Namespace != gw.Namespace {
 			continue
 		}

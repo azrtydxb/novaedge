@@ -17,17 +17,13 @@ limitations under the License.
 package snapshot
 
 import (
-	"context"
 	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"go.uber.org/zap"
@@ -527,8 +523,9 @@ func convertDistributedRateLimitConfig(config *novaedgev1alpha1.DistributedRateL
 }
 
 // convertWAFConfig converts NovaEdge WAFConfig to protobuf WAFConfig.
-// When a client and namespace are provided, it fetches referenced ConfigMap rules.
-func convertWAFConfig(config *novaedgev1alpha1.WAFConfig, c client.Reader, namespace string) *pb.WAFConfig {
+// When a buildContext and namespace are provided, it looks up referenced
+// ConfigMap rules from the pre-fetched cache (no API call).
+func convertWAFConfig(config *novaedgev1alpha1.WAFConfig, bc *buildContext, namespace string) *pb.WAFConfig {
 	if config == nil {
 		return nil
 	}
@@ -548,21 +545,19 @@ func convertWAFConfig(config *novaedgev1alpha1.WAFConfig, c client.Reader, names
 	if config.RulesConfigMap != nil {
 		pbConfig.RulesConfigMapRef = config.RulesConfigMap.Name
 
-		// Fetch ConfigMap data and load rules
-		if c != nil && namespace != "" {
-			cm := &corev1.ConfigMap{}
-			key := types.NamespacedName{Name: config.RulesConfigMap.Name, Namespace: namespace}
-			if err := c.Get(context.Background(), key, cm); err != nil {
-				logger := log.Log.WithName("snapshot")
-				logger.Error(err, "Failed to fetch WAF rules ConfigMap",
-					"configmap", config.RulesConfigMap.Name,
-					"namespace", namespace,
-				)
-			} else {
+		// Load ConfigMap rules from the pre-fetched cache
+		if bc != nil && namespace != "" {
+			if cm, ok := bc.getConfigMap(namespace, config.RulesConfigMap.Name); ok {
 				for _, content := range cm.Data {
 					rules := parseConfigMapRules(content)
 					pbConfig.CustomRules = append(pbConfig.CustomRules, rules...)
 				}
+			} else {
+				logger := log.Log.WithName("snapshot")
+				logger.Error(nil, "WAF rules ConfigMap not found in cache",
+					"configmap", config.RulesConfigMap.Name,
+					"namespace", namespace,
+				)
 			}
 		}
 	}

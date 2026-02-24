@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -91,6 +92,12 @@ type Server struct {
 	// Metrics
 	activeStreams int64
 	streamsMu     sync.RWMutex
+
+	// dirty tracks whether any resource change event has occurred since the
+	// last snapshot rebuild. Watch handlers set it to true; the periodic
+	// rebuild loop checks and clears it. Using atomic.Bool avoids locking
+	// on the hot path.
+	dirty atomic.Bool
 
 	// Shutdown channel for cleanup goroutine
 	shutdownCh chan struct{}
@@ -189,8 +196,12 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 	s.cache.Subscribe(req.NodeName, updateCh)
 	defer s.cache.Unsubscribe(req.NodeName, updateCh)
 
-	// Listen for updates
-	ticker := time.NewTicker(30 * time.Second)
+	// Listen for updates.
+	// The periodic ticker is a 5-minute fallback safety net. Actual changes
+	// are delivered through updateCh (triggered by watch handlers). The
+	// periodic rebuild only fires when the dirty flag is set, avoiding
+	// unnecessary List() calls when nothing has changed.
+	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -200,7 +211,13 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 			return stream.Context().Err()
 
 		case <-ticker.C:
-			// Periodic health check - rebuild snapshot
+			// Only rebuild if a resource change event has occurred
+			if !s.dirty.Load() {
+				continue
+			}
+			s.dirty.Store(false)
+
+			// Periodic safety-net rebuild
 			newSnapshot, err := s.builder.BuildSnapshot(stream.Context(), req.NodeName)
 			if err != nil {
 				logger.Error(err, "Failed to rebuild snapshot")
@@ -277,8 +294,11 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.AgentStatus) (*pb.Sta
 	}, nil
 }
 
-// TriggerUpdate triggers a config update for all nodes or a specific node
+// TriggerUpdate triggers a config update for all nodes or a specific node.
+// It also marks the server as dirty so the periodic fallback rebuild knows
+// that resources have changed.
 func (s *Server) TriggerUpdate(nodeName string) {
+	s.dirty.Store(true)
 	if nodeName == "" {
 		// Trigger update for all nodes
 		s.cache.NotifyAll()

@@ -20,15 +20,18 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -292,7 +295,9 @@ func (r *IngressReconciler) reconcileBackend(ctx context.Context, desired *novae
 	return nil
 }
 
-// SetupWithManager sets up the controller with the Manager
+// SetupWithManager sets up the controller with the Manager.
+// Configures exponential backoff rate limiting (5ms base, 1000s max) to
+// prevent API server overload during error storms.
 func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&networkingv1.Ingress{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
@@ -300,6 +305,9 @@ func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
 		Owns(&novaedgev1alpha1.ProxyBackend{}).
 		Watches(&novaedgev1alpha1.ProxyVIP{}, handler.EnqueueRequestsFromMapFunc(r.vipToIngress)).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
+		}).
 		Complete(r)
 }
 

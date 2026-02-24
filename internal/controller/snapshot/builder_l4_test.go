@@ -40,6 +40,11 @@ func TestBuildL4Listeners(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	ctx := context.Background()
+	bc := &buildContext{
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
 
 	tests := []struct {
 		name             string
@@ -134,7 +139,7 @@ func TestBuildL4Listeners(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			listeners := builder.buildL4Listeners(ctx, tt.gateways, tt.endpoints)
+			listeners := builder.buildL4Listeners(ctx, tt.gateways, tt.endpoints, bc)
 
 			if len(listeners) != tt.expectedCount {
 				t.Errorf("Expected %d listeners, got %d", tt.expectedCount, len(listeners))
@@ -154,6 +159,11 @@ func TestBuildTCPListener(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	ctx := context.Background()
+	bc := &buildContext{
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
 
 	gateway := &pb.Gateway{
 		Name:      "test-gateway",
@@ -169,7 +179,7 @@ func TestBuildTCPListener(t *testing.T) {
 	endpoints := make(map[string]*pb.EndpointList)
 
 	t.Run("TCP listener without backends", func(t *testing.T) {
-		result := builder.buildTCPListener(ctx, gateway, listener, endpoints)
+		result := builder.buildTCPListener(ctx, gateway, listener, endpoints, bc)
 		if result != nil {
 			t.Error("Expected nil listener without backends")
 		}
@@ -178,7 +188,7 @@ func TestBuildTCPListener(t *testing.T) {
 	t.Run("TCP listener with defaults", func(t *testing.T) {
 		// Even without backends, the config should have defaults if it were created
 		// For this test, we verify the function behavior with no backends
-		result := builder.buildTCPListener(ctx, gateway, listener, endpoints)
+		result := builder.buildTCPListener(ctx, gateway, listener, endpoints, bc)
 		if result != nil {
 			t.Error("Expected nil listener without backends")
 		}
@@ -196,6 +206,11 @@ func TestBuildTLSPassthroughListener(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	ctx := context.Background()
+	bc := &buildContext{
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
 
 	gateway := &pb.Gateway{
 		Name:      "test-gateway",
@@ -237,7 +252,7 @@ func TestBuildTLSPassthroughListener(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := builder.buildTLSPassthroughListener(ctx, gateway, tt.listener, tt.endpoints)
+			result := builder.buildTLSPassthroughListener(ctx, gateway, tt.listener, tt.endpoints, bc)
 
 			if tt.expectNil && result != nil {
 				t.Error("Expected nil listener")
@@ -260,6 +275,11 @@ func TestBuildUDPListener(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	ctx := context.Background()
+	bc := &buildContext{
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
 
 	gateway := &pb.Gateway{
 		Name:      "test-gateway",
@@ -275,7 +295,7 @@ func TestBuildUDPListener(t *testing.T) {
 	endpoints := make(map[string]*pb.EndpointList)
 
 	t.Run("UDP listener without backends", func(t *testing.T) {
-		result := builder.buildUDPListener(ctx, gateway, listener, endpoints)
+		result := builder.buildUDPListener(ctx, gateway, listener, endpoints, bc)
 		if result != nil {
 			t.Error("Expected nil listener without backends")
 		}
@@ -399,7 +419,21 @@ func TestFindL4BackendForListener(t *testing.T) {
 			builder := NewBuilder(fakeClient)
 			ctx := context.Background()
 
-			backendName, endpoints := builder.findL4BackendForListener(ctx, tt.gateway, tt.listener, tt.endpoints)
+			// Populate buildContext routes from test data
+			var routes []novaedgev1alpha1.ProxyRoute
+			for _, obj := range tt.routes {
+				if r, ok := obj.(*novaedgev1alpha1.ProxyRoute); ok {
+					routes = append(routes, *r)
+				}
+			}
+			bc := &buildContext{
+				routes:     routes,
+				nodes:      make(map[string]*corev1.Node),
+				secrets:    make(map[string]*corev1.Secret),
+				configMaps: make(map[string]*corev1.ConfigMap),
+			}
+
+			backendName, endpoints := builder.findL4BackendForListener(ctx, tt.gateway, tt.listener, tt.endpoints, bc)
 
 			if backendName != tt.expectedBackend {
 				t.Errorf("Expected backend %q, got %q", tt.expectedBackend, backendName)
@@ -443,6 +477,12 @@ func TestBuildL4ListenersIntegration(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	ctx := context.Background()
+	bc := &buildContext{
+		routes:     []novaedgev1alpha1.ProxyRoute{*route},
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
 
 	gateways := []*pb.Gateway{
 		{
@@ -467,7 +507,7 @@ func TestBuildL4ListenersIntegration(t *testing.T) {
 	}
 
 	t.Run("build TCP listener with backend", func(t *testing.T) {
-		listeners := builder.buildL4Listeners(ctx, gateways, endpoints)
+		listeners := builder.buildL4Listeners(ctx, gateways, endpoints, bc)
 
 		if len(listeners) != 1 {
 			t.Fatalf("Expected 1 listener, got %d", len(listeners))
