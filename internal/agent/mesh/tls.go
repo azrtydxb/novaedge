@@ -17,6 +17,7 @@ limitations under the License.
 package mesh
 
 import (
+	"bytes"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -29,7 +30,9 @@ import (
 
 // TLSProvider manages TLS certificates for mesh connections.
 // It supports certificate rotation by using dynamic TLS callbacks
-// that read the current certificate under a read lock.
+// that read the current certificate under a read lock. The provider
+// caches parsed certificates and only re-parses when the raw PEM
+// bytes actually change.
 type TLSProvider struct {
 	mu          sync.RWMutex
 	logger      *zap.Logger
@@ -38,6 +41,10 @@ type TLSProvider struct {
 	trustDomain string
 	spiffeID    string
 	fedCfg      *FederationConfig
+	// lastCertPEM and lastKeyPEM cache the raw PEM bytes to detect changes
+	// and skip re-parsing when the certificate has not changed.
+	lastCertPEM []byte
+	lastKeyPEM  []byte
 }
 
 // NewTLSProvider creates a new mesh TLS provider for the given trust domain.
@@ -55,19 +62,37 @@ func NewTLSProvider(logger *zap.Logger, trustDomain string, fedCfg *FederationCo
 // The certPEM and keyPEM must contain a valid X.509 certificate and
 // private key in PEM format. The caCertPEM must contain one or more
 // CA certificates that form the trust bundle.
+//
+// The provider caches the raw PEM bytes and skips re-parsing if the
+// certificate and key bytes are unchanged, avoiding redundant
+// tls.X509KeyPair() calls on every config refresh.
 func (p *TLSProvider) UpdateCertificate(certPEM, keyPEM, caCertPEM []byte, spiffeID string) error {
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
-	if err != nil {
-		return fmt.Errorf("failed to parse certificate/key pair: %w", err)
-	}
+	p.mu.RLock()
+	certUnchanged := bytes.Equal(p.lastCertPEM, certPEM) && bytes.Equal(p.lastKeyPEM, keyPEM) && p.cert != nil
+	p.mu.RUnlock()
 
-	// Parse the leaf certificate so it's available for inspection.
-	if len(cert.Certificate) > 0 {
-		leaf, parseErr := x509.ParseCertificate(cert.Certificate[0])
-		if parseErr != nil {
-			return fmt.Errorf("failed to parse leaf certificate: %w", parseErr)
+	var cert tls.Certificate
+	if certUnchanged {
+		// Certificate bytes haven't changed — reuse the cached parsed cert.
+		p.mu.RLock()
+		cert = *p.cert
+		p.mu.RUnlock()
+	} else {
+		// Parse the new certificate/key pair.
+		var err error
+		cert, err = tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return fmt.Errorf("failed to parse certificate/key pair: %w", err)
 		}
-		cert.Leaf = leaf
+
+		// Parse the leaf certificate so it's available for inspection.
+		if len(cert.Certificate) > 0 {
+			leaf, parseErr := x509.ParseCertificate(cert.Certificate[0])
+			if parseErr != nil {
+				return fmt.Errorf("failed to parse leaf certificate: %w", parseErr)
+			}
+			cert.Leaf = leaf
+		}
 	}
 
 	caPool := x509.NewCertPool()
@@ -98,13 +123,24 @@ func (p *TLSProvider) UpdateCertificate(certPEM, keyPEM, caCertPEM []byte, spiff
 	p.cert = &cert
 	p.caCertPool = caPool
 	p.spiffeID = spiffeID
+	// Cache the raw PEM bytes for future change detection.
+	p.lastCertPEM = make([]byte, len(certPEM))
+	copy(p.lastCertPEM, certPEM)
+	p.lastKeyPEM = make([]byte, len(keyPEM))
+	copy(p.lastKeyPEM, keyPEM)
 	p.mu.Unlock()
 
-	p.logger.Info("mesh TLS certificate updated",
-		zap.String("spiffe_id", spiffeID),
-		zap.String("trust_domain", p.trustDomain),
-		zap.Int("ca_certs", added),
-	)
+	if certUnchanged {
+		p.logger.Debug("mesh TLS certificate unchanged, skipped re-parse",
+			zap.String("spiffe_id", spiffeID),
+		)
+	} else {
+		p.logger.Info("mesh TLS certificate updated",
+			zap.String("spiffe_id", spiffeID),
+			zap.String("trust_domain", p.trustDomain),
+			zap.Int("ca_certs", added),
+		)
+	}
 
 	return nil
 }

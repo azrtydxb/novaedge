@@ -17,6 +17,7 @@ limitations under the License.
 package mesh
 
 import (
+	"bufio"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -40,6 +41,18 @@ const (
 
 	// headerDestService is the header containing the destination service name.
 	headerDestService = "X-NovaEdge-Dest-Service"
+
+	// tunnelPoolCleanupInterval is how often the tunnel pool checks for idle clients.
+	tunnelPoolCleanupInterval = 5 * time.Minute
+
+	// tunnelPoolClientTTL is the maximum idle time before a pooled client is evicted.
+	tunnelPoolClientTTL = 10 * time.Minute
+
+	// tunnelWriteBufSize is the buffer size for the buffered tunnel writer.
+	tunnelWriteBufSize = 32 * 1024
+
+	// tunnelFlushInterval is the periodic flush interval for buffered tunnel writes.
+	tunnelFlushInterval = 1 * time.Millisecond
 )
 
 // TunnelServer handles incoming HTTP/2 CONNECT requests from peer agents.
@@ -202,8 +215,9 @@ func (ts *TunnelServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// The request body is the read side (client -> proxy -> backend).
 	// The ResponseWriter is the write side (backend -> proxy -> client).
 	//
-	// We wrap the ResponseWriter in a flushWriter so that each write is
-	// flushed immediately to the HTTP/2 stream, preventing buffering delays.
+	// We wrap the ResponseWriter in a bufferedFlushWriter that batches
+	// writes into a 32KB buffer with periodic 1ms flush to reduce
+	// per-write Flush() system call overhead.
 	done := make(chan struct{})
 	go func() {
 		defer func() { done <- struct{}{} }()
@@ -212,43 +226,163 @@ func (ts *TunnelServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	fw := &flushWriter{w: w}
-	if _, err := io.Copy(fw, backendConn); err != nil {
+	bfw := newBufferedFlushWriter(w)
+	defer func() { _ = bfw.Close() }()
+
+	// Use a wrapper that calls BufferedWrite so io.Copy goes through the buffer.
+	bfwWriter := &bufferedWriteAdapter{bfw: bfw}
+	if _, err := io.Copy(bfwWriter, backendConn); err != nil {
 		ts.logger.Debug("io.Copy backend->client finished with error", zap.Error(err))
 	}
 	<-done
 }
 
-// flushWriter wraps an http.ResponseWriter and flushes after every write.
-// This ensures data is sent immediately over the HTTP/2 stream.
-type flushWriter struct {
-	w http.ResponseWriter
+// bufferedFlushWriter wraps an http.ResponseWriter with a bufio.Writer to
+// batch small writes and reduce per-write Flush() overhead. A periodic timer
+// ensures data is sent promptly even when the buffer is not full.
+type bufferedFlushWriter struct {
+	w       http.ResponseWriter
+	buf     *bufio.Writer
+	mu      sync.Mutex
+	timer   *time.Timer
+	closed  bool
 }
 
-func (fw *flushWriter) Write(p []byte) (int, error) {
-	n, err := fw.w.Write(p)
-	if flusher, ok := fw.w.(http.Flusher); ok {
+// newBufferedFlushWriter creates a buffered writer that accumulates writes
+// into a 32KB buffer and flushes periodically (every 1ms) or when full.
+func newBufferedFlushWriter(w http.ResponseWriter) *bufferedFlushWriter {
+	bfw := &bufferedFlushWriter{w: w}
+	bfw.buf = bufio.NewWriterSize(bfw, tunnelWriteBufSize)
+	return bfw
+}
+
+// Write implements io.Writer. Called by bufio.Writer when flushing the buffer
+// to the underlying http.ResponseWriter.
+func (bfw *bufferedFlushWriter) Write(p []byte) (int, error) {
+	n, err := bfw.w.Write(p)
+	if flusher, ok := bfw.w.(http.Flusher); ok {
 		flusher.Flush()
 	}
 	return n, err
 }
 
+// BufferedWrite writes data into the buffer and starts a periodic flush timer
+// if one is not already running.
+func (bfw *bufferedFlushWriter) BufferedWrite(p []byte) (int, error) {
+	bfw.mu.Lock()
+	defer bfw.mu.Unlock()
+
+	if bfw.closed {
+		return 0, errors.New("writer closed")
+	}
+
+	n, err := bfw.buf.Write(p)
+
+	// Start a flush timer if not already running.
+	if bfw.timer == nil {
+		bfw.timer = time.AfterFunc(tunnelFlushInterval, func() {
+			bfw.mu.Lock()
+			defer bfw.mu.Unlock()
+			if !bfw.closed {
+				_ = bfw.buf.Flush()
+			}
+			bfw.timer = nil
+		})
+	}
+
+	return n, err
+}
+
+// Close flushes any remaining buffered data and stops the flush timer.
+func (bfw *bufferedFlushWriter) Close() error {
+	bfw.mu.Lock()
+	defer bfw.mu.Unlock()
+
+	if bfw.closed {
+		return nil
+	}
+	bfw.closed = true
+
+	if bfw.timer != nil {
+		bfw.timer.Stop()
+		bfw.timer = nil
+	}
+
+	return bfw.buf.Flush()
+}
+
+// bufferedWriteAdapter adapts a bufferedFlushWriter to an io.Writer for use
+// with io.Copy, routing writes through the buffered path.
+type bufferedWriteAdapter struct {
+	bfw *bufferedFlushWriter
+}
+
+func (a *bufferedWriteAdapter) Write(p []byte) (int, error) {
+	return a.bfw.BufferedWrite(p)
+}
+
+// pooledClient wraps an HTTP client with a last-used timestamp for idle eviction.
+type pooledClient struct {
+	client   *http.Client
+	lastUsed time.Time
+}
+
 // TunnelPool manages persistent HTTP/2 mTLS connections to peer agents.
 // It maintains a pool of HTTP clients keyed by node address, reusing
-// connections for multiple tunnel requests to the same peer.
+// connections for multiple tunnel requests to the same peer. Idle clients
+// are periodically evicted to prevent unbounded memory growth.
 type TunnelPool struct {
 	mu        sync.RWMutex
 	logger    *zap.Logger
 	tlsConfig *tls.Config
-	clients   map[string]*http.Client
+	clients   map[string]*pooledClient
+	stopOnce  sync.Once
+	stopCh    chan struct{}
 }
 
 // NewTunnelPool creates a new tunnel client pool for dialing peer agents.
+// It starts a background goroutine that periodically evicts idle clients.
 func NewTunnelPool(logger *zap.Logger, tlsConfig *tls.Config) *TunnelPool {
-	return &TunnelPool{
+	tp := &TunnelPool{
 		logger:    logger.Named("tunnel-pool"),
 		tlsConfig: tlsConfig,
-		clients:   make(map[string]*http.Client),
+		clients:   make(map[string]*pooledClient),
+		stopCh:    make(chan struct{}),
+	}
+	go tp.cleanupLoop()
+	return tp
+}
+
+// cleanupLoop periodically evicts idle clients from the pool.
+func (tp *TunnelPool) cleanupLoop() {
+	ticker := time.NewTicker(tunnelPoolCleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-tp.stopCh:
+			return
+		case <-ticker.C:
+			tp.evictIdle()
+		}
+	}
+}
+
+// evictIdle removes clients that have not been used within the TTL.
+func (tp *TunnelPool) evictIdle() {
+	tp.mu.Lock()
+	defer tp.mu.Unlock()
+
+	cutoff := time.Now().Add(-tunnelPoolClientTTL)
+	for addr, pc := range tp.clients {
+		if pc.lastUsed.Before(cutoff) {
+			pc.client.CloseIdleConnections()
+			delete(tp.clients, addr)
+			tp.logger.Debug("Evicted idle tunnel client",
+				zap.String("node_addr", addr),
+				zap.Duration("idle_time", time.Since(pc.lastUsed)),
+			)
+		}
 	}
 }
 
@@ -308,21 +442,30 @@ func (tp *TunnelPool) DialVia(ctx context.Context, nodeAddr, backendAddr, source
 	localAddr := parseTCPAddr(nodeAddr)
 	remoteAddr := parseTCPAddr(backendAddr)
 
+	// Create a cancellable context for deadline support. The cancel function
+	// is stored on the streamConn so deadline timers can trigger it.
+	_, streamCancel := context.WithCancel(ctx)
+
 	return &streamConn{
 		reader:     resp.Body,
 		writer:     pw,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
+		cancel:     streamCancel,
 	}, nil
 }
 
-// Close closes all persistent connections in the pool.
+// Close stops the cleanup goroutine and closes all persistent connections in the pool.
 func (tp *TunnelPool) Close() {
+	tp.stopOnce.Do(func() {
+		close(tp.stopCh)
+	})
+
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 
-	for addr, client := range tp.clients {
-		client.CloseIdleConnections()
+	for addr, pc := range tp.clients {
+		pc.client.CloseIdleConnections()
 		delete(tp.clients, addr)
 	}
 
@@ -330,29 +473,37 @@ func (tp *TunnelPool) Close() {
 }
 
 // getOrCreateClient returns an existing HTTP/2 client for the node address
-// or creates a new one.
+// or creates a new one. It updates the lastUsed timestamp on every access.
 func (tp *TunnelPool) getOrCreateClient(nodeAddr string) *http.Client {
 	tp.mu.RLock()
-	client, ok := tp.clients[nodeAddr]
+	pc, ok := tp.clients[nodeAddr]
 	tp.mu.RUnlock()
 	if ok {
-		return client
+		// Update lastUsed under write lock.
+		tp.mu.Lock()
+		pc.lastUsed = time.Now()
+		tp.mu.Unlock()
+		return pc.client
 	}
 
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 
 	// Double-check after acquiring write lock.
-	if client, ok = tp.clients[nodeAddr]; ok {
-		return client
+	if pc, ok = tp.clients[nodeAddr]; ok {
+		pc.lastUsed = time.Now()
+		return pc.client
 	}
 
-	client = &http.Client{
+	client := &http.Client{
 		Transport: &http2.Transport{
 			TLSClientConfig: tp.tlsConfig,
 		},
 	}
-	tp.clients[nodeAddr] = client
+	tp.clients[nodeAddr] = &pooledClient{
+		client:   client,
+		lastUsed: time.Now(),
+	}
 
 	tp.logger.Debug("Created HTTP/2 client for peer",
 		zap.String("node_addr", nodeAddr),
@@ -365,11 +516,21 @@ func (tp *TunnelPool) getOrCreateClient(nodeAddr string) *http.Client {
 // Reads come from the response body and writes go to the request body
 // pipe writer. This allows the tunnel stream to be used as a regular
 // network connection by upstream code.
+//
+// Since HTTP/2 streams do not natively support deadlines, we emulate them
+// using time.AfterFunc timers that cancel the stream's context, causing
+// in-progress reads and writes to fail.
 type streamConn struct {
 	reader     io.ReadCloser  // response body (read from peer)
 	writer     io.WriteCloser // pipe writer (write to peer via request body)
 	localAddr  net.Addr
 	remoteAddr net.Addr
+
+	mu            sync.Mutex
+	cancel        context.CancelFunc // cancels the stream context on deadline expiry
+	readTimer     *time.Timer        // pending read deadline timer
+	writeTimer    *time.Timer        // pending write deadline timer
+	deadlineTimer *time.Timer        // pending combined deadline timer
 }
 
 // Read reads data from the tunnel stream (response body from server).
@@ -382,8 +543,15 @@ func (sc *streamConn) Write(p []byte) (int, error) {
 	return sc.writer.Write(p)
 }
 
-// Close closes both the reader and writer sides of the tunnel stream.
+// Close closes both the reader and writer sides of the tunnel stream
+// and cancels any pending deadline timers.
 func (sc *streamConn) Close() error {
+	sc.mu.Lock()
+	sc.stopTimerLocked(&sc.readTimer)
+	sc.stopTimerLocked(&sc.writeTimer)
+	sc.stopTimerLocked(&sc.deadlineTimer)
+	sc.mu.Unlock()
+
 	rErr := sc.reader.Close()
 	wErr := sc.writer.Close()
 	if rErr != nil {
@@ -402,19 +570,69 @@ func (sc *streamConn) RemoteAddr() net.Addr {
 	return sc.remoteAddr
 }
 
-// SetDeadline is a no-op for HTTP/2 streams.
-func (sc *streamConn) SetDeadline(_ time.Time) error {
+// SetDeadline sets both read and write deadlines. If the deadline is in the
+// past or zero, any pending timer is cancelled. Otherwise, a timer is started
+// that will cancel the stream when the deadline expires.
+func (sc *streamConn) SetDeadline(t time.Time) error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	sc.setTimerLocked(&sc.deadlineTimer, t)
 	return nil
 }
 
-// SetReadDeadline is a no-op for HTTP/2 streams.
-func (sc *streamConn) SetReadDeadline(_ time.Time) error {
+// SetReadDeadline sets the read deadline for the stream.
+func (sc *streamConn) SetReadDeadline(t time.Time) error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	sc.setTimerLocked(&sc.readTimer, t)
 	return nil
 }
 
-// SetWriteDeadline is a no-op for HTTP/2 streams.
-func (sc *streamConn) SetWriteDeadline(_ time.Time) error {
+// SetWriteDeadline sets the write deadline for the stream.
+func (sc *streamConn) SetWriteDeadline(t time.Time) error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	sc.setTimerLocked(&sc.writeTimer, t)
 	return nil
+}
+
+// setTimerLocked sets or resets a deadline timer. Must be called with sc.mu held.
+func (sc *streamConn) setTimerLocked(timer **time.Timer, t time.Time) {
+	// Cancel any existing timer.
+	sc.stopTimerLocked(timer)
+
+	if t.IsZero() {
+		// Zero time means no deadline.
+		return
+	}
+
+	d := time.Until(t)
+	if d <= 0 {
+		// Deadline already passed — cancel immediately.
+		if sc.cancel != nil {
+			sc.cancel()
+		}
+		return
+	}
+
+	*timer = time.AfterFunc(d, func() {
+		sc.mu.Lock()
+		defer sc.mu.Unlock()
+		if sc.cancel != nil {
+			sc.cancel()
+		}
+	})
+}
+
+// stopTimerLocked stops and nils a timer. Must be called with sc.mu held.
+func (sc *streamConn) stopTimerLocked(timer **time.Timer) {
+	if *timer != nil {
+		(*timer).Stop()
+		*timer = nil
+	}
 }
 
 // parseTCPAddr attempts to parse an address string into a *net.TCPAddr.
