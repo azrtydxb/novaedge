@@ -28,9 +28,14 @@ type Filter interface {
 	Apply(w http.ResponseWriter, r *http.Request) (*http.Request, bool)
 }
 
+// headerSanitizer is a package-level Replacer reused across all requests to
+// avoid allocating a new one on every call (strings.Replacer is safe for
+// concurrent use).
+var headerSanitizer = strings.NewReplacer("\r", "", "\n", "")
+
 // sanitizeHeaderValue removes CR/LF characters to prevent header injection (CRLF injection).
 func sanitizeHeaderValue(value string) string {
-	return strings.NewReplacer("\r", "", "\n", "").Replace(value)
+	return headerSanitizer.Replace(value)
 }
 
 // HeaderModifierFilter modifies request headers

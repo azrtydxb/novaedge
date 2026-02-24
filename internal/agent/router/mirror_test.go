@@ -90,10 +90,8 @@ func TestDiscardResponseWriter(t *testing.T) {
 
 func TestMirrorMetrics(t *testing.T) {
 	// Reset metrics
-	globalMirrorMetrics.mu.Lock()
-	globalMirrorMetrics.requestsTotal = 0
-	globalMirrorMetrics.errorsTotal = 0
-	globalMirrorMetrics.mu.Unlock()
+	globalMirrorMetrics.requestsTotal.Store(0)
+	globalMirrorMetrics.errorsTotal.Store(0)
 
 	if MirrorRequestsTotal() != 0 {
 		t.Errorf("MirrorRequestsTotal() = %d, want 0", MirrorRequestsTotal())
@@ -102,11 +100,9 @@ func TestMirrorMetrics(t *testing.T) {
 		t.Errorf("MirrorErrorsTotal() = %d, want 0", MirrorErrorsTotal())
 	}
 
-	// Increment
-	globalMirrorMetrics.mu.Lock()
-	globalMirrorMetrics.requestsTotal = 5
-	globalMirrorMetrics.errorsTotal = 2
-	globalMirrorMetrics.mu.Unlock()
+	// Set values
+	globalMirrorMetrics.requestsTotal.Store(5)
+	globalMirrorMetrics.errorsTotal.Store(2)
 
 	if MirrorRequestsTotal() != 5 {
 		t.Errorf("MirrorRequestsTotal() = %d, want 5", MirrorRequestsTotal())

@@ -20,7 +20,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -75,6 +74,9 @@ type FaultInjectionMiddleware struct {
 	logger *zap.Logger
 	// randFloat is a function returning a float64 in [0, 100). Injected for testing.
 	randFloat func() float64
+	// Pre-computed header value strings to avoid fmt.Sprintf in the hot path.
+	delayHeaderValue string
+	abortHeaderValue string
 }
 
 // NewFaultInjectionMiddleware creates a new FaultInjectionMiddleware with the
@@ -83,7 +85,7 @@ func NewFaultInjectionMiddleware(config *FaultInjectionConfig, logger *zap.Logge
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &FaultInjectionMiddleware{
+	m := &FaultInjectionMiddleware{
 		config: config,
 		logger: logger,
 		randFloat: func() float64 {
@@ -94,6 +96,17 @@ func NewFaultInjectionMiddleware(config *FaultInjectionConfig, logger *zap.Logge
 			return float64(binary.LittleEndian.Uint64(buf[:])) / float64(^uint64(0)) * 100
 		},
 	}
+	// Pre-compute header value strings at config time so the hot path
+	// avoids fmt.Sprintf entirely.
+	if config != nil {
+		if config.DelayDuration > 0 {
+			m.delayHeaderValue = "delay=" + config.DelayDuration.String()
+		}
+		if config.AbortStatusCode > 0 {
+			m.abortHeaderValue = "abort=" + strconv.Itoa(config.AbortStatusCode)
+		}
+	}
+	return m
 }
 
 // Wrap returns an http.Handler that wraps the given handler with fault
@@ -137,7 +150,7 @@ func (m *FaultInjectionMiddleware) Wrap(next http.Handler) http.Handler {
 				return
 			}
 
-			w.Header().Add(faultInjectedHeader, fmt.Sprintf("delay=%s", m.config.DelayDuration))
+			w.Header().Add(faultInjectedHeader, m.delayHeaderValue)
 			FaultInjectionDelaysTotal.WithLabelValues(m.config.Route, r.Method).Inc()
 		}
 
@@ -149,7 +162,7 @@ func (m *FaultInjectionMiddleware) Wrap(next http.Handler) http.Handler {
 				zap.String("method", r.Method),
 			)
 
-			w.Header().Add(faultInjectedHeader, fmt.Sprintf("abort=%d", m.config.AbortStatusCode))
+			w.Header().Add(faultInjectedHeader, m.abortHeaderValue)
 			FaultInjectionAbortsTotal.WithLabelValues(m.config.Route, r.Method, strconv.Itoa(m.config.AbortStatusCode)).Inc()
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(m.config.AbortStatusCode)
