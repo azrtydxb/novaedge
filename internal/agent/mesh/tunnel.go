@@ -442,16 +442,11 @@ func (tp *TunnelPool) DialVia(ctx context.Context, nodeAddr, backendAddr, source
 	localAddr := parseTCPAddr(nodeAddr)
 	remoteAddr := parseTCPAddr(backendAddr)
 
-	// Create a cancellable context for deadline support. The cancel function
-	// is stored on the streamConn so deadline timers can trigger it.
-	_, streamCancel := context.WithCancel(ctx)
-
 	return &streamConn{
 		reader:     resp.Body,
 		writer:     pw,
 		localAddr:  localAddr,
 		remoteAddr: remoteAddr,
-		cancel:     streamCancel,
 	}, nil
 }
 
@@ -527,10 +522,10 @@ type streamConn struct {
 	remoteAddr net.Addr
 
 	mu            sync.Mutex
-	cancel        context.CancelFunc // cancels the stream context on deadline expiry
-	readTimer     *time.Timer        // pending read deadline timer
-	writeTimer    *time.Timer        // pending write deadline timer
-	deadlineTimer *time.Timer        // pending combined deadline timer
+	closed        bool        // set when Close() or deadline fires
+	readTimer     *time.Timer // pending read deadline timer
+	writeTimer    *time.Timer // pending write deadline timer
+	deadlineTimer *time.Timer // pending combined deadline timer
 }
 
 // Read reads data from the tunnel stream (response body from server).
@@ -547,11 +542,21 @@ func (sc *streamConn) Write(p []byte) (int, error) {
 // and cancels any pending deadline timers.
 func (sc *streamConn) Close() error {
 	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
 	sc.stopTimerLocked(&sc.readTimer)
 	sc.stopTimerLocked(&sc.writeTimer)
 	sc.stopTimerLocked(&sc.deadlineTimer)
-	sc.mu.Unlock()
+	return sc.closeLocked()
+}
 
+// closeLocked closes the underlying reader and writer to interrupt any blocked
+// I/O. Must be called with sc.mu held. Safe to call multiple times.
+func (sc *streamConn) closeLocked() error {
+	if sc.closed {
+		return nil
+	}
+	sc.closed = true
 	rErr := sc.reader.Close()
 	wErr := sc.writer.Close()
 	if rErr != nil {
@@ -611,19 +616,15 @@ func (sc *streamConn) setTimerLocked(timer **time.Timer, t time.Time) {
 
 	d := time.Until(t)
 	if d <= 0 {
-		// Deadline already passed — cancel immediately.
-		if sc.cancel != nil {
-			sc.cancel()
-		}
+		// Deadline already passed — close I/O immediately.
+		sc.closeLocked()
 		return
 	}
 
 	*timer = time.AfterFunc(d, func() {
 		sc.mu.Lock()
 		defer sc.mu.Unlock()
-		if sc.cancel != nil {
-			sc.cancel()
-		}
+		sc.closeLocked()
 	})
 }
 

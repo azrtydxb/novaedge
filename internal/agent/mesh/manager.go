@@ -49,7 +49,7 @@ const (
 type serviceEntry struct {
 	ready    []*pb.Endpoint // pre-filtered ready endpoints
 	lbPolicy pb.LoadBalancingPolicy
-	idx      uint64 // round-robin counter
+	idx      atomic.Uint64 // round-robin counter (atomic for concurrent Lookup)
 }
 
 // ServiceTable maps ClusterIP:port to a list of backend endpoints.
@@ -103,11 +103,8 @@ func (st *ServiceTable) Lookup(ip string, port int) (*pb.Endpoint, bool) {
 		return nil, false
 	}
 
-	// Simple round-robin selection over pre-computed ready endpoints.
-	// The non-atomic increment on idx is acceptable here as slight
-	// imprecision in round-robin under concurrent access is benign.
-	idx := entry.idx
-	entry.idx++
+	// Atomic round-robin selection over pre-computed ready endpoints.
+	idx := entry.idx.Add(1) - 1
 	return entry.ready[idx%uint64(len(entry.ready))], true
 }
 
