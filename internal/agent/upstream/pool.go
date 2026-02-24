@@ -56,6 +56,10 @@ type Pool struct {
 	// Mutex only needed for endpoint updates (write path)
 	mu sync.Mutex
 
+	// drainTimer tracks the deferred idle-connection drain so it can be
+	// cancelled on Close() or superseded by a newer UpdateEndpoints call.
+	drainTimer *time.Timer
+
 	// Health checker for endpoints
 	healthChecker *health.Checker
 
@@ -229,22 +233,30 @@ func (p *Pool) UpdateEndpoints(endpoints []*pb.Endpoint) {
 		p.healthChecker.UpdateEndpoints(endpoints)
 	}
 
-	// Release the lock before building new proxies — createProxies allocates
-	// new httputil.ReverseProxy objects which is expensive. Since proxies is
-	// an atomic.Pointer, readers in Forward() are safe during the swap.
-	p.mu.Unlock()
+	// Capture the endpoints slice while still holding the lock so that
+	// createProxiesFrom (called after Unlock) operates on a stable copy.
+	eps := p.endpoints
 
-	p.createProxies()
+	// Cancel any previously scheduled drain timer before scheduling a new one.
+	if p.drainTimer != nil {
+		p.drainTimer.Stop()
+	}
 
 	// Schedule deferred drain of old idle connections instead of immediately
 	// closing them. This gives in-flight requests a short window to complete
 	// on existing connections before they are reclaimed.
-	time.AfterFunc(5*time.Second, func() {
+	p.drainTimer = time.AfterFunc(5*time.Second, func() {
 		p.transport.CloseIdleConnections()
 		if ce := p.logger.Check(zap.DebugLevel, "Deferred idle connection drain completed"); ce != nil {
 			ce.Write(zap.String("cluster", p.clusterKey))
 		}
 	})
+
+	p.mu.Unlock()
+
+	// Build new proxies outside the lock — allocation is expensive but the
+	// atomic.Pointer swap in createProxiesFrom is safe for concurrent readers.
+	p.createProxiesFrom(eps)
 }
 
 // endpointSetsEqual returns true if old and new endpoint slices represent
@@ -272,15 +284,6 @@ func endpointSetsEqual(old, new []*pb.Endpoint) bool {
 		set[k] = count - 1
 	}
 	return true
-}
-
-// drainIdleConnections closes all idle connections in the transport
-// This is called when endpoints change to ensure we don't use stale connections
-func (p *Pool) drainIdleConnections() {
-	if p.transport != nil {
-		p.transport.CloseIdleConnections()
-		p.logger.Debug("Drained idle connections from transport")
-	}
 }
 
 // updateMetrics periodically updates pool metrics and reports them via Prometheus
@@ -326,14 +329,26 @@ func (p *Pool) updateMetrics() {
 	}
 }
 
-// createProxies creates reverse proxies for all endpoints
+// createProxies creates reverse proxies using the current p.endpoints.
+// Only safe to call when p.endpoints is not being concurrently modified
+// (e.g. during NewPool init).
 func (p *Pool) createProxies() {
+	p.mu.Lock()
+	eps := p.endpoints
+	p.mu.Unlock()
+	p.createProxiesFrom(eps)
+}
+
+// createProxiesFrom creates reverse proxies for the given endpoints.
+// The caller must pass an endpoints slice that is safe to read (either captured
+// under the lock or from NewPool before any concurrent access).
+func (p *Pool) createProxiesFrom(endpoints []*pb.Endpoint) {
 	newProxies := make(map[string]*httputil.ReverseProxy)
 
 	// Load current proxies for reuse
 	currentProxies := *p.proxies.Load()
 
-	for _, ep := range p.endpoints {
+	for _, ep := range endpoints {
 		if !ep.Ready {
 			continue
 		}
@@ -459,6 +474,12 @@ func (p *Pool) Close() {
 	}
 	if p.cancel != nil {
 		p.cancel()
+	}
+
+	// Cancel any pending deferred drain
+	if p.drainTimer != nil {
+		p.drainTimer.Stop()
+		p.drainTimer = nil
 	}
 
 	p.transport.CloseIdleConnections()

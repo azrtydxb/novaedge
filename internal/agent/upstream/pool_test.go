@@ -195,6 +195,92 @@ func TestClose(t *testing.T) {
 	}
 }
 
+func TestEndpointSetsEqual(t *testing.T) {
+	tests := []struct {
+		name     string
+		old, new []*pb.Endpoint
+		want     bool
+	}{
+		{
+			name: "both empty",
+			old:  nil,
+			new:  nil,
+			want: true,
+		},
+		{
+			name: "same single endpoint",
+			old:  []*pb.Endpoint{{Address: "10.0.0.1", Port: 80, Ready: true}},
+			new:  []*pb.Endpoint{{Address: "10.0.0.1", Port: 80, Ready: true}},
+			want: true,
+		},
+		{
+			name: "same elements different order",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			want: true,
+		},
+		{
+			name: "different lengths",
+			old:  []*pb.Endpoint{{Address: "10.0.0.1", Port: 80, Ready: true}},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			want: false,
+		},
+		{
+			name: "different ready status",
+			old:  []*pb.Endpoint{{Address: "10.0.0.1", Port: 80, Ready: true}},
+			new:  []*pb.Endpoint{{Address: "10.0.0.1", Port: 80, Ready: false}},
+			want: false,
+		},
+		{
+			name: "different port",
+			old:  []*pb.Endpoint{{Address: "10.0.0.1", Port: 80, Ready: true}},
+			new:  []*pb.Endpoint{{Address: "10.0.0.1", Port: 443, Ready: true}},
+			want: false,
+		},
+		{
+			name: "duplicate endpoints same count",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			want: true,
+		},
+		{
+			name: "duplicate in old but unique in new",
+			old: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+			},
+			new: []*pb.Endpoint{
+				{Address: "10.0.0.1", Port: 80, Ready: true},
+				{Address: "10.0.0.2", Port: 80, Ready: true},
+			},
+			want: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := endpointSetsEqual(tt.old, tt.new)
+			if got != tt.want {
+				t.Errorf("endpointSetsEqual() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsGRPCRequest(t *testing.T) {
 	tests := []struct {
 		name        string
