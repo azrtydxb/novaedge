@@ -17,32 +17,25 @@ limitations under the License.
 package snapshot
 
 import (
-	"context"
 	"fmt"
 	"time"
-
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 // buildBasicAuthConfig builds a BasicAuthConfig proto from the CRD spec,
-// loading the htpasswd credentials from the referenced Kubernetes Secret.
-func (b *Builder) buildBasicAuthConfig(ctx context.Context, p *novaedgev1alpha1.ProxyPolicy) (*pb.BasicAuthConfig, error) {
+// loading the htpasswd credentials from the pre-fetched Secret cache.
+func (b *Builder) buildBasicAuthConfig(p *novaedgev1alpha1.ProxyPolicy, bc *buildContext) (*pb.BasicAuthConfig, error) {
 	spec := p.Spec.BasicAuth
 	if spec == nil {
 		return nil, fmt.Errorf("basicAuth spec is nil")
 	}
 
-	// Load htpasswd from secret
-	secret := &corev1.Secret{}
-	if err := b.client.Get(ctx, types.NamespacedName{
-		Namespace: p.Namespace,
-		Name:      spec.SecretRef.Name,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("failed to get htpasswd secret %s: %w", spec.SecretRef.Name, err)
+	// Load htpasswd from pre-fetched secret cache
+	secret, ok := bc.getSecret(p.Namespace, spec.SecretRef.Name)
+	if !ok {
+		return nil, fmt.Errorf("htpasswd secret %s/%s not found in cache", p.Namespace, spec.SecretRef.Name)
 	}
 
 	htpasswd, ok := secret.Data["htpasswd"]
@@ -90,21 +83,21 @@ func (b *Builder) buildForwardAuthConfig(spec *novaedgev1alpha1.ForwardAuthPolic
 }
 
 // buildOIDCConfig builds an OIDCConfig proto from the CRD spec,
-// loading client secret and session secret from referenced Kubernetes Secrets.
-func (b *Builder) buildOIDCConfig(ctx context.Context, p *novaedgev1alpha1.ProxyPolicy) (*pb.OIDCConfig, error) {
+// loading client secret and session secret from the pre-fetched Secret cache.
+func (b *Builder) buildOIDCConfig(p *novaedgev1alpha1.ProxyPolicy, bc *buildContext) (*pb.OIDCConfig, error) {
 	spec := p.Spec.OIDC
 	if spec == nil {
 		return nil, fmt.Errorf("oidc spec is nil")
 	}
 
-	// Load client secret
-	clientSecret, err := b.loadSecretValue(ctx, p.Namespace, spec.ClientSecretRef.Name, "client-secret")
+	// Load client secret from pre-fetched cache
+	clientSecret, err := b.loadSecretValue(p.Namespace, spec.ClientSecretRef.Name, "client-secret", bc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load client secret: %w", err)
 	}
 
-	// Load session secret
-	sessionSecret, err := b.loadSecretBytes(ctx, p.Namespace, spec.SessionSecretRef.Name, "session-secret")
+	// Load session secret from pre-fetched cache
+	sessionSecret, err := b.loadSecretBytes(p.Namespace, spec.SessionSecretRef.Name, "session-secret", bc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load session secret: %w", err)
 	}
@@ -150,14 +143,11 @@ func (b *Builder) buildOIDCConfig(ctx context.Context, p *novaedgev1alpha1.Proxy
 	return config, nil
 }
 
-// loadSecretValue loads a string value from a Kubernetes Secret.
-func (b *Builder) loadSecretValue(ctx context.Context, namespace, secretName, key string) (string, error) {
-	secret := &corev1.Secret{}
-	if err := b.client.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      secretName,
-	}, secret); err != nil {
-		return "", fmt.Errorf("failed to get secret %s: %w", secretName, err)
+// loadSecretValue loads a string value from the pre-fetched Secret cache.
+func (b *Builder) loadSecretValue(namespace, secretName, key string, bc *buildContext) (string, error) {
+	secret, ok := bc.getSecret(namespace, secretName)
+	if !ok {
+		return "", fmt.Errorf("secret %s/%s not found in cache", namespace, secretName)
 	}
 
 	data, ok := secret.Data[key]
@@ -168,14 +158,11 @@ func (b *Builder) loadSecretValue(ctx context.Context, namespace, secretName, ke
 	return string(data), nil
 }
 
-// loadSecretBytes loads raw bytes from a Kubernetes Secret.
-func (b *Builder) loadSecretBytes(ctx context.Context, namespace, secretName, key string) ([]byte, error) {
-	secret := &corev1.Secret{}
-	if err := b.client.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      secretName,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("failed to get secret %s: %w", secretName, err)
+// loadSecretBytes loads raw bytes from the pre-fetched Secret cache.
+func (b *Builder) loadSecretBytes(namespace, secretName, key string, bc *buildContext) ([]byte, error) {
+	secret, ok := bc.getSecret(namespace, secretName)
+	if !ok {
+		return nil, fmt.Errorf("secret %s/%s not found in cache", namespace, secretName)
 	}
 
 	data, ok := secret.Data[key]

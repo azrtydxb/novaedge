@@ -19,6 +19,7 @@ package config
 import (
 	"context"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -61,7 +62,11 @@ type Watcher struct {
 	clusterZone   string
 	clusterLabels map[string]string
 
-	currentVersion string
+	// currentSnapshot stores the latest applied config snapshot using
+	// atomic.Pointer for lock-free reads on the hot path. Writers build the
+	// complete new Snapshot then do a single atomic Store; readers use Load
+	// without any lock.
+	currentSnapshot atomic.Pointer[Snapshot]
 }
 
 // TLSConfig holds TLS configuration for the watcher
@@ -243,11 +248,17 @@ func (w *Watcher) connectWithRetry() (*grpc.ClientConn, error) {
 
 // streamConfig streams config snapshots from the controller
 func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFunc) error {
+	// Read the last applied version from the atomic snapshot pointer
+	lastVersion := ""
+	if snap := w.currentSnapshot.Load(); snap != nil {
+		lastVersion = snap.Version
+	}
+
 	// Create stream request
 	req := &pb.StreamConfigRequest{
 		NodeName:           w.nodeName,
 		AgentVersion:       w.agentVersion,
-		LastAppliedVersion: w.currentVersion,
+		LastAppliedVersion: lastVersion,
 		ClusterName:        w.clusterName,
 		ClusterRegion:      w.clusterRegion,
 		ClusterZone:        w.clusterZone,
@@ -287,7 +298,8 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 				zap.Int64("generation_time", snapshot.GenerationTime),
 			)
 
-			// Apply the new configuration
+			// Build the complete new snapshot, then atomically swap the
+			// pointer so readers never see a partially-built config.
 			wrapped := &Snapshot{ConfigSnapshot: snapshot}
 			if err := applyFunc(wrapped); err != nil {
 				w.logger.Error("Failed to apply config snapshot",
@@ -299,8 +311,8 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 				continue
 			}
 
-			// Update current version
-			w.currentVersion = snapshot.Version
+			// Atomic store: readers use Load() without any lock
+			w.currentSnapshot.Store(wrapped)
 			w.logger.Info("Applied config snapshot successfully",
 				zap.String("version", snapshot.Version),
 			)
@@ -316,9 +328,15 @@ func (w *Watcher) reportStatus(ctx context.Context, client pb.ConfigServiceClien
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
+	// Read current version from atomic pointer (lock-free)
+	currentVersion := ""
+	if snap := w.currentSnapshot.Load(); snap != nil {
+		currentVersion = snap.Version
+	}
+
 	status := &pb.AgentStatus{
 		NodeName:             w.nodeName,
-		AppliedConfigVersion: w.currentVersion,
+		AppliedConfigVersion: currentVersion,
 		Timestamp:            time.Now().Unix(),
 		Healthy:              true,
 		Metrics:              make(map[string]int64),
