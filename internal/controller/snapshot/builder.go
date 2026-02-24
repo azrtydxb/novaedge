@@ -66,6 +66,137 @@ func NewBuilder(client client.Client) *Builder {
 	}
 }
 
+// buildContext holds all pre-fetched Kubernetes resources for a single
+// snapshot build pass. This eliminates duplicate List() calls (N+1 pattern)
+// and allows sub-functions to look up resources from memory instead of
+// making additional API calls.
+type buildContext struct {
+	gateways   []novaedgev1alpha1.ProxyGateway
+	routes     []novaedgev1alpha1.ProxyRoute
+	backends   []novaedgev1alpha1.ProxyBackend
+	policies   []novaedgev1alpha1.ProxyPolicy
+	vips       []novaedgev1alpha1.ProxyVIP
+	services   []corev1.Service
+	wanLinks   []novaedgev1alpha1.ProxyWANLink
+	wanPolices []novaedgev1alpha1.ProxyWANPolicy
+
+	// Pre-loaded node map for O(1) topology lookups (fixes N+1 node fetches)
+	nodes map[string]*corev1.Node
+
+	// Pre-fetched Secrets and ConfigMaps keyed by "namespace/name" for O(1) lookup
+	// (eliminates per-policy/per-route Get() calls)
+	secrets    map[string]*corev1.Secret
+	configMaps map[string]*corev1.ConfigMap
+}
+
+// prefetch loads all Kubernetes resources needed for a snapshot build pass
+// into the buildContext with a minimal number of API calls.
+func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
+	bc := &buildContext{
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
+
+	// --- CRD resources ---
+	gatewayList := &novaedgev1alpha1.ProxyGatewayList{}
+	if err := b.client.List(ctx, gatewayList); err != nil {
+		return nil, fmt.Errorf("failed to list gateways: %w", err)
+	}
+	bc.gateways = gatewayList.Items
+
+	routeList := &novaedgev1alpha1.ProxyRouteList{}
+	if err := b.client.List(ctx, routeList); err != nil {
+		return nil, fmt.Errorf("failed to list routes: %w", err)
+	}
+	bc.routes = routeList.Items
+
+	backendList := &novaedgev1alpha1.ProxyBackendList{}
+	if err := b.client.List(ctx, backendList); err != nil {
+		return nil, fmt.Errorf("failed to list backends: %w", err)
+	}
+	bc.backends = backendList.Items
+
+	policyList := &novaedgev1alpha1.ProxyPolicyList{}
+	if err := b.client.List(ctx, policyList); err != nil {
+		return nil, fmt.Errorf("failed to list policies: %w", err)
+	}
+	bc.policies = policyList.Items
+
+	vipList := &novaedgev1alpha1.ProxyVIPList{}
+	if err := b.client.List(ctx, vipList); err != nil {
+		return nil, fmt.Errorf("failed to list VIPs: %w", err)
+	}
+	bc.vips = vipList.Items
+
+	serviceList := &corev1.ServiceList{}
+	if err := b.client.List(ctx, serviceList); err != nil {
+		return nil, fmt.Errorf("failed to list services: %w", err)
+	}
+	bc.services = serviceList.Items
+
+	wanLinkList := &novaedgev1alpha1.ProxyWANLinkList{}
+	if err := b.client.List(ctx, wanLinkList); err != nil {
+		return nil, fmt.Errorf("failed to list WAN links: %w", err)
+	}
+	bc.wanLinks = wanLinkList.Items
+
+	wanPolicyList := &novaedgev1alpha1.ProxyWANPolicyList{}
+	if err := b.client.List(ctx, wanPolicyList); err != nil {
+		return nil, fmt.Errorf("failed to list WAN policies: %w", err)
+	}
+	bc.wanPolices = wanPolicyList.Items
+
+	// --- Nodes: pre-load all into map for O(1) topology lookup ---
+	nodeList := &corev1.NodeList{}
+	if err := b.client.List(ctx, nodeList); err != nil {
+		return nil, fmt.Errorf("failed to list nodes: %w", err)
+	}
+	for i := range nodeList.Items {
+		bc.nodes[nodeList.Items[i].Name] = &nodeList.Items[i]
+	}
+
+	// --- Secrets: batch-fetch all TLS and auth secrets ---
+	secretList := &corev1.SecretList{}
+	if err := b.client.List(ctx, secretList); err != nil {
+		return nil, fmt.Errorf("failed to list secrets: %w", err)
+	}
+	for i := range secretList.Items {
+		key := secretList.Items[i].Namespace + "/" + secretList.Items[i].Name
+		bc.secrets[key] = &secretList.Items[i]
+	}
+
+	// --- ConfigMaps: batch-fetch for WAF rules and WASM binaries ---
+	configMapList := &corev1.ConfigMapList{}
+	if err := b.client.List(ctx, configMapList); err != nil {
+		return nil, fmt.Errorf("failed to list configmaps: %w", err)
+	}
+	for i := range configMapList.Items {
+		key := configMapList.Items[i].Namespace + "/" + configMapList.Items[i].Name
+		bc.configMaps[key] = &configMapList.Items[i]
+	}
+
+	return bc, nil
+}
+
+// getSecret returns a pre-fetched Secret from the build context.
+func (bc *buildContext) getSecret(namespace, name string) (*corev1.Secret, bool) {
+	s, ok := bc.secrets[namespace+"/"+name]
+	return s, ok
+}
+
+// getConfigMap returns a pre-fetched ConfigMap from the build context.
+func (bc *buildContext) getConfigMap(namespace, name string) (*corev1.ConfigMap, bool) {
+	cm, ok := bc.configMaps[namespace+"/"+name]
+	return cm, ok
+}
+
+// getNode returns a pre-fetched Node from the build context.
+func (bc *buildContext) getNode(name string) (*corev1.Node, bool) {
+	n, ok := bc.nodes[name]
+	return n, ok
+}
+
 // SetFederationProvider sets the federation state provider used to populate
 // FederationMetadata on built snapshots. When nil, snapshots are built
 // without federation metadata.
@@ -202,25 +333,30 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		GenerationTime: time.Now().Unix(),
 	}
 
+	// Pre-fetch all Kubernetes resources in bulk to avoid N+1 API calls.
+	// Every sub-function below reads from this cached buildContext instead
+	// of making its own List()/Get() calls.
+	bc, err := b.prefetch(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prefetch resources: %w", err)
+	}
+
 	// Build VIP assignments
-	vips, err := b.buildVIPAssignments(ctx, nodeName)
+	vips, err := b.buildVIPAssignments(ctx, nodeName, bc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build VIP assignments: %w", err)
 	}
 	snapshot.VipAssignments = vips
 
 	// Build gateways
-	gateways, err := b.buildGateways(ctx)
+	gateways, err := b.buildGateways(ctx, bc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build gateways: %w", err)
 	}
 	snapshot.Gateways = gateways
 
 	// Build routes
-	routes, err := b.buildRoutes(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build routes: %w", err)
-	}
+	routes := b.buildRoutes(ctx, bc)
 	snapshot.Routes = routes
 
 	// Determine if this node has any BGP/OSPF (ECMP) VIP assignments.
@@ -234,7 +370,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	}
 
 	// Build backends/clusters
-	clusters, endpoints, err := b.buildClusters(ctx, hasECMPVIP)
+	clusters, endpoints, err := b.buildClusters(ctx, hasECMPVIP, bc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build clusters: %w", err)
 	}
@@ -242,42 +378,30 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	snapshot.Endpoints = endpoints
 
 	// Build policies
-	policies, err := b.buildPolicies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build policies: %w", err)
-	}
+	policies := b.buildPolicies(ctx, bc)
 	snapshot.Policies = policies
 
 	// Build L4 listeners (TCP/UDP/TLS passthrough)
-	l4Listeners := b.buildL4Listeners(ctx, snapshot.Gateways, snapshot.Endpoints)
+	l4Listeners := b.buildL4Listeners(ctx, snapshot.Gateways, snapshot.Endpoints, bc)
 	snapshot.L4Listeners = l4Listeners
 
 	// Build internal service routing tables for east-west mesh traffic
-	internalServices, err := b.buildInternalServices(ctx)
+	internalServices, err := b.buildInternalServices(ctx, bc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build internal services: %w", err)
 	}
 	snapshot.InternalServices = internalServices
 
 	// Build mesh authorization policies
-	meshAuthzPolicies, err := b.buildMeshAuthorizationPolicies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build mesh authorization policies: %w", err)
-	}
+	meshAuthzPolicies := b.buildMeshAuthorizationPolicies(ctx, bc)
 	snapshot.MeshAuthzPolicies = meshAuthzPolicies
 
 	// Build SD-WAN WAN links
-	wanLinks, err := b.buildWANLinks(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build WAN links: %w", err)
-	}
+	wanLinks := b.buildWANLinks(bc)
 	snapshot.WanLinks = wanLinks
 
 	// Build SD-WAN WAN policies
-	wanPolicies, err := b.buildWANPolicies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build WAN policies: %w", err)
-	}
+	wanPolicies := b.buildWANPolicies(bc)
 	snapshot.WanPolicies = wanPolicies
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
@@ -323,28 +447,22 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 }
 
 // buildVIPAssignments builds VIP assignments for the node
-func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*pb.VIPAssignment, error) {
-	vipList := &novaedgev1alpha1.ProxyVIPList{}
-	if err := b.client.List(ctx, vipList); err != nil {
-		return nil, err
-	}
-
-	// Look up node's InternalIP for per-node RouterID override
-	node := &corev1.Node{}
+func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *buildContext) ([]*pb.VIPAssignment, error) {
+	// Look up node's InternalIP for per-node RouterID override from pre-loaded map
 	nodeIP := ""
-	if err := b.client.Get(ctx, types.NamespacedName{Name: nodeName}, node); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to get node for RouterID lookup", "node", nodeName)
-	} else {
+	if node, ok := bc.getNode(nodeName); ok {
 		for _, addr := range node.Status.Addresses {
 			if addr.Type == corev1.NodeInternalIP {
 				nodeIP = addr.Address
 				break
 			}
 		}
+	} else {
+		log.FromContext(ctx).Error(nil, "Node not found in pre-loaded cache for RouterID lookup", "node", nodeName)
 	}
 
 	var assignments []*pb.VIPAssignment
-	for _, vip := range vipList.Items {
+	for _, vip := range bc.vips {
 		// Check if this node should handle this VIP
 		isActive := false
 
@@ -438,14 +556,9 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string) ([]*
 }
 
 // buildGateways builds gateway configurations
-func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
-	gatewayList := &novaedgev1alpha1.ProxyGatewayList{}
-	if err := b.client.List(ctx, gatewayList); err != nil {
-		return nil, err
-	}
-
-	gateways := make([]*pb.Gateway, 0, len(gatewayList.Items))
-	for _, gw := range gatewayList.Items {
+func (b *Builder) buildGateways(ctx context.Context, bc *buildContext) ([]*pb.Gateway, error) {
+	gateways := make([]*pb.Gateway, 0, len(bc.gateways))
+	for _, gw := range bc.gateways {
 		gateway := &pb.Gateway{
 			Name:              gw.Name,
 			Namespace:         gw.Namespace,
@@ -465,7 +578,7 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 
 			// Load TLS configuration if present
 			if listener.TLS != nil {
-				tlsConfig, err := b.loadTLSConfig(ctx, listener.TLS, gw.Namespace)
+				tlsConfig, err := b.loadTLSConfig(ctx, listener.TLS, gw.Namespace, bc)
 				if err != nil {
 					log.FromContext(ctx).Error(err, "Failed to load TLS config", "listener", listener.Name)
 					continue
@@ -477,7 +590,7 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 			if len(listener.TLSCertificates) > 0 {
 				pbListener.TlsCertificates = make(map[string]*pb.TLSConfig)
 				for hostname, tlsConfig := range listener.TLSCertificates {
-					pbTLSConfig, err := b.loadTLSConfig(ctx, &tlsConfig, gw.Namespace)
+					pbTLSConfig, err := b.loadTLSConfig(ctx, &tlsConfig, gw.Namespace, bc)
 					if err != nil {
 						log.FromContext(ctx).Error(err, "Failed to load SNI TLS config",
 							"listener", listener.Name,
@@ -527,14 +640,9 @@ func (b *Builder) buildGateways(ctx context.Context) ([]*pb.Gateway, error) {
 }
 
 // buildRoutes builds route configurations
-func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
-	routeList := &novaedgev1alpha1.ProxyRouteList{}
-	if err := b.client.List(ctx, routeList); err != nil {
-		return nil, err
-	}
-
-	routes := make([]*pb.Route, 0, len(routeList.Items))
-	for _, r := range routeList.Items {
+func (b *Builder) buildRoutes(_ context.Context, bc *buildContext) []*pb.Route {
+	routes := make([]*pb.Route, 0, len(bc.routes))
+	for _, r := range bc.routes {
 		route := &pb.Route{
 			Name:      r.Name,
 			Namespace: r.Namespace,
@@ -607,22 +715,17 @@ func (b *Builder) buildRoutes(ctx context.Context) ([]*pb.Route, error) {
 		routes = append(routes, route)
 	}
 
-	return routes, nil
+	return routes
 }
 
 // buildClusters builds backend cluster configurations and their endpoints.
 // When hasECMPVIP is true, non-hash LB policies are rejected and unspecified
 // policies are auto-promoted to Maglev for cross-node routing consistency.
-func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
-	backendList := &novaedgev1alpha1.ProxyBackendList{}
-	if err := b.client.List(ctx, backendList); err != nil {
-		return nil, nil, err
-	}
-
-	clusters := make([]*pb.Cluster, 0, len(backendList.Items))
+func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool, bc *buildContext) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
+	clusters := make([]*pb.Cluster, 0, len(bc.backends))
 	endpoints := make(map[string]*pb.EndpointList)
 
-	for _, backend := range backendList.Items {
+	for _, backend := range bc.backends {
 		cluster := &pb.Cluster{
 			Name:             backend.Name,
 			Namespace:        backend.Namespace,
@@ -652,19 +755,10 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 				InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify,
 			}
 
-			// Load CA cert from secret if specified
+			// Load CA cert from pre-fetched secret cache
 			if backend.Spec.TLS.CACertSecretRef != nil && *backend.Spec.TLS.CACertSecretRef != "" {
-				secret := &corev1.Secret{}
 				secretName := *backend.Spec.TLS.CACertSecretRef
-				if err := b.client.Get(ctx, types.NamespacedName{
-					Namespace: backend.Namespace,
-					Name:      secretName,
-				}, secret); err != nil {
-					log.FromContext(ctx).Error(err, "Failed to load CA cert secret",
-						"backend", backend.Name,
-						"secret", secretName,
-					)
-				} else {
+				if secret, ok := bc.getSecret(backend.Namespace, secretName); ok {
 					// Try common CA cert keys
 					if caCert, ok := secret.Data["ca.crt"]; ok {
 						cluster.Tls.CaCert = caCert
@@ -673,6 +767,11 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 					} else if caCert, ok := secret.Data["ca-bundle.crt"]; ok {
 						cluster.Tls.CaCert = caCert
 					}
+				} else {
+					log.FromContext(ctx).Error(nil, "CA cert secret not found in cache",
+						"backend", backend.Name,
+						"secret", secretName,
+					)
 				}
 			}
 		}
@@ -712,7 +811,7 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 
 		// Resolve endpoints for this backend
 		if backend.Spec.ServiceRef != nil {
-			endpointList, err := b.resolveServiceEndpoints(ctx, backend.Spec.ServiceRef, backend.Namespace)
+			endpointList, err := b.resolveServiceEndpoints(ctx, backend.Spec.ServiceRef, backend.Namespace, bc)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Failed to resolve endpoints", "backend", backend.Name)
 				continue
@@ -744,14 +843,9 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool) ([]*pb.Clu
 }
 
 // buildPolicies builds policy configurations
-func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
-	policyList := &novaedgev1alpha1.ProxyPolicyList{}
-	if err := b.client.List(ctx, policyList); err != nil {
-		return nil, err
-	}
-
-	policies := make([]*pb.Policy, 0, len(policyList.Items))
-	for _, p := range policyList.Items {
+func (b *Builder) buildPolicies(ctx context.Context, bc *buildContext) []*pb.Policy {
+	policies := make([]*pb.Policy, 0, len(bc.policies))
+	for _, p := range bc.policies {
 		policy := &pb.Policy{
 			Name:      p.Name,
 			Namespace: p.Namespace,
@@ -829,7 +923,7 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 		}
 
 		if p.Spec.WAF != nil {
-			policy.Waf = convertWAFConfig(p.Spec.WAF, b.client, p.Namespace)
+			policy.Waf = convertWAFConfig(p.Spec.WAF, bc, p.Namespace)
 		}
 
 		// Add WASM plugin configuration
@@ -849,8 +943,8 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 			if p.Spec.WASMPlugin.ConfigRef != nil {
 				wasmConfig.ConfigRef = p.Spec.WASMPlugin.ConfigRef.Name
 			}
-			// Load WASM binary from ConfigMap
-			wasmBytes, loadErr := b.loadWASMBinary(ctx, p.Spec.WASMPlugin.Source, p.Namespace)
+			// Load WASM binary from pre-fetched ConfigMap cache
+			wasmBytes, loadErr := b.loadWASMBinary(p.Spec.WASMPlugin.Source, p.Namespace, bc)
 			if loadErr != nil {
 				log.FromContext(ctx).Error(loadErr, "Failed to load WASM binary",
 					"policy", p.Name,
@@ -863,7 +957,7 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 
 		// Build BasicAuth config
 		if p.Spec.BasicAuth != nil {
-			basicAuthConfig, err := b.buildBasicAuthConfig(ctx, &p)
+			basicAuthConfig, err := b.buildBasicAuthConfig(&p, bc)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Failed to build BasicAuth config",
 					"policy", p.Name)
@@ -879,7 +973,7 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 
 		// Build OIDC config
 		if p.Spec.OIDC != nil {
-			oidcConfig, err := b.buildOIDCConfig(ctx, &p)
+			oidcConfig, err := b.buildOIDCConfig(&p, bc)
 			if err != nil {
 				log.FromContext(ctx).Error(err, "Failed to build OIDC config",
 					"policy", p.Name)
@@ -891,7 +985,7 @@ func (b *Builder) buildPolicies(ctx context.Context) ([]*pb.Policy, error) {
 		policies = append(policies, policy)
 	}
 
-	return policies, nil
+	return policies
 }
 
 // meshAnnotation is the annotation key that opts a Service into mesh interception.
@@ -903,18 +997,12 @@ const meshMTLSAnnotation = "novaedge.io/mesh-mtls"
 
 // buildInternalServices discovers Kubernetes Services annotated for mesh
 // interception and builds routing entries with resolved endpoints.
-func (b *Builder) buildInternalServices(ctx context.Context) ([]*pb.InternalService, error) {
+func (b *Builder) buildInternalServices(ctx context.Context, bc *buildContext) ([]*pb.InternalService, error) {
 	logger := log.FromContext(ctx)
 
-	// List all Services across all namespaces
-	serviceList := &corev1.ServiceList{}
-	if err := b.client.List(ctx, serviceList); err != nil {
-		return nil, fmt.Errorf("failed to list services: %w", err)
-	}
-
-	services := make([]*pb.InternalService, 0, len(serviceList.Items))
-	for i := range serviceList.Items {
-		svc := &serviceList.Items[i]
+	services := make([]*pb.InternalService, 0, len(bc.services))
+	for i := range bc.services {
+		svc := &bc.services[i]
 
 		// Only include Services annotated with novaedge.io/mesh: "enabled"
 		if svc.Annotations[meshAnnotation] != "enabled" {
@@ -1027,7 +1115,7 @@ const (
 )
 
 // resolveServiceEndpoints resolves endpoints from a ServiceReference
-func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novaedgev1alpha1.ServiceReference, defaultNamespace string) (*pb.EndpointList, error) {
+func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novaedgev1alpha1.ServiceReference, defaultNamespace string, bc *buildContext) (*pb.EndpointList, error) {
 	namespace := getNamespace(serviceRef.Namespace, defaultNamespace)
 
 	// Get the Service
@@ -1064,10 +1152,6 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 		}); err != nil {
 		return nil, fmt.Errorf("failed to list endpoint slices: %w", err)
 	}
-
-	// Cache Node objects to avoid repeated API calls for the same node name.
-	// Multiple endpoints often run on the same node.
-	nodeCache := make(map[string]*corev1.Node)
 
 	var endpoints []*pb.Endpoint
 	for _, es := range endpointSliceList.Items {
@@ -1114,7 +1198,9 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 			ready := ep.Conditions.Ready != nil && *ep.Conditions.Ready
 
 			// Build topology labels for locality-aware routing.
-			labels := b.resolveEndpointTopologyLabels(ctx, &ep, nodeCache)
+			// Use the pre-loaded node map from buildContext instead of
+			// per-endpoint API calls.
+			labels := b.resolveEndpointTopologyLabels(ctx, &ep, bc.nodes)
 
 			for _, addr := range ep.Addresses {
 				endpoints = append(endpoints, &pb.Endpoint{
@@ -1132,9 +1218,8 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 
 // resolveEndpointTopologyLabels extracts zone and region labels from an
 // EndpointSlice endpoint. Zone is taken from the endpoint's Zone field or
-// endpoint hints. Region is looked up from the Node that hosts the endpoint.
-// The nodeCache avoids repeated API calls for the same node.
-func (b *Builder) resolveEndpointTopologyLabels(ctx context.Context, ep *discoveryv1.Endpoint, nodeCache map[string]*corev1.Node) map[string]string {
+// endpoint hints. Region is looked up from the pre-loaded Node map.
+func (b *Builder) resolveEndpointTopologyLabels(_ context.Context, ep *discoveryv1.Endpoint, nodeMap map[string]*corev1.Node) map[string]string {
 	labels := make(map[string]string)
 
 	// Zone: prefer the endpoint's Zone field (set by Kubernetes from the
@@ -1150,23 +1235,10 @@ func (b *Builder) resolveEndpointTopologyLabels(ctx context.Context, ep *discove
 		}
 	}
 
-	// Region: look up the Node object to get topology.kubernetes.io/region.
+	// Region: look up the Node from the pre-loaded map (no API call).
 	if ep.NodeName != nil && *ep.NodeName != "" {
 		nodeName := *ep.NodeName
-		node, ok := nodeCache[nodeName]
-		if !ok {
-			n := &corev1.Node{}
-			if err := b.client.Get(ctx, types.NamespacedName{Name: nodeName}, n); err != nil {
-				log.FromContext(ctx).V(1).Info("Failed to get node for topology labels",
-					"node", nodeName, "error", err)
-				// Store nil to avoid retrying the same failed lookup.
-				nodeCache[nodeName] = nil
-			} else {
-				node = n
-				nodeCache[nodeName] = node
-			}
-		}
-		if node != nil {
+		if node, ok := nodeMap[nodeName]; ok && node != nil {
 			if region, exists := node.Labels[topologyRegionLabel]; exists {
 				labels[topologyRegionLabel] = region
 			}
@@ -1214,19 +1286,16 @@ func mergeRemoteEndpointLabels(existing map[string]string, clusterName, region, 
 	return labels
 }
 
-// loadTLSConfig loads TLS certificates from Kubernetes Secret
-func (b *Builder) loadTLSConfig(ctx context.Context, tls *novaedgev1alpha1.TLSConfig, defaultNamespace string) (*pb.TLSConfig, error) {
+// loadTLSConfig loads TLS certificates from the pre-fetched Secret cache
+func (b *Builder) loadTLSConfig(_ context.Context, tls *novaedgev1alpha1.TLSConfig, defaultNamespace string, bc *buildContext) (*pb.TLSConfig, error) {
 	namespace := tls.SecretRef.Namespace
 	if namespace == "" {
 		namespace = defaultNamespace
 	}
 
-	secret := &corev1.Secret{}
-	if err := b.client.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      tls.SecretRef.Name,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("failed to get TLS secret: %w", err)
+	secret, ok := bc.getSecret(namespace, tls.SecretRef.Name)
+	if !ok {
+		return nil, fmt.Errorf("TLS secret %s/%s not found in cache", namespace, tls.SecretRef.Name)
 	}
 
 	cert, ok := secret.Data["tls.crt"]
@@ -1247,8 +1316,8 @@ func (b *Builder) loadTLSConfig(ctx context.Context, tls *novaedgev1alpha1.TLSCo
 	}, nil
 }
 
-// loadWASMBinary loads a WASM binary from a ConfigMap
-func (b *Builder) loadWASMBinary(ctx context.Context, source, defaultNamespace string) ([]byte, error) {
+// loadWASMBinary loads a WASM binary from the pre-fetched ConfigMap cache
+func (b *Builder) loadWASMBinary(source, defaultNamespace string, bc *buildContext) ([]byte, error) {
 	// Source is expected to be a ConfigMap name (namespace/name or just name)
 	parts := strings.SplitN(source, "/", 2)
 	namespace := defaultNamespace
@@ -1258,12 +1327,9 @@ func (b *Builder) loadWASMBinary(ctx context.Context, source, defaultNamespace s
 		name = parts[1]
 	}
 
-	configMap := &corev1.ConfigMap{}
-	if err := b.client.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      name,
-	}, configMap); err != nil {
-		return nil, fmt.Errorf("failed to get WASM ConfigMap %s/%s: %w", namespace, name, err)
+	configMap, ok := bc.getConfigMap(namespace, name)
+	if !ok {
+		return nil, fmt.Errorf("WASM ConfigMap %s/%s not found in cache", namespace, name)
 	}
 
 	// Look for the WASM binary in BinaryData
@@ -1337,14 +1403,9 @@ func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 
 // buildMeshAuthorizationPolicies converts ProxyPolicy resources of type
 // MeshAuthorization into proto MeshAuthorizationPolicy messages.
-func (b *Builder) buildMeshAuthorizationPolicies(ctx context.Context) ([]*pb.MeshAuthorizationPolicy, error) {
-	policyList := &novaedgev1alpha1.ProxyPolicyList{}
-	if err := b.client.List(ctx, policyList); err != nil {
-		return nil, err
-	}
-
-	policies := make([]*pb.MeshAuthorizationPolicy, 0, len(policyList.Items))
-	for _, p := range policyList.Items {
+func (b *Builder) buildMeshAuthorizationPolicies(_ context.Context, bc *buildContext) []*pb.MeshAuthorizationPolicy {
+	policies := make([]*pb.MeshAuthorizationPolicy, 0, len(bc.policies))
+	for _, p := range bc.policies {
 		if p.Spec.Type != novaedgev1alpha1.PolicyTypeMeshAuthorization {
 			continue
 		}
@@ -1367,7 +1428,7 @@ func (b *Builder) buildMeshAuthorizationPolicies(ctx context.Context) ([]*pb.Mes
 		policies = append(policies, policy)
 	}
 
-	return policies, nil
+	return policies
 }
 
 // convertMeshAuthzRules converts CRD MeshAuthorizationRule slices to proto.
@@ -1421,16 +1482,11 @@ func (b *Builder) enhanceWithFederation(snapshot *pb.ConfigSnapshot) {
 	}
 }
 
-// buildWANLinks builds SD-WAN WAN link configurations from ProxyWANLink CRDs.
-func (b *Builder) buildWANLinks(ctx context.Context) ([]*pb.WANLink, error) {
-	linkList := &novaedgev1alpha1.ProxyWANLinkList{}
-	if err := b.client.List(ctx, linkList); err != nil {
-		return nil, err
-	}
-
-	links := make([]*pb.WANLink, 0, len(linkList.Items))
-	for i := range linkList.Items {
-		link := &linkList.Items[i]
+// buildWANLinks builds SD-WAN WAN link configurations from pre-fetched ProxyWANLink CRDs.
+func (b *Builder) buildWANLinks(bc *buildContext) []*pb.WANLink {
+	links := make([]*pb.WANLink, 0, len(bc.wanLinks))
+	for i := range bc.wanLinks {
+		link := &bc.wanLinks[i]
 		pbLink := &pb.WANLink{
 			Name:      link.Name,
 			Namespace: link.Namespace,
@@ -1465,19 +1521,14 @@ func (b *Builder) buildWANLinks(ctx context.Context) ([]*pb.WANLink, error) {
 		links = append(links, pbLink)
 	}
 
-	return links, nil
+	return links
 }
 
-// buildWANPolicies builds SD-WAN WAN policy configurations from ProxyWANPolicy CRDs.
-func (b *Builder) buildWANPolicies(ctx context.Context) ([]*pb.WANPolicy, error) {
-	policyList := &novaedgev1alpha1.ProxyWANPolicyList{}
-	if err := b.client.List(ctx, policyList); err != nil {
-		return nil, err
-	}
-
-	policies := make([]*pb.WANPolicy, 0, len(policyList.Items))
-	for i := range policyList.Items {
-		p := &policyList.Items[i]
+// buildWANPolicies builds SD-WAN WAN policy configurations from pre-fetched ProxyWANPolicy CRDs.
+func (b *Builder) buildWANPolicies(bc *buildContext) []*pb.WANPolicy {
+	policies := make([]*pb.WANPolicy, 0, len(bc.wanPolices))
+	for i := range bc.wanPolices {
+		p := &bc.wanPolices[i]
 		pbPolicy := &pb.WANPolicy{
 			Name:      p.Name,
 			Namespace: p.Namespace,
@@ -1500,5 +1551,5 @@ func (b *Builder) buildWANPolicies(ctx context.Context) ([]*pb.WANPolicy, error)
 		policies = append(policies, pbPolicy)
 	}
 
-	return policies, nil
+	return policies
 }

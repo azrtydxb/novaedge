@@ -37,6 +37,18 @@ const (
 	testLabelTrue     = "true"
 )
 
+// newBuildContextForTest creates a buildContext with the given backends, services, and nodes.
+func newBuildContextForTest(backends []novaedgev1alpha1.ProxyBackend, services []corev1.Service) *buildContext {
+	bc := &buildContext{
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
+	bc.backends = backends
+	bc.services = services
+	return bc
+}
+
 func TestBuildSnapshot(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)
@@ -444,7 +456,8 @@ func TestResolveEndpointsTargetPort(t *testing.T) {
 		Port: 80, // Service port, NOT targetPort
 	}
 
-	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default")
+	bc := newBuildContextForTest(nil, nil)
+	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default", bc)
 	if err != nil {
 		t.Fatalf("resolveServiceEndpoints failed: %v", err)
 	}
@@ -481,8 +494,9 @@ func TestBuildClustersECMPAutoPromoteToMaglev(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
 	builder := NewBuilder(fakeClient)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), true)
+	clusters, _, err := builder.buildClusters(context.Background(), true, bc)
 	if err != nil {
 		t.Fatalf("buildClusters failed: %v", err)
 	}
@@ -514,8 +528,9 @@ func TestBuildClustersECMPAutoPromotesRoundRobin(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
 	builder := NewBuilder(fakeClient)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), true)
+	clusters, _, err := builder.buildClusters(context.Background(), true, bc)
 	if err != nil {
 		t.Fatalf("buildClusters failed: %v", err)
 	}
@@ -546,8 +561,9 @@ func TestBuildClustersECMPRejectsNonHashLB(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
 	builder := NewBuilder(fakeClient)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), true)
+	clusters, _, err := builder.buildClusters(context.Background(), true, bc)
 	if err != nil {
 		t.Fatalf("buildClusters failed: %v", err)
 	}
@@ -575,8 +591,9 @@ func TestBuildClustersNonECMPAllowsAnyLB(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
 	builder := NewBuilder(fakeClient)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), false)
+	clusters, _, err := builder.buildClusters(context.Background(), false, bc)
 	if err != nil {
 		t.Fatalf("buildClusters failed: %v", err)
 	}
@@ -604,8 +621,9 @@ func TestBuildClustersECMPAllowsHashLB(t *testing.T) {
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
 	builder := NewBuilder(fakeClient)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), true)
+	clusters, _, err := builder.buildClusters(context.Background(), true, bc)
 	if err != nil {
 		t.Fatalf("buildClusters failed: %v", err)
 	}
@@ -676,7 +694,8 @@ func TestResolveEndpointsUnnamedPort(t *testing.T) {
 		Port: 80,
 	}
 
-	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default")
+	bc := newBuildContextForTest(nil, nil)
+	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default", bc)
 	if err != nil {
 		t.Fatalf("resolveServiceEndpoints failed: %v", err)
 	}
@@ -771,7 +790,8 @@ func TestBuildInternalServices(t *testing.T) {
 		Build()
 
 	builder := NewBuilder(fakeClient)
-	services, err := builder.buildInternalServices(context.Background())
+	bc := newBuildContextForTest(nil, []corev1.Service{*meshSvc, *plainSvc, *headlessSvc})
+	services, err := builder.buildInternalServices(context.Background(), bc)
 	if err != nil {
 		t.Fatalf("buildInternalServices failed: %v", err)
 	}
@@ -880,7 +900,8 @@ func TestBuildClustersFederationInactive(t *testing.T) {
 		},
 	})
 
-	_, endpoints, err := builder.buildClusters(context.Background(), false)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
+	_, endpoints, err := builder.buildClusters(context.Background(), false, bc)
 	if err != nil {
 		t.Fatalf("buildClusters failed: %v", err)
 	}
@@ -966,7 +987,8 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 		},
 	})
 
-	_, endpoints, err := builder.buildClusters(context.Background(), false)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
+	_, endpoints, err := builder.buildClusters(context.Background(), false, bc)
 	if err != nil {
 		t.Fatalf("buildClusters failed: %v", err)
 	}
@@ -1068,7 +1090,8 @@ func TestBuildInternalServicesEmpty(t *testing.T) {
 		Build()
 
 	builder := NewBuilder(fakeClient)
-	services, err := builder.buildInternalServices(context.Background())
+	bc := newBuildContextForTest(nil, nil)
+	services, err := builder.buildInternalServices(context.Background(), bc)
 	if err != nil {
 		t.Fatalf("buildInternalServices failed: %v", err)
 	}

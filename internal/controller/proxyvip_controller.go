@@ -19,17 +19,22 @@ package controller
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -377,15 +382,41 @@ func removeCondition(conditions *[]metav1.Condition, conditionType string) {
 	}
 }
 
-// SetupWithManager sets up the controller with the Manager
+// SetupWithManager sets up the controller with the Manager.
+// Configures exponential backoff rate limiting and filters
+// NovaEdgeCluster watches to only trigger on relevant spec changes.
 func (r *ProxyVIPReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.ProxyVIP{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Watches(
 			&novaedgev1alpha1.NovaEdgeCluster{},
 			handler.EnqueueRequestsFromMapFunc(r.allVIPsMapper),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}, r.clusterVIPExclusionsPredicate()),
 		).
+		WithOptions(controller.Options{
+			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
+		}).
 		Complete(r)
+}
+
+// clusterVIPExclusionsPredicate returns a predicate that only passes
+// Update events where VipNodeExclusions actually changed. This prevents
+// cascading reconciliation of all VIPs on unrelated NovaEdgeCluster updates.
+func (r *ProxyVIPReconciler) clusterVIPExclusionsPredicate() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(_ event.CreateEvent) bool { return true },
+		DeleteFunc: func(_ event.DeleteEvent) bool { return true },
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldCluster, ok1 := e.ObjectOld.(*novaedgev1alpha1.NovaEdgeCluster)
+			newCluster, ok2 := e.ObjectNew.(*novaedgev1alpha1.NovaEdgeCluster)
+			if !ok1 || !ok2 {
+				return true // safe fallback: reconcile
+			}
+			// Only reconcile VIPs if vipNodeExclusions changed
+			return !reflect.DeepEqual(oldCluster.Spec.VipNodeExclusions, newCluster.Spec.VipNodeExclusions)
+		},
+		GenericFunc: func(_ event.GenericEvent) bool { return true },
+	}
 }
 
 // allVIPsMapper enqueues all ProxyVIP resources for reconciliation when

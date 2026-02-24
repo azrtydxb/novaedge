@@ -17,7 +17,6 @@ limitations under the License.
 package snapshot
 
 import (
-	"context"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +26,21 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
+// newTestBuildContext creates a buildContext from a list of secrets for test use.
+func newTestBuildContext(secrets ...*corev1.Secret) *buildContext {
+	bc := &buildContext{
+		nodes:      make(map[string]*corev1.Node),
+		secrets:    make(map[string]*corev1.Secret),
+		configMaps: make(map[string]*corev1.ConfigMap),
+	}
+	for _, s := range secrets {
+		if s != nil {
+			bc.secrets[s.Namespace+"/"+s.Name] = s
+		}
+	}
+	return bc
+}
 
 func TestBuildBasicAuthConfig(t *testing.T) {
 	scheme := runtime.NewScheme()
@@ -172,7 +186,8 @@ func TestBuildBasicAuthConfig(t *testing.T) {
 				Build()
 
 			builder := NewBuilder(fakeClient)
-			config, err := builder.buildBasicAuthConfig(context.Background(), tt.policy)
+			bc := newTestBuildContext(tt.secret)
+			config, err := builder.buildBasicAuthConfig(tt.policy, bc)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("buildBasicAuthConfig() error = %v, wantErr %v", err, tt.wantErr)
@@ -445,7 +460,8 @@ func TestBuildOIDCConfig(t *testing.T) {
 				Build()
 
 			builder := NewBuilder(fakeClient)
-			config, err := builder.buildOIDCConfig(context.Background(), tt.policy)
+			bc := newTestBuildContext(tt.secrets...)
+			config, err := builder.buildOIDCConfig(tt.policy, bc)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("buildOIDCConfig() error = %v, wantErr %v", err, tt.wantErr)
@@ -532,7 +548,8 @@ func TestLoadSecretValue(t *testing.T) {
 				Build()
 
 			builder := NewBuilder(fakeClient)
-			value, err := builder.loadSecretValue(context.Background(), "default", "test-secret", tt.key)
+			bc := newTestBuildContext(tt.secret)
+			value, err := builder.loadSecretValue("default", "test-secret", tt.key, bc)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("loadSecretValue() error = %v, wantErr %v", err, tt.wantErr)
@@ -566,9 +583,10 @@ func TestLoadSecretBytes(t *testing.T) {
 		Build()
 
 	builder := NewBuilder(fakeClient)
+	bc := newTestBuildContext(secret)
 
 	t.Run("load binary data", func(t *testing.T) {
-		data, err := builder.loadSecretBytes(context.Background(), "default", "test-secret", "binary-key")
+		data, err := builder.loadSecretBytes("default", "test-secret", "binary-key", bc)
 		if err != nil {
 			t.Errorf("loadSecretBytes() error = %v", err)
 			return
@@ -579,7 +597,7 @@ func TestLoadSecretBytes(t *testing.T) {
 	})
 
 	t.Run("missing key", func(t *testing.T) {
-		_, err := builder.loadSecretBytes(context.Background(), "default", "test-secret", "missing-key")
+		_, err := builder.loadSecretBytes("default", "test-secret", "missing-key", bc)
 		if err == nil {
 			t.Error("Expected error for missing key")
 		}
