@@ -64,6 +64,12 @@ func (r *ProxyPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	// Skip if already reconciled this generation (ObservedGeneration > 0
+	// ensures first-ever reconciliation always proceeds)
+	if policy.Status.ObservedGeneration != 0 && policy.Status.ObservedGeneration == policy.Generation {
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Reconciling ProxyPolicy", "name", policy.Name, "type", policy.Spec.Type, "target", policy.Spec.TargetRef.Name)
 
 	// Validate and update status

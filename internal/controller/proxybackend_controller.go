@@ -64,6 +64,12 @@ func (r *ProxyBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	// Skip if already reconciled this generation (ObservedGeneration > 0
+	// ensures first-ever reconciliation always proceeds)
+	if backend.Status.ObservedGeneration != 0 && backend.Status.ObservedGeneration == backend.Generation {
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Reconciling ProxyBackend", "name", backend.Name, "lbPolicy", backend.Spec.LBPolicy)
 
 	// Validate and update status

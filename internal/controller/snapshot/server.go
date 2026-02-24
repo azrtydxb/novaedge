@@ -99,6 +99,12 @@ type Server struct {
 	// on the hot path.
 	dirty atomic.Bool
 
+	// debounceTimer coalesces rapid TriggerUpdate calls within a 100ms window.
+	// Instead of notifying agents on every watch event, the timer is reset on
+	// each call and the actual notification fires only after 100ms of quiet.
+	debounceTimer *time.Timer
+	debounceMu    sync.Mutex
+
 	// Shutdown channel for cleanup goroutine
 	shutdownCh chan struct{}
 }
@@ -249,6 +255,11 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 				continue
 			}
 
+			// Skip if version hasn't changed since last push (content-hash dedup)
+			if newSnapshot.Version == lastVersion {
+				continue
+			}
+
 			if err := stream.Send(newSnapshot); err != nil {
 				logger.Error(err, "Failed to send triggered snapshot")
 				return status.Errorf(codes.Internal, "failed to send snapshot: %v", err)
@@ -297,13 +308,29 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.AgentStatus) (*pb.Sta
 // TriggerUpdate triggers a config update for all nodes or a specific node.
 // It also marks the server as dirty so the periodic fallback rebuild knows
 // that resources have changed.
+//
+// Rapid calls are debounced within a 100ms coalescing window: the actual
+// notification is delayed until 100ms after the last call, preventing
+// unnecessary snapshot rebuilds during bursts of watch events.
 func (s *Server) TriggerUpdate(nodeName string) {
 	s.dirty.Store(true)
+
+	s.debounceMu.Lock()
+	defer s.debounceMu.Unlock()
+
+	if s.debounceTimer != nil {
+		s.debounceTimer.Stop()
+	}
+	s.debounceTimer = time.AfterFunc(100*time.Millisecond, func() {
+		s.doTrigger(nodeName)
+	})
+}
+
+// doTrigger performs the actual cache notification after the debounce window.
+func (s *Server) doTrigger(nodeName string) {
 	if nodeName == "" {
-		// Trigger update for all nodes
 		s.cache.NotifyAll()
 	} else {
-		// Trigger update for specific node
 		s.cache.Notify(nodeName)
 	}
 }
@@ -546,6 +573,11 @@ func (s *Server) RequestMeshCertificate(ctx context.Context, req *pb.MeshCertifi
 
 // Shutdown gracefully shuts down the server
 func (s *Server) Shutdown() {
+	s.debounceMu.Lock()
+	if s.debounceTimer != nil {
+		s.debounceTimer.Stop()
+	}
+	s.debounceMu.Unlock()
 	close(s.shutdownCh)
 }
 

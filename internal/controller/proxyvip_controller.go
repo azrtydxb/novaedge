@@ -73,6 +73,12 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		return ctrl.Result{}, err
 	}
 
+	// Skip if already reconciled this generation (ObservedGeneration > 0
+	// ensures first-ever reconciliation always proceeds)
+	if vip.Status.ObservedGeneration != 0 && vip.Status.ObservedGeneration == vip.Generation {
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Reconciling ProxyVIP", "name", vip.Name, "mode", vip.Spec.Mode, "address", vip.Spec.Address)
 
 	// Handle IPAM allocation if poolRef is set and no address allocated yet
