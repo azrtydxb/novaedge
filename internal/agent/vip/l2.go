@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/netip"
 	"sync"
@@ -33,6 +34,12 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// maxFailoverJitter is the upper bound for the random jitter added before
+// sending GARP/NDP announcements during VIP failover. Each VIP picks a
+// uniformly random delay in [0, maxFailoverJitter) to stagger sends and
+// prevent a thundering-herd of gratuitous announcements on the network (#596).
+const maxFailoverJitter = 100 * time.Millisecond
 
 // L2Handler manages L2 ARP/NDP VIP mode
 type L2Handler struct {
@@ -132,6 +139,15 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 	if err := h.addIPAddress(assignment.Address); err != nil {
 		return fmt.Errorf("failed to add IP address: %w", err)
 	}
+
+	// Stagger GARP/NDP sends with per-VIP random jitter to avoid a
+	// thundering herd when multiple agents fail over simultaneously (#596).
+	jitter := time.Duration(rand.Int63n(int64(maxFailoverJitter))) //nolint:gosec // jitter does not need crypto rand
+	h.logger.Debug("Delaying GARP/NDP announcement",
+		zap.String("vip", assignment.VipName),
+		zap.Duration("jitter", jitter),
+	)
+	time.Sleep(jitter)
 
 	// Send gratuitous announcement (GARP for IPv4, NDP NA for IPv6)
 	if isIPv6 {
