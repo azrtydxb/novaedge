@@ -23,6 +23,8 @@ import (
 	"net"
 
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/conntrack"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/maglev"
 	"go.uber.org/zap"
 )
 
@@ -69,3 +71,15 @@ func (m *Manager) Stats() map[string]uint64 {
 
 // IsRunning returns false on non-Linux platforms.
 func (m *Manager) IsRunning() bool { return false }
+
+// SetMaglev is a no-op on non-Linux platforms.
+func (m *Manager) SetMaglev(_ *maglev.Manager) {}
+
+// SetConntrack is a no-op on non-Linux platforms.
+func (m *Manager) SetConntrack(_ *conntrack.Conntrack) {}
+
+// Maglev returns nil on non-Linux platforms.
+func (m *Manager) Maglev() *maglev.Manager { return nil }
+
+// Conntrack returns nil on non-Linux platforms.
+func (m *Manager) Conntrack() *conntrack.Conntrack { return nil }
