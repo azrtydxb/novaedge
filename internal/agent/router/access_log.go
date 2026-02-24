@@ -107,7 +107,8 @@ type AccessLogMiddleware struct {
 	stopCh chan struct{}
 	// doneCh is closed by the asyncWriter goroutine when it has finished
 	// draining and exiting, so Close() can wait for it.
-	doneCh chan struct{}
+	doneCh    chan struct{}
+	closeOnce sync.Once
 }
 
 // NewAccessLogMiddleware creates a new access log middleware from proto config
@@ -233,18 +234,20 @@ func (alm *AccessLogMiddleware) IsEnabled() bool {
 
 // Close cleans up resources used by the middleware. It signals the background
 // writer goroutine to stop, waits for it to drain remaining entries, and
-// then closes the file writer.
+// then closes the file writer. Safe to call multiple times.
 func (alm *AccessLogMiddleware) Close() {
-	if alm.stopCh != nil {
-		close(alm.stopCh)
-	}
-	// Wait for the async writer to finish draining before closing I/O.
-	if alm.doneCh != nil {
-		<-alm.doneCh
-	}
-	if alm.fileWriter != nil {
-		_ = alm.fileWriter.Close()
-	}
+	alm.closeOnce.Do(func() {
+		if alm.stopCh != nil {
+			close(alm.stopCh)
+		}
+		// Wait for the async writer to finish draining before closing I/O.
+		if alm.doneCh != nil {
+			<-alm.doneCh
+		}
+		if alm.fileWriter != nil {
+			_ = alm.fileWriter.Close()
+		}
+	})
 }
 
 // Wrap returns an http.Handler that logs access information
