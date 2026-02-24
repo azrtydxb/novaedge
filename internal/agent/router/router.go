@@ -76,6 +76,29 @@ func formatEndpointKey(address string, port int32) string {
 // tracerName is the instrumentation name for the router tracer
 const tracerName = "github.com/piwi3910/novaedge/internal/agent/router"
 
+// httpSpanNames is a pre-computed lookup table for OTel span names,
+// avoiding "HTTP " + req.Method string concatenation on every request.
+var httpSpanNames = map[string]string{
+	"GET":     "HTTP GET",
+	"POST":    "HTTP POST",
+	"PUT":     "HTTP PUT",
+	"DELETE":  "HTTP DELETE",
+	"PATCH":   "HTTP PATCH",
+	"HEAD":    "HTTP HEAD",
+	"OPTIONS": "HTTP OPTIONS",
+	"CONNECT": "HTTP CONNECT",
+	"TRACE":   "HTTP TRACE",
+}
+
+// httpSpanName returns the pre-computed span name for the given HTTP method,
+// falling back to concatenation for unknown methods.
+func httpSpanName(method string) string {
+	if name, ok := httpSpanNames[method]; ok {
+		return name
+	}
+	return "HTTP " + method
+}
+
 // routerState holds the immutable routing state that is atomically swapped
 // on each configuration update. ServeHTTP loads a snapshot of this state
 // once per request, so in-flight requests are never blocked by config updates.
@@ -309,6 +332,15 @@ func (r *Router) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) err
 	// Create sticky session wrappers for clusters with session affinity
 	newState.stickyWrappers = r.buildStickyWrappers(snapshot, newLoadBalancers)
 
+	// Pre-build middleware handler chains for all route entries now that pools
+	// and balancers are ready. This moves 5-7 closure allocations per request
+	// to a one-time cost at config time.
+	for _, entries := range newState.routes {
+		for _, entry := range entries {
+			entry.handler = r.buildHandler(newState, entry)
+		}
+	}
+
 	// Atomically publish the new state so ServeHTTP picks it up without locking.
 	r.state.Store(newState)
 
@@ -380,6 +412,9 @@ func (r *Router) buildRouteEntry(ctx context.Context, route *pb.Route, rule *pb.
 			)
 		}
 	}
+
+	// Pre-build retry policy at config time (avoids struct + 2 map allocs per request)
+	entry.retryPolicy = NewRetryPolicy(rule.Retry)
 
 	// Pre-compute cluster keys for all backend refs
 	if len(rule.BackendRefs) > 0 {
@@ -649,7 +684,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	// Start the main request span. Attributes are set lazily below to avoid
 	// allocating attribute.String values when the span is not sampled (#131).
 	tracer := otel.Tracer(tracerName)
-	ctx, span := tracer.Start(ctx, "HTTP "+req.Method,
+	ctx, span := tracer.Start(ctx, httpSpanName(req.Method),
 		trace.WithSpanKind(trace.SpanKindServer),
 	)
 	defer span.End()
