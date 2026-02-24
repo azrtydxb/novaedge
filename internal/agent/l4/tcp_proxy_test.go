@@ -133,7 +133,7 @@ func TestTCPProxy_PickBackend_RoundRobin(t *testing.T) {
 	// Pick backends and verify round-robin
 	seen := make(map[string]int)
 	for i := 0; i < 9; i++ {
-		ep := proxy.pickBackend()
+		ep, _ := proxy.pickBackend()
 		if ep == nil {
 			t.Fatal("pickBackend returned nil")
 		}
@@ -163,7 +163,7 @@ func TestTCPProxy_PickBackend_NoReady(t *testing.T) {
 		BackendName:  "test",
 	}, logger)
 
-	ep := proxy.pickBackend()
+	ep, _ := proxy.pickBackend()
 	if ep != nil {
 		t.Errorf("Expected nil for no ready backends, got %v", ep)
 	}
@@ -182,7 +182,7 @@ func TestTCPProxy_UpdateBackends(t *testing.T) {
 		BackendName:  "test",
 	}, logger)
 
-	ep := proxy.pickBackend()
+	ep, _ := proxy.pickBackend()
 	if ep == nil || ep.Address != testAddrTCP1 {
 		t.Fatal("Expected initial backend")
 	}
@@ -195,7 +195,7 @@ func TestTCPProxy_UpdateBackends(t *testing.T) {
 	proxy.UpdateBackends(newBackends)
 
 	// Verify new backends are used
-	ep = proxy.pickBackend()
+	ep, _ = proxy.pickBackend()
 	if ep == nil {
 		t.Fatal("Expected backend after update")
 	}
