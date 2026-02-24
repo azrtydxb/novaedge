@@ -1349,7 +1349,9 @@ func (b *Builder) loadWASMBinary(source, defaultNamespace string, bc *buildConte
 	return nil, fmt.Errorf("WASM binary not found in ConfigMap %s/%s (expected key: plugin.wasm)", namespace, name)
 }
 
-// generateVersion generates a version string based on content hash
+// generateVersion generates a version string based on content hash.
+// The hash must include ALL mutable snapshot fields so that downstream
+// consumers (e.g. the agent's HTTPServer.ApplyConfig) detect changes.
 func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	// Create a deterministic string representation
 	parts := make([]string, 0, len(snapshot.Gateways)+len(snapshot.Routes)+len(snapshot.Clusters)+len(snapshot.VipAssignments)+len(snapshot.Policies))
@@ -1363,6 +1365,13 @@ func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
 	}
 	for _, c := range snapshot.Clusters {
 		parts = append(parts, fmt.Sprintf("cluster:%s/%s", c.Namespace, c.Name))
+	}
+	// Include endpoint addresses and ports so that pod IP changes
+	// (e.g. after a scale-down/up) produce a different version hash.
+	for clusterName, epList := range snapshot.Endpoints {
+		for _, ep := range epList.Endpoints {
+			parts = append(parts, fmt.Sprintf("ep:%s:%s:%d:%v", clusterName, ep.Address, ep.Port, ep.Ready))
+		}
 	}
 	for _, vip := range snapshot.VipAssignments {
 		part := fmt.Sprintf("vip:%s:%s", vip.VipName, vip.Address)
