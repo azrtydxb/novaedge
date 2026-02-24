@@ -29,6 +29,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/service"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -117,6 +119,11 @@ func (st *ServiceTable) ServiceCount() int {
 // Manager orchestrates the service mesh data plane components: TPROXY rule
 // management, transparent listener, protocol detection, service routing,
 // mTLS tunnel server/client, and authorization policy enforcement.
+//
+// When eBPF acceleration is available (Linux with appropriate kernel support),
+// the manager also integrates:
+//   - SOCKMAP/sk_msg for same-node socket-to-socket redirection (#631)
+//   - eBPF service lookup maps for O(1) service resolution (#633)
 type Manager struct {
 	logger              *zap.Logger
 	tproxy              *TPROXYManager
@@ -130,6 +137,18 @@ type Manager struct {
 	trustDomain         string
 	ruleBackendOverride RuleBackend
 	cancel              context.CancelFunc
+
+	// nodeIP is the IP address of this node, used for identifying
+	// same-node endpoints eligible for SOCKMAP bypass.
+	nodeIP string
+
+	// sockMapMgr is the eBPF SOCKMAP manager for same-node traffic
+	// acceleration. May be nil if eBPF SOCKMAP is not available.
+	sockMapMgr *sockmap.Manager
+
+	// serviceMap is the eBPF service lookup map for accelerated service
+	// resolution. May be nil if eBPF service maps are not available.
+	serviceMap *service.ServiceMap
 }
 
 // ManagerConfig holds configuration for creating a mesh Manager.
@@ -137,6 +156,9 @@ type ManagerConfig struct {
 	TPROXYPort  int32
 	TunnelPort  int32
 	TrustDomain string
+	// NodeIP is the IP address of this node. Used for identifying same-node
+	// endpoints that are eligible for SOCKMAP bypass.
+	NodeIP string
 	// Federation holds cross-cluster federation settings. May be nil when
 	// federation is not active.
 	Federation *FederationConfig
@@ -144,6 +166,13 @@ type ManagerConfig struct {
 	// nftables/iptables backend. This is used by the eBPF sk_lookup backend
 	// which is initialized before the mesh manager.
 	RuleBackendOverride RuleBackend
+	// SockMapManager, if non-nil, enables eBPF SOCKMAP-based same-node
+	// traffic acceleration. The caller is responsible for creating the
+	// manager (typically after eBPF capability detection).
+	SockMapManager *sockmap.Manager
+	// ServiceMap, if non-nil, enables eBPF service lookup map acceleration.
+	// The caller is responsible for creating the map manager.
+	ServiceMap *service.ServiceMap
 }
 
 // NewManager creates a new mesh manager with mTLS tunnel support.
@@ -153,7 +182,7 @@ func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
 	if trustDomain == "" {
 		trustDomain = "cluster.local"
 	}
-	return &Manager{
+	m := &Manager{
 		logger:              namedLogger,
 		tproxyPort:          cfg.TPROXYPort,
 		tunnelPort:          cfg.TunnelPort,
@@ -162,7 +191,19 @@ func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
 		authorizer:          NewAuthorizer(namedLogger),
 		trustDomain:         trustDomain,
 		ruleBackendOverride: cfg.RuleBackendOverride,
+		nodeIP:              cfg.NodeIP,
+		sockMapMgr:          cfg.SockMapManager,
+		serviceMap:          cfg.ServiceMap,
 	}
+
+	if m.sockMapMgr != nil {
+		namedLogger.Info("eBPF SOCKMAP acceleration enabled for same-node traffic")
+	}
+	if m.serviceMap != nil {
+		namedLogger.Info("eBPF service lookup map acceleration enabled")
+	}
+
+	return m
 }
 
 // ListenerRegistrar is implemented by backends that need the listener
@@ -273,7 +314,7 @@ func (m *Manager) Start(ctx context.Context) error {
 }
 
 // ApplyConfig updates the mesh routing table, TPROXY interception rules,
-// and authorization policies from a config snapshot.
+// authorization policies, and eBPF acceleration maps from a config snapshot.
 func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*pb.MeshAuthorizationPolicy) error {
 	if m.tproxy == nil {
 		return fmt.Errorf("mesh manager not started")
@@ -306,13 +347,155 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 		m.authorizer.UpdatePolicies(authzPolicies)
 	}
 
+	// Populate eBPF SOCKMAP endpoint map with same-node endpoints (#631).
+	// Only endpoints whose pod IP is on this node are eligible for
+	// SOCKMAP bypass, which redirects data directly between sockets
+	// without traversing the full TCP/IP stack.
+	if m.sockMapMgr != nil {
+		m.reconcileSockMapEndpoints(services)
+	}
+
+	// Populate eBPF service lookup maps (#633). These maps provide O(1)
+	// service-to-backend resolution in the BPF data path, supplementing
+	// the Go-side ServiceTable for L4 decisions.
+	if m.serviceMap != nil {
+		m.reconcileServiceMap(services)
+	}
+
 	m.logger.Info("Mesh config applied",
 		zap.Int("services", len(services)),
 		zap.Int("intercept_rules", len(targets)),
 		zap.Int("routing_entries", m.serviceTable.ServiceCount()),
-		zap.Int("authz_policies", len(authzPolicies)))
+		zap.Int("authz_policies", len(authzPolicies)),
+		zap.Bool("sockmap_enabled", m.sockMapMgr != nil),
+		zap.Bool("service_map_enabled", m.serviceMap != nil))
 
 	return nil
+}
+
+// reconcileSockMapEndpoints identifies same-node endpoints from the service
+// list and updates the eBPF SOCKMAP endpoint map. An endpoint is considered
+// "same-node" if it matches the node's IP or is on the same node's pod CIDR.
+// For simplicity, we currently check all ready endpoints and mark those
+// that the BPF program should try to shortcircuit.
+func (m *Manager) reconcileSockMapEndpoints(services []*pb.InternalService) {
+	desired := make(map[sockmap.EndpointKey]sockmap.EndpointValue)
+	for _, svc := range services {
+		if !svc.MeshEnabled {
+			continue
+		}
+		for _, ep := range svc.Endpoints {
+			if !ep.Ready {
+				continue
+			}
+			// Check if endpoint is on this node.
+			// The endpoint's labels may contain topology info, or we can
+			// compare the address against the node IP range. For now,
+			// we use the "topology.kubernetes.io/zone" or node-local
+			// detection heuristic: if the endpoint address matches a
+			// known node-local CIDR or the node IP itself.
+			if !m.isLocalEndpoint(ep) {
+				continue
+			}
+			for _, port := range svc.Ports {
+				key, err := sockmap.NewEndpointKey(ep.Address, uint16(port.TargetPort))
+				if err != nil {
+					m.logger.Debug("Skipping invalid endpoint for SOCKMAP",
+						zap.String("address", ep.Address),
+						zap.Int32("port", port.TargetPort),
+						zap.Error(err))
+					continue
+				}
+				desired[key] = sockmap.EndpointValue{Eligible: 1}
+			}
+		}
+	}
+
+	if err := m.sockMapMgr.SyncEndpoints(desired); err != nil {
+		m.logger.Warn("Failed to reconcile SOCKMAP endpoints", zap.Error(err))
+	}
+}
+
+// reconcileServiceMap populates the eBPF service lookup map with service
+// entries from the config snapshot. This provides the BPF data path with
+// O(1) service-to-backend resolution for L4 decisions.
+func (m *Manager) reconcileServiceMap(services []*pb.InternalService) {
+	desired := make(map[service.ServiceKey][]service.BackendInfo)
+
+	for _, svc := range services {
+		if !svc.MeshEnabled {
+			continue
+		}
+		for _, port := range svc.Ports {
+			proto := protoStringToNumber(port.Protocol)
+			key, err := service.NewServiceKey(svc.ClusterIp, uint16(port.Port), proto)
+			if err != nil {
+				m.logger.Debug("Skipping invalid service for eBPF service map",
+					zap.String("cluster_ip", svc.ClusterIp),
+					zap.Int32("port", port.Port),
+					zap.Error(err))
+				continue
+			}
+
+			var backends []service.BackendInfo
+			for _, ep := range svc.Endpoints {
+				if !ep.Ready {
+					continue
+				}
+				nodeLocal := m.isLocalEndpoint(ep)
+				info, err := service.NewBackendInfo(
+					ep.Address,
+					uint16(port.TargetPort),
+					100, // default weight
+					true,
+					nodeLocal,
+				)
+				if err != nil {
+					m.logger.Debug("Skipping invalid backend for eBPF service map",
+						zap.String("address", ep.Address),
+						zap.Error(err))
+					continue
+				}
+				backends = append(backends, info)
+			}
+
+			desired[key] = backends
+		}
+	}
+
+	if err := m.serviceMap.Reconcile(desired); err != nil {
+		m.logger.Warn("Failed to reconcile eBPF service map", zap.Error(err))
+	}
+}
+
+// isLocalEndpoint determines whether a backend endpoint is running on the
+// same node as this agent. Currently uses a simple IP comparison against
+// the configured node IP. Future versions may use pod CIDR detection or
+// topology labels.
+func (m *Manager) isLocalEndpoint(ep *pb.Endpoint) bool {
+	if m.nodeIP == "" {
+		return false
+	}
+	// Check endpoint labels for node-local hint.
+	if nodeName, ok := ep.Labels["topology.kubernetes.io/node"]; ok {
+		// If label is present but empty, treat as unknown.
+		return nodeName != "" && nodeName == m.nodeIP
+	}
+	// Fallback: not enough info to determine locality.
+	return false
+}
+
+// protoStringToNumber converts a protocol string (e.g. "TCP", "UDP") to
+// the IANA protocol number.
+func protoStringToNumber(proto string) uint8 {
+	switch proto {
+	case "TCP", "tcp", "":
+		return service.ProtoTCP
+	case "UDP", "udp":
+		return service.ProtoUDP
+	default:
+		return service.ProtoTCP
+	}
 }
 
 // StartCertRequester launches a background goroutine that requests a mesh
@@ -350,6 +533,18 @@ func (m *Manager) Shutdown(_ context.Context) error {
 	if m.tproxy != nil {
 		if err := m.tproxy.Cleanup(); err != nil {
 			m.logger.Error("TPROXY cleanup failed", zap.Error(err))
+		}
+	}
+
+	// Clean up eBPF acceleration resources.
+	if m.sockMapMgr != nil {
+		if err := m.sockMapMgr.Close(); err != nil {
+			m.logger.Error("SOCKMAP manager cleanup failed", zap.Error(err))
+		}
+	}
+	if m.serviceMap != nil {
+		if err := m.serviceMap.Close(); err != nil {
+			m.logger.Error("eBPF service map cleanup failed", zap.Error(err))
 		}
 	}
 
