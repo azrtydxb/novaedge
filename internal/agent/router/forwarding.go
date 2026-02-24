@@ -36,16 +36,10 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// handleRoute handles a matched route
-func (r *Router) handleRoute(snap *routerState, entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
-	// Wrap response writer with response filter if needed
-	responseWriter := w
-	if entry.ResponseFilter != nil && entry.ResponseFilter.HasModifications() {
-		responseWriter = NewResponseHeaderWriter(w, entry.ResponseFilter)
-	}
-
-	// Pipeline state is already injected into the context by ServeHTTP
-
+// buildHandler pre-composes the full middleware chain for a RouteEntry at config
+// time. This eliminates 5-7 closure allocations per request that previously
+// occurred in handleRoute.
+func (r *Router) buildHandler(snap *routerState, entry *RouteEntry) http.Handler {
 	// Create the final handler that forwards to backend (with optional retry)
 	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.forwardToBackend(snap, entry, w, req)
@@ -94,7 +88,28 @@ func (r *Router) handleRoute(snap *routerState, entry *RouteEntry, w http.Respon
 	if snap.errorPages != nil && snap.errorPages.IsEnabled() {
 		handler = snap.errorPages.Wrap(handler)
 	}
-	// Execute the handler chain: policies -> limits -> req buffering -> cache -> compression -> resp buffering -> error pages -> pipeline -> backend
+
+	return handler
+}
+
+// handleRoute handles a matched route using the pre-built middleware chain.
+// Only the response filter wrapper and optional trace span are per-request.
+func (r *Router) handleRoute(_ *routerState, entry *RouteEntry, w http.ResponseWriter, req *http.Request) {
+	// Wrap response writer with response filter if needed
+	responseWriter := w
+	if entry.ResponseFilter != nil && entry.ResponseFilter.HasModifications() {
+		responseWriter = NewResponseHeaderWriter(w, entry.ResponseFilter)
+	}
+
+	// Use the pre-built handler chain (single interface dispatch, no per-request allocations).
+	// Fallback: if handler wasn't pre-built (e.g. tests that bypass ApplyConfig),
+	// load the current state and build on-the-fly.
+	handler := entry.handler
+	if handler == nil {
+		snap := r.state.Load()
+		handler = r.buildHandler(snap, entry)
+	}
+
 	// In detailed trace mode, wrap the middleware chain in a child span.
 	if DefaultTraceVerbosity.ShouldTraceDetailed() {
 		ctx := req.Context()
@@ -353,8 +368,8 @@ func (r *Router) executeForward(ctx context.Context, snap *routerState, entry *R
 		w.Header().Set("X-Cache", "MISS")
 	}
 
-	// Check for retry configuration on this route rule
-	retryPolicy := NewRetryPolicy(entry.Rule.Retry)
+	// Use pre-built retry policy (built at config time to avoid per-request allocations)
+	retryPolicy := entry.retryPolicy
 
 	if retryPolicy != nil && !isGRPC {
 		var loadBalancer lb.LoadBalancer

@@ -54,6 +54,11 @@ type Pool struct {
 	// Reverse proxies per endpoint - atomic for lock-free reads in Forward()
 	proxies atomic.Pointer[map[string]*httputil.ReverseProxy]
 
+	// endpointKeys caches pre-computed "host:port" strings per endpoint ID
+	// (address + port) to avoid per-request strconv + JoinHostPort allocations.
+	// Atomically swapped alongside proxies.
+	endpointKeys atomic.Pointer[map[endpointID]string]
+
 	// Mutex only needed for endpoint updates (write path)
 	mu sync.Mutex
 
@@ -117,11 +122,11 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	}
 	writeBufferSize := int(poolConfig.WriteBufferSize)
 	if writeBufferSize <= 0 {
-		writeBufferSize = 32 * 1024 // Default: 32KB
+		writeBufferSize = 64 * 1024 // Default: 64KB
 	}
 	readBufferSize := int(poolConfig.ReadBufferSize)
 	if readBufferSize <= 0 {
-		readBufferSize = 32 * 1024 // Default: 32KB
+		readBufferSize = 64 * 1024 // Default: 64KB
 	}
 
 	// Create HTTP transport with connection pooling
@@ -144,6 +149,7 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 		ForceAttemptHTTP2:      true,
 		WriteBufferSize:        writeBufferSize,
 		ReadBufferSize:         readBufferSize,
+		DisableCompression:     true, // Proxy handles compression; avoid double-compress to backends
 	}
 
 	// Configure backend TLS if enabled
@@ -165,9 +171,11 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 		clusterKey:         clusterKey,
 		hasExplicitTimeout: cluster.ConnectTimeoutMs > 0,
 	}
-	// Initialize atomic proxies
+	// Initialize atomic proxies and endpoint key cache
 	emptyProxies := make(map[string]*httputil.ReverseProxy)
 	pool.proxies.Store(&emptyProxies)
+	emptyKeys := make(map[endpointID]string)
+	pool.endpointKeys.Store(&emptyKeys)
 
 	// Create and start health checker
 	pool.healthChecker = health.NewChecker(cluster, endpoints, logger)
@@ -410,6 +418,7 @@ func (p *Pool) createProxies() {
 // under the lock or from NewPool before any concurrent access).
 func (p *Pool) createProxiesFrom(endpoints []*pb.Endpoint) {
 	newProxies := make(map[string]*httputil.ReverseProxy)
+	newKeys := make(map[endpointID]string, len(endpoints))
 
 	// Load current proxies for reuse
 	currentProxies := *p.proxies.Load()
@@ -420,6 +429,7 @@ func (p *Pool) createProxiesFrom(endpoints []*pb.Endpoint) {
 		}
 
 		key := endpointKey(ep)
+		newKeys[endpointID{ep.Address, ep.Port}] = key
 
 		// Reuse existing proxy if available (pool hit)
 		if proxy, ok := currentProxies[key]; ok {
@@ -479,11 +489,12 @@ func (p *Pool) createProxiesFrom(endpoints []*pb.Endpoint) {
 	}
 
 	p.proxies.Store(&newProxies)
+	p.endpointKeys.Store(&newKeys)
 }
 
 // Forward forwards an HTTP request to the specified endpoint
 func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.ResponseWriter) error {
-	key := endpointKey(endpoint)
+	key := p.cachedEndpointKey(endpoint)
 	proxies := *p.proxies.Load()
 	proxy, ok := proxies[key]
 	if !ok {
@@ -521,9 +532,26 @@ func connectTimeout(ms int64) time.Duration {
 	return timeout
 }
 
+// endpointID is a value type used as a map key for cached endpoint strings.
+type endpointID struct {
+	Address string
+	Port    int32
+}
+
 // endpointKey builds a key for an endpoint using net.JoinHostPort
 func endpointKey(ep *pb.Endpoint) string {
 	return net.JoinHostPort(ep.Address, strconv.FormatInt(int64(ep.Port), 10))
+}
+
+// cachedEndpointKey returns the pre-computed key string for an endpoint,
+// falling back to endpointKey if the cache misses (should not happen).
+func (p *Pool) cachedEndpointKey(ep *pb.Endpoint) string {
+	if keys := p.endpointKeys.Load(); keys != nil {
+		if key, ok := (*keys)[endpointID{ep.Address, ep.Port}]; ok {
+			return key
+		}
+	}
+	return endpointKey(ep)
 }
 
 // Close closes the pool and all connections
@@ -607,7 +635,7 @@ func (p *Pool) GetBackendURL(endpoint *pb.Endpoint) string {
 	if p.cluster.Tls != nil && p.cluster.Tls.Enabled {
 		scheme = "https"
 	}
-	return scheme + "://" + endpointKey(endpoint)
+	return scheme + "://" + p.cachedEndpointKey(endpoint)
 }
 
 // GetClusterKey returns the cached cluster key (namespace/name)
