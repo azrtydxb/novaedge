@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/netip"
 	"sync"
@@ -33,6 +34,12 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// maxFailoverJitter is the upper bound for the random jitter added before
+// sending GARP/NDP announcements during VIP failover. Each VIP picks a
+// uniformly random delay in [0, maxFailoverJitter) to stagger sends and
+// prevent a thundering-herd of gratuitous announcements on the network (#596).
+const maxFailoverJitter = 100 * time.Millisecond
 
 // L2Handler manages L2 ARP/NDP VIP mode
 type L2Handler struct {
@@ -104,36 +111,25 @@ func (h *L2Handler) Start(ctx context.Context) error {
 
 // AddVIP adds a VIP to the network interface (IPv4 or IPv6)
 func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// Check if already active
-	if _, exists := h.activeVIPs[assignment.VipName]; exists {
-		h.logger.Debug(msgVIPAlreadyActive, zap.String("vip", assignment.VipName))
+	// Phase 1: Check + add IP under the write lock, then release.
+	ip, isIPv6, err := h.addVIPLocked(assignment)
+	if err != nil {
+		return err
+	}
+	if ip == nil {
+		// Already active — nothing to do.
 		return nil
 	}
 
-	// Parse IP address
-	ip, _, err := net.ParseCIDR(assignment.Address)
-	if err != nil {
-		return fmt.Errorf(errInvalidVIPAddressFmt, assignment.Address, err)
-	}
-
-	isIPv6 := ip.To4() == nil
-
-	h.logger.Info("Adding VIP to interface",
+	// Phase 2: Jitter + GARP/NDP outside the lock so concurrent AddVIP /
+	// RemoveVIP / GetActiveVIPCount calls are not blocked.
+	jitter := time.Duration(rand.Int63n(int64(maxFailoverJitter))) //nolint:gosec // jitter does not need crypto rand
+	h.logger.Debug("Delaying GARP/NDP announcement",
 		zap.String("vip", assignment.VipName),
-		zap.String("address", assignment.Address),
-		zap.String("interface", h.interfaceName),
-		zap.Bool("ipv6", isIPv6),
+		zap.Duration("jitter", jitter),
 	)
+	time.Sleep(jitter)
 
-	// Add IP address to interface
-	if err := h.addIPAddress(assignment.Address); err != nil {
-		return fmt.Errorf("failed to add IP address: %w", err)
-	}
-
-	// Send gratuitous announcement (GARP for IPv4, NDP NA for IPv6)
 	if isIPv6 {
 		if err := h.sendUnsolicitedNA(ip); err != nil {
 			h.logger.Warn("Failed to send unsolicited Neighbor Advertisement",
@@ -150,7 +146,44 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 		}
 	}
 
-	// Track VIP state
+	h.logger.Info("VIP added successfully",
+		zap.String("vip", assignment.VipName),
+		zap.String("address", assignment.Address),
+	)
+
+	return nil
+}
+
+// addVIPLocked performs the locked portion of AddVIP: duplicate check, IP
+// parsing, adding the address to the interface, and recording state. It
+// returns (nil, false, nil) when the VIP is already active.
+func (h *L2Handler) addVIPLocked(assignment *pb.VIPAssignment) (net.IP, bool, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if _, exists := h.activeVIPs[assignment.VipName]; exists {
+		h.logger.Debug(msgVIPAlreadyActive, zap.String("vip", assignment.VipName))
+		return nil, false, nil
+	}
+
+	ip, _, err := net.ParseCIDR(assignment.Address)
+	if err != nil {
+		return nil, false, fmt.Errorf(errInvalidVIPAddressFmt, assignment.Address, err)
+	}
+
+	isIPv6 := ip.To4() == nil
+
+	h.logger.Info("Adding VIP to interface",
+		zap.String("vip", assignment.VipName),
+		zap.String("address", assignment.Address),
+		zap.String("interface", h.interfaceName),
+		zap.Bool("ipv6", isIPv6),
+	)
+
+	if err := h.addIPAddress(assignment.Address); err != nil {
+		return nil, false, fmt.Errorf("failed to add IP address: %w", err)
+	}
+
 	h.activeVIPs[assignment.VipName] = &State{
 		Assignment: assignment,
 		IP:         ip,
@@ -158,12 +191,7 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 		IsIPv6:     isIPv6,
 	}
 
-	h.logger.Info("VIP added successfully",
-		zap.String("vip", assignment.VipName),
-		zap.String("address", assignment.Address),
-	)
-
-	return nil
+	return ip, isIPv6, nil
 }
 
 // RemoveVIP removes a VIP from the network interface
