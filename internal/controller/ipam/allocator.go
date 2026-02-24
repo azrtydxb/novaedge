@@ -38,7 +38,13 @@ func NewAllocator(logger *zap.Logger) *Allocator {
 	}
 }
 
-// AddPool adds or updates a pool in the allocator
+// AddPool adds or updates a pool in the allocator.
+//
+// Lock ordering: allocator.mu is always acquired before pool.mu to prevent
+// deadlocks (#611). When migrating allocations we snapshot the old pool's
+// state first (under its own lock via GetAllocations), then populate the
+// new pool directly -- the new pool is not yet published so no other
+// goroutine can hold its lock.
 func (a *Allocator) AddPool(name string, cidrs []string, addresses []string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -48,14 +54,15 @@ func (a *Allocator) AddPool(name string, cidrs []string, addresses []string) err
 		return fmt.Errorf("failed to create pool %s: %w", name, err)
 	}
 
-	// If pool already exists, migrate allocations
+	// If pool already exists, migrate allocations.
+	// Snapshot the old pool's allocations under its own lock, then release
+	// it before touching the new pool to avoid holding both locks (#611).
 	if existing, ok := a.pools[name]; ok {
-		existingAllocations := existing.GetAllocations()
+		existingAllocations := existing.GetAllocations() // acquires & releases existing.mu
 		for addr, vipName := range existingAllocations {
-			if pool.Contains(addr) {
-				pool.mu.Lock()
+			// pool is local (not yet in a.pools), so no lock needed
+			if pool.containsUnlocked(addr) {
 				pool.allocated[addr] = vipName
-				pool.mu.Unlock()
 			}
 		}
 	}

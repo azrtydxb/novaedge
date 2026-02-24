@@ -134,34 +134,41 @@ func NewOIDCHandler(ctx context.Context, config *pb.OIDCConfig, logger *zap.Logg
 }
 
 // storeSession stores a pending auth flow session with size-bounded eviction.
+// Uses a single-pass batch eviction instead of repeated linear scans (#589).
 func (h *OIDCHandler) storeSession(state string, session *OIDCSession) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	// Evict oldest entries if at capacity
+	// Evict expired and oldest entries if at capacity
 	if len(h.sessions) >= maxOIDCSessions {
-		// Find and remove the oldest entry (expired first, then arbitrary)
-		var oldestKey string
-		var oldestTime time.Time
-		first := true
+		now := time.Now()
+
+		// First pass: batch-remove all expired sessions
 		for key, sess := range h.sessions {
-			// Prefer to evict sessions that look expired (zero Expiry means pending auth)
-			if !sess.Expiry.IsZero() && time.Now().After(sess.Expiry) {
+			if !sess.Expiry.IsZero() && now.After(sess.Expiry) {
 				delete(h.sessions, key)
-				continue
-			}
-			if first || (sess.Expiry.Before(oldestTime) && !sess.Expiry.IsZero()) {
-				oldestKey = key
-				oldestTime = sess.Expiry
-				first = false
 			}
 		}
-		// If still at capacity after evicting expired, remove the oldest
-		if len(h.sessions) >= maxOIDCSessions && oldestKey != "" {
-			delete(h.sessions, oldestKey)
-			h.logger.Warn("OIDC sessions map at capacity, evicted oldest entry",
-				zap.Int("max_sessions", maxOIDCSessions),
-			)
+
+		// If still at capacity after evicting expired, find the oldest
+		// non-expired session and remove it
+		if len(h.sessions) >= maxOIDCSessions {
+			var oldestKey string
+			var oldestTime time.Time
+			first := true
+			for key, sess := range h.sessions {
+				if first || (!sess.Expiry.IsZero() && sess.Expiry.Before(oldestTime)) {
+					oldestKey = key
+					oldestTime = sess.Expiry
+					first = false
+				}
+			}
+			if oldestKey != "" {
+				delete(h.sessions, oldestKey)
+				h.logger.Warn("OIDC sessions map at capacity, evicted oldest entry",
+					zap.Int("max_sessions", maxOIDCSessions),
+				)
+			}
 		}
 	}
 

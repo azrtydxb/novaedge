@@ -122,12 +122,20 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 		newAssignments[assignment.VipName] = assignment
 	}
 
-	// Phase 1: Compute diff under read lock
+	// Phase 1: Clone assignments under a short read lock, then compute diff
+	// outside the lock to minimize RLock hold time (#618).
 	m.mu.RLock()
-	actions := make([]vipAction, 0, len(m.assignments)+len(newAssignments))
+	oldAssignments := make(map[string]*pb.VIPAssignment, len(m.assignments))
+	for k, v := range m.assignments {
+		oldAssignments[k] = v
+	}
+	m.mu.RUnlock()
+
+	// Compute diff actions using the cloned data -- no lock held.
+	actions := make([]vipAction, 0, len(oldAssignments)+len(newAssignments))
 
 	// Find VIPs to release (no longer assigned)
-	for vipName, oldAssignment := range m.assignments {
+	for vipName, oldAssignment := range oldAssignments {
 		if _, exists := newAssignments[vipName]; !exists {
 			m.logger.Info("Releasing VIP", zap.String("vip", vipName))
 			actions = append(actions, vipAction{release: true, assignment: oldAssignment})
@@ -136,7 +144,7 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 
 	// Find VIPs to add or update
 	for vipName, assignment := range newAssignments {
-		oldAssignment, exists := m.assignments[vipName]
+		oldAssignment, exists := oldAssignments[vipName]
 
 		// Skip unchanged assignments
 		if exists && assignmentsEqual(oldAssignment, assignment) {
@@ -169,7 +177,6 @@ func (m *DefaultManager) ApplyVIPs(ctx context.Context, assignments []*pb.VIPAss
 			actions = append(actions, vipAction{release: false, assignment: ipv6Assignment})
 		}
 	}
-	m.mu.RUnlock()
 
 	// Sort apply actions so BGP VIPs with the highest LocalAS are processed first.
 	// The BGP handler uses a single shared server whose AS is set by the first VIP.

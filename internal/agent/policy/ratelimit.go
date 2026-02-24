@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
@@ -133,34 +134,36 @@ func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 	return limiter
 }
 
-// evictOldestLocked removes the n oldest entries by lastUsed time.
+// evictOldestLocked removes the n oldest entries by lastUsed time using a
+// single-pass sort instead of repeated linear scans (#589).
 // The caller must hold rl.mu in write mode.
 func (rl *RateLimiter) evictOldestLocked(n int) {
-	if n <= 0 {
+	if n <= 0 || len(rl.lastUsed) == 0 {
 		return
 	}
 
-	for n > 0 {
-		var oldestKey string
-		var oldestTime time.Time
-		first := true
+	// Collect all keys with their last-used times in one pass.
+	type entry struct {
+		key  string
+		time time.Time
+	}
+	entries := make([]entry, 0, len(rl.lastUsed))
+	for k, t := range rl.lastUsed {
+		entries = append(entries, entry{key: k, time: t})
+	}
 
-		for key, lastAccess := range rl.lastUsed {
-			if first || lastAccess.Before(oldestTime) {
-				oldestKey = key
-				oldestTime = lastAccess
-				first = false
-			}
-		}
+	// Sort by time ascending so the oldest entries come first.
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].time.Before(entries[j].time)
+	})
 
-		if first {
-			// Map is empty
-			break
-		}
-
-		delete(rl.limiters, oldestKey)
-		delete(rl.lastUsed, oldestKey)
-		n--
+	// Evict the first n entries.
+	if n > len(entries) {
+		n = len(entries)
+	}
+	for i := 0; i < n; i++ {
+		delete(rl.limiters, entries[i].key)
+		delete(rl.lastUsed, entries[i].key)
 	}
 }
 

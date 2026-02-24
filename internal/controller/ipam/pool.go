@@ -180,6 +180,13 @@ func (p *Pool) Contains(address string) bool {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
+	return p.containsUnlocked(address)
+}
+
+// containsUnlocked is the lock-free implementation of Contains.
+// The caller must ensure exclusive access (either holding the lock or owning
+// the only reference to the pool).
+func (p *Pool) containsUnlocked(address string) bool {
 	ip := net.ParseIP(address)
 	if ip == nil {
 		return false
