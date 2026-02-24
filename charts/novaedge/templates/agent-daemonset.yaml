@@ -99,6 +99,18 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.hostIP
+        {{- if .Values.agent.goMemLimit }}
+        - name: GOMEMLIMIT
+          value: {{ .Values.agent.goMemLimit | quote }}
+        {{- end }}
+        {{- if .Values.agent.goGC }}
+        - name: GOGC
+          value: {{ .Values.agent.goGC | quote }}
+        {{- end }}
+        {{- if .Values.agent.goMaxProcs }}
+        - name: GOMAXPROCS
+          value: {{ .Values.agent.goMaxProcs | quote }}
+        {{- end }}
         {{- with .Values.agent.extraEnv }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

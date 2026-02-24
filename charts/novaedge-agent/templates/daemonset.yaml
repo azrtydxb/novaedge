@@ -136,6 +136,18 @@ spec:
             - name: NOVAEDGE_CLUSTER_ZONE
               value: {{ .Values.cluster.zone | quote }}
             {{- end }}
+            {{- if .Values.goMemLimit }}
+            - name: GOMEMLIMIT
+              value: {{ .Values.goMemLimit | quote }}
+            {{- end }}
+            {{- if .Values.goGC }}
+            - name: GOGC
+              value: {{ .Values.goGC | quote }}
+            {{- end }}
+            {{- if .Values.goMaxProcs }}
+            - name: GOMAXPROCS
+              value: {{ .Values.goMaxProcs | quote }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
