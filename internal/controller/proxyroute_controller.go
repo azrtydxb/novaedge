@@ -61,6 +61,12 @@ func (r *ProxyRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
+	// Skip if already reconciled this generation (ObservedGeneration > 0
+	// ensures first-ever reconciliation always proceeds)
+	if route.Status.ObservedGeneration != 0 && route.Status.ObservedGeneration == route.Generation {
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Reconciling ProxyRoute", "name", route.Name, "hostnames", route.Spec.Hostnames)
 
 	// Validate and update status
