@@ -19,8 +19,8 @@ package metrics
 import (
 	"context"
 	"fmt"
-	"hash/fnv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -69,9 +69,11 @@ var (
 	lastBucketUpdate   time.Time
 )
 
-// trackedEndpoint holds metadata for a tracked endpoint
+// trackedEndpoint holds metadata for a tracked endpoint.
+// lastSeen is stored as UnixNano via atomic.Int64 to allow lock-free updates
+// on the hot path (shouldTrackEndpoint is called on every request).
 type trackedEndpoint struct {
-	lastSeen time.Time
+	lastSeen atomic.Int64 // UnixNano timestamp
 }
 
 // endpointCardinalityTracker tracks endpoints per cluster to limit metric cardinality
@@ -80,9 +82,11 @@ type endpointCardinalityTracker struct {
 	mu        sync.RWMutex
 }
 
-// shouldTrackEndpoint determines if we should track metrics for this endpoint
+// shouldTrackEndpoint determines if we should track metrics for this endpoint.
+// The hot path (already-tracked endpoint) uses only an RLock + atomic store,
+// avoiding the write lock that previously caused contention under load.
 func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint string) bool {
-	now := time.Now()
+	nowNano := time.Now().UnixNano()
 
 	t.mu.RLock()
 	clusterEndpoints, exists := t.endpoints[cluster]
@@ -90,10 +94,12 @@ func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint strin
 		ep, tracked := clusterEndpoints[endpoint]
 		t.mu.RUnlock()
 		if tracked {
-			// Update lastSeen under write lock
-			t.mu.Lock()
-			ep.lastSeen = now
-			t.mu.Unlock()
+			// Atomic update — no write lock needed.
+			// Only update when delta > 1s to reduce cache-line bouncing.
+			prev := ep.lastSeen.Load()
+			if nowNano-prev > int64(time.Second) {
+				ep.lastSeen.Store(nowNano)
+			}
 			return true
 		}
 	} else {
@@ -111,7 +117,7 @@ func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint strin
 
 	// Check if already added by another goroutine
 	if ep, ok := t.endpoints[cluster][endpoint]; ok {
-		ep.lastSeen = now
+		ep.lastSeen.Store(nowNano)
 		return true
 	}
 
@@ -122,7 +128,9 @@ func (t *endpointCardinalityTracker) shouldTrackEndpoint(cluster, endpoint strin
 	}
 
 	// Add endpoint to tracking
-	t.endpoints[cluster][endpoint] = &trackedEndpoint{lastSeen: now}
+	ep := &trackedEndpoint{}
+	ep.lastSeen.Store(nowNano)
+	t.endpoints[cluster][endpoint] = ep
 	return true
 }
 
@@ -142,14 +150,13 @@ func (t *endpointCardinalityTracker) cleanupCluster(cluster string) {
 // cleanupStaleEndpoints removes endpoints not seen within the given TTL
 // and deletes their Prometheus metric series.
 func (t *endpointCardinalityTracker) cleanupStaleEndpoints(ttl time.Duration) {
-	now := time.Now()
-	cutoff := now.Add(-ttl)
+	cutoffNano := time.Now().Add(-ttl).UnixNano()
 
 	t.mu.Lock()
 	stale := make(map[string][]string) // cluster -> []endpoint
 	for cluster, endpoints := range t.endpoints {
 		for endpoint, ep := range endpoints {
-			if ep.lastSeen.Before(cutoff) {
+			if ep.lastSeen.Load() < cutoffNano {
 				stale[cluster] = append(stale[cluster], endpoint)
 			}
 		}
@@ -237,17 +244,25 @@ func getTimeBucket() string {
 	return cachedTimeBucket
 }
 
+// fnv32a computes an FNV-1a hash inline without allocating a hash.Hash.
+func fnv32a(s string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
+}
+
 // shouldSample determines if we should record this metric based on sampling rate
 func shouldSample(key string) bool {
 	if !defaultConfig.EnableSampling {
 		return true
 	}
 
-	// Use hash-based sampling for consistent decisions
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(key))
-	_, _ = h.Write([]byte(getTimeBucket()))
-	hash := h.Sum32()
+	// Use hash-based sampling for consistent decisions.
+	// Inline FNV avoids allocating fnv.New32a() per call.
+	hash := fnv32a(key + getTimeBucket())
 
 	return int(hash%100) < defaultConfig.SampleRate
 }
