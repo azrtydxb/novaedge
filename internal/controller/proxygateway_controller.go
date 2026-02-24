@@ -80,6 +80,12 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 
+	// Skip if already reconciled this generation (ObservedGeneration > 0
+	// ensures first-ever reconciliation always proceeds)
+	if gateway.Status.ObservedGeneration != 0 && gateway.Status.ObservedGeneration == gateway.Generation {
+		return ctrl.Result{}, nil
+	}
+
 	logger.Info("Reconciling ProxyGateway", "name", gateway.Name, "vipRef", gateway.Spec.VIPRef)
 
 	// Check loadBalancerClass: only reconcile gateways matching our class
