@@ -550,11 +550,22 @@ func (r *Router) updateExistingLoadBalancer(clusterKey string, endpoints []*pb.E
 		return
 	}
 
-	// Try hash-based load balancers
+	// Try hash-based load balancers (Maglev, RingHash).
+	// These have Select(key string) instead of Select(), so they do NOT
+	// satisfy the lb.LoadBalancer interface. We must match each concrete
+	// type explicitly to call UpdateEndpoints.
 	if existingHashLB, ok := prev.hashBasedLBs[clusterKey]; ok {
 		switch hlb := existingHashLB.(type) {
+		case *lb.Maglev:
+			hlb.UpdateEndpoints(endpoints)
+		case *lb.RingHash:
+			hlb.UpdateEndpoints(endpoints)
 		case lb.LoadBalancer:
 			hlb.UpdateEndpoints(endpoints)
+		default:
+			r.logger.Warn("Hash-based LB does not support UpdateEndpoints, skipping in-place update",
+				zap.String("cluster", clusterKey),
+			)
 		}
 		newHashBasedLBs[clusterKey] = existingHashLB
 		r.logger.Debug("Updated existing hash-based load balancer endpoints in-place",
