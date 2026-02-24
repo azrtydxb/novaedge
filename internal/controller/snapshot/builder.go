@@ -78,7 +78,7 @@ type buildContext struct {
 	vips       []novaedgev1alpha1.ProxyVIP
 	services   []corev1.Service
 	wanLinks   []novaedgev1alpha1.ProxyWANLink
-	wanPolices []novaedgev1alpha1.ProxyWANPolicy
+	wanPolicies []novaedgev1alpha1.ProxyWANPolicy
 
 	// Pre-loaded node map for O(1) topology lookups (fixes N+1 node fetches)
 	nodes map[string]*corev1.Node
@@ -145,7 +145,7 @@ func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 	if err := b.client.List(ctx, wanPolicyList); err != nil {
 		return nil, fmt.Errorf("failed to list WAN policies: %w", err)
 	}
-	bc.wanPolices = wanPolicyList.Items
+	bc.wanPolicies = wanPolicyList.Items
 
 	// --- Nodes: pre-load all into map for O(1) topology lookup ---
 	nodeList := &corev1.NodeList{}
@@ -1526,9 +1526,9 @@ func (b *Builder) buildWANLinks(bc *buildContext) []*pb.WANLink {
 
 // buildWANPolicies builds SD-WAN WAN policy configurations from pre-fetched ProxyWANPolicy CRDs.
 func (b *Builder) buildWANPolicies(bc *buildContext) []*pb.WANPolicy {
-	policies := make([]*pb.WANPolicy, 0, len(bc.wanPolices))
-	for i := range bc.wanPolices {
-		p := &bc.wanPolices[i]
+	policies := make([]*pb.WANPolicy, 0, len(bc.wanPolicies))
+	for i := range bc.wanPolicies {
+		p := &bc.wanPolicies[i]
 		pbPolicy := &pb.WANPolicy{
 			Name:      p.Name,
 			Namespace: p.Namespace,
