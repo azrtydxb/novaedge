@@ -35,6 +35,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	ebpfhealth "github.com/piwi3910/novaedge/internal/agent/ebpf/health"
+	ebpfratelimit "github.com/piwi3910/novaedge/internal/agent/ebpf/ratelimit"
 	grpchandler "github.com/piwi3910/novaedge/internal/agent/grpc"
 	"github.com/piwi3910/novaedge/internal/agent/lb"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
@@ -157,6 +159,17 @@ type Router struct {
 	// tunnelTLSConfig is the TLS configuration used for mTLS connections
 	// to remote cluster gateway agents. Required when tunnelRegistry is set.
 	tunnelTLSConfig *tls.Config
+
+	// ebpfHealthMon is the optional eBPF passive health signal monitor.
+	// When non-nil, newly created upstream pool health checkers are configured
+	// to use eBPF-observed traffic signals as the primary health indicator.
+	// Only accessed under mu in ApplyConfig.
+	ebpfHealthMon *ebpfhealth.HealthMonitor
+
+	// ebpfRateLimiter is the optional eBPF per-IP rate limiter. When non-nil,
+	// newly created policy rate limiters are configured to offload per-source-IP
+	// rate limiting to BPF maps. Only accessed under mu in ApplyConfig.
+	ebpfRateLimiter *ebpfratelimit.RateLimiter
 }
 
 // NewRouter creates a new router
@@ -231,6 +244,25 @@ func (r *Router) SetTunnelRegistry(registry *CrossClusterTunnelRegistry, tlsConf
 // TunnelRegistry returns the cross-cluster tunnel registry, or nil if not configured.
 func (r *Router) TunnelRegistry() *CrossClusterTunnelRegistry {
 	return r.tunnelRegistry
+}
+
+// SetEBPFHealthMonitor sets the eBPF passive health signal monitor. When set,
+// newly created upstream pool health checkers are configured to use eBPF
+// passive health signals. Existing pools are updated on the next ApplyConfig.
+func (r *Router) SetEBPFHealthMonitor(monitor *ebpfhealth.HealthMonitor) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ebpfHealthMon = monitor
+}
+
+// SetEBPFRateLimiter sets the eBPF per-IP rate limiter. When set, newly
+// created policy rate limiters are configured to use the eBPF fast path
+// for per-source-IP rate limiting. Existing limiters are updated on the
+// next ApplyConfig.
+func (r *Router) SetEBPFRateLimiter(rl *ebpfratelimit.RateLimiter) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.ebpfRateLimiter = rl
 }
 
 // ApplyConfig applies a new configuration to the router
@@ -397,6 +429,10 @@ func (r *Router) buildPoolsAndBalancers(ctx context.Context, snapshot *config.Sn
 			newPools[clusterKey] = existingPool
 		} else {
 			pool := upstream.NewPool(ctx, cluster, endpointList.Endpoints, r.logger)
+			// Attach eBPF passive health monitor if available
+			if r.ebpfHealthMon != nil {
+				pool.SetEBPFHealthMonitor(r.ebpfHealthMon)
+			}
 			newPools[clusterKey] = pool
 		}
 
