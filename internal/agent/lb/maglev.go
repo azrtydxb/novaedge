@@ -19,22 +19,30 @@ package lb
 import (
 	"hash/fnv"
 	"sync"
+	"sync/atomic"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
-// Maglev implements Google's Maglev consistent hashing algorithm
-// Uses a fixed-size lookup table for O(1) lookups
-type Maglev struct {
-	mu        sync.RWMutex
-	endpoints []*pb.Endpoint
-
+// maglevData holds the immutable Maglev lookup table state that is atomically swapped.
+type maglevData struct {
 	// Lookup table mapping hash values to endpoint indices
-	// Size must be a prime number
 	lookupTable []int
-
-	// Endpoint list (for index lookups)
+	// Healthy endpoints used to build this table
 	healthyEndpoints []*pb.Endpoint
+	// All endpoints (including unhealthy) for reference
+	endpoints []*pb.Endpoint
+}
+
+// Maglev implements Google's Maglev consistent hashing algorithm.
+// Select() is lock-free via atomic load of the immutable maglevData.
+// UpdateEndpoints() builds a new table, then atomically swaps it in.
+type Maglev struct {
+	data atomic.Pointer[maglevData]
+
+	// mu serialises concurrent UpdateEndpoints calls so only one rebuild
+	// runs at a time; Select() never acquires this lock.
+	mu sync.Mutex
 
 	// Table size (prime number, typically 65537)
 	tableSize uint64
@@ -49,22 +57,20 @@ const (
 // NewMaglev creates a new Maglev load balancer
 func NewMaglev(endpoints []*pb.Endpoint) *Maglev {
 	m := &Maglev{
-		endpoints:        endpoints,
-		healthyEndpoints: []*pb.Endpoint{},
-		lookupTable:      make([]int, defaultMaglevTableSize),
-		tableSize:        defaultMaglevTableSize,
+		tableSize: defaultMaglevTableSize,
 	}
 
-	m.buildLookupTable()
+	md := m.buildLookupTable(endpoints)
+	m.data.Store(md)
 	return m
 }
 
-// Select chooses an endpoint using Maglev hashing based on a key
+// Select chooses an endpoint using Maglev hashing based on a key.
+// This method is lock-free.
 func (m *Maglev) Select(key string) *pb.Endpoint {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	md := m.data.Load()
 
-	if len(m.healthyEndpoints) == 0 {
+	if len(md.healthyEndpoints) == 0 {
 		return nil
 	}
 
@@ -73,63 +79,74 @@ func (m *Maglev) Select(key string) *pb.Endpoint {
 
 	// Lookup in table
 	idx := hash % m.tableSize
-	endpointIdx := m.lookupTable[idx]
+	endpointIdx := md.lookupTable[idx]
 
-	if endpointIdx >= 0 && endpointIdx < len(m.healthyEndpoints) {
-		return m.healthyEndpoints[endpointIdx]
+	if endpointIdx >= 0 && endpointIdx < len(md.healthyEndpoints) {
+		return md.healthyEndpoints[endpointIdx]
 	}
 
 	// Fallback to first endpoint if table is corrupted
-	return m.healthyEndpoints[0]
+	return md.healthyEndpoints[0]
 }
 
-// SelectDefault selects an endpoint without a key
+// SelectDefault selects an endpoint without a key.
+// This method is lock-free.
 func (m *Maglev) SelectDefault() *pb.Endpoint {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	md := m.data.Load()
 
-	if len(m.healthyEndpoints) > 0 {
-		return m.healthyEndpoints[0]
+	if len(md.healthyEndpoints) > 0 {
+		return md.healthyEndpoints[0]
 	}
 	return nil
 }
 
-// UpdateEndpoints updates the endpoint list and rebuilds the lookup table
+// UpdateEndpoints updates the endpoint list and rebuilds the lookup table.
+// The new table is built into local variables (no lock held for Select),
+// then atomically swapped in.
 func (m *Maglev) UpdateEndpoints(endpoints []*pb.Endpoint) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	// Build the new table outside any lock that Select uses
+	md := m.buildLookupTable(endpoints)
 
-	m.endpoints = endpoints
-	m.buildLookupTable()
+	// Serialise concurrent UpdateEndpoints calls
+	m.mu.Lock()
+	m.data.Store(md)
+	m.mu.Unlock()
 }
 
-// buildLookupTable constructs the Maglev lookup table
-// This is the core of the Maglev algorithm
-func (m *Maglev) buildLookupTable() {
+// buildLookupTable constructs an immutable maglevData from the given endpoints.
+// This is a pure function that does not touch any shared state.
+func (m *Maglev) buildLookupTable(endpoints []*pb.Endpoint) *maglevData {
 	// Filter healthy endpoints
-	m.healthyEndpoints = []*pb.Endpoint{}
-	for _, ep := range m.endpoints {
+	healthyEndpoints := make([]*pb.Endpoint, 0, len(endpoints))
+	for _, ep := range endpoints {
 		if ep.Ready {
-			m.healthyEndpoints = append(m.healthyEndpoints, ep)
+			healthyEndpoints = append(healthyEndpoints, ep)
 		}
 	}
 
-	n := len(m.healthyEndpoints)
+	lookupTable := make([]int, m.tableSize)
+
+	n := len(healthyEndpoints)
 	if n == 0 {
 		// No healthy endpoints, clear table
-		for i := range m.lookupTable {
-			m.lookupTable[i] = -1
+		for i := range lookupTable {
+			lookupTable[i] = -1
 		}
-		return
+		return &maglevData{
+			lookupTable:      lookupTable,
+			healthyEndpoints: healthyEndpoints,
+			endpoints:        endpoints,
+		}
 	}
+
 	// Initialize lookup table to -1 (empty) before filling
-	for i := range m.lookupTable {
-		m.lookupTable[i] = -1
+	for i := range lookupTable {
+		lookupTable[i] = -1
 	}
 
 	// Generate permutation for each endpoint
 	permutations := make([][]uint64, n)
-	for i, ep := range m.healthyEndpoints {
+	for i, ep := range healthyEndpoints {
 		permutations[i] = m.generatePermutation(ep)
 	}
 
@@ -140,17 +157,23 @@ func (m *Maglev) buildLookupTable() {
 	for filled < m.tableSize {
 		for i := 0; i < n; i++ {
 			c := permutations[i][next[i]]
-			for m.lookupTable[c] >= 0 {
+			for lookupTable[c] >= 0 {
 				next[i]++
 				c = permutations[i][next[i]]
 			}
-			m.lookupTable[c] = i
+			lookupTable[c] = i
 			next[i]++
 			filled++
 			if filled == m.tableSize {
 				break
 			}
 		}
+	}
+
+	return &maglevData{
+		lookupTable:      lookupTable,
+		healthyEndpoints: healthyEndpoints,
+		endpoints:        endpoints,
 	}
 }
 
@@ -183,22 +206,19 @@ func (m *Maglev) hashKey(key string) uint64 {
 
 // GetTableSize returns the size of the lookup table
 func (m *Maglev) GetTableSize() uint64 {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
 	return m.tableSize
 }
 
 // GetDistribution returns the distribution of endpoints in the lookup table
 // Useful for testing and debugging
 func (m *Maglev) GetDistribution() map[string]int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
+	md := m.data.Load()
 
 	distribution := make(map[string]int)
 
-	for _, idx := range m.lookupTable {
-		if idx >= 0 && idx < len(m.healthyEndpoints) {
-			ep := m.healthyEndpoints[idx]
+	for _, idx := range md.lookupTable {
+		if idx >= 0 && idx < len(md.healthyEndpoints) {
+			ep := md.healthyEndpoints[idx]
 			key := endpointKey(ep)
 			distribution[key]++
 		}

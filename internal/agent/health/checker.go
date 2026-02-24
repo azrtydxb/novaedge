@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"sync"
@@ -54,6 +55,15 @@ const DefaultHealthCheckPath = "/health"
 // DefaultHealthCheckInterval is the default interval between consecutive
 // health checks when no interval is configured.
 const DefaultHealthCheckInterval = 10 * time.Second
+
+// defaultMinRecordChSize is the minimum size of the passive health event channel.
+const defaultMinRecordChSize = 10000
+
+// jitterFraction is the fraction of the check interval used for per-endpoint jitter (+-20%).
+const jitterFraction = 0.20
+
+// dropLogInterval is the minimum interval between "events dropped" log warnings.
+const dropLogInterval = time.Minute
 
 // CheckConfig holds configurable health check parameters extracted
 // from the cluster protobuf configuration with sensible defaults.
@@ -107,7 +117,13 @@ type Checker struct {
 
 	// recordCh is used for async passive health recording (RecordSuccess/RecordFailure).
 	// Sending to this channel is non-blocking, keeping the hot request path lock-free.
+	// Channel size is dynamically based on endpoint count.
 	recordCh chan passiveRecord
+
+	// lastDropLog tracks the last time a "events dropped" warning was logged
+	// to rate-limit log output.
+	lastDropLog time.Time
+	dropLogMu   sync.Mutex
 }
 
 // passiveRecord carries a single passive health event (success or failure).
@@ -126,6 +142,15 @@ type Result struct {
 	// Consecutive check counts
 	ConsecutiveSuccesses uint32
 	ConsecutiveFailures  uint32
+}
+
+// recordChSize calculates the dynamic channel size based on endpoint count.
+func recordChSize(endpointCount int) int {
+	dynamic := endpointCount * 100
+	if dynamic < defaultMinRecordChSize {
+		return defaultMinRecordChSize
+	}
+	return dynamic
 }
 
 // NewChecker creates a new health checker
@@ -168,7 +193,7 @@ func NewChecker(cluster *pb.Cluster, endpoints []*pb.Endpoint, logger *zap.Logge
 		},
 		config:   config,
 		stopCh:   make(chan struct{}),
-		recordCh: make(chan passiveRecord, 10000),
+		recordCh: make(chan passiveRecord, recordChSize(len(endpoints))),
 	}
 
 	// Configure gRPC health checking if the cluster specifies it
@@ -263,7 +288,7 @@ func (hc *Checker) Start(ctx context.Context) {
 	}
 	hc.mu.Unlock()
 
-	// Start health check loop
+	// Start health check loop with staggered initial checks
 	hc.wg.Add(1)
 	go hc.healthCheckLoop(ctx)
 
@@ -341,25 +366,46 @@ func (hc *Checker) IsHealthy(endpoint *pb.Endpoint) bool {
 }
 
 // RecordSuccess records a successful request (for passive health checking).
-// This is called on every request so it must be lock-free — it sends a
+// This is called on every request so it must be lock-free -- it sends a
 // non-blocking event to the background processor.
 func (hc *Checker) RecordSuccess(endpoint *pb.Endpoint) {
 	select {
 	case hc.recordCh <- passiveRecord{endpoint: endpoint, success: true}:
 	default:
-		// Channel full — drop event. Passive records are best-effort;
-		// active health checks provide the authoritative health state.
+		// Channel full -- drop event and record the drop.
+		hc.recordDrop()
 	}
 }
 
 // RecordFailure records a failed request (for passive health checking).
-// This is called on every failed request so it must be lock-free — it sends
+// This is called on every failed request so it must be lock-free -- it sends
 // a non-blocking event to the background processor.
 func (hc *Checker) RecordFailure(endpoint *pb.Endpoint) {
 	select {
 	case hc.recordCh <- passiveRecord{endpoint: endpoint, success: false}:
 	default:
-		// Channel full — drop event (see RecordSuccess comment).
+		// Channel full -- drop event and record the drop.
+		hc.recordDrop()
+	}
+}
+
+// recordDrop increments the Prometheus counter for dropped passive health events
+// and emits a rate-limited log warning.
+func (hc *Checker) recordDrop() {
+	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
+	metrics.RecordPassiveHealthDropped(clusterKey)
+
+	hc.dropLogMu.Lock()
+	now := time.Now()
+	if now.Sub(hc.lastDropLog) >= dropLogInterval {
+		hc.lastDropLog = now
+		hc.dropLogMu.Unlock()
+		hc.logger.Warn("Passive health events dropped (channel full)",
+			zap.String("cluster", clusterKey),
+			zap.Int("channel_size", cap(hc.recordCh)),
+		)
+	} else {
+		hc.dropLogMu.Unlock()
 	}
 }
 
@@ -418,9 +464,15 @@ func (hc *Checker) drainRecordCh() {
 	}
 }
 
-// healthCheckLoop runs the active health check loop
+// healthCheckLoop runs the active health check loop.
+// The first check is staggered: each endpoint starts its first check at a
+// random offset within the first interval to avoid burst traffic.
 func (hc *Checker) healthCheckLoop(ctx context.Context) {
 	defer hc.wg.Done()
+
+	// Perform staggered initial health checks: spread the first round
+	// of checks over the first interval period.
+	hc.performStaggeredHealthChecks(ctx)
 
 	ticker := time.NewTicker(hc.config.Interval)
 	defer ticker.Stop()
@@ -442,18 +494,70 @@ func (hc *Checker) healthCheckLoop(ctx context.Context) {
 // how many endpoints are configured.
 const healthCheckWorkers = 10
 
+// performStaggeredHealthChecks performs the initial round of health checks
+// with per-endpoint jitter to avoid all checks firing simultaneously.
+func (hc *Checker) performStaggeredHealthChecks(ctx context.Context) {
+	hc.mu.RLock()
+	endpoints := make([]*pb.Endpoint, len(hc.endpoints))
+	copy(endpoints, hc.endpoints)
+	hc.mu.RUnlock()
+
+	if len(endpoints) == 0 {
+		return
+	}
+
+	// Spread initial checks over the first interval
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, healthCheckWorkers)
+
+	for _, ep := range endpoints {
+		ep := ep
+		// Random delay within the first interval
+		delay := time.Duration(rand.Int63n(int64(hc.config.Interval))) //nolint:gosec // jitter doesn't need crypto/rand
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case <-ctx.Done():
+				return
+			case <-hc.stopCh:
+				return
+			case <-time.After(delay):
+				sem <- struct{}{}
+				hc.checkEndpoint(ctx, ep)
+				<-sem
+			}
+		}()
+	}
+	wg.Wait()
+}
+
 // performHealthChecks performs health checks on all endpoints using a
 // bounded worker pool to avoid spawning unbounded goroutines.
+// Each endpoint's check is jittered by +-20% of the interval to avoid
+// synchronized burst traffic.
 func (hc *Checker) performHealthChecks(ctx context.Context) {
 	hc.mu.RLock()
 	endpoints := make([]*pb.Endpoint, len(hc.endpoints))
 	copy(endpoints, hc.endpoints)
 	hc.mu.RUnlock()
 
-	// Create a job channel and enqueue all endpoints
-	jobs := make(chan *pb.Endpoint, len(endpoints))
+	// Create a job channel and enqueue all endpoints with jitter
+	type jitteredJob struct {
+		ep    *pb.Endpoint
+		delay time.Duration
+	}
+
+	jobs := make(chan jitteredJob, len(endpoints))
+	maxJitter := time.Duration(float64(hc.config.Interval) * jitterFraction)
 	for _, ep := range endpoints {
-		jobs <- ep
+		// Per-endpoint jitter: random delay within [-20%, +20%] of the interval.
+		// We use [0, 2*maxJitter) mapped to [-maxJitter, +maxJitter).
+		jitter := time.Duration(rand.Int63n(int64(2*maxJitter))) - maxJitter //nolint:gosec // jitter doesn't need crypto/rand
+		if jitter < 0 {
+			jitter = 0 // don't delay negatively; just check immediately
+		}
+		jobs <- jitteredJob{ep: ep, delay: jitter}
 	}
 	close(jobs)
 
@@ -463,8 +567,17 @@ func (hc *Checker) performHealthChecks(ctx context.Context) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for ep := range jobs {
-				hc.checkEndpoint(ctx, ep)
+			for job := range jobs {
+				if job.delay > 0 {
+					select {
+					case <-ctx.Done():
+						return
+					case <-hc.stopCh:
+						return
+					case <-time.After(job.delay):
+					}
+				}
+				hc.checkEndpoint(ctx, job.ep)
 			}
 		}()
 	}

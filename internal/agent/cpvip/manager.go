@@ -24,6 +24,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
@@ -289,6 +290,17 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	if err := m.handler.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start VIP handler: %w", err)
+	}
+
+	// Stagger the initial health check to avoid all nodes checking at exactly
+	// the same time (e.g., after a simultaneous restart).
+	initialDelay := time.Duration(rand.Int63n(int64(m.config.HealthInterval))) //nolint:gosec // jitter doesn't need crypto/rand
+	select {
+	case <-ctx.Done():
+		m.logger.Info("Context cancelled, stopping CP VIP manager")
+		return nil
+	case <-time.After(initialDelay):
+		m.healthCheckTick(ctx)
 	}
 
 	ticker := time.NewTicker(m.config.HealthInterval)
