@@ -28,6 +28,13 @@ spec:
         - --metrics-bind-address=:8080
         - --health-probe-bind-address=:8081
         - --grpc-bind-address=:9090
+        env:
+        # Go runtime tuning: soft memory limit (90% of 512Mi memory limit)
+        - name: GOMEMLIMIT
+          value: "460MiB"
+        # Go runtime tuning: GC target percentage (100 = Go default, suitable for controller)
+        - name: GOGC
+          value: "100"
         ports:
         - name: metrics
           containerPort: 8080
