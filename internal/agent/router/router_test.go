@@ -26,6 +26,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	"github.com/piwi3910/novaedge/internal/agent/lb"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
@@ -372,6 +373,122 @@ func TestApplyConfigPreservesLBStateOnEndpointUpdate(t *testing.T) {
 	updatedPool := snap2.pools["default/backend1"]
 	if updatedPool != originalPool {
 		t.Error("Expected pool to be reused (same instance)")
+	}
+}
+
+// TestApplyConfigUpdatesHashBasedLBEndpoints is a regression test for the bug
+// where hash-based load balancers (Maglev, RingHash) were not updated when
+// endpoints changed. The root cause was that updateExistingLoadBalancer used a
+// type assertion to lb.LoadBalancer, but Maglev.Select(key string) and
+// RingHash.Select(key string) take a key argument and do NOT satisfy that
+// interface. The fix adds explicit type cases for *lb.Maglev and *lb.RingHash.
+func TestApplyConfigUpdatesHashBasedLBEndpoints(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		lbPolicy pb.LoadBalancingPolicy
+	}{
+		{"Maglev", pb.LoadBalancingPolicy_MAGLEV},
+		{"RingHash", pb.LoadBalancingPolicy_RING_HASH},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			logger, _ := zap.NewDevelopment()
+			r := NewRouter(logger)
+
+			// First snapshot: cluster exists but 0 endpoints (simulates pods not ready)
+			snapshot1 := &config.Snapshot{
+				ConfigSnapshot: &pb.ConfigSnapshot{
+					Routes: []*pb.Route{
+						{
+							Name:      "test-route",
+							Namespace: "default",
+							Hostnames: []string{"example.com"},
+							Rules: []*pb.RouteRule{
+								{
+									Matches: []*pb.RouteMatch{
+										{Path: &pb.PathMatch{Type: pb.PathMatchType_PATH_PREFIX, Value: "/"}},
+									},
+									BackendRefs: []*pb.BackendRef{
+										{Namespace: "default", Name: "backend1"},
+									},
+								},
+							},
+						},
+					},
+					Clusters: []*pb.Cluster{
+						{
+							Name:      "backend1",
+							Namespace: "default",
+							LbPolicy:  tc.lbPolicy,
+						},
+					},
+					Endpoints: map[string]*pb.EndpointList{
+						"default/backend1": {
+							Endpoints: []*pb.Endpoint{}, // empty — pods not ready
+						},
+					},
+					Gateways: []*pb.Gateway{},
+				},
+			}
+
+			err := r.ApplyConfig(context.Background(), snapshot1)
+			if err != nil {
+				t.Fatalf("First ApplyConfig failed: %v", err)
+			}
+
+			// Verify hash-based LB was created with 0 endpoints
+			snap1 := r.state.Load()
+			hashLB1 := snap1.hashBasedLBs["default/backend1"]
+			if hashLB1 == nil {
+				t.Fatal("Expected hash-based LB for default/backend1 after first apply")
+			}
+
+			// Second snapshot: same cluster, now with 3 endpoints (pods became ready)
+			snapshot2 := &config.Snapshot{
+				ConfigSnapshot: &pb.ConfigSnapshot{
+					Routes:   snapshot1.Routes,
+					Clusters: snapshot1.Clusters,
+					Endpoints: map[string]*pb.EndpointList{
+						"default/backend1": {
+							Endpoints: []*pb.Endpoint{
+								{Address: "10.0.0.1", Port: 8080, Ready: true},
+								{Address: "10.0.0.2", Port: 8080, Ready: true},
+								{Address: "10.0.0.3", Port: 8080, Ready: true},
+							},
+						},
+					},
+					Gateways: []*pb.Gateway{},
+				},
+			}
+
+			err = r.ApplyConfig(context.Background(), snapshot2)
+			if err != nil {
+				t.Fatalf("Second ApplyConfig failed: %v", err)
+			}
+
+			// The hash-based LB should be the SAME instance (in-place update)
+			snap2 := r.state.Load()
+			hashLB2 := snap2.hashBasedLBs["default/backend1"]
+			if hashLB2 == nil {
+				t.Fatal("Expected hash-based LB after second apply")
+			}
+			if hashLB2 != hashLB1 {
+				t.Error("Expected hash-based LB to be preserved (same instance)")
+			}
+
+			// The LB must now return endpoints (this is the actual regression check)
+			switch hlb := hashLB2.(type) {
+			case *lb.Maglev:
+				ep := hlb.Select("test-key")
+				if ep == nil {
+					t.Error("Maglev.Select returned nil after endpoint update — LB was not updated")
+				}
+			case *lb.RingHash:
+				ep := hlb.Select("test-key")
+				if ep == nil {
+					t.Error("RingHash.Select returned nil after endpoint update — LB was not updated")
+				}
+			}
+		})
 	}
 }
 
