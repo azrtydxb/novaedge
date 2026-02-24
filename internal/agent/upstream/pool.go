@@ -56,6 +56,10 @@ type Pool struct {
 	// Mutex only needed for endpoint updates (write path)
 	mu sync.Mutex
 
+	// drainTimer tracks the deferred idle-connection drain so it can be
+	// cancelled on Close() or superseded by a newer UpdateEndpoints call.
+	drainTimer *time.Timer
+
 	// Health checker for endpoints
 	healthChecker *health.Checker
 
@@ -74,6 +78,9 @@ type Pool struct {
 
 	// Cluster key cached to avoid repeated fmt.Sprintf in hot path
 	clusterKey string
+
+	// Whether ConnectTimeoutMs was explicitly configured (> 0)
+	hasExplicitTimeout bool
 }
 
 // NewPool creates a new connection pool
@@ -148,13 +155,14 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	poolCtx, cancel := context.WithCancel(ctx)
 
 	pool := &Pool{
-		logger:     logger,
-		cluster:    cluster,
-		endpoints:  endpoints,
-		transport:  transport,
-		ctx:        poolCtx,
-		cancel:     cancel,
-		clusterKey: clusterKey,
+		logger:             logger,
+		cluster:            cluster,
+		endpoints:          endpoints,
+		transport:          transport,
+		ctx:                poolCtx,
+		cancel:             cancel,
+		clusterKey:         clusterKey,
+		hasExplicitTimeout: cluster.ConnectTimeoutMs > 0,
 	}
 	// Initialize atomic proxies
 	emptyProxies := make(map[string]*httputil.ReverseProxy)
@@ -203,32 +211,79 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 // UpdateEndpoints updates the pool with new endpoints
 func (p *Pool) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
-	p.logger.Info("Updating endpoints, draining old connections",
+	// Early return if endpoint set is unchanged — avoids unnecessary drain storms
+	// when the controller pushes identical snapshots every 30s.
+	if endpointSetsEqual(p.endpoints, endpoints) {
+		p.mu.Unlock()
+		if ce := p.logger.Check(zap.DebugLevel, "Endpoints unchanged, skipping update"); ce != nil {
+			ce.Write(zap.Int("count", len(endpoints)))
+		}
+		return
+	}
+
+	p.logger.Info("Updating endpoints",
 		zap.Int("old_count", len(p.endpoints)),
 		zap.Int("new_count", len(endpoints)),
 	)
 
-	// Drain idle connections before updating to prevent routing to stale endpoints
-	p.drainIdleConnections()
-
+	// Update the endpoint list and health checker under the lock
 	p.endpoints = endpoints
-	p.createProxies()
-
-	// Update health checker with new endpoints
 	if p.healthChecker != nil {
 		p.healthChecker.UpdateEndpoints(endpoints)
 	}
+
+	// Capture the endpoints slice while still holding the lock so that
+	// createProxiesFrom (called after Unlock) operates on a stable copy.
+	eps := p.endpoints
+
+	// Cancel any previously scheduled drain timer before scheduling a new one.
+	if p.drainTimer != nil {
+		p.drainTimer.Stop()
+	}
+
+	// Schedule deferred drain of old idle connections instead of immediately
+	// closing them. This gives in-flight requests a short window to complete
+	// on existing connections before they are reclaimed.
+	p.drainTimer = time.AfterFunc(5*time.Second, func() {
+		p.transport.CloseIdleConnections()
+		if ce := p.logger.Check(zap.DebugLevel, "Deferred idle connection drain completed"); ce != nil {
+			ce.Write(zap.String("cluster", p.clusterKey))
+		}
+	})
+
+	p.mu.Unlock()
+
+	// Build new proxies outside the lock — allocation is expensive but the
+	// atomic.Pointer swap in createProxiesFrom is safe for concurrent readers.
+	p.createProxiesFrom(eps)
 }
 
-// drainIdleConnections closes all idle connections in the transport
-// This is called when endpoints change to ensure we don't use stale connections
-func (p *Pool) drainIdleConnections() {
-	if p.transport != nil {
-		p.transport.CloseIdleConnections()
-		p.logger.Debug("Drained idle connections from transport")
+// endpointSetsEqual returns true if old and new endpoint slices represent
+// the same set of address:port+ready tuples, regardless of order.
+func endpointSetsEqual(old, new []*pb.Endpoint) bool {
+	if len(old) != len(new) {
+		return false
 	}
+	// Build a set from old endpoints keyed by address:port:ready
+	type epKey struct {
+		addr  string
+		port  int32
+		ready bool
+	}
+	set := make(map[epKey]int, len(old))
+	for _, ep := range old {
+		set[epKey{ep.Address, ep.Port, ep.Ready}]++
+	}
+	for _, ep := range new {
+		k := epKey{ep.Address, ep.Port, ep.Ready}
+		count, ok := set[k]
+		if !ok || count == 0 {
+			return false
+		}
+		set[k] = count - 1
+	}
+	return true
 }
 
 // updateMetrics periodically updates pool metrics and reports them via Prometheus
@@ -274,14 +329,26 @@ func (p *Pool) updateMetrics() {
 	}
 }
 
-// createProxies creates reverse proxies for all endpoints
+// createProxies creates reverse proxies using the current p.endpoints.
+// Only safe to call when p.endpoints is not being concurrently modified
+// (e.g. during NewPool init).
 func (p *Pool) createProxies() {
+	p.mu.Lock()
+	eps := p.endpoints
+	p.mu.Unlock()
+	p.createProxiesFrom(eps)
+}
+
+// createProxiesFrom creates reverse proxies for the given endpoints.
+// The caller must pass an endpoints slice that is safe to read (either captured
+// under the lock or from NewPool before any concurrent access).
+func (p *Pool) createProxiesFrom(endpoints []*pb.Endpoint) {
 	newProxies := make(map[string]*httputil.ReverseProxy)
 
 	// Load current proxies for reuse
 	currentProxies := *p.proxies.Load()
 
-	for _, ep := range p.endpoints {
+	for _, ep := range endpoints {
 		if !ep.Ready {
 			continue
 		}
@@ -312,11 +379,10 @@ func (p *Pool) createProxies() {
 		proxy := httputil.NewSingleHostReverseProxy(target)
 		proxy.Transport = p.transport
 
-		// Flush periodically for streaming; the ReverseProxy automatically
-		// flushes immediately for detected streaming responses (Content-Length: -1,
-		// e.g. gRPC and WebSocket), so -1 (flush-per-write) is unnecessary and
-		// adds overhead for regular HTTP responses.
-		proxy.FlushInterval = 100 * time.Millisecond
+		// Flush immediately on every write. The previous 100ms FlushInterval
+		// caused maxLatencyWriter timer overhead (~9% CPU under load). Using -1
+		// triggers Go's simpler flushOnWrite path without per-response timers.
+		proxy.FlushInterval = -1
 
 		// Custom error handler
 		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
@@ -363,17 +429,18 @@ func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.Response
 	atomic.AddInt64(&p.totalConns, 1)
 	defer atomic.AddInt64(&p.activeConns, -1)
 
-	// Set up request context with timeout
-	ctx := req.Context()
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithTimeout(ctx, connectTimeout(p.cluster.ConnectTimeoutMs))
-	defer cancel()
-
-	// Create new request with modified context
-	reqWithContext := req.WithContext(ctx)
+	// Only wrap with a per-request timeout when ConnectTimeoutMs is explicitly
+	// configured. When it's 0 the server's WriteTimeout already provides a
+	// deadline on the request context, so adding another timer just wastes a
+	// heap allocation + runtime timer per request.
+	if p.hasExplicitTimeout {
+		ctx, cancel := context.WithTimeout(req.Context(), connectTimeout(p.cluster.ConnectTimeoutMs))
+		defer cancel()
+		req = req.WithContext(ctx)
+	}
 
 	// Forward request
-	proxy.ServeHTTP(w, reqWithContext)
+	proxy.ServeHTTP(w, req)
 
 	return nil
 }
@@ -407,6 +474,12 @@ func (p *Pool) Close() {
 	}
 	if p.cancel != nil {
 		p.cancel()
+	}
+
+	// Cancel any pending deferred drain
+	if p.drainTimer != nil {
+		p.drainTimer.Stop()
+		p.drainTimer = nil
 	}
 
 	p.transport.CloseIdleConnections()
@@ -479,7 +552,8 @@ func (p *Pool) GetClusterKey() string {
 // createBackendTLSConfig creates a TLS config for backend connections
 func createBackendTLSConfig(backendTLS *pb.BackendTLS, clusterKey string, logger *zap.Logger) *tls.Config {
 	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
+		MinVersion:         tls.VersionTLS12,
+		ClientSessionCache: tls.NewLRUClientSessionCache(256),
 	}
 
 	// InsecureSkipVerify is an explicit user configuration for backend connections
