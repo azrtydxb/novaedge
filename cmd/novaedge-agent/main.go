@@ -126,6 +126,12 @@ var (
 	forceLegacyLB   bool
 	forceLegacyMesh bool
 
+	// BGP backend selection
+	bgpBackend      string
+	novarouteSocket string
+	novarouteOwner  string
+	novarouteToken  string
+
 	// Control-plane VIP BGP/BFD configuration
 	cpVIPMode       string
 	cpBGPLocalAS    uint
@@ -186,6 +192,12 @@ func main() {
 	// Force-legacy flags — explicitly disable eBPF auto-detection
 	flag.BoolVar(&forceLegacyLB, "force-legacy-lb", false, "Force legacy userspace L4 proxy instead of XDP/AF_XDP acceleration")
 	flag.BoolVar(&forceLegacyMesh, "force-legacy-mesh", false, "Force legacy nftables/iptables mesh interception instead of eBPF sk_lookup")
+
+	// BGP backend flags
+	flag.StringVar(&bgpBackend, "bgp-backend", "gobgp", "BGP backend for VIP announcements: gobgp (built-in) or novaroute (delegated to NovaRoute agent)")
+	flag.StringVar(&novarouteSocket, "novaroute-socket", "/run/novaroute/novaroute.sock", "Unix domain socket path for NovaRoute gRPC API")
+	flag.StringVar(&novarouteOwner, "novaroute-owner", "novaedge", "Owner name for NovaRoute registration")
+	flag.StringVar(&novarouteToken, "novaroute-token", "", "Authentication token for NovaRoute registration")
 
 	// Control-plane VIP BGP/BFD flags
 	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
@@ -306,8 +318,22 @@ func main() {
 		logger.Warn("WARNING: Config watcher running without TLS (insecure)")
 	}
 
-	// Create VIP manager
-	vipManager, err := vip.NewManager(logger)
+	// Create VIP manager with selected BGP backend
+	var vipOpts []vip.ManagerOption
+	switch bgpBackend {
+	case "novaroute":
+		logger.Info("Using NovaRoute BGP backend",
+			zap.String("socket", novarouteSocket),
+			zap.String("owner", novarouteOwner),
+		)
+		nrHandler := vip.NewNovaRouteBGPHandler(logger, novarouteSocket, novarouteOwner, novarouteToken)
+		vipOpts = append(vipOpts, vip.WithBGPBackend(nrHandler))
+	case "gobgp", "":
+		logger.Info("Using built-in GoBGP backend")
+	default:
+		logger.Fatal("Unknown BGP backend", zap.String("backend", bgpBackend))
+	}
+	vipManager, err := vip.NewManager(logger, vipOpts...)
 	if err != nil {
 		logger.Fatal("Failed to create VIP manager", zap.Error(err))
 	}
