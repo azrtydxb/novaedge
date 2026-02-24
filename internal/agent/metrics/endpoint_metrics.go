@@ -131,6 +131,17 @@ var (
 		[]string{"cluster", "type"}, // type: connections, pending, requests, retries
 	)
 
+	// PassiveHealthDroppedTotal tracks passive health events dropped because the
+	// channel was full. A sustained increase indicates the channel size should be
+	// increased or the request rate is overwhelming the passive health processor.
+	PassiveHealthDroppedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "novaedge_passive_health_events_dropped_total",
+			Help: "Total number of passive health events dropped due to full channel",
+		},
+		[]string{"cluster"},
+	)
+
 	// Load Balancer Metrics
 
 	// LoadBalancerSelections tracks load balancer endpoint selections
@@ -258,6 +269,11 @@ func RecordCircuitBreakerOverflow(cluster, limitType string) {
 	CircuitBreakerOverflowTotal.WithLabelValues(cluster, limitType).Inc()
 }
 
+// RecordPassiveHealthDropped increments the counter for dropped passive health events.
+func RecordPassiveHealthDropped(cluster string) {
+	PassiveHealthDroppedTotal.WithLabelValues(cluster).Inc()
+}
+
 // RecordLoadBalancerSelection records a load balancer selection
 func RecordLoadBalancerSelection(cluster, algorithm, endpoint string) {
 	endpoint = resolveEndpointLabel(cluster, endpoint)
@@ -280,6 +296,7 @@ func CleanupClusterMetrics(cluster string) {
 	PoolHitsTotal.DeleteLabelValues(cluster)
 	PoolMissesTotal.DeleteLabelValues(cluster)
 	EndpointsEjected.DeleteLabelValues(cluster)
+	PassiveHealthDroppedTotal.DeleteLabelValues(cluster)
 	InsecureBackendConnectionsTotal.DeleteLabelValues(cluster)
 }
 

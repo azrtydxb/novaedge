@@ -98,14 +98,14 @@ func TestOutlierDetector_RecordSuccessAndFailure(t *testing.T) {
 
 	od.mu.RLock()
 	s := od.stats[testEndpointAddr]
-	if s.requests != 3 {
-		t.Errorf("expected 3 requests, got %d", s.requests)
+	if s.requests.Load() != 3 {
+		t.Errorf("expected 3 requests, got %d", s.requests.Load())
 	}
-	if s.successes != 2 {
-		t.Errorf("expected 2 successes, got %d", s.successes)
+	if s.successes.Load() != 2 {
+		t.Errorf("expected 2 successes, got %d", s.successes.Load())
 	}
-	if s.consecutiveErrors != 1 {
-		t.Errorf("expected 1 consecutive error, got %d", s.consecutiveErrors)
+	if s.consecutiveErrors.Load() != 1 {
+		t.Errorf("expected 1 consecutive error, got %d", s.consecutiveErrors.Load())
 	}
 	od.mu.RUnlock()
 }
@@ -471,15 +471,15 @@ func TestOutlierDetector_ResetStatsClearsCounters(t *testing.T) {
 	od.mu.Lock()
 	od.resetStats()
 	s := od.stats[ep]
-	if s.requests != 0 {
-		t.Errorf("expected requests=0 after reset, got %d", s.requests)
+	if s.requests.Load() != 0 {
+		t.Errorf("expected requests=0 after reset, got %d", s.requests.Load())
 	}
-	if s.successes != 0 {
-		t.Errorf("expected successes=0 after reset, got %d", s.successes)
+	if s.successes.Load() != 0 {
+		t.Errorf("expected successes=0 after reset, got %d", s.successes.Load())
 	}
 	// Consecutive errors should persist across resets.
-	if s.consecutiveErrors != 1 {
-		t.Errorf("expected consecutiveErrors=1 after reset (preserved), got %d", s.consecutiveErrors)
+	if s.consecutiveErrors.Load() != 1 {
+		t.Errorf("expected consecutiveErrors=1 after reset (preserved), got %d", s.consecutiveErrors.Load())
 	}
 	od.mu.Unlock()
 }
