@@ -33,6 +33,7 @@ import (
 
 	"go.uber.org/zap"
 
+	ebpfhealth "github.com/piwi3910/novaedge/internal/agent/ebpf/health"
 	"github.com/piwi3910/novaedge/internal/agent/health"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -206,6 +207,16 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	}
 
 	return pool
+}
+
+// SetEBPFHealthMonitor attaches an eBPF passive health signal monitor to the
+// pool's health checker. When set, backends with active eBPF-observed traffic
+// use passive signals as the primary health indicator instead of active probes.
+// May be nil to disable the eBPF health integration.
+func (p *Pool) SetEBPFHealthMonitor(monitor *ebpfhealth.HealthMonitor) {
+	if p.healthChecker != nil {
+		p.healthChecker.SetEBPFHealthMonitor(monitor)
+	}
 }
 
 // EndpointDiff holds the result of diffing old and new endpoint sets.

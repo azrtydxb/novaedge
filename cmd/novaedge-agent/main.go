@@ -41,6 +41,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/conntrack"
+	ebpfhealth "github.com/piwi3910/novaedge/internal/agent/ebpf/health"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/maglev"
+	ebpfratelimit "github.com/piwi3910/novaedge/internal/agent/ebpf/ratelimit"
+	ebpfservice "github.com/piwi3910/novaedge/internal/agent/ebpf/service"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
 	"github.com/piwi3910/novaedge/internal/agent/ebpfmesh"
 	"github.com/piwi3910/novaedge/internal/agent/introspection"
 	"github.com/piwi3910/novaedge/internal/agent/l4"
@@ -330,6 +336,31 @@ func main() {
 		logger.Info("XDP L4 LB disabled by --force-legacy-lb, using userspace proxy")
 	}
 
+	// Create eBPF Maglev manager for consistent hashing (attaches to XDP LB)
+	var maglevMgr *maglev.Manager
+	var conntrackMgr *conntrack.Conntrack
+	if xdpManager != nil && xdpManager.IsRunning() {
+		maglevMgr = maglev.NewManager(logger, 0) // 0 = DefaultTableSize
+		if initErr := maglevMgr.Init(); initErr != nil {
+			logger.Warn("eBPF Maglev not available, using hash-mod backend selection", zap.Error(initErr))
+			maglevMgr = nil
+		} else {
+			xdpManager.SetMaglev(maglevMgr)
+			logger.Info("eBPF Maglev consistent hashing enabled for XDP LB")
+		}
+
+		var ctErr error
+		conntrackMgr, ctErr = conntrack.NewConntrack(logger, 0, 0) // 0 = defaults
+		if ctErr != nil {
+			logger.Warn("eBPF conntrack not available", zap.Error(ctErr))
+			conntrackMgr = nil
+		} else {
+			xdpManager.SetConntrack(conntrackMgr)
+			conntrackMgr.StartGC()
+			logger.Info("eBPF conntrack enabled for XDP LB")
+		}
+	}
+
 	// Create AF_XDP worker — auto-attempted when xdpInterface is set
 	var afxdpWorker *afxdp.Worker
 	if !forceLegacyLB && xdpInterface != "" {
@@ -348,6 +379,16 @@ func main() {
 			zap.String("interface", xdpInterface))
 	}
 
+	// Create eBPF SOCKMAP + ServiceMap for mesh acceleration (if mesh enabled).
+	// TrySockMap/TryServiceMap auto-detect kernel capabilities and return nil
+	// when eBPF prerequisites are missing — no fatal errors.
+	var sockMapMgr *sockmap.Manager
+	var ebpfSvcMap *ebpfservice.ServiceMap
+	if meshEnabled {
+		sockMapMgr = ebpfmesh.TrySockMap(logger)
+		ebpfSvcMap = ebpfmesh.TryServiceMap(logger, 0, 0) // 0 = defaults
+	}
+
 	// Create mesh manager (if enabled)
 	var meshManager *mesh.Manager
 	if meshEnabled {
@@ -364,6 +405,8 @@ func main() {
 			TunnelPort:          int32(meshTunnelPort), //nolint:gosec // port range validated by flag
 			TrustDomain:         meshTrustDomain,
 			RuleBackendOverride: meshBackend,
+			SockMapManager:      sockMapMgr,
+			ServiceMap:          ebpfSvcMap,
 		})
 	}
 
@@ -372,6 +415,32 @@ func main() {
 	if sdwanEnabled {
 		sdwanManager = sdwan.NewManager(logger)
 	}
+
+	// Create eBPF health monitor for passive health signals from kernel
+	var ebpfHealthMon *ebpfhealth.HealthMonitor
+	ebpfHealthMon, err = ebpfhealth.NewHealthMonitor(logger, 0) // 0 = default (4096)
+	if err != nil {
+		logger.Warn("eBPF health monitor not available, using active probes only", zap.Error(err))
+		ebpfHealthMon = nil
+	} else {
+		logger.Info("eBPF passive health monitor enabled")
+	}
+
+	// Create eBPF rate limiter for per-IP fast-path rate limiting
+	var ebpfRL *ebpfratelimit.RateLimiter
+	ebpfRL, err = ebpfratelimit.NewRateLimiter(logger, 0) // 0 = default (100k entries)
+	if err != nil {
+		logger.Warn("eBPF rate limiter not available, using Go-side token buckets", zap.Error(err))
+		ebpfRL = nil
+	} else {
+		logger.Info("eBPF per-IP rate limiter enabled")
+	}
+
+	// Pass eBPF health monitor and rate limiter to the HTTP server so it
+	// can forward them to the Router -> pools/policies on config apply.
+	httpServer.SetEBPFHealthMonitor(ebpfHealthMon)
+	httpServer.SetEBPFRateLimiter(ebpfRL)
+
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
 
@@ -575,6 +644,32 @@ func main() {
 			logger.Error("Error during AF_XDP worker shutdown", zap.Error(err))
 		}
 	}
+
+	// Cleanup eBPF subsystem resources.
+	// Note: Maglev and conntrack are cleaned up by xdpManager.Stop() above,
+	// but we also close them here in case xdpManager was nil or failed to
+	// stop them. The Close methods are idempotent.
+	if maglevMgr != nil {
+		if err := maglevMgr.Close(); err != nil {
+			logger.Error("Error closing eBPF Maglev manager", zap.Error(err))
+		}
+	}
+	if conntrackMgr != nil {
+		if err := conntrackMgr.Close(); err != nil {
+			logger.Error("Error closing eBPF conntrack", zap.Error(err))
+		}
+	}
+	if ebpfHealthMon != nil {
+		if err := ebpfHealthMon.Close(); err != nil {
+			logger.Error("Error closing eBPF health monitor", zap.Error(err))
+		}
+	}
+	if ebpfRL != nil {
+		if err := ebpfRL.Close(); err != nil {
+			logger.Error("Error closing eBPF rate limiter", zap.Error(err))
+		}
+	}
+	// Note: sockMapMgr and ebpfSvcMap are closed by meshManager.Shutdown() above.
 
 	// Shutdown L4 listeners
 	if err := l4Manager.Shutdown(shutdownCtx); err != nil {

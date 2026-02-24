@@ -103,6 +103,12 @@ func (r *Router) buildRateLimitPolicy(p *pb.Policy) *policyMiddleware {
 		return nil
 	}
 	limiter := policy.NewRateLimiter(p.RateLimit)
+	// Attach eBPF rate limiter for per-source-IP fast-path if available.
+	// The policy.RateLimiter will use BPF maps for L3/L4 rate limiting and
+	// fall back to Go-side token buckets for L7 policies (per-header, etc).
+	if r.ebpfRateLimiter != nil {
+		limiter.SetEBPFRateLimiter(r.ebpfRateLimiter)
+	}
 	return &policyMiddleware{
 		name:    fmt.Sprintf("rate-limit-%s", p.Name),
 		handler: policy.HandleRateLimit(limiter),

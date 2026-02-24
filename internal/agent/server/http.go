@@ -30,6 +30,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	ebpfhealth "github.com/piwi3910/novaedge/internal/agent/ebpf/health"
+	ebpfratelimit "github.com/piwi3910/novaedge/internal/agent/ebpf/ratelimit"
 	"github.com/piwi3910/novaedge/internal/agent/router"
 	proto "github.com/piwi3910/novaedge/internal/proto/gen"
 )
@@ -49,6 +51,11 @@ type HTTPServer struct {
 	drainManager       *DrainManager  // Manages graceful connection draining on config reload
 	lastAppliedHash    string         // Content hash of the last applied snapshot version
 	lastStructuralHash string         // Hash of structural config (routes, gateways, policies -- not endpoints)
+
+	// eBPF acceleration: these are passed through to the Router so that
+	// health checkers and policy rate limiters can use eBPF fast paths.
+	ebpfHealthMonitor *ebpfhealth.HealthMonitor
+	ebpfRateLimiter   *ebpfratelimit.RateLimiter
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -62,6 +69,28 @@ func NewHTTPServer(logger *zap.Logger) *HTTPServer {
 		ocspStapler:  NewOCSPStapler(logger),
 		drainManager: NewDrainManager(logger, DefaultDrainTimeout),
 	}
+}
+
+// SetEBPFHealthMonitor sets the eBPF passive health signal monitor. When set,
+// it is forwarded to the Router so that upstream pool health checkers can
+// use passive eBPF signals instead of (or in addition to) active probes.
+// May be nil to disable the eBPF health path.
+func (s *HTTPServer) SetEBPFHealthMonitor(monitor *ebpfhealth.HealthMonitor) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ebpfHealthMonitor = monitor
+	s.router.SetEBPFHealthMonitor(monitor)
+}
+
+// SetEBPFRateLimiter sets the eBPF per-IP rate limiter. When set, it is
+// forwarded to the Router so that policy rate limiters can offload per-source-IP
+// rate limiting to BPF maps for lock-free per-CPU operation.
+// May be nil to disable the eBPF rate limiting path.
+func (s *HTTPServer) SetEBPFRateLimiter(rl *ebpfratelimit.RateLimiter) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ebpfRateLimiter = rl
+	s.router.SetEBPFRateLimiter(rl)
 }
 
 // Start blocks until the context is cancelled, keeping the server goroutine alive.

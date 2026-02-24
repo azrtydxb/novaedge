@@ -309,20 +309,6 @@ func (m *Manager) SetConntrack(ct *conntrack.Conntrack) {
 	m.logger.Info("eBPF conntrack enabled for XDP LB")
 }
 
-// Maglev returns the attached Maglev manager, or nil if not set.
-func (m *Manager) Maglev() *maglev.Manager {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.maglev
-}
-
-// Conntrack returns the attached conntrack table, or nil if not set.
-func (m *Manager) Conntrack() *conntrack.Conntrack {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.conntrack
-}
-
 // clearMaps removes all entries from vip_backends and backend_list maps.
 func (m *Manager) clearMaps() {
 	// Clear VIP map.
