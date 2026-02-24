@@ -44,6 +44,7 @@ type HTTPServer struct {
 	ocspStapler      *OCSPStapler   // OCSP stapling manager
 	cachedAltSvc     atomic.Value   // stores string - cached Alt-Svc header value
 	drainManager     *DrainManager  // Manages graceful connection draining on config reload
+	lastAppliedHash  string         // Content hash of the last applied snapshot version
 }
 
 // NewHTTPServer creates a new HTTP server
@@ -76,6 +77,21 @@ func (s *HTTPServer) DrainManager() *DrainManager {
 // connections, it initiates a graceful drain on the old configuration
 // before switching to the new one, allowing in-flight requests to complete.
 func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot) error {
+	// The snapshot version is a deterministic content hash. If it matches
+	// the last applied hash, the configuration is identical and we can skip
+	// the expensive drain + reconfigure cycle entirely.
+	contentHash := snapshot.Version
+	s.mu.RLock()
+	unchanged := s.lastAppliedHash != "" && s.lastAppliedHash == contentHash
+	s.mu.RUnlock()
+
+	if unchanged {
+		s.logger.Debug("Snapshot content hash unchanged, skipping config apply",
+			zap.String("version", snapshot.Version),
+		)
+		return nil
+	}
+
 	// Drain active connections from the previous configuration before
 	// acquiring the lock and swapping. This allows in-flight requests
 	// to finish while we prepare the new configuration.
@@ -203,6 +219,9 @@ func (s *HTTPServer) ApplyConfig(ctx context.Context, snapshot *config.Snapshot)
 	}
 
 	s.listeners = newListeners
+
+	// Record content hash so identical snapshots are skipped next time
+	s.lastAppliedHash = contentHash
 
 	// Update cached Alt-Svc header value for lock-free reads
 	s.updateAltSvcCache()
