@@ -17,10 +17,10 @@ limitations under the License.
 package router
 
 import (
-	"crypto/rand"
 	"fmt"
 	"hash/fnv"
-	"math/big"
+	"math/rand/v2"
+	"net/http"
 	"regexp"
 	"sort"
 
@@ -47,6 +47,17 @@ type RouteEntry struct {
 	// ApplyConfig to avoid per-request string concatenation in the
 	// forwarding hot path.
 	BackendClusterKeys map[*pb.BackendRef]string
+
+	// retryPolicy is the pre-built retry policy for this route rule.
+	// Built once at config time to avoid per-request NewRetryPolicy allocations
+	// (struct + 2 maps per request).
+	retryPolicy *RetryPolicy
+
+	// handler is the pre-built middleware chain for this route.
+	// Composed once at config time (in BuildHandler) to avoid 5-7 closure
+	// allocations per request from re-wrapping middleware on every call.
+	// handleRoute becomes a single interface dispatch: entry.handler.ServeHTTP(w, req)
+	handler http.Handler
 }
 
 // compileHeaderRegexes pre-compiles all header regex patterns for a route rule
@@ -94,13 +105,9 @@ func selectWeightedBackend(backends []*pb.BackendRef) *pb.BackendRef {
 		totalWeight += weight
 	}
 
-	// Generate random number between 0 and totalWeight using crypto/rand
-	bigRand, err := rand.Int(rand.Reader, big.NewInt(int64(totalWeight)))
-	if err != nil {
-		// Fallback to first backend if crypto/rand fails
-		return backends[0]
-	}
-	randVal := bigRand.Int64()
+	// Generate random number between 0 and totalWeight using math/rand/v2
+	// (ChaCha8 PRNG — no syscall, no alloc; crypto strength unnecessary for traffic splitting)
+	randVal := rand.Int64N(int64(totalWeight))
 
 	// Select backend based on weight (use int64 arithmetic to avoid integer overflow)
 	var currentWeight int64
