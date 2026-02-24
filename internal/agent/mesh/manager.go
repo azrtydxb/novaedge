@@ -22,9 +22,11 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
@@ -41,76 +43,75 @@ const (
 	connectTimeout = 5 * time.Second
 )
 
-// ServiceTable maps ClusterIP:port to a list of backend endpoints.
-type ServiceTable struct {
-	mu       sync.RWMutex
-	services map[string]*serviceEntry // key: "clusterIP:port"
+// serviceEntry holds the pre-computed ready endpoints for a service.
+// The ready list is computed at config-apply time so lookups at request
+// time do not need to filter under a lock.
+type serviceEntry struct {
+	ready    []*pb.Endpoint // pre-filtered ready endpoints
+	lbPolicy pb.LoadBalancingPolicy
+	idx      atomic.Uint64 // round-robin counter (atomic for concurrent Lookup)
 }
 
-type serviceEntry struct {
-	endpoints []*pb.Endpoint
-	lbPolicy  pb.LoadBalancingPolicy
-	idx       uint64 // round-robin counter
+// ServiceTable maps ClusterIP:port to a list of backend endpoints.
+// It uses atomic.Pointer for lock-free reads on the hot path.
+type ServiceTable struct {
+	services atomic.Pointer[map[string]*serviceEntry]
+	mu       sync.Mutex // protects writes only
 }
 
 // NewServiceTable creates an empty service routing table.
 func NewServiceTable() *ServiceTable {
-	return &ServiceTable{
-		services: make(map[string]*serviceEntry),
-	}
+	st := &ServiceTable{}
+	empty := make(map[string]*serviceEntry)
+	st.services.Store(&empty)
+	return st
 }
 
 // Update replaces the routing table with the given internal services.
+// Ready endpoints are pre-computed here so Lookup() avoids filtering.
 func (st *ServiceTable) Update(services []*pb.InternalService) {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-
 	newServices := make(map[string]*serviceEntry, len(services)*2)
 	for _, svc := range services {
+		// Pre-compute the ready endpoint list once.
+		var ready []*pb.Endpoint
+		for _, ep := range svc.Endpoints {
+			if ep.Ready {
+				ready = append(ready, ep)
+			}
+		}
 		for _, port := range svc.Ports {
 			key := fmt.Sprintf("%s:%d", svc.ClusterIp, port.Port)
 			newServices[key] = &serviceEntry{
-				endpoints: svc.Endpoints,
-				lbPolicy:  svc.LbPolicy,
+				ready:    ready,
+				lbPolicy: svc.LbPolicy,
 			}
 		}
 	}
-	st.services = newServices
+	st.mu.Lock()
+	st.services.Store(&newServices)
+	st.mu.Unlock()
 }
 
 // Lookup finds the service entry for a given original destination.
+// It reads the pre-computed ready endpoint list without filtering,
+// avoiding lock contention on the hot path.
 func (st *ServiceTable) Lookup(ip string, port int) (*pb.Endpoint, bool) {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-
+	svcMap := *st.services.Load()
 	key := fmt.Sprintf("%s:%d", ip, port)
-	entry, ok := st.services[key]
-	if !ok || len(entry.endpoints) == 0 {
+	entry, ok := svcMap[key]
+	if !ok || len(entry.ready) == 0 {
 		return nil, false
 	}
 
-	// Filter to ready endpoints
-	var ready []*pb.Endpoint
-	for _, ep := range entry.endpoints {
-		if ep.Ready {
-			ready = append(ready, ep)
-		}
-	}
-	if len(ready) == 0 {
-		return nil, false
-	}
-
-	// Simple round-robin selection
-	idx := entry.idx
-	entry.idx++
-	return ready[idx%uint64(len(ready))], true
+	// Atomic round-robin selection over pre-computed ready endpoints.
+	idx := entry.idx.Add(1) - 1
+	return entry.ready[idx%uint64(len(entry.ready))], true
 }
 
 // ServiceCount returns the number of services in the routing table.
 func (st *ServiceTable) ServiceCount() int {
-	st.mu.RLock()
-	defer st.mu.RUnlock()
-	return len(st.services)
+	svcMap := *st.services.Load()
+	return len(svcMap)
 }
 
 // Manager orchestrates the service mesh data plane components: TPROXY rule
@@ -175,6 +176,10 @@ type ListenerRegistrar interface {
 // If a RuleBackendOverride was provided via ManagerConfig (e.g. eBPF
 // sk_lookup), it is used directly; otherwise auto-detection selects the
 // best nftables/iptables backend.
+//
+// All spawned goroutines share the same context. If any component fails to
+// start, the context is cancelled to stop all others, preventing goroutine
+// leaks on error paths.
 func (m *Manager) Start(ctx context.Context) error {
 	if m.ruleBackendOverride != nil {
 		m.tproxy = NewTPROXYManagerWithBackend(m.logger, m.tproxyPort, m.ruleBackendOverride)
@@ -189,12 +194,16 @@ func (m *Manager) Start(ctx context.Context) error {
 	listenerCtx, cancel := context.WithCancel(ctx)
 	m.cancel = cancel
 
+	// Use errgroup to track all spawned goroutines. If any goroutine
+	// returns an error, the shared context is cancelled to stop all others.
+	eg, egCtx := errgroup.WithContext(listenerCtx)
+
 	listener := NewTransparentListener(m.logger, m.tproxyPort, m.handleConn)
 
 	// If the backend needs the listener socket FD (eBPF SOCKMAP), create
 	// the listener first, register the FD, then start the accept loop.
 	if registrar, ok := m.ruleBackendOverride.(ListenerRegistrar); ok {
-		tcpListener, err := listener.CreateListener(listenerCtx)
+		tcpListener, err := listener.CreateListener(egCtx)
 		if err != nil {
 			cancel()
 			return fmt.Errorf("creating listener for eBPF registration: %w", err)
@@ -220,21 +229,25 @@ func (m *Manager) Start(ctx context.Context) error {
 		listener.SetListener(tcpListener)
 	}
 
-	go func() {
-		if err := listener.Start(listenerCtx); err != nil {
+	eg.Go(func() error {
+		if err := listener.Start(egCtx); err != nil {
 			m.logger.Error("Transparent listener stopped", zap.Error(err))
+			return fmt.Errorf("transparent listener: %w", err)
 		}
-	}()
+		return nil
+	})
 
 	// Start tunnel server (will serve once TLS certificates are available).
 	if m.tunnelPort > 0 {
 		serverTLS := m.tlsProvider.ServerTLSConfig()
 		m.tunnelServer = NewTunnelServer(m.logger, m.tunnelPort, serverTLS, m.authorizer, m.tlsProvider)
-		go func() {
-			if err := m.tunnelServer.Start(listenerCtx); err != nil {
+		eg.Go(func() error {
+			if err := m.tunnelServer.Start(egCtx); err != nil {
 				m.logger.Error("Tunnel server stopped", zap.Error(err))
+				return fmt.Errorf("tunnel server: %w", err)
 			}
-		}()
+			return nil
+		})
 
 		// Create tunnel pool for outbound connections.
 		clientTLS := m.tlsProvider.ClientTLSConfig()
@@ -242,6 +255,15 @@ func (m *Manager) Start(ctx context.Context) error {
 
 		m.logger.Info("Mesh tunnel server started", zap.Int32("tunnel_port", m.tunnelPort))
 	}
+
+	// Monitor the errgroup in a background goroutine so that if any
+	// component fails, all others are cancelled.
+	go func() {
+		if err := eg.Wait(); err != nil {
+			m.logger.Error("Mesh component failed, stopping all components", zap.Error(err))
+			cancel()
+		}
+	}()
 
 	m.logger.Info("Mesh manager started",
 		zap.Int32("tproxy_port", m.tproxyPort),

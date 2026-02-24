@@ -85,12 +85,23 @@ type TCPProxyConfig struct {
 	BackendName string
 }
 
+// readyBackendEntry holds a pre-computed ready backend with its formatted address.
+type readyBackendEntry struct {
+	endpoint *pb.Endpoint
+	addr     string // pre-formatted "address:port"
+}
+
 // TCPProxy handles TCP proxying between clients and backends
 type TCPProxy struct {
-	config   TCPProxyConfig
-	logger   *zap.Logger
-	mu       sync.RWMutex
+	config TCPProxyConfig
+	logger *zap.Logger
+	mu     sync.RWMutex
+	// backends holds the raw endpoint list for UpdateBackends.
 	backends []*pb.Endpoint
+	// cachedReady holds pre-computed ready backends with formatted addresses.
+	// Updated atomically when backends change so pickBackend avoids filtering
+	// and fmt.Sprintf on every connection.
+	cachedReady atomic.Pointer[[]readyBackendEntry]
 	// roundRobinIdx for simple round-robin backend selection
 	roundRobinIdx atomic.Uint64
 	// activeConns tracks active connections for graceful shutdown
@@ -114,11 +125,13 @@ func NewTCPProxy(cfg TCPProxyConfig, logger *zap.Logger) *TCPProxy {
 		cfg.DrainTimeout = DefaultDrainTimeout
 	}
 
-	return &TCPProxy{
+	p := &TCPProxy{
 		config:   cfg,
 		logger:   logger.With(zap.String("listener", cfg.ListenerName)),
 		backends: cfg.Backends,
 	}
+	p.recomputeReadyBackends(cfg.Backends)
+	return p
 }
 
 // HandleConnection handles a single TCP connection by proxying it to a backend
@@ -148,8 +161,8 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) {
 	L4ActiveConnections.WithLabelValues("tcp", listenerName).Inc()
 	defer L4ActiveConnections.WithLabelValues("tcp", listenerName).Dec()
 
-	// Select a backend
-	backend := p.pickBackend()
+	// Select a backend from the pre-computed ready list.
+	backend, backendAddr := p.pickBackend()
 	if backend == nil {
 		p.logger.Warn("No backends available",
 			zap.String("client", clientConn.RemoteAddr().String()))
@@ -157,8 +170,6 @@ func (p *TCPProxy) HandleConnection(ctx context.Context, clientConn net.Conn) {
 		_ = clientConn.Close()
 		return
 	}
-
-	backendAddr := fmt.Sprintf("%s:%d", backend.Address, backend.Port)
 
 	// Connect to backend
 	dialer := &net.Dialer{Timeout: p.config.ConnectTimeout}
@@ -289,36 +300,45 @@ func (p *TCPProxy) copyWithIdleTimeout(ctx context.Context, dst, src net.Conn, b
 	}
 }
 
-// pickBackend selects a backend endpoint using round-robin
-func (p *TCPProxy) pickBackend() *pb.Endpoint {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	backends := p.getReadyBackends()
-	if len(backends) == 0 {
-		return nil
+// pickBackend selects a backend endpoint using round-robin from the
+// pre-computed ready list. Returns the endpoint and its pre-formatted address.
+func (p *TCPProxy) pickBackend() (*pb.Endpoint, string) {
+	readyPtr := p.cachedReady.Load()
+	if readyPtr == nil {
+		return nil, ""
+	}
+	ready := *readyPtr
+	if len(ready) == 0 {
+		return nil, ""
 	}
 
 	idx := p.roundRobinIdx.Add(1) - 1
-	return backends[idx%uint64(len(backends))]
+	entry := ready[idx%uint64(len(ready))]
+	return entry.endpoint, entry.addr
 }
 
-// getReadyBackends returns only ready backends
-func (p *TCPProxy) getReadyBackends() []*pb.Endpoint {
-	ready := make([]*pb.Endpoint, 0, len(p.backends))
-	for _, b := range p.backends {
+// recomputeReadyBackends filters ready backends and pre-formats their
+// address strings, then atomically stores the result.
+func (p *TCPProxy) recomputeReadyBackends(backends []*pb.Endpoint) {
+	ready := make([]readyBackendEntry, 0, len(backends))
+	for _, b := range backends {
 		if b.Ready {
-			ready = append(ready, b)
+			ready = append(ready, readyBackendEntry{
+				endpoint: b,
+				addr:     fmt.Sprintf("%s:%d", b.Address, b.Port),
+			})
 		}
 	}
-	return ready
+	p.cachedReady.Store(&ready)
 }
 
-// UpdateBackends updates the backend endpoint list
+// UpdateBackends updates the backend endpoint list and recomputes the
+// cached ready backend list.
 func (p *TCPProxy) UpdateBackends(backends []*pb.Endpoint) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.backends = backends
+	p.mu.Unlock()
+	p.recomputeReadyBackends(backends)
 }
 
 // Drain initiates graceful draining of existing connections
