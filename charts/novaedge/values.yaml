@@ -138,6 +138,17 @@ controller:
   tolerations: []
   affinity: {}
 
+  # Go runtime tuning
+  # GOMEMLIMIT sets the soft memory limit for the Go garbage collector.
+  # Should be ~90% of the container memory limit to avoid OOM kills.
+  goMemLimit: "460MiB"
+  # GOGC sets the garbage collection target percentage.
+  # 100 is the Go default, suitable for the controller's workload.
+  goGC: "100"
+  # GOMAXPROCS limits the number of OS threads for Go goroutines.
+  # Defaults to the number of CPU cores available. Set to match CPU limits.
+  goMaxProcs: ""
+
   # Additional environment variables
   extraEnv: []
 
@@ -264,6 +275,18 @@ agent:
   podDisruptionBudget:
     enabled: true
     maxUnavailable: 1
+
+  # Go runtime tuning
+  # GOMEMLIMIT sets the soft memory limit for the Go garbage collector.
+  # Should be ~90% of the container memory limit to avoid OOM kills.
+  goMemLimit: "900MiB"
+  # GOGC sets the garbage collection target percentage.
+  # Higher values reduce GC frequency at the cost of more memory usage.
+  # 200 is appropriate for latency-sensitive data-plane workloads.
+  goGC: "200"
+  # GOMAXPROCS limits the number of OS threads for Go goroutines.
+  # Defaults to the number of CPU cores available. Set to match CPU limits.
+  goMaxProcs: ""
 
   # Additional environment variables
   extraEnv: []

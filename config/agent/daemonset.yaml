@@ -74,6 +74,13 @@ spec:
             fieldRef:
               fieldPath: status.hostIP
 
+        # Go runtime tuning: soft memory limit (90% of 1Gi memory limit)
+        - name: GOMEMLIMIT
+          value: "900MiB"
+        # Go runtime tuning: GC target percentage (200 = less frequent GC for latency-sensitive agent)
+        - name: GOGC
+          value: "200"
+
         ports:
         # HTTP/HTTPS proxy ports
         - name: http
