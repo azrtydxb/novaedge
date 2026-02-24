@@ -19,6 +19,8 @@ package lb
 import (
 	"hash/fnv"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -138,9 +140,15 @@ func (rh *RingHash) buildRing(endpoints []*pb.Endpoint) *ringData {
 
 		// Create virtual nodes
 		for i := 0; i < rh.virtualNodes; i++ {
-			// Generate unique key for each virtual node
-			virtualKey := epKey + "#" + string(rune(i))
-			hash := hashKey(virtualKey)
+			// Generate unique key for each virtual node.
+			// Use strconv.Itoa instead of string(rune(i)) to avoid
+			// multi-byte UTF-8 collisions for i >= 128.
+			var b strings.Builder
+			b.Grow(len(epKey) + 1 + 3) // epKey + "#" + up to 3 digits
+			b.WriteString(epKey)
+			b.WriteByte('#')
+			b.WriteString(strconv.Itoa(i))
+			hash := hashKey(b.String())
 
 			entries = append(entries, ringEntry{
 				hash:     hash,

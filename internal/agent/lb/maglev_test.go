@@ -38,8 +38,9 @@ func TestNewMaglev(t *testing.T) {
 		t.Errorf("tableSize = %d, want %d", m.tableSize, defaultMaglevTableSize)
 	}
 
-	if len(m.lookupTable) != int(defaultMaglevTableSize) {
-		t.Errorf("lookupTable length = %d, want %d", len(m.lookupTable), defaultMaglevTableSize)
+	md := m.data.Load()
+	if len(md.lookupTable) != int(defaultMaglevTableSize) {
+		t.Errorf("lookupTable length = %d, want %d", len(md.lookupTable), defaultMaglevTableSize)
 	}
 }
 

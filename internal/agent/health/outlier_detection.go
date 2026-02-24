@@ -20,6 +20,7 @@ import (
 	"context"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -68,10 +69,13 @@ func DefaultOutlierDetectionConfig() OutlierDetectionConfig {
 }
 
 // endpointStats tracks request outcomes for a single endpoint in the current window.
+// The requests and successes fields use atomic operations for lock-free recording
+// on the hot path. The consecutiveErrors field is only modified under the analysis
+// lock (mu) during periodic analysis, or atomically via RecordSuccess/RecordFailure.
 type endpointStats struct {
-	requests          int64
-	successes         int64
-	consecutiveErrors int
+	requests          atomic.Int64
+	successes         atomic.Int64
+	consecutiveErrors atomic.Int32
 }
 
 // ejectionInfo tracks ejection state for an endpoint.
@@ -85,12 +89,17 @@ type ejectionInfo struct {
 // OutlierDetector performs statistical outlier detection on upstream endpoints.
 // It tracks per-endpoint success/failure rates in a sliding window and periodically
 // ejects endpoints that are statistically worse than their peers.
+//
+// RecordSuccess and RecordFailure use atomic counters and are lock-free on the
+// hot path. Ejection decisions are deferred to the periodic analysis loop which
+// runs under the mu lock.
 type OutlierDetector struct {
 	mu     sync.RWMutex
 	logger *zap.Logger
 	config OutlierDetectionConfig
 
 	// Per-endpoint request statistics for the current analysis window.
+	// The map itself is protected by mu, but individual stat fields use atomics.
 	stats map[string]*endpointStats
 
 	// Per-endpoint ejection state.
@@ -117,30 +126,31 @@ func NewOutlierDetector(cluster string, config OutlierDetectionConfig, logger *z
 }
 
 // RecordSuccess records a successful request for the given endpoint.
+// This method is optimized for the hot path: it only uses atomic operations
+// after the initial map lookup (which requires a read lock).
 func (od *OutlierDetector) RecordSuccess(endpointKey string) {
-	od.mu.Lock()
-	defer od.mu.Unlock()
-
 	s := od.getOrCreateStats(endpointKey)
-	s.requests++
-	s.successes++
-	s.consecutiveErrors = 0
+	s.requests.Add(1)
+	s.successes.Add(1)
+	s.consecutiveErrors.Store(0)
 }
 
-// RecordFailure records a failed request for the given endpoint. If the endpoint
-// reaches the consecutive error threshold, it is ejected immediately.
+// RecordFailure records a failed request for the given endpoint.
+// This method is optimized for the hot path: it only uses atomic operations
+// after the initial map lookup. Consecutive error ejection is deferred to the
+// periodic analysis loop to avoid write locks on every request.
 func (od *OutlierDetector) RecordFailure(endpointKey string) {
-	od.mu.Lock()
-	defer od.mu.Unlock()
-
 	s := od.getOrCreateStats(endpointKey)
-	s.requests++
-	s.consecutiveErrors++
+	s.requests.Add(1)
+	newConsec := s.consecutiveErrors.Add(1)
 
-	// Check consecutive error ejection inline for fast response.
-	if s.consecutiveErrors >= od.config.ConsecutiveErrors {
+	// Check consecutive error ejection threshold.
+	// If exceeded, trigger ejection under the write lock.
+	if int(newConsec) >= od.config.ConsecutiveErrors {
+		od.mu.Lock()
 		od.ejectEndpoint(endpointKey, "consecutive_errors")
-		s.consecutiveErrors = 0
+		s.consecutiveErrors.Store(0)
+		od.mu.Unlock()
 	}
 }
 
@@ -252,8 +262,9 @@ func (od *OutlierDetector) detectSuccessRateOutliers() {
 	var eligible []epRate
 
 	for key, s := range od.stats {
-		if s.requests >= int64(od.config.SuccessRateRequestVolume) {
-			rate := float64(s.successes) / float64(s.requests) * 100.0
+		reqs := s.requests.Load()
+		if reqs >= int64(od.config.SuccessRateRequestVolume) {
+			rate := float64(s.successes.Load()) / float64(reqs) * 100.0
 			eligible = append(eligible, epRate{key: key, rate: rate})
 		}
 	}
@@ -299,10 +310,12 @@ func (od *OutlierDetector) detectSuccessRateOutliers() {
 // exceeds the configured threshold.
 func (od *OutlierDetector) detectFailurePercentageOutliers() {
 	for key, s := range od.stats {
-		if s.requests == 0 {
+		reqs := s.requests.Load()
+		if reqs == 0 {
 			continue
 		}
-		failurePct := float64(s.requests-s.successes) / float64(s.requests) * 100.0
+		succs := s.successes.Load()
+		failurePct := float64(reqs-succs) / float64(reqs) * 100.0
 		if failurePct >= od.config.FailurePercentageThreshold {
 			od.ejectEndpoint(key, "failure_percentage")
 		}
@@ -373,19 +386,34 @@ func (od *OutlierDetector) ejectEndpoint(endpointKey, reason string) {
 // Consecutive error counts are preserved across windows.
 func (od *OutlierDetector) resetStats() {
 	for _, s := range od.stats {
-		s.requests = 0
-		s.successes = 0
+		s.requests.Store(0)
+		s.successes.Store(0)
 		// consecutiveErrors is NOT reset; it persists across windows.
 	}
 }
 
 // getOrCreateStats returns the stats entry for the endpoint, creating one if needed.
-// Must be called with od.mu held.
+// Uses a read lock for the fast path (endpoint already exists) and upgrades to a
+// write lock only when a new entry must be created.
 func (od *OutlierDetector) getOrCreateStats(endpointKey string) *endpointStats {
+	// Fast path: read lock
+	od.mu.RLock()
 	s, exists := od.stats[endpointKey]
-	if !exists {
-		s = &endpointStats{}
-		od.stats[endpointKey] = s
+	od.mu.RUnlock()
+	if exists {
+		return s
 	}
+
+	// Slow path: write lock to create new entry
+	od.mu.Lock()
+	defer od.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if s, exists = od.stats[endpointKey]; exists {
+		return s
+	}
+
+	s = &endpointStats{}
+	od.stats[endpointKey] = s
 	return s
 }
