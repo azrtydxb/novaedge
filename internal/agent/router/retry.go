@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -120,6 +121,17 @@ func NewRetryPolicy(cfg *pb.RetryConfig) *RetryPolicy {
 	return policy
 }
 
+// retryResponseWriterPool reuses retryResponseWriter objects to avoid
+// allocating a new one per attempt.
+var retryResponseWriterPool = sync.Pool{
+	New: func() interface{} {
+		return &retryResponseWriter{
+			header:     make(http.Header),
+			statusCode: http.StatusOK,
+		}
+	},
+}
+
 // retryResponseWriter captures the response status for retry decision
 type retryResponseWriter struct {
 	http.ResponseWriter
@@ -130,10 +142,14 @@ type retryResponseWriter struct {
 }
 
 func newRetryResponseWriter() *retryResponseWriter {
-	return &retryResponseWriter{
-		header:     make(http.Header),
-		statusCode: http.StatusOK,
-	}
+	rw := retryResponseWriterPool.Get().(*retryResponseWriter)
+	rw.reset()
+	return rw
+}
+
+// release returns the writer to the pool for reuse.
+func (rw *retryResponseWriter) release() {
+	retryResponseWriterPool.Put(rw)
 }
 
 func (rw *retryResponseWriter) Header() http.Header {
@@ -165,7 +181,12 @@ func (rw *retryResponseWriter) flushTo(w http.ResponseWriter) {
 
 // reset clears the response writer for reuse
 func (rw *retryResponseWriter) reset() {
-	rw.header = make(http.Header)
+	for k := range rw.header {
+		delete(rw.header, k)
+	}
+	if rw.header == nil {
+		rw.header = make(http.Header)
+	}
 	rw.statusCode = http.StatusOK
 	rw.body.Reset()
 	rw.written = false
@@ -246,7 +267,9 @@ func (r *Router) forwardWithRetry(
 		}
 	}
 
-	var excludedEndpoints []*pb.Endpoint
+	// Pre-allocate excluded endpoints slice to maxRetries capacity to avoid
+	// per-retry growth allocations.
+	excludedEndpoints := make([]*pb.Endpoint, 0, retryPolicy.MaxRetries)
 	var lastResponse *retryResponseWriter
 	var retryCount int32
 
@@ -260,6 +283,7 @@ func (r *Router) forwardWithRetry(
 			)
 			if lastResponse != nil {
 				lastResponse.flushTo(w)
+				lastResponse.release()
 				return
 			}
 			http.Error(w, "No healthy backend", http.StatusServiceUnavailable)
@@ -278,7 +302,7 @@ func (r *Router) forwardWithRetry(
 			req.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 		}
 
-		// Create response capture writer
+		// Create response capture writer (from pool)
 		captureWriter := newRetryResponseWriter()
 
 		// Track timing
@@ -290,7 +314,8 @@ func (r *Router) forwardWithRetry(
 		backendDuration := time.Since(backendStart).Seconds()
 
 		if err != nil {
-			// Connection failure
+			// Connection failure — release the capture writer back to pool
+			captureWriter.release()
 			pool.RecordFailure(endpoint)
 			metrics.RecordBackendRequest(clusterKey, endpointKey, "failure", backendDuration)
 			excludedEndpoints = append(excludedEndpoints, endpoint)
@@ -305,6 +330,9 @@ func (r *Router) forwardWithRetry(
 			// Check if we should retry
 			if !methodRetryable || attempt >= retryPolicy.MaxRetries {
 				metrics.RetryExhausted.Inc()
+				if lastResponse != nil {
+					lastResponse.release()
+				}
 				http.Error(w, "Backend error", http.StatusBadGateway)
 				return
 			}
@@ -317,6 +345,9 @@ func (r *Router) forwardWithRetry(
 				)
 				metrics.RetryBudgetExhausted.Inc()
 				metrics.RetryExhausted.Inc()
+				if lastResponse != nil {
+					lastResponse.release()
+				}
 				http.Error(w, "Backend error", http.StatusBadGateway)
 				return
 			}
@@ -330,6 +361,9 @@ func (r *Router) forwardWithRetry(
 			select {
 			case <-time.After(backoff):
 			case <-req.Context().Done():
+				if lastResponse != nil {
+					lastResponse.release()
+				}
 				http.Error(w, "Request Cancelled", http.StatusServiceUnavailable)
 				return
 			}
@@ -343,6 +377,10 @@ func (r *Router) forwardWithRetry(
 		if retryPolicy.shouldRetry(captureWriter.statusCode, nil) && methodRetryable && attempt < retryPolicy.MaxRetries {
 			// Response indicates a retryable condition
 			excludedEndpoints = append(excludedEndpoints, endpoint)
+			// Release the previous lastResponse before replacing it
+			if lastResponse != nil {
+				lastResponse.release()
+			}
 			lastResponse = captureWriter
 
 			if !budget.AllowRetry() {
@@ -352,6 +390,8 @@ func (r *Router) forwardWithRetry(
 					zap.Int64("active_retries", budget.ActiveRetries()),
 				)
 				captureWriter.flushTo(w)
+				captureWriter.release()
+				lastResponse = nil
 				metrics.RetryBudgetExhausted.Inc()
 				metrics.RetryExhausted.Inc()
 				return
@@ -373,6 +413,9 @@ func (r *Router) forwardWithRetry(
 			select {
 			case <-time.After(backoff):
 			case <-req.Context().Done():
+				if lastResponse != nil {
+					lastResponse.release()
+				}
 				http.Error(w, "Request Cancelled", http.StatusServiceUnavailable)
 				return
 			}
@@ -390,6 +433,11 @@ func (r *Router) forwardWithRetry(
 		}
 
 		captureWriter.flushTo(w)
+		captureWriter.release()
+		// Release any previous lastResponse that wasn't used
+		if lastResponse != nil {
+			lastResponse.release()
+		}
 		return
 	}
 
@@ -397,6 +445,7 @@ func (r *Router) forwardWithRetry(
 	metrics.RetryExhausted.Inc()
 	if lastResponse != nil {
 		lastResponse.flushTo(w)
+		lastResponse.release()
 	} else {
 		http.Error(w, "Backend error", http.StatusBadGateway)
 	}

@@ -23,7 +23,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -50,26 +50,23 @@ type MirrorConfig struct {
 }
 
 // mirrorMetrics holds Prometheus metrics for traffic mirroring.
+// Counters use atomic operations instead of a mutex to avoid lock
+// contention on the hot path.
 type mirrorMetrics struct {
-	mu            sync.Mutex
-	requestsTotal int64
-	errorsTotal   int64
+	requestsTotal atomic.Int64
+	errorsTotal   atomic.Int64
 }
 
 var globalMirrorMetrics = &mirrorMetrics{}
 
 // MirrorRequestsTotal returns the total mirrored requests count.
 func MirrorRequestsTotal() int64 {
-	globalMirrorMetrics.mu.Lock()
-	defer globalMirrorMetrics.mu.Unlock()
-	return globalMirrorMetrics.requestsTotal
+	return globalMirrorMetrics.requestsTotal.Load()
 }
 
 // MirrorErrorsTotal returns the total mirror error count.
 func MirrorErrorsTotal() int64 {
-	globalMirrorMetrics.mu.Lock()
-	defer globalMirrorMetrics.mu.Unlock()
-	return globalMirrorMetrics.errorsTotal
+	return globalMirrorMetrics.errorsTotal.Load()
 }
 
 // shouldMirror determines whether to mirror this request based on configured percentage.
@@ -175,9 +172,7 @@ func (r *Router) mirrorRequest(
 
 		mirrorReq = mirrorReq.WithContext(mirrorCtx)
 
-		globalMirrorMetrics.mu.Lock()
-		globalMirrorMetrics.requestsTotal++
-		globalMirrorMetrics.mu.Unlock()
+		globalMirrorMetrics.requestsTotal.Add(1)
 
 		mirrorStart := time.Now()
 
@@ -185,9 +180,7 @@ func (r *Router) mirrorRequest(
 		discardWriter := &discardResponseWriter{}
 
 		if err := pool.Forward(endpoint, mirrorReq, discardWriter); err != nil {
-			globalMirrorMetrics.mu.Lock()
-			globalMirrorMetrics.errorsTotal++
-			globalMirrorMetrics.mu.Unlock()
+			globalMirrorMetrics.errorsTotal.Add(1)
 
 			if ce := r.logger.Check(zap.DebugLevel, "Mirror request failed"); ce != nil {
 				ce.Write(
