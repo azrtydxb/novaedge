@@ -24,9 +24,12 @@ import "go.uber.org/zap"
 type Capabilities struct {
 	HasXDP        bool
 	HasSKLookup   bool
+	HasSockOps    bool
+	HasSKMsg      bool
 	HasAFXDP      bool
 	HasBTF        bool
 	HasLPMTrie    bool
+	HasSockHash   bool
 	KernelVersion string
 }
 

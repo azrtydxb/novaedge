@@ -35,7 +35,7 @@ func TestDetect(t *testing.T) {
 
 	if runtime.GOOS != "linux" {
 		// On non-Linux, all capabilities should be false.
-		if caps.HasXDP || caps.HasSKLookup || caps.HasAFXDP || caps.HasBTF || caps.HasLPMTrie {
+		if caps.HasXDP || caps.HasSKLookup || caps.HasSockOps || caps.HasSKMsg || caps.HasAFXDP || caps.HasBTF || caps.HasLPMTrie || caps.HasSockHash {
 			t.Error("expected all capabilities to be false on non-Linux")
 		}
 		if caps.KernelVersion != "" {

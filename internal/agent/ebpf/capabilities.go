@@ -35,6 +35,12 @@ type Capabilities struct {
 	// HasSKLookup indicates support for BPF_PROG_TYPE_SK_LOOKUP programs
 	// used for transparent service mesh redirection.
 	HasSKLookup bool
+	// HasSockOps indicates support for BPF_PROG_TYPE_SOCK_OPS programs
+	// used for SOCKMAP/SOCKHASH socket interception on connection events.
+	HasSockOps bool
+	// HasSKMsg indicates support for BPF_PROG_TYPE_SK_MSG programs used
+	// for sk_msg-based message redirection between sockets in a SOCKHASH.
+	HasSKMsg bool
 	// HasAFXDP indicates support for AF_XDP (XSK) sockets for zero-copy
 	// packet I/O.
 	HasAFXDP bool
@@ -44,6 +50,9 @@ type Capabilities struct {
 	// HasLPMTrie indicates support for BPF_MAP_TYPE_LPM_TRIE maps used
 	// for CIDR-based lookups.
 	HasLPMTrie bool
+	// HasSockHash indicates support for BPF_MAP_TYPE_SOCKHASH maps used
+	// by SOCKMAP redirection.
+	HasSockHash bool
 	// KernelVersion is the running kernel version string from /proc/version.
 	KernelVersion string
 }
@@ -64,9 +73,12 @@ func Detect() (*Capabilities, error) {
 	// Probe program types.
 	caps.HasXDP = features.HaveProgramType(ebpf.XDP) == nil
 	caps.HasSKLookup = features.HaveProgramType(ebpf.SkLookup) == nil
+	caps.HasSockOps = features.HaveProgramType(ebpf.SockOps) == nil
+	caps.HasSKMsg = features.HaveProgramType(ebpf.SkMsg) == nil
 
 	// Probe map types.
 	caps.HasLPMTrie = features.HaveMapType(ebpf.LPMTrie) == nil
+	caps.HasSockHash = features.HaveMapType(ebpf.SockHash) == nil
 
 	// AF_XDP requires XDP + XskMap support.
 	caps.HasAFXDP = caps.HasXDP && features.HaveMapType(ebpf.XSKMap) == nil
@@ -86,6 +98,9 @@ func LogCapabilities(logger *zap.Logger, caps *Capabilities) {
 		zap.String("kernel", caps.KernelVersion),
 		zap.Bool("xdp", caps.HasXDP),
 		zap.Bool("sk_lookup", caps.HasSKLookup),
+		zap.Bool("sock_ops", caps.HasSockOps),
+		zap.Bool("sk_msg", caps.HasSKMsg),
+		zap.Bool("sock_hash", caps.HasSockHash),
 		zap.Bool("af_xdp", caps.HasAFXDP),
 		zap.Bool("btf", caps.HasBTF),
 		zap.Bool("lpm_trie", caps.HasLPMTrie),
