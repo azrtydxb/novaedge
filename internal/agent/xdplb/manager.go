@@ -28,6 +28,8 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/conntrack"
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/maglev"
 	"go.uber.org/zap"
 )
 
@@ -60,6 +62,16 @@ type Manager struct {
 	statsMap   *ebpf.Map
 	prog       *ebpf.Program
 	nextListID uint32
+
+	// Optional eBPF Maglev manager. When set, SyncBackends populates
+	// the BPF Maglev lookup table instead of the simple hash-mod
+	// backend_list. The Maglev table provides consistent hashing that
+	// minimises connection disruption when backends change.
+	maglev *maglev.Manager
+
+	// Optional eBPF conntrack. When set, existing connections are
+	// pinned to their backend across Maglev table rebuilds.
+	conntrack *conntrack.Conntrack
 }
 
 // NewManager creates an XDP LB manager for the given network interface.
@@ -143,11 +155,24 @@ func (m *Manager) Start() error {
 	return nil
 }
 
-// Stop detaches the XDP program and releases all resources.
+// Stop detaches the XDP program and releases all resources, including
+// any attached Maglev manager and conntrack table.
 func (m *Manager) Stop() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.conntrack != nil {
+		if err := m.conntrack.Close(); err != nil {
+			m.logger.Warn("failed to close conntrack", zap.Error(err))
+		}
+		m.conntrack = nil
+	}
+	if m.maglev != nil {
+		if err := m.maglev.Close(); err != nil {
+			m.logger.Warn("failed to close Maglev manager", zap.Error(err))
+		}
+		m.maglev = nil
+	}
 	if m.xdpLink != nil {
 		if err := m.xdpLink.Close(); err != nil {
 			m.logger.Warn("failed to detach XDP program", zap.Error(err))
@@ -178,6 +203,11 @@ func (m *Manager) Stop() error {
 
 // SyncBackends reconciles the BPF maps with the desired L4 routes.
 // This performs a full sync: all existing entries are replaced.
+//
+// When an eBPF Maglev manager is attached (via SetMaglev), the backend
+// set is also written to the Maglev lookup table for consistent hashing.
+// When an eBPF conntrack is attached (via SetConntrack), existing
+// connections remain pinned to their backend across table rebuilds.
 func (m *Manager) SyncBackends(routes []L4Route) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -199,7 +229,22 @@ func (m *Manager) SyncBackends(routes []L4Route) error {
 		}
 	}
 
-	m.logger.Info("XDP LB backends synced", zap.Int("routes", len(routes)))
+	// If Maglev is enabled, also populate the BPF Maglev lookup table.
+	if m.maglev != nil {
+		maglevBackends := m.collectMaglevBackends(routes)
+		if err := m.maglev.UpdateTable(maglevBackends); err != nil {
+			m.logger.Warn("failed to update eBPF Maglev table", zap.Error(err))
+			// Non-fatal: the hash-mod backend_list still works as fallback.
+		} else {
+			m.logger.Debug("eBPF Maglev table updated",
+				zap.Int("backends", len(maglevBackends)))
+		}
+	}
+
+	m.logger.Info("XDP LB backends synced",
+		zap.Int("routes", len(routes)),
+		zap.Bool("maglev", m.maglev != nil),
+		zap.Bool("conntrack", m.conntrack != nil))
 	return nil
 }
 
@@ -240,6 +285,42 @@ func (m *Manager) IsRunning() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.xdpLink != nil
+}
+
+// SetMaglev attaches an eBPF Maglev manager to this XDP LB. When set,
+// SyncBackends will populate the BPF Maglev lookup table for consistent
+// hashing rather than the simple hash-mod backend_list. The Maglev
+// manager must already be initialised via Init().
+func (m *Manager) SetMaglev(mgr *maglev.Manager) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.maglev = mgr
+	m.logger.Info("eBPF Maglev lookup table enabled for XDP LB")
+}
+
+// SetConntrack attaches an eBPF conntrack table to this XDP LB. When
+// set, existing connections are pinned to their backend across Maglev
+// table rebuilds, preventing connection disruption. The conntrack must
+// already be initialised via NewConntrack().
+func (m *Manager) SetConntrack(ct *conntrack.Conntrack) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.conntrack = ct
+	m.logger.Info("eBPF conntrack enabled for XDP LB")
+}
+
+// Maglev returns the attached Maglev manager, or nil if not set.
+func (m *Manager) Maglev() *maglev.Manager {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.maglev
+}
+
+// Conntrack returns the attached conntrack table, or nil if not set.
+func (m *Manager) Conntrack() *conntrack.Conntrack {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.conntrack
 }
 
 // clearMaps removes all entries from vip_backends and backend_list maps.
@@ -368,6 +449,32 @@ func makeBackendEntry(be Backend) (backendEntry, error) {
 		copy(entry.MAC[:], be.MAC)
 	}
 	return entry, nil
+}
+
+// collectMaglevBackends extracts a flat list of unique backends from all
+// routes, assigning sequential IDs for the Maglev table.
+func (m *Manager) collectMaglevBackends(routes []L4Route) []maglev.Backend {
+	seen := make(map[string]bool)
+	var result []maglev.Backend
+	nextID := uint32(1)
+
+	for _, route := range routes {
+		for _, be := range route.Backends {
+			key := fmt.Sprintf("%s:%d", be.Addr, be.Port)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			result = append(result, maglev.Backend{
+				ID:   nextID,
+				Addr: be.Addr,
+				Port: be.Port,
+			})
+			nextID++
+		}
+	}
+
+	return result
 }
 
 func htons(v uint16) uint16 {
