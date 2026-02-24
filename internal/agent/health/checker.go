@@ -28,9 +28,14 @@ import (
 
 	"go.uber.org/zap"
 
+	ebpfhealth "github.com/piwi3910/novaedge/internal/agent/ebpf/health"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// ebpfNoTrafficTimeout is the duration after which a backend with no
+// eBPF-observed traffic falls back to active health probing.
+const ebpfNoTrafficTimeout = 30 * time.Second
 
 // CheckMode represents the type of health check to perform.
 type CheckMode int
@@ -124,6 +129,16 @@ type Checker struct {
 	// to rate-limit log output.
 	lastDropLog time.Time
 	dropLogMu   sync.Mutex
+
+	// ebpfHealth is the optional eBPF passive health signal monitor. When
+	// set, backends with active eBPF-observed traffic use passive signals
+	// as the primary health indicator instead of active probes.
+	ebpfHealth *ebpfhealth.HealthMonitor
+
+	// ebpfLastTraffic tracks the last time eBPF observed traffic for each
+	// backend. Backends with no traffic within ebpfNoTrafficTimeout fall
+	// back to active health probing.
+	ebpfLastTraffic map[string]time.Time
 }
 
 // passiveRecord carries a single passive health event (success or failure).
@@ -304,6 +319,101 @@ func (hc *Checker) Stop() {
 	hc.logger.Info("Health checker stopped")
 }
 
+// SetEBPFHealthMonitor attaches an eBPF passive health signal monitor.
+// When set, backends with active eBPF-observed traffic use passive signals
+// as the primary health indicator. Active health probes are only sent to
+// backends with zero eBPF-observed traffic in the last 30 seconds.
+// Pass nil to disable the eBPF health integration.
+func (hc *Checker) SetEBPFHealthMonitor(monitor *ebpfhealth.HealthMonitor) {
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
+	hc.ebpfHealth = monitor
+	if monitor != nil && hc.ebpfLastTraffic == nil {
+		hc.ebpfLastTraffic = make(map[string]time.Time)
+	}
+}
+
+// ApplyEBPFHealthData processes aggregated eBPF health data and updates
+// backend health state. This is typically called from the eBPF health
+// monitor's poller callback.
+func (hc *Checker) ApplyEBPFHealthData(data map[ebpfhealth.BackendKey]ebpfhealth.AggregatedHealth) {
+	hc.mu.Lock()
+	defer hc.mu.Unlock()
+
+	now := time.Now()
+	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
+
+	for bk, agg := range data {
+		key := bk.String()
+
+		// Update last traffic time if there was any traffic.
+		if agg.DeltaTotal > 0 {
+			hc.ebpfLastTraffic[key] = now
+		}
+
+		result, exists := hc.results[key]
+		if !exists {
+			continue
+		}
+
+		// Use eBPF passive signals to update health state.
+		// A backend is considered unhealthy by eBPF if its failure rate
+		// exceeds 50% over the polling interval.
+		if agg.DeltaTotal > 0 {
+			deltaFailureRate := float64(agg.DeltaFailed+agg.DeltaTimeout) / float64(agg.DeltaTotal)
+			if deltaFailureRate > 0.5 {
+				result.ConsecutiveFailures++
+				result.ConsecutiveSuccesses = 0
+				if result.ConsecutiveFailures >= DefaultUnhealthyThreshold {
+					if result.Healthy {
+						hc.logger.Warn("Endpoint marked unhealthy by eBPF passive signals",
+							zap.String("endpoint", key),
+							zap.String("cluster", clusterKey),
+							zap.Float64("failure_rate", deltaFailureRate))
+					}
+					result.Healthy = false
+					metrics.SetBackendHealth(clusterKey, key, false)
+				}
+
+				if cb, cbExists := hc.circuitBreakers[key]; cbExists {
+					cb.RecordFailure()
+				}
+			} else {
+				result.ConsecutiveSuccesses++
+				result.ConsecutiveFailures = 0
+				if result.ConsecutiveSuccesses >= DefaultHealthyThreshold {
+					if !result.Healthy {
+						hc.logger.Info("Endpoint became healthy via eBPF passive signals",
+							zap.String("endpoint", key),
+							zap.String("cluster", clusterKey))
+					}
+					result.Healthy = true
+					metrics.SetBackendHealth(clusterKey, key, true)
+				}
+
+				if cb, cbExists := hc.circuitBreakers[key]; cbExists {
+					cb.RecordSuccess()
+				}
+			}
+			result.LastCheck = now
+		}
+	}
+}
+
+// hasRecentEBPFTraffic returns true if eBPF has observed traffic for
+// the given endpoint within ebpfNoTrafficTimeout. Caller must hold
+// hc.mu (read or write).
+func (hc *Checker) hasRecentEBPFTraffic(key string) bool {
+	if hc.ebpfHealth == nil || !hc.ebpfHealth.IsActive() {
+		return false
+	}
+	lastTraffic, ok := hc.ebpfLastTraffic[key]
+	if !ok {
+		return false
+	}
+	return time.Since(lastTraffic) < ebpfNoTrafficTimeout
+}
+
 // UpdateEndpoints updates the list of endpoints to check
 func (hc *Checker) UpdateEndpoints(endpoints []*pb.Endpoint) {
 	hc.mu.Lock()
@@ -368,7 +478,23 @@ func (hc *Checker) IsHealthy(endpoint *pb.Endpoint) bool {
 // RecordSuccess records a successful request (for passive health checking).
 // This is called on every request so it must be lock-free -- it sends a
 // non-blocking event to the background processor.
+//
+// When an eBPF health monitor is active, per-request RecordSuccess/
+// RecordFailure calls are largely superseded by BPF counter reads,
+// which avoid the per-request channel send overhead. The Go-side
+// passive recording remains as a fallback.
 func (hc *Checker) RecordSuccess(endpoint *pb.Endpoint) {
+	// When eBPF health monitor is active, skip per-request channel sends
+	// for endpoints with recent eBPF traffic to reduce channel pressure.
+	if hc.ebpfHealth != nil && hc.ebpfHealth.IsActive() {
+		hc.mu.RLock()
+		recent := hc.hasRecentEBPFTraffic(endpointKey(endpoint))
+		hc.mu.RUnlock()
+		if recent {
+			return
+		}
+	}
+
 	select {
 	case hc.recordCh <- passiveRecord{endpoint: endpoint, success: true}:
 	default:
@@ -380,7 +506,22 @@ func (hc *Checker) RecordSuccess(endpoint *pb.Endpoint) {
 // RecordFailure records a failed request (for passive health checking).
 // This is called on every failed request so it must be lock-free -- it sends
 // a non-blocking event to the background processor.
+//
+// When an eBPF health monitor is active, per-request RecordSuccess/
+// RecordFailure calls are largely superseded by BPF counter reads.
+// The Go-side passive recording remains as a fallback.
 func (hc *Checker) RecordFailure(endpoint *pb.Endpoint) {
+	// When eBPF health monitor is active, skip per-request channel sends
+	// for endpoints with recent eBPF traffic to reduce channel pressure.
+	if hc.ebpfHealth != nil && hc.ebpfHealth.IsActive() {
+		hc.mu.RLock()
+		recent := hc.hasRecentEBPFTraffic(endpointKey(endpoint))
+		hc.mu.RUnlock()
+		if recent {
+			return
+		}
+	}
+
 	select {
 	case hc.recordCh <- passiveRecord{endpoint: endpoint, success: false}:
 	default:
@@ -584,10 +725,27 @@ func (hc *Checker) performHealthChecks(ctx context.Context) {
 	wg.Wait()
 }
 
-// checkEndpoint performs a health check on a single endpoint
+// checkEndpoint performs a health check on a single endpoint. When an
+// eBPF health monitor is active and has recently observed traffic for
+// this endpoint, the active health probe is skipped because the eBPF
+// passive signals provide sufficient health information.
 func (hc *Checker) checkEndpoint(ctx context.Context, ep *pb.Endpoint) {
 	key := endpointKey(ep)
 	clusterKey := fmt.Sprintf("%s/%s", hc.cluster.Namespace, hc.cluster.Name)
+
+	// Skip active probing if eBPF has recent passive health data for
+	// this backend. This avoids unnecessary network traffic for backends
+	// that are already being monitored passively.
+	hc.mu.RLock()
+	skipActiveProbe := hc.hasRecentEBPFTraffic(key)
+	hc.mu.RUnlock()
+
+	if skipActiveProbe {
+		hc.logger.Debug("Skipping active health check - eBPF passive signals active",
+			zap.String("endpoint", key),
+			zap.String("cluster", clusterKey))
+		return
+	}
 
 	// Check circuit breaker before performing health check
 	hc.mu.RLock()
