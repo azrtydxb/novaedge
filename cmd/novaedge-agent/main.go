@@ -379,23 +379,14 @@ func main() {
 			zap.String("interface", xdpInterface))
 	}
 
-	// Create eBPF SOCKMAP + ServiceMap for mesh acceleration (if mesh enabled)
+	// Create eBPF SOCKMAP + ServiceMap for mesh acceleration (if mesh enabled).
+	// TrySockMap/TryServiceMap auto-detect kernel capabilities and return nil
+	// when eBPF prerequisites are missing — no fatal errors.
 	var sockMapMgr *sockmap.Manager
 	var ebpfSvcMap *ebpfservice.ServiceMap
 	if meshEnabled {
-		var smErr error
-		sockMapMgr, smErr = sockmap.NewSockMapManager(logger)
-		if smErr != nil {
-			logger.Warn("eBPF SOCKMAP not available for same-node bypass", zap.Error(smErr))
-			sockMapMgr = nil
-		}
-
-		var svcErr error
-		ebpfSvcMap, svcErr = ebpfservice.NewServiceMap(logger, 0, 0) // 0 = defaults
-		if svcErr != nil {
-			logger.Warn("eBPF service map not available", zap.Error(svcErr))
-			ebpfSvcMap = nil
-		}
+		sockMapMgr = ebpfmesh.TrySockMap(logger)
+		ebpfSvcMap = ebpfmesh.TryServiceMap(logger, 0, 0) // 0 = defaults
 	}
 
 	// Create mesh manager (if enabled)
