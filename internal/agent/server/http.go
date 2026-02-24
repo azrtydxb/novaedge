@@ -36,19 +36,19 @@ import (
 
 // HTTPServer manages HTTP/HTTPS/HTTP3 listeners and routing
 type HTTPServer struct {
-	logger           *zap.Logger
-	mu               sync.RWMutex
-	servers          map[int32]*http.Server  // Port -> HTTP/1.1 or HTTP/2 Server
-	http3servers     map[int32]*HTTP3Server  // Port -> HTTP/3 Server
-	listeners        map[int32]*ListenerInfo // Port -> Listener config
-	router           *router.Router
-	inFlightRequests sync.WaitGroup // Track in-flight requests for graceful shutdown
-	shuttingDown     atomic.Bool    // Flag to indicate shutdown in progress
-	ocspStapler      *OCSPStapler   // OCSP stapling manager
-	cachedAltSvc     atomic.Value   // stores string - cached Alt-Svc header value
-	drainManager       *DrainManager // Manages graceful connection draining on config reload
-	lastAppliedHash    string        // Content hash of the last applied snapshot version
-	lastStructuralHash string        // Hash of structural config (routes, gateways, policies -- not endpoints)
+	logger             *zap.Logger
+	mu                 sync.RWMutex
+	servers            map[int32]*http.Server  // Port -> HTTP/1.1 or HTTP/2 Server
+	http3servers       map[int32]*HTTP3Server  // Port -> HTTP/3 Server
+	listeners          map[int32]*ListenerInfo // Port -> Listener config
+	router             *router.Router
+	inFlightRequests   sync.WaitGroup // Track in-flight requests for graceful shutdown
+	shuttingDown       atomic.Bool    // Flag to indicate shutdown in progress
+	ocspStapler        *OCSPStapler   // OCSP stapling manager
+	cachedAltSvc       atomic.Value   // stores string - cached Alt-Svc header value
+	drainManager       *DrainManager  // Manages graceful connection draining on config reload
+	lastAppliedHash    string         // Content hash of the last applied snapshot version
+	lastStructuralHash string         // Hash of structural config (routes, gateways, policies -- not endpoints)
 }
 
 // NewHTTPServer creates a new HTTP server

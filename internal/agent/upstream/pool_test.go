@@ -283,11 +283,11 @@ func TestEndpointSetsEqual(t *testing.T) {
 
 func TestDiffEndpoints(t *testing.T) {
 	tests := []struct {
-		name              string
-		old, new          []*pb.Endpoint
-		wantAdded         int
-		wantRemoved       int
-		wantUnchanged     int
+		name          string
+		old, new      []*pb.Endpoint
+		wantAdded     int
+		wantRemoved   int
+		wantUnchanged int
 	}{
 		{
 			name:          "both empty",
