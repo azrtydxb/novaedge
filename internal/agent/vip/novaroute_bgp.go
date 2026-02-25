@@ -30,7 +30,6 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/keepalive"
 
 	nrv1 "github.com/piwi3910/novaedge/api/novaroute/v1"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
@@ -119,11 +118,6 @@ func (h *NovaRouteBGPHandler) dial(_ context.Context) error {
 	conn, err := grpc.NewClient(
 		"unix://"+h.socketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                60 * time.Second,
-			Timeout:             10 * time.Second,
-			PermitWithoutStream: true,
-		}),
 	)
 	if err != nil {
 		return fmt.Errorf("novaroute: dial %s: %w", h.socketPath, err)
