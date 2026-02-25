@@ -364,6 +364,13 @@ func (m *DefaultManager) Release() error {
 
 	m.assignments = make(map[string]*pb.VIPAssignment)
 
+	// Stop the BGP backend (deregisters from NovaRoute, closes connections).
+	if m.bgpBackend != nil {
+		if err := m.bgpBackend.Stop(context.Background()); err != nil {
+			errs = append(errs, fmt.Errorf("stop BGP backend: %w", err))
+		}
+	}
+
 	if len(errs) > 0 {
 		return fmt.Errorf("failed to release some VIPs: %v", errs)
 	}
