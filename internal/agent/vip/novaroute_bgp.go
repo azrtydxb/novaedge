@@ -31,8 +31,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	nrv1 "github.com/piwi3910/novaedge/api/novaroute/v1"
+	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 

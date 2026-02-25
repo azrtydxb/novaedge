@@ -57,13 +57,13 @@ func (k BackendKey) String() string {
 // BackendHealth is the per-CPU BPF map value that tracks connection
 // health counters for a single backend on a single CPU core.
 type BackendHealth struct {
-	TotalConns   uint64 // total connections observed
-	FailedConns  uint64 // TCP RST, connection refused
-	TimeoutConns uint64 // SYN timeout
-	SuccessConns uint64 // successful connections
+	TotalConns    uint64 // total connections observed
+	FailedConns   uint64 // TCP RST, connection refused
+	TimeoutConns  uint64 // SYN timeout
+	SuccessConns  uint64 // successful connections
 	LastSuccessNS uint64 // timestamp of last success (ktime_ns)
 	LastFailureNS uint64 // timestamp of last failure (ktime_ns)
-	TotalRTTNS   uint64 // sum of SYN->SYN-ACK RTT in nanoseconds
+	TotalRTTNS    uint64 // sum of SYN->SYN-ACK RTT in nanoseconds
 }
 
 // AggregatedHealth contains node-wide health data for a single backend,
