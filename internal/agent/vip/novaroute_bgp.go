@@ -30,6 +30,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/keepalive"
 
 	nrv1 "github.com/piwi3910/novaedge/api/novaroute/v1"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
@@ -48,7 +49,7 @@ type NovaRouteBGPHandler struct {
 
 	conn      *grpc.ClientConn
 	client    nrv1.RouteControlClient
-	cancelCtx context.CancelFunc // cancels the event stream goroutine
+	cancelCtx context.CancelFunc // cancels the connection loop goroutine
 
 	// configuredAS tracks the local AS that was last configured via the
 	// ConfigureBGP RPC so we only reconfigure when the AS actually changes.
@@ -56,6 +57,10 @@ type NovaRouteBGPHandler struct {
 
 	// Track active VIPs for metrics and cleanup.
 	activeVIPs map[string]*novaRouteVIPState
+
+	// lastAssignments stores the most recent VIPAssignment for each VIP so
+	// we can replay them after a reconnect to NovaRoute.
+	lastAssignments map[string]*pb.VIPAssignment
 }
 
 type novaRouteVIPState struct {
@@ -71,11 +76,12 @@ type novaRouteVIPState struct {
 // socketPath is the Unix domain socket (e.g. /run/novaroute/novaroute.sock).
 func NewNovaRouteBGPHandler(logger *zap.Logger, socketPath, ownerName, ownerToken string) *NovaRouteBGPHandler {
 	return &NovaRouteBGPHandler{
-		logger:     logger,
-		socketPath: socketPath,
-		ownerName:  ownerName,
-		ownerToken: ownerToken,
-		activeVIPs: make(map[string]*novaRouteVIPState),
+		logger:          logger,
+		socketPath:      socketPath,
+		ownerName:       ownerName,
+		ownerToken:      ownerToken,
+		activeVIPs:      make(map[string]*novaRouteVIPState),
+		lastAssignments: make(map[string]*pb.VIPAssignment),
 	}
 }
 
@@ -86,9 +92,38 @@ func (h *NovaRouteBGPHandler) Start(ctx context.Context) error {
 		zap.String("owner", h.ownerName),
 	)
 
+	if err := h.dial(ctx); err != nil {
+		return err
+	}
+
+	// Register as owner so NovaRoute knows our intents.
+	if err := h.register(ctx); err != nil {
+		h.conn.Close()
+		h.conn = nil
+		h.client = nil
+		return err
+	}
+
+	h.logger.Info("Registered with NovaRoute", zap.String("owner", h.ownerName))
+
+	// Start background connection loop for event monitoring and reconnection.
+	loopCtx, loopCancel := context.WithCancel(ctx)
+	h.cancelCtx = loopCancel
+	go h.connectionLoop(loopCtx)
+
+	return nil
+}
+
+// dial creates a new gRPC connection to the NovaRoute socket.
+func (h *NovaRouteBGPHandler) dial(_ context.Context) error {
 	conn, err := grpc.NewClient(
 		"unix://"+h.socketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithKeepaliveParams(keepalive.ClientParameters{
+			Time:                10 * time.Second,
+			Timeout:             5 * time.Second,
+			PermitWithoutStream: true,
+		}),
 	)
 	if err != nil {
 		return fmt.Errorf("novaroute: dial %s: %w", h.socketPath, err)
@@ -96,25 +131,19 @@ func (h *NovaRouteBGPHandler) Start(ctx context.Context) error {
 
 	h.conn = conn
 	h.client = nrv1.NewRouteControlClient(conn)
+	return nil
+}
 
-	// Register as owner so NovaRoute knows our intents.
-	_, err = h.client.Register(ctx, &nrv1.RegisterRequest{
+// register sends a Register RPC to NovaRoute.
+func (h *NovaRouteBGPHandler) register(ctx context.Context) error {
+	_, err := h.client.Register(ctx, &nrv1.RegisterRequest{
 		Owner:           h.ownerName,
 		Token:           h.ownerToken,
 		ReassertIntents: true,
 	})
 	if err != nil {
-		h.conn.Close()
 		return fmt.Errorf("novaroute: register owner %q: %w", h.ownerName, err)
 	}
-
-	h.logger.Info("Registered with NovaRoute", zap.String("owner", h.ownerName))
-
-	// Start background event stream for peer/BFD failure monitoring.
-	streamCtx, streamCancel := context.WithCancel(ctx)
-	h.cancelCtx = streamCancel
-	go h.streamEvents(streamCtx)
-
 	return nil
 }
 
@@ -146,46 +175,155 @@ func (h *NovaRouteBGPHandler) Stop(ctx context.Context) error {
 	return nil
 }
 
-// streamEvents subscribes to NovaRoute's event stream and logs peer/BFD
-// state changes. This provides real-time visibility into routing events.
-func (h *NovaRouteBGPHandler) streamEvents(ctx context.Context) {
-	stream, err := h.client.StreamEvents(ctx, &nrv1.StreamEventsRequest{
-		OwnerFilter: h.ownerName,
-	})
-	if err != nil {
-		h.logger.Warn("Failed to start NovaRoute event stream", zap.Error(err))
-		return
-	}
-
-	h.logger.Info("NovaRoute event stream connected")
+// connectionLoop monitors the NovaRoute event stream and automatically
+// reconnects when the connection is lost. On reconnect it re-registers
+// and replays all active VIP assignments.
+func (h *NovaRouteBGPHandler) connectionLoop(ctx context.Context) {
+	backoff := time.Second
+	maxBackoff := 30 * time.Second
 
 	for {
-		ev, err := stream.Recv()
-		if err != nil {
-			if ctx.Err() != nil {
-				return // shutdown
-			}
-			h.logger.Warn("NovaRoute event stream error", zap.Error(err))
+		if ctx.Err() != nil {
 			return
 		}
 
-		switch ev.Type {
-		case nrv1.EventType_EVENT_TYPE_PEER_DOWN:
-			h.logger.Warn("BGP peer down", zap.String("detail", ev.Detail))
-		case nrv1.EventType_EVENT_TYPE_PEER_UP:
-			h.logger.Info("BGP peer up", zap.String("detail", ev.Detail))
-		case nrv1.EventType_EVENT_TYPE_BFD_DOWN:
-			h.logger.Warn("BFD session down", zap.String("detail", ev.Detail))
-		case nrv1.EventType_EVENT_TYPE_BFD_UP:
-			h.logger.Info("BFD session up", zap.String("detail", ev.Detail))
-		case nrv1.EventType_EVENT_TYPE_FRR_DISCONNECTED:
-			h.logger.Error("NovaRoute lost FRR connection", zap.String("detail", ev.Detail))
-		default:
-			h.logger.Debug("NovaRoute event",
-				zap.String("type", ev.Type.String()),
-				zap.String("detail", ev.Detail),
+		// Open the event stream — this serves as both event delivery and
+		// connection health monitoring.
+		stream, err := h.client.StreamEvents(ctx, &nrv1.StreamEventsRequest{
+			OwnerFilter: h.ownerName,
+		})
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			h.logger.Warn("NovaRoute event stream failed, reconnecting",
+				zap.Error(err),
+				zap.Duration("backoff", backoff),
 			)
+			if !h.reconnect(ctx) {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(backoff):
+					backoff = min(backoff*2, maxBackoff)
+					continue
+				}
+			}
+			backoff = time.Second
+			continue
 		}
+
+		backoff = time.Second
+		h.logger.Info("NovaRoute event stream connected")
+
+		// Read events until the stream breaks.
+		for {
+			ev, recvErr := stream.Recv()
+			if recvErr != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				h.logger.Warn("NovaRoute event stream error, will reconnect",
+					zap.Error(recvErr),
+				)
+				break
+			}
+			h.handleEvent(ev)
+		}
+
+		// Stream broke — reconnect.
+		h.logger.Info("NovaRoute connection lost, attempting reconnect")
+		if h.reconnect(ctx) {
+			backoff = time.Second
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+			backoff = min(backoff*2, maxBackoff)
+		}
+	}
+}
+
+// reconnect closes the old gRPC connection, creates a new one, re-registers,
+// and replays all active VIP assignments so that NovaRoute's FRR state is
+// fully restored after a NovaRoute pod restart.
+func (h *NovaRouteBGPHandler) reconnect(ctx context.Context) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Close old connection.
+	if h.conn != nil {
+		h.conn.Close()
+		h.conn = nil
+		h.client = nil
+	}
+
+	// Create new connection.
+	if err := h.dial(ctx); err != nil {
+		h.logger.Warn("NovaRoute reconnect: dial failed", zap.Error(err))
+		return false
+	}
+
+	// Re-register as owner.
+	if err := h.register(ctx); err != nil {
+		h.logger.Warn("NovaRoute reconnect: register failed", zap.Error(err))
+		h.conn.Close()
+		h.conn = nil
+		h.client = nil
+		return false
+	}
+
+	h.logger.Info("NovaRoute reconnected and re-registered")
+
+	// Reset configuredAS so ensureBGPGlobal will reconfigure on the new
+	// NovaRoute instance (which has no state from the previous one).
+	h.configuredAS = 0
+
+	// Replay all active VIP assignments to restore BGP state in FRR.
+	replayed := 0
+	for vipName, assignment := range h.lastAssignments {
+		// Clear the activeVIPs entry so AddVIP doesn't try to withdraw first.
+		delete(h.activeVIPs, vipName)
+
+		if err := h.addVIPLocked(ctx, assignment); err != nil {
+			h.logger.Error("NovaRoute reconnect: failed to replay VIP",
+				zap.String("vip", vipName),
+				zap.Error(err),
+			)
+			continue
+		}
+		replayed++
+	}
+
+	h.logger.Info("NovaRoute VIP state restored after reconnect",
+		zap.Int("replayed", replayed),
+		zap.Int("total", len(h.lastAssignments)),
+	)
+
+	return true
+}
+
+// handleEvent processes a single event from the NovaRoute event stream.
+func (h *NovaRouteBGPHandler) handleEvent(ev *nrv1.RouteEvent) {
+	switch ev.Type {
+	case nrv1.EventType_EVENT_TYPE_PEER_DOWN:
+		h.logger.Warn("BGP peer down", zap.String("detail", ev.Detail))
+	case nrv1.EventType_EVENT_TYPE_PEER_UP:
+		h.logger.Info("BGP peer up", zap.String("detail", ev.Detail))
+	case nrv1.EventType_EVENT_TYPE_BFD_DOWN:
+		h.logger.Warn("BFD session down", zap.String("detail", ev.Detail))
+	case nrv1.EventType_EVENT_TYPE_BFD_UP:
+		h.logger.Info("BFD session up", zap.String("detail", ev.Detail))
+	case nrv1.EventType_EVENT_TYPE_FRR_DISCONNECTED:
+		h.logger.Error("NovaRoute lost FRR connection", zap.String("detail", ev.Detail))
+	default:
+		h.logger.Debug("NovaRoute event",
+			zap.String("type", ev.Type.String()),
+			zap.String("detail", ev.Detail),
+		)
 	}
 }
 
@@ -198,6 +336,14 @@ func (h *NovaRouteBGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssi
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
+	// Store the assignment for reconnect replay.
+	h.lastAssignments[assignment.VipName] = assignment
+
+	return h.addVIPLocked(ctx, assignment)
+}
+
+// addVIPLocked performs the actual AddVIP logic. Caller must hold h.mu.
+func (h *NovaRouteBGPHandler) addVIPLocked(ctx context.Context, assignment *pb.VIPAssignment) error {
 	if assignment.BgpConfig == nil {
 		return fmt.Errorf("BGP config is required for BGP mode VIPs")
 	}
@@ -398,6 +544,7 @@ func (h *NovaRouteBGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPA
 	}
 
 	delete(h.activeVIPs, assignment.VipName)
+	delete(h.lastAssignments, assignment.VipName)
 	metrics.BGPAnnouncedRoutes.Set(float64(len(h.activeVIPs)))
 
 	h.logger.Info("VIP withdrawn via NovaRoute BGP",
