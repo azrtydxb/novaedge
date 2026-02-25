@@ -46,8 +46,9 @@ type NovaRouteBGPHandler struct {
 	ownerName  string
 	ownerToken string
 
-	conn   *grpc.ClientConn
-	client nrv1.RouteControlClient
+	conn      *grpc.ClientConn
+	client    nrv1.RouteControlClient
+	cancelCtx context.CancelFunc // cancels the event stream goroutine
 
 	// configuredAS tracks the local AS that was last configured via the
 	// ConfigureBGP RPC so we only reconfigure when the AS actually changes.
@@ -108,7 +109,84 @@ func (h *NovaRouteBGPHandler) Start(ctx context.Context) error {
 	}
 
 	h.logger.Info("Registered with NovaRoute", zap.String("owner", h.ownerName))
+
+	// Start background event stream for peer/BFD failure monitoring.
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	h.cancelCtx = streamCancel
+	go h.streamEvents(streamCtx)
+
 	return nil
+}
+
+// Stop deregisters from NovaRoute and closes the gRPC connection.
+func (h *NovaRouteBGPHandler) Stop(ctx context.Context) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.cancelCtx != nil {
+		h.cancelCtx()
+	}
+
+	if h.client != nil {
+		_, err := h.client.Deregister(ctx, &nrv1.DeregisterRequest{
+			Owner:       h.ownerName,
+			Token:       h.ownerToken,
+			WithdrawAll: true,
+		})
+		if err != nil {
+			h.logger.Warn("Failed to deregister from NovaRoute", zap.Error(err))
+		}
+	}
+
+	if h.conn != nil {
+		h.conn.Close()
+	}
+
+	h.logger.Info("NovaRoute BGP handler stopped")
+	return nil
+}
+
+// streamEvents subscribes to NovaRoute's event stream and logs peer/BFD
+// state changes. This provides real-time visibility into routing events.
+func (h *NovaRouteBGPHandler) streamEvents(ctx context.Context) {
+	stream, err := h.client.StreamEvents(ctx, &nrv1.StreamEventsRequest{
+		OwnerFilter: h.ownerName,
+	})
+	if err != nil {
+		h.logger.Warn("Failed to start NovaRoute event stream", zap.Error(err))
+		return
+	}
+
+	h.logger.Info("NovaRoute event stream connected")
+
+	for {
+		ev, err := stream.Recv()
+		if err != nil {
+			if ctx.Err() != nil {
+				return // shutdown
+			}
+			h.logger.Warn("NovaRoute event stream error", zap.Error(err))
+			return
+		}
+
+		switch ev.Type {
+		case nrv1.EventType_EVENT_TYPE_PEER_DOWN:
+			h.logger.Warn("BGP peer down", zap.String("detail", ev.Detail))
+		case nrv1.EventType_EVENT_TYPE_PEER_UP:
+			h.logger.Info("BGP peer up", zap.String("detail", ev.Detail))
+		case nrv1.EventType_EVENT_TYPE_BFD_DOWN:
+			h.logger.Warn("BFD session down", zap.String("detail", ev.Detail))
+		case nrv1.EventType_EVENT_TYPE_BFD_UP:
+			h.logger.Info("BFD session up", zap.String("detail", ev.Detail))
+		case nrv1.EventType_EVENT_TYPE_FRR_DISCONNECTED:
+			h.logger.Error("NovaRoute lost FRR connection", zap.String("detail", ev.Detail))
+		default:
+			h.logger.Debug("NovaRoute event",
+				zap.String("type", ev.Type.String()),
+				zap.String("detail", ev.Detail),
+			)
+		}
+	}
 }
 
 // AddVIP announces a VIP via NovaRoute's BGP. It:
@@ -293,6 +371,21 @@ func (h *NovaRouteBGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPA
 					zap.Error(bfdErr),
 				)
 			}
+		}
+	}
+
+	// Remove peers for this VIP.
+	for _, peerAddr := range state.peerAddrs {
+		_, peerErr := h.client.RemovePeer(ctx, &nrv1.RemovePeerRequest{
+			Owner:           h.ownerName,
+			Token:           h.ownerToken,
+			NeighborAddress: peerAddr,
+		})
+		if peerErr != nil {
+			h.logger.Warn("Failed to remove peer via NovaRoute",
+				zap.String("peer", peerAddr),
+				zap.Error(peerErr),
+			)
 		}
 	}
 

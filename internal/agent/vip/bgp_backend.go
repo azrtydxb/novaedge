@@ -35,4 +35,8 @@ type BGPBackend interface {
 
 	// RemoveVIP withdraws a VIP from BGP announcements.
 	RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment) error
+
+	// Stop gracefully shuts down the backend, deregistering from upstream
+	// services and closing connections.
+	Stop(ctx context.Context) error
 }
