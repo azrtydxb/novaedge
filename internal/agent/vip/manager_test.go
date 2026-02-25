@@ -318,8 +318,8 @@ func TestNewManager(t *testing.T) {
 		t.Error("l2Handler should be initialized")
 	}
 
-	if manager.bgpHandler == nil {
-		t.Error("bgpHandler should be initialized")
+	if manager.bgpBackend == nil {
+		t.Error("bgpBackend should be initialized")
 	}
 
 	if manager.ospfHandler == nil {

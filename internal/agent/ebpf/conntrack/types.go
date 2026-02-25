@@ -22,10 +22,10 @@ const DefaultMaxEntries uint32 = 65536
 
 // Connection states matching the C constants in bpf/conntrack.c.
 const (
-	StateSynSent    uint8 = 0
+	StateSynSent     uint8 = 0
 	StateEstablished uint8 = 1
-	StateFinWait    uint8 = 2
-	StateClosed     uint8 = 3
+	StateFinWait     uint8 = 2
+	StateClosed      uint8 = 3
 )
 
 // CTKey is the 5-tuple identifying a connection flow.

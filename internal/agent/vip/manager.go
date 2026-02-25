@@ -55,20 +55,27 @@ type DefaultManager struct {
 
 	// Mode-specific handlers
 	l2Handler   *L2Handler
-	bgpHandler  *BGPHandler
+	bgpBackend  BGPBackend
 	ospfHandler *OSPFHandler
 }
 
-// NewManager creates a new VIP manager
-func NewManager(logger *zap.Logger) (*DefaultManager, error) {
+// ManagerOption configures optional DefaultManager settings.
+type ManagerOption func(*DefaultManager)
+
+// WithBGPBackend overrides the default GoBGP backend with an alternative
+// implementation (e.g. NovaRouteBGPHandler).
+func WithBGPBackend(b BGPBackend) ManagerOption {
+	return func(m *DefaultManager) {
+		m.bgpBackend = b
+	}
+}
+
+// NewManager creates a new VIP manager. By default it uses the built-in GoBGP
+// backend. Pass WithBGPBackend to switch to an alternative like NovaRoute.
+func NewManager(logger *zap.Logger, opts ...ManagerOption) (*DefaultManager, error) {
 	l2Handler, err := NewL2Handler(logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create L2 handler: %w", err)
-	}
-
-	bgpHandler, err := NewBGPHandler(logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create BGP handler: %w", err)
 	}
 
 	ospfHandler, err := NewOSPFHandler(logger)
@@ -76,13 +83,27 @@ func NewManager(logger *zap.Logger) (*DefaultManager, error) {
 		return nil, fmt.Errorf("failed to create OSPF handler: %w", err)
 	}
 
-	return &DefaultManager{
+	mgr := &DefaultManager{
 		logger:      logger,
 		assignments: make(map[string]*pb.VIPAssignment),
 		l2Handler:   l2Handler,
-		bgpHandler:  bgpHandler,
 		ospfHandler: ospfHandler,
-	}, nil
+	}
+
+	for _, opt := range opts {
+		opt(mgr)
+	}
+
+	// Default to built-in GoBGP if no backend was provided.
+	if mgr.bgpBackend == nil {
+		bgpHandler, bgpErr := NewBGPHandler(logger)
+		if bgpErr != nil {
+			return nil, fmt.Errorf("failed to create BGP handler: %w", bgpErr)
+		}
+		mgr.bgpBackend = bgpHandler
+	}
+
+	return mgr, nil
 }
 
 // Start starts the VIP manager
@@ -93,7 +114,7 @@ func (m *DefaultManager) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start L2 handler: %w", err)
 	}
 
-	if err := m.bgpHandler.Start(ctx); err != nil {
+	if err := m.bgpBackend.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start BGP handler: %w", err)
 	}
 
@@ -270,7 +291,7 @@ func (m *DefaultManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignm
 	case pb.VIPMode_L2_ARP:
 		applyErr = m.l2Handler.AddVIP(ctx, assignment)
 	case pb.VIPMode_BGP:
-		applyErr = m.bgpHandler.AddVIP(ctx, assignment)
+		applyErr = m.bgpBackend.AddVIP(ctx, assignment)
 	case pb.VIPMode_OSPF:
 		applyErr = m.ospfHandler.AddVIP(ctx, assignment)
 	default:
@@ -291,7 +312,7 @@ func (m *DefaultManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssig
 	case pb.VIPMode_L2_ARP:
 		err = m.l2Handler.RemoveVIP(ctx, assignment)
 	case pb.VIPMode_BGP:
-		err = m.bgpHandler.RemoveVIP(ctx, assignment)
+		err = m.bgpBackend.RemoveVIP(ctx, assignment)
 	case pb.VIPMode_OSPF:
 		err = m.ospfHandler.RemoveVIP(ctx, assignment)
 	default:
@@ -312,7 +333,7 @@ func (m *DefaultManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssig
 		case pb.VIPMode_L2_ARP:
 			ipv6Err = m.l2Handler.RemoveVIP(ctx, ipv6Assignment)
 		case pb.VIPMode_BGP:
-			ipv6Err = m.bgpHandler.RemoveVIP(ctx, ipv6Assignment)
+			ipv6Err = m.bgpBackend.RemoveVIP(ctx, ipv6Assignment)
 		case pb.VIPMode_OSPF:
 			ipv6Err = m.ospfHandler.RemoveVIP(ctx, ipv6Assignment)
 		}
