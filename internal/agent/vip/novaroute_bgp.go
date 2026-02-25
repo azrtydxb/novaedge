@@ -120,8 +120,8 @@ func (h *NovaRouteBGPHandler) dial(_ context.Context) error {
 		"unix://"+h.socketPath,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
-			Time:                10 * time.Second,
-			Timeout:             5 * time.Second,
+			Time:                60 * time.Second,
+			Timeout:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
 	)
