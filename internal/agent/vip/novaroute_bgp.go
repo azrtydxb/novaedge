@@ -49,6 +49,10 @@ type NovaRouteBGPHandler struct {
 	conn   *grpc.ClientConn
 	client nrv1.RouteControlClient
 
+	// configuredAS tracks the local AS that was last configured via the
+	// ConfigureBGP RPC so we only reconfigure when the AS actually changes.
+	configuredAS uint32
+
 	// Track active VIPs for metrics and cleanup.
 	activeVIPs map[string]*novaRouteVIPState
 }
@@ -146,6 +150,13 @@ func (h *NovaRouteBGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssi
 		zap.Uint32("local_as", assignment.BgpConfig.LocalAs),
 		zap.Bool("ipv6", isIPv6),
 	)
+
+	// Configure BGP global settings (AS number + router-id) via NovaRoute
+	// if the controller-provided AS differs from what we last configured.
+	// This replaces the DaemonSet env var workaround with proper code support.
+	if err := h.ensureBGPGlobal(ctx, assignment.BgpConfig); err != nil {
+		return fmt.Errorf("novaroute: configure BGP global: %w", err)
+	}
 
 	// Configure BGP peers.
 	var peerAddrs []string
@@ -300,6 +311,51 @@ func (h *NovaRouteBGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPA
 		zap.String("vip", assignment.VipName),
 		zap.Duration("duration", time.Since(state.addedAt)),
 	)
+	return nil
+}
+
+// ensureBGPGlobal calls the ConfigureBGP RPC to set the local AS and router-id
+// in NovaRoute. It only makes the call when the AS has changed, avoiding
+// unnecessary reconfiguration. This is the code-level equivalent of the
+// GoBGP handler's startBGPServer() — it uses the controller-provided BgpConfig
+// to dynamically configure the local BGP AS per node.
+func (h *NovaRouteBGPHandler) ensureBGPGlobal(ctx context.Context, bgpCfg *pb.BGPConfig) error {
+	desiredAS := bgpCfg.LocalAs
+	routerID := bgpCfg.RouterId
+
+	if desiredAS == 0 {
+		return nil // No AS configured, nothing to do.
+	}
+
+	if h.configuredAS == desiredAS {
+		return nil // Already configured with this AS.
+	}
+
+	h.logger.Info("Configuring BGP global via NovaRoute",
+		zap.Uint32("desired_as", desiredAS),
+		zap.String("router_id", routerID),
+		zap.Uint32("previous_as", h.configuredAS),
+	)
+
+	resp, err := h.client.ConfigureBGP(ctx, &nrv1.ConfigureBGPRequest{
+		Owner:    h.ownerName,
+		Token:    h.ownerToken,
+		LocalAs:  desiredAS,
+		RouterId: routerID,
+	})
+	if err != nil {
+		return fmt.Errorf("ConfigureBGP RPC (AS=%d, router_id=%s): %w", desiredAS, routerID, err)
+	}
+
+	h.configuredAS = desiredAS
+
+	h.logger.Info("BGP global configured via NovaRoute",
+		zap.Uint32("local_as", desiredAS),
+		zap.String("router_id", routerID),
+		zap.Uint32("previous_as", resp.PreviousAs),
+		zap.String("previous_router_id", resp.PreviousRouterId),
+	)
+
 	return nil
 }
 
