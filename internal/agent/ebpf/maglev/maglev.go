@@ -39,14 +39,14 @@ type Manager struct {
 	logger    *zap.Logger
 	tableSize uint32
 
-	mu          sync.Mutex
-	outerMap    *ebpf.Map // ARRAY_OF_MAPS with 2 slots
-	backendMap  *ebpf.Map // backend_id -> BackendValue
-	statsMap    *ebpf.Map
-	innerMaps   [2]*ebpf.Map // two inner tables for swap
-	activeSlot  int          // 0 or 1: which inner map is active
-	innerSpec   *ebpf.MapSpec
-	closed      bool
+	mu         sync.Mutex
+	outerMap   *ebpf.Map // ARRAY_OF_MAPS with 2 slots
+	backendMap *ebpf.Map // backend_id -> BackendValue
+	statsMap   *ebpf.Map
+	innerMaps  [2]*ebpf.Map // two inner tables for swap
+	activeSlot int          // 0 or 1: which inner map is active
+	innerSpec  *ebpf.MapSpec
+	closed     bool
 }
 
 // NewManager creates a new Maglev BPF map manager with the given table size.
