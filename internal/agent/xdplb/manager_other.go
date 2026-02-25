@@ -77,4 +77,3 @@ func (m *Manager) SetMaglev(_ *maglev.Manager) {}
 
 // SetConntrack is a no-op on non-Linux platforms.
 func (m *Manager) SetConntrack(_ *conntrack.Conntrack) {}
-
