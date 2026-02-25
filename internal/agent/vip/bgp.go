@@ -108,6 +108,22 @@ func (h *BGPHandler) Start(ctx context.Context) error {
 	return nil
 }
 
+// Stop gracefully shuts down the GoBGP server and BFD manager.
+func (h *BGPHandler) Stop(ctx context.Context) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if h.bfdManager != nil {
+		h.bfdManager.Stop()
+	}
+	if h.bgpServer != nil {
+		h.bgpServer.Stop()
+	}
+	h.started = false
+	h.logger.Info("BGP handler stopped")
+	return nil
+}
+
 // AddVIP adds a VIP with BGP announcement (IPv4 or IPv6).
 // If the VIP already exists, it performs in-place reconfiguration of changed
 // BGP/BFD parameters without releasing the VIP address.
