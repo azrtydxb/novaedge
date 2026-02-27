@@ -92,6 +92,10 @@ message BGPPeer {
   string source_address = 9;
   uint32 ebgp_multihop = 10;
   string password = 11;
+  uint32 max_prefix = 12;
+  uint32 bfd_min_rx_ms = 13;
+  uint32 bfd_min_tx_ms = 14;
+  uint32 bfd_detect_multiplier = 15;
 }
 
 enum PeerType {
@@ -219,6 +223,7 @@ message PeerStatus {
   string uptime = 7;
   bool bfd_enabled = 8;
   string bfd_status = 9;
+  string description = 10;
 }
 
 message PrefixStatus {
@@ -281,4 +286,5 @@ enum EventType {
   EVENT_TYPE_OWNER_REGISTERED = 11;
   EVENT_TYPE_OWNER_DEREGISTERED = 12;
   EVENT_TYPE_POLICY_VIOLATION = 13;
+  EVENT_TYPE_BGP_CONFIG_CHANGED = 14;
 }
