@@ -125,6 +125,22 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          # Create asm symlink for eBPF compilation on multiarch Ubuntu
+          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+
+      - name: Generate eBPF code (bpf2go)
+        run: |
+          go generate ./internal/agent/ebpf/conntrack/
+          go generate ./internal/agent/ebpf/maglev/
+          go generate ./internal/agent/xdplb/
+          go generate ./internal/agent/ebpfmesh/
+          go generate ./internal/agent/afxdp/
+
       - name: Run govulncheck
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -167,11 +183,10 @@ jobs:
           go generate ./internal/agent/ebpfmesh/
           go generate ./internal/agent/afxdp/
 
-      - name: Raise MEMLOCK rlimit for eBPF tests
-        run: ulimit -l unlimited || true
-
       - name: Run unit tests
-        run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: |
+          ulimit -l unlimited 2>/dev/null || true
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Display coverage
         run: |
