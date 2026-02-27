@@ -18,12 +18,13 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -33,6 +34,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+)
+
+var (
+	errClusterNameIsRequired                  = errors.New("clusterName is required")
+	errConnectionControllerEndpointIsRequired = errors.New("connection.controllerEndpoint is required")
+	errRemoteClusterNotFoundInRegistry        = errors.New("remote cluster not found in registry")
+	errEncountered                            = errors.New("encountered")
 )
 
 const (
@@ -149,7 +157,7 @@ func (r *NovaEdgeRemoteClusterReconciler) Reconcile(ctx context.Context, req ctr
 	// Fetch the NovaEdgeRemoteCluster instance
 	remoteCluster := &novaedgev1alpha1.NovaEdgeRemoteCluster{}
 	if err := r.Get(ctx, req.NamespacedName, remoteCluster); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Resource deleted, unregister from registry
 			r.Registry.Unregister(req.Name)
 			logger.Info("NovaEdgeRemoteCluster resource not found, unregistered from registry")
@@ -237,10 +245,10 @@ func (r *NovaEdgeRemoteClusterReconciler) registerRemoteCluster(ctx context.Cont
 
 	// Validate required fields
 	if rc.Spec.ClusterName == "" {
-		return fmt.Errorf("clusterName is required")
+		return errClusterNameIsRequired
 	}
 	if rc.Spec.Connection.ControllerEndpoint == "" {
-		return fmt.Errorf("connection.controllerEndpoint is required")
+		return errConnectionControllerEndpointIsRequired
 	}
 
 	// Determine TLS settings
@@ -277,7 +285,7 @@ func (r *NovaEdgeRemoteClusterReconciler) registerRemoteCluster(ctx context.Cont
 func (r *NovaEdgeRemoteClusterReconciler) updateConnectionStatus(_ context.Context, rc *novaedgev1alpha1.NovaEdgeRemoteCluster) error {
 	info, ok := r.Registry.Get(rc.Spec.ClusterName)
 	if !ok {
-		return fmt.Errorf("remote cluster not found in registry")
+		return errRemoteClusterNotFoundInRegistry
 	}
 
 	// Initialize connection status if nil
@@ -456,7 +464,7 @@ func (r *NovaEdgeRemoteClusterReconciler) deleteFederatedResources(ctx context.C
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("encountered %d error(s) during cleanup: %v", len(errs), errs)
+		return fmt.Errorf("%w: %d error(s) during cleanup: %v", errEncountered, len(errs), errs)
 	}
 	return nil
 }
@@ -484,7 +492,7 @@ func (r *NovaEdgeRemoteClusterReconciler) deleteAllWithLabel(ctx context.Context
 			continue
 		}
 		if err := r.Delete(ctx, obj); err != nil {
-			if !errors.IsNotFound(err) {
+			if !apierrors.IsNotFound(err) {
 				logger.Error(err, "Failed to delete resource",
 					"kind", obj.GetObjectKind().GroupVersionKind().Kind,
 					"name", obj.GetName(),

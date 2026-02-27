@@ -20,10 +20,14 @@ package health
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFHealthMonitoringIsOnlySupportedOnLinux = errors.New("eBPF health monitoring is only supported on Linux")
 )
 
 // HealthMonitor is a stub on non-Linux platforms.
@@ -32,12 +36,12 @@ type HealthMonitor struct{}
 // NewHealthMonitor returns an error on non-Linux platforms since eBPF
 // health monitoring requires Linux kernel support.
 func NewHealthMonitor(_ *zap.Logger, _ uint32) (*HealthMonitor, error) {
-	return nil, fmt.Errorf("eBPF health monitoring is only supported on Linux")
+	return nil, errEBPFHealthMonitoringIsOnlySupportedOnLinux
 }
 
 // Poll returns an error on non-Linux platforms.
 func (hm *HealthMonitor) Poll() (map[BackendKey]AggregatedHealth, error) {
-	return nil, fmt.Errorf("eBPF health monitoring is only supported on Linux")
+	return nil, errEBPFHealthMonitoringIsOnlySupportedOnLinux
 }
 
 // StartPoller is a no-op on non-Linux platforms.

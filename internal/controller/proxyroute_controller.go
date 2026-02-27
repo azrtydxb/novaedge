@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -47,38 +47,12 @@ type ProxyRouteReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *ProxyRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// Fetch the ProxyRoute instance
 	route := &novaedgev1alpha1.ProxyRoute{}
-	err := r.Get(ctx, req.NamespacedName, route)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("ProxyRoute resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
-		}
-		logger.Error(err, "Failed to get ProxyRoute")
-		return ctrl.Result{}, err
-	}
-
-	// Skip if already reconciled this generation (ObservedGeneration > 0
-	// ensures first-ever reconciliation always proceeds)
-	if route.Status.ObservedGeneration != 0 && route.Status.ObservedGeneration == route.Generation {
-		return ctrl.Result{}, nil
-	}
-
-	logger.Info("Reconciling ProxyRoute", "name", route.Name, "hostnames", route.Spec.Hostnames)
-
-	// Validate and update status
-	if err := r.validateAndUpdateStatus(ctx, route); err != nil {
-		logger.Error(err, "Failed to validate route")
-		return ctrl.Result{Requeue: true}, err
-	}
-
-	// Trigger config update for all nodes
-	TriggerConfigUpdate()
-
-	return ctrl.Result{}, nil
+	return reconcileWithGenerationCheck(ctx, r.Client, req, route, "ProxyRoute",
+		func() int64 { return route.Status.ObservedGeneration },
+		func() []interface{} { return []interface{}{"name", route.Name, "hostnames", route.Spec.Hostnames} },
+		func() error { return r.validateAndUpdateStatus(ctx, route) },
+	)
 }
 
 // validateAndUpdateStatus validates the route and updates its status
@@ -99,7 +73,7 @@ func (r *ProxyRouteReconciler) validateAndUpdateStatus(ctx context.Context, rout
 				Name:      backendRef.Name,
 				Namespace: backendNamespace,
 			}, backend); err != nil {
-				if errors.IsNotFound(err) {
+				if apierrors.IsNotFound(err) {
 					validationErrors = append(validationErrors,
 						fmt.Sprintf("Backend %s not found for rule %d, backend %d", backendRef.Name, i, j))
 				} else {
@@ -158,7 +132,7 @@ func (r *ProxyRouteReconciler) validateAndUpdateStatus(ctx context.Context, rout
 	}
 
 	if len(validationErrors) > 0 {
-		return fmt.Errorf("validation failed: %v", validationErrors)
+		return fmt.Errorf("%w: %v", errValidationFailed, validationErrors)
 	}
 
 	return nil

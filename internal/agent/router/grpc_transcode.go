@@ -19,6 +19,7 @@ package router
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,14 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
+)
+
+var (
+	errInvalidGRPCMethodFormat = errors.New("invalid gRPC method format")
+	errIsNotAServiceDescriptor = errors.New("is not a service descriptor")
+	errMethod                  = errors.New("method")
+	errGRPCFrameTooShort       = errors.New("gRPC frame too short")
+	errGRPCFrameLength         = errors.New("gRPC frame length")
 )
 
 // grpcToHTTP maps gRPC status codes to HTTP status codes per the gRPC specification.
@@ -182,7 +191,7 @@ func (m *GRPCTranscodeMiddleware) buildDescriptors() error {
 func (m *GRPCTranscodeMiddleware) resolveMethod(files *protoregistry.Files, fullName string) (*methodDescriptor, error) {
 	parts := strings.SplitN(fullName, "/", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid gRPC method format %q, expected service/method", fullName)
+		return nil, fmt.Errorf("%w: %q, expected service/method", errInvalidGRPCMethodFormat, fullName)
 	}
 
 	serviceName := protoreflect.FullName(parts[0])
@@ -195,12 +204,12 @@ func (m *GRPCTranscodeMiddleware) resolveMethod(files *protoregistry.Files, full
 
 	svcDesc, ok := sd.(protoreflect.ServiceDescriptor)
 	if !ok {
-		return nil, fmt.Errorf("%q is not a service descriptor", serviceName)
+		return nil, fmt.Errorf("%w: %q is not a service descriptor", errIsNotAServiceDescriptor, serviceName)
 	}
 
 	mtdDesc := svcDesc.Methods().ByName(methodName)
 	if mtdDesc == nil {
-		return nil, fmt.Errorf("method %q not found in service %q", methodName, serviceName)
+		return nil, fmt.Errorf("%w: %q not found in service %q", errMethod, methodName, serviceName)
 	}
 
 	return &methodDescriptor{
@@ -360,12 +369,12 @@ func decodeGRPCFrame(data []byte) ([]byte, error) {
 		return nil, nil
 	}
 	if len(data) < 5 {
-		return nil, fmt.Errorf("gRPC frame too short: %d bytes", len(data))
+		return nil, fmt.Errorf("%w: %d bytes", errGRPCFrameTooShort, len(data))
 	}
 	// data[0] is the compressed flag (ignored for now).
 	msgLen := binary.BigEndian.Uint32(data[1:5])
 	if int(msgLen) > len(data)-5 {
-		return nil, fmt.Errorf("gRPC frame length %d exceeds available data %d", msgLen, len(data)-5)
+		return nil, fmt.Errorf("%w: %d exceeds available data %d", errGRPCFrameLength, msgLen, len(data)-5)
 	}
 	return data[5 : 5+msgLen], nil
 }

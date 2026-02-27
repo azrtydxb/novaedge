@@ -20,14 +20,22 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errCloudflareCredentialsMustIncludeAPIToken = errors.New("cloudflare credentials must include 'api_token'")
+	errCloudflareAPIError                       = errors.New("cloudflare API error")
+	errInvalidDomain                            = errors.New("invalid domain")
+	errNoCloudflareZoneFoundFor                 = errors.New("no Cloudflare zone found for")
+	errTXTRecordNotFoundFor                     = errors.New("TXT record not found for")
 )
 
 const (
@@ -48,7 +56,7 @@ type CloudflareProvider struct {
 func NewCloudflareProvider(credentials map[string]string, config *ProviderConfig) (*CloudflareProvider, error) {
 	apiToken := credentials["api_token"]
 	if apiToken == "" {
-		return nil, fmt.Errorf("cloudflare credentials must include 'api_token'")
+		return nil, errCloudflareCredentialsMustIncludeAPIToken
 	}
 
 	return &CloudflareProvider{
@@ -133,7 +141,7 @@ func (p *CloudflareProvider) CreateTXTRecord(ctx context.Context, fqdn, value st
 	}
 
 	if !cfResp.Success {
-		return fmt.Errorf("cloudflare API error: %v", cfResp.Errors)
+		return fmt.Errorf("%w: %v", errCloudflareAPIError, cfResp.Errors)
 	}
 
 	p.logger.Info("Created Cloudflare TXT record",
@@ -182,34 +190,7 @@ func (p *CloudflareProvider) DeleteTXTRecord(ctx context.Context, fqdn, value st
 
 // WaitForPropagation waits for the TXT record to be visible in DNS.
 func (p *CloudflareProvider) WaitForPropagation(ctx context.Context, fqdn, value string) error {
-	timeout := time.After(p.config.PropagationTimeout)
-	ticker := time.NewTicker(p.config.PollingInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("DNS propagation timeout for %s after %s", fqdn, p.config.PropagationTimeout)
-		case <-ticker.C:
-			resolver := &net.Resolver{}
-			records, err := resolver.LookupTXT(ctx, strings.TrimSuffix(fqdn, "."))
-			if err != nil {
-				p.logger.Debug("DNS lookup not yet propagated",
-					zap.String("fqdn", fqdn),
-					zap.Error(err))
-				continue
-			}
-			for _, record := range records {
-				if record == value {
-					p.logger.Info("DNS propagation confirmed",
-						zap.String("fqdn", fqdn))
-					return nil
-				}
-			}
-		}
-	}
+	return waitForDNSPropagation(ctx, fqdn, value, p.config.PropagationTimeout, p.config.PollingInterval, p.logger)
 }
 
 // findZoneID finds the Cloudflare zone ID for a given record name.
@@ -217,7 +198,7 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 	// Extract the root domain (last two labels for basic domains)
 	parts := strings.Split(recordName, ".")
 	if len(parts) < 2 {
-		return "", fmt.Errorf("invalid domain: %s", recordName)
+		return "", fmt.Errorf("%w: %s", errInvalidDomain, recordName)
 	}
 
 	// Try progressively shorter domain parts to find the zone
@@ -258,7 +239,7 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 		}
 	}
 
-	return "", fmt.Errorf("no Cloudflare zone found for %s", recordName)
+	return "", fmt.Errorf("%w: %s", errNoCloudflareZoneFoundFor, recordName)
 }
 
 // findRecord finds a specific TXT record in Cloudflare.
@@ -298,5 +279,5 @@ func (p *CloudflareProvider) findRecord(ctx context.Context, zoneID, name, conte
 		}
 	}
 
-	return "", fmt.Errorf("TXT record not found for %s with content %s", name, content)
+	return "", fmt.Errorf("%w: %s with content %s", errTXTRecordNotFoundFor, name, content)
 }

@@ -19,10 +19,14 @@ limitations under the License.
 package conntrack
 
 import (
-	"fmt"
+	"errors"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFConntrackIsOnlySupportedOnLinux = errors.New("eBPF conntrack is only supported on Linux")
 )
 
 // Conntrack is a stub on non-Linux platforms.
@@ -30,17 +34,17 @@ type Conntrack struct{}
 
 // NewConntrack returns an error on non-Linux platforms.
 func NewConntrack(_ *zap.Logger, _ uint32, _ time.Duration) (*Conntrack, error) {
-	return nil, fmt.Errorf("eBPF conntrack is only supported on Linux")
+	return nil, errEBPFConntrackIsOnlySupportedOnLinux
 }
 
 // Lookup returns an error on non-Linux platforms.
 func (ct *Conntrack) Lookup(_ CTKey) (*CTEntry, error) {
-	return nil, fmt.Errorf("eBPF conntrack is only supported on Linux")
+	return nil, errEBPFConntrackIsOnlySupportedOnLinux
 }
 
 // GarbageCollect returns an error on non-Linux platforms.
 func (ct *Conntrack) GarbageCollect(_ time.Duration) (int, error) {
-	return 0, fmt.Errorf("eBPF conntrack is only supported on Linux")
+	return 0, errEBPFConntrackIsOnlySupportedOnLinux
 }
 
 // StartGC is a no-op on non-Linux platforms.

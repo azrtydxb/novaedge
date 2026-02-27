@@ -22,6 +22,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -33,6 +34,13 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/policy"
 	"golang.org/x/crypto/ocsp"
+)
+
+var (
+	errCertificateIsNilOrEmpty          = errors.New("certificate is nil or empty")
+	errCertificateHasNoOCSPResponderURL = errors.New("certificate has no OCSP responder URL")
+	errOCSPResponderReturnedStatus      = errors.New("OCSP responder returned status")
+	errOCSPResponseStatusIsNotGood      = errors.New("OCSP response status is not good")
 )
 
 const (
@@ -103,7 +111,7 @@ func (s *OCSPStapler) Stop() {
 // for building the OCSP request.
 func (s *OCSPStapler) AddCertificate(hostname string, cert *tls.Certificate, issuerPEM []byte) error {
 	if cert == nil || len(cert.Certificate) == 0 {
-		return fmt.Errorf("certificate is nil or empty")
+		return errCertificateIsNilOrEmpty
 	}
 
 	leaf, err := x509.ParseCertificate(cert.Certificate[0])
@@ -326,7 +334,7 @@ func (s *OCSPStapler) refreshAll() {
 
 func (s *OCSPStapler) fetchOCSPResponse(entry *ocspCertEntry, leaf *x509.Certificate) error {
 	if len(leaf.OCSPServer) == 0 {
-		return fmt.Errorf("certificate has no OCSP responder URL")
+		return errCertificateHasNoOCSPResponderURL
 	}
 
 	ocspReq, err := ocsp.CreateRequest(leaf, entry.issuer, nil)
@@ -349,7 +357,7 @@ func (s *OCSPStapler) fetchOCSPResponse(entry *ocspCertEntry, leaf *x509.Certifi
 	defer func() { _ = httpResp.Body.Close() }()
 
 	if httpResp.StatusCode != http.StatusOK {
-		return fmt.Errorf("OCSP responder returned status %d", httpResp.StatusCode)
+		return fmt.Errorf("%w: %d", errOCSPResponderReturnedStatus, httpResp.StatusCode)
 	}
 
 	respBytes, err := io.ReadAll(io.LimitReader(httpResp.Body, ocspMaxResponseSize))
@@ -363,7 +371,7 @@ func (s *OCSPStapler) fetchOCSPResponse(entry *ocspCertEntry, leaf *x509.Certifi
 	}
 
 	if ocspResp.Status != ocsp.Good {
-		return fmt.Errorf("OCSP response status is not good: %d", ocspResp.Status)
+		return fmt.Errorf("%w: %d", errOCSPResponseStatusIsNotGood, ocspResp.Status)
 	}
 
 	entry.mu.Lock()

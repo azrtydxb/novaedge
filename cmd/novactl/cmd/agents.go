@@ -96,7 +96,7 @@ func newAgentsDescribeCommand() *cobra.Command {
 
 func runAgentsDescribe(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one argument required: node-name")
+		return errExactlyOneArgumentRequiredNodeName
 	}
 
 	nodeName := args[0]
@@ -118,7 +118,7 @@ func runAgentsDescribe(_ *cobra.Command, args []string) error {
 	}
 
 	if len(pods.Items) == 0 {
-		return fmt.Errorf("no agent found on node %s", nodeName)
+		return fmt.Errorf("%w: %s", errNoAgentFoundOnNode, nodeName)
 	}
 
 	pod := pods.Items[0]
@@ -174,7 +174,7 @@ func newAgentsConfigCommand() *cobra.Command {
 
 func runAgentsConfig(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one argument required: node-name")
+		return errExactlyOneArgumentRequiredNodeName
 	}
 
 	nodeName := args[0]

@@ -17,6 +17,7 @@ limitations under the License.
 package sdwan
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -25,6 +26,11 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errNoLinksAvailableForSelection  = errors.New("no links available for selection")
+	errNoHealthyLinkFoundForStrategy = errors.New("no healthy link found for strategy")
 )
 
 // Local strategy constants matching the CRD values to avoid an import cycle.
@@ -73,12 +79,12 @@ func (ps *PathSelector) Select(
 	costs map[string]int32,
 ) (string, error) {
 	if len(links) == 0 {
-		return "", fmt.Errorf("no links available for selection")
+		return "", errNoLinksAvailableForSelection
 	}
 
 	selected := selectPath(strategy, links, bandwidths, costs)
 	if selected == "" {
-		return "", fmt.Errorf("no healthy link found for strategy %q", strategy)
+		return "", fmt.Errorf("%w: %q", errNoHealthyLinkFoundForStrategy, strategy)
 	}
 
 	ps.mu.Lock()

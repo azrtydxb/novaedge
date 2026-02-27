@@ -18,11 +18,20 @@ package wasm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/tetratelabs/wazero"
 	"go.uber.org/zap"
+)
+
+var (
+	errPluginConfigIsNil          = errors.New("plugin config is nil")
+	errPluginNameIsRequired       = errors.New("plugin name is required")
+	errWASMBytesAreEmptyForPlugin = errors.New("WASM bytes are empty for plugin")
+	errRuntimeIsClosed            = errors.New("runtime is closed")
+	errPlugin                     = errors.New("plugin")
 )
 
 // Runtime manages the wazero WASM runtime and all loaded plugins.
@@ -63,20 +72,20 @@ func NewRuntime(ctx context.Context, logger *zap.Logger) (*Runtime, error) {
 // exists it is unloaded first.
 func (r *Runtime) LoadPlugin(ctx context.Context, cfg *PluginConfig) error {
 	if cfg == nil {
-		return fmt.Errorf("plugin config is nil")
+		return errPluginConfigIsNil
 	}
 	if cfg.Name == "" {
-		return fmt.Errorf("plugin name is required")
+		return errPluginNameIsRequired
 	}
 	if len(cfg.WASMBytes) == 0 {
-		return fmt.Errorf("WASM bytes are empty for plugin %s", cfg.Name)
+		return fmt.Errorf("%w: %s", errWASMBytesAreEmptyForPlugin, cfg.Name)
 	}
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	if r.closed {
-		return fmt.Errorf("runtime is closed")
+		return errRuntimeIsClosed
 	}
 
 	// Unload existing plugin with the same name
@@ -110,7 +119,7 @@ func (r *Runtime) UnloadPlugin(ctx context.Context, name string) error {
 
 	plugin, ok := r.plugins[name]
 	if !ok {
-		return fmt.Errorf("plugin %s not found", name)
+		return fmt.Errorf("%w: %s not found", errPlugin, name)
 	}
 
 	plugin.Close(ctx)

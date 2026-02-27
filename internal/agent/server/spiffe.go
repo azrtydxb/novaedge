@@ -32,6 +32,15 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	errSPIFFEWorkloadAPIAddressMustNotBeEmpty    = errors.New("SPIFFE workload API address must not be empty")
+	errSPIFFETrustDomainMustNotBeEmpty           = errors.New("SPIFFE trust domain must not be empty")
+	errSPIFFEProviderNotStarted                  = errors.New("SPIFFE provider not started")
+	errNoPeerCertificatePresented                = errors.New("no peer certificate presented")
+	errSPIFFEID                                  = errors.New("SPIFFE ID")
+	errPeerCertificateDoesNotContainAValidSPIFFE = errors.New("peer certificate does not contain a valid SPIFFE ID URI SAN")
+)
+
 // SPIFFEConfig holds configuration for the SPIFFE workload identity provider.
 type SPIFFEConfig struct {
 	// WorkloadAPIAddr is the address of the SPIFFE Workload API socket
@@ -50,10 +59,10 @@ type SPIFFEConfig struct {
 // Validate checks that SPIFFEConfig has all required fields.
 func (c *SPIFFEConfig) Validate() error {
 	if c.WorkloadAPIAddr == "" {
-		return errors.New("SPIFFE workload API address must not be empty")
+		return errSPIFFEWorkloadAPIAddressMustNotBeEmpty
 	}
 	if c.TrustDomain == "" {
-		return errors.New("SPIFFE trust domain must not be empty")
+		return errSPIFFETrustDomainMustNotBeEmpty
 	}
 	if _, err := spiffeid.TrustDomainFromString(c.TrustDomain); err != nil {
 		return fmt.Errorf("invalid SPIFFE trust domain %q: %w", c.TrustDomain, err)
@@ -210,7 +219,7 @@ func (p *SPIFFEProvider) GetTLSConfig() (*tls.Config, error) {
 	p.mu.RUnlock()
 
 	if source == nil {
-		return nil, errors.New("SPIFFE provider not started")
+		return nil, errSPIFFEProviderNotStarted
 	}
 
 	// Verify we can obtain a current SVID
@@ -246,7 +255,7 @@ func (p *SPIFFEProvider) GetClientCertificate() func(*tls.CertificateRequestInfo
 		p.mu.RUnlock()
 
 		if source == nil {
-			return nil, errors.New("SPIFFE provider not started")
+			return nil, errSPIFFEProviderNotStarted
 		}
 
 		svid, err := source.GetX509SVID()
@@ -274,7 +283,7 @@ func (p *SPIFFEProvider) GetTrustBundle() (*x509bundle.Bundle, error) {
 	p.mu.RUnlock()
 
 	if source == nil {
-		return nil, errors.New("SPIFFE provider not started")
+		return nil, errSPIFFEProviderNotStarted
 	}
 
 	bundle, err := source.GetX509BundleForTrustDomain(p.trustDomain)
@@ -311,7 +320,7 @@ func (p *SPIFFEProvider) getTrustBundleCertPool() (*x509.CertPool, error) {
 	p.mu.RUnlock()
 
 	if source == nil {
-		return nil, errors.New("SPIFFE provider not started")
+		return nil, errSPIFFEProviderNotStarted
 	}
 
 	bundle, err := source.GetX509BundleForTrustDomain(p.trustDomain)
@@ -331,7 +340,7 @@ func (p *SPIFFEProvider) getTrustBundleCertPool() (*x509.CertPool, error) {
 // SPIFFE ID (extracted from the certificate URI SAN) is in the allowed list.
 func (p *SPIFFEProvider) verifyPeerCertificate(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 	if len(rawCerts) == 0 {
-		return errors.New("no peer certificate presented")
+		return errNoPeerCertificatePresented
 	}
 
 	leaf, err := x509.ParseCertificate(rawCerts[0])
@@ -357,10 +366,10 @@ func (p *SPIFFEProvider) verifyPeerCertificate(rawCerts [][]byte, _ [][]*x509.Ce
 			zap.String("peer_id", peerID.String()),
 			zap.String("trust_domain", p.trustDomain.String()),
 		)
-		return fmt.Errorf("SPIFFE ID %s is not allowed", peerID.String())
+		return fmt.Errorf("%w: %s is not allowed", errSPIFFEID, peerID.String())
 	}
 
-	return errors.New("peer certificate does not contain a valid SPIFFE ID URI SAN")
+	return errPeerCertificateDoesNotContainAValidSPIFFE
 }
 
 // spiffeIDFromURI attempts to parse a URL as a SPIFFE ID.

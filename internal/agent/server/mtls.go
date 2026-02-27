@@ -21,13 +21,18 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/hex"
-	"fmt"
+	"errors"
 	"net/http"
 	"strings"
 
 	"go.uber.org/zap"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errFailedToParseClientCACertificateBundle   = errors.New("failed to parse client CA certificate bundle")
+	errMTLSModeRequireNeedsACACertificateBundle = errors.New("mTLS mode 'require' needs a CA certificate bundle but none was provided")
 )
 
 // parseClientAuth converts a ClientAuthConfig mode string to tls.ClientAuthType
@@ -54,7 +59,7 @@ func (s *HTTPServer) applyClientAuthConfig(tlsConfig *tls.Config, clientAuth *pb
 	if len(clientAuth.CaCert) > 0 {
 		caCertPool := x509.NewCertPool()
 		if !caCertPool.AppendCertsFromPEM(clientAuth.CaCert) {
-			return fmt.Errorf("failed to parse client CA certificate bundle")
+			return errFailedToParseClientCACertificateBundle
 		}
 		tlsConfig.ClientCAs = caCertPool
 
@@ -63,7 +68,7 @@ func (s *HTTPServer) applyClientAuthConfig(tlsConfig *tls.Config, clientAuth *pb
 			zap.Int("ca_certs_loaded", len(clientAuth.CaCert)),
 		)
 	} else if clientAuth.Mode == "require" {
-		return fmt.Errorf("mTLS mode 'require' needs a CA certificate bundle but none was provided")
+		return errMTLSModeRequireNeedsACACertificateBundle
 	}
 
 	return nil

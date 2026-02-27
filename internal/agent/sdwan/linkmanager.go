@@ -17,10 +17,17 @@ limitations under the License.
 package sdwan
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errLinkNameIsRequired         = errors.New("link name is required")
+	errLink                       = errors.New("link")
+	errNoLinkQualityDataAvailable = errors.New("no link quality data available")
 )
 
 // LinkState describes the operational state of a WAN link.
@@ -109,10 +116,10 @@ func (m *LinkManager) AddLink(config LinkConfig) error {
 	defer m.mu.Unlock()
 
 	if config.Name == "" {
-		return fmt.Errorf("link name is required")
+		return errLinkNameIsRequired
 	}
 	if _, exists := m.links[config.Name]; exists {
-		return fmt.Errorf("link %q already exists", config.Name)
+		return fmt.Errorf("%w: %q already exists", errLink, config.Name)
 	}
 
 	link := &ManagedLink{
@@ -148,7 +155,7 @@ func (m *LinkManager) RemoveLink(name string) error {
 	defer m.mu.Unlock()
 
 	if _, exists := m.links[name]; !exists {
-		return fmt.Errorf("link %q not found", name)
+		return fmt.Errorf("%w: %q not found", errLink, name)
 	}
 
 	delete(m.links, name)
@@ -252,7 +259,7 @@ func (m *LinkManager) SelectPathForPolicy(policyName, strategy string) (string, 
 
 	qualities := m.prober.GetAllQualities()
 	if len(qualities) == 0 {
-		return "", fmt.Errorf("no link quality data available")
+		return "", errNoLinkQualityDataAvailable
 	}
 
 	// Build link quality list and metadata maps

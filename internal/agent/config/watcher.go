@@ -18,6 +18,7 @@ package config
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -30,6 +31,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errTLSConfigurationIsIncomplete                  = errors.New("TLS configuration is incomplete")
+	errTLSConfigurationIsRequiredForRemoteAgents     = errors.New("TLS configuration is required for remote agents")
+	errClusterConfigurationIsRequiredForRemoteAgents = errors.New("cluster configuration is required for remote agents")
 )
 
 // Snapshot is a wrapper around the protobuf ConfigSnapshot
@@ -99,7 +106,7 @@ func NewWatcher(ctx context.Context, nodeName, agentVersion, controllerAddr stri
 // NewWatcherWithTLS creates a new config watcher with mTLS enabled
 func NewWatcherWithTLS(ctx context.Context, nodeName, agentVersion, controllerAddr string, tlsConfig *TLSConfig, logger *zap.Logger) (*Watcher, error) {
 	if tlsConfig == nil || tlsConfig.CertFile == "" || tlsConfig.KeyFile == "" || tlsConfig.CAFile == "" {
-		return nil, fmt.Errorf("TLS configuration is incomplete")
+		return nil, errTLSConfigurationIsIncomplete
 	}
 
 	return &Watcher{
@@ -118,10 +125,10 @@ func NewWatcherWithTLS(ctx context.Context, nodeName, agentVersion, controllerAd
 // NewRemoteWatcher creates a new config watcher for remote cluster agents with mTLS and cluster identification
 func NewRemoteWatcher(ctx context.Context, nodeName, agentVersion, controllerAddr string, tlsConfig *TLSConfig, clusterConfig *ClusterConfig, logger *zap.Logger) (*Watcher, error) {
 	if tlsConfig == nil || tlsConfig.CertFile == "" || tlsConfig.KeyFile == "" || tlsConfig.CAFile == "" {
-		return nil, fmt.Errorf("TLS configuration is required for remote agents")
+		return nil, errTLSConfigurationIsRequiredForRemoteAgents
 	}
 	if clusterConfig == nil || clusterConfig.Name == "" {
-		return nil, fmt.Errorf("cluster configuration is required for remote agents")
+		return nil, errClusterConfigurationIsRequiredForRemoteAgents
 	}
 
 	return &Watcher{

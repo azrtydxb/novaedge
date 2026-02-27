@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -10,6 +11,10 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+var (
+	errNodeFlagIsRequired = errors.New("--node flag is required")
 )
 
 var (
@@ -47,7 +52,7 @@ or route configuration.`,
 
 func runLogsAccess(_ *cobra.Command, _ []string) error {
 	if accessLogNodeName == "" {
-		return fmt.Errorf("--node flag is required")
+		return errNodeFlagIsRequired
 	}
 
 	ctx := context.Background()
@@ -68,7 +73,7 @@ func runLogsAccess(_ *cobra.Command, _ []string) error {
 	}
 
 	if len(pods.Items) == 0 {
-		return fmt.Errorf("no agent found on node %s", accessLogNodeName)
+		return fmt.Errorf("%w: %s", errNoAgentFoundOnNode, accessLogNodeName)
 	}
 
 	pod := pods.Items[0]

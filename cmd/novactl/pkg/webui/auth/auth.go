@@ -14,6 +14,15 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+var (
+	errAuthenticationIsNotConfigured = errors.New("authentication is not configured")
+	errInvalidCredentials            = errors.New("invalid credentials")
+	errUnexpectedSigningMethod       = errors.New("unexpected signing method")
+	errSessionNotFound               = errors.New("session not found")
+	errInvalidSessionData            = errors.New("invalid session data")
+	errSessionExpired                = errors.New("session expired")
+)
+
 const (
 	// jwtSecretSize is the size of the random JWT signing secret in bytes.
 	jwtSecretSize = 32
@@ -70,11 +79,11 @@ func NewManager(config Config) (*Manager, error) {
 // Login validates the provided credentials and returns a JWT token on success.
 func (m *Manager) Login(user, pass string) (string, error) {
 	if !m.config.Enabled() {
-		return "", errors.New("authentication is not configured")
+		return "", errAuthenticationIsNotConfigured
 	}
 
 	if user != m.config.BasicUser || pass != m.config.BasicPass {
-		return "", errors.New("invalid credentials")
+		return "", errInvalidCredentials
 	}
 
 	token, err := m.createToken(user)
@@ -110,7 +119,7 @@ func (m *Manager) createToken(user string) (string, error) {
 func (m *Manager) ValidateToken(tokenStr string) error {
 	_, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			return nil, fmt.Errorf("%w: %v", errUnexpectedSigningMethod, t.Header["alg"])
 		}
 		return m.jwtSecret, nil
 	})
@@ -120,17 +129,17 @@ func (m *Manager) ValidateToken(tokenStr string) error {
 
 	expiry, ok := m.sessions.Load(tokenStr)
 	if !ok {
-		return errors.New("session not found")
+		return errSessionNotFound
 	}
 
 	expiryTime, ok := expiry.(time.Time)
 	if !ok {
-		return errors.New("invalid session data")
+		return errInvalidSessionData
 	}
 
 	if time.Now().After(expiryTime) {
 		m.sessions.Delete(tokenStr)
-		return errors.New("session expired")
+		return errSessionExpired
 	}
 
 	return nil

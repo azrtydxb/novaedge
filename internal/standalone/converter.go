@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -33,6 +34,10 @@ import (
 
 	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errInvalidByteSize = errors.New("invalid byte size")
 )
 
 // Converter converts standalone config to protobuf ConfigSnapshot
@@ -880,12 +885,12 @@ func standaloneParseByteSize(s string) (int64, error) {
 			numStr := strings.TrimSuffix(s, suffix)
 			n, err := strconv.ParseInt(numStr, 10, 64)
 			if err != nil {
-				return 0, fmt.Errorf("invalid byte size: %s", s)
+				return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 			}
 			return n * mult, nil
 		}
 	}
-	return 0, fmt.Errorf("invalid byte size: %s", s)
+	return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 }
 
 func (c *Converter) convertL4Listeners(configs []L4ListenerStandaloneConfig, endpoints map[string]*pb.EndpointList) []*pb.L4Listener {

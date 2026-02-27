@@ -19,12 +19,13 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -34,6 +35,11 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller/federation"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errFailedToDeepCopyDesiredObjectFor = errors.New("failed to deep copy desired object for")
+	errFailedToDeepCopyStubObjectFor    = errors.New("failed to deep copy stub object for")
 )
 
 const (
@@ -198,13 +204,13 @@ func (a *FederationResourceApplier) createOrUpdate(ctx context.Context, key fede
 	// Ensure the object has the correct namespace and name for the lookup
 	desired, ok := obj.DeepCopyObject().(client.Object)
 	if !ok {
-		return fmt.Errorf("failed to deep copy desired object for %s %s/%s", key.Kind, key.Namespace, key.Name)
+		return fmt.Errorf("%w: %s %s/%s", errFailedToDeepCopyDesiredObjectFor, key.Kind, key.Namespace, key.Name)
 	}
 
 	// Build a fresh stub for the CreateOrUpdate lookup key
 	stub, ok := obj.DeepCopyObject().(client.Object)
 	if !ok {
-		return fmt.Errorf("failed to deep copy stub object for %s %s/%s", key.Kind, key.Namespace, key.Name)
+		return fmt.Errorf("%w: %s %s/%s", errFailedToDeepCopyStubObjectFor, key.Kind, key.Namespace, key.Name)
 	}
 	stub.SetName(key.Name)
 	stub.SetNamespace(key.Namespace)
@@ -257,7 +263,7 @@ func (a *FederationResourceApplier) deleteResource(ctx context.Context, key fede
 	}
 
 	if err := a.client.Get(ctx, objKey, obj); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Already gone, nothing to do
 			a.logger.Debug("Resource already deleted",
 				zap.String("resource", key.String()),
@@ -281,7 +287,7 @@ func (a *FederationResourceApplier) deleteResource(ctx context.Context, key fede
 			UID: uidPtr(obj.GetUID()),
 		},
 	}); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return nil
 		}
 		return fmt.Errorf("failed to delete %s %s/%s: %w", key.Kind, key.Namespace, key.Name, err)

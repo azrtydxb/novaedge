@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +11,11 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+)
+
+var (
+	errCachePurgeFailedStatus = errors.New("cache purge failed (status")
+	errCacheStatsFailedStatus = errors.New("cache stats failed (status")
 )
 
 func newCacheCommand() *cobra.Command {
@@ -92,7 +98,7 @@ func runCachePurge(agentAddr, pattern string) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("cache purge failed (status %d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("%w: %d): %s", errCachePurgeFailedStatus, resp.StatusCode, string(body))
 	}
 
 	var result map[string]interface{}
@@ -129,7 +135,7 @@ func runCacheStats(agentAddr string) error {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("cache stats failed (status %d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("%w: %d): %s", errCacheStatsFailedStatus, resp.StatusCode, string(body))
 	}
 
 	var stats map[string]interface{}

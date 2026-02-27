@@ -19,6 +19,7 @@ package standalone
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -28,6 +29,15 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/acme"
 	"go.uber.org/zap"
+)
+
+var (
+	errConfigIsRequired             = errors.New("config is required")
+	errUnsupportedIssuerType        = errors.New("unsupported issuer type")
+	errCertificateNotFound          = errors.New("certificate not found")
+	errCertificateNotLoaded         = errors.New("certificate not loaded")
+	errCertificateHasInvalidTypeFor = errors.New("certificate has invalid type for")
+	errNoCertificateAvailableFor    = errors.New("no certificate available for")
 )
 
 const (
@@ -73,7 +83,7 @@ type ManagedCertificate struct {
 // NewCertificateManager creates a new certificate manager.
 func NewCertificateManager(config *Config, storagePath string, logger *zap.Logger) (*CertificateManager, error) {
 	if config == nil {
-		return nil, fmt.Errorf("config is required")
+		return nil, errConfigIsRequired
 	}
 	if storagePath == "" {
 		storagePath = "/var/lib/novaedge/certs"
@@ -139,7 +149,7 @@ func (m *CertificateManager) initializeCertificate(ctx context.Context, certConf
 			return err
 		}
 	default:
-		return fmt.Errorf("unsupported issuer type: %s", certConfig.Issuer.Type)
+		return fmt.Errorf("%w: %s", errUnsupportedIssuerType, certConfig.Issuer.Type)
 	}
 
 	m.certificates[certConfig.Name] = mc
@@ -322,17 +332,17 @@ func (m *CertificateManager) GetCertificate(name string) (*tls.Certificate, erro
 
 	mc, ok := m.certificates[name]
 	if !ok {
-		return nil, fmt.Errorf("certificate not found: %s", name)
+		return nil, fmt.Errorf("%w: %s", errCertificateNotFound, name)
 	}
 
 	cert := mc.certificate.Load()
 	if cert == nil {
-		return nil, fmt.Errorf("certificate not loaded: %s", name)
+		return nil, fmt.Errorf("%w: %s", errCertificateNotLoaded, name)
 	}
 
 	tlsCert, ok := cert.(*tls.Certificate)
 	if !ok {
-		return nil, fmt.Errorf("certificate has invalid type for: %s", name)
+		return nil, fmt.Errorf("%w: %s", errCertificateHasInvalidTypeFor, name)
 	}
 	return tlsCert, nil
 }
@@ -370,7 +380,7 @@ func (m *CertificateManager) GetCertificateFunc() func(*tls.ClientHelloInfo) (*t
 			}
 		}
 
-		return nil, fmt.Errorf("no certificate available for %s", serverName)
+		return nil, fmt.Errorf("%w: %s", errNoCertificateAvailableFor, serverName)
 	}
 }
 

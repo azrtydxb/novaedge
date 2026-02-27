@@ -18,12 +18,22 @@ limitations under the License.
 package standalone
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
+)
+
+var (
+	errVersionIsRequired            = errors.New("version is required")
+	errAtLeastOneListenerIsRequired = errors.New("at least one listener is required")
+	errCertificate                  = errors.New("certificate[")
+	errListener                     = errors.New("listener[")
+	errBackend                      = errors.New("backend[")
+	errRoute                        = errors.New("route[")
 )
 
 // protocolTLS is the TLS protocol identifier used in listener and L4 configuration.
@@ -971,75 +981,75 @@ func LoadConfig(path string) (*Config, error) {
 // Validate validates the configuration
 func (c *Config) Validate() error {
 	if c.Version == "" {
-		return fmt.Errorf("version is required")
+		return errVersionIsRequired
 	}
 
 	if len(c.Listeners) == 0 {
-		return fmt.Errorf("at least one listener is required")
+		return errAtLeastOneListenerIsRequired
 	}
 
 	// Build certificate name map for validation
 	certNames := make(map[string]bool)
 	for i, cert := range c.Certificates {
 		if cert.Name == "" {
-			return fmt.Errorf("certificate[%d]: name is required", i)
+			return fmt.Errorf("%w: %d]: name is required", errCertificate, i)
 		}
 		if certNames[cert.Name] {
-			return fmt.Errorf("certificate[%d]: duplicate name %s", i, cert.Name)
+			return fmt.Errorf("%w: %d]: duplicate name %s", errCertificate, i, cert.Name)
 		}
 		certNames[cert.Name] = true
 
 		if len(cert.Domains) == 0 {
-			return fmt.Errorf("certificate[%d]: at least one domain is required", i)
+			return fmt.Errorf("%w: %d]: at least one domain is required", errCertificate, i)
 		}
 		if cert.Issuer.Type == "" {
-			return fmt.Errorf("certificate[%d]: issuer type is required", i)
+			return fmt.Errorf("%w: %d]: issuer type is required", errCertificate, i)
 		}
 
 		switch cert.Issuer.Type {
 		case "acme":
 			if cert.Issuer.ACME == nil {
-				return fmt.Errorf("certificate[%d]: ACME configuration required for type acme", i)
+				return fmt.Errorf("%w: %d]: ACME configuration required for type acme", errCertificate, i)
 			}
 			if cert.Issuer.ACME.Email == "" {
-				return fmt.Errorf("certificate[%d]: ACME email is required", i)
+				return fmt.Errorf("%w: %d]: ACME email is required", errCertificate, i)
 			}
 		case "manual":
 			if cert.Issuer.Manual == nil {
-				return fmt.Errorf("certificate[%d]: manual configuration required for type manual", i)
+				return fmt.Errorf("%w: %d]: manual configuration required for type manual", errCertificate, i)
 			}
 			if cert.Issuer.Manual.CertFile == "" || cert.Issuer.Manual.KeyFile == "" {
-				return fmt.Errorf("certificate[%d]: certFile and keyFile are required for manual issuer", i)
+				return fmt.Errorf("%w: %d]: certFile and keyFile are required for manual issuer", errCertificate, i)
 			}
 		case "self-signed":
 			// Self-signed config is optional
 		default:
-			return fmt.Errorf("certificate[%d]: invalid issuer type %s", i, cert.Issuer.Type)
+			return fmt.Errorf("%w: %d]: invalid issuer type %s", errCertificate, i, cert.Issuer.Type)
 		}
 	}
 
 	// Validate listeners
 	for i, l := range c.Listeners {
 		if l.Name == "" {
-			return fmt.Errorf("listener[%d]: name is required", i)
+			return fmt.Errorf("%w: %d]: name is required", errListener, i)
 		}
 		if l.Port <= 0 || l.Port > 65535 {
-			return fmt.Errorf("listener[%d]: invalid port %d", i, l.Port)
+			return fmt.Errorf("%w: %d]: invalid port %d", errListener, i, l.Port)
 		}
 		if l.Protocol == "" {
-			return fmt.Errorf("listener[%d]: protocol is required", i)
+			return fmt.Errorf("%w: %d]: protocol is required", errListener, i)
 		}
 		if l.Protocol == "HTTPS" || l.Protocol == protocolTLS {
 			if l.TLS == nil {
-				return fmt.Errorf("listener[%d]: TLS configuration required for %s", i, l.Protocol)
+				return fmt.Errorf("%w: %d]: TLS configuration required for %s", errListener, i, l.Protocol)
 			}
 			// Validate TLS config - either cert/key files or certificate reference
 			if l.TLS.Certificate != "" {
 				if !certNames[l.TLS.Certificate] {
-					return fmt.Errorf("listener[%d]: unknown certificate %s", i, l.TLS.Certificate)
+					return fmt.Errorf("%w: %d]: unknown certificate %s", errListener, i, l.TLS.Certificate)
 				}
 			} else if l.TLS.CertFile == "" || l.TLS.KeyFile == "" {
-				return fmt.Errorf("listener[%d]: either certificate reference or certFile/keyFile required", i)
+				return fmt.Errorf("%w: %d]: either certificate reference or certFile/keyFile required", errListener, i)
 			}
 		}
 	}
@@ -1048,29 +1058,29 @@ func (c *Config) Validate() error {
 	backendNames := make(map[string]bool)
 	for i, b := range c.Backends {
 		if b.Name == "" {
-			return fmt.Errorf("backend[%d]: name is required", i)
+			return fmt.Errorf("%w: %d]: name is required", errBackend, i)
 		}
 		if backendNames[b.Name] {
-			return fmt.Errorf("backend[%d]: duplicate name %s", i, b.Name)
+			return fmt.Errorf("%w: %d]: duplicate name %s", errBackend, i, b.Name)
 		}
 		backendNames[b.Name] = true
 
 		if len(b.Endpoints) == 0 {
-			return fmt.Errorf("backend[%d]: at least one endpoint is required", i)
+			return fmt.Errorf("%w: %d]: at least one endpoint is required", errBackend, i)
 		}
 	}
 
 	// Validate routes
 	for i, r := range c.Routes {
 		if r.Name == "" {
-			return fmt.Errorf("route[%d]: name is required", i)
+			return fmt.Errorf("%w: %d]: name is required", errRoute, i)
 		}
 		if len(r.Backends) == 0 {
-			return fmt.Errorf("route[%d]: at least one backend is required", i)
+			return fmt.Errorf("%w: %d]: at least one backend is required", errRoute, i)
 		}
 		for j, br := range r.Backends {
 			if !backendNames[br.Name] {
-				return fmt.Errorf("route[%d].backends[%d]: unknown backend %s", i, j, br.Name)
+				return fmt.Errorf("%w: %d].backends[%d]: unknown backend %s", errRoute, i, j, br.Name)
 			}
 		}
 	}

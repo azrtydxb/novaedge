@@ -20,11 +20,15 @@ package afxdp
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"time"
 
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
 	"go.uber.org/zap"
+)
+
+var (
+	errAFXDPIsOnlySupportedOnLinux = errors.New("AF_XDP is only supported on Linux")
 )
 
 // PacketProcessor processes raw Ethernet frames.
@@ -59,7 +63,7 @@ func NewWorker(_ *zap.Logger, _ *novaebpf.ProgramLoader, _ WorkerConfig, _ Packe
 
 // Start returns an error on non-Linux platforms.
 func (w *Worker) Start(_ context.Context) error {
-	return fmt.Errorf("AF_XDP is only supported on Linux")
+	return errAFXDPIsOnlySupportedOnLinux
 }
 
 // Stop is a no-op on non-Linux platforms.
@@ -67,7 +71,7 @@ func (w *Worker) Stop() error { return nil }
 
 // SyncVIPs returns an error on non-Linux platforms.
 func (w *Worker) SyncVIPs(_ []VIPKey) error {
-	return fmt.Errorf("AF_XDP is only supported on Linux")
+	return errAFXDPIsOnlySupportedOnLinux
 }
 
 // Stats returns an empty map on non-Linux platforms.

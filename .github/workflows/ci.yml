@@ -84,6 +84,14 @@ jobs:
           go generate ./internal/agent/ebpfmesh/
           go generate ./internal/agent/afxdp/
 
+      - name: Verify generated eBPF files are committed
+        run: |
+          if [ -n "$(git diff --name-only)" ]; then
+            echo "::error::Generated eBPF files are out of date. Run 'go generate ./internal/agent/ebpf/...' on Linux and commit the results."
+            git diff --name-only
+            exit 1
+          fi
+
       - name: Run gofmt
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
@@ -187,7 +195,17 @@ jobs:
       - name: Run unit tests
         run: |
           ulimit -l unlimited 2>/dev/null || true
-          go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -race -coverprofile=coverage.out -covermode=atomic ./... 2>&1 | tee test-output.log
+
+      - name: Check for skipped eBPF tests
+        if: always()
+        run: |
+          if grep -q "Skipping: eBPF unavailable" test-output.log 2>/dev/null; then
+            echo "::notice::Some eBPF tests were skipped due to insufficient privileges. Run with CAP_BPF/CAP_SYS_ADMIN to execute them."
+            echo "### eBPF Tests Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "Some eBPF tests were skipped because the CI runner lacks CAP_BPF/CAP_SYS_ADMIN privileges." >> $GITHUB_STEP_SUMMARY
+            echo "These tests require a privileged environment to run." >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Display coverage
         run: |

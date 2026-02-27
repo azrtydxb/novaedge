@@ -19,26 +19,11 @@ package ratelimit
 import (
 	"net"
 	"runtime"
-	"strings"
 	"testing"
 
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/testutil"
 	"go.uber.org/zap/zaptest"
 )
-
-// skipIfBPFUnavailable skips the test if the error indicates that eBPF map
-// creation failed due to insufficient privileges (MEMLOCK limit or missing
-// CAP_BPF/CAP_SYS_ADMIN). This allows tests to pass in unprivileged CI.
-func skipIfBPFUnavailable(t *testing.T, err error) {
-	t.Helper()
-	if err == nil {
-		return
-	}
-	msg := err.Error()
-	if strings.Contains(msg, "operation not permitted") ||
-		strings.Contains(msg, "MEMLOCK") {
-		t.Skipf("Skipping: eBPF unavailable (insufficient privileges): %v", err)
-	}
-}
 
 func TestNewRateLimiter(t *testing.T) {
 	logger := zaptest.NewLogger(t)
@@ -52,7 +37,7 @@ func TestNewRateLimiter(t *testing.T) {
 		return
 	}
 
-	skipIfBPFUnavailable(t, err)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
@@ -74,7 +59,7 @@ func TestRateLimiterConfigure(t *testing.T) {
 		return
 	}
 
-	skipIfBPFUnavailable(t, err)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
@@ -96,7 +81,7 @@ func TestRateLimiterGetStats(t *testing.T) {
 		return
 	}
 
-	skipIfBPFUnavailable(t, err)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
@@ -125,7 +110,7 @@ func TestRateLimiterCheckAllowed(t *testing.T) {
 		return
 	}
 
-	skipIfBPFUnavailable(t, err)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
@@ -153,7 +138,7 @@ func TestRateLimiterCloseIdempotent(t *testing.T) {
 		return
 	}
 
-	skipIfBPFUnavailable(t, err)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}

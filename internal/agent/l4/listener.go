@@ -20,6 +20,7 @@ package l4
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -28,6 +29,11 @@ import (
 	"go.uber.org/zap"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errUnknownListenerType   = errors.New("unknown listener type")
+	errExpectedNetUDPConnGot = errors.New("expected *net.UDPConn, got")
 )
 
 // ListenerType represents the type of L4 listener
@@ -182,7 +188,7 @@ func (m *Manager) startListenerLocked(parentCtx context.Context, cfg ListenerCon
 		}
 	default:
 		cancel()
-		return fmt.Errorf("unknown listener type: %s", cfg.Type)
+		return fmt.Errorf("%w: %s", errUnknownListenerType, cfg.Type)
 	}
 
 	m.listeners[key] = active
@@ -257,7 +263,7 @@ func (m *Manager) startUDPListener(ctx context.Context, active *activeListener) 
 	udpConn, ok := pc.(*net.UDPConn)
 	if !ok {
 		_ = pc.Close()
-		return fmt.Errorf("expected *net.UDPConn, got %T", pc)
+		return fmt.Errorf("%w: %T", errExpectedNetUDPConnGot, pc)
 	}
 	active.udpConn = udpConn
 

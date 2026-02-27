@@ -17,6 +17,7 @@ limitations under the License.
 package tunnel
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -24,6 +25,10 @@ import (
 
 	"github.com/pion/stun/v3"
 	"go.uber.org/zap"
+)
+
+var (
+	errNoAddressReturnedFrom = errors.New("no address returned from")
 )
 
 var defaultSTUNServers = []string{
@@ -142,7 +147,7 @@ func (d *STUNDiscoverer) querySTUN(server string) (*net.UDPAddr, error) {
 		return nil, resultErr
 	}
 	if resultAddr == nil {
-		return nil, fmt.Errorf("no address returned from %s", server)
+		return nil, fmt.Errorf("%w: %s", errNoAddressReturnedFrom, server)
 	}
 
 	return resultAddr, nil

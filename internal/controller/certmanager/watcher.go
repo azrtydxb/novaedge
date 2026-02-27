@@ -18,6 +18,7 @@ package certmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -28,6 +29,10 @@ import (
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+var (
+	errWatchChannelClosed = errors.New("watch channel closed")
 )
 
 // CertificateWatcher watches cert-manager Certificate resources for changes
@@ -143,7 +148,7 @@ func (w *CertificateWatcher) watch(ctx context.Context) error {
 			return nil
 		case event, ok := <-watcher.ResultChan():
 			if !ok {
-				return fmt.Errorf("watch channel closed")
+				return errWatchChannelClosed
 			}
 			if event.Type == watch.Modified || event.Type == watch.Added {
 				w.handleCertificateEvent(ctx, event.Object)

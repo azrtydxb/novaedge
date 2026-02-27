@@ -18,6 +18,7 @@ package server
 
 import (
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -25,6 +26,10 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errNoTLSCertificatesConfigured = errors.New("no TLS certificates configured")
 )
 
 // createTLSConfigWithSNI creates a tls.Config with SNI support for multiple certificates
@@ -62,7 +67,7 @@ func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config,
 	}
 
 	if defaultCert == nil {
-		return nil, fmt.Errorf("no TLS certificates configured")
+		return nil, errNoTLSCertificatesConfigured
 	}
 
 	// Get TLS settings from first certificate config

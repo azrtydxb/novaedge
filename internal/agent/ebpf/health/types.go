@@ -18,8 +18,14 @@ package health
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
+)
+
+var (
+	errInvalidIPAddress = errors.New("invalid IP address")
+	errNotAnIPv4Address = errors.New("not an IPv4 address")
 )
 
 // BackendKey identifies a backend by its IP address and port. The
@@ -35,11 +41,11 @@ type BackendKey struct {
 func NewBackendKey(ip string, port uint16) (BackendKey, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return BackendKey{}, fmt.Errorf("invalid IP address: %s", ip)
+		return BackendKey{}, fmt.Errorf("%w: %s", errInvalidIPAddress, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return BackendKey{}, fmt.Errorf("not an IPv4 address: %s", ip)
+		return BackendKey{}, fmt.Errorf("%w: %s", errNotAnIPv4Address, ip)
 	}
 	key := BackendKey{
 		Port: port,

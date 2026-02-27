@@ -22,6 +22,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,11 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+)
+
+var (
+	errVaultReturnedStatus = errors.New("vault returned status")
+	errFailedToParseCACert = errors.New("failed to parse CA cert")
 )
 
 const (
@@ -144,7 +150,7 @@ func (c *vaultHTTPClient) doRequest(req *http.Request) (*Response, error) {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("vault returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: %d: %s", errVaultReturnedStatus, resp.StatusCode, string(body))
 	}
 
 	// Parse response
@@ -174,7 +180,7 @@ func (c *vaultHTTPClient) newHTTPClient() (*http.Client, error) {
 		}
 		pool := x509.NewCertPool()
 		if !pool.AppendCertsFromPEM(caCert) {
-			return nil, fmt.Errorf("failed to parse CA cert")
+			return nil, errFailedToParseCACert
 		}
 		tlsConfig.RootCAs = pool
 	}

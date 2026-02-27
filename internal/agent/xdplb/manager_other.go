@@ -19,13 +19,17 @@ limitations under the License.
 package xdplb
 
 import (
-	"fmt"
+	"errors"
 	"net"
 
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/conntrack"
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/maglev"
 	"go.uber.org/zap"
+)
+
+var (
+	errXDPLBIsOnlySupportedOnLinux = errors.New("XDP LB is only supported on Linux")
 )
 
 // L4Route describes a VIP-to-backends mapping for XDP fast-path LB.
@@ -53,7 +57,7 @@ func NewManager(_ *zap.Logger, _ *novaebpf.ProgramLoader, _ string) *Manager {
 
 // Start returns an error on non-Linux platforms.
 func (m *Manager) Start() error {
-	return fmt.Errorf("XDP LB is only supported on Linux")
+	return errXDPLBIsOnlySupportedOnLinux
 }
 
 // Stop is a no-op on non-Linux platforms.
@@ -61,7 +65,7 @@ func (m *Manager) Stop() error { return nil }
 
 // SyncBackends returns an error on non-Linux platforms.
 func (m *Manager) SyncBackends(_ []L4Route) error {
-	return fmt.Errorf("XDP LB is only supported on Linux")
+	return errXDPLBIsOnlySupportedOnLinux
 }
 
 // Stats returns an empty map on non-Linux platforms.

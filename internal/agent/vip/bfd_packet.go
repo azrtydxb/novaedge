@@ -22,6 +22,10 @@ import (
 	"fmt"
 )
 
+var (
+	errCannotEncodeNilBFDPacket = errors.New("cannot encode nil BFD packet")
+)
+
 // BFD control packet constants per RFC 5880 Section 4.1
 const (
 	bfdPacketLength = 24 // Fixed header length without authentication
@@ -80,7 +84,7 @@ var (
 // encodeBFDPacket encodes a BFD control packet into its wire format per RFC 5880.
 func encodeBFDPacket(pkt *bfdControlPacket) ([]byte, error) {
 	if pkt == nil {
-		return nil, errors.New("cannot encode nil BFD packet")
+		return nil, errCannotEncodeNilBFDPacket
 	}
 
 	buf := make([]byte, bfdPacketLength)

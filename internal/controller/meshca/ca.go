@@ -26,6 +26,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -38,6 +39,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+)
+
+var (
+	errMeshCANotInitialized           = errors.New("mesh CA not initialized")
+	errFailedToDecodeCSRPEM           = errors.New("failed to decode CSR PEM")
+	errSecret                         = errors.New("secret")
+	errFailedToDecodeCACertificatePEM = errors.New("failed to decode CA certificate PEM")
+	errFailedToDecodeCAPrivateKeyPEM  = errors.New("failed to decode CA private key PEM")
 )
 
 const (
@@ -156,12 +165,12 @@ func (ca *MeshCA) SignCSR(csrPEM []byte, nodeName string) ([]byte, error) {
 	defer ca.mu.RUnlock()
 
 	if ca.caCert == nil || ca.caKey == nil {
-		return nil, fmt.Errorf("mesh CA not initialized")
+		return nil, errMeshCANotInitialized
 	}
 
 	block, _ := pem.Decode(csrPEM)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
-		return nil, fmt.Errorf("failed to decode CSR PEM")
+		return nil, errFailedToDecodeCSRPEM
 	}
 
 	csr, err := x509.ParseCertificateRequest(block.Bytes)
@@ -281,17 +290,17 @@ func (ca *MeshCA) generateRootCA() error {
 func (ca *MeshCA) loadFromSecret(secret *corev1.Secret) error {
 	certPEM, ok := secret.Data[caSecretKeyCA]
 	if !ok {
-		return fmt.Errorf("secret %s/%s missing key %q", caSecretNamespace, caSecretName, caSecretKeyCA)
+		return fmt.Errorf("%w: %s/%s missing key %q", errSecret, caSecretNamespace, caSecretName, caSecretKeyCA)
 	}
 
 	keyPEM, ok := secret.Data[caSecretKeyKey]
 	if !ok {
-		return fmt.Errorf("secret %s/%s missing key %q", caSecretNamespace, caSecretName, caSecretKeyKey)
+		return fmt.Errorf("%w: %s/%s missing key %q", errSecret, caSecretNamespace, caSecretName, caSecretKeyKey)
 	}
 
 	certBlock, _ := pem.Decode(certPEM)
 	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
-		return fmt.Errorf("failed to decode CA certificate PEM")
+		return errFailedToDecodeCACertificatePEM
 	}
 
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
@@ -301,7 +310,7 @@ func (ca *MeshCA) loadFromSecret(secret *corev1.Secret) error {
 
 	keyBlock, _ := pem.Decode(keyPEM)
 	if keyBlock == nil || keyBlock.Type != "EC PRIVATE KEY" {
-		return fmt.Errorf("failed to decode CA private key PEM")
+		return errFailedToDecodeCAPrivateKeyPEM
 	}
 
 	key, err := x509.ParseECPrivateKey(keyBlock.Bytes)

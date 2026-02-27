@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,6 +31,10 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errSnapshotHashMismatch = errors.New("snapshot hash mismatch")
 )
 
 const (
@@ -219,7 +224,7 @@ func (cp *Persistence) LoadSnapshot() (*pb.ConfigSnapshot, error) {
 		hash := sha256.Sum256(data)
 		hashStr := hex.EncodeToString(hash[:])
 		if hashStr != cp.metadata.ContentHash {
-			return nil, fmt.Errorf("snapshot hash mismatch")
+			return nil, errSnapshotHashMismatch
 		}
 	}
 

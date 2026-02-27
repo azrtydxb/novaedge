@@ -19,10 +19,14 @@ limitations under the License.
 package sockmap
 
 import (
-	"fmt"
+	"errors"
 	"net"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFSOCKMAPIsOnlySupportedOnLinux = errors.New("eBPF SOCKMAP is only supported on Linux")
 )
 
 // Manager is a stub on non-Linux platforms where eBPF SOCKMAP is not available.
@@ -31,27 +35,27 @@ type Manager struct{}
 // NewSockMapManager returns an error on non-Linux platforms since eBPF
 // SOCKMAP requires Linux kernel support.
 func NewSockMapManager(_ *zap.Logger) (*Manager, error) {
-	return nil, fmt.Errorf("eBPF SOCKMAP is only supported on Linux")
+	return nil, errEBPFSOCKMAPIsOnlySupportedOnLinux
 }
 
 // AddSameNodeEndpoint returns an error on non-Linux platforms.
 func (m *Manager) AddSameNodeEndpoint(_ net.IP, _ uint16) error {
-	return fmt.Errorf("eBPF SOCKMAP is only supported on Linux")
+	return errEBPFSOCKMAPIsOnlySupportedOnLinux
 }
 
 // RemoveSameNodeEndpoint returns an error on non-Linux platforms.
 func (m *Manager) RemoveSameNodeEndpoint(_ net.IP, _ uint16) error {
-	return fmt.Errorf("eBPF SOCKMAP is only supported on Linux")
+	return errEBPFSOCKMAPIsOnlySupportedOnLinux
 }
 
 // SyncEndpoints returns an error on non-Linux platforms.
 func (m *Manager) SyncEndpoints(_ map[EndpointKey]EndpointValue) error {
-	return fmt.Errorf("eBPF SOCKMAP is only supported on Linux")
+	return errEBPFSOCKMAPIsOnlySupportedOnLinux
 }
 
 // GetStats returns an error on non-Linux platforms.
 func (m *Manager) GetStats() (uint64, uint64, error) {
-	return 0, 0, fmt.Errorf("eBPF SOCKMAP is only supported on Linux")
+	return 0, 0, errEBPFSOCKMAPIsOnlySupportedOnLinux
 }
 
 // Close is a no-op on non-Linux platforms.

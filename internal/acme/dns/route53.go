@@ -23,14 +23,20 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errRoute53CredentialsMustIncludeAccessKeyIDAnd = errors.New("route53 credentials must include 'access_key_id' and 'secret_access_key'")
+	errRoute53CredentialsMustIncludeHostedZoneID   = errors.New("route53 credentials must include 'hosted_zone_id'")
+	errRoute53APIErrorStatus                       = errors.New("route53 API error (status")
 )
 
 const (
@@ -58,10 +64,10 @@ func NewRoute53Provider(credentials map[string]string, config *ProviderConfig) (
 	hostedZone := credentials["hosted_zone_id"]
 
 	if accessKey == "" || secretKey == "" {
-		return nil, fmt.Errorf("route53 credentials must include 'access_key_id' and 'secret_access_key'")
+		return nil, errRoute53CredentialsMustIncludeAccessKeyIDAnd
 	}
 	if hostedZone == "" {
-		return nil, fmt.Errorf("route53 credentials must include 'hosted_zone_id'")
+		return nil, errRoute53CredentialsMustIncludeHostedZoneID
 	}
 
 	region := credentials["region"]
@@ -92,33 +98,7 @@ func (p *Route53Provider) DeleteTXTRecord(ctx context.Context, fqdn, value strin
 
 // WaitForPropagation waits for the TXT record to be visible in DNS.
 func (p *Route53Provider) WaitForPropagation(ctx context.Context, fqdn, value string) error {
-	timeout := time.After(p.config.PropagationTimeout)
-	ticker := time.NewTicker(p.config.PollingInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("DNS propagation timeout for %s after %s", fqdn, p.config.PropagationTimeout)
-		case <-ticker.C:
-			resolver := &net.Resolver{}
-			records, err := resolver.LookupTXT(ctx, strings.TrimSuffix(fqdn, "."))
-			if err != nil {
-				p.logger.Debug("DNS lookup not yet propagated",
-					zap.String("fqdn", fqdn),
-					zap.Error(err))
-				continue
-			}
-			for _, record := range records {
-				if record == value {
-					p.logger.Info("DNS propagation confirmed", zap.String("fqdn", fqdn))
-					return nil
-				}
-			}
-		}
-	}
+	return waitForDNSPropagation(ctx, fqdn, value, p.config.PropagationTimeout, p.config.PollingInterval, p.logger)
 }
 
 // changeRecord performs a Route 53 change resource record set operation.
@@ -177,7 +157,7 @@ func (p *Route53Provider) changeRecord(ctx context.Context, action, fqdn, value 
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("route53 API error (status %d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("%w: %d): %s", errRoute53APIErrorStatus, resp.StatusCode, string(body))
 	}
 
 	p.logger.Info("Route53 record change successful",

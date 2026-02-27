@@ -17,7 +17,14 @@ limitations under the License.
 // Package tunnel provides optional network tunnel implementations for cross-cluster NAT/firewall traversal.
 package tunnel
 
-import "context"
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"go.uber.org/zap"
+)
 
 // Tunnel is the interface that all network tunnel implementations must satisfy.
 // Each tunnel provides L3/L4 connectivity to a remote cluster for NAT/firewall
@@ -42,4 +49,55 @@ type Tunnel interface {
 
 	// Type returns the tunnel type identifier ("wireguard", "ssh", or "websocket").
 	Type() string
+}
+
+// maintainTunnelConnection is a shared reconnection loop used by SSH and WebSocket tunnels.
+// It handles exponential backoff, health tracking, and the connect/forward/cleanup lifecycle.
+func maintainTunnelConnection(
+	ctx context.Context,
+	done chan struct{},
+	healthy *atomic.Bool,
+	mu *sync.RWMutex,
+	logger *zap.Logger,
+	tunnelType string,
+	localAddr func() string,
+	connect func(context.Context) error,
+	runForwardingLoop func(context.Context),
+	closeConnections func(),
+) {
+	defer close(done)
+
+	backoff := time.Second
+	for {
+		if err := connect(ctx); err != nil {
+			logger.Error(tunnelType+" connection failed", zap.Error(err), zap.Duration("backoff", backoff))
+			healthy.Store(false)
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+
+			backoff = minDuration(backoff*2, maxBackoff)
+			continue
+		}
+
+		healthy.Store(true)
+		backoff = time.Second
+		logger.Info(tunnelType+" tunnel established", zap.String("localAddr", localAddr()))
+
+		runForwardingLoop(ctx)
+
+		mu.Lock()
+		closeConnections()
+		mu.Unlock()
+		healthy.Store(false)
+
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+	}
 }

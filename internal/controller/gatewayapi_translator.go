@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -24,6 +25,23 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+)
+
+var (
+	errGatewayClass                                   = errors.New("gateway class")
+	errUnsupportedProtocol                            = errors.New("unsupported protocol")
+	errListener                                       = errors.New("listener")
+	errRuleHasNoBackendRefs                           = errors.New("rule has no backend refs")
+	errUnsupportedPathMatchType                       = errors.New("unsupported path match type")
+	errUnsupportedHeaderMatchType                     = errors.New("unsupported header match type")
+	errUnsupportedQueryParamMatchType                 = errors.New("unsupported query param match type")
+	errRequestHeaderModifierFilterHasNoConfiguration  = errors.New("RequestHeaderModifier filter has no configuration")
+	errResponseHeaderModifierFilterHasNoConfiguration = errors.New("ResponseHeaderModifier filter has no configuration")
+	errRequestRedirectFilterHasNoConfiguration        = errors.New("RequestRedirect filter has no configuration")
+	errURLRewriteFilterHasNoConfiguration             = errors.New("URLRewrite filter has no configuration")
+	errRequestMirrorFilterHasNoConfiguration          = errors.New("RequestMirror filter has no configuration")
+	errUnsupportedFilterType                          = errors.New("unsupported filter type")
+	errGRPCRuleHasNoBackendRefs                       = errors.New("gRPC rule has no backend refs")
 )
 
 const (
@@ -37,7 +55,7 @@ const (
 func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) (*novaedgev1alpha1.ProxyGateway, error) {
 	// Only translate gateways with our GatewayClass
 	if string(gateway.Spec.GatewayClassName) != NovaEdgeGatewayClassName {
-		return nil, fmt.Errorf("gateway class %s is not supported, expected %s", gateway.Spec.GatewayClassName, NovaEdgeGatewayClassName)
+		return nil, fmt.Errorf("%w: %s is not supported, expected %s", errGatewayClass, gateway.Spec.GatewayClassName, NovaEdgeGatewayClassName)
 	}
 
 	// Translate listeners
@@ -96,7 +114,7 @@ func translateListener(gwListener gatewayv1.Listener, namespace string) (novaedg
 	case gatewayv1.TCPProtocolType:
 		listener.Protocol = novaedgev1alpha1.ProtocolTypeTCP
 	default:
-		return listener, fmt.Errorf("unsupported protocol: %s", gwListener.Protocol)
+		return listener, fmt.Errorf("%w: %s", errUnsupportedProtocol, gwListener.Protocol)
 	}
 
 	// Translate hostnames
@@ -107,7 +125,7 @@ func translateListener(gwListener gatewayv1.Listener, namespace string) (novaedg
 	// Translate TLS configuration
 	if gwListener.TLS != nil {
 		if len(gwListener.TLS.CertificateRefs) == 0 {
-			return listener, fmt.Errorf("listener %s has TLS configured but no certificate refs", gwListener.Name)
+			return listener, fmt.Errorf("%w: %s has TLS configured but no certificate refs", errListener, gwListener.Name)
 		}
 
 		// Use the first certificate ref
@@ -200,7 +218,7 @@ func translateHTTPRouteRule(gwRule gatewayv1.HTTPRouteRule, namespace string, _ 
 
 	// Translate backend refs with weights
 	if len(gwRule.BackendRefs) == 0 {
-		return rule, fmt.Errorf("rule has no backend refs")
+		return rule, errRuleHasNoBackendRefs
 	}
 
 	// Translate all backend refs
@@ -263,7 +281,7 @@ func translateHTTPRouteMatch(gwMatch gatewayv1.HTTPRouteMatch) (novaedgev1alpha1
 		case gatewayv1.PathMatchRegularExpression:
 			pathMatch.Type = novaedgev1alpha1.PathMatchRegularExpression
 		default:
-			return match, fmt.Errorf("unsupported path match type: %v", gwMatch.Path.Type)
+			return match, fmt.Errorf("%w: %v", errUnsupportedPathMatchType, gwMatch.Path.Type)
 		}
 
 		match.Path = pathMatch
@@ -283,7 +301,7 @@ func translateHTTPRouteMatch(gwMatch gatewayv1.HTTPRouteMatch) (novaedgev1alpha1
 			case gatewayv1.HeaderMatchRegularExpression:
 				headerMatch.Type = novaedgev1alpha1.HeaderMatchRegularExpression
 			default:
-				return match, fmt.Errorf("unsupported header match type: %v", gwHeader.Type)
+				return match, fmt.Errorf("%w: %v", errUnsupportedHeaderMatchType, gwHeader.Type)
 			}
 		} else {
 			headerMatch.Type = novaedgev1alpha1.HeaderMatchExact
@@ -306,7 +324,7 @@ func translateHTTPRouteMatch(gwMatch gatewayv1.HTTPRouteMatch) (novaedgev1alpha1
 			case gatewayv1.QueryParamMatchRegularExpression:
 				queryParamMatch.Type = novaedgev1alpha1.HeaderMatchRegularExpression
 			default:
-				return match, fmt.Errorf("unsupported query param match type: %v", gwQueryParam.Type)
+				return match, fmt.Errorf("%w: %v", errUnsupportedQueryParamMatchType, gwQueryParam.Type)
 			}
 		} else {
 			queryParamMatch.Type = novaedgev1alpha1.HeaderMatchExact
@@ -331,7 +349,7 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 	switch gwFilter.Type {
 	case gatewayv1.HTTPRouteFilterRequestHeaderModifier:
 		if gwFilter.RequestHeaderModifier == nil {
-			return filter, fmt.Errorf("RequestHeaderModifier filter has no configuration")
+			return filter, errRequestHeaderModifierFilterHasNoConfiguration
 		}
 
 		// Handle header additions
@@ -371,7 +389,7 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 
 	case gatewayv1.HTTPRouteFilterResponseHeaderModifier:
 		if gwFilter.ResponseHeaderModifier == nil {
-			return filter, fmt.Errorf("ResponseHeaderModifier filter has no configuration")
+			return filter, errResponseHeaderModifierFilterHasNoConfiguration
 		}
 
 		filter.Type = novaedgev1alpha1.HTTPRouteFilterResponseAddHeader
@@ -397,7 +415,7 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 
 	case gatewayv1.HTTPRouteFilterRequestRedirect:
 		if gwFilter.RequestRedirect == nil {
-			return filter, fmt.Errorf("RequestRedirect filter has no configuration")
+			return filter, errRequestRedirectFilterHasNoConfiguration
 		}
 
 		filter.Type = novaedgev1alpha1.HTTPRouteFilterRequestRedirect
@@ -434,7 +452,7 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 
 	case gatewayv1.HTTPRouteFilterURLRewrite:
 		if gwFilter.URLRewrite == nil {
-			return filter, fmt.Errorf("URLRewrite filter has no configuration")
+			return filter, errURLRewriteFilterHasNoConfiguration
 		}
 
 		filter.Type = novaedgev1alpha1.HTTPRouteFilterURLRewrite
@@ -458,7 +476,7 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 
 	case gatewayv1.HTTPRouteFilterRequestMirror:
 		if gwFilter.RequestMirror == nil {
-			return filter, fmt.Errorf("RequestMirror filter has no configuration")
+			return filter, errRequestMirrorFilterHasNoConfiguration
 		}
 
 		filter.Type = novaedgev1alpha1.HTTPRouteFilterRequestMirror
@@ -479,7 +497,7 @@ func translateHTTPRouteFilter(gwFilter gatewayv1.HTTPRouteFilter) (novaedgev1alp
 		}
 
 	default:
-		return filter, fmt.Errorf("unsupported filter type: %v", gwFilter.Type)
+		return filter, fmt.Errorf("%w: %v", errUnsupportedFilterType, gwFilter.Type)
 	}
 
 	return filter, nil
@@ -625,7 +643,7 @@ func translateGRPCRouteRule(gwRule gatewayv1.GRPCRouteRule, namespace string) (n
 
 	// Translate backend refs
 	if len(gwRule.BackendRefs) == 0 {
-		return rule, fmt.Errorf("gRPC rule has no backend refs")
+		return rule, errGRPCRuleHasNoBackendRefs
 	}
 
 	rule.BackendRefs = make([]novaedgev1alpha1.BackendRef, 0, len(gwRule.BackendRefs))

@@ -52,6 +52,11 @@ jobs:
           kubectl cluster-info
           kubectl get nodes
 
+      - name: Label kind nodes
+        run: |
+          kubectl get nodes -o name | xargs -I{} kubectl label {} novaedge.io/role=edge
+          kubectl get nodes --show-labels
+
       - name: Build Docker images
         run: |
           docker build -t novaedge-controller:latest -f Dockerfile.controller .
@@ -76,16 +81,28 @@ jobs:
             --set agent.image.pullPolicy=Never \
             --set webui.enabled=false \
             --wait \
-            --timeout 300s
+            --timeout 600s
+
+      - name: Show initial pod status
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n nova-system -o wide
+          echo "=== DaemonSets ==="
+          kubectl get daemonsets -n nova-system
+          echo "=== Deployments ==="
+          kubectl get deployments -n nova-system
 
       - name: Wait for pods to be ready
         run: |
+          echo "Waiting for controller pods..."
           kubectl wait --for=condition=ready --timeout=300s pod \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=controller \
             -n nova-system
-          kubectl wait --for=condition=ready --timeout=300s pod \
+          echo "Controller pods ready. Waiting for agent pods..."
+          kubectl wait --for=condition=ready --timeout=600s pod \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=agent \
             -n nova-system
+          echo "All pods ready."
 
       - name: Show pod status
         run: |
@@ -100,14 +117,33 @@ jobs:
         if: failure()
         run: |
           mkdir -p logs
+          echo "=== Pod status ==="
+          kubectl get pods -n nova-system -o wide | tee logs/pod-status.log || true
+          echo ""
+          echo "=== DaemonSet status ==="
+          kubectl get daemonsets -n nova-system -o wide | tee logs/daemonset-status.log || true
+          echo ""
+          echo "=== Describe DaemonSet ==="
+          kubectl describe daemonset -n nova-system | tee logs/daemonset-describe.log || true
+          echo ""
+          echo "=== Controller logs ==="
           kubectl logs \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=controller \
-            -n nova-system > logs/controller.log || true
+            -n nova-system --tail=200 | tee logs/controller.log || true
+          echo ""
+          echo "=== Agent logs ==="
           kubectl logs \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=agent \
-            -n nova-system > logs/agent.log || true
-          kubectl describe pods -n nova-system > logs/pods.log || true
-          kubectl get events -n nova-system --sort-by='.lastTimestamp' > logs/events.log || true
+            -n nova-system --tail=200 | tee logs/agent.log || true
+          echo ""
+          echo "=== Pod descriptions ==="
+          kubectl describe pods -n nova-system | tee logs/pods.log || true
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -n nova-system --sort-by='.lastTimestamp' | tee logs/events.log || true
+          echo ""
+          echo "=== Node info ==="
+          kubectl get nodes -o wide --show-labels | tee logs/nodes.log || true
 
       - name: Upload logs on failure
         if: failure()

@@ -18,6 +18,7 @@ package wasm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -63,11 +64,21 @@ func (p *Plugin) Config() map[string]string { return p.config.Config }
 // ExecuteRequestPhase runs the guest on_request_headers export.
 // It returns the Action the guest chose (continue or pause).
 func (p *Plugin) ExecuteRequestPhase(ctx context.Context, reqCtx *RequestContext) (Action, error) {
+	return p.executePhase(ctx, reqCtx, "request", guestExportNames.OnRequestHeaders)
+}
+
+// ExecuteResponsePhase runs the guest on_response_headers export.
+func (p *Plugin) ExecuteResponsePhase(ctx context.Context, reqCtx *RequestContext) (Action, error) {
+	return p.executePhase(ctx, reqCtx, "response", guestExportNames.OnResponseHeaders)
+}
+
+// executePhase is the shared implementation for request and response phase execution.
+func (p *Plugin) executePhase(ctx context.Context, reqCtx *RequestContext, phase, exportName string) (Action, error) {
 	start := time.Now()
 
 	inst, err := p.pool.Get(ctx)
 	if err != nil {
-		RecordPluginError(p.config.Name, "request")
+		RecordPluginError(p.config.Name, phase)
 		return ActionContinue, fmt.Errorf("failed to get WASM instance: %w", err)
 	}
 	defer p.pool.Put(inst)
@@ -75,9 +86,9 @@ func (p *Plugin) ExecuteRequestPhase(ctx context.Context, reqCtx *RequestContext
 	reqCtx.PluginConfig = p.config.Config
 	wasmCtx := withRequestContext(ctx, reqCtx)
 
-	fn := inst.module.ExportedFunction(guestExportNames.OnRequestHeaders)
+	fn := inst.module.ExportedFunction(exportName)
 	if fn == nil {
-		// Guest does not handle this phase — continue.
+		// Guest does not handle this phase -- continue.
 		return ActionContinue, nil
 	}
 
@@ -90,54 +101,14 @@ func (p *Plugin) ExecuteRequestPhase(ctx context.Context, reqCtx *RequestContext
 	_, err = fn.Call(execCtx)
 
 	duration := time.Since(start)
-	RecordPluginExecution(p.config.Name, "request", duration, err)
+	RecordPluginExecution(p.config.Name, phase, duration, err)
 
 	if err != nil {
-		if execCtx.Err() == context.DeadlineExceeded {
-			RecordPluginTimeout(p.config.Name, "request")
-			return ActionContinue, fmt.Errorf("wasm on_request_headers timed out after %s: %w", timeout, err)
+		if errors.Is(execCtx.Err(), context.DeadlineExceeded) {
+			RecordPluginTimeout(p.config.Name, phase)
+			return ActionContinue, fmt.Errorf("wasm %s timed out after %s: %w", exportName, timeout, err)
 		}
-		return ActionContinue, fmt.Errorf("wasm on_request_headers failed: %w", err)
-	}
-
-	return reqCtx.Action, nil
-}
-
-// ExecuteResponsePhase runs the guest on_response_headers export.
-func (p *Plugin) ExecuteResponsePhase(ctx context.Context, reqCtx *RequestContext) (Action, error) {
-	start := time.Now()
-
-	inst, err := p.pool.Get(ctx)
-	if err != nil {
-		RecordPluginError(p.config.Name, "response")
-		return ActionContinue, fmt.Errorf("failed to get WASM instance: %w", err)
-	}
-	defer p.pool.Put(inst)
-
-	reqCtx.PluginConfig = p.config.Config
-	wasmCtx := withRequestContext(ctx, reqCtx)
-
-	fn := inst.module.ExportedFunction(guestExportNames.OnResponseHeaders)
-	if fn == nil {
-		return ActionContinue, nil
-	}
-
-	// Enforce execution timeout
-	timeout := p.executionTimeout()
-	execCtx, cancel := context.WithTimeout(wasmCtx, timeout)
-	defer cancel()
-
-	_, err = fn.Call(execCtx)
-
-	duration := time.Since(start)
-	RecordPluginExecution(p.config.Name, "response", duration, err)
-
-	if err != nil {
-		if execCtx.Err() == context.DeadlineExceeded {
-			RecordPluginTimeout(p.config.Name, "response")
-			return ActionContinue, fmt.Errorf("wasm on_response_headers timed out after %s: %w", timeout, err)
-		}
-		return ActionContinue, fmt.Errorf("wasm on_response_headers failed: %w", err)
+		return ActionContinue, fmt.Errorf("wasm %s failed: %w", exportName, err)
 	}
 
 	return reqCtx.Action, nil

@@ -18,11 +18,20 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errPKIMountPathIsRequired                  = errors.New("PKI mount path is required")
+	errPKIRoleIsRequired                       = errors.New("PKI role is required")
+	errCommonNameIsRequired                    = errors.New("common name is required")
+	errVaultPKIResponseMissingCertificateField = errors.New("vault PKI response missing certificate field")
+	errVaultPKIResponseMissingPrivateKeyField  = errors.New("vault PKI response missing private_key field")
 )
 
 // PKICertificate represents a certificate issued by Vault PKI.
@@ -81,13 +90,13 @@ func NewPKIManager(client *Client, logger *zap.Logger) *PKIManager {
 // IssueCertificate requests a certificate from Vault PKI.
 func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PKICertificate, error) {
 	if req.MountPath == "" {
-		return nil, fmt.Errorf("PKI mount path is required")
+		return nil, errPKIMountPathIsRequired
 	}
 	if req.Role == "" {
-		return nil, fmt.Errorf("PKI role is required")
+		return nil, errPKIRoleIsRequired
 	}
 	if req.CommonName == "" {
-		return nil, fmt.Errorf("common name is required")
+		return nil, errCommonNameIsRequired
 	}
 
 	path := fmt.Sprintf("%s/issue/%s", req.MountPath, req.Role)
@@ -149,10 +158,10 @@ func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PK
 
 	// Validate required fields in Vault PKI response
 	if cert.Certificate == "" {
-		return nil, fmt.Errorf("vault PKI response missing certificate field")
+		return nil, errVaultPKIResponseMissingCertificateField
 	}
 	if cert.PrivateKey == "" {
-		return nil, fmt.Errorf("vault PKI response missing private_key field")
+		return nil, errVaultPKIResponseMissingPrivateKeyField
 	}
 
 	p.logger.Info("Issued certificate from Vault PKI",

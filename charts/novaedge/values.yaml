@@ -247,6 +247,23 @@ agent:
   healthProbe:
     port: 9091
 
+  # Readiness probe configuration
+  # The agent readiness depends on receiving its first config snapshot from the
+  # controller via gRPC. Increase these values if the controller takes longer
+  # to become ready (e.g. in CI or resource-constrained environments).
+  readinessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 6
+
+  # Liveness probe configuration
+  livenessProbe:
+    initialDelaySeconds: 30
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+
   resources:
     limits:
       cpu: 2000m

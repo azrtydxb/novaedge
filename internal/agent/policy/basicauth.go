@@ -25,6 +25,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -34,6 +35,10 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errNoValidCredentialEntriesFound = errors.New("no valid credential entries found")
 )
 
 const hashTypeBcrypt = "bcrypt"
@@ -96,7 +101,7 @@ func (v *BasicAuthValidator) parseHtpasswd(htpasswd string) error {
 	}
 
 	if len(v.entries) == 0 {
-		return fmt.Errorf("no valid credential entries found")
+		return errNoValidCredentialEntriesFound
 	}
 
 	return nil

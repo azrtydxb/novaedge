@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -9,6 +10,12 @@ import (
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+var (
+	errExactlyOneArgumentRequiredHostname    = errors.New("exactly one argument required: hostname")
+	errExactlyOneArgumentRequiredBackendName = errors.New("exactly one argument required: backend-name")
+	errExactlyOneArgumentRequiredRequestID   = errors.New("exactly one argument required: request-id")
 )
 
 func newDebugCommand() *cobra.Command {
@@ -40,7 +47,7 @@ func newDebugRoutesCommand() *cobra.Command {
 
 func runDebugRoutes(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one argument required: hostname")
+		return errExactlyOneArgumentRequiredHostname
 	}
 
 	hostname := args[0]
@@ -148,7 +155,7 @@ func newDebugBackendsCommand() *cobra.Command {
 
 func runDebugBackends(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one argument required: backend-name")
+		return errExactlyOneArgumentRequiredBackendName
 	}
 
 	backendName := args[0]
@@ -240,7 +247,7 @@ func newDebugTraceCommand() *cobra.Command {
 
 func runDebugTrace(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one argument required: request-id")
+		return errExactlyOneArgumentRequiredRequestID
 	}
 
 	requestID := args[0]

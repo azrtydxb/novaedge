@@ -28,7 +28,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -380,33 +379,7 @@ func isProtocolSupported(protocol gatewayv1.ProtocolType) bool {
 
 // handleDeletion handles cleanup when a Gateway is deleted
 func (r *GatewayReconciler) handleDeletion(ctx context.Context, gateway *gatewayv1.Gateway) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-	logger.Info("Handling Gateway deletion", "name", gateway.Name)
-
-	// Delete associated ProxyGateway if it exists
-	proxyGateway := &novaedgev1alpha1.ProxyGateway{}
-	err := r.Get(ctx, types.NamespacedName{Name: gateway.Name, Namespace: gateway.Namespace}, proxyGateway)
-	if err == nil {
-		// ProxyGateway exists, delete it
-		logger.Info("Deleting associated ProxyGateway", "name", proxyGateway.Name)
-		if err := r.Delete(ctx, proxyGateway); err != nil && !errors.IsNotFound(err) {
-			logger.Error(err, "Failed to delete ProxyGateway")
-			return ctrl.Result{}, err
-		}
-	} else if !errors.IsNotFound(err) {
-		logger.Error(err, "Failed to get ProxyGateway for deletion")
-		return ctrl.Result{}, err
-	}
-
-	// Remove finalizer if it exists
-	if controllerutil.ContainsFinalizer(gateway, "novaedge.io/gateway-finalizer") {
-		controllerutil.RemoveFinalizer(gateway, "novaedge.io/gateway-finalizer")
-		if err := r.Update(ctx, gateway); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
+	return handleResourceDeletion(ctx, r.Client, gateway, &novaedgev1alpha1.ProxyGateway{}, "Gateway", "novaedge.io/gateway-finalizer")
 }
 
 // updateGatewayStatus updates the Gateway status with the given condition

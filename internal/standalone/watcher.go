@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,6 +32,10 @@ import (
 
 	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errConfigFileDoesNotExist = errors.New("config file does not exist")
 )
 
 // ConfigWatcher watches a config file for changes and provides ConfigSnapshots
@@ -55,7 +60,7 @@ func NewConfigWatcher(configPath, nodeName string, logger *zap.Logger) (*ConfigW
 
 	// Check if file exists
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("config file does not exist: %s", absPath)
+		return nil, fmt.Errorf("%w: %s", errConfigFileDoesNotExist, absPath)
 	}
 
 	return &ConfigWatcher{

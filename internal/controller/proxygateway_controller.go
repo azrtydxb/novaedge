@@ -18,12 +18,13 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,6 +41,10 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller/certmanager"
 	"github.com/piwi3910/novaedge/internal/controller/vault"
+)
+
+var (
+	errVaultCertificateErrors = errors.New("vault certificate errors")
 )
 
 // ProxyGatewayReconciler reconciles a ProxyGateway object
@@ -72,7 +77,7 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	gateway := &novaedgev1alpha1.ProxyGateway{}
 	err := r.Get(ctx, req.NamespacedName, gateway)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("ProxyGateway resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -187,7 +192,7 @@ func (r *ProxyGatewayReconciler) ensureVaultCertificates(ctx context.Context, ga
 		existing := &corev1.Secret{}
 		err = r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: gateway.Namespace}, existing)
 		switch {
-		case errors.IsNotFound(err):
+		case apierrors.IsNotFound(err):
 			if createErr := r.Create(ctx, secret); createErr != nil {
 				errs = append(errs, fmt.Sprintf("listener %s: failed to create secret: %v", listener.Name, createErr))
 				continue
@@ -209,7 +214,7 @@ func (r *ProxyGatewayReconciler) ensureVaultCertificates(ctx context.Context, ga
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("vault certificate errors: %s", strings.Join(errs, "; "))
+		return fmt.Errorf("%w: %s", errVaultCertificateErrors, strings.Join(errs, "; "))
 	}
 	return nil
 }
@@ -226,7 +231,7 @@ func (r *ProxyGatewayReconciler) validateAndUpdateStatus(ctx context.Context, ga
 			Name:      gateway.Spec.VIPRef,
 			Namespace: gateway.Namespace,
 		}, vip); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				validationErrors = append(validationErrors, fmt.Sprintf("VIP %s not found", gateway.Spec.VIPRef))
 			} else {
 				logger.Error(err, "Failed to get VIP", "vip", gateway.Spec.VIPRef)
@@ -254,7 +259,7 @@ func (r *ProxyGatewayReconciler) validateAndUpdateStatus(ctx context.Context, ga
 				Name:      listener.TLS.SecretRef.Name,
 				Namespace: secretNamespace,
 			}, secret); err != nil {
-				if errors.IsNotFound(err) {
+				if apierrors.IsNotFound(err) {
 					validationErrors = append(validationErrors,
 						fmt.Sprintf("TLS secret %s not found for listener %s",
 							listener.TLS.SecretRef.Name, listener.Name))
@@ -301,7 +306,7 @@ func (r *ProxyGatewayReconciler) validateAndUpdateStatus(ctx context.Context, ga
 	}
 
 	if len(validationErrors) > 0 {
-		return fmt.Errorf("validation failed: %v", validationErrors)
+		return fmt.Errorf("%w: %v", errValidationFailed, validationErrors)
 	}
 
 	return nil

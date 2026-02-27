@@ -3,6 +3,7 @@ package printer
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -11,6 +12,10 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
+)
+
+var (
+	errUnsupportedOutputFormat = errors.New("unsupported output format")
 )
 
 // OutputFormat represents the output format type
@@ -53,7 +58,7 @@ func (p *Printer) PrintResourceList(resourceType string, items []unstructured.Un
 	case OutputWide, OutputTable:
 		return p.printTable(resourceType, items)
 	default:
-		return fmt.Errorf("unsupported output format: %s", p.Format)
+		return fmt.Errorf("%w: %s", errUnsupportedOutputFormat, p.Format)
 	}
 }
 

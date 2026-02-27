@@ -18,6 +18,7 @@ package mode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -29,6 +30,14 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+)
+
+var (
+	errKubernetesConfigIsRequired = errors.New("kubernetes config is required")
+	errBackendIsReadOnly          = errors.New("backend is read-only")
+	errConfigIsNil                = errors.New("config is nil")
+	errBackend                    = errors.New("backend[")
+	errRoute                      = errors.New("route[")
 )
 
 // KubernetesBackend implements Backend for Kubernetes CRD operations
@@ -101,7 +110,7 @@ var (
 // NewKubernetesBackend creates a new Kubernetes backend
 func NewKubernetesBackend(config *rest.Config, readOnly bool) (*KubernetesBackend, error) {
 	if config == nil {
-		return nil, fmt.Errorf("kubernetes config is required")
+		return nil, errKubernetesConfigIsRequired
 	}
 
 	dynamicClient, err := dynamic.NewForConfig(config)
@@ -169,7 +178,7 @@ func (k *KubernetesBackend) GetGateway(ctx context.Context, namespace, name stri
 // CreateGateway creates a new gateway
 func (k *KubernetesBackend) CreateGateway(ctx context.Context, gateway *models.Gateway) (*models.Gateway, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.gatewayToUnstructured(gateway)
@@ -189,7 +198,7 @@ func (k *KubernetesBackend) CreateGateway(ctx context.Context, gateway *models.G
 // UpdateGateway updates an existing gateway
 func (k *KubernetesBackend) UpdateGateway(ctx context.Context, gateway *models.Gateway) (*models.Gateway, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.gatewayToUnstructured(gateway)
@@ -209,7 +218,7 @@ func (k *KubernetesBackend) UpdateGateway(ctx context.Context, gateway *models.G
 // DeleteGateway deletes a gateway
 func (k *KubernetesBackend) DeleteGateway(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrGateway).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -253,7 +262,7 @@ func (k *KubernetesBackend) GetRoute(ctx context.Context, namespace, name string
 // CreateRoute creates a new route
 func (k *KubernetesBackend) CreateRoute(ctx context.Context, route *models.Route) (*models.Route, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.routeToUnstructured(route)
@@ -273,7 +282,7 @@ func (k *KubernetesBackend) CreateRoute(ctx context.Context, route *models.Route
 // UpdateRoute updates an existing route
 func (k *KubernetesBackend) UpdateRoute(ctx context.Context, route *models.Route) (*models.Route, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.routeToUnstructured(route)
@@ -293,7 +302,7 @@ func (k *KubernetesBackend) UpdateRoute(ctx context.Context, route *models.Route
 // DeleteRoute deletes a route
 func (k *KubernetesBackend) DeleteRoute(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrRoute).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -337,7 +346,7 @@ func (k *KubernetesBackend) GetBackend(ctx context.Context, namespace, name stri
 // CreateBackend creates a new backend
 func (k *KubernetesBackend) CreateBackend(ctx context.Context, backend *models.Backend) (*models.Backend, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.backendToUnstructured(backend)
@@ -357,7 +366,7 @@ func (k *KubernetesBackend) CreateBackend(ctx context.Context, backend *models.B
 // UpdateBackend updates an existing backend
 func (k *KubernetesBackend) UpdateBackend(ctx context.Context, backend *models.Backend) (*models.Backend, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.backendToUnstructured(backend)
@@ -377,7 +386,7 @@ func (k *KubernetesBackend) UpdateBackend(ctx context.Context, backend *models.B
 // DeleteBackend deletes a backend
 func (k *KubernetesBackend) DeleteBackend(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrBackend).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -421,7 +430,7 @@ func (k *KubernetesBackend) GetVIP(ctx context.Context, namespace, name string) 
 // CreateVIP creates a new VIP
 func (k *KubernetesBackend) CreateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.vipToUnstructured(vip)
@@ -441,7 +450,7 @@ func (k *KubernetesBackend) CreateVIP(ctx context.Context, vip *models.VIP) (*mo
 // UpdateVIP updates an existing VIP
 func (k *KubernetesBackend) UpdateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.vipToUnstructured(vip)
@@ -461,7 +470,7 @@ func (k *KubernetesBackend) UpdateVIP(ctx context.Context, vip *models.VIP) (*mo
 // DeleteVIP deletes a VIP
 func (k *KubernetesBackend) DeleteVIP(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrVIP).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -505,7 +514,7 @@ func (k *KubernetesBackend) GetPolicy(ctx context.Context, namespace, name strin
 // CreatePolicy creates a new policy
 func (k *KubernetesBackend) CreatePolicy(ctx context.Context, policy *models.Policy) (*models.Policy, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.policyToUnstructured(policy)
@@ -525,7 +534,7 @@ func (k *KubernetesBackend) CreatePolicy(ctx context.Context, policy *models.Pol
 // UpdatePolicy updates an existing policy
 func (k *KubernetesBackend) UpdatePolicy(ctx context.Context, policy *models.Policy) (*models.Policy, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.policyToUnstructured(policy)
@@ -545,7 +554,7 @@ func (k *KubernetesBackend) UpdatePolicy(ctx context.Context, policy *models.Pol
 // DeletePolicy deletes a policy
 func (k *KubernetesBackend) DeletePolicy(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrPolicy).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -589,7 +598,7 @@ func (k *KubernetesBackend) GetCertificate(ctx context.Context, namespace, name 
 // CreateCertificate creates a new certificate
 func (k *KubernetesBackend) CreateCertificate(ctx context.Context, cert *models.Certificate) (*models.Certificate, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.certificateToUnstructured(cert)
@@ -609,7 +618,7 @@ func (k *KubernetesBackend) CreateCertificate(ctx context.Context, cert *models.
 // UpdateCertificate updates an existing certificate
 func (k *KubernetesBackend) UpdateCertificate(ctx context.Context, cert *models.Certificate) (*models.Certificate, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.certificateToUnstructured(cert)
@@ -629,7 +638,7 @@ func (k *KubernetesBackend) UpdateCertificate(ctx context.Context, cert *models.
 // DeleteCertificate deletes a certificate
 func (k *KubernetesBackend) DeleteCertificate(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrCertificate).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -666,7 +675,7 @@ func (k *KubernetesBackend) GetIPPool(ctx context.Context, name string) (*models
 // CreateIPPool creates a new IP pool (cluster-scoped)
 func (k *KubernetesBackend) CreateIPPool(ctx context.Context, pool *models.IPPool) (*models.IPPool, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.ipPoolToUnstructured(pool)
@@ -682,7 +691,7 @@ func (k *KubernetesBackend) CreateIPPool(ctx context.Context, pool *models.IPPoo
 // UpdateIPPool updates an existing IP pool (cluster-scoped)
 func (k *KubernetesBackend) UpdateIPPool(ctx context.Context, pool *models.IPPool) (*models.IPPool, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	obj := k.ipPoolToUnstructured(pool)
@@ -698,7 +707,7 @@ func (k *KubernetesBackend) UpdateIPPool(ctx context.Context, pool *models.IPPoo
 // DeleteIPPool deletes an IP pool (cluster-scoped)
 func (k *KubernetesBackend) DeleteIPPool(ctx context.Context, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrIPPool).Delete(ctx, name, metav1.DeleteOptions{})
@@ -706,32 +715,14 @@ func (k *KubernetesBackend) DeleteIPPool(ctx context.Context, name string) error
 
 // ListNovaEdgeClusters returns all NovaEdge clusters
 func (k *KubernetesBackend) ListNovaEdgeClusters(ctx context.Context, namespace string) ([]models.NovaEdgeClusterModel, error) {
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == namespaceAll {
-		list, err = k.dynamic.Resource(gvrCluster).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = k.dynamic.Resource(gvrCluster).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	}
+	items, err := k.genericList(ctx, genericResourceConfig{"NovaEdgeCluster", gvrCluster}, namespace)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list NovaEdge clusters: %w", err)
+		return nil, err
 	}
-
-	clusters := make([]models.NovaEdgeClusterModel, 0, len(list.Items))
-	for _, item := range list.Items {
-		cluster := unstructuredToGenericModel(&item)
-		clusters = append(clusters, models.NovaEdgeClusterModel{
-			Name:            cluster.name,
-			Namespace:       cluster.namespace,
-			Labels:          cluster.labels,
-			Annotations:     cluster.annotations,
-			Spec:            cluster.spec,
-			Status:          cluster.status,
-			ResourceVersion: cluster.resourceVersion,
-		})
+	clusters := make([]models.NovaEdgeClusterModel, 0, len(items))
+	for _, g := range items {
+		clusters = append(clusters, *genericToClusterModel(g))
 	}
-
 	return clusters, nil
 }
 
@@ -755,70 +746,26 @@ func (k *KubernetesBackend) GetNovaEdgeCluster(ctx context.Context, namespace, n
 
 // CreateNovaEdgeCluster creates a new NovaEdge cluster
 func (k *KubernetesBackend) CreateNovaEdgeCluster(ctx context.Context, cluster *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
-	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
-	}
-
-	namespace := cluster.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	obj := genericModelToUnstructured("NovaEdgeCluster",
-		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
-
-	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	g, err := k.genericCreate(ctx, genericResourceConfig{"NovaEdgeCluster", gvrCluster}, clusterModelToGeneric(cluster))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create NovaEdge cluster: %w", err)
+		return nil, err
 	}
-
-	g := unstructuredToGenericModel(result)
-	return &models.NovaEdgeClusterModel{
-		Name:            g.name,
-		Namespace:       g.namespace,
-		Labels:          g.labels,
-		Annotations:     g.annotations,
-		Spec:            g.spec,
-		Status:          g.status,
-		ResourceVersion: g.resourceVersion,
-	}, nil
+	return genericToClusterModel(g), nil
 }
 
 // UpdateNovaEdgeCluster updates an existing NovaEdge cluster
 func (k *KubernetesBackend) UpdateNovaEdgeCluster(ctx context.Context, cluster *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
-	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
-	}
-
-	namespace := cluster.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	obj := genericModelToUnstructured("NovaEdgeCluster",
-		cluster.Name, namespace, cluster.Labels, cluster.Annotations, cluster.Spec, cluster.ResourceVersion)
-
-	result, err := k.dynamic.Resource(gvrCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	g, err := k.genericUpdate(ctx, genericResourceConfig{"NovaEdgeCluster", gvrCluster}, clusterModelToGeneric(cluster))
 	if err != nil {
-		return nil, fmt.Errorf("failed to update NovaEdge cluster: %w", err)
+		return nil, err
 	}
-
-	g := unstructuredToGenericModel(result)
-	return &models.NovaEdgeClusterModel{
-		Name:            g.name,
-		Namespace:       g.namespace,
-		Labels:          g.labels,
-		Annotations:     g.annotations,
-		Spec:            g.spec,
-		Status:          g.status,
-		ResourceVersion: g.resourceVersion,
-	}, nil
+	return genericToClusterModel(g), nil
 }
 
 // DeleteNovaEdgeCluster deletes a NovaEdge cluster
 func (k *KubernetesBackend) DeleteNovaEdgeCluster(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrCluster).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -826,32 +773,14 @@ func (k *KubernetesBackend) DeleteNovaEdgeCluster(ctx context.Context, namespace
 
 // ListFederations returns all federations
 func (k *KubernetesBackend) ListFederations(ctx context.Context, namespace string) ([]models.FederationModel, error) {
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == namespaceAll {
-		list, err = k.dynamic.Resource(gvrFederation).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = k.dynamic.Resource(gvrFederation).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	}
+	items, err := k.genericList(ctx, genericResourceConfig{"NovaEdgeFederation", gvrFederation}, namespace)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list federations: %w", err)
+		return nil, err
 	}
-
-	federations := make([]models.FederationModel, 0, len(list.Items))
-	for _, item := range list.Items {
-		g := unstructuredToGenericModel(&item)
-		federations = append(federations, models.FederationModel{
-			Name:            g.name,
-			Namespace:       g.namespace,
-			Labels:          g.labels,
-			Annotations:     g.annotations,
-			Spec:            g.spec,
-			Status:          g.status,
-			ResourceVersion: g.resourceVersion,
-		})
+	federations := make([]models.FederationModel, 0, len(items))
+	for _, g := range items {
+		federations = append(federations, *genericToFederationModel(g))
 	}
-
 	return federations, nil
 }
 
@@ -875,70 +804,26 @@ func (k *KubernetesBackend) GetFederation(ctx context.Context, namespace, name s
 
 // CreateFederation creates a new federation
 func (k *KubernetesBackend) CreateFederation(ctx context.Context, federation *models.FederationModel) (*models.FederationModel, error) {
-	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
-	}
-
-	namespace := federation.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	obj := genericModelToUnstructured("NovaEdgeFederation",
-		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
-
-	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	g, err := k.genericCreate(ctx, genericResourceConfig{"NovaEdgeFederation", gvrFederation}, federationModelToGeneric(federation))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create federation: %w", err)
+		return nil, err
 	}
-
-	g := unstructuredToGenericModel(result)
-	return &models.FederationModel{
-		Name:            g.name,
-		Namespace:       g.namespace,
-		Labels:          g.labels,
-		Annotations:     g.annotations,
-		Spec:            g.spec,
-		Status:          g.status,
-		ResourceVersion: g.resourceVersion,
-	}, nil
+	return genericToFederationModel(g), nil
 }
 
 // UpdateFederation updates an existing federation
 func (k *KubernetesBackend) UpdateFederation(ctx context.Context, federation *models.FederationModel) (*models.FederationModel, error) {
-	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
-	}
-
-	namespace := federation.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	obj := genericModelToUnstructured("NovaEdgeFederation",
-		federation.Name, namespace, federation.Labels, federation.Annotations, federation.Spec, federation.ResourceVersion)
-
-	result, err := k.dynamic.Resource(gvrFederation).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	g, err := k.genericUpdate(ctx, genericResourceConfig{"NovaEdgeFederation", gvrFederation}, federationModelToGeneric(federation))
 	if err != nil {
-		return nil, fmt.Errorf("failed to update federation: %w", err)
+		return nil, err
 	}
-
-	g := unstructuredToGenericModel(result)
-	return &models.FederationModel{
-		Name:            g.name,
-		Namespace:       g.namespace,
-		Labels:          g.labels,
-		Annotations:     g.annotations,
-		Spec:            g.spec,
-		Status:          g.status,
-		ResourceVersion: g.resourceVersion,
-	}, nil
+	return genericToFederationModel(g), nil
 }
 
 // DeleteFederation deletes a federation
 func (k *KubernetesBackend) DeleteFederation(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrFederation).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -946,32 +831,14 @@ func (k *KubernetesBackend) DeleteFederation(ctx context.Context, namespace, nam
 
 // ListRemoteClusters returns all remote clusters
 func (k *KubernetesBackend) ListRemoteClusters(ctx context.Context, namespace string) ([]models.RemoteClusterModel, error) {
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == namespaceAll {
-		list, err = k.dynamic.Resource(gvrRemoteCluster).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	}
+	items, err := k.genericList(ctx, genericResourceConfig{"NovaEdgeRemoteCluster", gvrRemoteCluster}, namespace)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list remote clusters: %w", err)
+		return nil, err
 	}
-
-	remoteClusters := make([]models.RemoteClusterModel, 0, len(list.Items))
-	for _, item := range list.Items {
-		g := unstructuredToGenericModel(&item)
-		remoteClusters = append(remoteClusters, models.RemoteClusterModel{
-			Name:            g.name,
-			Namespace:       g.namespace,
-			Labels:          g.labels,
-			Annotations:     g.annotations,
-			Spec:            g.spec,
-			Status:          g.status,
-			ResourceVersion: g.resourceVersion,
-		})
+	remoteClusters := make([]models.RemoteClusterModel, 0, len(items))
+	for _, g := range items {
+		remoteClusters = append(remoteClusters, *genericToRemoteClusterModel(g))
 	}
-
 	return remoteClusters, nil
 }
 
@@ -995,70 +862,26 @@ func (k *KubernetesBackend) GetRemoteCluster(ctx context.Context, namespace, nam
 
 // CreateRemoteCluster creates a new remote cluster
 func (k *KubernetesBackend) CreateRemoteCluster(ctx context.Context, rc *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
-	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
-	}
-
-	namespace := rc.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	obj := genericModelToUnstructured("NovaEdgeRemoteCluster",
-		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
-
-	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
+	g, err := k.genericCreate(ctx, genericResourceConfig{"NovaEdgeRemoteCluster", gvrRemoteCluster}, remoteClusterModelToGeneric(rc))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create remote cluster: %w", err)
+		return nil, err
 	}
-
-	g := unstructuredToGenericModel(result)
-	return &models.RemoteClusterModel{
-		Name:            g.name,
-		Namespace:       g.namespace,
-		Labels:          g.labels,
-		Annotations:     g.annotations,
-		Spec:            g.spec,
-		Status:          g.status,
-		ResourceVersion: g.resourceVersion,
-	}, nil
+	return genericToRemoteClusterModel(g), nil
 }
 
 // UpdateRemoteCluster updates an existing remote cluster
 func (k *KubernetesBackend) UpdateRemoteCluster(ctx context.Context, rc *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
-	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
-	}
-
-	namespace := rc.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	obj := genericModelToUnstructured("NovaEdgeRemoteCluster",
-		rc.Name, namespace, rc.Labels, rc.Annotations, rc.Spec, rc.ResourceVersion)
-
-	result, err := k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
+	g, err := k.genericUpdate(ctx, genericResourceConfig{"NovaEdgeRemoteCluster", gvrRemoteCluster}, remoteClusterModelToGeneric(rc))
 	if err != nil {
-		return nil, fmt.Errorf("failed to update remote cluster: %w", err)
+		return nil, err
 	}
-
-	g := unstructuredToGenericModel(result)
-	return &models.RemoteClusterModel{
-		Name:            g.name,
-		Namespace:       g.namespace,
-		Labels:          g.labels,
-		Annotations:     g.annotations,
-		Spec:            g.spec,
-		Status:          g.status,
-		ResourceVersion: g.resourceVersion,
-	}, nil
+	return genericToRemoteClusterModel(g), nil
 }
 
 // DeleteRemoteCluster deletes a remote cluster
 func (k *KubernetesBackend) DeleteRemoteCluster(ctx context.Context, namespace, name string) error {
 	if k.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	return k.dynamic.Resource(gvrRemoteCluster).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
@@ -1120,7 +943,7 @@ func (k *KubernetesBackend) ExportConfig(ctx context.Context, namespace string) 
 // ImportConfig imports configuration from YAML
 func (k *KubernetesBackend) ImportConfig(ctx context.Context, data []byte, dryRun bool) (*models.ImportResult, error) {
 	if k.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	var config models.Config
@@ -1134,126 +957,62 @@ func (k *KubernetesBackend) ImportConfig(ctx context.Context, data []byte, dryRu
 
 	result := &models.ImportResult{DryRun: dryRun}
 
-	// Import gateways
+	// importResource is a helper that performs create-or-update for a single resource.
+	importResource := func(kind, name, ns string, get func() error, create, update func() error) {
+		ref := models.ResourceRef{Kind: kind, Name: name, Namespace: ns}
+		if dryRun {
+			result.Created = append(result.Created, ref)
+			return
+		}
+		if err := get(); err != nil {
+			if createErr := create(); createErr != nil {
+				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: createErr.Error()})
+			} else {
+				result.Created = append(result.Created, ref)
+			}
+		} else {
+			if updateErr := update(); updateErr != nil {
+				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: updateErr.Error()})
+			} else {
+				result.Updated = append(result.Updated, ref)
+			}
+		}
+	}
+
 	for _, gw := range config.Gateways {
-		ref := models.ResourceRef{Kind: "Gateway", Name: gw.Name, Namespace: gw.Namespace}
-		if dryRun {
-			result.Created = append(result.Created, ref)
-			continue
-		}
-
-		_, err := k.GetGateway(ctx, gw.Namespace, gw.Name)
-		if err != nil {
-			// Create
-			if _, err := k.CreateGateway(ctx, &gw); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Created = append(result.Created, ref)
-			}
-		} else {
-			// Update
-			if _, err := k.UpdateGateway(ctx, &gw); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Updated = append(result.Updated, ref)
-			}
-		}
+		gw := gw
+		importResource("Gateway", gw.Name, gw.Namespace,
+			func() error { _, e := k.GetGateway(ctx, gw.Namespace, gw.Name); return e },
+			func() error { _, e := k.CreateGateway(ctx, &gw); return e },
+			func() error { _, e := k.UpdateGateway(ctx, &gw); return e })
 	}
-
-	// Import routes
 	for _, rt := range config.Routes {
-		ref := models.ResourceRef{Kind: "Route", Name: rt.Name, Namespace: rt.Namespace}
-		if dryRun {
-			result.Created = append(result.Created, ref)
-			continue
-		}
-
-		_, err := k.GetRoute(ctx, rt.Namespace, rt.Name)
-		if err != nil {
-			if _, err := k.CreateRoute(ctx, &rt); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Created = append(result.Created, ref)
-			}
-		} else {
-			if _, err := k.UpdateRoute(ctx, &rt); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Updated = append(result.Updated, ref)
-			}
-		}
+		rt := rt
+		importResource("Route", rt.Name, rt.Namespace,
+			func() error { _, e := k.GetRoute(ctx, rt.Namespace, rt.Name); return e },
+			func() error { _, e := k.CreateRoute(ctx, &rt); return e },
+			func() error { _, e := k.UpdateRoute(ctx, &rt); return e })
 	}
-
-	// Import backends
 	for _, be := range config.Backends {
-		ref := models.ResourceRef{Kind: "Backend", Name: be.Name, Namespace: be.Namespace}
-		if dryRun {
-			result.Created = append(result.Created, ref)
-			continue
-		}
-
-		_, err := k.GetBackend(ctx, be.Namespace, be.Name)
-		if err != nil {
-			if _, err := k.CreateBackend(ctx, &be); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Created = append(result.Created, ref)
-			}
-		} else {
-			if _, err := k.UpdateBackend(ctx, &be); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Updated = append(result.Updated, ref)
-			}
-		}
+		be := be
+		importResource("Backend", be.Name, be.Namespace,
+			func() error { _, e := k.GetBackend(ctx, be.Namespace, be.Name); return e },
+			func() error { _, e := k.CreateBackend(ctx, &be); return e },
+			func() error { _, e := k.UpdateBackend(ctx, &be); return e })
 	}
-
-	// Import VIPs
 	for _, vip := range config.VIPs {
-		ref := models.ResourceRef{Kind: "VIP", Name: vip.Name, Namespace: vip.Namespace}
-		if dryRun {
-			result.Created = append(result.Created, ref)
-			continue
-		}
-
-		_, err := k.GetVIP(ctx, vip.Namespace, vip.Name)
-		if err != nil {
-			if _, err := k.CreateVIP(ctx, &vip); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Created = append(result.Created, ref)
-			}
-		} else {
-			if _, err := k.UpdateVIP(ctx, &vip); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Updated = append(result.Updated, ref)
-			}
-		}
+		vip := vip
+		importResource("VIP", vip.Name, vip.Namespace,
+			func() error { _, e := k.GetVIP(ctx, vip.Namespace, vip.Name); return e },
+			func() error { _, e := k.CreateVIP(ctx, &vip); return e },
+			func() error { _, e := k.UpdateVIP(ctx, &vip); return e })
 	}
-
-	// Import policies
 	for _, pol := range config.Policies {
-		ref := models.ResourceRef{Kind: "Policy", Name: pol.Name, Namespace: pol.Namespace}
-		if dryRun {
-			result.Created = append(result.Created, ref)
-			continue
-		}
-
-		_, err := k.GetPolicy(ctx, pol.Namespace, pol.Name)
-		if err != nil {
-			if _, err := k.CreatePolicy(ctx, &pol); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Created = append(result.Created, ref)
-			}
-		} else {
-			if _, err := k.UpdatePolicy(ctx, &pol); err != nil {
-				result.Errors = append(result.Errors, models.ImportError{Resource: ref, Error: err.Error()})
-			} else {
-				result.Updated = append(result.Updated, ref)
-			}
-		}
+		pol := pol
+		importResource("Policy", pol.Name, pol.Namespace,
+			func() error { _, e := k.GetPolicy(ctx, pol.Namespace, pol.Name); return e },
+			func() error { _, e := k.CreatePolicy(ctx, &pol); return e },
+			func() error { _, e := k.UpdatePolicy(ctx, &pol); return e })
 	}
 
 	return result, nil
@@ -1846,6 +1605,67 @@ func unstructuredToGenericModel(obj *unstructured.Unstructured) genericModel {
 	return g
 }
 
+// genericResourceConfig describes a generic namespaced resource for CRUD operations.
+type genericResourceConfig struct {
+	kind string
+	gvr  schema.GroupVersionResource
+}
+
+// genericCreate creates a namespaced resource via the dynamic client and returns a genericModel.
+func (k *KubernetesBackend) genericCreate(ctx context.Context, cfg genericResourceConfig, g genericModel) (genericModel, error) {
+	if k.readOnly {
+		return genericModel{}, errBackendIsReadOnly
+	}
+	ns := g.namespace
+	if ns == "" {
+		ns = defaultNamespace
+	}
+	obj := genericModelToUnstructured(cfg.kind, g.name, ns, g.labels, g.annotations, g.spec, g.resourceVersion)
+	result, err := k.dynamic.Resource(cfg.gvr).Namespace(ns).Create(ctx, obj, metav1.CreateOptions{})
+	if err != nil {
+		return genericModel{}, fmt.Errorf("failed to create %s: %w", cfg.kind, err)
+	}
+	return unstructuredToGenericModel(result), nil
+}
+
+// genericUpdate updates a namespaced resource via the dynamic client and returns a genericModel.
+func (k *KubernetesBackend) genericUpdate(ctx context.Context, cfg genericResourceConfig, g genericModel) (genericModel, error) {
+	if k.readOnly {
+		return genericModel{}, errBackendIsReadOnly
+	}
+	ns := g.namespace
+	if ns == "" {
+		ns = defaultNamespace
+	}
+	obj := genericModelToUnstructured(cfg.kind, g.name, ns, g.labels, g.annotations, g.spec, g.resourceVersion)
+	result, err := k.dynamic.Resource(cfg.gvr).Namespace(ns).Update(ctx, obj, metav1.UpdateOptions{})
+	if err != nil {
+		return genericModel{}, fmt.Errorf("failed to update %s: %w", cfg.kind, err)
+	}
+	return unstructuredToGenericModel(result), nil
+}
+
+// genericList lists namespaced resources via the dynamic client and returns a slice of genericModels.
+func (k *KubernetesBackend) genericList(ctx context.Context, cfg genericResourceConfig, namespace string) ([]genericModel, error) {
+	var list *unstructured.UnstructuredList
+	var err error
+
+	if namespace == "" || namespace == namespaceAll {
+		list, err = k.dynamic.Resource(cfg.gvr).List(ctx, metav1.ListOptions{})
+	} else {
+		list, err = k.dynamic.Resource(cfg.gvr).Namespace(namespace).List(ctx, metav1.ListOptions{})
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to list %s resources: %w", cfg.kind, err)
+	}
+
+	result := make([]genericModel, 0, len(list.Items))
+	for _, item := range list.Items {
+		result = append(result, unstructuredToGenericModel(&item))
+	}
+	return result, nil
+}
+
 // safeInt64ToInt32 safely converts int64 to int32 with bounds checking
 func safeInt64ToInt32(val int64) int32 {
 	if val > math.MaxInt32 {
@@ -1855,6 +1675,30 @@ func safeInt64ToInt32(val int64) int32 {
 		return math.MinInt32
 	}
 	return int32(val)
+}
+
+func clusterModelToGeneric(c *models.NovaEdgeClusterModel) genericModel {
+	return genericModel{name: c.Name, namespace: c.Namespace, labels: c.Labels, annotations: c.Annotations, spec: c.Spec, status: c.Status, resourceVersion: c.ResourceVersion}
+}
+
+func genericToClusterModel(g genericModel) *models.NovaEdgeClusterModel {
+	return &models.NovaEdgeClusterModel{Name: g.name, Namespace: g.namespace, Labels: g.labels, Annotations: g.annotations, Spec: g.spec, Status: g.status, ResourceVersion: g.resourceVersion}
+}
+
+func federationModelToGeneric(f *models.FederationModel) genericModel {
+	return genericModel{name: f.Name, namespace: f.Namespace, labels: f.Labels, annotations: f.Annotations, spec: f.Spec, status: f.Status, resourceVersion: f.ResourceVersion}
+}
+
+func genericToFederationModel(g genericModel) *models.FederationModel {
+	return &models.FederationModel{Name: g.name, Namespace: g.namespace, Labels: g.labels, Annotations: g.annotations, Spec: g.spec, Status: g.status, ResourceVersion: g.resourceVersion}
+}
+
+func remoteClusterModelToGeneric(rc *models.RemoteClusterModel) genericModel {
+	return genericModel{name: rc.Name, namespace: rc.Namespace, labels: rc.Labels, annotations: rc.Annotations, spec: rc.Spec, status: rc.Status, resourceVersion: rc.ResourceVersion}
+}
+
+func genericToRemoteClusterModel(g genericModel) *models.RemoteClusterModel {
+	return &models.RemoteClusterModel{Name: g.name, Namespace: g.namespace, Labels: g.labels, Annotations: g.annotations, Spec: g.spec, Status: g.status, ResourceVersion: g.resourceVersion}
 }
 
 func genericModelToUnstructured(kind, name, namespace string,
@@ -1908,16 +1752,16 @@ func getBoolField(m map[string]interface{}, key string) bool {
 // validateConfig performs basic configuration validation
 func validateConfig(config *models.Config) error {
 	if config == nil {
-		return fmt.Errorf("config is nil")
+		return errConfigIsNil
 	}
 
 	// Validate backends have endpoints
 	for i, be := range config.Backends {
 		if be.Name == "" {
-			return fmt.Errorf("backend[%d]: name is required", i)
+			return fmt.Errorf("%w: %d]: name is required", errBackend, i)
 		}
 		if len(be.Endpoints) == 0 {
-			return fmt.Errorf("backend[%d] '%s': at least one endpoint is required", i, be.Name)
+			return fmt.Errorf("%w: %d] '%s': at least one endpoint is required", errBackend, i, be.Name)
 		}
 	}
 
@@ -1929,11 +1773,11 @@ func validateConfig(config *models.Config) error {
 
 	for i, rt := range config.Routes {
 		if rt.Name == "" {
-			return fmt.Errorf("route[%d]: name is required", i)
+			return fmt.Errorf("%w: %d]: name is required", errRoute, i)
 		}
 		for j, ref := range rt.BackendRefs {
 			if !backendNames[ref.Name] {
-				return fmt.Errorf("route[%d] '%s' backendRef[%d]: unknown backend '%s'", i, rt.Name, j, ref.Name)
+				return fmt.Errorf("%w: %d] '%s' backendRef[%d]: unknown backend '%s'", errRoute, i, rt.Name, j, ref.Name)
 			}
 		}
 	}

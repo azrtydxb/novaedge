@@ -19,9 +19,13 @@ limitations under the License.
 package ebpf
 
 import (
-	"fmt"
+	"errors"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFIsOnlySupportedOnLinux = errors.New("eBPF is only supported on Linux")
 )
 
 const (
@@ -39,7 +43,7 @@ func NewProgramLoader(_ *zap.Logger, _ string) *ProgramLoader {
 
 // EnsurePinPath is a no-op on non-Linux platforms.
 func (l *ProgramLoader) EnsurePinPath() error {
-	return fmt.Errorf("eBPF is only supported on Linux")
+	return errEBPFIsOnlySupportedOnLinux
 }
 
 // PinPath returns an empty string on non-Linux platforms.

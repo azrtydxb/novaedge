@@ -19,11 +19,15 @@ limitations under the License.
 package ebpfmesh
 
 import (
-	"fmt"
+	"errors"
 
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
 	"github.com/piwi3910/novaedge/internal/agent/mesh"
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFMeshRedirectIsOnlySupportedOnLinux = errors.New("eBPF mesh redirect is only supported on Linux")
 )
 
 // Backend is a stub on non-Linux platforms.
@@ -41,12 +45,12 @@ func (b *Backend) Name() string {
 
 // Setup returns an error on non-Linux platforms.
 func (b *Backend) Setup() error {
-	return fmt.Errorf("eBPF mesh redirect is only supported on Linux")
+	return errEBPFMeshRedirectIsOnlySupportedOnLinux
 }
 
 // ApplyRules returns an error on non-Linux platforms.
 func (b *Backend) ApplyRules(_ []mesh.InterceptTarget, _ int32) error {
-	return fmt.Errorf("eBPF mesh redirect is only supported on Linux")
+	return errEBPFMeshRedirectIsOnlySupportedOnLinux
 }
 
 // Cleanup is a no-op on non-Linux platforms.
