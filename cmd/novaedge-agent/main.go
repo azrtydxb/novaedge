@@ -40,7 +40,6 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/afxdp"
 	"github.com/piwi3910/novaedge/internal/agent/config"
-	dpctl "github.com/piwi3910/novaedge/internal/dataplane"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/conntrack"
@@ -57,6 +56,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	"github.com/piwi3910/novaedge/internal/agent/xdplb"
+	dpctl "github.com/piwi3910/novaedge/internal/dataplane"
 	"github.com/piwi3910/novaedge/internal/observability"
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
