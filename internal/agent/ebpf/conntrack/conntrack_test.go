@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/testutil"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -33,10 +34,11 @@ func TestNewConntrack(t *testing.T) {
 		}
 		return
 	}
-	// On Linux, this may fail if BPF objects aren't generated.
+	// On Linux, this may fail if BPF objects aren't generated or
+	// if running without sufficient privileges.
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Logf("NewConntrack failed (expected in CI without BPF objects): %v", err)
-		return
+		t.Fatalf("NewConntrack() returned error: %v", err)
 	}
 	defer ct.Close()
 }
@@ -103,7 +105,8 @@ func TestConntrackCloseNil(t *testing.T) {
 	// but test that the types are well-formed.
 	logger := zaptest.NewLogger(t)
 	_, err := NewConntrack(logger, 1024, 30*time.Second)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Logf("NewConntrack failed (expected in CI): %v", err)
+		t.Fatalf("NewConntrack() returned error: %v", err)
 	}
 }
