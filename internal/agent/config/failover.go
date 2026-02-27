@@ -17,6 +17,7 @@ limitations under the License.
 package config
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"sort"
@@ -33,6 +34,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errUnknownState = errors.New("unknown state")
+	errConfigPersistenceNotInitialized = errors.New("config persistence not initialized")
+	errNoCachedConfigAvailable = errors.New("no cached config available")
+)
+
 
 // FailoverState represents the current state of the failover state machine
 type FailoverState string
@@ -336,7 +343,7 @@ func (w *FailoverWatcher) runStateMachine() error {
 		return w.handleAutonomous()
 
 	default:
-		return fmt.Errorf("unknown state: %s", state)
+		return fmt.Errorf("%w: %s", errUnknownState, state)
 	}
 }
 
@@ -821,12 +828,12 @@ func (w *FailoverWatcher) persistConfig(snapshot *Snapshot) {
 // loadCachedConfig loads the cached config for autonomous mode
 func (w *FailoverWatcher) loadCachedConfig() (*Snapshot, error) {
 	if w.persistence == nil {
-		return nil, fmt.Errorf("config persistence not initialized")
+		return nil, errConfigPersistenceNotInitialized
 	}
 
 	// Check if we have a cached config
 	if !w.persistence.HasCachedConfig() {
-		return nil, fmt.Errorf("no cached config available")
+		return nil, errNoCachedConfigAvailable
 	}
 
 	// Check config age - warn if stale

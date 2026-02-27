@@ -18,10 +18,14 @@ package router
 
 import (
 	"bufio"
-	"fmt"
+	"errors"
 	"net"
 	"net/http"
 	"sync"
+)
+
+var (
+	errUnderlyingResponseWriterDoesNotImplementHTTPHijacker = errors.New("underlying ResponseWriter does not implement http.Hijacker")
 )
 
 // responseWriterWithStatus wraps http.ResponseWriter to capture status code
@@ -70,7 +74,7 @@ func (rw *responseWriterWithStatus) Hijack() (net.Conn, *bufio.ReadWriter, error
 	if h, ok := rw.ResponseWriter.(http.Hijacker); ok {
 		return h.Hijack()
 	}
-	return nil, nil, fmt.Errorf("underlying ResponseWriter does not implement http.Hijacker")
+	return nil, nil, errUnderlyingResponseWriterDoesNotImplementHTTPHijacker
 }
 
 // Push implements http.Pusher by delegating to the underlying ResponseWriter if it supports HTTP/2 server push.

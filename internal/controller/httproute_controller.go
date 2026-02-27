@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -29,13 +29,14 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
+var ()
 
 // HTTPRouteReconciler reconciles a Gateway API HTTPRoute object
 type HTTPRouteReconciler struct {
@@ -55,7 +56,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	httpRoute := &gatewayv1.HTTPRoute{}
 	err := r.Get(ctx, req.NamespacedName, httpRoute)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("HTTPRoute resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -113,7 +114,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}, gateway)
 
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
 					Type:               string(gatewayv1.RouteConditionAccepted),
 					Status:             metav1.ConditionFalse,
@@ -225,7 +226,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	existingProxyRoute := &novaedgev1alpha1.ProxyRoute{}
 	err = r.Get(ctx, types.NamespacedName{Name: httpRoute.Name, Namespace: httpRoute.Namespace}, existingProxyRoute)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Create new ProxyRoute
 			logger.Info("Creating ProxyRoute", "name", proxyRoute.Name)
 			if err := r.Create(ctx, proxyRoute); err != nil {
@@ -324,11 +325,11 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 			Namespace: namespace,
 		}, service)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				logger.Error(err, "Backend Service not found",
 					"service", backendRef.Name,
 					"namespace", namespace)
-				return fmt.Errorf("service %s/%s not found", namespace, backendRef.Name)
+				return fmt.Errorf("%w: %s/%s not found", errService, namespace, backendRef.Name)
 			}
 			return err
 		}
@@ -364,7 +365,7 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 		existingBackend := &novaedgev1alpha1.ProxyBackend{}
 		err = r.Get(ctx, types.NamespacedName{Name: backendName, Namespace: namespace}, existingBackend)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				// Create new ProxyBackend
 				logger.Info("Creating ProxyBackend", "name", backendName, "namespace", namespace)
 				if err := r.Create(ctx, proxyBackend); err != nil {
@@ -389,37 +390,10 @@ func (r *HTTPRouteReconciler) reconcileBackends(ctx context.Context, httpRoute *
 	return nil
 }
 
-// handleDeletion handles cleanup when an HTTPRoute is deleted
+// handleDeletion handles cleanup when an HTTPRoute is deleted.
+// ProxyBackends will be automatically deleted via owner references.
 func (r *HTTPRouteReconciler) handleDeletion(ctx context.Context, httpRoute *gatewayv1.HTTPRoute) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-	logger.Info("Handling HTTPRoute deletion", "name", httpRoute.Name)
-
-	// Delete associated ProxyRoute if it exists
-	proxyRoute := &novaedgev1alpha1.ProxyRoute{}
-	err := r.Get(ctx, types.NamespacedName{Name: httpRoute.Name, Namespace: httpRoute.Namespace}, proxyRoute)
-	if err == nil {
-		// ProxyRoute exists, delete it
-		logger.Info("Deleting associated ProxyRoute", "name", proxyRoute.Name)
-		if err := r.Delete(ctx, proxyRoute); err != nil && !errors.IsNotFound(err) {
-			logger.Error(err, "Failed to delete ProxyRoute")
-			return ctrl.Result{}, err
-		}
-	} else if !errors.IsNotFound(err) {
-		logger.Error(err, "Failed to get ProxyRoute for deletion")
-		return ctrl.Result{}, err
-	}
-
-	// ProxyBackends will be automatically deleted via owner references
-
-	// Remove finalizer if it exists
-	if controllerutil.ContainsFinalizer(httpRoute, "novaedge.io/httproute-finalizer") {
-		controllerutil.RemoveFinalizer(httpRoute, "novaedge.io/httproute-finalizer")
-		if err := r.Update(ctx, httpRoute); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
+	return handleResourceDeletion(ctx, r.Client, httpRoute, &novaedgev1alpha1.ProxyRoute{}, "HTTPRoute", "novaedge.io/httproute-finalizer")
 }
 
 // SetupWithManager sets up the controller with the Manager

@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"errors"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +25,11 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+var (
+	errTCPRouteRule = errors.New("TCPRoute rule")
+	errTLSRouteRule = errors.New("TLSRoute rule")
+)
+
 
 // TranslateTCPRouteToProxyRoute translates a Gateway API TCPRoute to a NovaEdge ProxyRoute
 // TCPRoute is simpler than HTTPRoute: it only specifies backend refs without match conditions
@@ -32,7 +38,7 @@ func TranslateTCPRouteToProxyRoute(tcpRoute *gatewayv1alpha2.TCPRoute) (*novaedg
 
 	for i, gwRule := range tcpRoute.Spec.Rules {
 		if len(gwRule.BackendRefs) == 0 {
-			return nil, fmt.Errorf("TCPRoute rule %d has no backend refs", i)
+			return nil, fmt.Errorf("%w: %d has no backend refs", errTCPRouteRule, i)
 		}
 
 		rule := novaedgev1alpha1.HTTPRouteRule{
@@ -101,7 +107,7 @@ func TranslateTLSRouteToProxyRoute(tlsRoute *gatewayv1alpha2.TLSRoute) (*novaedg
 
 	for i, gwRule := range tlsRoute.Spec.Rules {
 		if len(gwRule.BackendRefs) == 0 {
-			return nil, fmt.Errorf("TLSRoute rule %d has no backend refs", i)
+			return nil, fmt.Errorf("%w: %d has no backend refs", errTLSRouteRule, i)
 		}
 
 		rule := novaedgev1alpha1.HTTPRouteRule{

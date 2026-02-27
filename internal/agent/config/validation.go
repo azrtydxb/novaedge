@@ -103,35 +103,31 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 	return nil
 }
 
-// ValidateGateway validates a gateway configuration
-func (v *Validator) ValidateGateway(gw *pb.Gateway, index int) error {
-	if gw == nil {
-		return pkgerrors.NewValidationError("gateway cannot be nil").
-			WithField("field", fmt.Sprintf("gateways[%d]", index))
-	}
-
-	prefix := fmt.Sprintf("gateways[%d]", index)
-
-	if gw.Name == "" {
-		return pkgerrors.NewValidationError("gateway name is required").
+// validateNamespacedResource validates common fields and child elements for a namespaced resource.
+// It returns nil if validation passes, or a parent validation error containing all child errors.
+func (v *Validator) validateNamespacedResource(
+	kind, name, namespace, prefix, childField string,
+	childCount int,
+	validateChild func(int) error,
+) error {
+	if name == "" {
+		return pkgerrors.NewValidationError(kind + " name is required").
 			WithField("field", prefix+".name")
 	}
-
-	if gw.Namespace == "" {
-		return pkgerrors.NewValidationError("gateway namespace is required").
+	if namespace == "" {
+		return pkgerrors.NewValidationError(kind + " namespace is required").
 			WithField("field", prefix+".namespace")
 	}
-
-	if len(gw.Listeners) == 0 {
-		return pkgerrors.NewValidationError("gateway must have at least one listener").
-			WithField("field", prefix+".listeners")
+	if childCount == 0 {
+		return pkgerrors.NewValidationError(kind + " must have at least one " + childField).
+			WithField("field", prefix+"."+childField+"s")
 	}
 
-	parentErr := pkgerrors.NewValidationError(fmt.Sprintf("gateway '%s/%s' validation failed", gw.Namespace, gw.Name))
+	parentErr := pkgerrors.NewValidationError(fmt.Sprintf("%s '%s/%s' validation failed", kind, namespace, name))
 	hasErrors := false
 
-	for i, listener := range gw.Listeners {
-		if err := v.ValidateListener(listener, prefix, i); err != nil {
+	for i := 0; i < childCount; i++ {
+		if err := validateChild(i); err != nil {
 			var validationErr *pkgerrors.ValidationError
 			if ok := isValidationError(err, &validationErr); ok {
 				_ = parentErr.AddChild(validationErr)
@@ -145,8 +141,19 @@ func (v *Validator) ValidateGateway(gw *pb.Gateway, index int) error {
 	if hasErrors {
 		return parentErr
 	}
-
 	return nil
+}
+
+// ValidateGateway validates a gateway configuration
+func (v *Validator) ValidateGateway(gw *pb.Gateway, index int) error {
+	if gw == nil {
+		return pkgerrors.NewValidationError("gateway cannot be nil").
+			WithField("field", fmt.Sprintf("gateways[%d]", index))
+	}
+
+	prefix := fmt.Sprintf("gateways[%d]", index)
+	return v.validateNamespacedResource("gateway", gw.Name, gw.Namespace, prefix, "listener", len(gw.Listeners),
+		func(i int) error { return v.ValidateListener(gw.Listeners[i], prefix, i) })
 }
 
 // ValidateListener validates a listener configuration
@@ -232,42 +239,8 @@ func (v *Validator) ValidateRoute(route *pb.Route, index int) error {
 	}
 
 	prefix := fmt.Sprintf("routes[%d]", index)
-
-	if route.Name == "" {
-		return pkgerrors.NewValidationError("route name is required").
-			WithField("field", prefix+".name")
-	}
-
-	if route.Namespace == "" {
-		return pkgerrors.NewValidationError("route namespace is required").
-			WithField("field", prefix+".namespace")
-	}
-
-	if len(route.Rules) == 0 {
-		return pkgerrors.NewValidationError("route must have at least one rule").
-			WithField("field", prefix+".rules")
-	}
-
-	parentErr := pkgerrors.NewValidationError(fmt.Sprintf("route '%s/%s' validation failed", route.Namespace, route.Name))
-	hasErrors := false
-
-	for i, rule := range route.Rules {
-		if err := v.ValidateRouteRule(rule, prefix, i); err != nil {
-			var validationErr *pkgerrors.ValidationError
-			if ok := isValidationError(err, &validationErr); ok {
-				_ = parentErr.AddChild(validationErr)
-			} else {
-				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
-			}
-			hasErrors = true
-		}
-	}
-
-	if hasErrors {
-		return parentErr
-	}
-
-	return nil
+	return v.validateNamespacedResource("route", route.Name, route.Namespace, prefix, "rule", len(route.Rules),
+		func(i int) error { return v.ValidateRouteRule(route.Rules[i], prefix, i) })
 }
 
 // ValidateRouteRule validates a route rule

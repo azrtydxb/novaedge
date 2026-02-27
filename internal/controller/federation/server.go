@@ -34,6 +34,12 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errUnexpectedTypeInResourcesMapForKey = errors.New("unexpected type in resources map for key")
+	errConflictNotFound = errors.New("conflict not found")
+	errUnexpectedTypeForConflict = errors.New("unexpected type for conflict")
+)
+
 
 const (
 	// ProtocolVersion is the current federation protocol version
@@ -347,7 +353,7 @@ func (s *Server) handleResourceChange(_ context.Context, peerName string, change
 	if existing, ok := s.resources.Load(keyStr); ok {
 		existingRes, ok := existing.(*TrackedResource)
 		if !ok {
-			return fmt.Errorf("unexpected type in resources map for key %s", keyStr)
+			return fmt.Errorf("%w: %s", errUnexpectedTypeInResourcesMapForKey, keyStr)
 		}
 		existingVC := NewVectorClockFromMap(existingRes.VectorClock)
 		incomingVC := NewVectorClockFromMap(change.VectorClock)
@@ -917,12 +923,12 @@ func (s *Server) GetConflicts() []*ConflictInfo {
 func (s *Server) ResolveConflict(keyStr string, useLocal bool) error {
 	val, ok := s.conflicts.Load(keyStr)
 	if !ok {
-		return fmt.Errorf("conflict not found: %s", keyStr)
+		return fmt.Errorf("%w: %s", errConflictNotFound, keyStr)
 	}
 
 	conflict, ok := val.(*ConflictInfo)
 	if !ok {
-		return fmt.Errorf("unexpected type for conflict: %s", keyStr)
+		return fmt.Errorf("%w: %s", errUnexpectedTypeForConflict, keyStr)
 	}
 	key := conflict.Key
 

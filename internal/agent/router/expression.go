@@ -17,11 +17,32 @@ limitations under the License.
 package router
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
 )
+var (
+	errUnexpectedTokenAtPosition = errors.New("unexpected token at position")
+	errUnterminatedStringAtPosition = errors.New("unterminated string at position")
+	errUnexpectedCharacter = errors.New("unexpected character")
+	errExpected = errors.New("expected")
+	errUnexpectedEndOfExpression = errors.New("unexpected end of expression")
+	errUnexpectedToken = errors.New("unexpected token")
+	errExpectedOperatorAfterHeader = errors.New("expected operator after header")
+	errExpectedQuotedStringAfterOperator = errors.New("expected quoted string after operator")
+	errExpectedMatchTypeExactPrefixContainsAfterPath = errors.New("expected match type (exact, prefix, contains) after path")
+	errInvalidPathMatchType = errors.New("invalid path match type")
+	errExpectedQuotedStringForPathValue = errors.New("expected quoted string for path value")
+	errExpectedOperatorAfterMethod = errors.New("expected operator after method")
+	errExpectedQuotedStringForMethodValue = errors.New("expected quoted string for method value")
+	errExpectedOperatorAfterQuery = errors.New("expected operator after query")
+	errExpectedInAfterSourceIP = errors.New("expected 'in' after source_ip")
+	errExpectedQuotedCIDRStringAfterIn = errors.New("expected quoted CIDR string after 'in'")
+	errUnknownOperand = errors.New("unknown operand")
+)
+
 
 // ExprNode represents a node in the boolean expression AST.
 type ExprNode interface {
@@ -242,7 +263,7 @@ func CompileExpression(expr string) (ExprNode, error) {
 		return nil, err
 	}
 	if p.pos < len(p.tokens) {
-		return nil, fmt.Errorf("unexpected token at position %d: %q", p.pos, p.tokens[p.pos])
+		return nil, fmt.Errorf("%w: %d: %q", errUnexpectedTokenAtPosition, p.pos, p.tokens[p.pos])
 	}
 	return node, nil
 }
@@ -312,7 +333,7 @@ func tokenize(expr string) ([]token, error) {
 				j++
 			}
 			if j >= len(runes) {
-				return nil, fmt.Errorf("unterminated string at position %d", i)
+				return nil, fmt.Errorf("%w: %d", errUnterminatedStringAtPosition, i)
 			}
 			tokens = append(tokens, token{kind: tokenString, value: string(runes[i+1 : j])})
 			i = j + 1
@@ -330,7 +351,7 @@ func tokenize(expr string) ([]token, error) {
 			continue
 		}
 
-		return nil, fmt.Errorf("unexpected character %q at position %d", string(ch), i)
+		return nil, fmt.Errorf("%w: %q at position %d", errUnexpectedCharacter, string(ch), i)
 	}
 
 	return tokens, nil
@@ -364,11 +385,11 @@ func (p *exprParser) advance() token {
 
 func (p *exprParser) expect(kind tokenKind, value string) error {
 	if p.pos >= len(p.tokens) {
-		return fmt.Errorf("expected %q but got end of expression", value)
+		return fmt.Errorf("%w: %q but got end of expression", errExpected, value)
 	}
 	t := p.tokens[p.pos]
 	if t.kind != kind || (value != "" && t.value != value) {
-		return fmt.Errorf("expected %q but got %q at position %d", value, t.value, p.pos)
+		return fmt.Errorf("%w: %q but got %q at position %d", errExpected, value, t.value, p.pos)
 	}
 	p.pos++
 	return nil
@@ -421,7 +442,7 @@ func (p *exprParser) parseNot() (ExprNode, error) {
 func (p *exprParser) parseAtom() (ExprNode, error) {
 	t := p.peek()
 	if t == nil {
-		return nil, fmt.Errorf("unexpected end of expression")
+		return nil, errUnexpectedEndOfExpression
 	}
 
 	// Parenthesized sub-expression
@@ -442,7 +463,7 @@ func (p *exprParser) parseAtom() (ExprNode, error) {
 		return p.parseOperand()
 	}
 
-	return nil, fmt.Errorf("unexpected token %q at position %d", t.value, p.pos)
+	return nil, fmt.Errorf("%w: %q at position %d", errUnexpectedToken, t.value, p.pos)
 }
 
 func (p *exprParser) parseOperand() (ExprNode, error) {
@@ -454,13 +475,13 @@ func (p *exprParser) parseOperand() (ExprNode, error) {
 		name := strings.TrimPrefix(t.value, "header:")
 		opTok := p.peek()
 		if opTok == nil || opTok.kind != tokenOp {
-			return nil, fmt.Errorf("expected operator after header:%s", name)
+			return nil, fmt.Errorf("%w: %s", errExpectedOperatorAfterHeader, name)
 		}
 		op := p.advance().value
 
 		valTok := p.peek()
 		if valTok == nil || valTok.kind != tokenString {
-			return nil, fmt.Errorf("expected quoted string after operator")
+			return nil, errExpectedQuotedStringAfterOperator
 		}
 		val := p.advance().value
 		return &HeaderExpr{Name: name, Op: op, Value: val}, nil
@@ -469,15 +490,15 @@ func (p *exprParser) parseOperand() (ExprNode, error) {
 	case strings.EqualFold(t.value, "path"):
 		matchTypeTok := p.peek()
 		if matchTypeTok == nil || matchTypeTok.kind != tokenWord {
-			return nil, fmt.Errorf("expected match type (exact, prefix, contains) after path")
+			return nil, errExpectedMatchTypeExactPrefixContainsAfterPath
 		}
 		matchType := strings.ToLower(p.advance().value)
 		if matchType != "exact" && matchType != "prefix" && matchType != "contains" {
-			return nil, fmt.Errorf("invalid path match type %q", matchType)
+			return nil, fmt.Errorf("%w: %q", errInvalidPathMatchType, matchType)
 		}
 		valTok := p.peek()
 		if valTok == nil || valTok.kind != tokenString {
-			return nil, fmt.Errorf("expected quoted string for path value")
+			return nil, errExpectedQuotedStringForPathValue
 		}
 		val := p.advance().value
 		return &PathExpr{MatchType: matchType, Value: val}, nil
@@ -486,12 +507,12 @@ func (p *exprParser) parseOperand() (ExprNode, error) {
 	case strings.EqualFold(t.value, "method"):
 		opTok := p.peek()
 		if opTok == nil || opTok.kind != tokenOp {
-			return nil, fmt.Errorf("expected operator after method")
+			return nil, errExpectedOperatorAfterMethod
 		}
 		p.advance() // consume operator
 		valTok := p.peek()
 		if valTok == nil || valTok.kind != tokenString {
-			return nil, fmt.Errorf("expected quoted string for method value")
+			return nil, errExpectedQuotedStringForMethodValue
 		}
 		val := p.advance().value
 		return &MethodExpr{Method: val}, nil
@@ -501,12 +522,12 @@ func (p *exprParser) parseOperand() (ExprNode, error) {
 		name := strings.TrimPrefix(t.value, "query:")
 		opTok := p.peek()
 		if opTok == nil || opTok.kind != tokenOp {
-			return nil, fmt.Errorf("expected operator after query:%s", name)
+			return nil, fmt.Errorf("%w: %s", errExpectedOperatorAfterQuery, name)
 		}
 		op := p.advance().value
 		valTok := p.peek()
 		if valTok == nil || valTok.kind != tokenString {
-			return nil, fmt.Errorf("expected quoted string after operator")
+			return nil, errExpectedQuotedStringAfterOperator
 		}
 		val := p.advance().value
 		return &QueryParamExpr{Name: name, Op: op, Value: val}, nil
@@ -515,12 +536,12 @@ func (p *exprParser) parseOperand() (ExprNode, error) {
 	case strings.EqualFold(t.value, "source_ip"):
 		inTok := p.peek()
 		if inTok == nil || inTok.kind != tokenWord || !strings.EqualFold(inTok.value, "in") {
-			return nil, fmt.Errorf("expected 'in' after source_ip")
+			return nil, errExpectedInAfterSourceIP
 		}
 		p.advance() // consume 'in'
 		valTok := p.peek()
 		if valTok == nil || valTok.kind != tokenString {
-			return nil, fmt.Errorf("expected quoted CIDR string after 'in'")
+			return nil, errExpectedQuotedCIDRStringAfterIn
 		}
 		cidr := p.advance().value
 		_, network, err := net.ParseCIDR(cidr)
@@ -530,6 +551,6 @@ func (p *exprParser) parseOperand() (ExprNode, error) {
 		return &SourceIPExpr{CIDR: cidr, network: network}, nil
 
 	default:
-		return nil, fmt.Errorf("unknown operand %q at position %d", t.value, p.pos-1)
+		return nil, fmt.Errorf("%w: %q at position %d", errUnknownOperand, t.value, p.pos-1)
 	}
 }

@@ -17,30 +17,38 @@ limitations under the License.
 package snapshot
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errBasicAuthSpecIsNil = errors.New("basicAuth spec is nil")
+	errHtpasswdSecret = errors.New("htpasswd secret")
+	errSecret = errors.New("secret")
+	errOidcSpecIsNil = errors.New("oidc spec is nil")
+)
+
 
 // buildBasicAuthConfig builds a BasicAuthConfig proto from the CRD spec,
 // loading the htpasswd credentials from the pre-fetched Secret cache.
 func (b *Builder) buildBasicAuthConfig(p *novaedgev1alpha1.ProxyPolicy, bc *buildContext) (*pb.BasicAuthConfig, error) {
 	spec := p.Spec.BasicAuth
 	if spec == nil {
-		return nil, fmt.Errorf("basicAuth spec is nil")
+		return nil, errBasicAuthSpecIsNil
 	}
 
 	// Load htpasswd from pre-fetched secret cache
 	secret, ok := bc.getSecret(p.Namespace, spec.SecretRef.Name)
 	if !ok {
-		return nil, fmt.Errorf("htpasswd secret %s/%s not found in cache", p.Namespace, spec.SecretRef.Name)
+		return nil, fmt.Errorf("%w: %s/%s not found in cache", errHtpasswdSecret, p.Namespace, spec.SecretRef.Name)
 	}
 
 	htpasswd, ok := secret.Data["htpasswd"]
 	if !ok {
-		return nil, fmt.Errorf("secret %s missing 'htpasswd' key", spec.SecretRef.Name)
+		return nil, fmt.Errorf("%w: %s missing 'htpasswd' key", errSecret, spec.SecretRef.Name)
 	}
 
 	realm := spec.Realm
@@ -87,7 +95,7 @@ func (b *Builder) buildForwardAuthConfig(spec *novaedgev1alpha1.ForwardAuthPolic
 func (b *Builder) buildOIDCConfig(p *novaedgev1alpha1.ProxyPolicy, bc *buildContext) (*pb.OIDCConfig, error) {
 	spec := p.Spec.OIDC
 	if spec == nil {
-		return nil, fmt.Errorf("oidc spec is nil")
+		return nil, errOidcSpecIsNil
 	}
 
 	// Load client secret from pre-fetched cache
@@ -147,12 +155,12 @@ func (b *Builder) buildOIDCConfig(p *novaedgev1alpha1.ProxyPolicy, bc *buildCont
 func (b *Builder) loadSecretValue(namespace, secretName, key string, bc *buildContext) (string, error) {
 	secret, ok := bc.getSecret(namespace, secretName)
 	if !ok {
-		return "", fmt.Errorf("secret %s/%s not found in cache", namespace, secretName)
+		return "", fmt.Errorf("%w: %s/%s not found in cache", errSecret, namespace, secretName)
 	}
 
 	data, ok := secret.Data[key]
 	if !ok {
-		return "", fmt.Errorf("secret %s missing key '%s'", secretName, key)
+		return "", fmt.Errorf("%w: %s missing key '%s'", errSecret, secretName, key)
 	}
 
 	return string(data), nil
@@ -162,12 +170,12 @@ func (b *Builder) loadSecretValue(namespace, secretName, key string, bc *buildCo
 func (b *Builder) loadSecretBytes(namespace, secretName, key string, bc *buildContext) ([]byte, error) {
 	secret, ok := bc.getSecret(namespace, secretName)
 	if !ok {
-		return nil, fmt.Errorf("secret %s/%s not found in cache", namespace, secretName)
+		return nil, fmt.Errorf("%w: %s/%s not found in cache", errSecret, namespace, secretName)
 	}
 
 	data, ok := secret.Data[key]
 	if !ok {
-		return nil, fmt.Errorf("secret %s missing key '%s'", secretName, key)
+		return nil, fmt.Errorf("%w: %s missing key '%s'", errSecret, secretName, key)
 	}
 
 	return data, nil

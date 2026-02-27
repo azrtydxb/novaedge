@@ -21,13 +21,14 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -40,6 +41,10 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+var (
+	errObjectDoesNotImplementClientObject = errors.New("object does not implement client.Object")
+)
+
 
 const (
 	novaEdgeClusterFinalizer = "novaedge.io/finalizer"
@@ -83,7 +88,7 @@ func (r *NovaEdgeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 	// Fetch the NovaEdgeCluster instance
 	cluster := &novaedgev1alpha1.NovaEdgeCluster{}
 	if err := r.Get(ctx, req.NamespacedName, cluster); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("NovaEdgeCluster resource not found, ignoring")
 			return ctrl.Result{}, nil
 		}
@@ -173,14 +178,14 @@ func (r *NovaEdgeClusterReconciler) cleanupResources(ctx context.Context, cluste
 	crb := &rbacv1.ClusterRoleBinding{}
 	crbName := fmt.Sprintf("%s-%s-controller", cluster.Namespace, cluster.Name)
 	if err := r.Get(ctx, types.NamespacedName{Name: crbName}, crb); err == nil {
-		if err := r.Delete(ctx, crb); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, crb); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
 
 	agentCRBName := fmt.Sprintf("%s-%s-agent", cluster.Namespace, cluster.Name)
 	if err := r.Get(ctx, types.NamespacedName{Name: agentCRBName}, crb); err == nil {
-		if err := r.Delete(ctx, crb); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, crb); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -189,14 +194,14 @@ func (r *NovaEdgeClusterReconciler) cleanupResources(ctx context.Context, cluste
 	cr := &rbacv1.ClusterRole{}
 	crName := fmt.Sprintf("%s-%s-controller", cluster.Namespace, cluster.Name)
 	if err := r.Get(ctx, types.NamespacedName{Name: crName}, cr); err == nil {
-		if err := r.Delete(ctx, cr); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, cr); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
 
 	agentCRName := fmt.Sprintf("%s-%s-agent", cluster.Namespace, cluster.Name)
 	if err := r.Get(ctx, types.NamespacedName{Name: agentCRName}, cr); err == nil {
-		if err := r.Delete(ctx, cr); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, cr); err != nil && !apierrors.IsNotFound(err) {
 			return err
 		}
 	}
@@ -1096,11 +1101,11 @@ func (r *NovaEdgeClusterReconciler) createOrUpdate(ctx context.Context, obj clie
 	existingObj := obj.DeepCopyObject()
 	existing, ok := existingObj.(client.Object)
 	if !ok {
-		return fmt.Errorf("object does not implement client.Object")
+		return errObjectDoesNotImplementClientObject
 	}
 
 	if err := r.Get(ctx, key, existing); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("Creating resource", "kind", obj.GetObjectKind().GroupVersionKind().Kind, "name", key.Name)
 			return r.Create(ctx, obj)
 		}

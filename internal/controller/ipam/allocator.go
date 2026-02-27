@@ -17,11 +17,16 @@ limitations under the License.
 package ipam
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
 	"go.uber.org/zap"
 )
+var (
+	errPool = errors.New("pool")
+)
+
 
 // Allocator manages IP address allocation across multiple pools
 type Allocator struct {
@@ -101,7 +106,7 @@ func (a *Allocator) Allocate(poolName, vipName string) (string, error) {
 	a.mu.RUnlock()
 
 	if !ok {
-		return "", fmt.Errorf("pool %s not found", poolName)
+		return "", fmt.Errorf("%w: %s not found", errPool, poolName)
 	}
 
 	addr, err := pool.Allocate(vipName)
@@ -143,7 +148,7 @@ func (a *Allocator) GetPoolStats(poolName string) (allocated, available int, err
 	a.mu.RUnlock()
 
 	if !ok {
-		return 0, 0, fmt.Errorf("pool %s not found", poolName)
+		return 0, 0, fmt.Errorf("%w: %s not found", errPool, poolName)
 	}
 
 	return pool.GetAllocatedCount(), pool.GetAvailableCount(), nil
@@ -156,7 +161,7 @@ func (a *Allocator) GetPoolAllocations(poolName string) (map[string]string, erro
 	a.mu.RUnlock()
 
 	if !ok {
-		return nil, fmt.Errorf("pool %s not found", poolName)
+		return nil, fmt.Errorf("%w: %s not found", errPool, poolName)
 	}
 
 	return pool.GetAllocations(), nil

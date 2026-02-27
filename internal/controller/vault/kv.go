@@ -17,6 +17,7 @@ limitations under the License.
 package vault
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"strings"
@@ -25,6 +26,12 @@ import (
 
 	"go.uber.org/zap"
 )
+var (
+	errNoDataFoundAtPath = errors.New("no data found at path")
+	errUnexpectedKVV2ResponseStructureAtPath = errors.New("unexpected KV v2 response structure at path")
+	errKey = errors.New("key")
+)
+
 
 // KVEngine defines the KV engine version.
 type KVEngine string
@@ -81,7 +88,7 @@ func (k *KVManager) ReadSecret(ctx context.Context, engine KVEngine, path string
 	}
 
 	if resp == nil || resp.Data == nil {
-		return nil, fmt.Errorf("no data found at path %s", path)
+		return nil, fmt.Errorf("%w: %s", errNoDataFoundAtPath, path)
 	}
 
 	// KV v2 wraps data in a nested "data" key
@@ -89,7 +96,7 @@ func (k *KVManager) ReadSecret(ctx context.Context, engine KVEngine, path string
 		if nestedData, ok := resp.Data["data"].(map[string]interface{}); ok {
 			return nestedData, nil
 		}
-		return nil, fmt.Errorf("unexpected KV v2 response structure at path %s", path)
+		return nil, fmt.Errorf("%w: %s", errUnexpectedKVV2ResponseStructureAtPath, path)
 	}
 
 	return resp.Data, nil
@@ -104,12 +111,12 @@ func (k *KVManager) ReadSecretKey(ctx context.Context, engine KVEngine, path, ke
 
 	value, ok := data[key]
 	if !ok {
-		return "", fmt.Errorf("key %q not found in secret at %s", key, path)
+		return "", fmt.Errorf("%w: %q not found in secret at %s", errKey, key, path)
 	}
 
 	strValue, ok := value.(string)
 	if !ok {
-		return "", fmt.Errorf("key %q at %s is not a string", key, path)
+		return "", fmt.Errorf("%w: %q at %s is not a string", errKey, key, path)
 	}
 
 	return strValue, nil

@@ -19,6 +19,7 @@ limitations under the License.
 package main
 
 import (
+	"errors"
 	"context"
 	"flag"
 	"fmt"
@@ -60,6 +61,11 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errInvalidBGPPeerFormat = errors.New("invalid BGP peer format")
+	errInvalidBGPPeerIP = errors.New("invalid BGP peer IP")
+)
+
 
 // stringSlice implements flag.Value for repeatable string flags.
 type stringSlice []string
@@ -926,11 +932,11 @@ func applySDWANConfig(mgr *sdwan.Manager, snapshot *config.Snapshot, logger *zap
 func parseBGPPeer(peerStr string) (cpvip.BGPPeerConfig, error) {
 	parts := strings.Split(peerStr, ":")
 	if len(parts) < 2 || len(parts) > 3 {
-		return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer format %q: expected IP:AS[:PORT]", peerStr)
+		return cpvip.BGPPeerConfig{}, fmt.Errorf("%w: %q: expected IP:AS[:PORT]", errInvalidBGPPeerFormat, peerStr)
 	}
 
 	if net.ParseIP(parts[0]) == nil {
-		return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer IP %q", parts[0])
+		return cpvip.BGPPeerConfig{}, fmt.Errorf("%w: %q", errInvalidBGPPeerIP, parts[0])
 	}
 
 	peerAS, err := strconv.ParseUint(parts[1], 10, 32)

@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"errors"
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -39,6 +40,30 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errAllowedAlgorithmsMustBeExplicitlyConfiguredRefusingToAllow = errors.New("AllowedAlgorithms must be explicitly configured; refusing to allow all algorithms by default")
+	errJWKSEndpointReturnedStatus = errors.New("JWKS endpoint returned status")
+	errAlgorithmNoneNotAllowed = errors.New(`algorithm "none" is not allowed`)
+	errUnexpectedSigningMethod = errors.New("unexpected signing method")
+	errAlgorithm2 = errors.New("algorithm")
+	errTokenMissingKidHeader = errors.New("token missing kid header")
+	errUnknownKeyID = errors.New("unknown key ID")
+	errInvalidClaimsType = errors.New("invalid claims type")
+	errTokenHasBeenRevoked = errors.New("token has been revoked")
+	errInvalidIssuer = errors.New("invalid issuer")
+	errMissingAudienceClaim = errors.New("missing audience claim")
+	errInvalidAudience = errors.New("invalid audience")
+	errUnsupportedKeyType = errors.New("unsupported key type")
+	errFailedToDecodeCertificate = errors.New("failed to decode certificate")
+	errCertificateDoesNotContainRSAPublicKey = errors.New("certificate does not contain RSA public key")
+	errRSAJWKMissingNOrEParameter = errors.New("RSA JWK missing n or e parameter")
+	errECJWKMissingCrvXOrYParameter = errors.New("EC JWK missing crv, x, or y parameter")
+	errUnsupportedECCurve = errors.New("unsupported EC curve")
+	errUnsupportedOKPCurve = errors.New("unsupported OKP curve")
+	errOKPJWKMissingXParameter = errors.New("OKP JWK missing x parameter")
+	errInvalidEd25519PublicKeySizeGot = errors.New("invalid Ed25519 public key size: got")
+)
+
 
 // jwtClaimsKey is a typed context key for storing JWT claims, avoiding SA1029.
 type jwtClaimsKey struct{}
@@ -115,7 +140,7 @@ func NewJWTValidator(ctx context.Context, config *pb.JWTConfig, opts ...JWTValid
 
 	// Require explicit algorithm configuration to prevent algorithm confusion attacks
 	if len(config.GetAllowedAlgorithms()) == 0 {
-		return nil, fmt.Errorf("AllowedAlgorithms must be explicitly configured; refusing to allow all algorithms by default")
+		return nil, errAllowedAlgorithmsMustBeExplicitlyConfiguredRefusingToAllow
 	}
 
 	// Build allowed algorithms set
@@ -163,7 +188,7 @@ func (v *JWTValidator) fetchJWKS(ctx context.Context) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("JWKS endpoint returned status %d", resp.StatusCode)
+		return fmt.Errorf("%w: %d", errJWKSEndpointReturnedStatus, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxJWKSResponseSize))
@@ -232,24 +257,24 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		// Explicitly reject the "none" algorithm to prevent algorithm confusion attacks
 		if algHeader, ok := token.Header["alg"].(string); ok && strings.EqualFold(algHeader, "none") {
-			return nil, fmt.Errorf("algorithm \"none\" is not allowed")
+			return nil, errAlgorithmNoneNotAllowed
 		}
 
 		// Verify the signing method is a supported type
 		if !isSupportedSigningMethod(token.Method) {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, fmt.Errorf("%w: %v", errUnexpectedSigningMethod, token.Header["alg"])
 		}
 
 		// Check against the configured allowed algorithms
 		alg := token.Method.Alg()
 		if !v.isAlgorithmAllowed(alg) {
-			return nil, fmt.Errorf("algorithm %s is not allowed", alg)
+			return nil, fmt.Errorf("%w: %s is not allowed", errAlgorithm2, alg)
 		}
 
 		// Get key ID from token header
 		kid, ok := token.Header["kid"].(string)
 		if !ok {
-			return nil, fmt.Errorf("token missing kid header")
+			return nil, errTokenMissingKidHeader
 		}
 
 		// Get key from cache
@@ -258,7 +283,7 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 		v.mu.RUnlock()
 
 		if !exists {
-			return nil, fmt.Errorf("unknown key ID: %s", kid)
+			return nil, fmt.Errorf("%w: %s", errUnknownKeyID, kid)
 		}
 
 		return key, nil
@@ -271,14 +296,14 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 	// Validate claims
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok {
-		return nil, fmt.Errorf("invalid claims type")
+		return nil, errInvalidClaimsType
 	}
 
 	// Check blacklist using the jti (JWT ID) claim
 	if jti, jtiOK := claims["jti"].(string); jtiOK && jti != "" {
 		if v.blacklist.IsBlacklisted(jti) {
 			metrics.JWTBlockedTotal.Inc()
-			return nil, fmt.Errorf("token has been revoked")
+			return nil, errTokenHasBeenRevoked
 		}
 	}
 
@@ -286,7 +311,7 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 	if v.config.Issuer != "" {
 		iss, ok := claims["iss"].(string)
 		if !ok || iss != v.config.Issuer {
-			return nil, fmt.Errorf("invalid issuer")
+			return nil, errInvalidIssuer
 		}
 	}
 
@@ -294,7 +319,7 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 	if len(v.config.Audience) > 0 {
 		aud, ok := claims["aud"].(string)
 		if !ok {
-			return nil, fmt.Errorf("missing audience claim")
+			return nil, errMissingAudienceClaim
 		}
 
 		validAudience := false
@@ -306,7 +331,7 @@ func (v *JWTValidator) Validate(tokenString string) (*jwt.Token, error) {
 		}
 
 		if !validAudience {
-			return nil, fmt.Errorf("invalid audience")
+			return nil, errInvalidAudience
 		}
 	}
 
@@ -377,7 +402,7 @@ func parseJWKPublicKey(key JWK) (interface{}, error) {
 	case "OKP":
 		return parseOKPPublicKey(key)
 	default:
-		return nil, fmt.Errorf("unsupported key type: %s", key.Kty)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedKeyType, key.Kty)
 	}
 }
 
@@ -388,7 +413,7 @@ func parseRSAPublicKey(key JWK) (*rsa.PublicKey, error) {
 		certPEM := "-----BEGIN CERTIFICATE-----\n" + key.X5c[0] + "\n-----END CERTIFICATE-----"
 		block, _ := pem.Decode([]byte(certPEM))
 		if block == nil {
-			return nil, fmt.Errorf("failed to decode certificate")
+			return nil, errFailedToDecodeCertificate
 		}
 
 		cert, err := x509.ParseCertificate(block.Bytes)
@@ -398,7 +423,7 @@ func parseRSAPublicKey(key JWK) (*rsa.PublicKey, error) {
 
 		rsaKey, ok := cert.PublicKey.(*rsa.PublicKey)
 		if !ok {
-			return nil, fmt.Errorf("certificate does not contain RSA public key")
+			return nil, errCertificateDoesNotContainRSAPublicKey
 		}
 
 		return rsaKey, nil
@@ -406,7 +431,7 @@ func parseRSAPublicKey(key JWK) (*rsa.PublicKey, error) {
 
 	// Construct from n and e parameters
 	if key.N == "" || key.E == "" {
-		return nil, fmt.Errorf("RSA JWK missing n or e parameter")
+		return nil, errRSAJWKMissingNOrEParameter
 	}
 
 	nBytes, err := base64.RawURLEncoding.DecodeString(key.N)
@@ -431,7 +456,7 @@ func parseRSAPublicKey(key JWK) (*rsa.PublicKey, error) {
 // parseECPublicKey parses an ECDSA public key from a JWK
 func parseECPublicKey(key JWK) (*ecdsa.PublicKey, error) {
 	if key.Crv == "" || key.X == "" || key.Y == "" {
-		return nil, fmt.Errorf("EC JWK missing crv, x, or y parameter")
+		return nil, errECJWKMissingCrvXOrYParameter
 	}
 
 	var curve elliptic.Curve
@@ -443,7 +468,7 @@ func parseECPublicKey(key JWK) (*ecdsa.PublicKey, error) {
 	case "P-521":
 		curve = elliptic.P521()
 	default:
-		return nil, fmt.Errorf("unsupported EC curve: %s", key.Crv)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedECCurve, key.Crv)
 	}
 
 	xBytes, err := base64.RawURLEncoding.DecodeString(key.X)
@@ -469,11 +494,11 @@ func parseECPublicKey(key JWK) (*ecdsa.PublicKey, error) {
 // parseOKPPublicKey parses an Ed25519 public key from a JWK with key type "OKP"
 func parseOKPPublicKey(key JWK) (ed25519.PublicKey, error) {
 	if key.Crv != "Ed25519" {
-		return nil, fmt.Errorf("unsupported OKP curve: %s (only Ed25519 is supported)", key.Crv)
+		return nil, fmt.Errorf("%w: %s (only Ed25519 is supported)", errUnsupportedOKPCurve, key.Crv)
 	}
 
 	if key.X == "" {
-		return nil, fmt.Errorf("OKP JWK missing x parameter")
+		return nil, errOKPJWKMissingXParameter
 	}
 
 	xBytes, err := base64.RawURLEncoding.DecodeString(key.X)
@@ -482,7 +507,7 @@ func parseOKPPublicKey(key JWK) (ed25519.PublicKey, error) {
 	}
 
 	if len(xBytes) != ed25519.PublicKeySize {
-		return nil, fmt.Errorf("invalid Ed25519 public key size: got %d, want %d", len(xBytes), ed25519.PublicKeySize)
+		return nil, fmt.Errorf("%w: %d, want %d", errInvalidEd25519PublicKeySizeGot, len(xBytes), ed25519.PublicKeySize)
 	}
 
 	return ed25519.PublicKey(xBytes), nil

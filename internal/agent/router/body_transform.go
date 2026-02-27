@@ -17,6 +17,7 @@ limitations under the License.
 package router
 
 import (
+	"errors"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -27,6 +28,14 @@ import (
 
 	"go.uber.org/zap"
 )
+var (
+	errUnsupportedOperation = errors.New("unsupported operation")
+	errJSONPointerMustStartWith = errors.New("JSON Pointer must start with '/'")
+	errEmptyPathNotSupported = errors.New("empty path not supported")
+	errPathSegment = errors.New("path segment")
+	errKey = errors.New("key")
+)
+
 
 // defaultMaxBodySize is the default maximum body size for transformation (1MB).
 const defaultMaxBodySize int64 = 1 << 20
@@ -247,7 +256,7 @@ func applyOperations(body []byte, ops []TransformOperation) ([]byte, error) {
 		case "copy":
 			err = applyCopy(data, op.From, op.Path)
 		default:
-			err = fmt.Errorf("unsupported operation: %s", op.Op)
+			err = fmt.Errorf("%w: %s", errUnsupportedOperation, op.Op)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("operation %s on path %q failed: %w", op.Op, op.Path, err)
@@ -264,7 +273,7 @@ func parsePointer(pointer string) ([]string, error) {
 		return nil, nil
 	}
 	if !strings.HasPrefix(pointer, "/") {
-		return nil, fmt.Errorf("JSON Pointer must start with '/': %s", pointer)
+		return nil, fmt.Errorf("%w: %s", errJSONPointerMustStartWith, pointer)
 	}
 	parts := strings.Split(pointer[1:], "/")
 	// Unescape ~1 -> / and ~0 -> ~
@@ -284,18 +293,18 @@ func navigateToParent(data map[string]interface{}, pointer string) (map[string]i
 		return nil, "", err
 	}
 	if len(parts) == 0 {
-		return nil, "", fmt.Errorf("empty path not supported")
+		return nil, "", errEmptyPathNotSupported
 	}
 
 	current := data
 	for i := 0; i < len(parts)-1; i++ {
 		next, ok := current[parts[i]]
 		if !ok {
-			return nil, "", fmt.Errorf("path segment %q not found", parts[i])
+			return nil, "", fmt.Errorf("%w: %q not found", errPathSegment, parts[i])
 		}
 		nextMap, ok := next.(map[string]interface{})
 		if !ok {
-			return nil, "", fmt.Errorf("path segment %q is not an object", parts[i])
+			return nil, "", fmt.Errorf("%w: %q is not an object", errPathSegment, parts[i])
 		}
 		current = nextMap
 	}
@@ -311,7 +320,7 @@ func getValue(data map[string]interface{}, pointer string) (interface{}, error) 
 	}
 	val, ok := parent[key]
 	if !ok {
-		return nil, fmt.Errorf("key %q not found", key)
+		return nil, fmt.Errorf("%w: %q not found", errKey, key)
 	}
 	return val, nil
 }
@@ -340,7 +349,7 @@ func applyRemove(data map[string]interface{}, path string) error {
 	}
 
 	if _, ok := parent[key]; !ok {
-		return fmt.Errorf("key %q not found for removal", key)
+		return fmt.Errorf("%w: %q not found for removal", errKey, key)
 	}
 
 	delete(parent, key)
@@ -355,7 +364,7 @@ func applyReplace(data map[string]interface{}, path string, value json.RawMessag
 	}
 
 	if _, ok := parent[key]; !ok {
-		return fmt.Errorf("key %q not found for replacement", key)
+		return fmt.Errorf("%w: %q not found for replacement", errKey, key)
 	}
 
 	var val interface{}

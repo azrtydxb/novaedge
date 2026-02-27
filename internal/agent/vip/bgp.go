@@ -35,6 +35,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errBGPConfigIsRequiredForBGPModeVIPs = errors.New("BGP config is required for BGP mode VIPs")
+)
+
 
 // BGPHandler manages BGP VIP mode with IPv4/IPv6 and BFD support
 type BGPHandler struct {
@@ -147,7 +151,7 @@ func (h *BGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) e
 
 	// Validate BGP config
 	if assignment.BgpConfig == nil {
-		return fmt.Errorf("BGP config is required for BGP mode VIPs")
+		return errBGPConfigIsRequiredForBGPModeVIPs
 	}
 
 	isIPv6 := ip.To4() == nil
@@ -405,7 +409,7 @@ func (h *BGPHandler) reconfigureVIP(ctx context.Context, state *BGPVIPState, ass
 	newBGP := assignment.BgpConfig
 
 	if newBGP == nil {
-		return fmt.Errorf("BGP config is required for BGP mode VIPs")
+		return errBGPConfigIsRequiredForBGPModeVIPs
 	}
 
 	// Check if ASN or RouterID changed — requires full BGP server restart

@@ -17,6 +17,7 @@ limitations under the License.
 package vip
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"net"
@@ -25,12 +26,20 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errOverlayCIDRMustNotBeEmpty = errors.New("overlay CIDR must not be empty")
+	errBGPConfigIsRequiredForOverlayPrefixAnnouncement = errors.New("BGP config is required for overlay prefix announcement")
+	errBGPServerNotStartedCannotAnnounceOverlayPrefix = errors.New("BGP server not started, cannot announce overlay prefix")
+	errBGPConfigIsRequiredForOverlayPrefixWithdrawal = errors.New("BGP config is required for overlay prefix withdrawal")
+	errBGPServerNotStartedCannotWithdrawOverlayPrefix = errors.New("BGP server not started, cannot withdraw overlay prefix")
+)
+
 
 // validateOverlayCIDR validates that the given string is a valid CIDR notation.
 // It returns an error if the CIDR is empty or cannot be parsed.
 func validateOverlayCIDR(cidr string) error {
 	if cidr == "" {
-		return fmt.Errorf("overlay CIDR must not be empty")
+		return errOverlayCIDRMustNotBeEmpty
 	}
 
 	_, _, err := net.ParseCIDR(cidr)
@@ -51,7 +60,7 @@ func (h *BGPHandler) AnnounceOverlayPrefix(ctx context.Context, cidr string, con
 	}
 
 	if config == nil {
-		return fmt.Errorf("BGP config is required for overlay prefix announcement")
+		return errBGPConfigIsRequiredForOverlayPrefixAnnouncement
 	}
 
 	ip, ipNet, err := net.ParseCIDR(cidr)
@@ -67,7 +76,7 @@ func (h *BGPHandler) AnnounceOverlayPrefix(ctx context.Context, cidr string, con
 	defer h.mu.Unlock()
 
 	if h.bgpServer == nil {
-		return fmt.Errorf("BGP server not started, cannot announce overlay prefix")
+		return errBGPServerNotStartedCannotAnnounceOverlayPrefix
 	}
 
 	h.logger.Info("announcing overlay prefix via BGP",
@@ -97,7 +106,7 @@ func (h *BGPHandler) WithdrawOverlayPrefix(ctx context.Context, cidr string, con
 	}
 
 	if config == nil {
-		return fmt.Errorf("BGP config is required for overlay prefix withdrawal")
+		return errBGPConfigIsRequiredForOverlayPrefixWithdrawal
 	}
 
 	_, ipNet, err := net.ParseCIDR(cidr)
@@ -112,7 +121,7 @@ func (h *BGPHandler) WithdrawOverlayPrefix(ctx context.Context, cidr string, con
 	defer h.mu.Unlock()
 
 	if h.bgpServer == nil {
-		return fmt.Errorf("BGP server not started, cannot withdraw overlay prefix")
+		return errBGPServerNotStartedCannotWithdrawOverlayPrefix
 	}
 
 	h.logger.Info("withdrawing overlay prefix from BGP",

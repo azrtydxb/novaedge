@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"errors"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -19,6 +20,17 @@ import (
 	"github.com/go-acme/lego/v4/registration"
 	"go.uber.org/zap"
 )
+var (
+	errConfigIsRequired = errors.New("config is required")
+	errStorageIsRequired = errors.New("storage is required")
+	errFailedToDecodeAccountPrivateKey = errors.New("failed to decode account private key")
+	errUnsupportedPrivateKeyType = errors.New("unsupported private key type")
+	errClientNotInitialized = errors.New("client not initialized")
+	errAtLeastOneDomainIsRequired = errors.New("at least one domain is required")
+	errUnsupportedChallengeType = errors.New("unsupported challenge type")
+	errFailedToDecodePEMBlock = errors.New("failed to decode PEM block")
+)
+
 
 // Client provides ACME certificate management functionality.
 type Client struct {
@@ -62,10 +74,10 @@ func (u *User) GetPrivateKey() crypto.PrivateKey {
 // NewClient creates a new ACME client.
 func NewClient(config *Config, storage Storage, provider ChallengeProvider, logger *zap.Logger) (*Client, error) {
 	if config == nil {
-		return nil, fmt.Errorf("config is required")
+		return nil, errConfigIsRequired
 	}
 	if storage == nil {
-		return nil, fmt.Errorf("storage is required")
+		return nil, errStorageIsRequired
 	}
 	if logger == nil {
 		logger = zap.NewNop()
@@ -98,7 +110,7 @@ func (c *Client) Initialize(ctx context.Context) error {
 		// Decode existing private key
 		block, _ := pem.Decode(account.PrivateKeyPEM)
 		if block == nil {
-			return fmt.Errorf("failed to decode account private key")
+			return errFailedToDecodeAccountPrivateKey
 		}
 
 		privateKey, err = x509.ParseECPrivateKey(block.Bytes)
@@ -188,7 +200,7 @@ func (c *Client) registerAccount(ctx context.Context, _ *User, privateKey crypto
 			Bytes: x509.MarshalPKCS1PrivateKey(k),
 		})
 	default:
-		return fmt.Errorf("unsupported private key type")
+		return errUnsupportedPrivateKeyType
 	}
 
 	c.account = &AccountInfo{
@@ -218,11 +230,11 @@ func (c *Client) ObtainCertificate(ctx context.Context, req *CertificateRequest)
 	c.mu.RUnlock()
 
 	if client == nil {
-		return nil, fmt.Errorf("client not initialized")
+		return nil, errClientNotInitialized
 	}
 
 	if len(req.Domains) == 0 {
-		return nil, fmt.Errorf("at least one domain is required")
+		return nil, errAtLeastOneDomainIsRequired
 	}
 
 	c.logger.Info("Requesting certificate",
@@ -332,7 +344,7 @@ func (c *Client) setupChallengeProvider(client *lego.Client) error {
 	case ChallengeTLSALPN01:
 		return client.Challenge.SetTLSALPN01Provider(c.provider)
 	default:
-		return fmt.Errorf("unsupported challenge type: %s", c.config.ChallengeType)
+		return fmt.Errorf("%w: %s", errUnsupportedChallengeType, c.config.ChallengeType)
 	}
 }
 
@@ -372,7 +384,7 @@ func (c *Client) getKeyType() certcrypto.KeyType {
 func parseCertificate(pemBytes []byte) (*x509.Certificate, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block")
+		return nil, errFailedToDecodePEMBlock
 	}
 	return x509.ParseCertificate(block.Bytes)
 }

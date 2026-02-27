@@ -8,6 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var ()
+
 func newDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete [resource-type] [name]",
@@ -26,7 +28,7 @@ func newDeleteCommand() *cobra.Command {
 
 func runDelete(_ *cobra.Command, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("exactly two arguments required: resource-type and name")
+		return errExactlyTwoArgumentsRequiredResourceTypeAndName
 	}
 
 	resourceType := args[0]
@@ -48,7 +50,7 @@ func runDelete(_ *cobra.Command, args []string) error {
 	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
 		rt = client.ResourceGRPCRoute
 	default:
-		return fmt.Errorf("unknown resource type: %s", resourceType)
+		return fmt.Errorf("%w: %s", errUnknownResourceType, resourceType)
 	}
 
 	ctx := context.Background()

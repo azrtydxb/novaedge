@@ -2,6 +2,7 @@
 package prometheus
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,14 @@ import (
 	"strconv"
 	"time"
 )
+var (
+	errQueryFailed = errors.New("query failed")
+	errInvalidValueFormat = errors.New("invalid value format")
+	errValueIsNotAString = errors.New("value is not a string")
+	errValueIsNaNOrInf = errors.New("value is NaN or Inf")
+	errTimestampIsNotANumber = errors.New("timestamp is not a number")
+)
+
 
 // Client provides methods for querying Prometheus
 type Client struct {
@@ -101,7 +110,7 @@ func (c *Client) QueryAt(ctx context.Context, query string, t time.Time) (*Query
 	}
 
 	if result.Status != "success" {
-		return nil, fmt.Errorf("query failed: %s (%s)", result.Error, result.ErrorType)
+		return nil, fmt.Errorf("%w: %s (%s)", errQueryFailed, result.Error, result.ErrorType)
 	}
 
 	return &result, nil
@@ -147,7 +156,7 @@ func (c *Client) QueryRange(ctx context.Context, params RangeQueryParams) (*Quer
 	}
 
 	if result.Status != "success" {
-		return nil, fmt.Errorf("query failed: %s (%s)", result.Error, result.ErrorType)
+		return nil, fmt.Errorf("%w: %s (%s)", errQueryFailed, result.Error, result.ErrorType)
 	}
 
 	return &result, nil
@@ -246,12 +255,12 @@ func (c *Client) GetSeries(ctx context.Context, matchers []string, start, end ti
 // ValueAsFloat extracts the value from a Result as a float64
 func ValueAsFloat(r Result) (float64, error) {
 	if len(r.Value) < 2 {
-		return 0, fmt.Errorf("invalid value format")
+		return 0, errInvalidValueFormat
 	}
 
 	valueStr, ok := r.Value[1].(string)
 	if !ok {
-		return 0, fmt.Errorf("value is not a string")
+		return 0, errValueIsNotAString
 	}
 
 	v, err := strconv.ParseFloat(valueStr, 64)
@@ -259,7 +268,7 @@ func ValueAsFloat(r Result) (float64, error) {
 		return 0, err
 	}
 	if math.IsNaN(v) || math.IsInf(v, 0) {
-		return 0, fmt.Errorf("value is NaN or Inf")
+		return 0, errValueIsNaNOrInf
 	}
 	return v, nil
 }
@@ -267,12 +276,12 @@ func ValueAsFloat(r Result) (float64, error) {
 // TimestampFromValue extracts the timestamp from a Result
 func TimestampFromValue(r Result) (time.Time, error) {
 	if len(r.Value) < 1 {
-		return time.Time{}, fmt.Errorf("invalid value format")
+		return time.Time{}, errInvalidValueFormat
 	}
 
 	timestamp, ok := r.Value[0].(float64)
 	if !ok {
-		return time.Time{}, fmt.Errorf("timestamp is not a number")
+		return time.Time{}, errTimestampIsNotANumber
 	}
 
 	return time.Unix(int64(timestamp), 0), nil

@@ -17,12 +17,17 @@ limitations under the License.
 package router
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errRegexPatternExceedsMaximumLengthOf = errors.New("regex pattern exceeds maximum length of")
+)
+
 
 // PathMatcher matches request paths
 type PathMatcher interface {
@@ -65,7 +70,7 @@ const maxRegexLength = 500
 // validateRegexPattern checks a regex pattern for dangerous constructs.
 func validateRegexPattern(pattern string) error {
 	if len(pattern) > maxRegexLength {
-		return fmt.Errorf("regex pattern exceeds maximum length of %d characters", maxRegexLength)
+		return fmt.Errorf("%w: %d characters", errRegexPatternExceedsMaximumLengthOf, maxRegexLength)
 	}
 	return nil
 }

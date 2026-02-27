@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"sync"
@@ -29,6 +30,12 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
+var (
+	errOtelExporterAlreadyStarted = errors.New("otel exporter already started")
+	errOtelExporterHasBeenShutDown = errors.New("otel exporter has been shut down")
+	errUnsupportedProtocol = errors.New("unsupported protocol")
+)
+
 
 // OTelExporter manages the OpenTelemetry metrics pipeline that exports
 // NovaEdge metrics via OTLP. It creates OTel-native metric instruments
@@ -70,10 +77,10 @@ func (e *OTelExporter) Start(ctx context.Context) error {
 	defer e.mu.Unlock()
 
 	if e.started {
-		return fmt.Errorf("otel exporter already started")
+		return errOtelExporterAlreadyStarted
 	}
 	if e.shutdown {
-		return fmt.Errorf("otel exporter has been shut down")
+		return errOtelExporterHasBeenShutDown
 	}
 
 	exporter, err := e.buildExporter(ctx)
@@ -177,7 +184,7 @@ func (e *OTelExporter) buildExporter(ctx context.Context) (metric.Exporter, erro
 	case ProtocolGRPC:
 		return e.buildGRPCExporter(ctx)
 	default:
-		return nil, fmt.Errorf("unsupported protocol: %s", e.config.Protocol)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedProtocol, e.config.Protocol)
 	}
 }
 

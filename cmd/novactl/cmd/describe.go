@@ -10,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var ()
+
 func newDescribeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "describe [resource-type] [name]",
@@ -37,7 +39,7 @@ For ProxyBackend resources, shows upstream PROXY protocol configuration.`,
 
 func runDescribe(_ *cobra.Command, args []string) error {
 	if len(args) != 2 {
-		return fmt.Errorf("exactly two arguments required: resource-type and name")
+		return errExactlyTwoArgumentsRequiredResourceTypeAndName
 	}
 
 	resourceType := args[0]
@@ -70,7 +72,7 @@ func runDescribe(_ *cobra.Command, args []string) error {
 	case resourceAliasCertificates, resourceAliasCertificate, resourceAliasCert, resourceAliasProxyCertificates:
 		rt = client.ResourceCertificate
 	default:
-		return fmt.Errorf("unknown resource type: %s", resourceType)
+		return fmt.Errorf("%w: %s", errUnknownResourceType, resourceType)
 	}
 
 	ctx := context.Background()

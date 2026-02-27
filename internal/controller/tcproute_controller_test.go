@@ -288,10 +288,8 @@ func TestTCPRouteUpdateStatus(t *testing.T) {
 		WithStatusSubresource(&gatewayv1alpha2.TCPRoute{}).
 		Build()
 
-	reconciler := &TCPRouteReconciler{
-		Client: k8sClient,
-		Scheme: scheme,
-	}
+	adapter := &l4RouteAdapter{client: k8sClient, statusCli: k8sClient.Status()}
+	wrapper := &tcpRouteWrapper{tcpRoute}
 
 	ctx := context.Background()
 	condition := metav1.Condition{
@@ -303,7 +301,7 @@ func TestTCPRouteUpdateStatus(t *testing.T) {
 		LastTransitionTime: metav1.Now(),
 	}
 
-	_, err := reconciler.updateRouteStatus(ctx, tcpRoute, condition)
+	_, err := adapter.updateL4RouteStatus(ctx, wrapper, condition)
 	if err != nil {
 		t.Errorf("unexpected error updating status: %v", err)
 	}
@@ -343,13 +341,10 @@ func TestTCPRouteHandleDeletion(t *testing.T) {
 		WithRuntimeObjects(tcpRoute, proxyRoute).
 		Build()
 
-	reconciler := &TCPRouteReconciler{
-		Client: k8sClient,
-		Scheme: scheme,
-	}
+	adapter := &l4RouteAdapter{client: k8sClient, statusCli: k8sClient.Status()}
 
 	ctx := context.Background()
-	_, err := reconciler.handleDeletion(ctx, tcpRoute)
+	_, err := adapter.handleL4RouteDeletion(ctx, "TCPRoute", tcpRoute)
 	if err != nil {
 		t.Errorf("unexpected error handling deletion: %v", err)
 	}

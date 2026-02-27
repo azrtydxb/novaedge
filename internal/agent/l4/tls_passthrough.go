@@ -30,6 +30,24 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errTLSRecordHeaderTooShort = errors.New("TLS record header too short")
+	errNotATLSHandshakeRecordContentType = errors.New("not a TLS handshake record: content type")
+	errTLSRecordTooLarge = errors.New("TLS record too large")
+	errHandshakeMessageTooShort = errors.New("handshake message too short")
+	errNotAClientHelloType = errors.New("not a ClientHello: type")
+	errClientHelloTooShortMissingVersionRandom = errors.New("ClientHello too short: missing version/random")
+	errClientHelloTooShortMissingSessionIDLength = errors.New("ClientHello too short: missing session ID length")
+	errClientHelloTooShortMissingCipherSuites = errors.New("ClientHello too short: missing cipher suites")
+	errClientHelloTooShortMissingCompressionMethods = errors.New("ClientHello too short: missing compression methods")
+	errNoExtensionsPresent = errors.New("no extensions present")
+	errSNIExtensionNotFound = errors.New("SNI extension not found")
+	errSNIExtensionTooShort = errors.New("SNI extension too short")
+	errSNIListLengthExceedsData = errors.New("SNI list length exceeds data")
+	errSNIHostnameLengthExceedsData = errors.New("SNI hostname length exceeds data")
+	errNoHostnameFoundInSNIExtension = errors.New("no hostname found in SNI extension")
+)
+
 
 const (
 	// DefaultSNIReadTimeout is the timeout for reading the TLS ClientHello
@@ -354,16 +372,16 @@ func extractSNI(conn net.Conn) (string, []byte, error) {
 
 	// Verify this is a TLS handshake record
 	if len(header) < TLSRecordHeaderLen {
-		return "", header, fmt.Errorf("TLS record header too short: %d bytes", len(header))
+		return "", header, fmt.Errorf("%w: %d bytes", errTLSRecordHeaderTooShort, len(header))
 	}
 	if header[0] != TLSHandshakeType {
-		return "", header, fmt.Errorf("not a TLS handshake record: content type %d", header[0])
+		return "", header, fmt.Errorf("%w: %d", errNotATLSHandshakeRecordContentType, header[0])
 	}
 
 	// Get record length
 	recordLen := int(header[3])<<8 | int(header[4])
 	if recordLen > MaxTLSRecordSize {
-		return "", header, fmt.Errorf("TLS record too large: %d bytes", recordLen)
+		return "", header, fmt.Errorf("%w: %d bytes", errTLSRecordTooLarge, recordLen)
 	}
 
 	// Read the full record
@@ -388,12 +406,12 @@ func extractSNI(conn net.Conn) (string, []byte, error) {
 // parseClientHelloSNI parses a TLS ClientHello handshake message to extract the SNI extension
 func parseClientHelloSNI(data []byte) (string, error) {
 	if len(data) < 4 {
-		return "", errors.New("handshake message too short")
+		return "", errHandshakeMessageTooShort
 	}
 
 	// Check handshake type
 	if data[0] != TLSClientHelloType {
-		return "", fmt.Errorf("not a ClientHello: type %d", data[0])
+		return "", fmt.Errorf("%w: %d", errNotAClientHelloType, data[0])
 	}
 
 	// Skip handshake header (1 byte type + 3 bytes length)
@@ -401,13 +419,13 @@ func parseClientHelloSNI(data []byte) (string, error) {
 
 	// Skip client version (2 bytes) and random (32 bytes)
 	if pos+34 > len(data) {
-		return "", errors.New("ClientHello too short: missing version/random")
+		return "", errClientHelloTooShortMissingVersionRandom
 	}
 	pos += 34
 
 	// Skip session ID
 	if pos+1 > len(data) {
-		return "", errors.New("ClientHello too short: missing session ID length")
+		return "", errClientHelloTooShortMissingSessionIDLength
 	}
 	sessionIDLen := int(data[pos])
 	pos++
@@ -415,7 +433,7 @@ func parseClientHelloSNI(data []byte) (string, error) {
 
 	// Skip cipher suites
 	if pos+2 > len(data) {
-		return "", errors.New("ClientHello too short: missing cipher suites")
+		return "", errClientHelloTooShortMissingCipherSuites
 	}
 	cipherSuitesLen := int(data[pos])<<8 | int(data[pos+1])
 	pos += 2
@@ -423,7 +441,7 @@ func parseClientHelloSNI(data []byte) (string, error) {
 
 	// Skip compression methods
 	if pos+1 > len(data) {
-		return "", errors.New("ClientHello too short: missing compression methods")
+		return "", errClientHelloTooShortMissingCompressionMethods
 	}
 	compressionLen := int(data[pos])
 	pos++
@@ -431,7 +449,7 @@ func parseClientHelloSNI(data []byte) (string, error) {
 
 	// Extensions
 	if pos+2 > len(data) {
-		return "", errors.New("no extensions present")
+		return "", errNoExtensionsPresent
 	}
 	extensionsLen := int(data[pos])<<8 | int(data[pos+1])
 	pos += 2
@@ -454,19 +472,19 @@ func parseClientHelloSNI(data []byte) (string, error) {
 		pos += extLen
 	}
 
-	return "", errors.New("SNI extension not found")
+	return "", errSNIExtensionNotFound
 }
 
 // parseSNIExtension parses the SNI extension data to extract the hostname
 func parseSNIExtension(data []byte) (string, error) {
 	if len(data) < 2 {
-		return "", errors.New("SNI extension too short")
+		return "", errSNIExtensionTooShort
 	}
 
 	// Server name list length
 	listLen := int(data[0])<<8 | int(data[1])
 	if listLen+2 > len(data) {
-		return "", errors.New("SNI list length exceeds data")
+		return "", errSNIListLengthExceedsData
 	}
 
 	pos := 2
@@ -478,7 +496,7 @@ func parseSNIExtension(data []byte) (string, error) {
 
 		if nameType == 0 { // Host name type
 			if pos+nameLen > end {
-				return "", errors.New("SNI hostname length exceeds data")
+				return "", errSNIHostnameLengthExceedsData
 			}
 			return string(data[pos : pos+nameLen]), nil
 		}
@@ -486,7 +504,7 @@ func parseSNIExtension(data []byte) (string, error) {
 		pos += nameLen
 	}
 
-	return "", errors.New("no hostname found in SNI extension")
+	return "", errNoHostnameFoundInSNIExtension
 }
 
 // getReadyEndpoints filters endpoints to only ready ones

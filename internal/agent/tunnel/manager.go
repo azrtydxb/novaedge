@@ -17,6 +17,7 @@ limitations under the License.
 package tunnel
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"sync"
@@ -25,6 +26,12 @@ import (
 
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+var (
+	errTunnelManagerNotStarted = errors.New("tunnel manager not started")
+	errNoTunnelFoundForCluster = errors.New("no tunnel found for cluster")
+	errUnsupportedTunnelType = errors.New("unsupported tunnel type")
+)
+
 
 // NetworkTunnelManager manages network tunnels for remote cluster connectivity.
 // It handles creation, lifecycle, and health monitoring of tunnels that provide
@@ -91,7 +98,7 @@ func (m *NetworkTunnelManager) AddTunnelWithOverlay(ctx context.Context, cluster
 	defer m.mu.Unlock()
 
 	if m.ctx == nil {
-		return fmt.Errorf("tunnel manager not started")
+		return errTunnelManagerNotStarted
 	}
 
 	// Stop existing tunnel if present
@@ -131,7 +138,7 @@ func (m *NetworkTunnelManager) RemoveTunnel(clusterName string) error {
 
 	t, ok := m.tunnels[clusterName]
 	if !ok {
-		return fmt.Errorf("no tunnel found for cluster %s", clusterName)
+		return fmt.Errorf("%w: %s", errNoTunnelFoundForCluster, clusterName)
 	}
 
 	if err := t.Stop(); err != nil {
@@ -179,6 +186,6 @@ func (m *NetworkTunnelManager) createTunnelWithOverlay(clusterName string, confi
 	case v1alpha1.TunnelTypeWebSocket:
 		return newWebSocketTunnel(clusterName, config, m.logger)
 	default:
-		return nil, fmt.Errorf("unsupported tunnel type: %s", config.Type)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedTunnelType, config.Type)
 	}
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"errors"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
@@ -39,6 +40,15 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errIssuerURLIsRequiredSetIssuerURLOrKeycloak = errors.New("issuer URL is required (set issuerURL or keycloak config)")
+	errSessionSecretIsRequired32Bytes = errors.New("session secret is required (32 bytes)")
+	errSessionSecretMustBeAtLeast32Bytes = errors.New("session secret must be at least 32 bytes of random data, got")
+	errCiphertextTooShort = errors.New("ciphertext too short")
+	errNoRefreshTokenAvailable = errors.New("no refresh token available")
+	errNoIDTokenInRefreshedTokenResponse = errors.New("no id_token in refreshed token response")
+)
+
 
 // OIDCSession represents an authenticated OIDC user session.
 type OIDCSession struct {
@@ -81,7 +91,7 @@ func NewOIDCHandler(ctx context.Context, config *pb.OIDCConfig, logger *zap.Logg
 	}
 
 	if issuerURL == "" {
-		return nil, fmt.Errorf("issuer URL is required (set issuerURL or keycloak config)")
+		return nil, errIssuerURLIsRequiredSetIssuerURLOrKeycloak
 	}
 
 	provider, err := oidc.NewProvider(ctx, issuerURL)
@@ -96,10 +106,10 @@ func NewOIDCHandler(ctx context.Context, config *pb.OIDCConfig, logger *zap.Logg
 
 	sessionKey := config.SessionSecret
 	if len(sessionKey) == 0 {
-		return nil, fmt.Errorf("session secret is required (32 bytes)")
+		return nil, errSessionSecretIsRequired32Bytes
 	}
 	if len(sessionKey) < 32 {
-		return nil, fmt.Errorf("session secret must be at least 32 bytes of random data, got %d", len(sessionKey))
+		return nil, fmt.Errorf("%w: %d", errSessionSecretMustBeAtLeast32Bytes, len(sessionKey))
 	}
 	if len(sessionKey) > 32 {
 		// Truncate to 32 bytes for AES-256
@@ -256,7 +266,7 @@ func (h *OIDCHandler) decryptSession(encrypted string) (*OIDCSession, error) {
 
 	nonceSize := aesGCM.NonceSize()
 	if len(data) < nonceSize {
-		return nil, fmt.Errorf("ciphertext too short")
+		return nil, errCiphertextTooShort
 	}
 
 	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
@@ -303,7 +313,7 @@ func generateSessionID() (string, error) {
 // refreshToken attempts to refresh the access token using the refresh token.
 func (h *OIDCHandler) refreshToken(ctx context.Context, session *OIDCSession) (*OIDCSession, error) {
 	if session.RefreshToken == "" {
-		return nil, fmt.Errorf("no refresh token available")
+		return nil, errNoRefreshTokenAvailable
 	}
 
 	token := &oauth2.Token{
@@ -319,7 +329,7 @@ func (h *OIDCHandler) refreshToken(ctx context.Context, session *OIDCSession) (*
 	// Extract ID token from the refreshed token
 	rawIDToken, ok := newToken.Extra("id_token").(string)
 	if !ok {
-		return nil, fmt.Errorf("no id_token in refreshed token response")
+		return nil, errNoIDTokenInRefreshedTokenResponse
 	}
 
 	// Verify the refreshed ID token

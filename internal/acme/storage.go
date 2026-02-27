@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,10 @@ import (
 
 	"go.uber.org/zap"
 )
+var (
+	errCertificateHasNoDomains = errors.New("certificate has no domains")
+)
+
 
 // FileStorage implements Storage using the filesystem.
 type FileStorage struct {
@@ -47,7 +52,7 @@ func (s *FileStorage) SaveCertificate(_ context.Context, cert *Certificate) erro
 	defer s.mu.Unlock()
 
 	if len(cert.Domains) == 0 {
-		return fmt.Errorf("certificate has no domains")
+		return errCertificateHasNoDomains
 	}
 
 	domain := cert.Domains[0]

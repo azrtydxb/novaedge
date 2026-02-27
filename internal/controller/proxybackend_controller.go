@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,6 +34,8 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
+var ()
 
 // ProxyBackendReconciler reconciles a ProxyBackend object
 type ProxyBackendReconciler struct {
@@ -50,38 +52,12 @@ type ProxyBackendReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *ProxyBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// Fetch the ProxyBackend instance
 	backend := &novaedgev1alpha1.ProxyBackend{}
-	err := r.Get(ctx, req.NamespacedName, backend)
-	if err != nil {
-		if errors.IsNotFound(err) {
-			logger.Info("ProxyBackend resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
-		}
-		logger.Error(err, "Failed to get ProxyBackend")
-		return ctrl.Result{}, err
-	}
-
-	// Skip if already reconciled this generation (ObservedGeneration > 0
-	// ensures first-ever reconciliation always proceeds)
-	if backend.Status.ObservedGeneration != 0 && backend.Status.ObservedGeneration == backend.Generation {
-		return ctrl.Result{}, nil
-	}
-
-	logger.Info("Reconciling ProxyBackend", "name", backend.Name, "lbPolicy", backend.Spec.LBPolicy)
-
-	// Validate and update status
-	if err := r.validateAndUpdateStatus(ctx, backend); err != nil {
-		logger.Error(err, "Failed to validate backend")
-		return ctrl.Result{Requeue: true}, err
-	}
-
-	// Trigger config update for all nodes
-	TriggerConfigUpdate()
-
-	return ctrl.Result{}, nil
+	return reconcileWithGenerationCheck(ctx, r.Client, req, backend, "ProxyBackend",
+		func() int64 { return backend.Status.ObservedGeneration },
+		func() []interface{} { return []interface{}{"name", backend.Name, "lbPolicy", backend.Spec.LBPolicy} },
+		func() error { return r.validateAndUpdateStatus(ctx, backend) },
+	)
 }
 
 // validateAndUpdateStatus validates the backend and updates its status
@@ -101,7 +77,7 @@ func (r *ProxyBackendReconciler) validateAndUpdateStatus(ctx context.Context, ba
 			Name:      backend.Spec.ServiceRef.Name,
 			Namespace: serviceNamespace,
 		}, service); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				validationErrors = append(validationErrors,
 					fmt.Sprintf("Service %s not found", backend.Spec.ServiceRef.Name))
 			} else {
@@ -156,7 +132,7 @@ func (r *ProxyBackendReconciler) validateAndUpdateStatus(ctx context.Context, ba
 			Name:      *backend.Spec.TLS.CACertSecretRef,
 			Namespace: backend.Namespace,
 		}, secret); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				validationErrors = append(validationErrors,
 					fmt.Sprintf("TLS CA cert secret %s not found", *backend.Spec.TLS.CACertSecretRef))
 			}
@@ -197,7 +173,7 @@ func (r *ProxyBackendReconciler) validateAndUpdateStatus(ctx context.Context, ba
 	}
 
 	if len(validationErrors) > 0 {
-		return fmt.Errorf("validation failed: %v", validationErrors)
+		return fmt.Errorf("%w: %v", errValidationFailed, validationErrors)
 	}
 
 	return nil

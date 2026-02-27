@@ -28,6 +28,10 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 )
+var (
+	errHedgingAllRequestsFailedWithNoError = errors.New("hedging: all requests failed with no error")
+)
+
 
 // defaultHedgingInitialRequests is the default number of initial (non-hedged) requests.
 const defaultHedgingInitialRequests = 1
@@ -246,5 +250,5 @@ func (h *HedgingHandler) Execute(
 	if lastErr != nil {
 		return nil, lastErr
 	}
-	return nil, errors.New("hedging: all requests failed with no error")
+	return nil, errHedgingAllRequestsFailedWithNoError
 }

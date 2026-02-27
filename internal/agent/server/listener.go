@@ -30,6 +30,10 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errHTTP3RequiresTLSConfiguration = errors.New("HTTP/3 requires TLS configuration")
+)
+
 
 // ListenerInfo contains information about a configured listener
 type ListenerInfo struct {
@@ -129,7 +133,7 @@ func (s *HTTPServer) startListener(ctx context.Context, port int32, listenerInfo
 func (s *HTTPServer) startHTTP3Listener(ctx context.Context, port int32, listenerInfo *ListenerInfo) error {
 	// HTTP/3 requires TLS
 	if listenerInfo.TLSConfig == nil {
-		return fmt.Errorf("HTTP/3 requires TLS configuration")
+		return errHTTP3RequiresTLSConfiguration
 	}
 
 	s.logger.Info("Starting HTTP/3 listener",

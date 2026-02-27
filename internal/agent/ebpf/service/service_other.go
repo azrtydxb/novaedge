@@ -19,9 +19,13 @@ limitations under the License.
 package service
 
 import (
-	"fmt"
+	"errors"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFServiceMapsAreOnlySupportedOnLinux = errors.New("eBPF service maps are only supported on Linux")
 )
 
 // ServiceMap is a stub on non-Linux platforms where eBPF is not available.
@@ -30,22 +34,22 @@ type ServiceMap struct{}
 // NewServiceMap returns an error on non-Linux platforms since eBPF service
 // maps require Linux kernel support.
 func NewServiceMap(_ *zap.Logger, _, _ uint32) (*ServiceMap, error) {
-	return nil, fmt.Errorf("eBPF service maps are only supported on Linux")
+	return nil, errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // UpsertService returns an error on non-Linux platforms.
 func (sm *ServiceMap) UpsertService(_ ServiceKey, _ []BackendInfo) error {
-	return fmt.Errorf("eBPF service maps are only supported on Linux")
+	return errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // DeleteService returns an error on non-Linux platforms.
 func (sm *ServiceMap) DeleteService(_ ServiceKey) error {
-	return fmt.Errorf("eBPF service maps are only supported on Linux")
+	return errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // Reconcile returns an error on non-Linux platforms.
 func (sm *ServiceMap) Reconcile(_ map[ServiceKey][]BackendInfo) error {
-	return fmt.Errorf("eBPF service maps are only supported on Linux")
+	return errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // Close is a no-op on non-Linux platforms.

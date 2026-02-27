@@ -17,6 +17,7 @@ limitations under the License.
 package tunnel
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"net"
@@ -32,6 +33,13 @@ import (
 
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+var (
+	errWireguardConfigIsRequiredForWireGuardTunnelType = errors.New("wireguard config is required for WireGuard tunnel type")
+	errWgctrlClientNotInitialized = errors.New("wgctrl client not initialized")
+	errNoWireguardHandshakeEstablished = errors.New("no wireguard handshake established")
+	errWireguardHandshakeStaleLast = errors.New("wireguard handshake stale (last")
+)
+
 
 const (
 	wireguardInterfacePrefix = "novaedge-wg"
@@ -68,7 +76,7 @@ type wireGuardTunnel struct {
 // (e.g., "10.200.1.1/24"). If empty, overlay routing is disabled.
 func newWireGuardTunnel(clusterName string, config v1alpha1.TunnelConfig, logger *zap.Logger) (*wireGuardTunnel, error) {
 	if config.WireGuard == nil {
-		return nil, fmt.Errorf("wireguard config is required for WireGuard tunnel type")
+		return nil, errWireguardConfigIsRequiredForWireGuardTunnelType
 	}
 
 	// Generate a deterministic interface name from the cluster name
@@ -372,7 +380,7 @@ func (t *wireGuardTunnel) checkHandshake() error {
 	t.mu.RUnlock()
 
 	if client == nil {
-		return fmt.Errorf("wgctrl client not initialized")
+		return errWgctrlClientNotInitialized
 	}
 
 	device, err := client.Device(t.ifaceName)
@@ -382,12 +390,12 @@ func (t *wireGuardTunnel) checkHandshake() error {
 
 	for _, peer := range device.Peers {
 		if peer.LastHandshakeTime.IsZero() {
-			return fmt.Errorf("no wireguard handshake established")
+			return errNoWireguardHandshakeEstablished
 		}
 
 		since := time.Since(peer.LastHandshakeTime)
 		if since > handshakeStaleThreshold {
-			return fmt.Errorf("wireguard handshake stale (last: %v ago)", since)
+			return fmt.Errorf("%w: %v ago)", errWireguardHandshakeStaleLast, since)
 		}
 	}
 

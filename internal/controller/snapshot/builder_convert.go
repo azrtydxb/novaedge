@@ -17,6 +17,7 @@ limitations under the License.
 package snapshot
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -31,6 +32,10 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errInvalidByteSize = errors.New("invalid byte size")
+)
+
 
 // convertVIPMode converts NovaEdge VIPMode to protobuf VIPMode
 func convertVIPMode(mode novaedgev1alpha1.VIPMode) pb.VIPMode {
@@ -628,7 +633,7 @@ func parseByteSize(s string) (int64, error) {
 		}
 	}
 
-	return 0, fmt.Errorf("invalid byte size: %s", s)
+	return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 }
 
 // parseDurationMs parses a duration string and returns milliseconds.

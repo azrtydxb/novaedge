@@ -17,6 +17,7 @@ limitations under the License.
 package federation
 
 import (
+	"errors"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -33,6 +34,13 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errNotConnectedToPeer = errors.New("not connected to peer")
+	errExpectedHandshakeResponseGot = errors.New("expected handshake response, got")
+	errSyncStreamNotEstablished = errors.New("sync stream not established")
+	errFailedToParseCACertificateForPeer = errors.New("failed to parse CA certificate for peer")
+)
+
 
 // PeerClient manages the connection to a federation peer
 type PeerClient struct {
@@ -150,7 +158,7 @@ func (c *PeerClient) StartSyncStream(ctx context.Context, localVectorClock map[s
 	c.connMu.RUnlock()
 
 	if client == nil {
-		return fmt.Errorf("not connected to peer")
+		return errNotConnectedToPeer
 	}
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -194,7 +202,7 @@ func (c *PeerClient) StartSyncStream(ctx context.Context, localVectorClock map[s
 
 	if msg.GetHandshake() == nil {
 		cancel()
-		return fmt.Errorf("expected handshake response, got %T", msg.Message)
+		return fmt.Errorf("%w: %T", errExpectedHandshakeResponseGot, msg.Message)
 	}
 
 	c.logger.Info("Sync stream established with peer")
@@ -248,7 +256,7 @@ func (c *PeerClient) SendMessage(msg *pb.SyncMessage) error {
 	defer c.streamMu.Unlock()
 
 	if c.stream == nil {
-		return fmt.Errorf("sync stream not established")
+		return errSyncStreamNotEstablished
 	}
 
 	return c.stream.Send(msg)
@@ -297,7 +305,7 @@ func (c *PeerClient) Ping(ctx context.Context) (time.Duration, error) {
 	c.connMu.RUnlock()
 
 	if client == nil {
-		return 0, fmt.Errorf("not connected to peer")
+		return 0, errNotConnectedToPeer
 	}
 
 	start := time.Now()
@@ -329,7 +337,7 @@ func (c *PeerClient) GetState(ctx context.Context) (*pb.GetStateResponse, error)
 	c.connMu.RUnlock()
 
 	if client == nil {
-		return nil, fmt.Errorf("not connected to peer")
+		return nil, errNotConnectedToPeer
 	}
 
 	return client.GetState(ctx, &pb.GetStateRequest{
@@ -345,7 +353,7 @@ func (c *PeerClient) RequestFullSync(ctx context.Context, resourceTypes, namespa
 	c.connMu.RUnlock()
 
 	if client == nil {
-		return nil, fmt.Errorf("not connected to peer")
+		return nil, errNotConnectedToPeer
 	}
 
 	stream, err := client.RequestFullSync(ctx, &pb.FullSyncRequest{
@@ -437,7 +445,7 @@ func (c *PeerClient) buildTLSConfig() (*tls.Config, error) {
 	if len(c.peer.CACert) > 0 {
 		certPool := x509.NewCertPool()
 		if !certPool.AppendCertsFromPEM(c.peer.CACert) {
-			return nil, fmt.Errorf("failed to parse CA certificate for peer %s", c.peer.Name)
+			return nil, fmt.Errorf("%w: %s", errFailedToParseCACertificateForPeer, c.peer.Name)
 		}
 		config.RootCAs = certPool
 		c.logger.Debug("Loaded CA certificate for peer",

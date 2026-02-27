@@ -31,6 +31,11 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
+var (
+	errWriterClosed = errors.New("writer closed")
+	errCONNECTTo = errors.New("CONNECT to")
+)
+
 
 const (
 	// tunnelConnectTimeout is the timeout for dialing a backend pod.
@@ -273,7 +278,7 @@ func (bfw *bufferedFlushWriter) BufferedWrite(p []byte) (int, error) {
 	defer bfw.mu.Unlock()
 
 	if bfw.closed {
-		return 0, errors.New("writer closed")
+		return 0, errWriterClosed
 	}
 
 	n, err := bfw.buf.Write(p)
@@ -436,7 +441,7 @@ func (tp *TunnelPool) DialVia(ctx context.Context, nodeAddr, backendAddr, source
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
 		_ = pw.Close()
-		return nil, fmt.Errorf("CONNECT to %s via %s returned status %d", backendAddr, nodeAddr, resp.StatusCode)
+		return nil, fmt.Errorf("%w: %s via %s returned status %d", errCONNECTTo, backendAddr, nodeAddr, resp.StatusCode)
 	}
 
 	localAddr := parseTCPAddr(nodeAddr)

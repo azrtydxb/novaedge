@@ -31,6 +31,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errOSPFConfigIsRequiredForOSPFModeVIPs = errors.New("OSPF config is required for OSPF mode VIPs")
+	errInvalidRouterID = errors.New("invalid router ID")
+	errOSPFServerNotInitialized = errors.New("OSPF server not initialized")
+)
+
 
 // OSPF protocol constants
 const (
@@ -198,7 +204,7 @@ func (h *OSPFHandler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) er
 	}
 
 	if assignment.OspfConfig == nil {
-		return fmt.Errorf("OSPF config is required for OSPF mode VIPs")
+		return errOSPFConfigIsRequiredForOSPFModeVIPs
 	}
 
 	isIPv6 := ip.To4() == nil
@@ -354,7 +360,7 @@ func (h *OSPFHandler) reconfigureVIP(state *OSPFVIPState, assignment *pb.VIPAssi
 	newCfg := assignment.OspfConfig
 
 	if newCfg == nil {
-		return fmt.Errorf("OSPF config is required for OSPF mode VIPs")
+		return errOSPFConfigIsRequiredForOSPFModeVIPs
 	}
 
 	// Check if RouterID or AreaID changed — requires full OSPF server restart
@@ -548,7 +554,7 @@ func (h *OSPFHandler) startOSPFServer(config *pb.OSPFConfig) error {
 
 	routerID := net.ParseIP(config.RouterId)
 	if routerID == nil {
-		return fmt.Errorf("invalid router ID: %s", config.RouterId)
+		return fmt.Errorf("%w: %s", errInvalidRouterID, config.RouterId)
 	}
 
 	cost := uint32(ospfDefaultCost)
@@ -805,7 +811,7 @@ func (h *OSPFHandler) handleGracefulShutdown() {
 // announceLSA announces an LSA for a VIP (supports both IPv4 and IPv6)
 func (h *OSPFHandler) announceLSA(ip net.IP, _ *pb.OSPFConfig, isIPv6 bool) error {
 	if h.ospfServer == nil {
-		return fmt.Errorf("OSPF server not initialized")
+		return errOSPFServerNotInitialized
 	}
 
 	h.ospfServer.mu.Lock()
@@ -862,7 +868,7 @@ func (h *OSPFHandler) announceLSA(ip net.IP, _ *pb.OSPFConfig, isIPv6 bool) erro
 // withdrawLSA withdraws an LSA for a VIP
 func (h *OSPFHandler) withdrawLSA(ip net.IP, _ *pb.OSPFConfig, isIPv6 bool) error {
 	if h.ospfServer == nil {
-		return fmt.Errorf("OSPF server not initialized")
+		return errOSPFServerNotInitialized
 	}
 
 	h.ospfServer.mu.Lock()

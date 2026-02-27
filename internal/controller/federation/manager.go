@@ -17,6 +17,7 @@ limitations under the License.
 package federation
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"sync"
@@ -28,6 +29,13 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errFederationManagerAlreadyStarted = errors.New("federation manager already started")
+	errFederationServerNotStarted = errors.New("federation server not started")
+	errFederationManagerIsNotStarted = errors.New("federation manager is not started")
+	errPeerNotFound = errors.New("peer not found")
+)
+
 
 // Manager orchestrates federation between controllers
 type Manager struct {
@@ -197,7 +205,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	if m.started {
 		m.mu.Unlock()
-		return fmt.Errorf("federation manager already started")
+		return errFederationManagerAlreadyStarted
 	}
 	m.started = true
 	m.mu.Unlock()
@@ -384,7 +392,7 @@ func (m *Manager) ResolveConflict(keyStr string, useLocal bool) error {
 	if m.server != nil {
 		return m.server.ResolveConflict(keyStr, useLocal)
 	}
-	return fmt.Errorf("federation server not started")
+	return errFederationServerNotStarted
 }
 
 // GetVectorClock returns the current vector clock
@@ -410,7 +418,7 @@ func (m *Manager) UpdateConfig(newConfig *Config) error {
 	defer m.mu.Unlock()
 
 	if !m.started {
-		return fmt.Errorf("federation manager is not started")
+		return errFederationManagerIsNotStarted
 	}
 
 	oldConfig := m.config
@@ -690,7 +698,7 @@ func (m *Manager) RequestFullSync(peerName string) error {
 	m.clientsMu.RUnlock()
 
 	if !ok {
-		return fmt.Errorf("peer not found: %s", peerName)
+		return fmt.Errorf("%w: %s", errPeerNotFound, peerName)
 	}
 
 	ctx, cancel := context.WithTimeout(m.ctx, 5*time.Minute)

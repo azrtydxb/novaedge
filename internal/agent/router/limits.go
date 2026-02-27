@@ -17,6 +17,7 @@ limitations under the License.
 package router
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"io"
@@ -28,6 +29,12 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errRequestBodyExceedsMaximumSize = errors.New("request body exceeds maximum size")
+	errInvalidByteSize = errors.New("invalid byte size")
+	errInvalidDuration = errors.New("invalid duration")
+)
+
 
 // RequestLimitsMiddleware enforces per-route request size limits and timeouts.
 type RequestLimitsMiddleware struct {
@@ -98,7 +105,7 @@ func (m *RequestLimitsMiddleware) Wrap(next http.Handler) http.Handler {
 			// Request completed normally
 		case <-ctx.Done():
 			// Context expired (timeout)
-			if ctx.Err() == context.DeadlineExceeded {
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				once.Do(func() {
 					http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
 				})
@@ -119,14 +126,14 @@ type limitedReadCloser struct {
 // Read reads from the underlying reader, enforcing the size limit.
 func (lr *limitedReadCloser) Read(p []byte) (int, error) {
 	if lr.exceeded {
-		return 0, fmt.Errorf("request body exceeds maximum size")
+		return 0, errRequestBodyExceedsMaximumSize
 	}
 
 	n, err := lr.ReadCloser.Read(p)
 	lr.remaining -= int64(n)
 	if lr.remaining < 0 {
 		lr.exceeded = true
-		return n, fmt.Errorf("request body exceeds maximum size")
+		return n, errRequestBodyExceedsMaximumSize
 	}
 	return n, err
 }
@@ -166,13 +173,13 @@ func ParseByteSize(s string) (int64, error) {
 			numStr := strings.TrimSuffix(s, suffix)
 			n, err := strconv.ParseInt(numStr, 10, 64)
 			if err != nil {
-				return 0, fmt.Errorf("invalid byte size: %s", s)
+				return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 			}
 			return n * mult, nil
 		}
 	}
 
-	return 0, fmt.Errorf("invalid byte size: %s", s)
+	return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 }
 
 // ParseDurationMs parses a duration string and returns it in milliseconds.
@@ -182,7 +189,7 @@ func ParseDurationMs(s string) (int64, error) {
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		return 0, fmt.Errorf("invalid duration: %s", s)
+		return 0, fmt.Errorf("%w: %s", errInvalidDuration, s)
 	}
 	return d.Milliseconds(), nil
 }

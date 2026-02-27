@@ -17,9 +17,15 @@ limitations under the License.
 package sockmap
 
 import (
+	"errors"
 	"fmt"
 	"net"
 )
+var (
+	errInvalidIPAddress = errors.New("invalid IP address")
+	errNotAnIPv4Address = errors.New("not an IPv4 address")
+)
+
 
 // SockKey is the BPF SOCKHASH key identifying a socket pair. The struct
 // layout matches the C struct sock_key used by the BPF sock_ops and
@@ -51,11 +57,11 @@ type EndpointValue struct {
 func NewEndpointKey(ip string, port uint16) (EndpointKey, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return EndpointKey{}, fmt.Errorf("invalid IP address: %s", ip)
+		return EndpointKey{}, fmt.Errorf("%w: %s", errInvalidIPAddress, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return EndpointKey{}, fmt.Errorf("not an IPv4 address: %s", ip)
+		return EndpointKey{}, fmt.Errorf("%w: %s", errNotAnIPv4Address, ip)
 	}
 	key := EndpointKey{
 		Port: port,

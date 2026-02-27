@@ -26,6 +26,11 @@ import (
 
 	"go.uber.org/zap"
 )
+var (
+	errFailedToGetLocalUDPAddress = errors.New("failed to get local UDP address")
+	errBFDTransportNotStarted = errors.New("BFD transport not started")
+)
+
 
 // bfdTransport handles BFD UDP packet I/O per RFC 5881.
 //
@@ -93,7 +98,7 @@ func (t *bfdTransport) Start(ctx context.Context) error {
 	localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
 	if !ok {
 		_ = conn.Close()
-		return errors.New("failed to get local UDP address")
+		return errFailedToGetLocalUDPAddress
 	}
 	t.localPort = localAddr.Port
 
@@ -142,7 +147,7 @@ func (t *bfdTransport) Send(peerAddr net.IP, peerPort int, pkt *bfdControlPacket
 	t.mu.Unlock()
 
 	if conn == nil {
-		return errors.New("BFD transport not started")
+		return errBFDTransportNotStarted
 	}
 
 	data, err := encodeBFDPacket(pkt)

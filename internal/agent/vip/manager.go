@@ -17,6 +17,7 @@ limitations under the License.
 package vip
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"net"
@@ -29,6 +30,11 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errUnsupportedVIPMode = errors.New("unsupported VIP mode")
+	errFailedToReleaseSomeVIPs = errors.New("failed to release some VIPs")
+)
+
 
 // Manager manages VIP ownership and announces
 type Manager interface {
@@ -295,7 +301,7 @@ func (m *DefaultManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignm
 	case pb.VIPMode_OSPF:
 		applyErr = m.ospfHandler.AddVIP(ctx, assignment)
 	default:
-		applyErr = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
+		applyErr = fmt.Errorf("%w: %v", errUnsupportedVIPMode, assignment.Mode)
 	}
 
 	if applyErr == nil {
@@ -316,7 +322,7 @@ func (m *DefaultManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssig
 	case pb.VIPMode_OSPF:
 		err = m.ospfHandler.RemoveVIP(ctx, assignment)
 	default:
-		err = fmt.Errorf("unsupported VIP mode: %v", assignment.Mode)
+		err = fmt.Errorf("%w: %v", errUnsupportedVIPMode, assignment.Mode)
 	}
 
 	if err == nil {
@@ -372,7 +378,7 @@ func (m *DefaultManager) Release() error {
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("failed to release some VIPs: %v", errs)
+		return fmt.Errorf("%w: %v", errFailedToReleaseSomeVIPs, errs)
 	}
 
 	return nil

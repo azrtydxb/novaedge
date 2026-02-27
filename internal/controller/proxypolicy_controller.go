@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,6 +34,8 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
+var ()
 
 // ProxyPolicyReconciler reconciles a ProxyPolicy object
 type ProxyPolicyReconciler struct {
@@ -56,7 +58,7 @@ func (r *ProxyPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	policy := &novaedgev1alpha1.ProxyPolicy{}
 	err := r.Get(ctx, req.NamespacedName, policy)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("ProxyPolicy resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -102,7 +104,7 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 			Name:      policy.Spec.TargetRef.Name,
 			Namespace: targetNamespace,
 		}, gateway); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				validationErrors = append(validationErrors,
 					fmt.Sprintf("Target ProxyGateway %s not found", policy.Spec.TargetRef.Name))
 			} else {
@@ -115,7 +117,7 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 			Name:      policy.Spec.TargetRef.Name,
 			Namespace: targetNamespace,
 		}, route); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				validationErrors = append(validationErrors,
 					fmt.Sprintf("Target ProxyRoute %s not found", policy.Spec.TargetRef.Name))
 			} else {
@@ -128,7 +130,7 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 			Name:      policy.Spec.TargetRef.Name,
 			Namespace: targetNamespace,
 		}, backend); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				validationErrors = append(validationErrors,
 					fmt.Sprintf("Target ProxyBackend %s not found", policy.Spec.TargetRef.Name))
 			} else {
@@ -208,7 +210,7 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 	}
 
 	if len(validationErrors) > 0 {
-		return fmt.Errorf("validation failed: %v", validationErrors)
+		return fmt.Errorf("%w: %v", errValidationFailed, validationErrors)
 	}
 
 	return nil

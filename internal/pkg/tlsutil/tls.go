@@ -40,6 +40,7 @@ limitations under the License.
 package tlsutil
 
 import (
+	"errors"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
@@ -51,6 +52,10 @@ import (
 
 	pkgerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
 )
+var (
+	errFailedToAddCACertificateToPool = errors.New("failed to add CA certificate to pool")
+)
+
 
 // LoadServerTLSCredentials loads TLS credentials for gRPC server with mTLS.
 // It uses GetCertificate/GetConfigForClient callbacks so that certificate files
@@ -69,7 +74,7 @@ func LoadServerTLSCredentials(certFile, keyFile, caFile string) (credentials.Tra
 
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(caCert) {
-		return nil, fmt.Errorf("failed to add CA certificate to pool")
+		return nil, errFailedToAddCACertificateToPool
 	}
 
 	cleanCertFile := filepath.Clean(certFile)
@@ -109,7 +114,7 @@ func LoadClientTLSCredentials(certFile, keyFile, caFile, serverName string) (cre
 
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(caCert) {
-		return nil, fmt.Errorf("failed to add CA certificate to pool")
+		return nil, errFailedToAddCACertificateToPool
 	}
 
 	cleanCertFile := filepath.Clean(certFile)
@@ -143,7 +148,7 @@ func LoadServerTLSCredentialsFromMemory(certPEM, keyPEM, caPEM []byte) (credenti
 	// Load CA certificate for client verification
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("failed to add CA certificate to pool")
+		return nil, errFailedToAddCACertificateToPool
 	}
 
 	// Create TLS configuration with mutual TLS
@@ -168,7 +173,7 @@ func LoadClientTLSCredentialsFromMemory(certPEM, keyPEM, caPEM []byte, serverNam
 	// Load CA certificate for server verification
 	certPool := x509.NewCertPool()
 	if !certPool.AppendCertsFromPEM(caPEM) {
-		return nil, fmt.Errorf("failed to add CA certificate to pool")
+		return nil, errFailedToAddCACertificateToPool
 	}
 
 	// Create TLS configuration with mutual TLS

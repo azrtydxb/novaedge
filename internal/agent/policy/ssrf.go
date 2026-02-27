@@ -17,12 +17,17 @@ limitations under the License.
 package policy
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
 )
+var (
+	errConnectionsToPrivateIP = errors.New("connections to private IP")
+)
+
 
 // privateNetworks contains CIDR ranges that should be blocked for outbound requests.
 // These are pre-computed at package initialization time to avoid runtime parsing overhead.
@@ -96,7 +101,7 @@ func NewSSRFProtectedTransport() *http.Transport {
 
 			for _, ipAddr := range ips {
 				if isPrivateIP(ipAddr.IP) {
-					return nil, fmt.Errorf("connections to private IP %s are blocked (SSRF protection)", ipAddr.IP)
+					return nil, fmt.Errorf("%w: %s are blocked (SSRF protection)", errConnectionsToPrivateIP, ipAddr.IP)
 				}
 			}
 

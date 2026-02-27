@@ -37,6 +37,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errNoGatewaysRegisteredForCluster = errors.New("no gateways registered for cluster")
+	errNoHealthyGatewayAvailableForCluster = errors.New("no healthy gateway available for cluster")
+	errCONNECTTo = errors.New("CONNECT to")
+)
+
 
 const (
 	// labelRemote marks an endpoint as belonging to a remote cluster.
@@ -112,7 +118,7 @@ func (r *CrossClusterTunnelRegistry) GetGateway(clusterName string) (*GatewayAge
 
 	gateways, ok := r.gateways[clusterName]
 	if !ok {
-		return nil, fmt.Errorf("no gateways registered for cluster %q", clusterName)
+		return nil, fmt.Errorf("%w: %q", errNoGatewaysRegisteredForCluster, clusterName)
 	}
 
 	for i := range gateways {
@@ -121,7 +127,7 @@ func (r *CrossClusterTunnelRegistry) GetGateway(clusterName string) (*GatewayAge
 		}
 	}
 
-	return nil, fmt.Errorf("no healthy gateway available for cluster %q", clusterName)
+	return nil, fmt.Errorf("%w: %q", errNoHealthyGatewayAvailableForCluster, clusterName)
 }
 
 // IsRemoteEndpoint checks whether the given endpoint has the novaedge.io/remote=true label,
@@ -203,7 +209,7 @@ func dialViaTunnel(ctx context.Context, gatewayAddr, backendAddr string, tlsConf
 	if resp.StatusCode != http.StatusOK {
 		_ = resp.Body.Close()
 		_ = pw.Close()
-		return nil, fmt.Errorf("CONNECT to %s via gateway %s returned status %d", backendAddr, gatewayAddr, resp.StatusCode)
+		return nil, fmt.Errorf("%w: %s via gateway %s returned status %d", errCONNECTTo, backendAddr, gatewayAddr, resp.StatusCode)
 	}
 
 	return &tunnelStreamConn{

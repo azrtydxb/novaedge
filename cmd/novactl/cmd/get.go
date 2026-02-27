@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"os"
@@ -9,6 +10,10 @@ import (
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/printer"
 	"github.com/spf13/cobra"
 )
+var (
+	errExactlyOneResourceTypeRequired = errors.New("exactly one resource type required")
+)
+
 
 var outputFormat string
 
@@ -38,7 +43,7 @@ func newGetCommand() *cobra.Command {
 
 func runGet(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one resource type required")
+		return errExactlyOneResourceTypeRequired
 	}
 
 	resourceType := args[0]
@@ -70,7 +75,7 @@ func runGet(_ *cobra.Command, args []string) error {
 	case resourceAliasCertificates, resourceAliasCertificate, resourceAliasCert, resourceAliasProxyCertificates:
 		rt = client.ResourceCertificate
 	default:
-		return fmt.Errorf("unknown resource type: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes, grpcroutes, ippools, wasmplugins, certificates)", resourceType)
+		return fmt.Errorf("%w: %s (valid types: gateways, routes, backends, policies, vips, tcproutes, tlsroutes, grpcroutes, ippools, wasmplugins, certificates)", errUnknownResourceType, resourceType)
 	}
 
 	ctx := context.Background()

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"os"
@@ -11,6 +12,10 @@ import (
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/trace"
 	"github.com/spf13/cobra"
 )
+var (
+	errInvalidTagFormat = errors.New("invalid tag format")
+)
+
 
 var (
 	traceEndpoint string
@@ -250,7 +255,7 @@ func runTraceSearch(_ *cobra.Command, _ []string) error {
 	for _, tag := range traceTags {
 		parts := strings.SplitN(tag, "=", 2)
 		if len(parts) != 2 {
-			return fmt.Errorf("invalid tag format %q, expected key=value", tag)
+			return fmt.Errorf("%w: %q, expected key=value", errInvalidTagFormat, tag)
 		}
 		params.Tags[parts[0]] = parts[1]
 	}

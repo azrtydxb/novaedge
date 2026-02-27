@@ -17,6 +17,7 @@ limitations under the License.
 package tunnel
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"io"
@@ -30,6 +31,10 @@ import (
 
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+var (
+	errRelayEndpointIsRequiredForWebSocketTunnelType = errors.New("relay endpoint is required for WebSocket tunnel type")
+)
+
 
 const (
 	wsDialTimeout  = 10 * time.Second
@@ -58,7 +63,7 @@ type webSocketTunnel struct {
 // newWebSocketTunnel creates a WebSocket tunnel instance.
 func newWebSocketTunnel(clusterName string, config v1alpha1.TunnelConfig, logger *zap.Logger) (*webSocketTunnel, error) {
 	if config.RelayEndpoint == "" {
-		return nil, fmt.Errorf("relay endpoint is required for WebSocket tunnel type")
+		return nil, errRelayEndpointIsRequiredForWebSocketTunnelType
 	}
 
 	return &webSocketTunnel{
@@ -122,42 +127,8 @@ func (t *webSocketTunnel) Type() string {
 
 // maintainConnection keeps the WebSocket tunnel connected with exponential backoff.
 func (t *webSocketTunnel) maintainConnection(ctx context.Context) {
-	defer close(t.done)
-
-	backoff := time.Second
-	for {
-		if err := t.connect(ctx); err != nil {
-			t.logger.Error("websocket connection failed", zap.Error(err), zap.Duration("backoff", backoff))
-			t.healthy.Store(false)
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(backoff):
-			}
-
-			backoff = minDuration(backoff*2, maxBackoff)
-			continue
-		}
-
-		t.healthy.Store(true)
-		backoff = time.Second
-		t.logger.Info("websocket tunnel established", zap.String("localAddr", t.LocalAddr()))
-
-		// Run the forwarding loop until the connection is lost
-		t.runForwardingLoop(ctx)
-
-		t.mu.Lock()
-		t.closeConnections()
-		t.mu.Unlock()
-		t.healthy.Store(false)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-	}
+	maintainTunnelConnection(ctx, t.done, &t.healthy, &t.mu, t.logger, "websocket",
+		t.LocalAddr, t.connect, t.runForwardingLoop, t.closeConnections)
 }
 
 // connect establishes the WebSocket connection and local listener.

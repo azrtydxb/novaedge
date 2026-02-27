@@ -17,6 +17,7 @@ limitations under the License.
 package mesh
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"io"
@@ -33,6 +34,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errMeshManagerNotStarted = errors.New("mesh manager not started")
+)
+
 
 const (
 	// DefaultTPROXYPort is the default port for the transparent listener.
@@ -317,7 +322,7 @@ func (m *Manager) Start(ctx context.Context) error {
 // authorization policies, and eBPF acceleration maps from a config snapshot.
 func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*pb.MeshAuthorizationPolicy) error {
 	if m.tproxy == nil {
-		return fmt.Errorf("mesh manager not started")
+		return errMeshManagerNotStarted
 	}
 
 	// Update service routing table

@@ -17,11 +17,16 @@ limitations under the License.
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
 	"go.uber.org/zap"
 )
+var (
+	errTunnelForCluster = errors.New("tunnel for cluster")
+)
+
 
 // InMemoryTunnelManager tracks tunnel names and provides cleanup during
 // remote cluster deletion. It implements TunnelTeardown without depending
@@ -56,7 +61,7 @@ func (m *InMemoryTunnelManager) RemoveTunnel(clusterName string) error {
 	defer m.mu.Unlock()
 
 	if !m.tunnels[clusterName] {
-		return fmt.Errorf("tunnel for cluster %q not found", clusterName)
+		return fmt.Errorf("%w: %q not found", errTunnelForCluster, clusterName)
 	}
 
 	delete(m.tunnels, clusterName)

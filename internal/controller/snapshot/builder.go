@@ -20,6 +20,7 @@ limitations under the License.
 package snapshot
 
 import (
+	"errors"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -41,6 +42,15 @@ import (
 	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errNoCACertificateFoundInSecret = errors.New("no CA certificate found in secret")
+	errTLSSecret = errors.New("TLS secret")
+	errTLSCrtNotFoundInSecret = errors.New("tls.crt not found in secret")
+	errTLSKeyNotFoundInSecret = errors.New("tls.key not found in secret")
+	errWASMConfigMap = errors.New("WASM ConfigMap")
+	errWASMBinaryNotFoundInConfigMap = errors.New("WASM binary not found in ConfigMap")
+)
+
 
 // FederationStateProvider exposes the minimal federation state needed by the
 // snapshot builder to populate FederationMetadata on ConfigSnapshots and to
@@ -320,7 +330,7 @@ func (b *Builder) loadCACert(ctx context.Context, secretName, secretNamespace, d
 		}
 	}
 
-	return nil, fmt.Errorf("no CA certificate found in secret %s/%s (tried ca.crt, ca-bundle.crt, tls.crt)", namespace, secretName)
+	return nil, fmt.Errorf("%w: %s/%s (tried ca.crt, ca-bundle.crt, tls.crt)", errNoCACertificateFoundInSecret, namespace, secretName)
 }
 
 // BuildSnapshot builds a complete ConfigSnapshot for a specific node
@@ -1295,17 +1305,17 @@ func (b *Builder) loadTLSConfig(_ context.Context, tls *novaedgev1alpha1.TLSConf
 
 	secret, ok := bc.getSecret(namespace, tls.SecretRef.Name)
 	if !ok {
-		return nil, fmt.Errorf("TLS secret %s/%s not found in cache", namespace, tls.SecretRef.Name)
+		return nil, fmt.Errorf("%w: %s/%s not found in cache", errTLSSecret, namespace, tls.SecretRef.Name)
 	}
 
 	cert, ok := secret.Data["tls.crt"]
 	if !ok {
-		return nil, fmt.Errorf("tls.crt not found in secret")
+		return nil, errTLSCrtNotFoundInSecret
 	}
 
 	key, ok := secret.Data["tls.key"]
 	if !ok {
-		return nil, fmt.Errorf("tls.key not found in secret")
+		return nil, errTLSKeyNotFoundInSecret
 	}
 
 	return &pb.TLSConfig{
@@ -1329,7 +1339,7 @@ func (b *Builder) loadWASMBinary(source, defaultNamespace string, bc *buildConte
 
 	configMap, ok := bc.getConfigMap(namespace, name)
 	if !ok {
-		return nil, fmt.Errorf("WASM ConfigMap %s/%s not found in cache", namespace, name)
+		return nil, fmt.Errorf("%w: %s/%s not found in cache", errWASMConfigMap, namespace, name)
 	}
 
 	// Look for the WASM binary in BinaryData
@@ -1346,7 +1356,7 @@ func (b *Builder) loadWASMBinary(source, defaultNamespace string, bc *buildConte
 		return decoded, nil
 	}
 
-	return nil, fmt.Errorf("WASM binary not found in ConfigMap %s/%s (expected key: plugin.wasm)", namespace, name)
+	return nil, fmt.Errorf("%w: %s/%s (expected key: plugin.wasm)", errWASMBinaryNotFoundInConfigMap, namespace, name)
 }
 
 // generateVersion generates a version string based on content hash.

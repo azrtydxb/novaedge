@@ -18,9 +18,7 @@ package l4
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 	"sync"
 	"sync/atomic"
@@ -254,50 +252,10 @@ func (p *TCPProxy) copyOneDirection(ctx context.Context, dst, src net.Conn) int6
 	return n
 }
 
-// copyWithIdleTimeout copies data from src to dst with an idle timeout
+// copyWithIdleTimeout copies data from src to dst with an idle timeout.
+// Delegates to the package-level copyWithTimeout function.
 func (p *TCPProxy) copyWithIdleTimeout(ctx context.Context, dst, src net.Conn, buf []byte, idleTimeout time.Duration) (int64, error) {
-	var total int64
-	for {
-		select {
-		case <-ctx.Done():
-			return total, ctx.Err()
-		default:
-		}
-
-		// Set read deadline for idle timeout
-		if err := src.SetReadDeadline(time.Now().Add(idleTimeout)); err != nil {
-			return total, fmt.Errorf("set read deadline: %w", err)
-		}
-
-		nr, readErr := src.Read(buf)
-		if nr > 0 {
-			// Reset write deadline
-			if err := dst.SetWriteDeadline(time.Now().Add(idleTimeout)); err != nil {
-				return total, fmt.Errorf("set write deadline: %w", err)
-			}
-
-			nw, writeErr := dst.Write(buf[:nr])
-			total += int64(nw)
-			if writeErr != nil {
-				return total, writeErr
-			}
-			if nw != nr {
-				return total, io.ErrShortWrite
-			}
-		}
-
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				return total, nil
-			}
-			// Check for timeout (idle timeout reached)
-			var netErr net.Error
-			if errors.As(readErr, &netErr) && netErr.Timeout() {
-				return total, nil
-			}
-			return total, readErr
-		}
-	}
+	return copyWithTimeout(ctx, dst, src, buf, idleTimeout)
 }
 
 // pickBackend selects a backend endpoint using round-robin from the

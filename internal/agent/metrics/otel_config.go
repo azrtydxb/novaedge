@@ -21,6 +21,14 @@ import (
 	"net/url"
 	"time"
 )
+var (
+	errOtelEndpointMustNotBeEmpty = errors.New("otel: endpoint must not be empty")
+	errOtelEndpointIsNotAValidURLFor = errors.New("otel: endpoint is not a valid URL for HTTP protocol")
+	errOtelEndpointIsNotAValidHostPort = errors.New("otel: endpoint is not a valid host:port for gRPC protocol")
+	errOtelProtocolMustBeHTTPOrGrpc = errors.New(`otel: protocol must be "http" or "grpc"`)
+	errOtelExportIntervalMustNotBeNegative = errors.New("otel: export interval must not be negative")
+)
+
 
 const (
 	// ProtocolHTTP selects OTLP over HTTP transport.
@@ -61,26 +69,26 @@ func (c *OTelConfig) Validate() error {
 	}
 
 	if c.Endpoint == "" {
-		return errors.New("otel: endpoint must not be empty")
+		return errOtelEndpointMustNotBeEmpty
 	}
 
 	switch c.Protocol {
 	case ProtocolHTTP:
 		if _, err := url.Parse(c.Endpoint); err != nil {
-			return errors.New("otel: endpoint is not a valid URL for HTTP protocol")
+			return errOtelEndpointIsNotAValidURLFor
 		}
 	case ProtocolGRPC:
 		// gRPC endpoints are host:port; a basic length check suffices here
 		// since the gRPC dialer performs full validation.
 		if len(c.Endpoint) < 3 {
-			return errors.New("otel: endpoint is not a valid host:port for gRPC protocol")
+			return errOtelEndpointIsNotAValidHostPort
 		}
 	default:
-		return errors.New("otel: protocol must be \"http\" or \"grpc\"")
+		return errOtelProtocolMustBeHTTPOrGrpc
 	}
 
 	if c.ExportInterval < 0 {
-		return errors.New("otel: export interval must not be negative")
+		return errOtelExportIntervalMustNotBeNegative
 	}
 
 	return nil

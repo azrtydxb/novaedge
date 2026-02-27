@@ -17,6 +17,7 @@ limitations under the License.
 package upstream
 
 import (
+	"errors"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -38,6 +39,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errNoProxyForEndpoint = errors.New("no proxy for endpoint")
+)
+
 
 // DefaultConnectTimeout is the fallback connect timeout when ConnectTimeoutMs is zero or negative.
 const DefaultConnectTimeout = 60 * time.Second
@@ -498,7 +503,7 @@ func (p *Pool) Forward(endpoint *pb.Endpoint, req *http.Request, w http.Response
 	proxies := *p.proxies.Load()
 	proxy, ok := proxies[key]
 	if !ok {
-		return fmt.Errorf("no proxy for endpoint %s", key)
+		return fmt.Errorf("%w: %s", errNoProxyForEndpoint, key)
 	}
 
 	// Track active connections for pool metrics

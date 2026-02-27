@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"errors"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -13,6 +14,46 @@ import (
 	"net"
 	"time"
 )
+var (
+	errAtLeastOneDomainOrIPIsRequired = errors.New("at least one domain or IP is required")
+	errUnsupportedKeyType = errors.New("unsupported key type")
+	errFailedToDecodeCACertificate = errors.New("failed to decode CA certificate")
+	errFailedToDecodeCAPrivateKey = errors.New("failed to decode CA private key")
+	errUnsupportedCAKeyType = errors.New("unsupported CA key type")
+)
+
+
+// generateKeyPair generates a private/public key pair based on the configured key type.
+func generateKeyPair(keyType string) (privateKey, publicKey interface{}, err error) {
+	switch keyType {
+	case KeyTypeEC256:
+		key, genErr := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if genErr != nil {
+			return nil, nil, fmt.Errorf("failed to generate EC key: %w", genErr)
+		}
+		return key, &key.PublicKey, nil
+	case KeyTypeEC384:
+		key, genErr := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+		if genErr != nil {
+			return nil, nil, fmt.Errorf("failed to generate EC key: %w", genErr)
+		}
+		return key, &key.PublicKey, nil
+	case KeyTypeRSA2048:
+		key, genErr := rsa.GenerateKey(rand.Reader, 2048)
+		if genErr != nil {
+			return nil, nil, fmt.Errorf("failed to generate RSA key: %w", genErr)
+		}
+		return key, &key.PublicKey, nil
+	case KeyTypeRSA4096:
+		key, genErr := rsa.GenerateKey(rand.Reader, 4096)
+		if genErr != nil {
+			return nil, nil, fmt.Errorf("failed to generate RSA key: %w", genErr)
+		}
+		return key, &key.PublicKey, nil
+	default:
+		return nil, nil, fmt.Errorf("%w: %s", errUnsupportedKeyType, keyType)
+	}
+}
 
 // SelfSignedConfig configures self-signed certificate generation.
 type SelfSignedConfig struct {
@@ -38,7 +79,7 @@ type SelfSignedConfig struct {
 // GenerateSelfSigned generates a self-signed certificate.
 func GenerateSelfSigned(config *SelfSignedConfig) (*Certificate, error) {
 	if len(config.Domains) == 0 && len(config.IPs) == 0 {
-		return nil, fmt.Errorf("at least one domain or IP is required")
+		return nil, errAtLeastOneDomainOrIPIsRequired
 	}
 
 	// Set defaults
@@ -53,41 +94,9 @@ func GenerateSelfSigned(config *SelfSignedConfig) (*Certificate, error) {
 	}
 
 	// Generate private key
-	var privateKey interface{}
-	var publicKey interface{}
-	var err error
-
-	switch config.KeyType {
-	case KeyTypeEC256:
-		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate EC key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	case KeyTypeEC384:
-		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate EC key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	case KeyTypeRSA2048:
-		key, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	case KeyTypeRSA4096:
-		key, err := rsa.GenerateKey(rand.Reader, 4096)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	default:
-		return nil, fmt.Errorf("unsupported key type: %s", config.KeyType)
+	privateKey, publicKey, err := generateKeyPair(config.KeyType)
+	if err != nil {
+		return nil, err
 	}
 
 	// Generate serial number
@@ -183,13 +192,13 @@ func GenerateCA(organization string, validity time.Duration) (*Certificate, erro
 // SignCertificate signs a certificate with a CA.
 func SignCertificate(caCert *Certificate, config *SelfSignedConfig) (*Certificate, error) {
 	if len(config.Domains) == 0 && len(config.IPs) == 0 {
-		return nil, fmt.Errorf("at least one domain or IP is required")
+		return nil, errAtLeastOneDomainOrIPIsRequired
 	}
 
 	// Parse CA certificate
 	caBlock, _ := pem.Decode(caCert.CertificatePEM)
 	if caBlock == nil {
-		return nil, fmt.Errorf("failed to decode CA certificate")
+		return nil, errFailedToDecodeCACertificate
 	}
 	caX509, err := x509.ParseCertificate(caBlock.Bytes)
 	if err != nil {
@@ -199,7 +208,7 @@ func SignCertificate(caCert *Certificate, config *SelfSignedConfig) (*Certificat
 	// Parse CA private key
 	caKeyBlock, _ := pem.Decode(caCert.PrivateKeyPEM)
 	if caKeyBlock == nil {
-		return nil, fmt.Errorf("failed to decode CA private key")
+		return nil, errFailedToDecodeCAPrivateKey
 	}
 
 	var caPrivateKey interface{}
@@ -209,7 +218,7 @@ func SignCertificate(caCert *Certificate, config *SelfSignedConfig) (*Certificat
 	case "RSA PRIVATE KEY":
 		caPrivateKey, err = x509.ParsePKCS1PrivateKey(caKeyBlock.Bytes)
 	default:
-		return nil, fmt.Errorf("unsupported CA key type: %s", caKeyBlock.Type)
+		return nil, fmt.Errorf("%w: %s", errUnsupportedCAKeyType, caKeyBlock.Type)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse CA private key: %w", err)
@@ -227,40 +236,9 @@ func SignCertificate(caCert *Certificate, config *SelfSignedConfig) (*Certificat
 	}
 
 	// Generate private key for new certificate
-	var privateKey interface{}
-	var publicKey interface{}
-
-	switch config.KeyType {
-	case KeyTypeEC256:
-		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate EC key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	case KeyTypeEC384:
-		key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate EC key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	case KeyTypeRSA2048:
-		key, err := rsa.GenerateKey(rand.Reader, 2048)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	case KeyTypeRSA4096:
-		key, err := rsa.GenerateKey(rand.Reader, 4096)
-		if err != nil {
-			return nil, fmt.Errorf("failed to generate RSA key: %w", err)
-		}
-		privateKey = key
-		publicKey = &key.PublicKey
-	default:
-		return nil, fmt.Errorf("unsupported key type: %s", config.KeyType)
+	privateKey, publicKey, err := generateKeyPair(config.KeyType)
+	if err != nil {
+		return nil, err
 	}
 
 	// Generate serial number

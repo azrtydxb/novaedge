@@ -19,10 +19,14 @@ limitations under the License.
 package ratelimit
 
 import (
-	"fmt"
+	"errors"
 	"net"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFRateLimitingIsOnlySupportedOnLinux = errors.New("eBPF rate limiting is only supported on Linux")
 )
 
 // RateLimiter is a stub on non-Linux platforms.
@@ -31,22 +35,22 @@ type RateLimiter struct{}
 // NewRateLimiter returns an error on non-Linux platforms since eBPF
 // rate limiting requires Linux kernel support.
 func NewRateLimiter(_ *zap.Logger, _ uint32) (*RateLimiter, error) {
-	return nil, fmt.Errorf("eBPF rate limiting is only supported on Linux")
+	return nil, errEBPFRateLimitingIsOnlySupportedOnLinux
 }
 
 // Configure returns an error on non-Linux platforms.
 func (rl *RateLimiter) Configure(_, _ uint64) error {
-	return fmt.Errorf("eBPF rate limiting is only supported on Linux")
+	return errEBPFRateLimitingIsOnlySupportedOnLinux
 }
 
 // CheckAllowed always returns true on non-Linux platforms.
 func (rl *RateLimiter) CheckAllowed(_ net.IP) (bool, error) {
-	return true, fmt.Errorf("eBPF rate limiting is only supported on Linux")
+	return true, errEBPFRateLimitingIsOnlySupportedOnLinux
 }
 
 // GetStats returns empty stats on non-Linux platforms.
 func (rl *RateLimiter) GetStats() (RateLimitStats, error) {
-	return RateLimitStats{}, fmt.Errorf("eBPF rate limiting is only supported on Linux")
+	return RateLimitStats{}, errEBPFRateLimitingIsOnlySupportedOnLinux
 }
 
 // IsActive returns false on non-Linux platforms.

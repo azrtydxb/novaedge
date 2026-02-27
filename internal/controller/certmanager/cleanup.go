@@ -17,6 +17,7 @@ limitations under the License.
 package certmanager
 
 import (
+	"errors"
 	"context"
 	"fmt"
 
@@ -26,6 +27,10 @@ import (
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+var (
+	errErrorsCleaningUpCertificates = errors.New("errors cleaning up certificates")
+)
+
 
 // Cleanup handles removing cert-manager Certificate CRs when their parent
 // ProxyGateway is deleted. While ownerReferences handle automatic garbage
@@ -82,7 +87,7 @@ func (c *Cleanup) CleanupForGateway(ctx context.Context, gateway types.Namespace
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("errors cleaning up certificates: %v", errs)
+		return fmt.Errorf("%w: %v", errErrorsCleaningUpCertificates, errs)
 	}
 
 	logger.Info("Cleaned up cert-manager Certificates for gateway",

@@ -19,6 +19,7 @@ limitations under the License.
 package certmanager
 
 import (
+	"errors"
 	"context"
 	"fmt"
 
@@ -27,6 +28,11 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+var (
+	errCertManagerIsRequiredEnableCertManagerTrue = errors.New("cert-manager is required (--enable-cert-manager=true) but CRDs not found")
+	errInvalidCertManagerEnableMode = errors.New("invalid cert-manager enable mode")
+)
+
 
 // EnableMode defines the cert-manager enablement mode.
 type EnableMode string
@@ -129,7 +135,7 @@ func (d *Detector) ShouldEnable(ctx context.Context, mode EnableMode) (bool, err
 			return false, fmt.Errorf("failed to detect cert-manager: %w", err)
 		}
 		if !installed {
-			return false, fmt.Errorf("cert-manager is required (--enable-cert-manager=true) but CRDs not found")
+			return false, errCertManagerIsRequiredEnableCertManagerTrue
 		}
 		return true, nil
 	case EnableModeAuto:
@@ -140,6 +146,6 @@ func (d *Detector) ShouldEnable(ctx context.Context, mode EnableMode) (bool, err
 		}
 		return installed, nil
 	default:
-		return false, fmt.Errorf("invalid cert-manager enable mode: %s", mode)
+		return false, fmt.Errorf("%w: %s", errInvalidCertManagerEnableMode, mode)
 	}
 }

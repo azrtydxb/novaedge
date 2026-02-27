@@ -20,14 +20,21 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errGooglednsCredentialsMustIncludeProject              = errors.New("googledns credentials must include 'project'")
+	errGooglednsCredentialsMustIncludeManagedZone          = errors.New("googledns credentials must include 'managed_zone'")
+	errGooglednsCredentialsMustIncludeAccessTokenOrService = errors.New("googledns credentials must include 'access_token' or 'service_account_json'")
+	errGoogleCloudDNSAPIErrorStatus                        = errors.New("google cloud DNS API error (status")
 )
 
 const (
@@ -54,17 +61,17 @@ func NewGoogleDNSProvider(credentials map[string]string, config *ProviderConfig)
 	managedZone := credentials["managed_zone"]
 
 	if project == "" {
-		return nil, fmt.Errorf("googledns credentials must include 'project'")
+		return nil, errGooglednsCredentialsMustIncludeProject
 	}
 	if managedZone == "" {
-		return nil, fmt.Errorf("googledns credentials must include 'managed_zone'")
+		return nil, errGooglednsCredentialsMustIncludeManagedZone
 	}
 
 	accessToken := credentials["access_token"]
 	saJSON := credentials["service_account_json"]
 
 	if accessToken == "" && saJSON == "" {
-		return nil, fmt.Errorf("googledns credentials must include 'access_token' or 'service_account_json'")
+		return nil, errGooglednsCredentialsMustIncludeAccessTokenOrService
 	}
 
 	return &GoogleDNSProvider{
@@ -136,33 +143,7 @@ func (p *GoogleDNSProvider) DeleteTXTRecord(ctx context.Context, fqdn, value str
 
 // WaitForPropagation waits for the TXT record to be visible in DNS.
 func (p *GoogleDNSProvider) WaitForPropagation(ctx context.Context, fqdn, value string) error {
-	timeout := time.After(p.config.PropagationTimeout)
-	ticker := time.NewTicker(p.config.PollingInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeout:
-			return fmt.Errorf("DNS propagation timeout for %s after %s", fqdn, p.config.PropagationTimeout)
-		case <-ticker.C:
-			resolver := &net.Resolver{}
-			records, err := resolver.LookupTXT(ctx, strings.TrimSuffix(fqdn, "."))
-			if err != nil {
-				p.logger.Debug("DNS lookup not yet propagated",
-					zap.String("fqdn", fqdn),
-					zap.Error(err))
-				continue
-			}
-			for _, record := range records {
-				if record == value {
-					p.logger.Info("DNS propagation confirmed", zap.String("fqdn", fqdn))
-					return nil
-				}
-			}
-		}
-	}
+	return waitForDNSPropagation(ctx, fqdn, value, p.config.PropagationTimeout, p.config.PollingInterval, p.logger)
 }
 
 // submitChange submits a DNS change request to Google Cloud DNS.
@@ -199,8 +180,8 @@ func (p *GoogleDNSProvider) submitChange(ctx context.Context, change *googleDNSC
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("google cloud DNS API error (status %d): %s",
-			resp.StatusCode, string(body))
+		return fmt.Errorf("%w %d): %s",
+			errGoogleCloudDNSAPIErrorStatus, resp.StatusCode, string(body))
 	}
 
 	p.logger.Info("Google Cloud DNS change submitted",

@@ -17,10 +17,16 @@ limitations under the License.
 package ebpfmesh
 
 import (
+	"errors"
 	"encoding/binary"
 	"fmt"
 	"net"
 )
+var (
+	errInvalidIP = errors.New("invalid IP")
+	errNotIPv4 = errors.New("not IPv4")
+)
+
 
 // meshSvcKey matches the C struct mesh_svc_key layout.
 type meshSvcKey struct {
@@ -38,11 +44,11 @@ type meshSvcValue struct {
 func makeServiceKey(ip string, port int32) (meshSvcKey, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return meshSvcKey{}, fmt.Errorf("invalid IP: %s", ip)
+		return meshSvcKey{}, fmt.Errorf("%w: %s", errInvalidIP, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return meshSvcKey{}, fmt.Errorf("not IPv4: %s", ip)
+		return meshSvcKey{}, fmt.Errorf("%w: %s", errNotIPv4, ip)
 	}
 	key := meshSvcKey{
 		Port: htons(uint16(port)),

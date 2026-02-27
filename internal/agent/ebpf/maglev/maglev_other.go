@@ -19,9 +19,13 @@ limitations under the License.
 package maglev
 
 import (
-	"fmt"
+	"errors"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errEBPFMaglevIsOnlySupportedOnLinux = errors.New("eBPF Maglev is only supported on Linux")
 )
 
 // Manager is a stub on non-Linux platforms.
@@ -34,12 +38,12 @@ func NewManager(_ *zap.Logger, _ uint32) *Manager {
 
 // Init returns an error on non-Linux platforms.
 func (m *Manager) Init() error {
-	return fmt.Errorf("eBPF Maglev is only supported on Linux")
+	return errEBPFMaglevIsOnlySupportedOnLinux
 }
 
 // UpdateTable returns an error on non-Linux platforms.
 func (m *Manager) UpdateTable(_ []Backend) error {
-	return fmt.Errorf("eBPF Maglev is only supported on Linux")
+	return errEBPFMaglevIsOnlySupportedOnLinux
 }
 
 // Stats returns an empty map on non-Linux platforms.

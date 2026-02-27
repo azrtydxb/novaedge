@@ -17,12 +17,13 @@ limitations under the License.
 package controller
 
 import (
+	"errors"
 	"context"
 	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -36,6 +37,11 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller/ipam"
 )
+var (
+	errUnsupportedVIPMode = errors.New("unsupported VIP mode")
+	errUnsupportedAddressFamily = errors.New("unsupported address family")
+)
+
 
 const (
 	// annotationVIPMode is the required annotation that triggers VIP creation.
@@ -87,7 +93,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	svc := &corev1.Service{}
 	err := r.Get(ctx, req.NamespacedName, svc)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Service deleted — IPAM release is handled below when ProxyVIP is not found
 			logger.Info("Service resource not found, cleaning up IPAM allocation if any")
 			r.releaseIPAMForService(req.Name, req.Namespace)
@@ -156,7 +162,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	existingVIP := &novaedgev1alpha1.ProxyVIP{}
 	err = r.Get(ctx, types.NamespacedName{Name: vipName, Namespace: svc.Namespace}, existingVIP)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Create new ProxyVIP
 			vip := &novaedgev1alpha1.ProxyVIP{
 				ObjectMeta: metav1.ObjectMeta{
@@ -238,7 +244,7 @@ func parseVIPMode(mode string) (novaedgev1alpha1.VIPMode, error) {
 	case novaedgev1alpha1.VIPModeOSPF:
 		return novaedgev1alpha1.VIPModeOSPF, nil
 	default:
-		return "", fmt.Errorf("unsupported VIP mode %q: must be one of L2ARP, BGP, OSPF", mode)
+		return "", fmt.Errorf("%w: %q: must be one of L2ARP, BGP, OSPF", errUnsupportedVIPMode, mode)
 	}
 }
 
@@ -315,7 +321,7 @@ func parseAddressFamily(af string) (novaedgev1alpha1.AddressFamily, error) {
 	case novaedgev1alpha1.AddressFamilyDual:
 		return novaedgev1alpha1.AddressFamilyDual, nil
 	default:
-		return "", fmt.Errorf("unsupported address family %q: must be one of ipv4, ipv6, dual", af)
+		return "", fmt.Errorf("%w: %q: must be one of ipv4, ipv6, dual", errUnsupportedAddressFamily, af)
 	}
 }
 

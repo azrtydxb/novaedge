@@ -19,6 +19,7 @@ limitations under the License.
 package health
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -28,6 +29,18 @@ import (
 
 	"go.uber.org/zap"
 )
+var (
+	errUnexpectedCharacter = errors.New("unexpected character")
+	errExpectedTokenKind = errors.New("expected token kind")
+	errEmptyExpression = errors.New("empty expression")
+	errUnexpectedTokenAfterExpression = errors.New("unexpected token after expression")
+	errExpectedComparisonOperatorGot = errors.New("expected comparison operator, got")
+	errNetworkErrorRatioTakesNoArgumentsGot = errors.New("NetworkErrorRatio() takes no arguments, got")
+	errResponseCodeRatioRequires4ArgumentsCodeFromCodeToDividendFromDividendTo = errors.New("ResponseCodeRatio() requires 4 arguments (codeFrom, codeTo, dividendFrom, dividendTo), got")
+	errLatencyAtQuantileMSRequires1ArgumentQuantileGot = errors.New("LatencyAtQuantileMS() requires 1 argument (quantile), got")
+	errUnknownFunction = errors.New("unknown function")
+)
+
 
 // CBExpression evaluates a circuit breaker expression against cluster statistics.
 type CBExpression interface {
@@ -270,7 +283,7 @@ func (l *lexer) tokenize() ([]token, error) {
 			}
 			l.tokens = append(l.tokens, token{kind: tokenNumber, value: l.input[start:l.pos]})
 		default:
-			return nil, fmt.Errorf("unexpected character %q at position %d", ch, l.pos)
+			return nil, fmt.Errorf("%w: %q at position %d", errUnexpectedCharacter, ch, l.pos)
 		}
 	}
 
@@ -306,7 +319,7 @@ func (p *parser) next() token {
 func (p *parser) expect(kind tokenKind) (token, error) {
 	t := p.next()
 	if t.kind != kind {
-		return t, fmt.Errorf("expected token kind %d, got %d (%q)", kind, t.kind, t.value)
+		return t, fmt.Errorf("%w: %d, got %d (%q)", errExpectedTokenKind, kind, t.kind, t.value)
 	}
 	return t, nil
 }
@@ -323,7 +336,7 @@ func (p *parser) expect(kind tokenKind) (token, error) {
 func ParseCBExpression(expr string) (CBExpression, error) {
 	expr = strings.TrimSpace(expr)
 	if expr == "" {
-		return nil, fmt.Errorf("empty expression")
+		return nil, errEmptyExpression
 	}
 
 	lex := newLexer(expr)
@@ -339,7 +352,7 @@ func ParseCBExpression(expr string) (CBExpression, error) {
 	}
 
 	if p.peek().kind != tokenEOF {
-		return nil, fmt.Errorf("unexpected token after expression: %q", p.peek().value)
+		return nil, fmt.Errorf("%w: %q", errUnexpectedTokenAfterExpression, p.peek().value)
 	}
 
 	return result, nil
@@ -409,7 +422,7 @@ func (p *parser) parseComparison() (CBExpression, error) {
 	case tokenGT, tokenLT, tokenGTE, tokenLTE:
 		p.next()
 	default:
-		return nil, fmt.Errorf("expected comparison operator, got %q", op.value)
+		return nil, fmt.Errorf("%w: %q", errExpectedComparisonOperatorGot, op.value)
 	}
 
 	// Expect a number
@@ -478,7 +491,7 @@ func buildStatsFunc(name string, args []float64) (statsFunc, error) {
 	switch name {
 	case "NetworkErrorRatio":
 		if len(args) != 0 {
-			return nil, fmt.Errorf("NetworkErrorRatio() takes no arguments, got %d", len(args))
+			return nil, fmt.Errorf("%w: %d", errNetworkErrorRatioTakesNoArgumentsGot, len(args))
 		}
 		return func(stats *ClusterStats) float64 {
 			return stats.NetworkErrorRatio()
@@ -486,7 +499,7 @@ func buildStatsFunc(name string, args []float64) (statsFunc, error) {
 
 	case "ResponseCodeRatio":
 		if len(args) != 4 {
-			return nil, fmt.Errorf("ResponseCodeRatio() requires 4 arguments (codeFrom, codeTo, dividendFrom, dividendTo), got %d", len(args))
+			return nil, fmt.Errorf("%w: %d", errResponseCodeRatioRequires4ArgumentsCodeFromCodeToDividendFromDividendTo, len(args))
 		}
 		codeFrom := int(args[0])
 		codeTo := int(args[1])
@@ -498,7 +511,7 @@ func buildStatsFunc(name string, args []float64) (statsFunc, error) {
 
 	case "LatencyAtQuantileMS":
 		if len(args) != 1 {
-			return nil, fmt.Errorf("LatencyAtQuantileMS() requires 1 argument (quantile), got %d", len(args))
+			return nil, fmt.Errorf("%w: %d", errLatencyAtQuantileMSRequires1ArgumentQuantileGot, len(args))
 		}
 		quantile := args[0]
 		return func(stats *ClusterStats) float64 {
@@ -506,7 +519,7 @@ func buildStatsFunc(name string, args []float64) (statsFunc, error) {
 		}, nil
 
 	default:
-		return nil, fmt.Errorf("unknown function %q", name)
+		return nil, fmt.Errorf("%w: %q", errUnknownFunction, name)
 	}
 }
 

@@ -17,6 +17,7 @@ limitations under the License.
 package tunnel
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -24,6 +25,10 @@ import (
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 )
+var (
+	errNoOverlayRouteFoundForCIDR = errors.New("no overlay route found for CIDR")
+)
+
 
 // overlayRoute tracks a single overlay route installed in the kernel routing table.
 type overlayRoute struct {
@@ -96,7 +101,7 @@ func (m *OverlayRouteManager) RemoveRoute(remoteCIDR string) error {
 
 	existing, ok := m.routes[remoteCIDR]
 	if !ok {
-		return fmt.Errorf("no overlay route found for CIDR %s", remoteCIDR)
+		return fmt.Errorf("%w: %s", errNoOverlayRouteFoundForCIDR, remoteCIDR)
 	}
 
 	if err := netlink.RouteDel(existing.Route); err != nil {

@@ -17,6 +17,7 @@ limitations under the License.
 package policy
 
 import (
+	"errors"
 	"bytes"
 	"fmt"
 	"io"
@@ -33,6 +34,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+var (
+	errWAFConfigIsNil = errors.New("WAF config is nil")
+)
+
 
 // WAFFailMode represents how the WAF behaves when processing errors occur
 type WAFFailMode string
@@ -63,7 +68,7 @@ type WAFEngine struct {
 // NewWAFEngine creates a new WAF engine from protobuf configuration
 func NewWAFEngine(config *pb.WAFConfig, logger *zap.Logger) (*WAFEngine, error) {
 	if config == nil {
-		return nil, fmt.Errorf("WAF config is nil")
+		return nil, errWAFConfigIsNil
 	}
 
 	wafConfig := coraza.NewWAFConfig()

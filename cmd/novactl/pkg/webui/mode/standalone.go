@@ -17,6 +17,7 @@ limitations under the License.
 package mode
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"os"
@@ -26,6 +27,20 @@ import (
 	"github.com/piwi3910/novaedge/internal/standalone"
 	"gopkg.in/yaml.v3"
 )
+var (
+	errConfigPathIsRequired                            = errors.New("config path is required")
+	errGateway                                         = errors.New("gateway '")
+	errRoute2                                          = errors.New("route '")
+	errBackend2                                        = errors.New("backend '")
+	errVIP                                             = errors.New("VIP '")
+	errPolicy                                          = errors.New("policy '")
+	errCertificatesAreNotSupportedInStandaloneMode     = errors.New("certificates are not supported in standalone mode")
+	errIPPoolsAreNotSupportedInStandaloneMode          = errors.New("IP pools are not supported in standalone mode")
+	errNovaEdgeClustersAreNotSupportedInStandaloneMode = errors.New("NovaEdge clusters are not supported in standalone mode")
+	errFederationsAreNotSupportedInStandaloneMode      = errors.New("federations are not supported in standalone mode")
+	errRemoteClustersAreNotSupportedInStandaloneMode   = errors.New("remote clusters are not supported in standalone mode")
+)
+
 
 // StandaloneBackend implements Backend for standalone YAML file operations
 type StandaloneBackend struct {
@@ -38,7 +53,7 @@ type StandaloneBackend struct {
 // NewStandaloneBackend creates a new standalone backend
 func NewStandaloneBackend(configPath string, readOnly bool) (*StandaloneBackend, error) {
 	if configPath == "" {
-		return nil, fmt.Errorf("config path is required")
+		return nil, errConfigPathIsRequired
 	}
 
 	s := &StandaloneBackend{
@@ -71,7 +86,7 @@ func (s *StandaloneBackend) reload() error {
 // save saves the configuration to disk
 func (s *StandaloneBackend) save() error {
 	if s.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	data, err := yaml.Marshal(s.config)
@@ -166,13 +181,13 @@ func (s *StandaloneBackend) GetGateway(ctx context.Context, namespace, name stri
 		}
 	}
 
-	return nil, fmt.Errorf("gateway '%s' not found", name)
+	return nil, fmt.Errorf("%w: %s' not found", errGateway, name)
 }
 
 // CreateGateway creates a new gateway (adds listeners in standalone mode)
 func (s *StandaloneBackend) CreateGateway(_ context.Context, gateway *models.Gateway) (*models.Gateway, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -210,7 +225,7 @@ func (s *StandaloneBackend) CreateGateway(_ context.Context, gateway *models.Gat
 // UpdateGateway updates an existing gateway
 func (s *StandaloneBackend) UpdateGateway(_ context.Context, gateway *models.Gateway) (*models.Gateway, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -267,7 +282,7 @@ func (s *StandaloneBackend) UpdateGateway(_ context.Context, gateway *models.Gat
 // DeleteGateway deletes a gateway (clears listeners in standalone mode)
 func (s *StandaloneBackend) DeleteGateway(_ context.Context, _, name string) error {
 	if s.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -278,7 +293,7 @@ func (s *StandaloneBackend) DeleteGateway(_ context.Context, _, name string) err
 		return s.save()
 	}
 
-	return fmt.Errorf("gateway '%s' not found", name)
+	return fmt.Errorf("%w: %s' not found", errGateway, name)
 }
 
 // ListRoutes returns all routes
@@ -362,13 +377,13 @@ func (s *StandaloneBackend) GetRoute(ctx context.Context, namespace, name string
 		}
 	}
 
-	return nil, fmt.Errorf("route '%s' not found", name)
+	return nil, fmt.Errorf("%w: %s' not found", errRoute2, name)
 }
 
 // CreateRoute creates a new route
 func (s *StandaloneBackend) CreateRoute(_ context.Context, route *models.Route) (*models.Route, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -377,7 +392,7 @@ func (s *StandaloneBackend) CreateRoute(_ context.Context, route *models.Route) 
 	// Check for duplicate
 	for _, r := range s.config.Routes {
 		if r.Name == route.Name {
-			return nil, fmt.Errorf("route '%s' already exists", route.Name)
+			return nil, fmt.Errorf("%w: %s' already exists", errRoute2, route.Name)
 		}
 	}
 
@@ -394,7 +409,7 @@ func (s *StandaloneBackend) CreateRoute(_ context.Context, route *models.Route) 
 // UpdateRoute updates an existing route
 func (s *StandaloneBackend) UpdateRoute(_ context.Context, route *models.Route) (*models.Route, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -410,7 +425,7 @@ func (s *StandaloneBackend) UpdateRoute(_ context.Context, route *models.Route) 
 	}
 
 	if !found {
-		return nil, fmt.Errorf("route '%s' not found", route.Name)
+		return nil, fmt.Errorf("%w: %s' not found", errRoute2, route.Name)
 	}
 
 	if err := s.save(); err != nil {
@@ -423,7 +438,7 @@ func (s *StandaloneBackend) UpdateRoute(_ context.Context, route *models.Route) 
 // DeleteRoute deletes a route
 func (s *StandaloneBackend) DeleteRoute(_ context.Context, _, name string) error {
 	if s.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -436,7 +451,7 @@ func (s *StandaloneBackend) DeleteRoute(_ context.Context, _, name string) error
 		}
 	}
 
-	return fmt.Errorf("route '%s' not found", name)
+	return fmt.Errorf("%w: %s' not found", errRoute2, name)
 }
 
 // ListBackends returns all backends
@@ -528,13 +543,13 @@ func (s *StandaloneBackend) GetBackend(ctx context.Context, namespace, name stri
 		}
 	}
 
-	return nil, fmt.Errorf("backend '%s' not found", name)
+	return nil, fmt.Errorf("%w: %s' not found", errBackend2, name)
 }
 
 // CreateBackend creates a new backend
 func (s *StandaloneBackend) CreateBackend(_ context.Context, backend *models.Backend) (*models.Backend, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -543,7 +558,7 @@ func (s *StandaloneBackend) CreateBackend(_ context.Context, backend *models.Bac
 	// Check for duplicate
 	for _, b := range s.config.Backends {
 		if b.Name == backend.Name {
-			return nil, fmt.Errorf("backend '%s' already exists", backend.Name)
+			return nil, fmt.Errorf("%w: %s' already exists", errBackend2, backend.Name)
 		}
 	}
 
@@ -560,7 +575,7 @@ func (s *StandaloneBackend) CreateBackend(_ context.Context, backend *models.Bac
 // UpdateBackend updates an existing backend
 func (s *StandaloneBackend) UpdateBackend(_ context.Context, backend *models.Backend) (*models.Backend, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -576,7 +591,7 @@ func (s *StandaloneBackend) UpdateBackend(_ context.Context, backend *models.Bac
 	}
 
 	if !found {
-		return nil, fmt.Errorf("backend '%s' not found", backend.Name)
+		return nil, fmt.Errorf("%w: %s' not found", errBackend2, backend.Name)
 	}
 
 	if err := s.save(); err != nil {
@@ -589,7 +604,7 @@ func (s *StandaloneBackend) UpdateBackend(_ context.Context, backend *models.Bac
 // DeleteBackend deletes a backend
 func (s *StandaloneBackend) DeleteBackend(_ context.Context, _, name string) error {
 	if s.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -602,7 +617,7 @@ func (s *StandaloneBackend) DeleteBackend(_ context.Context, _, name string) err
 		}
 	}
 
-	return fmt.Errorf("backend '%s' not found", name)
+	return fmt.Errorf("%w: %s' not found", errBackend2, name)
 }
 
 // ListVIPs returns all VIPs
@@ -658,13 +673,13 @@ func (s *StandaloneBackend) GetVIP(ctx context.Context, namespace, name string) 
 		}
 	}
 
-	return nil, fmt.Errorf("VIP '%s' not found", name)
+	return nil, fmt.Errorf("%w: %s' not found", errVIP, name)
 }
 
 // CreateVIP creates a new VIP
 func (s *StandaloneBackend) CreateVIP(_ context.Context, vip *models.VIP) (*models.VIP, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -673,7 +688,7 @@ func (s *StandaloneBackend) CreateVIP(_ context.Context, vip *models.VIP) (*mode
 	// Check for duplicate
 	for _, v := range s.config.VIPs {
 		if v.Name == vip.Name {
-			return nil, fmt.Errorf("VIP '%s' already exists", vip.Name)
+			return nil, fmt.Errorf("%w: %s' already exists", errVIP, vip.Name)
 		}
 	}
 
@@ -690,7 +705,7 @@ func (s *StandaloneBackend) CreateVIP(_ context.Context, vip *models.VIP) (*mode
 // UpdateVIP updates an existing VIP
 func (s *StandaloneBackend) UpdateVIP(_ context.Context, vip *models.VIP) (*models.VIP, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -706,7 +721,7 @@ func (s *StandaloneBackend) UpdateVIP(_ context.Context, vip *models.VIP) (*mode
 	}
 
 	if !found {
-		return nil, fmt.Errorf("VIP '%s' not found", vip.Name)
+		return nil, fmt.Errorf("%w: %s' not found", errVIP, vip.Name)
 	}
 
 	if err := s.save(); err != nil {
@@ -719,7 +734,7 @@ func (s *StandaloneBackend) UpdateVIP(_ context.Context, vip *models.VIP) (*mode
 // DeleteVIP deletes a VIP
 func (s *StandaloneBackend) DeleteVIP(_ context.Context, _, name string) error {
 	if s.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -732,7 +747,7 @@ func (s *StandaloneBackend) DeleteVIP(_ context.Context, _, name string) error {
 		}
 	}
 
-	return fmt.Errorf("VIP '%s' not found", name)
+	return fmt.Errorf("%w: %s' not found", errVIP, name)
 }
 
 // ListPolicies returns all policies
@@ -803,13 +818,13 @@ func (s *StandaloneBackend) GetPolicy(ctx context.Context, namespace, name strin
 		}
 	}
 
-	return nil, fmt.Errorf("policy '%s' not found", name)
+	return nil, fmt.Errorf("%w: %s' not found", errPolicy, name)
 }
 
 // CreatePolicy creates a new policy
 func (s *StandaloneBackend) CreatePolicy(_ context.Context, policy *models.Policy) (*models.Policy, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -818,7 +833,7 @@ func (s *StandaloneBackend) CreatePolicy(_ context.Context, policy *models.Polic
 	// Check for duplicate
 	for _, p := range s.config.Policies {
 		if p.Name == policy.Name {
-			return nil, fmt.Errorf("policy '%s' already exists", policy.Name)
+			return nil, fmt.Errorf("%w: %s' already exists", errPolicy, policy.Name)
 		}
 	}
 
@@ -835,7 +850,7 @@ func (s *StandaloneBackend) CreatePolicy(_ context.Context, policy *models.Polic
 // UpdatePolicy updates an existing policy
 func (s *StandaloneBackend) UpdatePolicy(_ context.Context, policy *models.Policy) (*models.Policy, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -851,7 +866,7 @@ func (s *StandaloneBackend) UpdatePolicy(_ context.Context, policy *models.Polic
 	}
 
 	if !found {
-		return nil, fmt.Errorf("policy '%s' not found", policy.Name)
+		return nil, fmt.Errorf("%w: %s' not found", errPolicy, policy.Name)
 	}
 
 	if err := s.save(); err != nil {
@@ -864,7 +879,7 @@ func (s *StandaloneBackend) UpdatePolicy(_ context.Context, policy *models.Polic
 // DeletePolicy deletes a policy
 func (s *StandaloneBackend) DeletePolicy(_ context.Context, _, name string) error {
 	if s.readOnly {
-		return fmt.Errorf("backend is read-only")
+		return errBackendIsReadOnly
 	}
 
 	s.mu.Lock()
@@ -877,7 +892,7 @@ func (s *StandaloneBackend) DeletePolicy(_ context.Context, _, name string) erro
 		}
 	}
 
-	return fmt.Errorf("policy '%s' not found", name)
+	return fmt.Errorf("%w: %s' not found", errPolicy, name)
 }
 
 // ListCertificates returns all certificates (not supported in standalone mode)
@@ -887,22 +902,22 @@ func (s *StandaloneBackend) ListCertificates(_ context.Context, _ string) ([]mod
 
 // GetCertificate returns a specific certificate (not supported in standalone mode)
 func (s *StandaloneBackend) GetCertificate(_ context.Context, _, _ string) (*models.Certificate, error) {
-	return nil, fmt.Errorf("certificates are not supported in standalone mode")
+	return nil, errCertificatesAreNotSupportedInStandaloneMode
 }
 
 // CreateCertificate creates a new certificate (not supported in standalone mode)
 func (s *StandaloneBackend) CreateCertificate(_ context.Context, _ *models.Certificate) (*models.Certificate, error) {
-	return nil, fmt.Errorf("certificates are not supported in standalone mode")
+	return nil, errCertificatesAreNotSupportedInStandaloneMode
 }
 
 // UpdateCertificate updates an existing certificate (not supported in standalone mode)
 func (s *StandaloneBackend) UpdateCertificate(_ context.Context, _ *models.Certificate) (*models.Certificate, error) {
-	return nil, fmt.Errorf("certificates are not supported in standalone mode")
+	return nil, errCertificatesAreNotSupportedInStandaloneMode
 }
 
 // DeleteCertificate deletes a certificate (not supported in standalone mode)
 func (s *StandaloneBackend) DeleteCertificate(_ context.Context, _, _ string) error {
-	return fmt.Errorf("certificates are not supported in standalone mode")
+	return errCertificatesAreNotSupportedInStandaloneMode
 }
 
 // ListIPPools returns all IP pools (not supported in standalone mode)
@@ -912,22 +927,22 @@ func (s *StandaloneBackend) ListIPPools(_ context.Context) ([]models.IPPool, err
 
 // GetIPPool returns a specific IP pool (not supported in standalone mode)
 func (s *StandaloneBackend) GetIPPool(_ context.Context, _ string) (*models.IPPool, error) {
-	return nil, fmt.Errorf("IP pools are not supported in standalone mode")
+	return nil, errIPPoolsAreNotSupportedInStandaloneMode
 }
 
 // CreateIPPool creates a new IP pool (not supported in standalone mode)
 func (s *StandaloneBackend) CreateIPPool(_ context.Context, _ *models.IPPool) (*models.IPPool, error) {
-	return nil, fmt.Errorf("IP pools are not supported in standalone mode")
+	return nil, errIPPoolsAreNotSupportedInStandaloneMode
 }
 
 // UpdateIPPool updates an existing IP pool (not supported in standalone mode)
 func (s *StandaloneBackend) UpdateIPPool(_ context.Context, _ *models.IPPool) (*models.IPPool, error) {
-	return nil, fmt.Errorf("IP pools are not supported in standalone mode")
+	return nil, errIPPoolsAreNotSupportedInStandaloneMode
 }
 
 // DeleteIPPool deletes an IP pool (not supported in standalone mode)
 func (s *StandaloneBackend) DeleteIPPool(_ context.Context, _ string) error {
-	return fmt.Errorf("IP pools are not supported in standalone mode")
+	return errIPPoolsAreNotSupportedInStandaloneMode
 }
 
 // ListNovaEdgeClusters returns all NovaEdge clusters (not supported in standalone mode)
@@ -937,22 +952,22 @@ func (s *StandaloneBackend) ListNovaEdgeClusters(_ context.Context, _ string) ([
 
 // GetNovaEdgeCluster returns a specific NovaEdge cluster (not supported in standalone mode)
 func (s *StandaloneBackend) GetNovaEdgeCluster(_ context.Context, _, _ string) (*models.NovaEdgeClusterModel, error) {
-	return nil, fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+	return nil, errNovaEdgeClustersAreNotSupportedInStandaloneMode
 }
 
 // CreateNovaEdgeCluster creates a new NovaEdge cluster (not supported in standalone mode)
 func (s *StandaloneBackend) CreateNovaEdgeCluster(_ context.Context, _ *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
-	return nil, fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+	return nil, errNovaEdgeClustersAreNotSupportedInStandaloneMode
 }
 
 // UpdateNovaEdgeCluster updates an existing NovaEdge cluster (not supported in standalone mode)
 func (s *StandaloneBackend) UpdateNovaEdgeCluster(_ context.Context, _ *models.NovaEdgeClusterModel) (*models.NovaEdgeClusterModel, error) {
-	return nil, fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+	return nil, errNovaEdgeClustersAreNotSupportedInStandaloneMode
 }
 
 // DeleteNovaEdgeCluster deletes a NovaEdge cluster (not supported in standalone mode)
 func (s *StandaloneBackend) DeleteNovaEdgeCluster(_ context.Context, _, _ string) error {
-	return fmt.Errorf("NovaEdge clusters are not supported in standalone mode")
+	return errNovaEdgeClustersAreNotSupportedInStandaloneMode
 }
 
 // ListFederations returns all federations (not supported in standalone mode)
@@ -962,22 +977,22 @@ func (s *StandaloneBackend) ListFederations(_ context.Context, _ string) ([]mode
 
 // GetFederation returns a specific federation (not supported in standalone mode)
 func (s *StandaloneBackend) GetFederation(_ context.Context, _, _ string) (*models.FederationModel, error) {
-	return nil, fmt.Errorf("federations are not supported in standalone mode")
+	return nil, errFederationsAreNotSupportedInStandaloneMode
 }
 
 // CreateFederation creates a new federation (not supported in standalone mode)
 func (s *StandaloneBackend) CreateFederation(_ context.Context, _ *models.FederationModel) (*models.FederationModel, error) {
-	return nil, fmt.Errorf("federations are not supported in standalone mode")
+	return nil, errFederationsAreNotSupportedInStandaloneMode
 }
 
 // UpdateFederation updates an existing federation (not supported in standalone mode)
 func (s *StandaloneBackend) UpdateFederation(_ context.Context, _ *models.FederationModel) (*models.FederationModel, error) {
-	return nil, fmt.Errorf("federations are not supported in standalone mode")
+	return nil, errFederationsAreNotSupportedInStandaloneMode
 }
 
 // DeleteFederation deletes a federation (not supported in standalone mode)
 func (s *StandaloneBackend) DeleteFederation(_ context.Context, _, _ string) error {
-	return fmt.Errorf("federations are not supported in standalone mode")
+	return errFederationsAreNotSupportedInStandaloneMode
 }
 
 // ListRemoteClusters returns all remote clusters (not supported in standalone mode)
@@ -987,22 +1002,22 @@ func (s *StandaloneBackend) ListRemoteClusters(_ context.Context, _ string) ([]m
 
 // GetRemoteCluster returns a specific remote cluster (not supported in standalone mode)
 func (s *StandaloneBackend) GetRemoteCluster(_ context.Context, _, _ string) (*models.RemoteClusterModel, error) {
-	return nil, fmt.Errorf("remote clusters are not supported in standalone mode")
+	return nil, errRemoteClustersAreNotSupportedInStandaloneMode
 }
 
 // CreateRemoteCluster creates a new remote cluster (not supported in standalone mode)
 func (s *StandaloneBackend) CreateRemoteCluster(_ context.Context, _ *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
-	return nil, fmt.Errorf("remote clusters are not supported in standalone mode")
+	return nil, errRemoteClustersAreNotSupportedInStandaloneMode
 }
 
 // UpdateRemoteCluster updates an existing remote cluster (not supported in standalone mode)
 func (s *StandaloneBackend) UpdateRemoteCluster(_ context.Context, _ *models.RemoteClusterModel) (*models.RemoteClusterModel, error) {
-	return nil, fmt.Errorf("remote clusters are not supported in standalone mode")
+	return nil, errRemoteClustersAreNotSupportedInStandaloneMode
 }
 
 // DeleteRemoteCluster deletes a remote cluster (not supported in standalone mode)
 func (s *StandaloneBackend) DeleteRemoteCluster(_ context.Context, _, _ string) error {
-	return fmt.Errorf("remote clusters are not supported in standalone mode")
+	return errRemoteClustersAreNotSupportedInStandaloneMode
 }
 
 // ListNamespaces returns available namespaces (just "standalone" in standalone mode)
@@ -1026,7 +1041,7 @@ func (s *StandaloneBackend) ExportConfig(_ context.Context, _ string) ([]byte, e
 // ImportConfig imports configuration from YAML
 func (s *StandaloneBackend) ImportConfig(_ context.Context, data []byte, dryRun bool) (*models.ImportResult, error) {
 	if s.readOnly {
-		return nil, fmt.Errorf("backend is read-only")
+		return nil, errBackendIsReadOnly
 	}
 
 	var config standalone.Config

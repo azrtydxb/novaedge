@@ -19,6 +19,7 @@ limitations under the License.
 package vault
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"os"
@@ -28,6 +29,19 @@ import (
 
 	"go.uber.org/zap"
 )
+var (
+	errVaultConfigIsRequired = errors.New("vault config is required")
+	errVaultAddressIsRequiredSetVAULTADDROr = errors.New("vault address is required (set VAULT_ADDR or config.address)")
+	errUnsupportedAuthMethod = errors.New("unsupported auth method")
+	errVaultTokenNotProvidedSetVAULTTOKENOr = errors.New("vault token not provided (set VAULT_TOKEN or config.token)")
+	errKubernetesAuthConfigIsRequired = errors.New("kubernetes auth config is required")
+	errNoClientTokenInKubernetesAuthResponse = errors.New("no client_token in kubernetes auth response")
+	errClientTokenIsNotAString = errors.New("client_token is not a string")
+	errApproleAuthConfigIsRequired = errors.New("approle auth config is required")
+	errNoClientTokenInApproleAuthResponse = errors.New("no client_token in approle auth response")
+	errInvalidVaultEnableMode = errors.New("invalid vault enable mode")
+)
+
 
 // EnableMode defines the Vault enablement mode.
 type EnableMode string
@@ -129,13 +143,13 @@ type vaultHTTPClient struct {
 // NewClient creates a new Vault client.
 func NewClient(config *Config, logger *zap.Logger) (*Client, error) {
 	if config == nil {
-		return nil, fmt.Errorf("vault config is required")
+		return nil, errVaultConfigIsRequired
 	}
 	if config.Address == "" {
 		// Try environment variable
 		config.Address = os.Getenv("VAULT_ADDR")
 		if config.Address == "" {
-			return nil, fmt.Errorf("vault address is required (set VAULT_ADDR or config.address)")
+			return nil, errVaultAddressIsRequiredSetVAULTADDROr
 		}
 	}
 	if logger == nil {
@@ -169,7 +183,7 @@ func (c *Client) Authenticate(ctx context.Context) error {
 	case AuthMethodAppRole:
 		return c.authenticateAppRole(ctx)
 	default:
-		return fmt.Errorf("unsupported auth method: %s", c.config.AuthMethod)
+		return fmt.Errorf("%w: %s", errUnsupportedAuthMethod, c.config.AuthMethod)
 	}
 }
 
@@ -180,7 +194,7 @@ func (c *Client) authenticateToken() error {
 		token = os.Getenv("VAULT_TOKEN")
 	}
 	if token == "" {
-		return fmt.Errorf("vault token not provided (set VAULT_TOKEN or config.token)")
+		return errVaultTokenNotProvidedSetVAULTTOKENOr
 	}
 
 	c.token = token
@@ -193,7 +207,7 @@ func (c *Client) authenticateToken() error {
 func (c *Client) authenticateKubernetes(ctx context.Context) error {
 	config := c.config.KubernetesAuth
 	if config == nil {
-		return fmt.Errorf("kubernetes auth config is required")
+		return errKubernetesAuthConfigIsRequired
 	}
 
 	mountPath := config.MountPath
@@ -225,12 +239,12 @@ func (c *Client) authenticateKubernetes(ctx context.Context) error {
 
 	token, ok := resp.Auth["client_token"]
 	if !ok {
-		return fmt.Errorf("no client_token in kubernetes auth response")
+		return errNoClientTokenInKubernetesAuthResponse
 	}
 
 	tokenStr, ok := token.(string)
 	if !ok {
-		return fmt.Errorf("client_token is not a string")
+		return errClientTokenIsNotAString
 	}
 
 	c.token = tokenStr
@@ -254,7 +268,7 @@ func (c *Client) authenticateKubernetes(ctx context.Context) error {
 func (c *Client) authenticateAppRole(ctx context.Context) error {
 	config := c.config.AppRoleAuth
 	if config == nil {
-		return fmt.Errorf("approle auth config is required")
+		return errApproleAuthConfigIsRequired
 	}
 
 	mountPath := config.MountPath
@@ -275,12 +289,12 @@ func (c *Client) authenticateAppRole(ctx context.Context) error {
 
 	token, ok := resp.Auth["client_token"]
 	if !ok {
-		return fmt.Errorf("no client_token in approle auth response")
+		return errNoClientTokenInApproleAuthResponse
 	}
 
 	tokenStr, ok := token.(string)
 	if !ok {
-		return fmt.Errorf("client_token is not a string")
+		return errClientTokenIsNotAString
 	}
 
 	c.token = tokenStr
@@ -368,6 +382,6 @@ func ShouldEnable(ctx context.Context, config *Config, mode EnableMode, logger *
 		}
 		return true, nil
 	default:
-		return false, fmt.Errorf("invalid vault enable mode: %s", mode)
+		return false, fmt.Errorf("%w: %s", errInvalidVaultEnableMode, mode)
 	}
 }
