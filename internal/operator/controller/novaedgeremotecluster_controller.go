@@ -35,13 +35,13 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
-var (
-	errClusterNameIsRequired = errors.New("clusterName is required")
-	errConnectionControllerEndpointIsRequired = errors.New("connection.controllerEndpoint is required")
-	errRemoteClusterNotFoundInRegistry = errors.New("remote cluster not found in registry")
-	errEncountered = errors.New("encountered")
-)
 
+var (
+	errClusterNameIsRequired                  = errors.New("clusterName is required")
+	errConnectionControllerEndpointIsRequired = errors.New("connection.controllerEndpoint is required")
+	errRemoteClusterNotFoundInRegistry        = errors.New("remote cluster not found in registry")
+	errEncountered                            = errors.New("encountered")
+)
 
 const (
 	remoteClusterFinalizer = "novaedge.io/remote-cluster-finalizer"

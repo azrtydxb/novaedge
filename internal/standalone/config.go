@@ -26,15 +26,15 @@ import (
 
 	"gopkg.in/yaml.v3"
 )
-var (
-	errVersionIsRequired = errors.New("version is required")
-	errAtLeastOneListenerIsRequired = errors.New("at least one listener is required")
-	errCertificate = errors.New("certificate[")
-	errListener = errors.New("listener[")
-	errBackend = errors.New("backend[")
-	errRoute = errors.New("route[")
-)
 
+var (
+	errVersionIsRequired            = errors.New("version is required")
+	errAtLeastOneListenerIsRequired = errors.New("at least one listener is required")
+	errCertificate                  = errors.New("certificate[")
+	errListener                     = errors.New("listener[")
+	errBackend                      = errors.New("backend[")
+	errRoute                        = errors.New("route[")
+)
 
 // protocolTLS is the TLS protocol identifier used in listener and L4 configuration.
 const protocolTLS = "TLS"

@@ -1,9 +1,9 @@
 package acme
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,10 +13,10 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
 	errCertificateHasNoDomains = errors.New("certificate has no domains")
 )
-
 
 // FileStorage implements Storage using the filesystem.
 type FileStorage struct {

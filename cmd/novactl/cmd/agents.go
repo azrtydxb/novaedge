@@ -12,8 +12,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-var ()
-
 func newAgentsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "agents",

@@ -21,14 +21,14 @@ import (
 	"net/url"
 	"time"
 )
+
 var (
-	errOtelEndpointMustNotBeEmpty = errors.New("otel: endpoint must not be empty")
-	errOtelEndpointIsNotAValidURLFor = errors.New("otel: endpoint is not a valid URL for HTTP protocol")
-	errOtelEndpointIsNotAValidHostPort = errors.New("otel: endpoint is not a valid host:port for gRPC protocol")
-	errOtelProtocolMustBeHTTPOrGrpc = errors.New(`otel: protocol must be "http" or "grpc"`)
+	errOtelEndpointMustNotBeEmpty          = errors.New("otel: endpoint must not be empty")
+	errOtelEndpointIsNotAValidURLFor       = errors.New("otel: endpoint is not a valid URL for HTTP protocol")
+	errOtelEndpointIsNotAValidHostPort     = errors.New("otel: endpoint is not a valid host:port for gRPC protocol")
+	errOtelProtocolMustBeHTTPOrGrpc        = errors.New(`otel: protocol must be "http" or "grpc"`)
 	errOtelExportIntervalMustNotBeNegative = errors.New("otel: export interval must not be negative")
 )
-
 
 const (
 	// ProtocolHTTP selects OTLP over HTTP transport.

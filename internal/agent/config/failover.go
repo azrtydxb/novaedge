@@ -17,8 +17,8 @@ limitations under the License.
 package config
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -34,12 +34,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
-var (
-	errUnknownState = errors.New("unknown state")
-	errConfigPersistenceNotInitialized = errors.New("config persistence not initialized")
-	errNoCachedConfigAvailable = errors.New("no cached config available")
-)
 
+var (
+	errUnknownState                    = errors.New("unknown state")
+	errConfigPersistenceNotInitialized = errors.New("config persistence not initialized")
+	errNoCachedConfigAvailable         = errors.New("no cached config available")
+)
 
 // FailoverState represents the current state of the failover state machine
 type FailoverState string

@@ -17,8 +17,8 @@ limitations under the License.
 package mode
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -27,6 +27,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/standalone"
 	"gopkg.in/yaml.v3"
 )
+
 var (
 	errConfigPathIsRequired                            = errors.New("config path is required")
 	errGateway                                         = errors.New("gateway '")
@@ -40,7 +41,6 @@ var (
 	errFederationsAreNotSupportedInStandaloneMode      = errors.New("federations are not supported in standalone mode")
 	errRemoteClustersAreNotSupportedInStandaloneMode   = errors.New("remote clusters are not supported in standalone mode")
 )
-
 
 // StandaloneBackend implements Backend for standalone YAML file operations
 type StandaloneBackend struct {

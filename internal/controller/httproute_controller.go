@@ -36,8 +36,6 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
-var ()
-
 // HTTPRouteReconciler reconciles a Gateway API HTTPRoute object
 type HTTPRouteReconciler struct {
 	client.Client

@@ -17,10 +17,10 @@ limitations under the License.
 package standalone
 
 import (
-	"errors"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,10 +33,10 @@ import (
 	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errConfigFileDoesNotExist = errors.New("config file does not exist")
 )
-
 
 // ConfigWatcher watches a config file for changes and provides ConfigSnapshots
 type ConfigWatcher struct {

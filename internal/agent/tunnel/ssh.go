@@ -17,8 +17,8 @@ limitations under the License.
 package tunnel
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -31,10 +31,10 @@ import (
 
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
 var (
 	errRelayEndpointIsRequiredForSSHTunnelType = errors.New("relay endpoint is required for SSH tunnel type")
 )
-
 
 const (
 	sshRemoteForwardPort = "15002"

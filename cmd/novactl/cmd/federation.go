@@ -2,8 +2,8 @@
 package cmd
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -17,10 +17,10 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
 var (
 	errMustSpecifyEitherLocalOrRemote = errors.New("must specify either --local or --remote")
 )
-
 
 // newFederationCommand creates the federation command
 func newFederationCommand() *cobra.Command {

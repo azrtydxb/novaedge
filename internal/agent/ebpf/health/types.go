@@ -17,16 +17,16 @@ limitations under the License.
 package health
 
 import (
-	"errors"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 )
+
 var (
 	errInvalidIPAddress = errors.New("invalid IP address")
 	errNotAnIPv4Address = errors.New("not an IPv4 address")
 )
-
 
 // BackendKey identifies a backend by its IP address and port. The
 // struct layout is 8 bytes total (4-byte IP + 2-byte port + 2-byte

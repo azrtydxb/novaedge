@@ -17,8 +17,8 @@ limitations under the License.
 package controller
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -41,10 +41,10 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
 var (
 	errPort = errors.New("port")
 )
-
 
 const (
 	// IngressClassName is the ingress class that this controller handles

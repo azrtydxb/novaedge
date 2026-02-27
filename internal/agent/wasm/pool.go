@@ -17,18 +17,18 @@ limitations under the License.
 package wasm
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/tetratelabs/wazero/api"
 	"go.uber.org/zap"
 )
+
 var (
 	errInstancePoolIsClosed = errors.New("instance pool is closed")
 )
-
 
 const poolDefaultSize = 4
 

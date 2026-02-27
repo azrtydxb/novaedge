@@ -17,8 +17,8 @@ limitations under the License.
 package router
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,12 +29,12 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errRequestBodyExceedsMaximumSize = errors.New("request body exceeds maximum size")
-	errInvalidByteSize = errors.New("invalid byte size")
-	errInvalidDuration = errors.New("invalid duration")
+	errInvalidByteSize               = errors.New("invalid byte size")
+	errInvalidDuration               = errors.New("invalid duration")
 )
-
 
 // RequestLimitsMiddleware enforces per-route request size limits and timeouts.
 type RequestLimitsMiddleware struct {

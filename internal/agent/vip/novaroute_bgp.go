@@ -35,10 +35,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errInvalidAddress = errors.New("invalid address")
 )
-
 
 // NovaRouteBGPHandler delegates BGP VIP announcements to a NovaRoute agent
 // running as a sidecar or DaemonSet, communicating over a Unix gRPC socket.

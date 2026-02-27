@@ -41,10 +41,10 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
 var (
 	errObjectDoesNotImplementClientObject = errors.New("object does not implement client.Object")
 )
-
 
 const (
 	novaEdgeClusterFinalizer = "novaedge.io/finalizer"

@@ -17,8 +17,8 @@ limitations under the License.
 package router
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,12 +28,12 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
-	errSSEProxyIsDraining = errors.New("SSE proxy is draining")
-	errMaximumSSEConnectionsReached = errors.New("maximum SSE connections reached")
+	errSSEProxyIsDraining                   = errors.New("SSE proxy is draining")
+	errMaximumSSEConnectionsReached         = errors.New("maximum SSE connections reached")
 	errResponseWriterDoesNotSupportFlushing = errors.New("response writer does not support flushing")
 )
-
 
 const (
 	// SSEContentType is the MIME type for Server-Sent Events

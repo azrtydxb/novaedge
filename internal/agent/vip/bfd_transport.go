@@ -26,11 +26,11 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
 	errFailedToGetLocalUDPAddress = errors.New("failed to get local UDP address")
-	errBFDTransportNotStarted = errors.New("BFD transport not started")
+	errBFDTransportNotStarted     = errors.New("BFD transport not started")
 )
-
 
 // bfdTransport handles BFD UDP packet I/O per RFC 5881.
 //

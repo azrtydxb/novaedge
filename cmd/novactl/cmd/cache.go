@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,11 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 )
+
 var (
 	errCachePurgeFailedStatus = errors.New("cache purge failed (status")
 	errCacheStatsFailedStatus = errors.New("cache stats failed (status")
 )
-
 
 func newCacheCommand() *cobra.Command {
 	cmd := &cobra.Command{

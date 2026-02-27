@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -12,10 +12,10 @@ import (
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/trace"
 	"github.com/spf13/cobra"
 )
+
 var (
 	errInvalidTagFormat = errors.New("invalid tag format")
 )
-
 
 var (
 	traceEndpoint string

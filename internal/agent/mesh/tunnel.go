@@ -31,11 +31,11 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 )
+
 var (
 	errWriterClosed = errors.New("writer closed")
-	errCONNECTTo = errors.New("CONNECT to")
+	errCONNECTTo    = errors.New("CONNECT to")
 )
-
 
 const (
 	// tunnelConnectTimeout is the timeout for dialing a backend pod.

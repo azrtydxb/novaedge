@@ -13,15 +13,15 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
 var (
 	errAuthenticationIsNotConfigured = errors.New("authentication is not configured")
-	errInvalidCredentials = errors.New("invalid credentials")
-	errUnexpectedSigningMethod = errors.New("unexpected signing method")
-	errSessionNotFound = errors.New("session not found")
-	errInvalidSessionData = errors.New("invalid session data")
-	errSessionExpired = errors.New("session expired")
+	errInvalidCredentials            = errors.New("invalid credentials")
+	errUnexpectedSigningMethod       = errors.New("unexpected signing method")
+	errSessionNotFound               = errors.New("session not found")
+	errInvalidSessionData            = errors.New("invalid session data")
+	errSessionExpired                = errors.New("session expired")
 )
-
 
 const (
 	// jwtSecretSize is the size of the random JWT signing secret in bytes.

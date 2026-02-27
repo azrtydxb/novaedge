@@ -11,8 +11,6 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
 
-var ()
-
 func newMetricsCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "metrics",

@@ -19,8 +19,8 @@ limitations under the License.
 package main
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
@@ -61,11 +61,11 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errInvalidBGPPeerFormat = errors.New("invalid BGP peer format")
-	errInvalidBGPPeerIP = errors.New("invalid BGP peer IP")
+	errInvalidBGPPeerIP     = errors.New("invalid BGP peer IP")
 )
-
 
 // stringSlice implements flag.Value for repeatable string flags.
 type stringSlice []string

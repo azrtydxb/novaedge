@@ -2,8 +2,8 @@
 package printer
 
 import (
-	"errors"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -13,10 +13,10 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"
 )
+
 var (
 	errUnsupportedOutputFormat = errors.New("unsupported output format")
 )
-
 
 // OutputFormat represents the output format type
 type OutputFormat string

@@ -17,8 +17,8 @@ limitations under the License.
 package vip
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 
@@ -26,14 +26,14 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
-var (
-	errOverlayCIDRMustNotBeEmpty = errors.New("overlay CIDR must not be empty")
-	errBGPConfigIsRequiredForOverlayPrefixAnnouncement = errors.New("BGP config is required for overlay prefix announcement")
-	errBGPServerNotStartedCannotAnnounceOverlayPrefix = errors.New("BGP server not started, cannot announce overlay prefix")
-	errBGPConfigIsRequiredForOverlayPrefixWithdrawal = errors.New("BGP config is required for overlay prefix withdrawal")
-	errBGPServerNotStartedCannotWithdrawOverlayPrefix = errors.New("BGP server not started, cannot withdraw overlay prefix")
-)
 
+var (
+	errOverlayCIDRMustNotBeEmpty                       = errors.New("overlay CIDR must not be empty")
+	errBGPConfigIsRequiredForOverlayPrefixAnnouncement = errors.New("BGP config is required for overlay prefix announcement")
+	errBGPServerNotStartedCannotAnnounceOverlayPrefix  = errors.New("BGP server not started, cannot announce overlay prefix")
+	errBGPConfigIsRequiredForOverlayPrefixWithdrawal   = errors.New("BGP config is required for overlay prefix withdrawal")
+	errBGPServerNotStartedCannotWithdrawOverlayPrefix  = errors.New("BGP server not started, cannot withdraw overlay prefix")
+)
 
 // validateOverlayCIDR validates that the given string is a valid CIDR notation.
 // It returns an error if the CIDR is empty or cannot be parsed.

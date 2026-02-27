@@ -17,10 +17,10 @@ limitations under the License.
 package federation
 
 import (
-	"errors"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -34,13 +34,13 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
-	errNotConnectedToPeer = errors.New("not connected to peer")
-	errExpectedHandshakeResponseGot = errors.New("expected handshake response, got")
-	errSyncStreamNotEstablished = errors.New("sync stream not established")
+	errNotConnectedToPeer                = errors.New("not connected to peer")
+	errExpectedHandshakeResponseGot      = errors.New("expected handshake response, got")
+	errSyncStreamNotEstablished          = errors.New("sync stream not established")
 	errFailedToParseCACertificateForPeer = errors.New("failed to parse CA certificate for peer")
 )
-
 
 // PeerClient manages the connection to a federation peer
 type PeerClient struct {

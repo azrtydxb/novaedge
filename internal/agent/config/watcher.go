@@ -17,8 +17,8 @@ limitations under the License.
 package config
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sync/atomic"
 	"time"
@@ -32,12 +32,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
-	errTLSConfigurationIsIncomplete = errors.New("TLS configuration is incomplete")
-	errTLSConfigurationIsRequiredForRemoteAgents = errors.New("TLS configuration is required for remote agents")
+	errTLSConfigurationIsIncomplete                  = errors.New("TLS configuration is incomplete")
+	errTLSConfigurationIsRequiredForRemoteAgents     = errors.New("TLS configuration is required for remote agents")
 	errClusterConfigurationIsRequiredForRemoteAgents = errors.New("cluster configuration is required for remote agents")
 )
-
 
 // Snapshot is a wrapper around the protobuf ConfigSnapshot
 type Snapshot struct {

@@ -2,9 +2,9 @@
 package prometheus
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -13,14 +13,14 @@ import (
 	"strconv"
 	"time"
 )
+
 var (
-	errQueryFailed = errors.New("query failed")
-	errInvalidValueFormat = errors.New("invalid value format")
-	errValueIsNotAString = errors.New("value is not a string")
-	errValueIsNaNOrInf = errors.New("value is NaN or Inf")
+	errQueryFailed           = errors.New("query failed")
+	errInvalidValueFormat    = errors.New("invalid value format")
+	errValueIsNotAString     = errors.New("value is not a string")
+	errValueIsNaNOrInf       = errors.New("value is NaN or Inf")
 	errTimestampIsNotANumber = errors.New("timestamp is not a number")
 )
-
 
 // Client provides methods for querying Prometheus
 type Client struct {

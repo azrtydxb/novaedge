@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 
@@ -10,10 +10,10 @@ import (
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/printer"
 	"github.com/spf13/cobra"
 )
+
 var (
 	errExactlyOneResourceTypeRequired = errors.New("exactly one resource type required")
 )
-
 
 var outputFormat string
 

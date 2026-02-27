@@ -17,10 +17,10 @@ limitations under the License.
 package standalone
 
 import (
-	"errors"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -35,10 +35,10 @@ import (
 	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errInvalidByteSize = errors.New("invalid byte size")
 )
-
 
 // Converter converts standalone config to protobuf ConfigSnapshot
 type Converter struct{}

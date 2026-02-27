@@ -17,8 +17,8 @@ limitations under the License.
 package health
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -26,10 +26,10 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
+
 var (
 	errGrpcHealthCheckService = errors.New("grpc health check: service")
 )
-
 
 // GRPCHealthChecker performs health checks using the standard gRPC health
 // checking protocol (grpc.health.v1.Health/Check).

@@ -17,8 +17,8 @@ limitations under the License.
 package controller
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -42,10 +42,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/controller/certmanager"
 	"github.com/piwi3910/novaedge/internal/controller/vault"
 )
+
 var (
 	errVaultCertificateErrors = errors.New("vault certificate errors")
 )
-
 
 // ProxyGatewayReconciler reconciles a ProxyGateway object
 type ProxyGatewayReconciler struct {

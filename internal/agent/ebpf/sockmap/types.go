@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"net"
 )
+
 var (
 	errInvalidIPAddress = errors.New("invalid IP address")
 	errNotAnIPv4Address = errors.New("not an IPv4 address")
 )
-
 
 // SockKey is the BPF SOCKHASH key identifying a socket pair. The struct
 // layout matches the C struct sock_key used by the BPF sock_ops and

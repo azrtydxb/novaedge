@@ -26,23 +26,23 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
-var (
-	errGatewayClass = errors.New("gateway class")
-	errUnsupportedProtocol = errors.New("unsupported protocol")
-	errListener = errors.New("listener")
-	errRuleHasNoBackendRefs = errors.New("rule has no backend refs")
-	errUnsupportedPathMatchType = errors.New("unsupported path match type")
-	errUnsupportedHeaderMatchType = errors.New("unsupported header match type")
-	errUnsupportedQueryParamMatchType = errors.New("unsupported query param match type")
-	errRequestHeaderModifierFilterHasNoConfiguration = errors.New("RequestHeaderModifier filter has no configuration")
-	errResponseHeaderModifierFilterHasNoConfiguration = errors.New("ResponseHeaderModifier filter has no configuration")
-	errRequestRedirectFilterHasNoConfiguration = errors.New("RequestRedirect filter has no configuration")
-	errURLRewriteFilterHasNoConfiguration = errors.New("URLRewrite filter has no configuration")
-	errRequestMirrorFilterHasNoConfiguration = errors.New("RequestMirror filter has no configuration")
-	errUnsupportedFilterType = errors.New("unsupported filter type")
-	errGRPCRuleHasNoBackendRefs = errors.New("gRPC rule has no backend refs")
-)
 
+var (
+	errGatewayClass                                   = errors.New("gateway class")
+	errUnsupportedProtocol                            = errors.New("unsupported protocol")
+	errListener                                       = errors.New("listener")
+	errRuleHasNoBackendRefs                           = errors.New("rule has no backend refs")
+	errUnsupportedPathMatchType                       = errors.New("unsupported path match type")
+	errUnsupportedHeaderMatchType                     = errors.New("unsupported header match type")
+	errUnsupportedQueryParamMatchType                 = errors.New("unsupported query param match type")
+	errRequestHeaderModifierFilterHasNoConfiguration  = errors.New("RequestHeaderModifier filter has no configuration")
+	errResponseHeaderModifierFilterHasNoConfiguration = errors.New("ResponseHeaderModifier filter has no configuration")
+	errRequestRedirectFilterHasNoConfiguration        = errors.New("RequestRedirect filter has no configuration")
+	errURLRewriteFilterHasNoConfiguration             = errors.New("URLRewrite filter has no configuration")
+	errRequestMirrorFilterHasNoConfiguration          = errors.New("RequestMirror filter has no configuration")
+	errUnsupportedFilterType                          = errors.New("unsupported filter type")
+	errGRPCRuleHasNoBackendRefs                       = errors.New("gRPC rule has no backend refs")
+)
 
 const (
 	// NovaEdgeGatewayClassName is the GatewayClass name that NovaEdge handles

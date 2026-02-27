@@ -37,7 +37,7 @@ type tcpRouteWrapper struct {
 	*gatewayv1alpha2.TCPRoute
 }
 
-func (w *tcpRouteWrapper) Unwrap() client.Object              { return w.TCPRoute }
+func (w *tcpRouteWrapper) Unwrap() client.Object { return w.TCPRoute }
 func (w *tcpRouteWrapper) GetRouteParents() []gatewayv1alpha2.RouteParentStatus {
 	return w.Status.Parents
 }
@@ -50,7 +50,7 @@ type tlsRouteWrapper struct {
 	*gatewayv1alpha2.TLSRoute
 }
 
-func (w *tlsRouteWrapper) Unwrap() client.Object              { return w.TLSRoute }
+func (w *tlsRouteWrapper) Unwrap() client.Object { return w.TLSRoute }
 func (w *tlsRouteWrapper) GetRouteParents() []gatewayv1alpha2.RouteParentStatus {
 	return w.Status.Parents
 }
@@ -94,7 +94,9 @@ func reconcileL4Controller(
 	return a.reconcileL4Route(ctx, routeKind, w,
 		translate,
 		func(ctx context.Context) (ctrl.Result, error) { return a.handleL4RouteDeletion(ctx, routeKind, route) },
-		func(ctx context.Context, c metav1.Condition) (ctrl.Result, error) { return a.updateL4RouteStatus(ctx, w, c) },
+		func(ctx context.Context, c metav1.Condition) (ctrl.Result, error) {
+			return a.updateL4RouteStatus(ctx, w, c)
+		},
 	)
 }
 

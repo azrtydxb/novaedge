@@ -17,8 +17,8 @@ limitations under the License.
 package federation
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -29,13 +29,13 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errFederationManagerAlreadyStarted = errors.New("federation manager already started")
-	errFederationServerNotStarted = errors.New("federation server not started")
-	errFederationManagerIsNotStarted = errors.New("federation manager is not started")
-	errPeerNotFound = errors.New("peer not found")
+	errFederationServerNotStarted      = errors.New("federation server not started")
+	errFederationManagerIsNotStarted   = errors.New("federation manager is not started")
+	errPeerNotFound                    = errors.New("peer not found")
 )
-
 
 // Manager orchestrates federation between controllers
 type Manager struct {

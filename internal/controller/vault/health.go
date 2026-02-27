@@ -17,20 +17,20 @@ limitations under the License.
 package vault
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"go.uber.org/zap"
 )
+
 var (
-	errVaultIsSealed = errors.New("vault is sealed")
-	errVaultIsNotInitialized = errors.New("vault is not initialized")
-	errVaultIsInStandbyMode = errors.New("vault is in standby mode")
+	errVaultIsSealed              = errors.New("vault is sealed")
+	errVaultIsNotInitialized      = errors.New("vault is not initialized")
+	errVaultIsInStandbyMode       = errors.New("vault is in standby mode")
 	errVaultIsUnhealthyStatusCode = errors.New("vault is unhealthy (status code")
 )
-
 
 // HealthChecker provides health check endpoints for Vault connectivity.
 type HealthChecker struct {

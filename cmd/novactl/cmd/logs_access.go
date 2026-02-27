@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"errors"
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -12,10 +12,10 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
 var (
 	errNodeFlagIsRequired = errors.New("--node flag is required")
 )
-
 
 var (
 	accessLogNodeName string

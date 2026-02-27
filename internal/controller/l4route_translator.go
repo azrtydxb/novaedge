@@ -25,11 +25,11 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
 var (
 	errTCPRouteRule = errors.New("TCPRoute rule")
 	errTLSRouteRule = errors.New("TLSRoute rule")
 )
-
 
 // TranslateTCPRouteToProxyRoute translates a Gateway API TCPRoute to a NovaEdge ProxyRoute
 // TCPRoute is simpler than HTTPRoute: it only specifies backend refs without match conditions

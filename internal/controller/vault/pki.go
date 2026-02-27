@@ -17,22 +17,22 @@ limitations under the License.
 package vault
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
 )
-var (
-	errPKIMountPathIsRequired = errors.New("PKI mount path is required")
-	errPKIRoleIsRequired = errors.New("PKI role is required")
-	errCommonNameIsRequired = errors.New("common name is required")
-	errVaultPKIResponseMissingCertificateField = errors.New("vault PKI response missing certificate field")
-	errVaultPKIResponseMissingPrivateKeyField = errors.New("vault PKI response missing private_key field")
-)
 
+var (
+	errPKIMountPathIsRequired                  = errors.New("PKI mount path is required")
+	errPKIRoleIsRequired                       = errors.New("PKI role is required")
+	errCommonNameIsRequired                    = errors.New("common name is required")
+	errVaultPKIResponseMissingCertificateField = errors.New("vault PKI response missing certificate field")
+	errVaultPKIResponseMissingPrivateKeyField  = errors.New("vault PKI response missing private_key field")
+)
 
 // PKICertificate represents a certificate issued by Vault PKI.
 type PKICertificate struct {

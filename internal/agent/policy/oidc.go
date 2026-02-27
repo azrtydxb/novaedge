@@ -17,13 +17,13 @@ limitations under the License.
 package policy
 
 import (
-	"errors"
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,15 +40,15 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errIssuerURLIsRequiredSetIssuerURLOrKeycloak = errors.New("issuer URL is required (set issuerURL or keycloak config)")
-	errSessionSecretIsRequired32Bytes = errors.New("session secret is required (32 bytes)")
-	errSessionSecretMustBeAtLeast32Bytes = errors.New("session secret must be at least 32 bytes of random data, got")
-	errCiphertextTooShort = errors.New("ciphertext too short")
-	errNoRefreshTokenAvailable = errors.New("no refresh token available")
-	errNoIDTokenInRefreshedTokenResponse = errors.New("no id_token in refreshed token response")
+	errSessionSecretIsRequired32Bytes            = errors.New("session secret is required (32 bytes)")
+	errSessionSecretMustBeAtLeast32Bytes         = errors.New("session secret must be at least 32 bytes of random data, got")
+	errCiphertextTooShort                        = errors.New("ciphertext too short")
+	errNoRefreshTokenAvailable                   = errors.New("no refresh token available")
+	errNoIDTokenInRefreshedTokenResponse         = errors.New("no id_token in refreshed token response")
 )
-
 
 // OIDCSession represents an authenticated OIDC user session.
 type OIDCSession struct {

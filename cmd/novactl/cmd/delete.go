@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ()
-
 func newDeleteCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "delete [resource-type] [name]",

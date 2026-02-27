@@ -37,12 +37,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
-var (
-	errNoGatewaysRegisteredForCluster = errors.New("no gateways registered for cluster")
-	errNoHealthyGatewayAvailableForCluster = errors.New("no healthy gateway available for cluster")
-	errCONNECTTo = errors.New("CONNECT to")
-)
 
+var (
+	errNoGatewaysRegisteredForCluster      = errors.New("no gateways registered for cluster")
+	errNoHealthyGatewayAvailableForCluster = errors.New("no healthy gateway available for cluster")
+	errCONNECTTo                           = errors.New("CONNECT to")
+)
 
 const (
 	// labelRemote marks an endpoint as belonging to a remote cluster.

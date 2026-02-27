@@ -10,8 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var ()
-
 func newDescribeCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "describe [resource-type] [name]",

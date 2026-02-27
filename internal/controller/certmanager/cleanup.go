@@ -17,8 +17,8 @@ limitations under the License.
 package certmanager
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -27,10 +27,10 @@ import (
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
 var (
 	errErrorsCleaningUpCertificates = errors.New("errors cleaning up certificates")
 )
-
 
 // Cleanup handles removing cert-manager Certificate CRs when their parent
 // ProxyGateway is deleted. While ownerReferences handle automatic garbage

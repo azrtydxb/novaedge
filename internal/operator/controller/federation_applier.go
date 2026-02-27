@@ -36,11 +36,11 @@ import (
 	"github.com/piwi3910/novaedge/internal/controller/federation"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errFailedToDeepCopyDesiredObjectFor = errors.New("failed to deep copy desired object for")
-	errFailedToDeepCopyStubObjectFor = errors.New("failed to deep copy stub object for")
+	errFailedToDeepCopyStubObjectFor    = errors.New("failed to deep copy stub object for")
 )
-
 
 const (
 	// FederationOriginLabel marks a resource as originating from federation sync.

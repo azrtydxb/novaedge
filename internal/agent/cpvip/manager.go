@@ -21,9 +21,9 @@ limitations under the License.
 package cpvip
 
 import (
-	"errors"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -38,16 +38,16 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
-	errVIPAddressIsRequired = errors.New("VIP address is required")
-	errInvalidAPIPort = errors.New("invalid API port")
-	errHealthIntervalMustBePositive = errors.New("health interval must be positive")
-	errHealthTimeoutMustBePositive = errors.New("health timeout must be positive")
-	errFailThresholdMustBeAtLeast1 = errors.New("fail threshold must be at least 1")
+	errVIPAddressIsRequired           = errors.New("VIP address is required")
+	errInvalidAPIPort                 = errors.New("invalid API port")
+	errHealthIntervalMustBePositive   = errors.New("health interval must be positive")
+	errHealthTimeoutMustBePositive    = errors.New("health timeout must be positive")
+	errFailThresholdMustBeAtLeast1    = errors.New("fail threshold must be at least 1")
 	errBGPLocalASIsRequiredForBgpMode = errors.New("BGP local AS is required for bgp mode")
 	errAtLeastOneBGPPeerIsRequiredFor = errors.New("at least one BGP peer is required for bgp mode")
 )
-
 
 const (
 	// DefaultAPIPort is the default kube-apiserver port.

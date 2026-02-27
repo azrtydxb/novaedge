@@ -19,19 +19,19 @@ limitations under the License.
 package ebpf
 
 import (
-	"errors"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 )
+
 var (
-	errCIDR = errors.New("CIDR")
+	errCIDR             = errors.New("CIDR")
 	errInvalidIPAddress = errors.New("invalid IP address")
 	errNotAnIPv4Address = errors.New("not an IPv4 address")
-	errInvalidIP = errors.New("invalid IP")
-	errNotIPv4 = errors.New("not IPv4")
+	errInvalidIP        = errors.New("invalid IP")
+	errNotIPv4          = errors.New("not IPv4")
 )
-
 
 // LPMTrieKey4 is the key format for a BPF_MAP_TYPE_LPM_TRIE with IPv4 prefixes.
 type LPMTrieKey4 struct {

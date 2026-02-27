@@ -17,9 +17,9 @@ limitations under the License.
 package controller
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
@@ -37,11 +37,11 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	"github.com/piwi3910/novaedge/internal/controller/ipam"
 )
+
 var (
-	errUnsupportedVIPMode = errors.New("unsupported VIP mode")
+	errUnsupportedVIPMode       = errors.New("unsupported VIP mode")
 	errUnsupportedAddressFamily = errors.New("unsupported address family")
 )
-
 
 const (
 	// annotationVIPMode is the required annotation that triggers VIP creation.

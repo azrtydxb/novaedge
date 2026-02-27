@@ -19,8 +19,8 @@ limitations under the License.
 package l4
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -30,11 +30,11 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
-	errUnknownListenerType = errors.New("unknown listener type")
+	errUnknownListenerType   = errors.New("unknown listener type")
 	errExpectedNetUDPConnGot = errors.New("expected *net.UDPConn, got")
 )
-
 
 // ListenerType represents the type of L4 listener
 type ListenerType string

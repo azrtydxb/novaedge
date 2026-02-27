@@ -17,8 +17,8 @@ limitations under the License.
 package vip
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
@@ -30,11 +30,11 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
-	errUnsupportedVIPMode = errors.New("unsupported VIP mode")
+	errUnsupportedVIPMode      = errors.New("unsupported VIP mode")
 	errFailedToReleaseSomeVIPs = errors.New("failed to release some VIPs")
 )
-
 
 // Manager manages VIP ownership and announces
 type Manager interface {

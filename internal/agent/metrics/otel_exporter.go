@@ -17,8 +17,8 @@ limitations under the License.
 package metrics
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -30,12 +30,12 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 )
-var (
-	errOtelExporterAlreadyStarted = errors.New("otel exporter already started")
-	errOtelExporterHasBeenShutDown = errors.New("otel exporter has been shut down")
-	errUnsupportedProtocol = errors.New("unsupported protocol")
-)
 
+var (
+	errOtelExporterAlreadyStarted  = errors.New("otel exporter already started")
+	errOtelExporterHasBeenShutDown = errors.New("otel exporter has been shut down")
+	errUnsupportedProtocol         = errors.New("unsupported protocol")
+)
 
 // OTelExporter manages the OpenTelemetry metrics pipeline that exports
 // NovaEdge metrics via OTLP. It creates OTel-native metric instruments

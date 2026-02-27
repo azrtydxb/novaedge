@@ -30,24 +30,24 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
-var (
-	errTLSRecordHeaderTooShort = errors.New("TLS record header too short")
-	errNotATLSHandshakeRecordContentType = errors.New("not a TLS handshake record: content type")
-	errTLSRecordTooLarge = errors.New("TLS record too large")
-	errHandshakeMessageTooShort = errors.New("handshake message too short")
-	errNotAClientHelloType = errors.New("not a ClientHello: type")
-	errClientHelloTooShortMissingVersionRandom = errors.New("ClientHello too short: missing version/random")
-	errClientHelloTooShortMissingSessionIDLength = errors.New("ClientHello too short: missing session ID length")
-	errClientHelloTooShortMissingCipherSuites = errors.New("ClientHello too short: missing cipher suites")
-	errClientHelloTooShortMissingCompressionMethods = errors.New("ClientHello too short: missing compression methods")
-	errNoExtensionsPresent = errors.New("no extensions present")
-	errSNIExtensionNotFound = errors.New("SNI extension not found")
-	errSNIExtensionTooShort = errors.New("SNI extension too short")
-	errSNIListLengthExceedsData = errors.New("SNI list length exceeds data")
-	errSNIHostnameLengthExceedsData = errors.New("SNI hostname length exceeds data")
-	errNoHostnameFoundInSNIExtension = errors.New("no hostname found in SNI extension")
-)
 
+var (
+	errTLSRecordHeaderTooShort                      = errors.New("TLS record header too short")
+	errNotATLSHandshakeRecordContentType            = errors.New("not a TLS handshake record: content type")
+	errTLSRecordTooLarge                            = errors.New("TLS record too large")
+	errHandshakeMessageTooShort                     = errors.New("handshake message too short")
+	errNotAClientHelloType                          = errors.New("not a ClientHello: type")
+	errClientHelloTooShortMissingVersionRandom      = errors.New("ClientHello too short: missing version/random")
+	errClientHelloTooShortMissingSessionIDLength    = errors.New("ClientHello too short: missing session ID length")
+	errClientHelloTooShortMissingCipherSuites       = errors.New("ClientHello too short: missing cipher suites")
+	errClientHelloTooShortMissingCompressionMethods = errors.New("ClientHello too short: missing compression methods")
+	errNoExtensionsPresent                          = errors.New("no extensions present")
+	errSNIExtensionNotFound                         = errors.New("SNI extension not found")
+	errSNIExtensionTooShort                         = errors.New("SNI extension too short")
+	errSNIListLengthExceedsData                     = errors.New("SNI list length exceeds data")
+	errSNIHostnameLengthExceedsData                 = errors.New("SNI hostname length exceeds data")
+	errNoHostnameFoundInSNIExtension                = errors.New("no hostname found in SNI extension")
+)
 
 const (
 	// DefaultSNIReadTimeout is the timeout for reading the TLS ClientHello

@@ -17,12 +17,12 @@ limitations under the License.
 package server
 
 import (
-	"errors"
 	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,13 +35,13 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/policy"
 	"golang.org/x/crypto/ocsp"
 )
-var (
-	errCertificateIsNilOrEmpty = errors.New("certificate is nil or empty")
-	errCertificateHasNoOCSPResponderURL = errors.New("certificate has no OCSP responder URL")
-	errOCSPResponderReturnedStatus = errors.New("OCSP responder returned status")
-	errOCSPResponseStatusIsNotGood = errors.New("OCSP response status is not good")
-)
 
+var (
+	errCertificateIsNilOrEmpty          = errors.New("certificate is nil or empty")
+	errCertificateHasNoOCSPResponderURL = errors.New("certificate has no OCSP responder URL")
+	errOCSPResponderReturnedStatus      = errors.New("OCSP responder returned status")
+	errOCSPResponseStatusIsNotGood      = errors.New("OCSP response status is not good")
+)
 
 const (
 	// ocspRefreshInterval is how often to check if OCSP responses need refreshing

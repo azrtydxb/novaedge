@@ -27,11 +27,11 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
 	errNoValidCACertificatesFoundInCABundle = errors.New("no valid CA certificates found in CA bundle")
-	errNoMeshTLSCertificateLoaded = errors.New("no mesh TLS certificate loaded")
+	errNoMeshTLSCertificateLoaded           = errors.New("no mesh TLS certificate loaded")
 )
-
 
 // TLSProvider manages TLS certificates for mesh connections.
 // It supports certificate rotation by using dynamic TLS callbacks

@@ -17,7 +17,6 @@ limitations under the License.
 package policy
 
 import (
-	"errors"
 	"context"
 	"crypto/ecdsa"
 	"crypto/ed25519"
@@ -27,6 +26,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -40,30 +40,30 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errAllowedAlgorithmsMustBeExplicitlyConfiguredRefusingToAllow = errors.New("AllowedAlgorithms must be explicitly configured; refusing to allow all algorithms by default")
-	errJWKSEndpointReturnedStatus = errors.New("JWKS endpoint returned status")
-	errAlgorithmNoneNotAllowed = errors.New(`algorithm "none" is not allowed`)
-	errUnexpectedSigningMethod = errors.New("unexpected signing method")
-	errAlgorithm2 = errors.New("algorithm")
-	errTokenMissingKidHeader = errors.New("token missing kid header")
-	errUnknownKeyID = errors.New("unknown key ID")
-	errInvalidClaimsType = errors.New("invalid claims type")
-	errTokenHasBeenRevoked = errors.New("token has been revoked")
-	errInvalidIssuer = errors.New("invalid issuer")
-	errMissingAudienceClaim = errors.New("missing audience claim")
-	errInvalidAudience = errors.New("invalid audience")
-	errUnsupportedKeyType = errors.New("unsupported key type")
-	errFailedToDecodeCertificate = errors.New("failed to decode certificate")
-	errCertificateDoesNotContainRSAPublicKey = errors.New("certificate does not contain RSA public key")
-	errRSAJWKMissingNOrEParameter = errors.New("RSA JWK missing n or e parameter")
-	errECJWKMissingCrvXOrYParameter = errors.New("EC JWK missing crv, x, or y parameter")
-	errUnsupportedECCurve = errors.New("unsupported EC curve")
-	errUnsupportedOKPCurve = errors.New("unsupported OKP curve")
-	errOKPJWKMissingXParameter = errors.New("OKP JWK missing x parameter")
-	errInvalidEd25519PublicKeySizeGot = errors.New("invalid Ed25519 public key size: got")
+	errJWKSEndpointReturnedStatus                                 = errors.New("JWKS endpoint returned status")
+	errAlgorithmNoneNotAllowed                                    = errors.New(`algorithm "none" is not allowed`)
+	errUnexpectedSigningMethod                                    = errors.New("unexpected signing method")
+	errAlgorithm2                                                 = errors.New("algorithm")
+	errTokenMissingKidHeader                                      = errors.New("token missing kid header")
+	errUnknownKeyID                                               = errors.New("unknown key ID")
+	errInvalidClaimsType                                          = errors.New("invalid claims type")
+	errTokenHasBeenRevoked                                        = errors.New("token has been revoked")
+	errInvalidIssuer                                              = errors.New("invalid issuer")
+	errMissingAudienceClaim                                       = errors.New("missing audience claim")
+	errInvalidAudience                                            = errors.New("invalid audience")
+	errUnsupportedKeyType                                         = errors.New("unsupported key type")
+	errFailedToDecodeCertificate                                  = errors.New("failed to decode certificate")
+	errCertificateDoesNotContainRSAPublicKey                      = errors.New("certificate does not contain RSA public key")
+	errRSAJWKMissingNOrEParameter                                 = errors.New("RSA JWK missing n or e parameter")
+	errECJWKMissingCrvXOrYParameter                               = errors.New("EC JWK missing crv, x, or y parameter")
+	errUnsupportedECCurve                                         = errors.New("unsupported EC curve")
+	errUnsupportedOKPCurve                                        = errors.New("unsupported OKP curve")
+	errOKPJWKMissingXParameter                                    = errors.New("OKP JWK missing x parameter")
+	errInvalidEd25519PublicKeySizeGot                             = errors.New("invalid Ed25519 public key size: got")
 )
-
 
 // jwtClaimsKey is a typed context key for storing JWT claims, avoiding SA1029.
 type jwtClaimsKey struct{}

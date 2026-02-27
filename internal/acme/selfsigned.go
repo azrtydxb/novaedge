@@ -1,7 +1,6 @@
 package acme
 
 import (
-	"errors"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -9,19 +8,20 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
 	"time"
 )
+
 var (
 	errAtLeastOneDomainOrIPIsRequired = errors.New("at least one domain or IP is required")
-	errUnsupportedKeyType = errors.New("unsupported key type")
-	errFailedToDecodeCACertificate = errors.New("failed to decode CA certificate")
-	errFailedToDecodeCAPrivateKey = errors.New("failed to decode CA private key")
-	errUnsupportedCAKeyType = errors.New("unsupported CA key type")
+	errUnsupportedKeyType             = errors.New("unsupported key type")
+	errFailedToDecodeCACertificate    = errors.New("failed to decode CA certificate")
+	errFailedToDecodeCAPrivateKey     = errors.New("failed to decode CA private key")
+	errUnsupportedCAKeyType           = errors.New("unsupported CA key type")
 )
-
 
 // generateKeyPair generates a private/public key pair based on the configured key type.
 func generateKeyPair(keyType string) (privateKey, publicKey interface{}, err error) {

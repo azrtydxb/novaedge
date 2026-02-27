@@ -24,13 +24,13 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errBasicAuthSpecIsNil = errors.New("basicAuth spec is nil")
-	errHtpasswdSecret = errors.New("htpasswd secret")
-	errSecret = errors.New("secret")
-	errOidcSpecIsNil = errors.New("oidc spec is nil")
+	errHtpasswdSecret     = errors.New("htpasswd secret")
+	errSecret             = errors.New("secret")
+	errOidcSpecIsNil      = errors.New("oidc spec is nil")
 )
-
 
 // buildBasicAuthConfig builds a BasicAuthConfig proto from the CRD spec,
 // loading the htpasswd credentials from the pre-fetched Secret cache.

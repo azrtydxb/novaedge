@@ -19,7 +19,6 @@ limitations under the License.
 package meshca
 
 import (
-	"errors"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -27,6 +26,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/url"
@@ -40,14 +40,14 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
-var (
-	errMeshCANotInitialized = errors.New("mesh CA not initialized")
-	errFailedToDecodeCSRPEM = errors.New("failed to decode CSR PEM")
-	errSecret = errors.New("secret")
-	errFailedToDecodeCACertificatePEM = errors.New("failed to decode CA certificate PEM")
-	errFailedToDecodeCAPrivateKeyPEM = errors.New("failed to decode CA private key PEM")
-)
 
+var (
+	errMeshCANotInitialized           = errors.New("mesh CA not initialized")
+	errFailedToDecodeCSRPEM           = errors.New("failed to decode CSR PEM")
+	errSecret                         = errors.New("secret")
+	errFailedToDecodeCACertificatePEM = errors.New("failed to decode CA certificate PEM")
+	errFailedToDecodeCAPrivateKeyPEM  = errors.New("failed to decode CA private key PEM")
+)
 
 const (
 	// caSecretName is the Kubernetes Secret storing the root CA.

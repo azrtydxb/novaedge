@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"net"
 )
+
 var (
 	errInvalidIPAddress = errors.New("invalid IP address")
 	errNotAnIPv4Address = errors.New("not an IPv4 address")
 )
-
 
 // ServiceKey is the key for the BPF service lookup map. It identifies a
 // Kubernetes Service by its ClusterIP, port, and protocol. The struct

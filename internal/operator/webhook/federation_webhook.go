@@ -19,8 +19,8 @@ limitations under the License.
 package webhook
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -31,17 +31,17 @@ import (
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
-var (
-	errFederationIDIsImmutableCannotChangeFrom = errors.New("federation ID is immutable: cannot change from")
-	errLocalMemberNameIsImmutableCannotChangeFrom = errors.New("local member name is immutable: cannot change from")
-	errValidationFailed = errors.New("validation failed")
-	errInvalidName = errors.New("invalid name")
-	errName = errors.New("name")
-	errInvalidEndpoint = errors.New("invalid endpoint")
-	errEndpoint = errors.New("endpoint")
-	errTLSEnabledButNoCASecretSpecifiedAnd = errors.New("TLS enabled but no CA secret specified and insecureSkipVerify is false")
-)
 
+var (
+	errFederationIDIsImmutableCannotChangeFrom    = errors.New("federation ID is immutable: cannot change from")
+	errLocalMemberNameIsImmutableCannotChangeFrom = errors.New("local member name is immutable: cannot change from")
+	errValidationFailed                           = errors.New("validation failed")
+	errInvalidName                                = errors.New("invalid name")
+	errName                                       = errors.New("name")
+	errInvalidEndpoint                            = errors.New("invalid endpoint")
+	errEndpoint                                   = errors.New("endpoint")
+	errTLSEnabledButNoCASecretSpecifiedAnd        = errors.New("TLS enabled but no CA secret specified and insecureSkipVerify is false")
+)
 
 // FederationValidator validates NovaEdgeFederation resources
 type FederationValidator struct{}

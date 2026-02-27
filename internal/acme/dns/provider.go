@@ -27,11 +27,11 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
-	errUnsupportedDNSProvider  = errors.New("unsupported DNS provider")
+	errUnsupportedDNSProvider   = errors.New("unsupported DNS provider")
 	errDNSPropagationTimeoutFor = errors.New("DNS propagation timeout for")
 )
-
 
 const (
 	// DefaultPropagationTimeout is the default time to wait for DNS propagation.

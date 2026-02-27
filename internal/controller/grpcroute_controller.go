@@ -37,8 +37,6 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
-var ()
-
 // GRPCRouteReconciler reconciles Gateway API GRPCRoute resources
 type GRPCRouteReconciler struct {
 	client.Client

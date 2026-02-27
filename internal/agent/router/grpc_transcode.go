@@ -17,9 +17,9 @@ limitations under the License.
 package router
 
 import (
-	"errors"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,14 +35,14 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
+
 var (
 	errInvalidGRPCMethodFormat = errors.New("invalid gRPC method format")
 	errIsNotAServiceDescriptor = errors.New("is not a service descriptor")
-	errMethod = errors.New("method")
-	errGRPCFrameTooShort = errors.New("gRPC frame too short")
-	errGRPCFrameLength = errors.New("gRPC frame length")
+	errMethod                  = errors.New("method")
+	errGRPCFrameTooShort       = errors.New("gRPC frame too short")
+	errGRPCFrameLength         = errors.New("gRPC frame length")
 )
-
 
 // grpcToHTTP maps gRPC status codes to HTTP status codes per the gRPC specification.
 var grpcToHTTP = map[int]int{

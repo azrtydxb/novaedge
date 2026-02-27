@@ -17,8 +17,8 @@ limitations under the License.
 package vault
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -26,12 +26,12 @@ import (
 
 	"go.uber.org/zap"
 )
-var (
-	errNoDataFoundAtPath = errors.New("no data found at path")
-	errUnexpectedKVV2ResponseStructureAtPath = errors.New("unexpected KV v2 response structure at path")
-	errKey = errors.New("key")
-)
 
+var (
+	errNoDataFoundAtPath                     = errors.New("no data found at path")
+	errUnexpectedKVV2ResponseStructureAtPath = errors.New("unexpected KV v2 response structure at path")
+	errKey                                   = errors.New("key")
+)
 
 // KVEngine defines the KV engine version.
 type KVEngine string

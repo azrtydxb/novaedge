@@ -17,17 +17,17 @@ limitations under the License.
 package policy
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
 )
+
 var (
 	errConnectionsToPrivateIP = errors.New("connections to private IP")
 )
-
 
 // privateNetworks contains CIDR ranges that should be blocked for outbound requests.
 // These are pre-computed at package initialization time to avoid runtime parsing overhead.

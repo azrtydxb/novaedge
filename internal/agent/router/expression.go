@@ -23,26 +23,26 @@ import (
 	"net/http"
 	"strings"
 )
-var (
-	errUnexpectedTokenAtPosition = errors.New("unexpected token at position")
-	errUnterminatedStringAtPosition = errors.New("unterminated string at position")
-	errUnexpectedCharacter = errors.New("unexpected character")
-	errExpected = errors.New("expected")
-	errUnexpectedEndOfExpression = errors.New("unexpected end of expression")
-	errUnexpectedToken = errors.New("unexpected token")
-	errExpectedOperatorAfterHeader = errors.New("expected operator after header")
-	errExpectedQuotedStringAfterOperator = errors.New("expected quoted string after operator")
-	errExpectedMatchTypeExactPrefixContainsAfterPath = errors.New("expected match type (exact, prefix, contains) after path")
-	errInvalidPathMatchType = errors.New("invalid path match type")
-	errExpectedQuotedStringForPathValue = errors.New("expected quoted string for path value")
-	errExpectedOperatorAfterMethod = errors.New("expected operator after method")
-	errExpectedQuotedStringForMethodValue = errors.New("expected quoted string for method value")
-	errExpectedOperatorAfterQuery = errors.New("expected operator after query")
-	errExpectedInAfterSourceIP = errors.New("expected 'in' after source_ip")
-	errExpectedQuotedCIDRStringAfterIn = errors.New("expected quoted CIDR string after 'in'")
-	errUnknownOperand = errors.New("unknown operand")
-)
 
+var (
+	errUnexpectedTokenAtPosition                     = errors.New("unexpected token at position")
+	errUnterminatedStringAtPosition                  = errors.New("unterminated string at position")
+	errUnexpectedCharacter                           = errors.New("unexpected character")
+	errExpected                                      = errors.New("expected")
+	errUnexpectedEndOfExpression                     = errors.New("unexpected end of expression")
+	errUnexpectedToken                               = errors.New("unexpected token")
+	errExpectedOperatorAfterHeader                   = errors.New("expected operator after header")
+	errExpectedQuotedStringAfterOperator             = errors.New("expected quoted string after operator")
+	errExpectedMatchTypeExactPrefixContainsAfterPath = errors.New("expected match type (exact, prefix, contains) after path")
+	errInvalidPathMatchType                          = errors.New("invalid path match type")
+	errExpectedQuotedStringForPathValue              = errors.New("expected quoted string for path value")
+	errExpectedOperatorAfterMethod                   = errors.New("expected operator after method")
+	errExpectedQuotedStringForMethodValue            = errors.New("expected quoted string for method value")
+	errExpectedOperatorAfterQuery                    = errors.New("expected operator after query")
+	errExpectedInAfterSourceIP                       = errors.New("expected 'in' after source_ip")
+	errExpectedQuotedCIDRStringAfterIn               = errors.New("expected quoted CIDR string after 'in'")
+	errUnknownOperand                                = errors.New("unknown operand")
+)
 
 // ExprNode represents a node in the boolean expression AST.
 type ExprNode interface {

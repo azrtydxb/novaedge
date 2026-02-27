@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"errors"
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -12,11 +12,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
+
 var (
-	errNoControllerPodsFound = errors.New("no controller pods found")
+	errNoControllerPodsFound        = errors.New("no controller pods found")
 	errNoRunningControllerPodsFound = errors.New("no running controller pods found")
 )
-
 
 var (
 	follow     bool

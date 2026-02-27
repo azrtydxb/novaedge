@@ -17,10 +17,10 @@ limitations under the License.
 package config
 
 import (
-	"errors"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,10 +32,10 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errSnapshotHashMismatch = errors.New("snapshot hash mismatch")
 )
-
 
 const (
 	// ConfigCacheFile is the name of the cached config file

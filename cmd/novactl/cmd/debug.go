@@ -1,8 +1,8 @@
 package cmd
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"text/tabwriter"
@@ -11,12 +11,12 @@ import (
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 )
-var (
-	errExactlyOneArgumentRequiredHostname = errors.New("exactly one argument required: hostname")
-	errExactlyOneArgumentRequiredBackendName = errors.New("exactly one argument required: backend-name")
-	errExactlyOneArgumentRequiredRequestID = errors.New("exactly one argument required: request-id")
-)
 
+var (
+	errExactlyOneArgumentRequiredHostname    = errors.New("exactly one argument required: hostname")
+	errExactlyOneArgumentRequiredBackendName = errors.New("exactly one argument required: backend-name")
+	errExactlyOneArgumentRequiredRequestID   = errors.New("exactly one argument required: request-id")
+)
 
 func newDebugCommand() *cobra.Command {
 	cmd := &cobra.Command{

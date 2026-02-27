@@ -17,8 +17,8 @@ limitations under the License.
 package router
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -27,12 +27,12 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
 	errBuiltinMiddlewareFactoryNotAvailableFor = errors.New("builtin middleware factory not available for")
-	errWASMMiddlewareFactoryNotAvailableFor = errors.New("WASM middleware factory not available for")
-	errUnknownMiddlewareType = errors.New("unknown middleware type")
+	errWASMMiddlewareFactoryNotAvailableFor    = errors.New("WASM middleware factory not available for")
+	errUnknownMiddlewareType                   = errors.New("unknown middleware type")
 )
-
 
 // MiddlewarePhase indicates when a middleware executes relative to routing/backend.
 type MiddlewarePhase int

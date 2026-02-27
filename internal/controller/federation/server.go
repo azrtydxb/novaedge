@@ -34,12 +34,12 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errUnexpectedTypeInResourcesMapForKey = errors.New("unexpected type in resources map for key")
-	errConflictNotFound = errors.New("conflict not found")
-	errUnexpectedTypeForConflict = errors.New("unexpected type for conflict")
+	errConflictNotFound                   = errors.New("conflict not found")
+	errUnexpectedTypeForConflict          = errors.New("unexpected type for conflict")
 )
-
 
 const (
 	// ProtocolVersion is the current federation protocol version

@@ -17,8 +17,8 @@ limitations under the License.
 package tunnel
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -33,13 +33,13 @@ import (
 
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
 var (
 	errWireguardConfigIsRequiredForWireGuardTunnelType = errors.New("wireguard config is required for WireGuard tunnel type")
-	errWgctrlClientNotInitialized = errors.New("wgctrl client not initialized")
-	errNoWireguardHandshakeEstablished = errors.New("no wireguard handshake established")
-	errWireguardHandshakeStaleLast = errors.New("wireguard handshake stale (last")
+	errWgctrlClientNotInitialized                      = errors.New("wgctrl client not initialized")
+	errNoWireguardHandshakeEstablished                 = errors.New("no wireguard handshake established")
+	errWireguardHandshakeStaleLast                     = errors.New("wireguard handshake stale (last")
 )
-
 
 const (
 	wireguardInterfacePrefix = "novaedge-wg"

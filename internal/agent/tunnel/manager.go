@@ -17,8 +17,8 @@ limitations under the License.
 package tunnel
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -26,12 +26,12 @@ import (
 
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
+
 var (
 	errTunnelManagerNotStarted = errors.New("tunnel manager not started")
 	errNoTunnelFoundForCluster = errors.New("no tunnel found for cluster")
-	errUnsupportedTunnelType = errors.New("unsupported tunnel type")
+	errUnsupportedTunnelType   = errors.New("unsupported tunnel type")
 )
-
 
 // NetworkTunnelManager manages network tunnels for remote cluster connectivity.
 // It handles creation, lifecycle, and health monitoring of tunnels that provide

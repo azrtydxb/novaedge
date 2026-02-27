@@ -20,12 +20,12 @@ limitations under the License.
 package policy
 
 import (
-	"errors"
 	"crypto/md5" //nolint:gosec // G501: MD5 is required by Apache apr1 password hash format (RFC-compatible htpasswd)
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -36,10 +36,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errNoValidCredentialEntriesFound = errors.New("no valid credential entries found")
 )
-
 
 const hashTypeBcrypt = "bcrypt"
 

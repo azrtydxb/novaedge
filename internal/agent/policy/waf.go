@@ -17,8 +17,8 @@ limitations under the License.
 package policy
 
 import (
-	"errors"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,10 +34,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errWAFConfigIsNil = errors.New("WAF config is nil")
 )
-
 
 // WAFFailMode represents how the WAF behaves when processing errors occur
 type WAFFailMode string

@@ -29,18 +29,18 @@ import (
 
 	"go.uber.org/zap"
 )
-var (
-	errUnexpectedCharacter = errors.New("unexpected character")
-	errExpectedTokenKind = errors.New("expected token kind")
-	errEmptyExpression = errors.New("empty expression")
-	errUnexpectedTokenAfterExpression = errors.New("unexpected token after expression")
-	errExpectedComparisonOperatorGot = errors.New("expected comparison operator, got")
-	errNetworkErrorRatioTakesNoArgumentsGot = errors.New("NetworkErrorRatio() takes no arguments, got")
-	errResponseCodeRatioRequires4ArgumentsCodeFromCodeToDividendFromDividendTo = errors.New("ResponseCodeRatio() requires 4 arguments (codeFrom, codeTo, dividendFrom, dividendTo), got")
-	errLatencyAtQuantileMSRequires1ArgumentQuantileGot = errors.New("LatencyAtQuantileMS() requires 1 argument (quantile), got")
-	errUnknownFunction = errors.New("unknown function")
-)
 
+var (
+	errUnexpectedCharacter                                                     = errors.New("unexpected character")
+	errExpectedTokenKind                                                       = errors.New("expected token kind")
+	errEmptyExpression                                                         = errors.New("empty expression")
+	errUnexpectedTokenAfterExpression                                          = errors.New("unexpected token after expression")
+	errExpectedComparisonOperatorGot                                           = errors.New("expected comparison operator, got")
+	errNetworkErrorRatioTakesNoArgumentsGot                                    = errors.New("NetworkErrorRatio() takes no arguments, got")
+	errResponseCodeRatioRequires4ArgumentsCodeFromCodeToDividendFromDividendTo = errors.New("ResponseCodeRatio() requires 4 arguments (codeFrom, codeTo, dividendFrom, dividendTo), got")
+	errLatencyAtQuantileMSRequires1ArgumentQuantileGot                         = errors.New("LatencyAtQuantileMS() requires 1 argument (quantile), got")
+	errUnknownFunction                                                         = errors.New("unknown function")
+)
 
 // CBExpression evaluates a circuit breaker expression against cluster statistics.
 type CBExpression interface {

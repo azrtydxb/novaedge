@@ -17,12 +17,12 @@ limitations under the License.
 package vault
 
 import (
-	"errors"
 	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,11 +31,11 @@ import (
 	"strings"
 	"time"
 )
+
 var (
 	errVaultReturnedStatus = errors.New("vault returned status")
 	errFailedToParseCACert = errors.New("failed to parse CA cert")
 )
-
 
 const (
 	defaultHTTPTimeout = 30 * time.Second

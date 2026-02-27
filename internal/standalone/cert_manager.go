@@ -17,9 +17,9 @@ limitations under the License.
 package standalone
 
 import (
-	"errors"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,15 +30,15 @@ import (
 	"github.com/piwi3910/novaedge/internal/acme"
 	"go.uber.org/zap"
 )
-var (
-	errConfigIsRequired = errors.New("config is required")
-	errUnsupportedIssuerType = errors.New("unsupported issuer type")
-	errCertificateNotFound = errors.New("certificate not found")
-	errCertificateNotLoaded = errors.New("certificate not loaded")
-	errCertificateHasInvalidTypeFor = errors.New("certificate has invalid type for")
-	errNoCertificateAvailableFor = errors.New("no certificate available for")
-)
 
+var (
+	errConfigIsRequired             = errors.New("config is required")
+	errUnsupportedIssuerType        = errors.New("unsupported issuer type")
+	errCertificateNotFound          = errors.New("certificate not found")
+	errCertificateNotLoaded         = errors.New("certificate not loaded")
+	errCertificateHasInvalidTypeFor = errors.New("certificate has invalid type for")
+	errNoCertificateAvailableFor    = errors.New("no certificate available for")
+)
 
 const (
 	issuerTypeACME       = "acme"

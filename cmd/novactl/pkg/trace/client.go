@@ -2,23 +2,23 @@
 package trace
 
 import (
-	"errors"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"time"
 )
+
 var (
-	errTraceQueryFailedWithStatus = errors.New("trace query failed with status")
-	errTrace = errors.New("trace")
-	errTraceSearchFailedWithStatus = errors.New("trace search failed with status")
-	errServicesQueryFailedWithStatus = errors.New("services query failed with status")
+	errTraceQueryFailedWithStatus      = errors.New("trace query failed with status")
+	errTrace                           = errors.New("trace")
+	errTraceSearchFailedWithStatus     = errors.New("trace search failed with status")
+	errServicesQueryFailedWithStatus   = errors.New("services query failed with status")
 	errOperationsQueryFailedWithStatus = errors.New("operations query failed with status")
 )
-
 
 // Client provides methods for querying distributed traces.
 type Client struct {

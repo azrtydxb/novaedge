@@ -17,8 +17,8 @@ limitations under the License.
 package mode
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
@@ -31,14 +31,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 )
+
 var (
 	errKubernetesConfigIsRequired = errors.New("kubernetes config is required")
-	errBackendIsReadOnly = errors.New("backend is read-only")
-	errConfigIsNil = errors.New("config is nil")
-	errBackend = errors.New("backend[")
-	errRoute = errors.New("route[")
+	errBackendIsReadOnly          = errors.New("backend is read-only")
+	errConfigIsNil                = errors.New("config is nil")
+	errBackend                    = errors.New("backend[")
+	errRoute                      = errors.New("route[")
 )
-
 
 // KubernetesBackend implements Backend for Kubernetes CRD operations
 type KubernetesBackend struct {

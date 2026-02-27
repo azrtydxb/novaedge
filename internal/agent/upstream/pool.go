@@ -17,10 +17,10 @@ limitations under the License.
 package upstream
 
 import (
-	"errors"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -39,10 +39,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errNoProxyForEndpoint = errors.New("no proxy for endpoint")
 )
-
 
 // DefaultConnectTimeout is the fallback connect timeout when ConnectTimeoutMs is zero or negative.
 const DefaultConnectTimeout = 60 * time.Second

@@ -111,15 +111,15 @@ func (v *Validator) validateNamespacedResource(
 	validateChild func(int) error,
 ) error {
 	if name == "" {
-		return pkgerrors.NewValidationError(kind + " name is required").
+		return pkgerrors.NewValidationError(kind+" name is required").
 			WithField("field", prefix+".name")
 	}
 	if namespace == "" {
-		return pkgerrors.NewValidationError(kind + " namespace is required").
+		return pkgerrors.NewValidationError(kind+" namespace is required").
 			WithField("field", prefix+".namespace")
 	}
 	if childCount == 0 {
-		return pkgerrors.NewValidationError(kind + " must have at least one " + childField).
+		return pkgerrors.NewValidationError(kind+" must have at least one "+childField).
 			WithField("field", prefix+"."+childField+"s")
 	}
 

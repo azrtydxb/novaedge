@@ -19,8 +19,8 @@ limitations under the License.
 package vault
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -29,19 +29,19 @@ import (
 
 	"go.uber.org/zap"
 )
-var (
-	errVaultConfigIsRequired = errors.New("vault config is required")
-	errVaultAddressIsRequiredSetVAULTADDROr = errors.New("vault address is required (set VAULT_ADDR or config.address)")
-	errUnsupportedAuthMethod = errors.New("unsupported auth method")
-	errVaultTokenNotProvidedSetVAULTTOKENOr = errors.New("vault token not provided (set VAULT_TOKEN or config.token)")
-	errKubernetesAuthConfigIsRequired = errors.New("kubernetes auth config is required")
-	errNoClientTokenInKubernetesAuthResponse = errors.New("no client_token in kubernetes auth response")
-	errClientTokenIsNotAString = errors.New("client_token is not a string")
-	errApproleAuthConfigIsRequired = errors.New("approle auth config is required")
-	errNoClientTokenInApproleAuthResponse = errors.New("no client_token in approle auth response")
-	errInvalidVaultEnableMode = errors.New("invalid vault enable mode")
-)
 
+var (
+	errVaultConfigIsRequired                 = errors.New("vault config is required")
+	errVaultAddressIsRequiredSetVAULTADDROr  = errors.New("vault address is required (set VAULT_ADDR or config.address)")
+	errUnsupportedAuthMethod                 = errors.New("unsupported auth method")
+	errVaultTokenNotProvidedSetVAULTTOKENOr  = errors.New("vault token not provided (set VAULT_TOKEN or config.token)")
+	errKubernetesAuthConfigIsRequired        = errors.New("kubernetes auth config is required")
+	errNoClientTokenInKubernetesAuthResponse = errors.New("no client_token in kubernetes auth response")
+	errClientTokenIsNotAString               = errors.New("client_token is not a string")
+	errApproleAuthConfigIsRequired           = errors.New("approle auth config is required")
+	errNoClientTokenInApproleAuthResponse    = errors.New("no client_token in approle auth response")
+	errInvalidVaultEnableMode                = errors.New("invalid vault enable mode")
+)
 
 // EnableMode defines the Vault enablement mode.
 type EnableMode string

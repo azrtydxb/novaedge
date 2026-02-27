@@ -31,15 +31,15 @@ import (
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"go.uber.org/zap"
 )
+
 var (
-	errSPIFFEWorkloadAPIAddressMustNotBeEmpty = errors.New("SPIFFE workload API address must not be empty")
-	errSPIFFETrustDomainMustNotBeEmpty = errors.New("SPIFFE trust domain must not be empty")
-	errSPIFFEProviderNotStarted = errors.New("SPIFFE provider not started")
-	errNoPeerCertificatePresented = errors.New("no peer certificate presented")
-	errSPIFFEID = errors.New("SPIFFE ID")
+	errSPIFFEWorkloadAPIAddressMustNotBeEmpty    = errors.New("SPIFFE workload API address must not be empty")
+	errSPIFFETrustDomainMustNotBeEmpty           = errors.New("SPIFFE trust domain must not be empty")
+	errSPIFFEProviderNotStarted                  = errors.New("SPIFFE provider not started")
+	errNoPeerCertificatePresented                = errors.New("no peer certificate presented")
+	errSPIFFEID                                  = errors.New("SPIFFE ID")
 	errPeerCertificateDoesNotContainAValidSPIFFE = errors.New("peer certificate does not contain a valid SPIFFE ID URI SAN")
 )
-
 
 // SPIFFEConfig holds configuration for the SPIFFE workload identity provider.
 type SPIFFEConfig struct {

@@ -23,10 +23,10 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
 	errPool = errors.New("pool")
 )
-
 
 // Allocator manages IP address allocation across multiple pools
 type Allocator struct {

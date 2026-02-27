@@ -17,9 +17,9 @@ limitations under the License.
 package router
 
 import (
-	"errors"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,14 +28,14 @@ import (
 
 	"go.uber.org/zap"
 )
-var (
-	errUnsupportedOperation = errors.New("unsupported operation")
-	errJSONPointerMustStartWith = errors.New("JSON Pointer must start with '/'")
-	errEmptyPathNotSupported = errors.New("empty path not supported")
-	errPathSegment = errors.New("path segment")
-	errKey = errors.New("key")
-)
 
+var (
+	errUnsupportedOperation     = errors.New("unsupported operation")
+	errJSONPointerMustStartWith = errors.New("JSON Pointer must start with '/'")
+	errEmptyPathNotSupported    = errors.New("empty path not supported")
+	errPathSegment              = errors.New("path segment")
+	errKey                      = errors.New("key")
+)
 
 // defaultMaxBodySize is the default maximum body size for transformation (1MB).
 const defaultMaxBodySize int64 = 1 << 20

@@ -35,8 +35,6 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
-var ()
-
 // ProxyPolicyReconciler reconciles a ProxyPolicy object
 type ProxyPolicyReconciler struct {
 	client.Client

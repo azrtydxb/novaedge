@@ -31,12 +31,12 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errOSPFConfigIsRequiredForOSPFModeVIPs = errors.New("OSPF config is required for OSPF mode VIPs")
-	errInvalidRouterID = errors.New("invalid router ID")
-	errOSPFServerNotInitialized = errors.New("OSPF server not initialized")
+	errInvalidRouterID                     = errors.New("invalid router ID")
+	errOSPFServerNotInitialized            = errors.New("OSPF server not initialized")
 )
-
 
 // OSPF protocol constants
 const (

@@ -19,8 +19,8 @@ limitations under the License.
 package certmanager
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -28,11 +28,11 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
 var (
 	errCertManagerIsRequiredEnableCertManagerTrue = errors.New("cert-manager is required (--enable-cert-manager=true) but CRDs not found")
-	errInvalidCertManagerEnableMode = errors.New("invalid cert-manager enable mode")
+	errInvalidCertManagerEnableMode               = errors.New("invalid cert-manager enable mode")
 )
-
 
 // EnableMode defines the cert-manager enablement mode.
 type EnableMode string

@@ -17,22 +17,22 @@ limitations under the License.
 package wasm
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/tetratelabs/wazero"
 	"go.uber.org/zap"
 )
-var (
-	errPluginConfigIsNil = errors.New("plugin config is nil")
-	errPluginNameIsRequired = errors.New("plugin name is required")
-	errWASMBytesAreEmptyForPlugin = errors.New("WASM bytes are empty for plugin")
-	errRuntimeIsClosed = errors.New("runtime is closed")
-	errPlugin = errors.New("plugin")
-)
 
+var (
+	errPluginConfigIsNil          = errors.New("plugin config is nil")
+	errPluginNameIsRequired       = errors.New("plugin name is required")
+	errWASMBytesAreEmptyForPlugin = errors.New("WASM bytes are empty for plugin")
+	errRuntimeIsClosed            = errors.New("runtime is closed")
+	errPlugin                     = errors.New("plugin")
+)
 
 // Runtime manages the wazero WASM runtime and all loaded plugins.
 type Runtime struct {

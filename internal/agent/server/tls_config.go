@@ -17,8 +17,8 @@ limitations under the License.
 package server
 
 import (
-	"errors"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -27,10 +27,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errNoTLSCertificatesConfigured = errors.New("no TLS certificates configured")
 )
-
 
 // createTLSConfigWithSNI creates a tls.Config with SNI support for multiple certificates
 func (s *HTTPServer) createTLSConfigWithSNI(listener *pb.Listener) (*tls.Config, error) {

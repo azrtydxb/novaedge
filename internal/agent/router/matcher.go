@@ -24,10 +24,10 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errRegexPatternExceedsMaximumLengthOf = errors.New("regex pattern exceeds maximum length of")
 )
-
 
 // PathMatcher matches request paths
 type PathMatcher interface {

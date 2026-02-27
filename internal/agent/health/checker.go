@@ -17,9 +17,9 @@ limitations under the License.
 package health
 
 import (
-	"errors"
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -33,10 +33,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errUnhealthyStatusCode = errors.New("unhealthy status code")
 )
-
 
 // ebpfNoTrafficTimeout is the duration after which a backend with no
 // eBPF-observed traffic falls back to active health probing.

@@ -30,10 +30,10 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errHTTP3RequiresTLSConfiguration = errors.New("HTTP/3 requires TLS configuration")
 )
-
 
 // ListenerInfo contains information about a configured listener
 type ListenerInfo struct {

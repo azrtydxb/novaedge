@@ -40,9 +40,9 @@ limitations under the License.
 package tlsutil
 
 import (
-	"errors"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,10 +52,10 @@ import (
 
 	pkgerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
 )
+
 var (
 	errFailedToAddCACertificateToPool = errors.New("failed to add CA certificate to pool")
 )
-
 
 // LoadServerTLSCredentials loads TLS credentials for gRPC server with mTLS.
 // It uses GetCertificate/GetConfigForClient callbacks so that certificate files

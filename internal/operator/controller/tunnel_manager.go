@@ -23,10 +23,10 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
 	errTunnelForCluster = errors.New("tunnel for cluster")
 )
-
 
 // InMemoryTunnelManager tracks tunnel names and provides cleanup during
 // remote cluster deletion. It implements TunnelTeardown without depending

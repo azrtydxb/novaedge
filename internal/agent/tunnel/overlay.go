@@ -25,10 +25,10 @@ import (
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 )
+
 var (
 	errNoOverlayRouteFoundForCIDR = errors.New("no overlay route found for CIDR")
 )
-
 
 // overlayRoute tracks a single overlay route installed in the kernel routing table.
 type overlayRoute struct {

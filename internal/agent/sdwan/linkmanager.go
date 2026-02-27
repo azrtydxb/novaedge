@@ -23,12 +23,12 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
-	errLinkNameIsRequired = errors.New("link name is required")
-	errLink = errors.New("link")
+	errLinkNameIsRequired         = errors.New("link name is required")
+	errLink                       = errors.New("link")
 	errNoLinkQualityDataAvailable = errors.New("no link quality data available")
 )
-
 
 // LinkState describes the operational state of a WAN link.
 type LinkState string

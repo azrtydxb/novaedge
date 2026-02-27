@@ -17,8 +17,8 @@ limitations under the License.
 package mesh
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -34,10 +34,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errMeshManagerNotStarted = errors.New("mesh manager not started")
 )
-
 
 const (
 	// DefaultTPROXYPort is the default port for the transparent listener.

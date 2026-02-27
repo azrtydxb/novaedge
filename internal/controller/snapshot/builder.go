@@ -20,11 +20,11 @@ limitations under the License.
 package snapshot
 
 import (
-	"errors"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -42,15 +42,15 @@ import (
 	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
-	errNoCACertificateFoundInSecret = errors.New("no CA certificate found in secret")
-	errTLSSecret = errors.New("TLS secret")
-	errTLSCrtNotFoundInSecret = errors.New("tls.crt not found in secret")
-	errTLSKeyNotFoundInSecret = errors.New("tls.key not found in secret")
-	errWASMConfigMap = errors.New("WASM ConfigMap")
+	errNoCACertificateFoundInSecret  = errors.New("no CA certificate found in secret")
+	errTLSSecret                     = errors.New("TLS secret")
+	errTLSCrtNotFoundInSecret        = errors.New("tls.crt not found in secret")
+	errTLSKeyNotFoundInSecret        = errors.New("tls.key not found in secret")
+	errWASMConfigMap                 = errors.New("WASM ConfigMap")
 	errWASMBinaryNotFoundInConfigMap = errors.New("WASM binary not found in ConfigMap")
 )
-
 
 // FederationStateProvider exposes the minimal federation state needed by the
 // snapshot builder to populate FederationMetadata on ConfigSnapshots and to

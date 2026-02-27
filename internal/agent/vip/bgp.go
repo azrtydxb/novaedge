@@ -35,10 +35,10 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errBGPConfigIsRequiredForBGPModeVIPs = errors.New("BGP config is required for BGP mode VIPs")
 )
-
 
 // BGPHandler manages BGP VIP mode with IPv4/IPv6 and BFD support
 type BGPHandler struct {

@@ -27,11 +27,11 @@ import (
 
 	"go.uber.org/zap"
 )
+
 var (
-	errNoLinksAvailableForSelection = errors.New("no links available for selection")
+	errNoLinksAvailableForSelection  = errors.New("no links available for selection")
 	errNoHealthyLinkFoundForStrategy = errors.New("no healthy link found for strategy")
 )
-
 
 // Local strategy constants matching the CRD values to avoid an import cycle.
 const (

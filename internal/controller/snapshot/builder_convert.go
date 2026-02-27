@@ -32,10 +32,10 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
 var (
 	errInvalidByteSize = errors.New("invalid byte size")
 )
-
 
 // convertVIPMode converts NovaEdge VIPMode to protobuf VIPMode
 func convertVIPMode(mode novaedgev1alpha1.VIPMode) pb.VIPMode {

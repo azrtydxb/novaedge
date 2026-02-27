@@ -21,10 +21,10 @@ import (
 	"errors"
 	"fmt"
 )
+
 var (
 	errCannotEncodeNilBFDPacket = errors.New("cannot encode nil BFD packet")
 )
-
 
 // BFD control packet constants per RFC 5880 Section 4.1
 const (

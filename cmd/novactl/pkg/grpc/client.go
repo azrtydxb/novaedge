@@ -2,8 +2,8 @@
 package grpc
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -14,11 +14,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
+
 var (
-	errPod = errors.New("pod")
+	errPod                   = errors.New("pod")
 	errNoAgentPodFoundOnNode = errors.New("no agent pod found on node")
 )
-
 
 // AgentClient wraps a gRPC connection to a NovaEdge agent
 type AgentClient struct {

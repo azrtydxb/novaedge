@@ -26,10 +26,10 @@ import (
 	"github.com/pion/stun/v3"
 	"go.uber.org/zap"
 )
+
 var (
 	errNoAddressReturnedFrom = errors.New("no address returned from")
 )
-
 
 var defaultSTUNServers = []string{
 	"stun.l.google.com:19302",

@@ -17,16 +17,16 @@ limitations under the License.
 package ebpfmesh
 
 import (
-	"errors"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 )
+
 var (
 	errInvalidIP = errors.New("invalid IP")
-	errNotIPv4 = errors.New("not IPv4")
+	errNotIPv4   = errors.New("not IPv4")
 )
-
 
 // meshSvcKey matches the C struct mesh_svc_key layout.
 type meshSvcKey struct {

@@ -1,7 +1,6 @@
 package acme
 
 import (
-	"errors"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -10,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -20,17 +20,17 @@ import (
 	"github.com/go-acme/lego/v4/registration"
 	"go.uber.org/zap"
 )
-var (
-	errConfigIsRequired = errors.New("config is required")
-	errStorageIsRequired = errors.New("storage is required")
-	errFailedToDecodeAccountPrivateKey = errors.New("failed to decode account private key")
-	errUnsupportedPrivateKeyType = errors.New("unsupported private key type")
-	errClientNotInitialized = errors.New("client not initialized")
-	errAtLeastOneDomainIsRequired = errors.New("at least one domain is required")
-	errUnsupportedChallengeType = errors.New("unsupported challenge type")
-	errFailedToDecodePEMBlock = errors.New("failed to decode PEM block")
-)
 
+var (
+	errConfigIsRequired                = errors.New("config is required")
+	errStorageIsRequired               = errors.New("storage is required")
+	errFailedToDecodeAccountPrivateKey = errors.New("failed to decode account private key")
+	errUnsupportedPrivateKeyType       = errors.New("unsupported private key type")
+	errClientNotInitialized            = errors.New("client not initialized")
+	errAtLeastOneDomainIsRequired      = errors.New("at least one domain is required")
+	errUnsupportedChallengeType        = errors.New("unsupported challenge type")
+	errFailedToDecodePEMBlock          = errors.New("failed to decode PEM block")
+)
 
 // Client provides ACME certificate management functionality.
 type Client struct {

@@ -17,8 +17,8 @@ limitations under the License.
 package certmanager
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -30,10 +30,10 @@ import (
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
 var (
 	errWatchChannelClosed = errors.New("watch channel closed")
 )
-
 
 // CertificateWatcher watches cert-manager Certificate resources for changes
 // and triggers callbacks when certificates become Ready.
