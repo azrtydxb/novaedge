@@ -14,11 +14,14 @@ mod l4;
 mod lb;
 mod loader;
 mod maps;
+mod mesh;
 mod middleware;
 mod proto;
 mod proxy;
+mod sdwan;
 mod server;
 mod upstream;
+mod vip;
 
 /// NovaEdge Rust dataplane daemon.
 #[derive(Parser, Debug)]
