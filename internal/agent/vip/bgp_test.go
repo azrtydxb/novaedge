@@ -210,6 +210,7 @@ func TestBGPHandler_AddRemoveVIP(t *testing.T) {
 			},
 		}
 		err := handler.AddVIP(ctx, modifiedAssignment)
+		skipIfBGPUnavailable(t, err)
 		if err != nil {
 			t.Fatalf("Reconfiguring VIP should not error: %v", err)
 		}

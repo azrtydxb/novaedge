@@ -36,7 +36,7 @@ linters:
     - dupl
     # Best practices
     - gochecknoinits
-    - goerr113
+    - err113
     - exhaustive
   exclusions:
     rules:
@@ -58,7 +58,7 @@ linters:
         linters:
           - dupl
           - gochecknoinits
-          - goerr113
+          - err113
       # Exclude generated files
       - path: zz_generated\.deepcopy\.go
         linters:
