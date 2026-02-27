@@ -50,10 +50,6 @@ type NovaRouteBGPHandler struct {
 	client    nrv1.RouteControlClient
 	cancelCtx context.CancelFunc // cancels the connection loop goroutine
 
-	// configuredAS tracks the local AS that was last configured via the
-	// ConfigureBGP RPC so we only reconfigure when the AS actually changes.
-	configuredAS uint32
-
 	// Track active VIPs for metrics and cleanup.
 	activeVIPs map[string]*novaRouteVIPState
 
@@ -66,9 +62,6 @@ type novaRouteVIPState struct {
 	address string
 	addedAt time.Time
 	isIPv6  bool
-	// peerAddrs tracks which peers were applied for this VIP so we can
-	// remove them when the VIP is withdrawn.
-	peerAddrs []string
 }
 
 // NewNovaRouteBGPHandler creates a handler that talks to NovaRoute.
@@ -272,11 +265,7 @@ func (h *NovaRouteBGPHandler) reconnect(ctx context.Context) bool {
 
 	h.logger.Info("NovaRoute reconnected and re-registered")
 
-	// Reset configuredAS so ensureBGPGlobal will reconfigure on the new
-	// NovaRoute instance (which has no state from the previous one).
-	h.configuredAS = 0
-
-	// Replay all active VIP assignments to restore BGP state in FRR.
+	// Replay all active VIP assignments to restore prefix announcements.
 	replayed := 0
 	for vipName, assignment := range h.lastAssignments {
 		// Clear the activeVIPs entry so AddVIP doesn't try to withdraw first.
@@ -321,11 +310,8 @@ func (h *NovaRouteBGPHandler) handleEvent(ev *nrv1.RouteEvent) {
 	}
 }
 
-// AddVIP announces a VIP via NovaRoute's BGP. It:
-//  1. Configures BGP peers through NovaRoute
-//  2. Binds the VIP address to loopback (same as GoBGP handler)
-//  3. Advertises the prefix via NovaRoute
-//  4. Configures BFD sessions if enabled
+// AddVIP announces a VIP via NovaRoute's BGP by binding the address to
+// loopback and advertising the prefix. BGP peers are managed by NovaRoute.
 func (h *NovaRouteBGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -337,11 +323,12 @@ func (h *NovaRouteBGPHandler) AddVIP(ctx context.Context, assignment *pb.VIPAssi
 }
 
 // addVIPLocked performs the actual AddVIP logic. Caller must hold h.mu.
+//
+// When using NovaRoute, BGP peering and global config (AS, router-id, peers,
+// BFD) are already managed by NovaNET/NovaRoute. This handler only:
+//   - Binds the VIP address to loopback
+//   - Advertises the prefix via NovaRoute
 func (h *NovaRouteBGPHandler) addVIPLocked(ctx context.Context, assignment *pb.VIPAssignment) error {
-	if assignment.BgpConfig == nil {
-		return fmt.Errorf("BGP config is required for BGP mode VIPs")
-	}
-
 	ip, _, err := net.ParseCIDR(assignment.Address)
 	if err != nil {
 		return fmt.Errorf("invalid VIP address %q: %w", assignment.Address, err)
@@ -365,46 +352,8 @@ func (h *NovaRouteBGPHandler) addVIPLocked(ctx context.Context, assignment *pb.V
 	h.logger.Info("Adding VIP via NovaRoute BGP",
 		zap.String("vip", assignment.VipName),
 		zap.String("address", assignment.Address),
-		zap.Uint32("local_as", assignment.BgpConfig.LocalAs),
 		zap.Bool("ipv6", isIPv6),
 	)
-
-	// Configure BGP global settings (AS number + router-id) via NovaRoute
-	// if the controller-provided AS differs from what we last configured.
-	// This replaces the DaemonSet env var workaround with proper code support.
-	if err := h.ensureBGPGlobal(ctx, assignment.BgpConfig); err != nil {
-		return fmt.Errorf("novaroute: configure BGP global: %w", err)
-	}
-
-	// Configure BGP peers.
-	var peerAddrs []string
-	for _, peer := range assignment.BgpConfig.Peers {
-		afs := []nrv1.AddressFamily{nrv1.AddressFamily_ADDRESS_FAMILY_IPV4_UNICAST}
-		peerIP := net.ParseIP(peer.Address)
-		if peerIP != nil && peerIP.To4() == nil {
-			afs = []nrv1.AddressFamily{nrv1.AddressFamily_ADDRESS_FAMILY_IPV6_UNICAST}
-		}
-
-		peerType := nrv1.PeerType_PEER_TYPE_EXTERNAL
-		if peer.As == assignment.BgpConfig.LocalAs {
-			peerType = nrv1.PeerType_PEER_TYPE_INTERNAL
-		}
-
-		_, err := h.client.ApplyPeer(ctx, &nrv1.ApplyPeerRequest{
-			Owner: h.ownerName,
-			Token: h.ownerToken,
-			Peer: &nrv1.BGPPeer{
-				NeighborAddress: peer.Address,
-				RemoteAs:        peer.As,
-				PeerType:        peerType,
-				AddressFamilies: afs,
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("novaroute: apply peer %s: %w", peer.Address, err)
-		}
-		peerAddrs = append(peerAddrs, peer.Address)
-	}
 
 	// Bind VIP to loopback so the node can receive traffic.
 	if err := addLoopbackAddr(assignment.Address); err != nil {
@@ -414,12 +363,15 @@ func (h *NovaRouteBGPHandler) addVIPLocked(ctx context.Context, assignment *pb.V
 		)
 	}
 
-	// Build prefix attributes.
-	attrs := &nrv1.PrefixAttributes{
-		NextHop: assignment.BgpConfig.RouterId,
+	// Build prefix attributes. Use BGP config for next-hop, communities,
+	// and local-pref if available — these are per-prefix attributes, not
+	// peering config.
+	attrs := &nrv1.PrefixAttributes{}
+	if assignment.BgpConfig != nil {
+		attrs.NextHop = assignment.BgpConfig.RouterId
+		attrs.LocalPreference = assignment.BgpConfig.LocalPreference
+		attrs.Communities = assignment.BgpConfig.Communities
 	}
-	attrs.LocalPreference = assignment.BgpConfig.LocalPreference
-	attrs.Communities = assignment.BgpConfig.Communities
 
 	// Advertise the prefix.
 	_, err = h.client.AdvertisePrefix(ctx, &nrv1.AdvertisePrefixRequest{
@@ -433,35 +385,10 @@ func (h *NovaRouteBGPHandler) addVIPLocked(ctx context.Context, assignment *pb.V
 		return fmt.Errorf("novaroute: advertise prefix %s: %w", assignment.Address, err)
 	}
 
-	// Configure BFD sessions if enabled.
-	if assignment.BfdConfig != nil && assignment.BfdConfig.Enabled {
-		minRxMs := parseDurationMs(assignment.BfdConfig.RequiredMinRxInterval, 300)
-		minTxMs := parseDurationMs(assignment.BfdConfig.DesiredMinTxInterval, 300)
-		detectMult := uint32(assignment.BfdConfig.DetectMultiplier)
-
-		for _, peer := range assignment.BgpConfig.Peers {
-			_, bfdErr := h.client.EnableBFD(ctx, &nrv1.EnableBFDRequest{
-				Owner:            h.ownerName,
-				Token:            h.ownerToken,
-				PeerAddress:      peer.Address,
-				MinRxMs:          minRxMs,
-				MinTxMs:          minTxMs,
-				DetectMultiplier: detectMult,
-			})
-			if bfdErr != nil {
-				h.logger.Warn("Failed to enable BFD via NovaRoute",
-					zap.String("peer", peer.Address),
-					zap.Error(bfdErr),
-				)
-			}
-		}
-	}
-
 	h.activeVIPs[assignment.VipName] = &novaRouteVIPState{
-		address:   assignment.Address,
-		addedAt:   time.Now(),
-		isIPv6:    isIPv6,
-		peerAddrs: peerAddrs,
+		address: assignment.Address,
+		addedAt: time.Now(),
+		isIPv6:  isIPv6,
 	}
 
 	metrics.BGPAnnouncedRoutes.Set(float64(len(h.activeVIPs)))
@@ -474,6 +401,8 @@ func (h *NovaRouteBGPHandler) addVIPLocked(ctx context.Context, assignment *pb.V
 }
 
 // RemoveVIP withdraws a VIP from NovaRoute BGP.
+// Only withdraws the prefix and unbinds the loopback address — BGP peers
+// and BFD sessions are managed by NovaNET/NovaRoute, not NovaEdge.
 func (h *NovaRouteBGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPAssignment) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -497,38 +426,6 @@ func (h *NovaRouteBGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPA
 		)
 	}
 
-	// Disable BFD sessions.
-	if assignment.BfdConfig != nil && assignment.BfdConfig.Enabled {
-		for _, peerAddr := range state.peerAddrs {
-			_, bfdErr := h.client.DisableBFD(ctx, &nrv1.DisableBFDRequest{
-				Owner:       h.ownerName,
-				Token:       h.ownerToken,
-				PeerAddress: peerAddr,
-			})
-			if bfdErr != nil {
-				h.logger.Warn("Failed to disable BFD via NovaRoute",
-					zap.String("peer", peerAddr),
-					zap.Error(bfdErr),
-				)
-			}
-		}
-	}
-
-	// Remove peers for this VIP.
-	for _, peerAddr := range state.peerAddrs {
-		_, peerErr := h.client.RemovePeer(ctx, &nrv1.RemovePeerRequest{
-			Owner:           h.ownerName,
-			Token:           h.ownerToken,
-			NeighborAddress: peerAddr,
-		})
-		if peerErr != nil {
-			h.logger.Warn("Failed to remove peer via NovaRoute",
-				zap.String("peer", peerAddr),
-				zap.Error(peerErr),
-			)
-		}
-	}
-
 	// Remove VIP from loopback.
 	if err := removeLoopbackAddr(state.address); err != nil {
 		h.logger.Warn("Failed to remove VIP from loopback",
@@ -545,51 +442,6 @@ func (h *NovaRouteBGPHandler) RemoveVIP(ctx context.Context, assignment *pb.VIPA
 		zap.String("vip", assignment.VipName),
 		zap.Duration("duration", time.Since(state.addedAt)),
 	)
-	return nil
-}
-
-// ensureBGPGlobal calls the ConfigureBGP RPC to set the local AS and router-id
-// in NovaRoute. It only makes the call when the AS has changed, avoiding
-// unnecessary reconfiguration. This is the code-level equivalent of the
-// GoBGP handler's startBGPServer() — it uses the controller-provided BgpConfig
-// to dynamically configure the local BGP AS per node.
-func (h *NovaRouteBGPHandler) ensureBGPGlobal(ctx context.Context, bgpCfg *pb.BGPConfig) error {
-	desiredAS := bgpCfg.LocalAs
-	routerID := bgpCfg.RouterId
-
-	if desiredAS == 0 {
-		return nil // No AS configured, nothing to do.
-	}
-
-	if h.configuredAS == desiredAS {
-		return nil // Already configured with this AS.
-	}
-
-	h.logger.Info("Configuring BGP global via NovaRoute",
-		zap.Uint32("desired_as", desiredAS),
-		zap.String("router_id", routerID),
-		zap.Uint32("previous_as", h.configuredAS),
-	)
-
-	resp, err := h.client.ConfigureBGP(ctx, &nrv1.ConfigureBGPRequest{
-		Owner:    h.ownerName,
-		Token:    h.ownerToken,
-		LocalAs:  desiredAS,
-		RouterId: routerID,
-	})
-	if err != nil {
-		return fmt.Errorf("ConfigureBGP RPC (AS=%d, router_id=%s): %w", desiredAS, routerID, err)
-	}
-
-	h.configuredAS = desiredAS
-
-	h.logger.Info("BGP global configured via NovaRoute",
-		zap.Uint32("local_as", desiredAS),
-		zap.String("router_id", routerID),
-		zap.Uint32("previous_as", resp.PreviousAs),
-		zap.String("previous_router_id", resp.PreviousRouterId),
-	)
-
 	return nil
 }
 
@@ -634,19 +486,6 @@ func addLoopbackAddr(cidr string) error {
 		return err
 	}
 	return nil
-}
-
-// parseDurationMs parses a Go-style duration string (e.g. "300ms") and returns
-// the value in milliseconds. If parsing fails it returns the provided default.
-func parseDurationMs(s string, defaultMs uint32) uint32 {
-	if s == "" {
-		return defaultMs
-	}
-	d, err := time.ParseDuration(s)
-	if err != nil {
-		return defaultMs
-	}
-	return uint32(d.Milliseconds())
 }
 
 // removeLoopbackAddr removes a VIP address from the loopback interface.
