@@ -90,7 +90,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: global-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # Unique federation identifier
   federationID: "prod-global"
@@ -154,7 +154,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   agent:
     # Controller connection configuration

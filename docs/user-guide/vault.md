@@ -62,7 +62,7 @@ vault write auth/kubernetes/config \
   kubernetes_host="https://kubernetes.default.svc"
 vault write auth/kubernetes/role/novaedge \
   bound_service_account_names=novaedge-controller \
-  bound_service_account_namespaces=novaedge-system \
+  bound_service_account_namespaces=nova-system \
   policies=novaedge-policy \
   ttl=1h
 ```

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: novaedge-agent
-  namespace: novaedge-system
+  namespace: nova-system
   labels:
     app.kubernetes.io/name: novaedge-agent
     app.kubernetes.io/component: agent
@@ -60,7 +60,7 @@ spec:
         env:
         # Controller gRPC service address
         - name: CONTROLLER_ADDRESS
-          value: "novaedge-controller.novaedge-system.svc.cluster.local:9090"
+          value: "novaedge-controller.nova-system.svc.cluster.local:9090"
 
         # Node name for identification
         - name: NODE_NAME
@@ -136,7 +136,7 @@ spec:
           # - Enabled filters (JWT validation, rate limiting add overhead)
           # - WebSocket/gRPC connection count (long-lived connections use more memory)
           # - TLS termination (CPU intensive)
-          # Monitor with: kubectl top pod -n novaedge-system -l app.kubernetes.io/name=novaedge-agent
+          # Monitor with: kubectl top pod -n nova-system -l app.kubernetes.io/name=novaedge-agent
           limits:
             cpu: 2000m
             memory: 1Gi

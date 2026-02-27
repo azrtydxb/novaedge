@@ -55,23 +55,23 @@ Generate or obtain certificates for secure agent-controller communication:
 # Create CA and client certificates, then create secrets:
 kubectl create secret generic novaedge-ca \
   --from-file=ca.crt=path/to/ca.crt \
-  -n novaedge-system
+  -n nova-system
 
 kubectl create secret tls novaedge-agent-cert \
   --cert=path/to/client.crt \
   --key=path/to/client.key \
-  -n novaedge-system
+  -n nova-system
 ```
 
 ### Step 2: Install the Chart
 
 ```bash
 # Create namespace
-kubectl create namespace novaedge-system
+kubectl create namespace nova-system
 
 # Install with required values
 helm install novaedge-agent ./charts/novaedge-agent \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --set cluster.name=edge-cluster-1 \
   --set cluster.region=us-west \
   --set connection.controllerEndpoint=controller.hub-cluster.example.com:9090 \
@@ -88,13 +88,13 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-cluster-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: edge-cluster-1
   region: us-west
   connection:
     mode: Direct
-    controllerEndpoint: controller.novaedge-system.svc.cluster.local:9090
+    controllerEndpoint: controller.nova-system.svc.cluster.local:9090
     tls:
       enabled: true
   healthCheck:
@@ -230,18 +230,18 @@ nodeSelector:
 
 1. Check agent logs:
    ```bash
-   kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent
+   kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent
    ```
 
 2. Verify network connectivity:
    ```bash
-   kubectl exec -n novaedge-system <agent-pod> -- nc -zv <controller-endpoint> 9090
+   kubectl exec -n nova-system <agent-pod> -- nc -zv <controller-endpoint> 9090
    ```
 
 3. Check TLS certificates:
    ```bash
-   kubectl get secrets -n novaedge-system
-   kubectl describe secret novaedge-agent-cert -n novaedge-system
+   kubectl get secrets -n nova-system
+   kubectl describe secret novaedge-agent-cert -n nova-system
    ```
 
 ### Certificate Issues
@@ -249,19 +249,19 @@ nodeSelector:
 1. Verify CA matches between hub and spoke:
    ```bash
    # On spoke cluster
-   kubectl get secret novaedge-ca -n novaedge-system -o jsonpath='{.data.ca\.crt}' | base64 -d | openssl x509 -text -noout
+   kubectl get secret novaedge-ca -n nova-system -o jsonpath='{.data.ca\.crt}' | base64 -d | openssl x509 -text -noout
    ```
 
 2. Check certificate expiration:
    ```bash
-   kubectl get secret novaedge-agent-cert -n novaedge-system -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -enddate -noout
+   kubectl get secret novaedge-agent-cert -n nova-system -o jsonpath='{.data.tls\.crt}' | base64 -d | openssl x509 -enddate -noout
    ```
 
 ## Uninstallation
 
 ```bash
-helm uninstall novaedge-agent -n novaedge-system
-kubectl delete namespace novaedge-system
+helm uninstall novaedge-agent -n nova-system
+kubectl delete namespace nova-system
 ```
 
 ## See Also

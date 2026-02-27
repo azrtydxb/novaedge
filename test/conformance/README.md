@@ -115,7 +115,7 @@ The `status.conditions` should contain an `Accepted: True` condition.
 Increase the timeout configuration or check that NovaEdge agents are running:
 
 ```bash
-kubectl get pods -n novaedge-system
+kubectl get pods -n nova-system
 ```
 
 ### Debug Mode

@@ -333,7 +333,7 @@ export function useDeletePolicy() {
 }
 
 // Agents
-export function useAgents(namespace: string = 'novaedge-system') {
+export function useAgents(namespace: string = 'nova-system') {
   return useQuery<AgentInfo[]>({
     queryKey: ['agents', namespace],
     queryFn: () => api.agents.list(namespace),

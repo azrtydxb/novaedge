@@ -271,7 +271,7 @@ sequenceDiagram
 
 The controller runs an embedded Mesh CA (`internal/controller/meshca/`) that signs workload certificates:
 
-- Root CA key: ECDSA P-384, stored in Kubernetes Secret `novaedge-mesh-ca` in namespace `novaedge-system`
+- Root CA key: ECDSA P-384, stored in Kubernetes Secret `novaedge-mesh-ca` in namespace `nova-system`
 - On first startup, the CA generates a new root key and persists it to the Secret
 - On subsequent startups, it loads the existing key from the Secret
 - Issued certificates include SPIFFE URI SANs and both `ClientAuth` and `ServerAuth` extended key usage
@@ -399,21 +399,21 @@ ss -tlnp | grep 15002
 
 ```bash
 # Check agent logs for certificate lifecycle events
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep "mesh.*cert"
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep "mesh.*cert"
 
 # Expected log lines:
 # "Mesh certificate obtained, scheduling renewal" expiry=... lifetime=24h0m0s renew_in=19h12m0s
 # "Mesh certificate applied" spiffe_id=spiffe://cluster.local/agent/node-1
 
 # Verify the CA secret exists
-kubectl get secret novaedge-mesh-ca -n novaedge-system
+kubectl get secret novaedge-mesh-ca -n nova-system
 ```
 
 ### Check mesh service count
 
 ```bash
 # Look for mesh config application in agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep "Mesh config applied"
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep "Mesh config applied"
 
 # Expected: "Mesh config applied" services=5 intercept_rules=8 routing_entries=8 authz_policies=3
 ```
@@ -431,7 +431,7 @@ If traffic to a mesh-enrolled service is not being intercepted:
 
 ```bash
 # Check for tunnel errors in agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep -i tunnel
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep -i tunnel
 
 # Common issues:
 # - "no mesh TLS certificate loaded" -> cert requester has not obtained a cert yet
@@ -443,7 +443,7 @@ kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep 
 
 ```bash
 # Check authorizer debug logs (set log level to debug)
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep "mesh authorization"
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep "mesh authorization"
 
 # Expected for denials:
 # "mesh authorization denied by DENY policy" policy=... source=... dest=...

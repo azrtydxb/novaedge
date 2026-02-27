@@ -27,7 +27,7 @@ const DEFAULT_FEDERATION_YAML = `apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: my-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   mode: mesh
   syncInterval: "30s"
@@ -46,7 +46,7 @@ const DEFAULT_REMOTE_CLUSTER_YAML = `apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: remote-cluster-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   endpoint: "https://remote-cluster:6443"
   tunnel:

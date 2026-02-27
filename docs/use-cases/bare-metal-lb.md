@@ -490,7 +490,7 @@ kubectl describe proxyvip web-vip-bgp
 kubectl get proxyippool production-pool -o jsonpath='{.status.allocations}'
 
 # Verify BGP peering from the node (if using BGP mode)
-kubectl exec -n novaedge-system daemonset/novaedge-agent -- \
+kubectl exec -n nova-system daemonset/novaedge-agent -- \
   novaedge-agent bgp status
 
 # Test VIP reachability

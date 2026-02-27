@@ -45,7 +45,7 @@ const (
 	caSecretName = "novaedge-mesh-ca" //nolint:gosec // not a credential, just a secret name
 
 	// caSecretNamespace is the namespace where the CA secret is stored.
-	caSecretNamespace = "novaedge-system"
+	caSecretNamespace = "nova-system"
 
 	// caSecretKeyCA is the key for the PEM-encoded CA certificate in the Secret.
 	caSecretKeyCA = "ca.crt"

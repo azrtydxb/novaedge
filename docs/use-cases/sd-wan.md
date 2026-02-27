@@ -58,7 +58,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANLink
 metadata:
   name: alpha-primary-fiber
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   site: site-alpha
   interface: eth0
@@ -82,7 +82,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANLink
 metadata:
   name: alpha-backup-lte
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   site: site-alpha
   interface: wwan0
@@ -108,7 +108,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANLink
 metadata:
   name: beta-primary-fiber
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   site: site-beta
   interface: eth0
@@ -132,7 +132,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANLink
 metadata:
   name: beta-backup-dsl
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   site: site-beta
   interface: eth1
@@ -160,7 +160,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANPolicy
 metadata:
   name: voice-policy
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   match:
     hosts:
@@ -186,7 +186,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANPolicy
 metadata:
   name: bulk-transfer-policy
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   match:
     hosts:
@@ -217,7 +217,7 @@ kubectl apply -f voice-policy.yaml
 kubectl apply -f bulk-transfer-policy.yaml
 
 # Verify link status
-kubectl get proxywanlinks -n novaedge-system
+kubectl get proxywanlinks -n nova-system
 ```
 
 Expected output:

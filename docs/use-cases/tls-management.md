@@ -677,7 +677,7 @@ Expected output includes `OCSP Response Status: successful`.
 ### Monitor Certificate Metrics
 
 ```bash
-kubectl exec -n novaedge-system daemonset/novaedge-agent -- \
+kubectl exec -n nova-system daemonset/novaedge-agent -- \
   curl -s localhost:9090/metrics | grep novaedge_certificate
 ```
 

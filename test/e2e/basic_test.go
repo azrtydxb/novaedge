@@ -62,11 +62,11 @@ func TestControllerReady(t *testing.T) {
 	defer cancel()
 
 	// Get the controller deployment - try Helm name first, then plain name
-	deploy, err := client.AppsV1().Deployments("novaedge-system").Get(ctx, "novaedge-controller", metav1.GetOptions{})
+	deploy, err := client.AppsV1().Deployments("nova-system").Get(ctx, "novaedge-controller", metav1.GetOptions{})
 	if err != nil {
 		// Fallback: try without namespace prefix for non-Helm deploys
 		t.Logf("novaedge-controller not found, trying alternate names")
-		deploys, listErr := client.AppsV1().Deployments("novaedge-system").List(ctx, metav1.ListOptions{
+		deploys, listErr := client.AppsV1().Deployments("nova-system").List(ctx, metav1.ListOptions{
 			LabelSelector: "app.kubernetes.io/component=controller",
 		})
 		if listErr != nil {
@@ -91,7 +91,7 @@ func TestAgentDaemonSet(t *testing.T) {
 	defer cancel()
 
 	// Get the agent DaemonSet
-	ds, err := client.AppsV1().DaemonSets("novaedge-system").Get(ctx, "novaedge-agent", metav1.GetOptions{})
+	ds, err := client.AppsV1().DaemonSets("nova-system").Get(ctx, "novaedge-agent", metav1.GetOptions{})
 	require.NoError(t, err, "Failed to get agent DaemonSet")
 
 	// Check that the DaemonSet has desired number of nodes
@@ -197,12 +197,12 @@ func TestPodDNSResolution(t *testing.T) {
 	defer cancel()
 
 	// Get the controller pod - try Helm labels first, then plain labels
-	pods, err := client.CoreV1().Pods("novaedge-system").List(ctx, metav1.ListOptions{
+	pods, err := client.CoreV1().Pods("nova-system").List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/component=controller",
 	})
 	if err == nil && len(pods.Items) == 0 {
 		// Fallback: try legacy label selector
-		pods, err = client.CoreV1().Pods("novaedge-system").List(ctx, metav1.ListOptions{
+		pods, err = client.CoreV1().Pods("nova-system").List(ctx, metav1.ListOptions{
 			LabelSelector: "app=novaedge-controller",
 		})
 	}
@@ -239,12 +239,12 @@ func TestClusterInfo(t *testing.T) {
 
 	var foundNovaEdge bool
 	for _, ns := range namespaces.Items {
-		if ns.Name == "novaedge-system" {
+		if ns.Name == "nova-system" {
 			foundNovaEdge = true
 			break
 		}
 	}
-	assert.True(t, foundNovaEdge, "Should have novaedge-system namespace")
+	assert.True(t, foundNovaEdge, "Should have nova-system namespace")
 
 	t.Log("Cluster info test passed")
 }
@@ -258,7 +258,7 @@ func TestHealthEndpoints(t *testing.T) {
 	defer cancel()
 
 	// Get the controller service
-	svc, err := client.CoreV1().Services("novaedge-system").Get(ctx, "novaedge-controller", metav1.GetOptions{})
+	svc, err := client.CoreV1().Services("nova-system").Get(ctx, "novaedge-controller", metav1.GetOptions{})
 	if err != nil {
 		t.Logf("Controller service may not exist: %v", err)
 		t.Skip("Controller service not found")
@@ -268,7 +268,7 @@ func TestHealthEndpoints(t *testing.T) {
 
 	// For ClusterIP services, we can test via port-forward in a real scenario
 	// For now, just verify the service exists and has endpoints
-	endpoints, err := client.CoreV1().Endpoints("novaedge-system").Get(ctx, "novaedge-controller", metav1.GetOptions{})
+	endpoints, err := client.CoreV1().Endpoints("nova-system").Get(ctx, "novaedge-controller", metav1.GetOptions{})
 	require.NoError(t, err, "Failed to get endpoints")
 
 	assert.NotEmpty(t, endpoints.Subsets, "Service should have endpoints")

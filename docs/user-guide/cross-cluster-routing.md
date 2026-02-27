@@ -248,7 +248,7 @@ Inspect the merged endpoint list for a service:
 
 ```bash
 # View the cluster endpoints in the current config snapshot
-kubectl -n novaedge-system exec deploy/novaedge-agent -- \
+kubectl -n nova-system exec deploy/novaedge-agent -- \
   novaedge-agent --dump-config | \
   jq '.clusters[] | select(.name=="my-service") | .endpoints[] | {address, labels}'
 ```

@@ -695,7 +695,7 @@ spec:
 kubectl get proxyvip main-vip -o yaml
 
 # Check agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep -i vip
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep -i vip
 
 # Verify interface binding (on the active node)
 ip addr show eth0
@@ -718,7 +718,7 @@ ip -6 neigh show
 
 ```bash
 # Check BGP session status
-kubectl exec -n novaedge-system <agent-pod> -- novactl bgp status
+kubectl exec -n nova-system <agent-pod> -- novactl bgp status
 
 # Verify routes on router
 show ip bgp summary
@@ -739,7 +739,7 @@ curl -s http://<agent-ip>:9090/metrics | grep bfd
 
 ```bash
 # Check OSPF neighbor states
-kubectl logs -n novaedge-system <agent-pod> | grep ospf
+kubectl logs -n nova-system <agent-pod> | grep ospf
 
 # Verify OSPF routes on router
 show ip ospf neighbor
