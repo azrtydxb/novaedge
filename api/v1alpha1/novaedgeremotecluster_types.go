@@ -82,7 +82,7 @@ type RemoteClusterConnection struct {
 	Mode ConnectionMode `json:"mode,omitempty"`
 
 	// ControllerEndpoint is the address of the hub controller's gRPC endpoint
-	// For Direct mode: "controller.novaedge-system.svc.cluster.local:9090" or external address
+	// For Direct mode: "controller.nova-system.svc.cluster.local:9090" or external address
 	// For Tunnel mode: tunnel relay address
 	// +kubebuilder:validation:Required
 	ControllerEndpoint string `json:"controllerEndpoint"`

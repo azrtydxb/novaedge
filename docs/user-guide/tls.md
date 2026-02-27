@@ -646,7 +646,7 @@ spec:
       dnsProvider: cloudflare
       dnsCredentialsRef:
         name: cloudflare-api-token
-        namespace: novaedge-system
+        namespace: nova-system
       dns01:
         provider: cloudflare
         credentialsRef:
@@ -663,7 +663,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: cloudflare-api-token
-  namespace: novaedge-system
+  namespace: nova-system
 type: Opaque
 stringData:
   api_token: "your-cloudflare-api-token"

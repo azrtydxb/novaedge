@@ -167,7 +167,7 @@ make lint
 ```bash
 # Install the operator
 helm install novaedge-operator ./charts/novaedge-operator \
-  --namespace novaedge-system --create-namespace
+  --namespace nova-system --create-namespace
 
 # Deploy NovaEdge via operator
 kubectl apply -f - <<EOF
@@ -175,7 +175,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
   agent:
@@ -185,7 +185,7 @@ spec:
 EOF
 
 # Verify
-kubectl get pods -n novaedge-system
+kubectl get pods -n nova-system
 ```
 
 ### Deploying Manually
@@ -206,9 +206,9 @@ kubectl apply -f config/agent/clusterrolebinding.yaml
 kubectl apply -f config/agent/daemonset.yaml
 
 # 4. Verify deployment
-kubectl get pods -n novaedge-system
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent
+kubectl get pods -n nova-system
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent
 ```
 
 ### Example Usage

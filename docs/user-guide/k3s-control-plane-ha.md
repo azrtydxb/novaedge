@@ -466,7 +466,7 @@ Deploy the NovaEdge controller with the `--enable-service-lb` flag:
 
 ```bash
 helm install novaedge novaedge/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set controller.extraArgs[0]="--enable-service-lb"
 ```
@@ -688,7 +688,7 @@ curl -sfL https://get.k3s.io | K3S_TOKEN=my-secret-token sh -s - server \
 # Install NovaEdge with Helm
 helm repo add novaedge https://piwi3910.github.io/novaedge
 helm install novaedge novaedge/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set controller.extraArgs[0]="--enable-service-lb"
 
@@ -808,7 +808,7 @@ openssl s_client -connect 10.0.0.100:6443 </dev/null 2>/dev/null | \
 kubectl get svc <name> -o jsonpath='{.metadata.annotations}'
 
 # Check the NovaEdge controller logs
-kubectl logs -n novaedge-system deploy/novaedge-controller | grep service
+kubectl logs -n nova-system deploy/novaedge-controller | grep service
 
 # Check the IP pool has available addresses
 kubectl get proxyippool default -o yaml
@@ -824,7 +824,7 @@ kubectl describe svc <name> | grep Events
 show ip bgp summary
 
 # Check NovaEdge agent logs for BGP errors
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep bgp
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep bgp
 
 # Verify connectivity to BGP peer
 nc -zv 10.0.0.254 179

@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: novaedge-controller
-  namespace: novaedge-system
+  namespace: nova-system
   labels:
     app.kubernetes.io/name: novaedge-controller
     app.kubernetes.io/component: controller
@@ -63,7 +63,7 @@ spec:
           # - Medium cluster (50-200 nodes, 100-500 gateways): cpu: 250m, memory: 256Mi
           # - Large cluster (200-500 nodes, 500-1000 gateways): cpu: 500m, memory: 512Mi
           # - XL cluster (>500 nodes, >1000 gateways): cpu: 1000m, memory: 1Gi
-          # Monitor actual usage with: kubectl top pod -n novaedge-system
+          # Monitor actual usage with: kubectl top pod -n nova-system
           limits:
             cpu: 500m
             memory: 512Mi

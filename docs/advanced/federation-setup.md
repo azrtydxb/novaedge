@@ -79,7 +79,7 @@ First, deploy NovaEdge on each cluster that will participate in the federation:
 
     # Install the operator
     helm install novaedge-operator ./charts/novaedge-operator \
-      --namespace novaedge-system \
+      --namespace nova-system \
       --create-namespace
 
     # Create NovaEdgeCluster
@@ -88,7 +88,7 @@ First, deploy NovaEdge on each cluster that will participate in the federation:
     kind: NovaEdgeCluster
     metadata:
       name: novaedge
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       version: "v0.1.0"
       controller:
@@ -117,7 +117,7 @@ First, deploy NovaEdge on each cluster that will participate in the federation:
 
     # Install the operator
     helm install novaedge-operator ./charts/novaedge-operator \
-      --namespace novaedge-system \
+      --namespace nova-system \
       --create-namespace
 
     # Create NovaEdgeCluster
@@ -126,7 +126,7 @@ First, deploy NovaEdge on each cluster that will participate in the federation:
     kind: NovaEdgeCluster
     metadata:
       name: novaedge
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       version: "v0.1.0"
       controller:
@@ -155,7 +155,7 @@ First, deploy NovaEdge on each cluster that will participate in the federation:
 
     # Install the operator
     helm install novaedge-operator ./charts/novaedge-operator \
-      --namespace novaedge-system \
+      --namespace nova-system \
       --create-namespace
 
     # Create NovaEdgeCluster
@@ -164,7 +164,7 @@ First, deploy NovaEdge on each cluster that will participate in the federation:
     kind: NovaEdgeCluster
     metadata:
       name: novaedge
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       version: "v0.1.0"
       controller:
@@ -195,7 +195,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: novaedge-controller-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   type: LoadBalancer
   ports:
@@ -213,7 +213,7 @@ Get the external endpoints:
 
 ```bash
 # On each cluster, get the external IP/hostname
-kubectl get svc novaedge-controller-federation -n novaedge-system \
+kubectl get svc novaedge-controller-federation -n nova-system \
   -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
 ```
 
@@ -232,7 +232,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: novaedge-federation-ca
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   isCA: true
   secretName: novaedge-federation-ca
@@ -249,7 +249,7 @@ apiVersion: cert-manager.io/v1
 kind: Issuer
 metadata:
   name: novaedge-federation-issuer
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   ca:
     secretName: novaedge-federation-ca
@@ -264,7 +264,7 @@ Generate certificates for each controller:
     kind: Certificate
     metadata:
       name: novaedge-federation-us-west
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       secretName: novaedge-federation-us-west-tls
       duration: 8760h  # 1 year
@@ -291,7 +291,7 @@ Generate certificates for each controller:
     kind: Certificate
     metadata:
       name: novaedge-federation-eu-west
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       secretName: novaedge-federation-eu-west-tls
       duration: 8760h
@@ -318,7 +318,7 @@ Generate certificates for each controller:
     kind: Certificate
     metadata:
       name: novaedge-federation-ap-east
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       secretName: novaedge-federation-ap-east-tls
       duration: 8760h
@@ -344,13 +344,13 @@ Export the CA and peer certificates, then create secrets on each cluster:
 
 ```bash
 # Export Federation CA (from the cluster where it was created)
-kubectl get secret novaedge-federation-ca -n novaedge-system \
+kubectl get secret novaedge-federation-ca -n nova-system \
   -o jsonpath='{.data.ca\.crt}' | base64 -d > federation-ca.crt
 
 # Export each controller's certificate
-kubectl get secret novaedge-federation-us-west-tls -n novaedge-system \
+kubectl get secret novaedge-federation-us-west-tls -n nova-system \
   -o jsonpath='{.data.tls\.crt}' | base64 -d > us-west.crt
-kubectl get secret novaedge-federation-us-west-tls -n novaedge-system \
+kubectl get secret novaedge-federation-us-west-tls -n nova-system \
   -o jsonpath='{.data.tls\.key}' | base64 -d > us-west.key
 
 # Repeat for other regions...
@@ -362,7 +362,7 @@ Create CA secret on each cluster:
 # On each cluster
 kubectl create secret generic novaedge-federation-ca \
   --from-file=ca.crt=federation-ca.crt \
-  -n novaedge-system
+  -n nova-system
 ```
 
 Create peer certificate secrets:
@@ -371,11 +371,11 @@ Create peer certificate secrets:
 # On US-West cluster - create secrets for connecting to EU-West and AP-East
 kubectl create secret tls novaedge-peer-eu-west \
   --cert=eu-west.crt --key=eu-west.key \
-  -n novaedge-system
+  -n nova-system
 
 kubectl create secret tls novaedge-peer-ap-east \
   --cert=ap-east.crt --key=ap-east.key \
-  -n novaedge-system
+  -n nova-system
 ```
 
 ## Step 4: Create Federation Configuration
@@ -389,7 +389,7 @@ Apply the `NovaEdgeFederation` resource on each cluster. Each cluster needs its 
     kind: NovaEdgeFederation
     metadata:
       name: global-federation
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       federationID: "prod-global"
 
@@ -456,7 +456,7 @@ Apply the `NovaEdgeFederation` resource on each cluster. Each cluster needs its 
     kind: NovaEdgeFederation
     metadata:
       name: global-federation
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       federationID: "prod-global"
 
@@ -518,7 +518,7 @@ Apply the `NovaEdgeFederation` resource on each cluster. Each cluster needs its 
     kind: NovaEdgeFederation
     metadata:
       name: global-federation
-      namespace: novaedge-system
+      namespace: nova-system
     spec:
       federationID: "prod-global"
 
@@ -582,7 +582,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   agent:
     controllers:
@@ -624,14 +624,14 @@ Check the federation status on each cluster:
 
 ```bash
 # Check federation resource status
-kubectl get novaedgefederation -n novaedge-system
+kubectl get novaedgefederation -n nova-system
 
 # Output:
 # NAME                FEDERATION-ID   PHASE     MEMBERS   SYNCED   AGE
 # global-federation   prod-global     Healthy   3         3        5m
 
 # Get detailed status
-kubectl describe novaedgefederation global-federation -n novaedge-system
+kubectl describe novaedgefederation global-federation -n nova-system
 ```
 
 Use `novactl` for federation management:
@@ -990,7 +990,7 @@ Import the federation dashboard:
 
 ```bash
 # The federation dashboard is included in the novaedge-operator chart
-kubectl get configmap novaedge-federation-dashboard -n novaedge-system -o yaml
+kubectl get configmap novaedge-federation-dashboard -n nova-system -o yaml
 ```
 
 ### Alerts
@@ -1040,18 +1040,18 @@ groups:
 
 ```bash
 # Check federation status
-kubectl describe novaedgefederation global-federation -n novaedge-system
+kubectl describe novaedgefederation global-federation -n nova-system
 
 # Check controller logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller \
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller \
   --tail=100 | grep -i federation
 
 # Verify network connectivity
-kubectl exec -n novaedge-system <controller-pod> -- \
+kubectl exec -n nova-system <controller-pod> -- \
   nc -zv controller.eu-west.example.com 9090
 
 # Check TLS certificates
-kubectl exec -n novaedge-system <controller-pod> -- \
+kubectl exec -n nova-system <controller-pod> -- \
   openssl s_client -connect controller.eu-west.example.com:9090 \
   -CAfile /etc/novaedge/federation/ca.crt
 ```
@@ -1060,14 +1060,14 @@ kubectl exec -n novaedge-system <controller-pod> -- \
 
 ```bash
 # Check agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent \
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent \
   --tail=100 | grep -i failover
 
 # Check agent connection status
 novactl agents list
 
 # Force agent reconnection
-kubectl rollout restart daemonset/novaedge-agent -n novaedge-system
+kubectl rollout restart daemonset/novaedge-agent -n nova-system
 ```
 
 ### Split-Brain Recovery
@@ -1077,11 +1077,11 @@ kubectl rollout restart daemonset/novaedge-agent -n novaedge-system
 novactl federation status
 
 # If stuck in partitioned state after network recovery:
-kubectl annotate novaedgefederation global-federation -n novaedge-system \
+kubectl annotate novaedgefederation global-federation -n nova-system \
   novaedge.io/force-reconcile=$(date +%s)
 
 # View anti-entropy logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller \
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller \
   --tail=100 | grep -i "anti-entropy"
 ```
 

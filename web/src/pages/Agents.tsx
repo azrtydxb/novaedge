@@ -176,7 +176,7 @@ export default function Agents() {
             label: 'View Logs',
             onClick: () => {
               const podName = row.podName ?? ''
-              const ns = row.namespace ?? 'novaedge-system'
+              const ns = row.namespace ?? 'nova-system'
               navigate(`/logs?pod=${encodeURIComponent(podName)}&namespace=${encodeURIComponent(ns)}`)
             },
           },
@@ -205,7 +205,7 @@ export default function Agents() {
                       size="sm"
                       onClick={() => {
                         const podName = agent.podName ?? ''
-                        const ns = agent.namespace ?? 'novaedge-system'
+                        const ns = agent.namespace ?? 'nova-system'
                         navigate(`/logs?pod=${encodeURIComponent(podName)}&namespace=${encodeURIComponent(ns)}`)
                       }}
                     >

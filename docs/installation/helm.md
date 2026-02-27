@@ -18,7 +18,7 @@ The recommended approach for production deployments.
 
 ```bash
 helm install novaedge-operator ./charts/novaedge-operator \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 ```
 
@@ -62,7 +62,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
   controller:
@@ -82,7 +82,7 @@ Deploy NovaEdge components directly without the operator.
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 ```
 
@@ -140,7 +140,7 @@ tracing:
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set controller.replicas=3 \
   --set controller.resources.requests.cpu=500m \
@@ -153,7 +153,7 @@ helm install novaedge ./charts/novaedge \
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set agent.vip.mode=BGP \
   --set agent.bgp.asn=65000 \
@@ -165,7 +165,7 @@ helm install novaedge ./charts/novaedge \
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set metrics.enabled=true \
   --set metrics.serviceMonitor.enabled=true \
@@ -177,7 +177,7 @@ helm install novaedge ./charts/novaedge \
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set webUI.enabled=true \
   --set webUI.service.type=LoadBalancer
@@ -191,7 +191,7 @@ For hub-spoke multi-cluster deployments.
 
 ```bash
 helm install novaedge-agent ./charts/novaedge-agent \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set controller.address=hub-controller.example.com:9090
 ```
@@ -290,13 +290,13 @@ clusterName: "spoke-cluster-1"
 ```bash
 # Update values and upgrade
 helm upgrade novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --set controller.image.tag=v0.2.0 \
   --set agent.image.tag=v0.2.0
 
 # Upgrade with values file
 helm upgrade novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   -f production-values.yaml
 ```
 
@@ -307,7 +307,7 @@ helm upgrade novaedge ./charts/novaedge \
 kubectl delete proxyvips,proxygateways,proxyroutes,proxybackends,proxypolicies --all -A
 
 # Uninstall chart
-helm uninstall novaedge -n novaedge-system
+helm uninstall novaedge -n nova-system
 
 # Remove CRDs (optional)
 kubectl delete crd proxyvips.novaedge.io proxygateways.novaedge.io \

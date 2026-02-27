@@ -86,7 +86,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANPolicy
 metadata:
   name: voice-low-latency
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   match:
     hosts:

@@ -2,7 +2,7 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: novaedge-controller-pdb
-  namespace: novaedge-system
+  namespace: nova-system
   labels:
     app.kubernetes.io/name: novaedge-controller
     app.kubernetes.io/component: controller

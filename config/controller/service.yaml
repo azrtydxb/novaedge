@@ -2,7 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: novaedge-controller
-  namespace: novaedge-system
+  namespace: nova-system
   labels:
     app.kubernetes.io/name: novaedge-controller
     app.kubernetes.io/component: controller

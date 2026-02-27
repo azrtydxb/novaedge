@@ -90,14 +90,14 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: global-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   federationID: prod-global
   localMember:
     name: us-east-1
     region: us-east
     zone: us-east-1a
-    endpoint: "novaedge-controller.novaedge-system.svc.cluster.local:9090"
+    endpoint: "novaedge-controller.nova-system.svc.cluster.local:9090"
     labels:
       tier: hub
       environment: production
@@ -152,7 +152,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: eu-west-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: eu-west-1
   region: eu-west
@@ -162,16 +162,16 @@ spec:
     environment: production
   connection:
     mode: Direct
-    controllerEndpoint: "novaedge-controller.novaedge-system.svc.cluster.local:9090"
+    controllerEndpoint: "novaedge-controller.nova-system.svc.cluster.local:9090"
     tls:
       enabled: true
       caSecretRef:
         name: federation-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: eu-west-1-client-cert
-        namespace: novaedge-system
-      serverName: novaedge-controller.novaedge-system.svc.cluster.local
+        namespace: nova-system
+      serverName: novaedge-controller.nova-system.svc.cluster.local
     reconnectInterval: "30s"
     timeout: "10s"
   agent:
@@ -206,7 +206,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: ap-southeast-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: ap-southeast-1
   region: ap-southeast
@@ -216,16 +216,16 @@ spec:
     environment: production
   connection:
     mode: Direct
-    controllerEndpoint: "novaedge-controller.novaedge-system.svc.cluster.local:9090"
+    controllerEndpoint: "novaedge-controller.nova-system.svc.cluster.local:9090"
     tls:
       enabled: true
       caSecretRef:
         name: federation-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: ap-southeast-1-client-cert
-        namespace: novaedge-system
-      serverName: novaedge-controller.novaedge-system.svc.cluster.local
+        namespace: nova-system
+      serverName: novaedge-controller.nova-system.svc.cluster.local
     reconnectInterval: "30s"
     timeout: "10s"
   routing:
@@ -252,7 +252,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-site-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: edge-site-1
   region: edge
@@ -279,7 +279,7 @@ spec:
       enabled: true
       caSecretRef:
         name: federation-ca
-        namespace: novaedge-system
+        namespace: nova-system
   routing:
     enabled: true
     priority: 300
@@ -304,7 +304,7 @@ openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
 
 # Create CA secret in hub cluster
 kubectl create secret generic federation-ca \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --from-file=ca.crt=federation-ca.crt
 
 # Generate client cert for eu-west-1
@@ -316,7 +316,7 @@ openssl x509 -req -in eu-west-1.csr -CA federation-ca.crt -CAkey federation-ca.k
   -CAcreateserial -out eu-west-1.crt -days 365
 
 kubectl create secret tls eu-west-1-client-cert \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --cert=eu-west-1.crt \
   --key=eu-west-1.key
 
@@ -329,7 +329,7 @@ openssl x509 -req -in ap-southeast-1.csr -CA federation-ca.crt -CAkey federation
   -CAcreateserial -out ap-southeast-1.crt -days 365
 
 kubectl create secret tls ap-southeast-1-client-cert \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --cert=ap-southeast-1.crt \
   --key=ap-southeast-1.key
 ```
@@ -492,7 +492,7 @@ With `quorumMode: AgentAssisted`, the system uses both controller and agent reac
 ### Check Federation Status
 
 ```bash
-kubectl get novaedgefederations -n novaedge-system
+kubectl get novaedgefederations -n nova-system
 
 # Expected output:
 # NAME                FEDERATION    LOCAL       MEMBERS   PHASE     AGE
@@ -500,13 +500,13 @@ kubectl get novaedgefederations -n novaedge-system
 ```
 
 ```bash
-kubectl describe novaedgefederation global-federation -n novaedge-system
+kubectl describe novaedgefederation global-federation -n nova-system
 ```
 
 ### Check Remote Cluster Status
 
 ```bash
-kubectl get novaedgeremoteclusters -n novaedge-system
+kubectl get novaedgeremoteclusters -n nova-system
 
 # Expected output:
 # NAME              CLUSTER          REGION         PHASE       CONNECTED   AGENTS   AGE
@@ -518,7 +518,7 @@ kubectl get novaedgeremoteclusters -n novaedge-system
 ### Inspect Remote Cluster Connection Details
 
 ```bash
-kubectl describe novaedgeremotecluster eu-west-1 -n novaedge-system
+kubectl describe novaedgeremotecluster eu-west-1 -n nova-system
 ```
 
 Look for:
@@ -546,7 +546,7 @@ kubectl get proxybackend api-backend -n production -o yaml | grep -A 5 endpointC
 ### Check Split-Brain Status
 
 ```bash
-kubectl get novaedgefederation global-federation -n novaedge-system \
+kubectl get novaedgefederation global-federation -n nova-system \
   -o jsonpath='{.status.splitBrain}' | jq .
 ```
 
@@ -565,7 +565,7 @@ Expected output when healthy:
 ### Monitor Federation Metrics
 
 ```bash
-kubectl exec -n novaedge-system deploy/novaedge-controller -- \
+kubectl exec -n nova-system deploy/novaedge-controller -- \
   curl -s localhost:9090/metrics | grep novaedge_federation
 ```
 
@@ -587,10 +587,10 @@ Disconnect a spoke cluster and observe automatic failover:
 ```bash
 # Scale down agents in the EU spoke (simulates cluster failure)
 # Run this in the EU cluster:
-kubectl scale daemonset novaedge-agent -n novaedge-system --replicas=0
+kubectl scale daemonset novaedge-agent -n nova-system --replicas=0
 
 # On the hub, watch the remote cluster status change
-kubectl get novaedgeremoteclusters -n novaedge-system -w
+kubectl get novaedgeremoteclusters -n nova-system -w
 
 # After unhealthyThreshold (3) missed health checks:
 # eu-west-1 transitions to Disconnected

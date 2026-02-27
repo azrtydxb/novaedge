@@ -133,7 +133,7 @@ The controller's embedded mesh CA automatically issues SPIFFE certificates to ev
 
 ```bash
 # Check agent logs for certificate issuance
-kubectl logs -n novaedge-system daemonset/novaedge-agent | grep -i "mesh cert"
+kubectl logs -n nova-system daemonset/novaedge-agent | grep -i "mesh cert"
 ```
 
 Expected log entries:
@@ -145,7 +145,7 @@ Expected log entries:
 
 ```bash
 # Verify the SPIFFE identity on a specific agent
-kubectl exec -n novaedge-system daemonset/novaedge-agent -- \
+kubectl exec -n nova-system daemonset/novaedge-agent -- \
   novaedge-agent mesh status
 ```
 
@@ -267,7 +267,7 @@ spec:
 
 ```bash
 # List active mesh tunnels on an agent
-kubectl exec -n novaedge-system daemonset/novaedge-agent -- \
+kubectl exec -n nova-system daemonset/novaedge-agent -- \
   novaedge-agent mesh tunnels
 ```
 
@@ -299,7 +299,7 @@ Expected output: `403`
 
 ```bash
 # Check mesh-specific Prometheus metrics
-kubectl exec -n novaedge-system daemonset/novaedge-agent -- \
+kubectl exec -n nova-system daemonset/novaedge-agent -- \
   curl -s localhost:9090/metrics | grep novaedge_mesh
 ```
 

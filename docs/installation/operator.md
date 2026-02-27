@@ -45,14 +45,14 @@ cd novaedge
 
 # Install the operator
 helm install novaedge-operator ./charts/novaedge-operator \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 ```
 
 Verify the operator is running:
 
 ```bash
-kubectl get pods -n novaedge-system -l app.kubernetes.io/name=novaedge-operator
+kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-operator
 ```
 
 ## Step 2: Deploy NovaEdge
@@ -65,7 +65,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
 
@@ -93,10 +93,10 @@ kubectl apply -f novaedge-cluster.yaml
 
 ```bash
 # Check cluster status
-kubectl get novaedgecluster -n novaedge-system
+kubectl get novaedgecluster -n nova-system
 
 # Check all pods are running
-kubectl get pods -n novaedge-system
+kubectl get pods -n nova-system
 
 # Expected output:
 # novaedge-operator-xxx      1/1     Running
@@ -114,7 +114,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge-prod
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
 
@@ -180,7 +180,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge-bgp
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
 
@@ -212,7 +212,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge-dev
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
   controller:
@@ -296,7 +296,7 @@ spec:
 Update the version in your `NovaEdgeCluster`:
 
 ```bash
-kubectl patch novaedgecluster novaedge -n novaedge-system \
+kubectl patch novaedgecluster novaedge -n nova-system \
   --type=merge \
   -p '{"spec":{"version":"v0.2.0"}}'
 ```
@@ -304,7 +304,7 @@ kubectl patch novaedgecluster novaedge -n novaedge-system \
 Monitor the upgrade:
 
 ```bash
-kubectl get novaedgecluster novaedge -n novaedge-system -w
+kubectl get novaedgecluster novaedge -n nova-system -w
 ```
 
 ## Cluster Status
@@ -312,7 +312,7 @@ kubectl get novaedgecluster novaedge -n novaedge-system -w
 Check the status of your deployment:
 
 ```bash
-kubectl describe novaedgecluster novaedge -n novaedge-system
+kubectl describe novaedgecluster novaedge -n nova-system
 ```
 
 Status fields:
@@ -329,10 +329,10 @@ Status fields:
 
 ```bash
 # Delete the cluster
-kubectl delete novaedgecluster novaedge -n novaedge-system
+kubectl delete novaedgecluster novaedge -n nova-system
 
 # Uninstall the operator
-helm uninstall novaedge-operator -n novaedge-system
+helm uninstall novaedge-operator -n nova-system
 
 # Optional: Remove CRDs
 kubectl delete crd novaedgeclusters.novaedge.io
@@ -343,26 +343,26 @@ kubectl delete crd novaedgeclusters.novaedge.io
 ### Operator Not Starting
 
 ```bash
-kubectl describe pod -n novaedge-system -l app.kubernetes.io/name=novaedge-operator
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-operator
+kubectl describe pod -n nova-system -l app.kubernetes.io/name=novaedge-operator
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-operator
 ```
 
 ### Cluster Stuck in Initializing
 
 ```bash
 # Check operator logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-operator
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-operator
 
 # Check events
-kubectl get events -n novaedge-system --sort-by='.lastTimestamp'
+kubectl get events -n nova-system --sort-by='.lastTimestamp'
 ```
 
 ### Components Not Ready
 
 ```bash
 # Check component logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/component=controller
-kubectl logs -n novaedge-system -l app.kubernetes.io/component=agent
+kubectl logs -n nova-system -l app.kubernetes.io/component=controller
+kubectl logs -n nova-system -l app.kubernetes.io/component=agent
 ```
 
 ## Next Steps

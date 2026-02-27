@@ -335,7 +335,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway
 metadata:
   name: management-gateway
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   vipRef: management-vip
   listeners:
@@ -348,13 +348,13 @@ spec:
         mode: TERMINATE
         certificateRefs:
           - name: dashboard-tls-secret
-            namespace: novaedge-system
+            namespace: nova-system
 ---
 apiVersion: novaedge.io/v1alpha1
 kind: ProxyRoute
 metadata:
   name: webui-route
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   gatewayRef:
     name: management-gateway
@@ -372,7 +372,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: webui-backend
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   serviceRef:
     name: novaedge-webui
@@ -383,7 +383,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: webui-jwt-auth
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   targetRef:
     kind: ProxyRoute
@@ -397,7 +397,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: webui-rate-limit
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   targetRef:
     kind: ProxyRoute
@@ -411,7 +411,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: webui-ip-filter
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   targetRef:
     kind: ProxyRoute

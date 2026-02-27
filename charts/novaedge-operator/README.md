@@ -32,11 +32,11 @@ helm repo update
 
 ```bash
 # Create namespace
-kubectl create namespace novaedge-system
+kubectl create namespace nova-system
 
 # Install the operator
 helm install novaedge-operator novaedge/novaedge-operator \
-  --namespace novaedge-system
+  --namespace nova-system
 ```
 
 ### Install from source
@@ -48,7 +48,7 @@ cd novaedge
 
 # Install the operator
 helm install novaedge-operator charts/novaedge-operator \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 ```
 
@@ -61,7 +61,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
 
@@ -193,13 +193,13 @@ helm upgrade novaedge-operator novaedge/novaedge-operator \
 
 ```bash
 # Get cluster status
-kubectl get novaedgeclusters -n novaedge-system
+kubectl get novaedgeclusters -n nova-system
 
 # Describe cluster details
-kubectl describe novaedgecluster novaedge -n novaedge-system
+kubectl describe novaedgecluster novaedge -n nova-system
 
 # Check component status
-kubectl get pods -n novaedge-system -l app.kubernetes.io/managed-by=novaedge-operator
+kubectl get pods -n nova-system -l app.kubernetes.io/managed-by=novaedge-operator
 ```
 
 ## Upgrading
@@ -208,7 +208,7 @@ kubectl get pods -n novaedge-system -l app.kubernetes.io/managed-by=novaedge-ope
 
 ```bash
 helm upgrade novaedge-operator novaedge/novaedge-operator \
-  --namespace novaedge-system
+  --namespace nova-system
 ```
 
 ### Upgrade a NovaEdge cluster
@@ -227,13 +227,13 @@ The operator will perform a rolling upgrade of all components.
 ### Remove NovaEdge clusters
 
 ```bash
-kubectl delete novaedgeclusters --all -n novaedge-system
+kubectl delete novaedgeclusters --all -n nova-system
 ```
 
 ### Uninstall the operator
 
 ```bash
-helm uninstall novaedge-operator -n novaedge-system
+helm uninstall novaedge-operator -n nova-system
 ```
 
 ### Remove CRDs (optional)
@@ -247,19 +247,19 @@ kubectl delete crd novaedgeclusters.novaedge.io
 ### Check operator logs
 
 ```bash
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-operator
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-operator
 ```
 
 ### Check controller logs
 
 ```bash
-kubectl logs -n novaedge-system -l app.kubernetes.io/component=controller
+kubectl logs -n nova-system -l app.kubernetes.io/component=controller
 ```
 
 ### Check agent logs
 
 ```bash
-kubectl logs -n novaedge-system -l app.kubernetes.io/component=agent
+kubectl logs -n nova-system -l app.kubernetes.io/component=agent
 ```
 
 ### Common issues

@@ -22,7 +22,7 @@ trap cleanup EXIT
 # Port-forward helper: starts port-forward, waits, returns PID
 start_pf() {
     local pod=$1 local_port=$2 remote_port=$3
-    kubectl port-forward -n novaedge-system "$pod" "${local_port}:${remote_port}" >/dev/null 2>&1 &
+    kubectl port-forward -n nova-system "$pod" "${local_port}:${remote_port}" >/dev/null 2>&1 &
     local pid=$!
     PF_PIDS+=("$pid")
     sleep 3
@@ -78,9 +78,9 @@ if [ -z "$ACTIVE_NODE" ]; then
     exit 1
 fi
 
-AGENT_POD=$(kubectl get pods -n novaedge-system -l app.kubernetes.io/name=novaedge-agent \
+AGENT_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent \
   --field-selector "spec.nodeName=$ACTIVE_NODE" -o jsonpath='{.items[0].metadata.name}')
-CTRL_POD=$(kubectl get pods -n novaedge-system -l app.kubernetes.io/name=novaedge-controller \
+CTRL_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-controller \
   -o jsonpath='{.items[0].metadata.name}')
 
 echo "============================================"
@@ -326,7 +326,7 @@ echo ""
 # ============================================================
 echo "--- Test 11: WebUI ---"
 PORT=$((PORT_BASE++))
-kubectl port-forward -n novaedge-system svc/novaedge-webui "${PORT}:80" >/dev/null 2>&1 &
+kubectl port-forward -n nova-system svc/novaedge-webui "${PORT}:80" >/dev/null 2>&1 &
 PF_PID=$!
 PF_PIDS+=("$PF_PID")
 sleep 3
@@ -342,10 +342,10 @@ echo ""
 # Test 12: Config Propagation
 # ============================================================
 echo "--- Test 12: Config Propagation ---"
-OLD_VERSION=$(kubectl logs "$AGENT_POD" -n novaedge-system --tail=3 | grep "Applied config" | tail -1 | grep -o '"version":"[^"]*"' || echo "none")
+OLD_VERSION=$(kubectl logs "$AGENT_POD" -n nova-system --tail=3 | grep "Applied config" | tail -1 | grep -o '"version":"[^"]*"' || echo "none")
 kubectl patch proxybackend api-backend -n default --type=merge -p '{"spec":{"idleTimeout":"180s"}}' >/dev/null 2>&1
 sleep 12
-NEW_VERSION=$(kubectl logs "$AGENT_POD" -n novaedge-system --tail=5 | grep "Applied config" | tail -1 | grep -o '"version":"[^"]*"' || echo "none")
+NEW_VERSION=$(kubectl logs "$AGENT_POD" -n nova-system --tail=5 | grep "Applied config" | tail -1 | grep -o '"version":"[^"]*"' || echo "none")
 if [ "$OLD_VERSION" != "$NEW_VERSION" ] && [ "$NEW_VERSION" != "none" ]; then
     echo "  PASS: Config snapshot updated ($OLD_VERSION -> $NEW_VERSION)"
     ((PASS++))

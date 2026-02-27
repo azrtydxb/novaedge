@@ -119,7 +119,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   selector:
     matchLabels:
@@ -278,13 +278,13 @@ spec:
 
 ```bash
 # Controller logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller
 
 # Agent logs on specific node
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent -c agent
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent -c agent
 
 # Follow logs
-kubectl logs -f -n novaedge-system -l app.kubernetes.io/name=novaedge-agent
+kubectl logs -f -n nova-system -l app.kubernetes.io/name=novaedge-agent
 ```
 
 ### Log Aggregation
@@ -332,7 +332,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
   name: novaedge-alerts
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   groups:
     - name: novaedge

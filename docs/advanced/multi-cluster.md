@@ -139,7 +139,7 @@ First, deploy the full NovaEdge stack on the hub cluster:
 
 # Install the operator
 helm install novaedge-operator ./charts/novaedge-operator \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 
 # Create NovaEdgeCluster with external access enabled
@@ -148,7 +148,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge-hub
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
   controller:
@@ -184,7 +184,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: novaedge-controller-external
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   type: LoadBalancer
   ports:
@@ -199,7 +199,7 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: novaedge-controller
-  namespace: novaedge-system
+  namespace: nova-system
   annotations:
     nginx.ingress.kubernetes.io/ssl-passthrough: "true"
     nginx.ingress.kubernetes.io/backend-protocol: "GRPCS"
@@ -232,7 +232,7 @@ apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: novaedge-agent-cert
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   secretName: novaedge-agent-cert
   duration: 8760h  # 1 year
@@ -252,13 +252,13 @@ Export certificates for spoke clusters:
 
 ```bash
 # Export CA certificate
-kubectl get secret novaedge-ca -n novaedge-system \
+kubectl get secret novaedge-ca -n nova-system \
   -o jsonpath='{.data.ca\.crt}' | base64 -d > ca.crt
 
 # Export agent certificate and key
-kubectl get secret novaedge-agent-cert -n novaedge-system \
+kubectl get secret novaedge-agent-cert -n nova-system \
   -o jsonpath='{.data.tls\.crt}' | base64 -d > tls.crt
-kubectl get secret novaedge-agent-cert -n novaedge-system \
+kubectl get secret novaedge-agent-cert -n nova-system \
   -o jsonpath='{.data.tls\.key}' | base64 -d > tls.key
 ```
 
@@ -271,21 +271,21 @@ On each spoke cluster:
 kubectl config use-context spoke-cluster-1
 
 # Create namespace
-kubectl create namespace novaedge-system
+kubectl create namespace nova-system
 
 # Create TLS secrets
 kubectl create secret generic novaedge-ca \
   --from-file=ca.crt=ca.crt \
-  -n novaedge-system
+  -n nova-system
 
 kubectl create secret tls novaedge-agent-cert \
   --cert=tls.crt \
   --key=tls.key \
-  -n novaedge-system
+  -n nova-system
 
 # Install agent chart
 helm install novaedge-agent ./charts/novaedge-agent \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --set cluster.name=edge-west-1 \
   --set cluster.region=us-west \
   --set connection.controllerEndpoint=novaedge-controller.example.com:9090 \
@@ -305,7 +305,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-west-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: edge-west-1
   region: us-west
@@ -316,7 +316,7 @@ spec:
 
   connection:
     mode: Direct
-    controllerEndpoint: novaedge-controller.novaedge-system.svc.cluster.local:9090
+    controllerEndpoint: novaedge-controller.nova-system.svc.cluster.local:9090
     tls:
       enabled: true
 
@@ -342,7 +342,7 @@ Check the status of remote clusters:
 
 ```bash
 # On hub cluster
-kubectl get novaedgeremoteclusters -n novaedge-system
+kubectl get novaedgeremoteclusters -n nova-system
 
 # Output:
 # NAME          CLUSTER       REGION    PHASE       CONNECTED   AGENTS   AGE
@@ -350,7 +350,7 @@ kubectl get novaedgeremoteclusters -n novaedge-system
 # edge-east-1   edge-east-1   eu-west   Connected   true        2        3m
 
 # Describe for details
-kubectl describe novaedgeremotecluster edge-west-1 -n novaedge-system
+kubectl describe novaedgeremotecluster edge-west-1 -n nova-system
 
 # Check status with novactl
 novactl status
@@ -447,7 +447,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-west-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: edge-west-1
   region: us-west
@@ -472,7 +472,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-west-2
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: edge-west-2
   region: us-west
@@ -499,7 +499,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: novaedge-tunnel-relay
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   replicas: 2
   selector:
@@ -541,7 +541,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: Prometheus
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # Federate metrics from remote clusters
   additionalScrapeConfigs:
@@ -552,7 +552,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: remote-cluster-scrape-configs
-  namespace: novaedge-system
+  namespace: nova-system
 stringData:
   prometheus.yaml: |
     - job_name: 'novaedge-edge-west-1'
@@ -569,7 +569,7 @@ The NovaEdge web UI provides a unified view of all clusters:
 
 ```bash
 # Access the web UI
-kubectl port-forward -n novaedge-system svc/novaedge-webui 9080:9080
+kubectl port-forward -n nova-system svc/novaedge-webui 9080:9080
 
 # Open http://localhost:9080
 # Navigate to: Clusters > Overview
@@ -611,14 +611,14 @@ kubectl port-forward -n novaedge-system svc/novaedge-webui 9080:9080
 
 ```bash
 # Check agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent --tail=100
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent --tail=100
 
 # Verify network connectivity
-kubectl exec -n novaedge-system <agent-pod> -- \
+kubectl exec -n nova-system <agent-pod> -- \
   nc -zv novaedge-controller.example.com 9090
 
 # Check TLS certificates
-kubectl exec -n novaedge-system <agent-pod> -- \
+kubectl exec -n nova-system <agent-pod> -- \
   openssl s_client -connect novaedge-controller.example.com:9090 \
   -CAfile /etc/novaedge/tls/ca.crt
 ```
@@ -627,13 +627,13 @@ kubectl exec -n novaedge-system <agent-pod> -- \
 
 ```bash
 # Check remote cluster status
-kubectl get novaedgeremotecluster -n novaedge-system
+kubectl get novaedgeremotecluster -n nova-system
 
 # View detailed status
-kubectl describe novaedgeremotecluster edge-west-1 -n novaedge-system
+kubectl describe novaedgeremotecluster edge-west-1 -n nova-system
 
 # Check controller logs for connection attempts
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller \
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller \
   --tail=100 | grep "edge-west-1"
 ```
 
@@ -647,7 +647,7 @@ novactl describe backend api-backend
 novactl describe route api-route
 
 # Test connectivity manually
-kubectl exec -n novaedge-system <agent-pod> -- \
+kubectl exec -n nova-system <agent-pod> -- \
   curl -v http://backend-service.remote-ns.svc.cluster.local:8080/health
 ```
 

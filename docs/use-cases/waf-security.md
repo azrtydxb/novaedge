@@ -842,7 +842,7 @@ curl -k -s -o /dev/null -w "%{http_code}" \
 ### Monitor Security Metrics
 
 ```bash
-kubectl exec -n novaedge-system daemonset/novaedge-agent -- \
+kubectl exec -n nova-system daemonset/novaedge-agent -- \
   curl -s localhost:9090/metrics | grep -E "novaedge_(waf|ratelimit|auth|policy)"
 ```
 
