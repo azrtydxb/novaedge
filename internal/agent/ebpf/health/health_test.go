@@ -18,10 +18,26 @@ package health
 
 import (
 	"runtime"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap/zaptest"
 )
+
+// skipIfBPFUnavailable skips the test if the error indicates that eBPF map
+// creation failed due to insufficient privileges (MEMLOCK limit or missing
+// CAP_BPF/CAP_SYS_ADMIN). This allows tests to pass in unprivileged CI.
+func skipIfBPFUnavailable(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		return
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "operation not permitted") ||
+		strings.Contains(msg, "MEMLOCK") {
+		t.Skipf("Skipping: eBPF unavailable (insufficient privileges): %v", err)
+	}
+}
 
 func TestNewHealthMonitor(t *testing.T) {
 	logger := zaptest.NewLogger(t)
@@ -34,6 +50,7 @@ func TestNewHealthMonitor(t *testing.T) {
 		return
 	}
 
+	skipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewHealthMonitor() returned error: %v", err)
 	}
@@ -55,6 +72,7 @@ func TestHealthMonitorPoll(t *testing.T) {
 		return
 	}
 
+	skipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewHealthMonitor() returned error: %v", err)
 	}
@@ -83,6 +101,7 @@ func TestHealthMonitorCloseIdempotent(t *testing.T) {
 		return
 	}
 
+	skipIfBPFUnavailable(t, err)
 	if err != nil {
 		t.Fatalf("NewHealthMonitor() returned error: %v", err)
 	}
