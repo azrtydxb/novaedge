@@ -137,7 +137,10 @@ spec:
                     minimum: 0
                     type: integer
                   peers:
-                    description: Peers lists BGP peer configurations
+                    description: |-
+                      Peers lists BGP peer configurations.
+                      Required when using the built-in GoBGP backend.
+                      Optional (can be empty) when using NovaRoute, which manages peering externally.
                     items:
                       description: BGPPeer defines a BGP peer configuration
                       properties:
@@ -159,7 +162,6 @@ spec:
                       - address
                       - as
                       type: object
-                    minItems: 1
                     type: array
                   routerID:
                     description: RouterID is the BGP router ID (usually an IP address)
@@ -167,7 +169,6 @@ spec:
                     type: string
                 required:
                 - localAS
-                - peers
                 - routerID
                 type: object
               healthPolicy:
