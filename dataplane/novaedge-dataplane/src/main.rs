@@ -9,10 +9,13 @@ use clap::Parser;
 use tracing::{info, warn};
 
 mod flows;
+mod health;
+mod lb;
 mod loader;
 mod maps;
 mod proto;
 mod server;
+mod upstream;
 
 /// NovaEdge Rust dataplane daemon.
 #[derive(Parser, Debug)]
