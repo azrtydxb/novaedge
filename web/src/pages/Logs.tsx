@@ -70,7 +70,7 @@ interface ParsedLine {
 }
 
 export default function Logs() {
-  const [namespace, setNamespace] = useState('novaedge-system')
+  const [namespace, setNamespace] = useState('nova-system')
   const [selectedPod, setSelectedPod] = useState('')
   const [tailLines, setTailLines] = useState(100)
   const [levelFilter, setLevelFilter] = useState<Set<LogLevel>>(new Set(LEVEL_OPTIONS))
@@ -164,7 +164,7 @@ export default function Logs() {
               <Input
                 value={namespace}
                 onChange={(e) => setNamespace(e.target.value)}
-                placeholder="novaedge-system"
+                placeholder="nova-system"
               />
             </div>
 

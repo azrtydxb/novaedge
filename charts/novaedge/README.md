@@ -18,12 +18,12 @@ cd novaedge
 
 # Install with default values
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 
 # Install with custom values
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   -f my-values.yaml
 ```
@@ -32,13 +32,13 @@ helm install novaedge ./charts/novaedge \
 
 ```bash
 helm upgrade novaedge ./charts/novaedge \
-  --namespace novaedge-system
+  --namespace nova-system
 ```
 
 ### Uninstalling
 
 ```bash
-helm uninstall novaedge --namespace novaedge-system
+helm uninstall novaedge --namespace nova-system
 
 # CRDs are preserved by default, to remove them:
 kubectl delete crds proxybackends.novaedge.io proxygateways.novaedge.io \
@@ -125,7 +125,7 @@ kubectl delete crds proxybackends.novaedge.io proxygateways.novaedge.io \
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 ```
 
@@ -168,7 +168,7 @@ webui:
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   -f production-values.yaml
 ```
@@ -192,7 +192,7 @@ webui:
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   -f dev-values.yaml
 ```
@@ -201,7 +201,7 @@ helm install novaedge ./charts/novaedge \
 
 ```bash
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set webui.enabled=false
 ```
@@ -238,15 +238,15 @@ The chart deploys the following components:
 
 ```bash
 # Controller
-kubectl get pods -n novaedge-system -l app.kubernetes.io/component=controller
-kubectl logs -n novaedge-system -l app.kubernetes.io/component=controller
+kubectl get pods -n nova-system -l app.kubernetes.io/component=controller
+kubectl logs -n nova-system -l app.kubernetes.io/component=controller
 
 # Agent
-kubectl get pods -n novaedge-system -l app.kubernetes.io/component=agent
-kubectl logs -n novaedge-system -l app.kubernetes.io/component=agent
+kubectl get pods -n nova-system -l app.kubernetes.io/component=agent
+kubectl logs -n nova-system -l app.kubernetes.io/component=agent
 
 # Web UI
-kubectl get pods -n novaedge-system -l app.kubernetes.io/component=webui
+kubectl get pods -n nova-system -l app.kubernetes.io/component=webui
 ```
 
 ### Verify CRDs
@@ -258,8 +258,8 @@ kubectl get crds | grep novaedge.io
 ### Check Helm Release
 
 ```bash
-helm status novaedge -n novaedge-system
-helm get values novaedge -n novaedge-system
+helm status novaedge -n nova-system
+helm get values novaedge -n nova-system
 ```
 
 ## License

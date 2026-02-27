@@ -39,7 +39,7 @@ cd novaedge
 
 # Install operator with Helm
 helm install novaedge-operator ./charts/novaedge-operator \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 ```
 
@@ -53,7 +53,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
 
@@ -79,10 +79,10 @@ kubectl apply -f novaedge-cluster.yaml
 
 ```bash
 # Check cluster status
-kubectl get novaedgecluster -n novaedge-system
+kubectl get novaedgecluster -n nova-system
 
 # Check pods
-kubectl get pods -n novaedge-system
+kubectl get pods -n nova-system
 
 # Expected output:
 # novaedge-operator-xxx     1/1     Running
@@ -101,7 +101,7 @@ cd novaedge
 
 # Install with Helm
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set agent.vip.enabled=true \
   --set agent.vip.mode=L2
@@ -112,7 +112,7 @@ helm install novaedge ./charts/novaedge \
 ```bash
 # Production with BGP
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set controller.replicas=3 \
   --set agent.vip.mode=BGP \
@@ -120,7 +120,7 @@ helm install novaedge ./charts/novaedge \
 
 # With metrics and tracing
 helm install novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace \
   --set metrics.enabled=true \
   --set tracing.enabled=true \
@@ -148,7 +148,7 @@ kubectl apply -f config/crd/
 ### Create Namespace
 
 ```bash
-kubectl create namespace novaedge-system
+kubectl create namespace nova-system
 ```
 
 ### Deploy RBAC
@@ -191,20 +191,20 @@ kubectl get crds | grep novaedge.io
 
 ```bash
 # Pod status
-kubectl get pods -n novaedge-system -l app.kubernetes.io/name=novaedge-controller
+kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-controller
 
 # Logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller
 ```
 
 ### Check Agents
 
 ```bash
 # Pod status (one per node)
-kubectl get pods -n novaedge-system -l app.kubernetes.io/name=novaedge-agent -o wide
+kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent -o wide
 
 # Logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent
 ```
 
 ## Configuration
@@ -244,19 +244,19 @@ Agents require specific node capabilities:
 
 ```bash
 # Update the version
-kubectl patch novaedgecluster novaedge -n novaedge-system \
+kubectl patch novaedgecluster novaedge -n nova-system \
   --type=merge \
   -p '{"spec":{"version":"v0.2.0"}}'
 
 # Monitor rollout
-kubectl get novaedgecluster novaedge -n novaedge-system -w
+kubectl get novaedgecluster novaedge -n nova-system -w
 ```
 
 ### Using Helm
 
 ```bash
 helm upgrade novaedge ./charts/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --set controller.image.tag=v0.2.0 \
   --set agent.image.tag=v0.2.0
 ```
@@ -274,16 +274,16 @@ kubectl delete proxyvips,proxygateways,proxyroutes,proxybackends,proxypolicies -
 
 ```bash
 # Delete the cluster
-kubectl delete novaedgecluster novaedge -n novaedge-system
+kubectl delete novaedgecluster novaedge -n nova-system
 
 # Uninstall operator
-helm uninstall novaedge-operator -n novaedge-system
+helm uninstall novaedge-operator -n nova-system
 ```
 
 ### Using Helm Direct
 
 ```bash
-helm uninstall novaedge -n novaedge-system
+helm uninstall novaedge -n nova-system
 ```
 
 ### Remove CRDs
@@ -293,7 +293,7 @@ make uninstall-crds
 # Or: kubectl delete -f config/crd/
 
 # Remove namespace
-kubectl delete namespace novaedge-system
+kubectl delete namespace nova-system
 ```
 
 ## Troubleshooting
@@ -302,31 +302,31 @@ kubectl delete namespace novaedge-system
 
 ```bash
 # Check pod events
-kubectl describe pod -n novaedge-system -l app.kubernetes.io/name=novaedge-controller
+kubectl describe pod -n nova-system -l app.kubernetes.io/name=novaedge-controller
 
 # Check RBAC
 kubectl auth can-i list proxygateways \
-  --as=system:serviceaccount:novaedge-system:novaedge-controller
+  --as=system:serviceaccount:nova-system:novaedge-controller
 ```
 
 ### Agents Not Connecting
 
 ```bash
 # Check controller service
-kubectl get svc -n novaedge-system novaedge-controller
+kubectl get svc -n nova-system novaedge-controller
 
 # Test connectivity from agent
-kubectl exec -n novaedge-system <agent-pod> -- nc -zv novaedge-controller 9090
+kubectl exec -n nova-system <agent-pod> -- nc -zv novaedge-controller 9090
 ```
 
 ### VIP Not Working
 
 ```bash
 # Check agent logs for VIP errors
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep -i vip
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep -i vip
 
 # Verify capabilities
-kubectl get pod <agent-pod> -n novaedge-system -o yaml | grep -A5 securityContext
+kubectl get pod <agent-pod> -n nova-system -o yaml | grep -A5 securityContext
 ```
 
 ## Next Steps

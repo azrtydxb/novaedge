@@ -2,7 +2,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANLink
 metadata:
   name: site-a-isp1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   site: site-a
   interface: eth0

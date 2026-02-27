@@ -21,7 +21,7 @@ VIP_ADDRESS="${VIP_ADDRESS:-192.168.100.50}"
 VIP_NAME="${VIP_NAME:-lb-vip}"
 GATEWAY_NAME="${GATEWAY_NAME:-lb-gateway}"
 ECHO_HOST="e2e.test.local"
-NOVAEDGE_NS="novaedge-system"
+NOVAEDGE_NS="nova-system"
 SNAPSHOT_WAIT="${SNAPSHOT_WAIT:-15}"  # seconds to wait for config snapshot propagation
 POLICY_WAIT="${POLICY_WAIT:-12}"     # seconds to wait for policy application
 

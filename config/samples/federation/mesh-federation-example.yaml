@@ -22,7 +22,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: mesh-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # mesh: bidirectional sync with cross-cluster endpoint merging
   mode: mesh
@@ -54,10 +54,10 @@ spec:
         enabled: true
         caSecretRef:
           name: federation-ca
-          namespace: novaedge-system
+          namespace: nova-system
         clientCertSecretRef:
           name: federation-client-cert
-          namespace: novaedge-system
+          namespace: nova-system
         serverName: novaedge-eu.example.com
 
   # Sync settings for bidirectional replication
@@ -72,7 +72,7 @@ spec:
     excludeNamespaces:
       - kube-system
       - kube-public
-      - novaedge-system
+      - nova-system
 
   # Conflict resolution is critical in mesh mode since both sides can write
   conflictResolution:

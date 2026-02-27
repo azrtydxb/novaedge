@@ -233,7 +233,7 @@ deploy_novaedge() {
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: novaedge-system
+  name: nova-system
 EOF
 
   cat > "${TMPDIR_DEPLOY}/02-rbac.yaml" <<'EOF'
@@ -241,7 +241,7 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: novaedge-controller
-  namespace: novaedge-system
+  namespace: nova-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -290,13 +290,13 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: novaedge-controller
-  namespace: novaedge-system
+  namespace: nova-system
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: novaedge-agent
-  namespace: novaedge-system
+  namespace: nova-system
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -321,7 +321,7 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: novaedge-agent
-  namespace: novaedge-system
+  namespace: nova-system
 EOF
 
   cat > "${TMPDIR_DEPLOY}/03-controller.yaml" <<'EOF'
@@ -329,7 +329,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: novaedge-controller
-  namespace: novaedge-system
+  namespace: nova-system
   labels:
     app.kubernetes.io/name: novaedge-controller
 spec:
@@ -381,7 +381,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: novaedge-agent
-  namespace: novaedge-system
+  namespace: nova-system
   labels:
     app.kubernetes.io/name: novaedge-agent
 spec:
@@ -407,7 +407,7 @@ spec:
         image: ghcr.io/piwi3910/novaedge-agent:nightly
         args:
         - "--node-name=$(NODE_NAME)"
-        - "--controller-addr=novaedge-controller.novaedge-system.svc.cluster.local:8082"
+        - "--controller-addr=novaedge-controller.nova-system.svc.cluster.local:8082"
         env:
         - name: NODE_NAME
           valueFrom:
@@ -512,14 +512,14 @@ for manifest in /tmp/novaedge-deploy/0*.yaml; do
 done
 
 echo "Waiting for NovaEdge controller..."
-kubectl -n novaedge-system rollout status deployment/novaedge-controller --timeout=120s 2>/dev/null || true
+kubectl -n nova-system rollout status deployment/novaedge-controller --timeout=120s 2>/dev/null || true
 
 echo "Waiting for NovaEdge agents..."
-kubectl -n novaedge-system rollout status daemonset/novaedge-agent --timeout=120s 2>/dev/null || true
+kubectl -n nova-system rollout status daemonset/novaedge-agent --timeout=120s 2>/dev/null || true
 
 echo ""
 echo "NovaEdge deployed:"
-kubectl -n novaedge-system get pods -o wide
+kubectl -n nova-system get pods -o wide
 
 rm -rf /tmp/novaedge-deploy
 APPLYEOF
@@ -544,7 +544,7 @@ kubectl get nodes -o wide
 
 echo ""
 echo "=== NovaEdge Pods ==="
-kubectl -n novaedge-system get pods -o wide 2>/dev/null || echo "No NovaEdge pods"
+kubectl -n nova-system get pods -o wide 2>/dev/null || echo "No NovaEdge pods"
 
 echo ""
 echo "=== CP VIP Status ==="

@@ -78,7 +78,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: site-b
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: site-b
   region: us-west-2
@@ -122,7 +122,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANLink
 metadata:
   name: site-a-isp1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   site: site-a
   interface: eth0
@@ -146,7 +146,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANLink
 metadata:
   name: site-a-isp2
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   site: site-a
   interface: eth1
@@ -179,7 +179,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANPolicy
 metadata:
   name: voice-low-latency
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   match:
     hosts:
@@ -203,13 +203,13 @@ Check the status of your WAN links and policies:
 
 ```bash
 # View WAN link status
-kubectl get proxywanlinks -n novaedge-system
+kubectl get proxywanlinks -n nova-system
 
 # View WAN policy status
-kubectl get proxywanpolicies -n novaedge-system
+kubectl get proxywanpolicies -n nova-system
 
 # Detailed link health
-kubectl describe proxywanlink site-a-isp1 -n novaedge-system
+kubectl describe proxywanlink site-a-isp1 -n nova-system
 ```
 
 ## WAN Link Management
@@ -310,7 +310,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANPolicy
 metadata:
   name: voice
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   match:
     hosts: ["voip.example.com"]
@@ -324,7 +324,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANPolicy
 metadata:
   name: db-replication
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   match:
     hosts: ["db-replica.internal"]
@@ -338,7 +338,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyWANPolicy
 metadata:
   name: backups
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   match:
     hosts: ["backup.example.com"]
@@ -433,15 +433,15 @@ Access it at **Operations > SD-WAN Topology** in the web interface.
 
 1. Verify WireGuard is loaded: `lsmod | grep wireguard`
 2. Check the tunnel endpoint is reachable: `nc -zu <publicIP> <port>`
-3. Verify the WireGuard public key matches: `kubectl get secret -n novaedge-system`
+3. Verify the WireGuard public key matches: `kubectl get secret -n nova-system`
 4. Check firewall rules allow UDP on the tunnel port
-5. Inspect agent logs: `kubectl logs -n novaedge-system -l app=novaedge-agent | grep wireguard`
+5. Inspect agent logs: `kubectl logs -n nova-system -l app=novaedge-agent | grep wireguard`
 
 ### High Latency on a Link
 
 **Symptoms**: Link shows high latency in status, policies avoid it.
 
-1. Check the link status: `kubectl describe proxywanlink <name> -n novaedge-system`
+1. Check the link status: `kubectl describe proxywanlink <name> -n nova-system`
 2. Verify the SLA thresholds are realistic for the link type (e.g., satellite links have inherently high latency)
 3. Run a manual latency test from the node: `ping -c 10 <peer-endpoint>`
 4. Check for congestion on the underlying interface: `ip -s link show <interface>`
@@ -453,7 +453,7 @@ Access it at **Operations > SD-WAN Topology** in the web interface.
 1. Confirm the `ProxyWANPolicy` has `failover: true`
 2. Verify there is an alternative link available (check `kubectl get proxywanlinks`)
 3. Check that the alternative link is healthy: `status.healthy` should be `true`
-4. Inspect agent logs for path selection decisions: `kubectl logs -n novaedge-system -l app=novaedge-agent | grep "path selection"`
+4. Inspect agent logs for path selection decisions: `kubectl logs -n nova-system -l app=novaedge-agent | grep "path selection"`
 5. Ensure the policy matches the traffic (check `hosts`, `paths`, and `headers` fields)
 
 ### DSCP Marks Not Applied

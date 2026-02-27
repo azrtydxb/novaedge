@@ -888,7 +888,7 @@ The `novaedge-agent` chart is designed for deploying agents in remote/edge clust
 | `connection.timeout` | Connection timeout | `10s` |
 
 **Examples:**
-- Direct mode: `controller.novaedge-system.svc.hub-cluster:9090`
+- Direct mode: `controller.nova-system.svc.hub-cluster:9090`
 - External: `novaedge-controller.example.com:9090`
 
 ### mTLS Configuration

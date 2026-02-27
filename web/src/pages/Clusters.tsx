@@ -22,7 +22,7 @@ const DEFAULT_CLUSTER_YAML = `apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: example-cluster
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "1.0.2"
   replicas:

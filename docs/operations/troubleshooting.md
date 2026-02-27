@@ -8,10 +8,10 @@ Common issues and solutions for NovaEdge deployments.
 
 ```bash
 # Check all pods
-kubectl get pods -n novaedge-system
+kubectl get pods -n nova-system
 
 # Check cluster status (operator mode)
-kubectl get novaedgecluster -n novaedge-system
+kubectl get novaedgecluster -n nova-system
 
 # Check CRDs
 kubectl get crds | grep novaedge
@@ -24,13 +24,13 @@ novactl status
 
 ```bash
 # Controller logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller
 
 # Agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent
 
 # Operator logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-operator
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-operator
 ```
 
 ## Installation Issues
@@ -58,10 +58,10 @@ kubectl get crds | grep novaedge.io
 **Diagnosis**:
 ```bash
 # Check pod events
-kubectl describe pod -n novaedge-system -l app.kubernetes.io/name=novaedge-controller
+kubectl describe pod -n nova-system -l app.kubernetes.io/name=novaedge-controller
 
 # Check logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller --previous
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller --previous
 ```
 
 **Common Causes**:
@@ -80,22 +80,22 @@ kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller --
 **Diagnosis**:
 ```bash
 # Check agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep -i "connect\|error"
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep -i "connect\|error"
 
 # Test connectivity
-kubectl exec -n novaedge-system <agent-pod> -- nc -zv novaedge-controller 9090
+kubectl exec -n nova-system <agent-pod> -- nc -zv novaedge-controller 9090
 
 # Check controller service
-kubectl get svc -n novaedge-system novaedge-controller
+kubectl get svc -n nova-system novaedge-controller
 ```
 
 **Solutions**:
 ```bash
 # Verify controller address
-kubectl get deployment novaedge-agent -n novaedge-system -o yaml | grep CONTROLLER_ADDR
+kubectl get deployment novaedge-agent -n nova-system -o yaml | grep CONTROLLER_ADDR
 
 # Check network policies
-kubectl get networkpolicies -n novaedge-system
+kubectl get networkpolicies -n nova-system
 ```
 
 ## Routing Issues
@@ -138,7 +138,7 @@ kubectl get proxybackend <backend-name> -o yaml
 kubectl get endpoints <service-name>
 
 # Test backend directly
-kubectl exec -n novaedge-system <agent-pod> -- curl -v http://<backend-ip>:<port>/health
+kubectl exec -n nova-system <agent-pod> -- curl -v http://<backend-ip>:<port>/health
 ```
 
 ## VIP Issues
@@ -153,7 +153,7 @@ kubectl exec -n novaedge-system <agent-pod> -- curl -v http://<backend-ip>:<port
 kubectl get proxyvip -o yaml
 
 # Check agent logs for VIP
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep -i vip
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep -i vip
 
 # Verify VIP is bound (on active node)
 ip addr show | grep <vip-address>
@@ -176,7 +176,7 @@ kubectl get proxyvip -o yaml | grep interface
 #### BGP Mode
 ```bash
 # Check BGP sessions
-kubectl exec -n novaedge-system <agent-pod> -- novactl bgp status
+kubectl exec -n nova-system <agent-pod> -- novactl bgp status
 
 # Verify peer config
 kubectl get proxyvip -o yaml | grep -A10 bgp
@@ -193,7 +193,7 @@ show ip route <vip-address>
 **Diagnosis**:
 ```bash
 # Check controller logs for failover
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller | grep -i failover
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller | grep -i failover
 
 # Check VIP assignment
 kubectl get proxyvip -o yaml | grep currentNode
@@ -334,7 +334,7 @@ spec:
 **Diagnosis**:
 ```bash
 # Check resource usage
-kubectl top pods -n novaedge-system
+kubectl top pods -n nova-system
 
 # Check OOM kills
 kubectl describe pod <pod-name> | grep -i oom
@@ -364,10 +364,10 @@ resources:
 kubectl get proxybackend -o yaml | grep -A10 healthCheck
 
 # Test health endpoint manually
-kubectl exec -n novaedge-system <agent-pod> -- curl -v http://<backend>:<port>/health
+kubectl exec -n nova-system <agent-pod> -- curl -v http://<backend>:<port>/health
 
 # Check agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep health
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep health
 ```
 
 **Common Causes**:
@@ -386,13 +386,13 @@ kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep 
 **Diagnosis**:
 ```bash
 # Check remote cluster status
-kubectl get novaedgeremotecluster -n novaedge-system
+kubectl get novaedgeremotecluster -n nova-system
 
 # Check agent logs on spoke
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep connect
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep connect
 
 # Verify mTLS certificates
-kubectl get secret novaedge-agent-cert -n novaedge-system
+kubectl get secret novaedge-agent-cert -n nova-system
 ```
 
 **Solutions**:
@@ -410,9 +410,9 @@ kubectl get secret novaedge-agent-cert -n novaedge-system
 novactl debug bundle -o novaedge-debug.tar.gz
 
 # Or manually
-kubectl get all -n novaedge-system -o yaml > novaedge-resources.yaml
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-controller > controller.log
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent > agent.log
+kubectl get all -n nova-system -o yaml > novaedge-resources.yaml
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-controller > controller.log
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent > agent.log
 ```
 
 ### Check Documentation

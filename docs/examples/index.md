@@ -325,7 +325,7 @@ metadata:
 spec:
   parentRefs:
     - name: shared-gateway
-      namespace: novaedge-system
+      namespace: nova-system
   hostnames:
     - tenant-a.example.com
   rules:
@@ -346,7 +346,7 @@ metadata:
 spec:
   parentRefs:
     - name: shared-gateway
-      namespace: novaedge-system
+      namespace: nova-system
   hostnames:
     - tenant-b.example.com
   rules:

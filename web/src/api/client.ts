@@ -439,7 +439,7 @@ export const api = {
 
   // Agents
   agents: {
-    list: async (namespace: string = 'novaedge-system'): Promise<AgentInfo[]> => {
+    list: async (namespace: string = 'nova-system'): Promise<AgentInfo[]> => {
       return fetchJSON<AgentInfo[]>(`${API_BASE}/agents?namespace=${namespace}`)
     },
   },

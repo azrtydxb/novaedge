@@ -67,7 +67,7 @@ Get running in 2 minutes:
 ```bash
 # Install the operator
 helm install novaedge-operator ./charts/novaedge-operator \
-  --namespace novaedge-system --create-namespace
+  --namespace nova-system --create-namespace
 
 # Deploy NovaEdge
 kubectl apply -f - <<EOF
@@ -75,7 +75,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
   agent:
@@ -85,7 +85,7 @@ spec:
 EOF
 
 # Verify
-kubectl get pods -n novaedge-system
+kubectl get pods -n nova-system
 ```
 
 [Full Quick Start Guide](getting-started/quickstart.md){ .md-button .md-button--primary }

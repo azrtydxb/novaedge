@@ -134,7 +134,7 @@ Example output:
 ```
 Agent on Node: worker-1
 Pod Name: novaedge-agent-abc123
-Namespace: novaedge-system
+Namespace: nova-system
 Status: Running
 Pod IP: 10.244.1.5
 Host IP: 192.168.1.10

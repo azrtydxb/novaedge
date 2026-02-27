@@ -24,7 +24,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: unified-global
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # unified: shared service namespace with location-aware routing
   mode: unified
@@ -57,10 +57,10 @@ spec:
         enabled: true
         caSecretRef:
           name: federation-ca
-          namespace: novaedge-system
+          namespace: nova-system
         clientCertSecretRef:
           name: federation-client-cert
-          namespace: novaedge-system
+          namespace: nova-system
         serverName: novaedge-eu.example.com
 
     - name: cluster-ap-south
@@ -75,10 +75,10 @@ spec:
         enabled: true
         caSecretRef:
           name: federation-ca
-          namespace: novaedge-system
+          namespace: nova-system
         clientCertSecretRef:
           name: federation-client-cert
-          namespace: novaedge-system
+          namespace: nova-system
         serverName: novaedge-ap.example.com
 
   # Aggressive sync for unified mode: endpoints must stay fresh

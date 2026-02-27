@@ -65,7 +65,7 @@ jobs:
       - name: Install NovaEdge
         run: |
           helm upgrade --install novaedge ./charts/novaedge \
-            --namespace novaedge-system \
+            --namespace nova-system \
             --create-namespace \
             --set controller.image.repository=novaedge-controller \
             --set controller.image.tag=latest \
@@ -82,15 +82,15 @@ jobs:
         run: |
           kubectl wait --for=condition=ready --timeout=300s pod \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=controller \
-            -n novaedge-system
+            -n nova-system
           kubectl wait --for=condition=ready --timeout=300s pod \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=agent \
-            -n novaedge-system
+            -n nova-system
 
       - name: Show pod status
         run: |
-          kubectl get pods -n novaedge-system -o wide
-          kubectl describe pods -n novaedge-system
+          kubectl get pods -n nova-system -o wide
+          kubectl describe pods -n nova-system
 
       - name: Run E2E tests
         run: |
@@ -102,12 +102,12 @@ jobs:
           mkdir -p logs
           kubectl logs \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=controller \
-            -n novaedge-system > logs/controller.log || true
+            -n nova-system > logs/controller.log || true
           kubectl logs \
             -l app.kubernetes.io/name=novaedge,app.kubernetes.io/component=agent \
-            -n novaedge-system > logs/agent.log || true
-          kubectl describe pods -n novaedge-system > logs/pods.log || true
-          kubectl get events -n novaedge-system --sort-by='.lastTimestamp' > logs/events.log || true
+            -n nova-system > logs/agent.log || true
+          kubectl describe pods -n nova-system > logs/pods.log || true
+          kubectl get events -n nova-system --sort-by='.lastTimestamp' > logs/events.log || true
 
       - name: Upload logs on failure
         if: failure()

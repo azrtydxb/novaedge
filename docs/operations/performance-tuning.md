@@ -61,7 +61,7 @@ NovaEdge uses eBPF/XDP by default for data plane acceleration. All three feature
 
 ```bash
 # Check agent logs for eBPF status
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep -E "XDP|AF_XDP|eBPF|sk_lookup"
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep -E "XDP|AF_XDP|eBPF|sk_lookup"
 
 # List loaded BPF programs
 bpftool prog list
@@ -246,12 +246,12 @@ Use `kubectl port-forward` to access from outside the cluster:
 
 ```bash
 # Agent CPU profile (30 seconds)
-kubectl -n novaedge-system port-forward pod/<agent-pod> 9901:9901
+kubectl -n nova-system port-forward pod/<agent-pod> 9901:9901
 curl -o cpu.pprof http://127.0.0.1:9901/debug/pprof/profile?seconds=30
 go tool pprof cpu.pprof
 
 # Controller heap profile
-kubectl -n novaedge-system port-forward pod/<controller-pod> 6060:6060
+kubectl -n nova-system port-forward pod/<controller-pod> 6060:6060
 curl -o heap.pprof http://127.0.0.1:6060/debug/pprof/heap
 go tool pprof heap.pprof
 ```

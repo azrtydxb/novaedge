@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	defaultAgentNamespace = "novaedge-system"
+	defaultAgentNamespace = "nova-system"
 )
 
 var (
