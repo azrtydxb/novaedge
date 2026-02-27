@@ -263,37 +263,37 @@ standalone-monitoring: docker-build-standalone ## Start standalone mode with mon
 
 .PHONY: helm-install
 helm-install: ## Install NovaEdge using Helm.
-	helm install novaedge charts/novaedge -n novaedge-system --create-namespace
+	helm install novaedge charts/novaedge -n nova-system --create-namespace
 
 .PHONY: helm-upgrade
 helm-upgrade: ## Upgrade NovaEdge using Helm.
-	helm upgrade novaedge charts/novaedge -n novaedge-system
+	helm upgrade novaedge charts/novaedge -n nova-system
 
 .PHONY: helm-uninstall
 helm-uninstall: ## Uninstall NovaEdge using Helm.
-	helm uninstall novaedge -n novaedge-system
+	helm uninstall novaedge -n nova-system
 
 .PHONY: helm-template
 helm-template: ## Generate Helm templates for debugging.
-	helm template novaedge charts/novaedge -n novaedge-system
+	helm template novaedge charts/novaedge -n nova-system
 
 ##@ Operator
 
 .PHONY: operator-install
 operator-install: ## Install NovaEdge Operator using Helm.
-	helm install novaedge-operator charts/novaedge-operator -n novaedge-system --create-namespace
+	helm install novaedge-operator charts/novaedge-operator -n nova-system --create-namespace
 
 .PHONY: operator-upgrade
 operator-upgrade: ## Upgrade NovaEdge Operator using Helm.
-	helm upgrade novaedge-operator charts/novaedge-operator -n novaedge-system
+	helm upgrade novaedge-operator charts/novaedge-operator -n nova-system
 
 .PHONY: operator-uninstall
 operator-uninstall: ## Uninstall NovaEdge Operator using Helm.
-	helm uninstall novaedge-operator -n novaedge-system
+	helm uninstall novaedge-operator -n nova-system
 
 .PHONY: operator-template
 operator-template: ## Generate Operator Helm templates for debugging.
-	helm template novaedge-operator charts/novaedge-operator -n novaedge-system
+	helm template novaedge-operator charts/novaedge-operator -n nova-system
 
 .PHONY: run-operator
 run-operator: fmt vet ## Run operator from your host.
