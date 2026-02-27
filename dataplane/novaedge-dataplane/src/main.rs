@@ -10,10 +10,12 @@ use tracing::{info, warn};
 
 mod flows;
 mod health;
+mod l4;
 mod lb;
 mod loader;
 mod maps;
 mod proto;
+mod proxy;
 mod server;
 mod upstream;
 
