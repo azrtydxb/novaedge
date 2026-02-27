@@ -8,7 +8,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyCertificate
 metadata:
   name: management-cert
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   domains:
     - management.example.com
@@ -26,7 +26,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway
 metadata:
   name: novaedge-management
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   listeners:
     - name: https
@@ -35,7 +35,7 @@ spec:
       tls:
         certificateRef:
           name: management-cert
-          namespace: novaedge-system
+          namespace: nova-system
         minVersion: "TLS1.2"
         cipherSuites:
           - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
@@ -51,7 +51,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: novaedge-webui
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   endpoints:
     - address: localhost
@@ -69,10 +69,10 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyBackend
 metadata:
   name: prometheus
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   endpoints:
-    - address: prometheus.novaedge-system.svc.cluster.local
+    - address: prometheus.nova-system.svc.cluster.local
       port: 9090
   healthCheck:
     path: /-/healthy
@@ -85,11 +85,11 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyRoute
 metadata:
   name: management-webui
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   parentRefs:
     - name: novaedge-management
-      namespace: novaedge-system
+      namespace: nova-system
   hostnames:
     - management.example.com
   rules:
@@ -99,7 +99,7 @@ spec:
             value: /
       backendRefs:
         - name: novaedge-webui
-          namespace: novaedge-system
+          namespace: nova-system
       filters:
         # Add security headers to all responses
         - type: ResponseSetHeader
@@ -119,11 +119,11 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyRoute
 metadata:
   name: management-metrics
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   parentRefs:
     - name: novaedge-management
-      namespace: novaedge-system
+      namespace: nova-system
   hostnames:
     - management.example.com
   rules:
@@ -133,7 +133,7 @@ spec:
             value: /prometheus
       backendRefs:
         - name: prometheus
-          namespace: novaedge-system
+          namespace: nova-system
       filters:
         # Strip /prometheus prefix when forwarding to Prometheus
         - type: URLRewrite
@@ -145,12 +145,12 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: management-ratelimit
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   targetRef:
     kind: ProxyGateway
     name: novaedge-management
-    namespace: novaedge-system
+    namespace: nova-system
   type: RateLimit
   rateLimit:
     requestsPerSecond: 100
@@ -163,12 +163,12 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: management-ipfilter
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   targetRef:
     kind: ProxyGateway
     name: novaedge-management
-    namespace: novaedge-system
+    namespace: nova-system
   type: IPAllowList
   ipList:
     cidrs:
@@ -182,12 +182,12 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyPolicy
 metadata:
   name: management-security-headers
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   targetRef:
     kind: ProxyGateway
     name: novaedge-management
-    namespace: novaedge-system
+    namespace: nova-system
   type: SecurityHeaders
   securityHeaders:
     hsts:
@@ -208,12 +208,12 @@ spec:
 # kind: ProxyPolicy
 # metadata:
 #   name: management-jwt
-#   namespace: novaedge-system
+#   namespace: nova-system
 # spec:
 #   targetRef:
 #     kind: ProxyGateway
 #     name: novaedge-management
-#     namespace: novaedge-system
+#     namespace: nova-system
 #   type: JWT
 #   jwt:
 #     issuer: https://auth.example.com
@@ -230,12 +230,12 @@ spec:
 # kind: ProxyPolicy
 # metadata:
 #   name: management-cors
-#   namespace: novaedge-system
+#   namespace: nova-system
 # spec:
 #   targetRef:
 #     kind: ProxyGateway
 #     name: novaedge-management
-#     namespace: novaedge-system
+#     namespace: nova-system
 #   type: CORS
 #   cors:
 #     allowOrigins:

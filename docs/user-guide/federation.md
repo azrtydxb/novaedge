@@ -178,10 +178,10 @@ openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key \
   -CAcreateserial -days 365 -out client.crt
 
 # Create Kubernetes secrets
-kubectl -n novaedge-system create secret tls federation-ca \
+kubectl -n nova-system create secret tls federation-ca \
   --cert=ca.crt --key=ca.key
 
-kubectl -n novaedge-system create secret tls federation-client-cert \
+kubectl -n nova-system create secret tls federation-client-cert \
   --cert=client.crt --key=client.key
 ```
 
@@ -199,7 +199,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: global-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   mode: hub-spoke
   federationID: global-prod
@@ -218,10 +218,10 @@ spec:
         enabled: true
         caSecretRef:
           name: federation-ca
-          namespace: novaedge-system
+          namespace: nova-system
         clientCertSecretRef:
           name: federation-client-cert
-          namespace: novaedge-system
+          namespace: nova-system
         serverName: spoke-eu.example.com
   sync:
     interval: 5s
@@ -242,7 +242,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: mesh-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   mode: mesh
   federationID: prod-mesh
@@ -261,10 +261,10 @@ spec:
         enabled: true
         caSecretRef:
           name: federation-ca
-          namespace: novaedge-system
+          namespace: nova-system
         clientCertSecretRef:
           name: federation-client-cert
-          namespace: novaedge-system
+          namespace: nova-system
         serverName: novaedge-eu.example.com
   conflictResolution:
     strategy: Merge
@@ -289,7 +289,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-eu-west
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: edge-eu-west
   region: eu-west-1
@@ -301,10 +301,10 @@ spec:
       enabled: true
       caSecretRef:
         name: remote-cluster-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: remote-agent-cert
-        namespace: novaedge-system
+        namespace: nova-system
       serverName: novaedge-hub.example.com
   routing:
     enabled: true
@@ -326,13 +326,13 @@ Check the federation status:
 
 ```bash
 # View federation status
-kubectl -n novaedge-system get novaedgefederations
+kubectl -n nova-system get novaedgefederations
 
 # Detailed status with member health
-kubectl -n novaedge-system describe novaedgefederation global-federation
+kubectl -n nova-system describe novaedgefederation global-federation
 
 # Check remote clusters
-kubectl -n novaedge-system get novaedgeremoteclusters
+kubectl -n nova-system get novaedgeremoteclusters
 ```
 
 A healthy federation shows `Phase: Healthy` with all members listed as healthy:
@@ -354,12 +354,12 @@ tls:
   # CA certificate used to verify the peer's server certificate
   caSecretRef:
     name: federation-ca
-    namespace: novaedge-system
+    namespace: nova-system
 
   # Client certificate and key for authenticating to the peer
   clientCertSecretRef:
     name: federation-client-cert
-    namespace: novaedge-system
+    namespace: nova-system
 
   # Expected server name in the peer's certificate (for SNI verification)
   serverName: novaedge-eu.example.com
@@ -434,10 +434,10 @@ NovaEdge exposes federation-specific Prometheus metrics:
 The `NovaEdgeFederation` status includes standard Kubernetes conditions and per-member health:
 
 ```bash
-kubectl -n novaedge-system get fed global-federation -o jsonpath='{.status.phase}'
+kubectl -n nova-system get fed global-federation -o jsonpath='{.status.phase}'
 # Healthy
 
-kubectl -n novaedge-system get fed global-federation -o jsonpath='{.status.members}' | jq .
+kubectl -n nova-system get fed global-federation -o jsonpath='{.status.members}' | jq .
 ```
 
 Key status fields:
@@ -460,7 +460,7 @@ Key status fields:
 1. Verify network connectivity: `nc -zv <peer-endpoint> 9443`
 2. Check firewall rules allow traffic on port 9443 between clusters
 3. Verify TLS secrets exist and contain valid certificates
-4. Check controller logs: `kubectl -n novaedge-system logs deploy/novaedge-controller | grep federation`
+4. Check controller logs: `kubectl -n nova-system logs deploy/novaedge-controller | grep federation`
 
 ### Peers show as unhealthy
 
@@ -468,7 +468,7 @@ Key status fields:
 
 **Resolution:**
 
-1. Check the `error` field in the member status: `kubectl -n novaedge-system get fed -o yaml`
+1. Check the `error` field in the member status: `kubectl -n nova-system get fed -o yaml`
 2. Verify the peer's endpoint is correct and resolvable
 3. Ensure TLS `serverName` matches the peer's certificate CN/SAN
 4. Increase `healthCheck.timeout` if the network has high latency
@@ -479,7 +479,7 @@ Key status fields:
 
 **Resolution:**
 
-1. Check pending conflicts: `kubectl -n novaedge-system get fed -o jsonpath='{.status.conflictsPending}'`
+1. Check pending conflicts: `kubectl -n nova-system get fed -o jsonpath='{.status.conflictsPending}'`
 2. If using `Manual` strategy, resolve conflicts by updating the resource in one cluster
 3. Consider switching to `Merge` or `LastWriterWins` for automatic resolution
 4. Review which teams are editing shared resources and establish ownership conventions
@@ -490,7 +490,7 @@ Key status fields:
 
 **Resolution:**
 
-1. Check partition state: `kubectl -n novaedge-system get fed -o jsonpath='{.status.splitBrain}'`
+1. Check partition state: `kubectl -n nova-system get fed -o jsonpath='{.status.splitBrain}'`
 2. Verify network connectivity between clusters
 3. If using tunnels, check tunnel health (see [Federation Tunnels](federation-tunnels.md))
 4. If writes are fenced, they will resume automatically once the partition heals and the grace period elapses

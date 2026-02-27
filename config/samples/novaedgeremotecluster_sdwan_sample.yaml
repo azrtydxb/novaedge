@@ -2,7 +2,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: site-b
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: site-b
   region: us-west-2

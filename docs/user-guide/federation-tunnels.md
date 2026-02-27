@@ -50,7 +50,7 @@ cat publickey    # Share this with the hub
 Create a Kubernetes secret in the remote cluster containing the private key:
 
 ```bash
-kubectl -n novaedge-system create secret generic wg-private-key \
+kubectl -n nova-system create secret generic wg-private-key \
   --from-file=privateKey=./privatekey
 ```
 
@@ -63,7 +63,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-onprem-dc1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   clusterName: edge-onprem-dc1
   region: us-west-2
@@ -79,10 +79,10 @@ spec:
       enabled: true
       caSecretRef:
         name: remote-cluster-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: remote-agent-cert
-        namespace: novaedge-system
+        namespace: nova-system
       serverName: novaedge-hub.internal
 
     tunnel:
@@ -138,10 +138,10 @@ spec:
       enabled: true
       caSecretRef:
         name: remote-cluster-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: remote-agent-cert
-        namespace: novaedge-system
+        namespace: nova-system
       serverName: novaedge-hub.internal
 
     reconnectInterval: 30s
@@ -174,10 +174,10 @@ spec:
       enabled: true
       caSecretRef:
         name: remote-cluster-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: remote-agent-cert
-        namespace: novaedge-system
+        namespace: nova-system
       serverName: novaedge-hub.example.com
 
     reconnectInterval: 30s
@@ -202,7 +202,7 @@ All tunnel types include automatic health checking and reconnection:
 3. **Health reporting** -- tunnel status is reflected in the `NovaEdgeRemoteCluster` status:
 
 ```bash
-kubectl -n novaedge-system get novaedgeremoteclusters edge-onprem-dc1 -o yaml
+kubectl -n nova-system get novaedgeremoteclusters edge-onprem-dc1 -o yaml
 ```
 
 Key status fields:

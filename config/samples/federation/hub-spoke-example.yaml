@@ -12,9 +12,9 @@
 #
 # Prerequisites:
 #   1. Create TLS secrets for mTLS between clusters:
-#      kubectl -n novaedge-system create secret tls federation-ca \
+#      kubectl -n nova-system create secret tls federation-ca \
 #        --cert=ca.crt --key=ca.key
-#      kubectl -n novaedge-system create secret tls federation-client-cert \
+#      kubectl -n nova-system create secret tls federation-client-cert \
 #        --cert=client.crt --key=client.key
 #   2. Ensure gRPC ports (9443) are reachable between clusters.
 
@@ -22,7 +22,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: global-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # hub-spoke: hub pushes config to spokes, no endpoint merging
   mode: hub-spoke
@@ -58,10 +58,10 @@ spec:
         enabled: true
         caSecretRef:
           name: federation-ca
-          namespace: novaedge-system
+          namespace: nova-system
         clientCertSecretRef:
           name: federation-client-cert
-          namespace: novaedge-system
+          namespace: nova-system
         serverName: spoke-eu.example.com
 
     # Second spoke: APAC region
@@ -77,10 +77,10 @@ spec:
         enabled: true
         caSecretRef:
           name: federation-ca
-          namespace: novaedge-system
+          namespace: nova-system
         clientCertSecretRef:
           name: federation-client-cert
-          namespace: novaedge-system
+          namespace: nova-system
         serverName: spoke-ap.example.com
 
   # Sync settings control how configuration is distributed

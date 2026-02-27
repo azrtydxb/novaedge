@@ -86,19 +86,19 @@ helm repo update
 
 # Install the operator
 helm install novaedge-operator novaedge/novaedge-operator \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 
 # Install the controller with Ingress support enabled
 helm install novaedge novaedge/novaedge \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --set controller.ingressClass.enabled=true \
   --set controller.ingressClass.name=novaedge \
   --set controller.ingressClass.default=false
 
 # Install the agent DaemonSet
 helm install novaedge-agent novaedge/novaedge-agent \
-  --namespace novaedge-system
+  --namespace nova-system
 ```
 
 ## Configuration
@@ -126,7 +126,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway
 metadata:
   name: ingress-gateway
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   vipRef: ingress-vip
   ingressClassName: novaedge
@@ -137,7 +137,7 @@ spec:
       tls:
         secretRef:
           name: default-tls-cert
-          namespace: novaedge-system
+          namespace: nova-system
         minVersion: "TLS1.2"
       sslRedirect: true
     - name: http
@@ -358,8 +358,8 @@ spec:
 kubectl get ingressclass novaedge
 
 # Check NovaEdge gateway is reconciling Ingress resources
-kubectl get proxygateway -n novaedge-system ingress-gateway
-kubectl describe proxygateway -n novaedge-system ingress-gateway
+kubectl get proxygateway -n nova-system ingress-gateway
+kubectl describe proxygateway -n nova-system ingress-gateway
 
 # Check VIP is active
 kubectl get proxyvip ingress-vip

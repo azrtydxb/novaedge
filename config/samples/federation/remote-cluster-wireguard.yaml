@@ -13,7 +13,7 @@
 #   2. Generate WireGuard key pair for the remote cluster:
 #        wg genkey | tee privatekey | wg pubkey > publickey
 #   3. Store the private key as a Kubernetes secret in the remote cluster:
-#        kubectl -n novaedge-system create secret generic wg-private-key \
+#        kubectl -n nova-system create secret generic wg-private-key \
 #          --from-file=privateKey=./privatekey
 #   4. Create mTLS secrets for agent authentication (same as direct mode).
 #   5. The hub's WireGuard endpoint (UDP port 51820) must be reachable from
@@ -23,7 +23,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-onprem-dc1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # Unique cluster name
   clusterName: edge-onprem-dc1
@@ -51,10 +51,10 @@ spec:
       enabled: true
       caSecretRef:
         name: remote-cluster-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: remote-agent-cert
-        namespace: novaedge-system
+        namespace: nova-system
       # Use the tunnel-internal hostname or IP for TLS verification
       serverName: novaedge-hub.internal
 

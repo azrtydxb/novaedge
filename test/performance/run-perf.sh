@@ -126,10 +126,10 @@ preflight() {
 
     # Check NovaEdge agents are running
     local agent_count
-    agent_count=$(kubectl -n novaedge-system get pods -l app.kubernetes.io/component=agent --no-headers 2>/dev/null | grep -c Running || echo 0)
+    agent_count=$(kubectl -n nova-system get pods -l app.kubernetes.io/component=agent --no-headers 2>/dev/null | grep -c Running || echo 0)
     agent_count=$(echo "${agent_count}" | tr -d '[:space:]')
     if [[ "${agent_count}" -eq 0 ]]; then
-        log_warn "No running NovaEdge agents found in novaedge-system namespace"
+        log_warn "No running NovaEdge agents found in nova-system namespace"
     else
         log_ok "NovaEdge agents running: ${agent_count}"
     fi
@@ -142,7 +142,7 @@ preflight() {
     # Record cluster state
     log_info "Recording cluster state..."
     kubectl get nodes -o wide > "${RUN_DIR}/nodes.txt" 2>&1 || true
-    kubectl -n novaedge-system get pods -o wide > "${RUN_DIR}/novaedge-pods.txt" 2>&1 || true
+    kubectl -n nova-system get pods -o wide > "${RUN_DIR}/novaedge-pods.txt" 2>&1 || true
     kubectl -n "${NAMESPACE}" get pods -o wide > "${RUN_DIR}/perf-pods.txt" 2>&1 || true
 
     log_ok "Pre-flight checks complete"
@@ -217,14 +217,14 @@ start_pprof_collection() {
 
     # Find first agent pod for port-forwarding
     local agent_pod
-    agent_pod=$(kubectl -n novaedge-system get pods -l app.kubernetes.io/name=novaedge-agent -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+    agent_pod=$(kubectl -n nova-system get pods -l app.kubernetes.io/name=novaedge-agent -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
     if [[ -z "${agent_pod}" ]]; then
         log_warn "No agent pod found for pprof collection"
         return
     fi
 
     # Port-forward in background
-    kubectl -n novaedge-system port-forward "pod/${agent_pod}" "${AGENT_ADMIN_PORT}:${AGENT_ADMIN_PORT}" &
+    kubectl -n nova-system port-forward "pod/${agent_pod}" "${AGENT_ADMIN_PORT}:${AGENT_ADMIN_PORT}" &
     PPROF_PF_PID=$!
     sleep 2
 

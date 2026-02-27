@@ -13,4 +13,4 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: novaedge-webui
-  namespace: novaedge-system
+  namespace: nova-system

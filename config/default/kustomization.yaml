@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: novaedge-system
+namespace: nova-system
 
 # Include all base resources
 resources:

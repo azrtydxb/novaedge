@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	defaultNamespace = "novaedge-system"
+	defaultNamespace = "nova-system"
 )
 
 // serverStartTime records when the process started, used for standalone agent info.

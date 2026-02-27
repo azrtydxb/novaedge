@@ -2,7 +2,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: novaedge-controller
-  namespace: novaedge-system
+  namespace: nova-system
   labels:
     app.kubernetes.io/name: novaedge-controller
     app.kubernetes.io/component: controller

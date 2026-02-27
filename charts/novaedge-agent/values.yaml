@@ -18,7 +18,7 @@ connection:
   # -- Mode: Direct (direct gRPC) or Tunnel (through relay)
   mode: Direct
   # -- Hub controller endpoint (required)
-  # For direct mode: "controller.novaedge-system.svc.hub-cluster:9090"
+  # For direct mode: "controller.nova-system.svc.hub-cluster:9090"
   # For external: "novaedge-controller.example.com:9090"
   controllerEndpoint: ""
   # -- Reconnect interval when disconnected

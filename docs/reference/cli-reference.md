@@ -99,7 +99,7 @@ novactl get policies
 NovaEdgeClusters:
 ```
 NAMESPACE        NAME       VERSION   PHASE     CONTROLLER   AGENTS   AGE
-novaedge-system  novaedge   v0.1.0    Running   1/1          3/3      5d
+nova-system  novaedge   v0.1.0    Running   1/1          3/3      5d
 ```
 
 Gateways:
@@ -145,7 +145,7 @@ novactl describe <resource-type> <name> [flags]
 
 ```bash
 # Describe a NovaEdge cluster
-novactl describe cluster novaedge -n novaedge-system
+novactl describe cluster novaedge -n nova-system
 
 # Describe a gateway
 novactl describe gateway main-gateway
@@ -403,7 +403,7 @@ Operator:
 
 Cluster:
   Name:        novaedge
-  Namespace:   novaedge-system
+  Namespace:   nova-system
   Phase:       Running
   Version:     v0.1.0
 
@@ -427,7 +427,7 @@ Agents:
 Web UI:
   Enabled:     Yes
   Replicas:    1/1 Ready
-  URL:         http://novaedge-webui.novaedge-system:9080
+  URL:         http://novaedge-webui.nova-system:9080
 
 Resources:
   NovaEdgeClusters:  1
@@ -773,7 +773,7 @@ novactl is designed to work alongside kubectl:
 |------|---------|---------|
 | List gateways | `kubectl get proxygateways` | `novactl get gateways` |
 | Describe gateway | `kubectl describe proxygateway main-gateway` | `novactl describe gateway main-gateway` |
-| View logs | `kubectl logs -n novaedge-system -l app=controller` | `novactl logs controller` |
+| View logs | `kubectl logs -n nova-system -l app=controller` | `novactl logs controller` |
 | Overall status | Manual inspection | `novactl status` |
 | Validate | `kubectl apply --dry-run=client` | `novactl validate` |
 

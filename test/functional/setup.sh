@@ -53,12 +53,12 @@ fi
 echo "VIP elected on node: $ACTIVE_NODE"
 
 # Step 6: Find active agent pod
-AGENT_POD=$(kubectl get pods -n novaedge-system -l app.kubernetes.io/name=novaedge-agent \
+AGENT_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent \
   --field-selector "spec.nodeName=$ACTIVE_NODE" -o jsonpath='{.items[0].metadata.name}')
 echo "Active agent pod: $AGENT_POD"
 
 # Step 7: Verify agent has listeners
-LISTENERS=$(kubectl logs "$AGENT_POD" -n novaedge-system --tail=5 | grep -o 'active_http_listeners":[0-9]*' | tail -1 | cut -d: -f2)
+LISTENERS=$(kubectl logs "$AGENT_POD" -n nova-system --tail=5 | grep -o 'active_http_listeners":[0-9]*' | tail -1 | cut -d: -f2)
 if [ "${LISTENERS:-0}" -lt 1 ]; then
     echo "WARNING: Agent has $LISTENERS HTTP listeners (expected >= 1)"
 else

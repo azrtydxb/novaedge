@@ -4,7 +4,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
 
@@ -53,7 +53,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge-prod
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
   imageRepository: "ghcr.io/piwi3910/novaedge"
@@ -145,7 +145,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge-bgp
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
 

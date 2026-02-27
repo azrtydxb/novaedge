@@ -334,7 +334,7 @@ kubectl get proxybackend api-backend -o yaml
 kubectl exec -it <agent-pod> -- curl -v http://<endpoint>:8080/health
 
 # Check agent logs
-kubectl logs -n novaedge-system -l app.kubernetes.io/name=novaedge-agent | grep health
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep health
 ```
 
 ### High Ejection Rate

@@ -17,7 +17,7 @@ cd novaedge
 
 # Install the operator
 helm install novaedge-operator ./charts/novaedge-operator \
-  --namespace novaedge-system \
+  --namespace nova-system \
   --create-namespace
 
 # Deploy NovaEdge cluster
@@ -26,7 +26,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   version: "v0.1.0"
   controller:
@@ -43,7 +43,7 @@ EOF
 
 ```bash
 # Check all pods are running
-kubectl get pods -n novaedge-system
+kubectl get pods -n nova-system
 
 # Expected output:
 # NAME                                    READY   STATUS    RESTARTS   AGE

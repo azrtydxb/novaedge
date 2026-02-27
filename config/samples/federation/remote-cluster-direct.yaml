@@ -12,9 +12,9 @@
 # Prerequisites:
 #   1. Deploy this resource on the HUB cluster.
 #   2. Create mTLS secrets so agents in the remote cluster can authenticate:
-#      kubectl -n novaedge-system create secret tls remote-cluster-ca \
+#      kubectl -n nova-system create secret tls remote-cluster-ca \
 #        --cert=ca.crt --key=ca.key
-#      kubectl -n novaedge-system create secret tls remote-agent-cert \
+#      kubectl -n nova-system create secret tls remote-agent-cert \
 #        --cert=agent.crt --key=agent.key
 #   3. Ensure the controller endpoint (port 9090) is reachable from the
 #      remote cluster's network.
@@ -23,7 +23,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-eu-west
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # Unique name for this remote cluster
   clusterName: edge-eu-west
@@ -51,10 +51,10 @@ spec:
       enabled: true
       caSecretRef:
         name: remote-cluster-ca
-        namespace: novaedge-system
+        namespace: nova-system
       clientCertSecretRef:
         name: remote-agent-cert
-        namespace: novaedge-system
+        namespace: nova-system
       serverName: novaedge-hub.example.com
 
     # Reconnect every 30s if the connection drops

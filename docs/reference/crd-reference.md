@@ -104,7 +104,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeCluster
 metadata:
   name: novaedge
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # Version of NovaEdge to deploy
   version: "v0.1.0"
@@ -247,7 +247,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeRemoteCluster
 metadata:
   name: edge-west-1
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # Unique cluster identifier
   clusterName: edge-west-1
@@ -264,14 +264,14 @@ spec:
   # Connection to hub controller
   connection:
     mode: Direct  # Direct or Tunnel
-    controllerEndpoint: controller.novaedge-system.svc.cluster.local:9090
+    controllerEndpoint: controller.nova-system.svc.cluster.local:9090
     reconnectInterval: 30s
     timeout: 10s
     tls:
       enabled: true
       caSecretRef:
         name: novaedge-ca
-        namespace: novaedge-system
+        namespace: nova-system
       serverName: novaedge-controller
 
   # Agent configuration for this cluster
@@ -408,7 +408,7 @@ apiVersion: novaedge.io/v1alpha1
 kind: NovaEdgeFederation
 metadata:
   name: production-federation
-  namespace: novaedge-system
+  namespace: nova-system
 spec:
   # Unique federation identifier
   federationID: prod-fed-01
