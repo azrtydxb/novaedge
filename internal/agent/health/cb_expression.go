@@ -16,6 +16,10 @@ limitations under the License.
 
 // Package health provides active and passive health checking, circuit breaking,
 // outlier detection, and resource limit enforcement for upstream endpoints.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles all health checking natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package health
 
 import (

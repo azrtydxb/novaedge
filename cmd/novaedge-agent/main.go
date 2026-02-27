@@ -40,6 +40,7 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/afxdp"
 	"github.com/piwi3910/novaedge/internal/agent/config"
+	dpctl "github.com/piwi3910/novaedge/internal/dataplane"
 	"github.com/piwi3910/novaedge/internal/agent/cpvip"
 	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/conntrack"
@@ -147,6 +148,10 @@ var (
 	cpBFDDetectMult int
 	cpBFDTxInterval string
 	cpBFDRxInterval string
+
+	// Forwarding plane delegation (go, rust, or shadow)
+	forwardingPlane string
+	dataplaneSocket string
 )
 
 func main() {
@@ -215,6 +220,12 @@ func main() {
 	flag.StringVar(&cpBFDTxInterval, "cp-bfd-tx-interval", "300ms", "BFD minimum TX interval for CP VIP")
 	flag.StringVar(&cpBFDRxInterval, "cp-bfd-rx-interval", "300ms", "BFD minimum RX interval for CP VIP")
 
+	// Forwarding plane delegation flags
+	flag.StringVar(&forwardingPlane, "forwarding-plane", "go",
+		"Forwarding plane implementation: go (default), rust (delegate to Rust dataplane), shadow (run both, compare)")
+	flag.StringVar(&dataplaneSocket, "dataplane-socket", dpctl.DefaultDataplaneSocket,
+		"Unix domain socket path for the Rust dataplane daemon")
+
 	flag.Parse()
 
 	// Validate required flags
@@ -238,6 +249,18 @@ func main() {
 		zap.String("date", date),
 		zap.String("controller", controllerAddr),
 	)
+
+	// Validate forwarding plane flag
+	fwdPlane, fwdErr := dpctl.ValidateForwardingPlane(forwardingPlane)
+	if fwdErr != nil {
+		logger.Fatal("Invalid forwarding plane", zap.Error(fwdErr))
+	}
+	if fwdPlane != dpctl.ForwardingPlaneGo {
+		logger.Info("Forwarding plane configured",
+			zap.String("mode", string(fwdPlane)),
+			zap.String("dataplane_socket", dataplaneSocket),
+		)
+	}
 
 	// Control-plane VIP mode: run a simplified agent that only manages
 	// a VIP for kube-apiserver HA, without connecting to the controller.
@@ -473,6 +496,30 @@ func main() {
 	httpServer.SetEBPFHealthMonitor(ebpfHealthMon)
 	httpServer.SetEBPFRateLimiter(ebpfRL)
 
+	// Create dataplane client and translator (for rust/shadow modes)
+	var dpClient *dpctl.Client
+	var dpTranslator *dpctl.Translator
+	var shadowComparator *dpctl.ShadowComparator
+
+	if fwdPlane == dpctl.ForwardingPlaneRust || fwdPlane == dpctl.ForwardingPlaneShadow {
+		var dpErr error
+		dpClient, dpErr = dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
+		if dpErr != nil {
+			logger.Fatal("Failed to connect to Rust dataplane",
+				zap.String("socket", dataplaneSocket),
+				zap.Error(dpErr))
+		}
+		dpTranslator = dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
+
+		if fwdPlane == dpctl.ForwardingPlaneShadow {
+			shadowComparator = dpctl.NewShadowComparator(dpTranslator, dpClient, logger)
+			shadowComparator.Start(ctx)
+			logger.Info("Shadow mode active: Go forwarding primary, Rust dataplane secondary")
+		} else {
+			logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
+		}
+	}
+
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
 
@@ -529,10 +576,38 @@ func main() {
 				zap.Int("gateways", len(snapshot.Gateways)),
 				zap.Int("routes", len(snapshot.Routes)),
 				zap.Int("vips", len(snapshot.VipAssignments)),
+				zap.String("forwarding_plane", string(fwdPlane)),
 			)
 
 			// Store snapshot for introspection
 			snapshotHolder.Store(snapshot.ConfigSnapshot)
+
+			// ── Rust-only mode: delegate forwarding to the dataplane ──
+			if fwdPlane == dpctl.ForwardingPlaneRust {
+				if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
+					logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
+					healthServer.SetReady(false)
+					adminServer.SetReady(false)
+					return syncErr
+				}
+
+				// VIP management still runs in Go (kernel netlink ops)
+				if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
+					logger.Error("Failed to apply VIP assignments", zap.Error(err))
+				}
+
+				healthServer.SetReady(true)
+				adminServer.SetSnapshot(snapshot)
+				adminServer.SetReady(true)
+				return nil
+			}
+
+			// ── Shadow mode: send config to Rust dataplane in parallel ──
+			if fwdPlane == dpctl.ForwardingPlaneShadow && shadowComparator != nil {
+				shadowComparator.SyncConfig(ctx, snapshot.ConfigSnapshot)
+			}
+
+			// ── Go forwarding path (default, also used in shadow mode) ──
 
 			// Apply L4 config (TCP/UDP/TLS passthrough)
 			if applyErr := applyL4Config(ctx, l4Manager, snapshot, logger); applyErr != nil {
@@ -655,6 +730,18 @@ func main() {
 	if meshManager != nil {
 		if err := meshManager.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Error during mesh manager shutdown", zap.Error(err))
+		}
+	}
+
+	// Shutdown shadow comparator (if running)
+	if shadowComparator != nil {
+		shadowComparator.Stop()
+	}
+
+	// Shutdown dataplane client
+	if dpClient != nil {
+		if err := dpClient.Close(); err != nil {
+			logger.Error("Error closing dataplane client", zap.Error(err))
 		}
 	}
 

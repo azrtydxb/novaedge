@@ -17,6 +17,10 @@ limitations under the License.
 // Package policy implements security and access control policies including
 // rate limiting, authentication, JWT validation, CORS, IP filtering, WAF,
 // mTLS enforcement, and security headers.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles all policy enforcement natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package policy
 
 import (

@@ -16,6 +16,10 @@ limitations under the License.
 
 // Package server provides HTTP/HTTPS/HTTP3 server implementations, TLS configuration,
 // PROXY protocol support, OCSP stapling, and overload management for the NovaEdge agent.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles all HTTP serving natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package server
 
 import (

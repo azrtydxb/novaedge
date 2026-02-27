@@ -16,6 +16,10 @@ limitations under the License.
 
 // Package upstream provides HTTP connection pooling and reverse proxy transport
 // configuration for the NovaEdge data plane agent.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles all upstream connection management natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package upstream
 
 const (

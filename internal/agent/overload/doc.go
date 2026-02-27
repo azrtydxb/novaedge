@@ -17,4 +17,8 @@ limitations under the License.
 // Package overload provides adaptive load shedding for the NovaEdge agent.
 // It monitors system resources (heap memory, goroutine count, active connections)
 // and signals overload conditions with hysteresis to prevent flapping.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles load shedding natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package overload
