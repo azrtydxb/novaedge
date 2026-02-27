@@ -336,6 +336,23 @@ agent:
     endpoint: ""
     samplingRate: 10
 
+# Dataplane settings (Rust eBPF sidecar in agent DaemonSet)
+dataplane:
+  enabled: true
+  image:
+    repository: ghcr.io/piwi3910/novaedge/novaedge-dataplane
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  socketPath: /run/novaedge/dataplane.sock
+  ebpfPath: /opt/novaedge/novaedge-ebpf
+
 # Web UI settings
 webui:
   enabled: true

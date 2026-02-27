@@ -107,6 +107,33 @@ perf-test-tcp: ## Run TCP performance tests only.
 perf-profile: ## Run perf tests with pprof CPU/memory profiling.
 	@test/performance/run-perf.sh --collect-pprof
 
+##@ Rust Dataplane
+
+.PHONY: build-dataplane-docker
+build-dataplane-docker: ## Build Rust dataplane via Docker (works on macOS).
+	docker build -f Dockerfile.build -t novaedge-builder .
+	@docker create --name novaedge-extract novaedge-builder 2>/dev/null || true
+	docker cp novaedge-extract:/build/dataplane/target/release/novaedge-dataplane bin/
+	docker cp novaedge-extract:/build/dataplane/target/bpfel-unknown-none/release/novaedge-ebpf bin/
+	docker rm novaedge-extract
+
+.PHONY: build-dataplane-native
+build-dataplane-native: ## Build Rust dataplane natively (requires Rust toolchain).
+	cd dataplane && cargo build --package novaedge-dataplane --release
+	cp dataplane/target/release/novaedge-dataplane bin/
+
+.PHONY: test-dataplane
+test-dataplane: ## Run Rust dataplane tests.
+	cd dataplane && cargo test --package novaedge-common --package novaedge-dataplane
+
+.PHONY: lint-dataplane
+lint-dataplane: ## Run clippy on Rust dataplane.
+	cd dataplane && cargo clippy --package novaedge-common --package novaedge-dataplane -- -D warnings
+
+.PHONY: fmt-dataplane
+fmt-dataplane: ## Check Rust dataplane formatting.
+	cd dataplane && cargo fmt --all -- --check
+
 ##@ Build
 
 .PHONY: build-controller
