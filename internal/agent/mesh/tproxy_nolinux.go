@@ -19,9 +19,13 @@ limitations under the License.
 package mesh
 
 import (
-	"fmt"
+	"errors"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errTPROXYIsOnlySupportedOnLinux = errors.New("TPROXY is only supported on Linux")
 )
 
 // stubBackend is used on non-Linux platforms where TPROXY is not supported.
@@ -30,11 +34,11 @@ type stubBackend struct{}
 func (s *stubBackend) Name() string { return "stub" }
 
 func (s *stubBackend) Setup() error {
-	return fmt.Errorf("TPROXY is only supported on Linux")
+	return errTPROXYIsOnlySupportedOnLinux
 }
 
 func (s *stubBackend) ApplyRules(_ []InterceptTarget, _ int32) error {
-	return fmt.Errorf("TPROXY is only supported on Linux")
+	return errTPROXYIsOnlySupportedOnLinux
 }
 
 func (s *stubBackend) Cleanup() error { return nil }

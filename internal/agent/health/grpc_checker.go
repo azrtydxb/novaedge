@@ -18,12 +18,17 @@ package health
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
+)
+
+var (
+	errGrpcHealthCheckService = errors.New("grpc health check: service")
 )
 
 // GRPCHealthChecker performs health checks using the standard gRPC health
@@ -84,6 +89,6 @@ func (g *GRPCHealthChecker) Check(ctx context.Context, address string) (bool, er
 		return true, nil
 	}
 
-	return false, fmt.Errorf("grpc health check: service %q on %s reported status %s",
-		g.ServiceName, address, resp.GetStatus().String())
+	return false, fmt.Errorf("%w %q on %s reported status %s",
+		errGrpcHealthCheckService, g.ServiceName, address, resp.GetStatus().String())
 }

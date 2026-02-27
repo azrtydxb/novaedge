@@ -3,6 +3,7 @@ package grpc
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -12,6 +13,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+)
+
+var (
+	errPod                   = errors.New("pod")
+	errNoAgentPodFoundOnNode = errors.New("no agent pod found on node")
 )
 
 // AgentClient wraps a gRPC connection to a NovaEdge agent
@@ -29,7 +35,7 @@ func NewAgentClient(ctx context.Context, clientset kubernetes.Interface, namespa
 	}
 
 	if pod.Status.PodIP == "" {
-		return nil, fmt.Errorf("pod %s has no IP address", podName)
+		return nil, fmt.Errorf("%w: %s has no IP address", errPod, podName)
 	}
 
 	// Agent introspection gRPC port
@@ -206,5 +212,5 @@ func FindAgentPod(ctx context.Context, clientset kubernetes.Interface, namespace
 		}
 	}
 
-	return "", fmt.Errorf("no agent pod found on node %s", nodeName)
+	return "", fmt.Errorf("%w: %s", errNoAgentPodFoundOnNode, nodeName)
 }

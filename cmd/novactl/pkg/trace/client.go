@@ -4,11 +4,20 @@ package trace
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"time"
+)
+
+var (
+	errTraceQueryFailedWithStatus      = errors.New("trace query failed with status")
+	errTrace                           = errors.New("trace")
+	errTraceSearchFailedWithStatus     = errors.New("trace search failed with status")
+	errServicesQueryFailedWithStatus   = errors.New("services query failed with status")
+	errOperationsQueryFailedWithStatus = errors.New("operations query failed with status")
 )
 
 // Client provides methods for querying distributed traces.
@@ -99,7 +108,7 @@ func (c *Client) ListTraces(ctx context.Context, limit int, lookback time.Durati
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("trace query failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: %d: %s", errTraceQueryFailedWithStatus, resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -132,12 +141,12 @@ func (c *Client) GetTrace(ctx context.Context, traceID string) (*Trace, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("trace %s not found", traceID)
+		return nil, fmt.Errorf("%w: %s not found", errTrace, traceID)
 	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("trace query failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: %d: %s", errTraceQueryFailedWithStatus, resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -149,7 +158,7 @@ func (c *Client) GetTrace(ctx context.Context, traceID string) (*Trace, error) {
 	}
 
 	if len(result.Data) == 0 {
-		return nil, fmt.Errorf("trace %s not found", traceID)
+		return nil, fmt.Errorf("%w: %s not found", errTrace, traceID)
 	}
 
 	return &result.Data[0], nil
@@ -217,7 +226,7 @@ func (c *Client) SearchTraces(ctx context.Context, params SearchParams) ([]Trace
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("trace search failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: %d: %s", errTraceSearchFailedWithStatus, resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -251,7 +260,7 @@ func (c *Client) GetServices(ctx context.Context) ([]string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("services query failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: %d: %s", errServicesQueryFailedWithStatus, resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -285,7 +294,7 @@ func (c *Client) GetOperations(ctx context.Context, serviceName string) ([]strin
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("operations query failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("%w: %d: %s", errOperationsQueryFailedWithStatus, resp.StatusCode, string(body))
 	}
 
 	var result struct {

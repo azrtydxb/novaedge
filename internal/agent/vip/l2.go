@@ -35,6 +35,13 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+var (
+	errInterface                           = errors.New("interface")
+	errNotAnIPv4Address                    = errors.New("not an IPv4 address")
+	errFailedToConvertIPAddressToNetipAddr = errors.New("failed to convert IP address to netip.Addr")
+	errNoSuitableNetworkInterfaceFound     = errors.New("no suitable network interface found")
+)
+
 // maxFailoverJitter is the upper bound for the random jitter added before
 // sending GARP/NDP announcements during VIP failover. Each VIP picks a
 // uniformly random delay in [0, maxFailoverJitter) to stagger sends and
@@ -281,12 +288,12 @@ func (h *L2Handler) sendGARP(ip net.IP) error {
 
 	hwAddr := iface.HardwareAddr
 	if len(hwAddr) == 0 {
-		return fmt.Errorf("interface %s has no hardware address", h.interfaceName)
+		return fmt.Errorf("%w: %s has no hardware address", errInterface, h.interfaceName)
 	}
 
 	ipv4 := ip.To4()
 	if ipv4 == nil {
-		return fmt.Errorf("not an IPv4 address: %s", ip.String())
+		return fmt.Errorf("%w: %s", errNotAnIPv4Address, ip.String())
 	}
 
 	client, err := arp.Dial(iface)
@@ -300,7 +307,7 @@ func (h *L2Handler) sendGARP(ip net.IP) error {
 
 	senderIP, ok := netip.AddrFromSlice(ipv4)
 	if !ok {
-		return fmt.Errorf("failed to convert IP address to netip.Addr")
+		return errFailedToConvertIPAddressToNetipAddr
 	}
 
 	packet := &arp.Packet{
@@ -341,7 +348,7 @@ func (h *L2Handler) sendUnsolicitedNA(ip net.IP) error {
 
 	hwAddr := iface.HardwareAddr
 	if len(hwAddr) == 0 {
-		return fmt.Errorf("interface %s has no hardware address", h.interfaceName)
+		return fmt.Errorf("%w: %s has no hardware address", errInterface, h.interfaceName)
 	}
 
 	// For unsolicited Neighbor Advertisement (RFC 4861 Section 7.2.6):
@@ -474,7 +481,7 @@ func detectPrimaryInterface() (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("no suitable network interface found")
+	return "", errNoSuitableNetworkInterfaceFound
 }
 
 // GetActiveVIPCount returns the number of active VIPs

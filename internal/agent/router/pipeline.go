@@ -18,6 +18,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"runtime/debug"
@@ -25,6 +26,12 @@ import (
 	"sync"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errBuiltinMiddlewareFactoryNotAvailableFor = errors.New("builtin middleware factory not available for")
+	errWASMMiddlewareFactoryNotAvailableFor    = errors.New("WASM middleware factory not available for")
+	errUnknownMiddlewareType                   = errors.New("unknown middleware type")
 )
 
 // MiddlewarePhase indicates when a middleware executes relative to routing/backend.
@@ -275,16 +282,16 @@ func BuildPipeline(
 		switch MiddlewareType(ref.Type) {
 		case MiddlewareBuiltin:
 			if builtinFactory == nil {
-				return nil, fmt.Errorf("builtin middleware factory not available for %s", ref.Name)
+				return nil, fmt.Errorf("%w: %s", errBuiltinMiddlewareFactoryNotAvailableFor, ref.Name)
 			}
 			handler, err = builtinFactory(ref.Name, ref.Config)
 		case MiddlewareWASM:
 			if wasmFactory == nil {
-				return nil, fmt.Errorf("WASM middleware factory not available for %s", ref.Name)
+				return nil, fmt.Errorf("%w: %s", errWASMMiddlewareFactoryNotAvailableFor, ref.Name)
 			}
 			handler, err = wasmFactory(ref.Name, ref.Config)
 		default:
-			return nil, fmt.Errorf("unknown middleware type %q for %s", ref.Type, ref.Name)
+			return nil, fmt.Errorf("%w: %q for %s", errUnknownMiddlewareType, ref.Type, ref.Name)
 		}
 
 		if err != nil {

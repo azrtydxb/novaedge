@@ -326,10 +326,8 @@ func TestTLSRouteUpdateStatus(t *testing.T) {
 		WithStatusSubresource(&gatewayv1alpha2.TLSRoute{}).
 		Build()
 
-	reconciler := &TLSRouteReconciler{
-		Client: k8sClient,
-		Scheme: scheme,
-	}
+	adapter := &l4RouteAdapter{client: k8sClient, statusCli: k8sClient.Status()}
+	wrapper := &tlsRouteWrapper{tlsRoute}
 
 	ctx := context.Background()
 	condition := metav1.Condition{
@@ -341,7 +339,7 @@ func TestTLSRouteUpdateStatus(t *testing.T) {
 		LastTransitionTime: metav1.Now(),
 	}
 
-	_, err := reconciler.updateRouteStatus(ctx, tlsRoute, condition)
+	_, err := adapter.updateL4RouteStatus(ctx, wrapper, condition)
 	if err != nil {
 		t.Errorf("unexpected error updating status: %v", err)
 	}
@@ -381,13 +379,10 @@ func TestTLSRouteHandleDeletion(t *testing.T) {
 		WithRuntimeObjects(tlsRoute, proxyRoute).
 		Build()
 
-	reconciler := &TLSRouteReconciler{
-		Client: k8sClient,
-		Scheme: scheme,
-	}
+	adapter := &l4RouteAdapter{client: k8sClient, statusCli: k8sClient.Status()}
 
 	ctx := context.Background()
-	_, err := reconciler.handleDeletion(ctx, tlsRoute)
+	_, err := adapter.handleL4RouteDeletion(ctx, "TLSRoute", tlsRoute)
 	if err != nil {
 		t.Errorf("unexpected error handling deletion: %v", err)
 	}

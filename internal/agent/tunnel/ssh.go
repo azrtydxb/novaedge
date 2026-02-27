@@ -18,6 +18,7 @@ package tunnel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -29,6 +30,10 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+)
+
+var (
+	errRelayEndpointIsRequiredForSSHTunnelType = errors.New("relay endpoint is required for SSH tunnel type")
 )
 
 const (
@@ -58,7 +63,7 @@ type sshTunnel struct {
 // newSSHTunnel creates an SSH tunnel instance.
 func newSSHTunnel(clusterName string, config v1alpha1.TunnelConfig, logger *zap.Logger) (*sshTunnel, error) {
 	if config.RelayEndpoint == "" {
-		return nil, fmt.Errorf("relay endpoint is required for SSH tunnel type")
+		return nil, errRelayEndpointIsRequiredForSSHTunnelType
 	}
 
 	return &sshTunnel{
@@ -122,42 +127,8 @@ func (t *sshTunnel) Type() string {
 
 // maintainConnection keeps the SSH tunnel connected with exponential backoff.
 func (t *sshTunnel) maintainConnection(ctx context.Context) {
-	defer close(t.done)
-
-	backoff := time.Second
-	for {
-		if err := t.connect(ctx); err != nil {
-			t.logger.Error("ssh connection failed", zap.Error(err), zap.Duration("backoff", backoff))
-			t.healthy.Store(false)
-
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(backoff):
-			}
-
-			backoff = minDuration(backoff*2, maxBackoff)
-			continue
-		}
-
-		t.healthy.Store(true)
-		backoff = time.Second
-		t.logger.Info("ssh tunnel established", zap.String("localAddr", t.LocalAddr()))
-
-		// Run the forwarding loop until the connection is lost
-		t.runForwardingLoop(ctx)
-
-		t.mu.Lock()
-		t.closeConnections()
-		t.mu.Unlock()
-		t.healthy.Store(false)
-
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-	}
+	maintainTunnelConnection(ctx, t.done, &t.healthy, &t.mu, t.logger, "ssh",
+		t.LocalAddr, t.connect, t.runForwardingLoop, t.closeConnections)
 }
 
 // connect establishes the SSH connection and local listener.

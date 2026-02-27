@@ -18,13 +18,14 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/workqueue"
@@ -39,6 +40,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+)
+
+var (
+	errPort = errors.New("port")
 )
 
 const (
@@ -71,7 +76,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	ingress := &networkingv1.Ingress{}
 	err := r.Get(ctx, req.NamespacedName, ingress)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("Ingress resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -196,103 +201,53 @@ func (r *IngressReconciler) handleDeletion(ctx context.Context, ingress *network
 	return ctrl.Result{}, nil
 }
 
-// reconcileGateway creates or updates a ProxyGateway
-func (r *IngressReconciler) reconcileGateway(ctx context.Context, desired *novaedgev1alpha1.ProxyGateway) error {
+// reconcileResource creates or updates a NovaEdge proxy resource.
+// The kind parameter is used for logging (e.g. "ProxyGateway").
+func (r *IngressReconciler) reconcileResource(ctx context.Context, kind string, desired, existing client.Object, applySpec func()) error {
 	logger := log.FromContext(ctx)
 
-	existing := &novaedgev1alpha1.ProxyGateway{}
 	err := r.Get(ctx, client.ObjectKey{
-		Name:      desired.Name,
-		Namespace: desired.Namespace,
+		Name:      desired.GetName(),
+		Namespace: desired.GetNamespace(),
 	}, existing)
 
 	if err != nil {
-		if errors.IsNotFound(err) {
-			// Create new gateway
-			logger.Info("Creating ProxyGateway", "name", desired.Name)
+		if apierrors.IsNotFound(err) {
+			logger.Info("Creating "+kind, "name", desired.GetName())
 			if err := r.Create(ctx, desired); err != nil {
-				return fmt.Errorf("failed to create ProxyGateway: %w", err)
+				return fmt.Errorf("failed to create %s: %w", kind, err)
 			}
 			return nil
 		}
-		return fmt.Errorf("failed to get ProxyGateway: %w", err)
+		return fmt.Errorf("failed to get %s: %w", kind, err)
 	}
 
-	// Update existing gateway
-	logger.Info("Updating ProxyGateway", "name", desired.Name)
-	existing.Spec = desired.Spec
-	existing.Labels = desired.Labels
+	logger.Info("Updating "+kind, "name", desired.GetName())
+	applySpec()
+	existing.SetLabels(desired.GetLabels())
 	if err := r.Update(ctx, existing); err != nil {
-		return fmt.Errorf("failed to update ProxyGateway: %w", err)
+		return fmt.Errorf("failed to update %s: %w", kind, err)
 	}
 
 	return nil
+}
+
+// reconcileGateway creates or updates a ProxyGateway
+func (r *IngressReconciler) reconcileGateway(ctx context.Context, desired *novaedgev1alpha1.ProxyGateway) error {
+	existing := &novaedgev1alpha1.ProxyGateway{}
+	return r.reconcileResource(ctx, "ProxyGateway", desired, existing, func() { existing.Spec = desired.Spec })
 }
 
 // reconcileRoute creates or updates a ProxyRoute
 func (r *IngressReconciler) reconcileRoute(ctx context.Context, desired *novaedgev1alpha1.ProxyRoute) error {
-	logger := log.FromContext(ctx)
-
 	existing := &novaedgev1alpha1.ProxyRoute{}
-	err := r.Get(ctx, client.ObjectKey{
-		Name:      desired.Name,
-		Namespace: desired.Namespace,
-	}, existing)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Create new route
-			logger.Info("Creating ProxyRoute", "name", desired.Name)
-			if err := r.Create(ctx, desired); err != nil {
-				return fmt.Errorf("failed to create ProxyRoute: %w", err)
-			}
-			return nil
-		}
-		return fmt.Errorf("failed to get ProxyRoute: %w", err)
-	}
-
-	// Update existing route
-	logger.Info("Updating ProxyRoute", "name", desired.Name)
-	existing.Spec = desired.Spec
-	existing.Labels = desired.Labels
-	if err := r.Update(ctx, existing); err != nil {
-		return fmt.Errorf("failed to update ProxyRoute: %w", err)
-	}
-
-	return nil
+	return r.reconcileResource(ctx, "ProxyRoute", desired, existing, func() { existing.Spec = desired.Spec })
 }
 
 // reconcileBackend creates or updates a ProxyBackend
 func (r *IngressReconciler) reconcileBackend(ctx context.Context, desired *novaedgev1alpha1.ProxyBackend) error {
-	logger := log.FromContext(ctx)
-
 	existing := &novaedgev1alpha1.ProxyBackend{}
-	err := r.Get(ctx, client.ObjectKey{
-		Name:      desired.Name,
-		Namespace: desired.Namespace,
-	}, existing)
-
-	if err != nil {
-		if errors.IsNotFound(err) {
-			// Create new backend
-			logger.Info("Creating ProxyBackend", "name", desired.Name)
-			if err := r.Create(ctx, desired); err != nil {
-				return fmt.Errorf("failed to create ProxyBackend: %w", err)
-			}
-			return nil
-		}
-		return fmt.Errorf("failed to get ProxyBackend: %w", err)
-	}
-
-	// Update existing backend
-	logger.Info("Updating ProxyBackend", "name", desired.Name)
-	existing.Spec = desired.Spec
-	existing.Labels = desired.Labels
-	if err := r.Update(ctx, existing); err != nil {
-		return fmt.Errorf("failed to update ProxyBackend: %w", err)
-	}
-
-	return nil
+	return r.reconcileResource(ctx, "ProxyBackend", desired, existing, func() { existing.Spec = desired.Spec })
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -365,7 +320,7 @@ func (r *IngressReconciler) resolveServicePort(ctx context.Context, namespace, s
 		}
 	}
 
-	return 0, fmt.Errorf("port %s not found in service %s/%s", portName, namespace, serviceName)
+	return 0, fmt.Errorf("%w: %s not found in service %s/%s", errPort, portName, namespace, serviceName)
 }
 
 // resolveVIPMode fetches a ProxyVIP by name and returns its mode (e.g. "BGP", "OSPF", "L2ARP").
@@ -386,7 +341,7 @@ func (r *IngressReconciler) updateIngressStatus(ctx context.Context, ingress *ne
 	// Get the VIP to retrieve the address
 	vip := &novaedgev1alpha1.ProxyVIP{}
 	if err := r.Get(ctx, types.NamespacedName{Name: vipRef}, vip); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("VIP not found, skipping status update", "vipRef", vipRef)
 			return nil
 		}

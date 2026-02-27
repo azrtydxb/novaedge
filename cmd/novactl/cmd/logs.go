@@ -3,6 +3,7 @@ package cmd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -10,6 +11,11 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+var (
+	errNoControllerPodsFound        = errors.New("no controller pods found")
+	errNoRunningControllerPodsFound = errors.New("no running controller pods found")
 )
 
 var (
@@ -57,7 +63,7 @@ func newLogsAgentCommand() *cobra.Command {
 
 func runLogsAgent(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one argument required: node-name")
+		return errExactlyOneArgumentRequiredNodeName
 	}
 
 	nodeName := args[0]
@@ -79,7 +85,7 @@ func runLogsAgent(_ *cobra.Command, args []string) error {
 	}
 
 	if len(pods.Items) == 0 {
-		return fmt.Errorf("no agent found on node %s", nodeName)
+		return fmt.Errorf("%w: %s", errNoAgentFoundOnNode, nodeName)
 	}
 
 	pod := pods.Items[0]
@@ -124,7 +130,7 @@ func runLogsController(_ *cobra.Command, _ []string) error {
 	}
 
 	if len(pods.Items) == 0 {
-		return fmt.Errorf("no controller pods found")
+		return errNoControllerPodsFound
 	}
 
 	// Use the first running pod
@@ -137,7 +143,7 @@ func runLogsController(_ *cobra.Command, _ []string) error {
 	}
 
 	if pod == nil {
-		return fmt.Errorf("no running controller pods found")
+		return errNoRunningControllerPodsFound
 	}
 
 	return streamPodLogs(ctx, c, pod.Namespace, pod.Name, "novaedge-controller")

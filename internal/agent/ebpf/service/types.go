@@ -17,8 +17,14 @@ limitations under the License.
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net"
+)
+
+var (
+	errInvalidIPAddress = errors.New("invalid IP address")
+	errNotAnIPv4Address = errors.New("not an IPv4 address")
 )
 
 // ServiceKey is the key for the BPF service lookup map. It identifies a
@@ -66,11 +72,11 @@ const (
 func NewServiceKey(ip string, port uint16, proto uint8) (ServiceKey, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return ServiceKey{}, fmt.Errorf("invalid IP address: %s", ip)
+		return ServiceKey{}, fmt.Errorf("%w: %s", errInvalidIPAddress, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return ServiceKey{}, fmt.Errorf("not an IPv4 address: %s", ip)
+		return ServiceKey{}, fmt.Errorf("%w: %s", errNotAnIPv4Address, ip)
 	}
 	key := ServiceKey{
 		Port:  port,
@@ -85,11 +91,11 @@ func NewServiceKey(ip string, port uint16, proto uint8) (ServiceKey, error) {
 func NewBackendInfo(ip string, port uint16, weight uint16, healthy bool, nodeLocal bool) (BackendInfo, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return BackendInfo{}, fmt.Errorf("invalid IP address: %s", ip)
+		return BackendInfo{}, fmt.Errorf("%w: %s", errInvalidIPAddress, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return BackendInfo{}, fmt.Errorf("not an IPv4 address: %s", ip)
+		return BackendInfo{}, fmt.Errorf("%w: %s", errNotAnIPv4Address, ip)
 	}
 
 	info := BackendInfo{

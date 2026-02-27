@@ -3,6 +3,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -15,6 +16,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+)
+
+var (
+	errMustSpecifyEitherLocalOrRemote = errors.New("must specify either --local or --remote")
 )
 
 // newFederationCommand creates the federation command
@@ -135,7 +140,7 @@ func newFederationConflictsCommand() *cobra.Command {
 			useRemote, _ := cmd.Flags().GetBool("remote")
 
 			if useLocal == useRemote {
-				return fmt.Errorf("must specify either --local or --remote")
+				return errMustSpecifyEitherLocalOrRemote
 			}
 
 			fmt.Printf("Resolving conflict for %s (local=%v)\n", args[0], useLocal)

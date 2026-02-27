@@ -107,7 +107,7 @@ func (p *Pool) Allocate(vipName string) (string, error) {
 		}
 	}
 
-	return "", fmt.Errorf("pool %s exhausted: no available addresses", p.name)
+	return "", fmt.Errorf("%w: %s exhausted: no available addresses", errPool, p.name)
 }
 
 // Release releases an IP allocation for a VIP

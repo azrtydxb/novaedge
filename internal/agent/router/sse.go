@@ -18,6 +18,7 @@ package router
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,12 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errSSEProxyIsDraining                   = errors.New("SSE proxy is draining")
+	errMaximumSSEConnectionsReached         = errors.New("maximum SSE connections reached")
+	errResponseWriterDoesNotSupportFlushing = errors.New("response writer does not support flushing")
 )
 
 const (
@@ -133,20 +140,20 @@ func (p *SSEProxy) ProxySSE(w http.ResponseWriter, r *http.Request, backendURL s
 	// Check if draining
 	if p.draining.Load() {
 		http.Error(w, "Server is draining, not accepting new SSE connections", http.StatusServiceUnavailable)
-		return fmt.Errorf("SSE proxy is draining")
+		return errSSEProxyIsDraining
 	}
 
 	// Check max connections
 	if cfg.MaxConnections > 0 && p.activeConnections.Load() >= int64(cfg.MaxConnections) {
 		http.Error(w, "Maximum SSE connections reached", http.StatusServiceUnavailable)
-		return fmt.Errorf("maximum SSE connections reached: %d", cfg.MaxConnections)
+		return fmt.Errorf("%w: %d", errMaximumSSEConnectionsReached, cfg.MaxConnections)
 	}
 
 	// Check that the response writer supports flushing
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
-		return fmt.Errorf("response writer does not support flushing")
+		return errResponseWriterDoesNotSupportFlushing
 	}
 
 	// Track connection

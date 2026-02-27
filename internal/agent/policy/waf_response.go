@@ -18,7 +18,7 @@ package policy
 
 import (
 	"bytes"
-	"fmt"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -27,6 +27,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
+)
+
+var (
+	errResponseBodyExceededWAFInspectionLimit = errors.New("response body exceeded WAF inspection limit")
 )
 
 // wafResponseWriter wraps http.ResponseWriter to inspect response bodies via WAF.
@@ -92,7 +96,7 @@ func (w *wafResponseWriter) Write(b []byte) (int, error) {
 			w.blocked = true
 			w.ResponseWriter.WriteHeader(http.StatusBadGateway)
 			w.headersSent = true
-			return 0, fmt.Errorf("response body exceeded WAF inspection limit")
+			return 0, errResponseBodyExceededWAFInspectionLimit
 		}
 	}
 	return len(b), nil

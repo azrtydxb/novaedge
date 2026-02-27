@@ -44,7 +44,7 @@ func newMetricsAgentCommand() *cobra.Command {
 
 func runMetricsAgent(_ *cobra.Command, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("exactly one argument required: node-name")
+		return errExactlyOneArgumentRequiredNodeName
 	}
 
 	nodeName := args[0]

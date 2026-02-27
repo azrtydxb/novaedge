@@ -20,21 +20,26 @@ package mesh
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net"
+)
+
+var (
+	errTPROXYSOORIGINALDSTIsOnlySupportedOn           = errors.New("TPROXY SO_ORIGINAL_DST is only supported on Linux")
+	errTransparentProxyListenerIsOnlySupportedOnLinux = errors.New("transparent proxy listener is only supported on Linux")
 )
 
 // OriginalDst is not supported on non-Linux platforms.
 func OriginalDst(_ net.Conn) (net.IP, int, error) {
-	return nil, 0, fmt.Errorf("TPROXY SO_ORIGINAL_DST is only supported on Linux")
+	return nil, 0, errTPROXYSOORIGINALDSTIsOnlySupportedOn
 }
 
 // CreateListener is not supported on non-Linux platforms.
 func (tl *TransparentListener) CreateListener(_ context.Context) (net.Listener, error) {
-	return nil, fmt.Errorf("transparent proxy listener is only supported on Linux")
+	return nil, errTransparentProxyListenerIsOnlySupportedOnLinux
 }
 
 // Start is not supported on non-Linux platforms.
 func (tl *TransparentListener) Start(_ context.Context) error {
-	return fmt.Errorf("transparent proxy listener is only supported on Linux")
+	return errTransparentProxyListenerIsOnlySupportedOnLinux
 }

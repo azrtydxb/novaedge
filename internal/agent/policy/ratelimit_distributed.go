@@ -18,6 +18,7 @@ package policy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -153,7 +154,7 @@ func (d *DistributedRateLimiter) slidingWindow(ctx context.Context, key string, 
 
 	_, err := pipe.Exec(ctx)
 	// Ignore redis.Nil errors (keys not found)
-	if err != nil && err != redis.Nil {
+	if err != nil && !errors.Is(err, redis.Nil) {
 		d.logger.Warn("Redis get failed, falling back to local", zap.Error(err))
 		metrics.RedisErrors.Inc()
 		allowed := d.localLimiter.Allow(r)

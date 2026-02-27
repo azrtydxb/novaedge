@@ -18,10 +18,18 @@ package vault
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errVaultIsSealed              = errors.New("vault is sealed")
+	errVaultIsNotInitialized      = errors.New("vault is not initialized")
+	errVaultIsInStandbyMode       = errors.New("vault is in standby mode")
+	errVaultIsUnhealthyStatusCode = errors.New("vault is unhealthy (status code")
 )
 
 // HealthChecker provides health check endpoints for Vault connectivity.
@@ -51,15 +59,15 @@ func (h *HealthChecker) Check(ctx context.Context) error {
 
 	if !status.IsHealthy() {
 		if status.Sealed {
-			return fmt.Errorf("vault is sealed")
+			return errVaultIsSealed
 		}
 		if !status.Initialized {
-			return fmt.Errorf("vault is not initialized")
+			return errVaultIsNotInitialized
 		}
 		if status.Standby {
-			return fmt.Errorf("vault is in standby mode")
+			return errVaultIsInStandbyMode
 		}
-		return fmt.Errorf("vault is unhealthy (status code: %d)", status.StatusCode)
+		return fmt.Errorf("%w: %d)", errVaultIsUnhealthyStatusCode, status.StatusCode)
 	}
 
 	return nil

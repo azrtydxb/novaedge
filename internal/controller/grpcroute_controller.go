@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,7 +54,7 @@ func (r *GRPCRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	grpcRoute := &gatewayv1.GRPCRoute{}
 	err := r.Get(ctx, req.NamespacedName, grpcRoute)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("GRPCRoute resource not found, ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -131,7 +131,7 @@ func (r *GRPCRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	grpcRouteName := "grpc-" + grpcRoute.Name
 	err = r.Get(ctx, types.NamespacedName{Name: grpcRouteName, Namespace: grpcRoute.Namespace}, existingProxyRoute)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("Creating ProxyRoute for GRPCRoute", "name", grpcRouteName)
 			if err := r.Create(ctx, proxyRoute); err != nil {
 				logger.Error(err, "Failed to create ProxyRoute for GRPCRoute")
@@ -248,11 +248,11 @@ func (r *GRPCRouteReconciler) reconcileGRPCBackends(ctx context.Context, grpcRou
 			Namespace: namespace,
 		}, service)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				logger.Error(err, "gRPC backend Service not found",
 					"service", backendRef.Name,
 					"namespace", namespace)
-				return fmt.Errorf("service %s/%s not found", namespace, backendRef.Name)
+				return fmt.Errorf("%w: %s/%s not found", errService, namespace, backendRef.Name)
 			}
 			return err
 		}
@@ -286,7 +286,7 @@ func (r *GRPCRouteReconciler) reconcileGRPCBackends(ctx context.Context, grpcRou
 		existingBackend := &novaedgev1alpha1.ProxyBackend{}
 		err = r.Get(ctx, types.NamespacedName{Name: backendName, Namespace: namespace}, existingBackend)
 		if err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				logger.Info("Creating ProxyBackend for gRPC service", "name", backendName)
 				if err := r.Create(ctx, proxyBackend); err != nil {
 					logger.Error(err, "Failed to create ProxyBackend for gRPC service")
@@ -319,11 +319,11 @@ func (r *GRPCRouteReconciler) handleGRPCRouteDeletion(ctx context.Context, grpcR
 	err := r.Get(ctx, types.NamespacedName{Name: grpcRouteName, Namespace: grpcRoute.Namespace}, proxyRoute)
 	if err == nil {
 		logger.Info("Deleting associated ProxyRoute", "name", proxyRoute.Name)
-		if err := r.Delete(ctx, proxyRoute); err != nil && !errors.IsNotFound(err) {
+		if err := r.Delete(ctx, proxyRoute); err != nil && !apierrors.IsNotFound(err) {
 			logger.Error(err, "Failed to delete ProxyRoute")
 			return ctrl.Result{}, err
 		}
-	} else if !errors.IsNotFound(err) {
+	} else if !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get ProxyRoute for deletion")
 		return ctrl.Result{}, err
 	}

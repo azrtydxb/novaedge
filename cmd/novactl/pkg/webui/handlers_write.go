@@ -17,6 +17,7 @@ limitations under the License.
 package webui
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -25,6 +26,84 @@ import (
 
 	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
 )
+
+// namespacedResource bundles the backend operations for a namespaced resource
+// so they can be served by a single generic handler (handleNamespacedCRUD).
+type namespacedResource[T any] struct {
+	pathPrefix string
+	create     func(ctx context.Context, obj *T) (*T, error)
+	update     func(ctx context.Context, obj *T) (*T, error)
+	delete     func(ctx context.Context, ns, name string) error
+	setKey     func(obj *T, ns, name string)
+}
+
+// handleNamespacedCRUD is a generic POST/PUT/DELETE handler for namespaced resources.
+func handleNamespacedCRUD[T any](s *Server, w http.ResponseWriter, r *http.Request, res namespacedResource[T]) {
+	if s.backend == nil {
+		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
+		return
+	}
+
+	ctx := r.Context()
+	path := strings.TrimPrefix(r.URL.Path, res.pathPrefix)
+
+	switch r.Method {
+	case http.MethodPost:
+		var obj T
+		if err := json.NewDecoder(r.Body).Decode(&obj); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		result, err := res.create(ctx, &obj)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusCreated, result)
+
+	case http.MethodPut:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected "+res.pathPrefix+"/{namespace}/{name}")
+			return
+		}
+
+		var obj T
+		if err := json.NewDecoder(r.Body).Decode(&obj); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+
+		res.setKey(&obj, parts[0], parts[1])
+
+		result, err := res.update(ctx, &obj)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		if len(parts) != 2 {
+			writeError(w, http.StatusBadRequest, "invalid path: expected "+res.pathPrefix+"/{namespace}/{name}")
+			return
+		}
+
+		if err := res.delete(ctx, parts[0], parts[1]); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
 
 // handleMode handles GET /api/v1/mode
 func (s *Server) handleMode(w http.ResponseWriter, r *http.Request) {
@@ -48,419 +127,68 @@ func (s *Server) handleMode(w http.ResponseWriter, r *http.Request) {
 
 // handleGatewayWrite handles POST/PUT/DELETE for gateways
 func (s *Server) handleGatewayWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/gateways")
-
-	switch r.Method {
-	case http.MethodPost:
-		// Create gateway
-		var gateway models.Gateway
-		if err := json.NewDecoder(r.Body).Decode(&gateway); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateGateway(ctx, &gateway)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		// Update gateway
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/gateways/{namespace}/{name}")
-			return
-		}
-
-		var gateway models.Gateway
-		if err := json.NewDecoder(r.Body).Decode(&gateway); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		gateway.Namespace = parts[0]
-		gateway.Name = parts[1]
-
-		result, err := s.backend.UpdateGateway(ctx, &gateway)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		// Delete gateway
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/gateways/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteGateway(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.Gateway]{
+		pathPrefix: "/api/v1/gateways",
+		create:     s.backend.CreateGateway,
+		update:     s.backend.UpdateGateway,
+		delete:     s.backend.DeleteGateway,
+		setKey:     func(g *models.Gateway, ns, name string) { g.Namespace = ns; g.Name = name },
+	})
 }
 
 // handleRouteWrite handles POST/PUT/DELETE for routes
 func (s *Server) handleRouteWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/routes")
-
-	switch r.Method {
-	case http.MethodPost:
-		var route models.Route
-		if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateRoute(ctx, &route)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/routes/{namespace}/{name}")
-			return
-		}
-
-		var route models.Route
-		if err := json.NewDecoder(r.Body).Decode(&route); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		route.Namespace = parts[0]
-		route.Name = parts[1]
-
-		result, err := s.backend.UpdateRoute(ctx, &route)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/routes/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteRoute(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.Route]{
+		pathPrefix: "/api/v1/routes",
+		create:     s.backend.CreateRoute,
+		update:     s.backend.UpdateRoute,
+		delete:     s.backend.DeleteRoute,
+		setKey:     func(rt *models.Route, ns, name string) { rt.Namespace = ns; rt.Name = name },
+	})
 }
 
 // handleBackendWrite handles POST/PUT/DELETE for backends
 func (s *Server) handleBackendWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/backends")
-
-	switch r.Method {
-	case http.MethodPost:
-		var backend models.Backend
-		if err := json.NewDecoder(r.Body).Decode(&backend); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateBackend(ctx, &backend)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/backends/{namespace}/{name}")
-			return
-		}
-
-		var backend models.Backend
-		if err := json.NewDecoder(r.Body).Decode(&backend); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		backend.Namespace = parts[0]
-		backend.Name = parts[1]
-
-		result, err := s.backend.UpdateBackend(ctx, &backend)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/backends/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteBackend(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.Backend]{
+		pathPrefix: "/api/v1/backends",
+		create:     s.backend.CreateBackend,
+		update:     s.backend.UpdateBackend,
+		delete:     s.backend.DeleteBackend,
+		setKey:     func(b *models.Backend, ns, name string) { b.Namespace = ns; b.Name = name },
+	})
 }
 
 // handleVIPWrite handles POST/PUT/DELETE for VIPs
 func (s *Server) handleVIPWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/vips")
-
-	switch r.Method {
-	case http.MethodPost:
-		var vip models.VIP
-		if err := json.NewDecoder(r.Body).Decode(&vip); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateVIP(ctx, &vip)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/vips/{namespace}/{name}")
-			return
-		}
-
-		var vip models.VIP
-		if err := json.NewDecoder(r.Body).Decode(&vip); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		vip.Namespace = parts[0]
-		vip.Name = parts[1]
-
-		result, err := s.backend.UpdateVIP(ctx, &vip)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/vips/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteVIP(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.VIP]{
+		pathPrefix: "/api/v1/vips",
+		create:     s.backend.CreateVIP,
+		update:     s.backend.UpdateVIP,
+		delete:     s.backend.DeleteVIP,
+		setKey:     func(v *models.VIP, ns, name string) { v.Namespace = ns; v.Name = name },
+	})
 }
 
 // handlePolicyWrite handles POST/PUT/DELETE for policies
 func (s *Server) handlePolicyWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/policies")
-
-	switch r.Method {
-	case http.MethodPost:
-		var policy models.Policy
-		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreatePolicy(ctx, &policy)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/policies/{namespace}/{name}")
-			return
-		}
-
-		var policy models.Policy
-		if err := json.NewDecoder(r.Body).Decode(&policy); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		policy.Namespace = parts[0]
-		policy.Name = parts[1]
-
-		result, err := s.backend.UpdatePolicy(ctx, &policy)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/policies/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeletePolicy(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.Policy]{
+		pathPrefix: "/api/v1/policies",
+		create:     s.backend.CreatePolicy,
+		update:     s.backend.UpdatePolicy,
+		delete:     s.backend.DeletePolicy,
+		setKey:     func(p *models.Policy, ns, name string) { p.Namespace = ns; p.Name = name },
+	})
 }
 
 // handleCertificateWrite handles POST/PUT/DELETE for certificates
 func (s *Server) handleCertificateWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/certificates")
-
-	switch r.Method {
-	case http.MethodPost:
-		var cert models.Certificate
-		if err := json.NewDecoder(r.Body).Decode(&cert); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateCertificate(ctx, &cert)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/certificates/{namespace}/{name}")
-			return
-		}
-
-		var cert models.Certificate
-		if err := json.NewDecoder(r.Body).Decode(&cert); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		cert.Namespace = parts[0]
-		cert.Name = parts[1]
-
-		result, err := s.backend.UpdateCertificate(ctx, &cert)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/certificates/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteCertificate(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.Certificate]{
+		pathPrefix: "/api/v1/certificates",
+		create:     s.backend.CreateCertificate,
+		update:     s.backend.UpdateCertificate,
+		delete:     s.backend.DeleteCertificate,
+		setKey:     func(c *models.Certificate, ns, name string) { c.Namespace = ns; c.Name = name },
+	})
 }
 
 // handleIPPoolWrite handles POST/PUT/DELETE for IP pools
@@ -533,209 +261,35 @@ func (s *Server) handleIPPoolWrite(w http.ResponseWriter, r *http.Request) {
 
 // handleClusterWrite handles POST/PUT/DELETE for NovaEdge clusters
 func (s *Server) handleClusterWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/clusters")
-
-	switch r.Method {
-	case http.MethodPost:
-		var cluster models.NovaEdgeClusterModel
-		if err := json.NewDecoder(r.Body).Decode(&cluster); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateNovaEdgeCluster(ctx, &cluster)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/clusters/{namespace}/{name}")
-			return
-		}
-
-		var cluster models.NovaEdgeClusterModel
-		if err := json.NewDecoder(r.Body).Decode(&cluster); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		cluster.Namespace = parts[0]
-		cluster.Name = parts[1]
-
-		result, err := s.backend.UpdateNovaEdgeCluster(ctx, &cluster)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/clusters/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteNovaEdgeCluster(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.NovaEdgeClusterModel]{
+		pathPrefix: "/api/v1/clusters",
+		create:     s.backend.CreateNovaEdgeCluster,
+		update:     s.backend.UpdateNovaEdgeCluster,
+		delete:     s.backend.DeleteNovaEdgeCluster,
+		setKey:     func(c *models.NovaEdgeClusterModel, ns, name string) { c.Namespace = ns; c.Name = name },
+	})
 }
 
 // handleFederationWrite handles POST/PUT/DELETE for federations
 func (s *Server) handleFederationWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/federations")
-
-	switch r.Method {
-	case http.MethodPost:
-		var federation models.FederationModel
-		if err := json.NewDecoder(r.Body).Decode(&federation); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateFederation(ctx, &federation)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/federations/{namespace}/{name}")
-			return
-		}
-
-		var federation models.FederationModel
-		if err := json.NewDecoder(r.Body).Decode(&federation); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		federation.Namespace = parts[0]
-		federation.Name = parts[1]
-
-		result, err := s.backend.UpdateFederation(ctx, &federation)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/federations/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteFederation(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.FederationModel]{
+		pathPrefix: "/api/v1/federations",
+		create:     s.backend.CreateFederation,
+		update:     s.backend.UpdateFederation,
+		delete:     s.backend.DeleteFederation,
+		setKey:     func(f *models.FederationModel, ns, name string) { f.Namespace = ns; f.Name = name },
+	})
 }
 
 // handleRemoteClusterWrite handles POST/PUT/DELETE for remote clusters
 func (s *Server) handleRemoteClusterWrite(w http.ResponseWriter, r *http.Request) {
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	path := strings.TrimPrefix(r.URL.Path, "/api/v1/remoteclusters")
-
-	switch r.Method {
-	case http.MethodPost:
-		var rc models.RemoteClusterModel
-		if err := json.NewDecoder(r.Body).Decode(&rc); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		result, err := s.backend.CreateRemoteCluster(ctx, &rc)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusCreated, result)
-
-	case http.MethodPut:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/remoteclusters/{namespace}/{name}")
-			return
-		}
-
-		var rc models.RemoteClusterModel
-		if err := json.NewDecoder(r.Body).Decode(&rc); err != nil {
-			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
-			return
-		}
-
-		rc.Namespace = parts[0]
-		rc.Name = parts[1]
-
-		result, err := s.backend.UpdateRemoteCluster(ctx, &rc)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-
-	case http.MethodDelete:
-		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
-		if len(parts) != 2 {
-			writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/remoteclusters/{namespace}/{name}")
-			return
-		}
-
-		if err := s.backend.DeleteRemoteCluster(ctx, parts[0], parts[1]); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-
-		writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
-
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
+	handleNamespacedCRUD(s, w, r, namespacedResource[models.RemoteClusterModel]{
+		pathPrefix: "/api/v1/remoteclusters",
+		create:     s.backend.CreateRemoteCluster,
+		update:     s.backend.UpdateRemoteCluster,
+		delete:     s.backend.DeleteRemoteCluster,
+		setKey:     func(rc *models.RemoteClusterModel, ns, name string) { rc.Namespace = ns; rc.Name = name },
+	})
 }
 
 // handleConfigValidate handles POST /api/v1/config/validate

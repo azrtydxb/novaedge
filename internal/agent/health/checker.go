@@ -19,6 +19,7 @@ package health
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -31,6 +32,10 @@ import (
 	ebpfhealth "github.com/piwi3910/novaedge/internal/agent/ebpf/health"
 	"github.com/piwi3910/novaedge/internal/agent/metrics"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errUnhealthyStatusCode = errors.New("unhealthy status code")
 )
 
 // ebpfNoTrafficTimeout is the duration after which a backend with no
@@ -875,7 +880,7 @@ func (hc *Checker) performHTTPCheck(ctx context.Context, ep *pb.Endpoint) (bool,
 		return true, nil
 	}
 
-	return false, fmt.Errorf("unhealthy status code: %d", resp.StatusCode)
+	return false, fmt.Errorf("%w: %d", errUnhealthyStatusCode, resp.StatusCode)
 }
 
 // performHTTPSCheck performs an HTTPS health check with TLS.
@@ -901,7 +906,7 @@ func (hc *Checker) performHTTPSCheck(ctx context.Context, ep *pb.Endpoint) (bool
 		return true, nil
 	}
 
-	return false, fmt.Errorf("unhealthy status code: %d", resp.StatusCode)
+	return false, fmt.Errorf("%w: %d", errUnhealthyStatusCode, resp.StatusCode)
 }
 
 // performTCPCheck performs a TCP health check by dialing the endpoint.

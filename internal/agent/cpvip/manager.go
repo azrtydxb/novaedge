@@ -23,6 +23,7 @@ package cpvip
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net"
@@ -36,6 +37,16 @@ import (
 
 	"github.com/piwi3910/novaedge/internal/agent/vip"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+)
+
+var (
+	errVIPAddressIsRequired           = errors.New("VIP address is required")
+	errInvalidAPIPort                 = errors.New("invalid API port")
+	errHealthIntervalMustBePositive   = errors.New("health interval must be positive")
+	errHealthTimeoutMustBePositive    = errors.New("health timeout must be positive")
+	errFailThresholdMustBeAtLeast1    = errors.New("fail threshold must be at least 1")
+	errBGPLocalASIsRequiredForBgpMode = errors.New("BGP local AS is required for bgp mode")
+	errAtLeastOneBGPPeerIsRequiredFor = errors.New("at least one BGP peer is required for bgp mode")
 )
 
 const (
@@ -148,7 +159,7 @@ type Config struct {
 // Validate checks that the configuration is valid.
 func (c *Config) Validate() error {
 	if c.VIPAddress == "" {
-		return fmt.Errorf("VIP address is required")
+		return errVIPAddressIsRequired
 	}
 
 	// Validate CIDR notation
@@ -157,27 +168,27 @@ func (c *Config) Validate() error {
 	}
 
 	if c.APIPort < 1 || c.APIPort > 65535 {
-		return fmt.Errorf("invalid API port %d: must be between 1 and 65535", c.APIPort)
+		return fmt.Errorf("%w: %d: must be between 1 and 65535", errInvalidAPIPort, c.APIPort)
 	}
 
 	if c.HealthInterval <= 0 {
-		return fmt.Errorf("health interval must be positive")
+		return errHealthIntervalMustBePositive
 	}
 
 	if c.HealthTimeout <= 0 {
-		return fmt.Errorf("health timeout must be positive")
+		return errHealthTimeoutMustBePositive
 	}
 
 	if c.FailThreshold < 1 {
-		return fmt.Errorf("fail threshold must be at least 1")
+		return errFailThresholdMustBeAtLeast1
 	}
 
 	if c.Mode == ModeBGP {
 		if c.BGPLocalAS == 0 {
-			return fmt.Errorf("BGP local AS is required for bgp mode")
+			return errBGPLocalASIsRequiredForBgpMode
 		}
 		if len(c.BGPPeers) == 0 {
-			return fmt.Errorf("at least one BGP peer is required for bgp mode")
+			return errAtLeastOneBGPPeerIsRequiredFor
 		}
 	}
 

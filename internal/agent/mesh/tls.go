@@ -28,6 +28,11 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	errNoValidCACertificatesFoundInCABundle = errors.New("no valid CA certificates found in CA bundle")
+	errNoMeshTLSCertificateLoaded           = errors.New("no mesh TLS certificate loaded")
+)
+
 // TLSProvider manages TLS certificates for mesh connections.
 // It supports certificate rotation by using dynamic TLS callbacks
 // that read the current certificate under a read lock. The provider
@@ -116,7 +121,7 @@ func (p *TLSProvider) UpdateCertificate(certPEM, keyPEM, caCertPEM []byte, spiff
 	}
 
 	if added == 0 {
-		return errors.New("no valid CA certificates found in CA bundle")
+		return errNoValidCACertificatesFoundInCABundle
 	}
 
 	p.mu.Lock()
@@ -154,7 +159,7 @@ func (p *TLSProvider) ServerTLSConfig() *tls.Config {
 			p.mu.RLock()
 			defer p.mu.RUnlock()
 			if p.cert == nil {
-				return nil, errors.New("no mesh TLS certificate loaded")
+				return nil, errNoMeshTLSCertificateLoaded
 			}
 			return p.cert, nil
 		},
@@ -170,7 +175,7 @@ func (p *TLSProvider) ServerTLSConfig() *tls.Config {
 					p.mu.RLock()
 					defer p.mu.RUnlock()
 					if p.cert == nil {
-						return nil, errors.New("no mesh TLS certificate loaded")
+						return nil, errNoMeshTLSCertificateLoaded
 					}
 					return p.cert, nil
 				},
@@ -194,7 +199,7 @@ func (p *TLSProvider) ClientTLSConfig() *tls.Config {
 			p.mu.RLock()
 			defer p.mu.RUnlock()
 			if p.cert == nil {
-				return nil, errors.New("no mesh TLS certificate loaded")
+				return nil, errNoMeshTLSCertificateLoaded
 			}
 			return p.cert, nil
 		},

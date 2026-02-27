@@ -19,10 +19,18 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
+)
+
+var (
+	errUnsupportedDNSProvider   = errors.New("unsupported DNS provider")
+	errDNSPropagationTimeoutFor = errors.New("DNS propagation timeout for")
 )
 
 const (
@@ -87,7 +95,7 @@ func NewProvider(name string, credentials map[string]string, config *ProviderCon
 	case "googledns":
 		return NewGoogleDNSProvider(credentials, config)
 	default:
-		return nil, fmt.Errorf("unsupported DNS provider: %s (supported: cloudflare, route53, googledns)", name)
+		return nil, fmt.Errorf("%w: %s (supported: cloudflare, route53, googledns)", errUnsupportedDNSProvider, name)
 	}
 }
 
@@ -142,4 +150,36 @@ func (p *DNS01ChallengeProvider) CleanUp(domain, _, keyAuth string) error {
 
 	ctx := context.Background()
 	return p.provider.DeleteTXTRecord(ctx, fqdn, keyAuth)
+}
+
+// waitForDNSPropagation polls DNS until the expected TXT record is visible or the timeout expires.
+// This shared implementation is used by all DNS provider WaitForPropagation methods.
+func waitForDNSPropagation(ctx context.Context, fqdn, value string, propagationTimeout, pollingInterval time.Duration, logger *zap.Logger) error {
+	timeout := time.After(propagationTimeout)
+	ticker := time.NewTicker(pollingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeout:
+			return fmt.Errorf("%w: %s after %s", errDNSPropagationTimeoutFor, fqdn, propagationTimeout)
+		case <-ticker.C:
+			resolver := &net.Resolver{}
+			records, err := resolver.LookupTXT(ctx, strings.TrimSuffix(fqdn, "."))
+			if err != nil {
+				logger.Debug("DNS lookup not yet propagated",
+					zap.String("fqdn", fqdn),
+					zap.Error(err))
+				continue
+			}
+			for _, record := range records {
+				if record == value {
+					logger.Info("DNS propagation confirmed", zap.String("fqdn", fqdn))
+					return nil
+				}
+			}
+		}
+	}
 }

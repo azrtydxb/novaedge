@@ -34,6 +34,12 @@ var (
 
 	// ErrReconciliationFailed indicates reconciliation failed
 	ErrReconciliationFailed = errors.New("reconciliation failed")
+
+	// errService is a sentinel for service-related errors.
+	errService = errors.New("service")
+
+	// errValidationFailed is a sentinel for validation failures.
+	errValidationFailed = errors.New("validation failed")
 )
 
 // ReconcileError represents a reconciliation error with additional context

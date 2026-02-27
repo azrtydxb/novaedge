@@ -18,11 +18,16 @@ package wasm
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
 	"github.com/tetratelabs/wazero/api"
 	"go.uber.org/zap"
+)
+
+var (
+	errInstancePoolIsClosed = errors.New("instance pool is closed")
 )
 
 const poolDefaultSize = 4
@@ -121,7 +126,7 @@ func (p *InstancePool) createInstance(ctx context.Context) (*Instance, error) {
 	p.mu.Lock()
 	if p.closed {
 		p.mu.Unlock()
-		return nil, fmt.Errorf("instance pool is closed")
+		return nil, errInstancePoolIsClosed
 	}
 	p.mu.Unlock()
 

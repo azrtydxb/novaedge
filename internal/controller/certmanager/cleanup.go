@@ -18,6 +18,7 @@ package certmanager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +26,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+var (
+	errErrorsCleaningUpCertificates = errors.New("errors cleaning up certificates")
 )
 
 // Cleanup handles removing cert-manager Certificate CRs when their parent
@@ -82,7 +87,7 @@ func (c *Cleanup) CleanupForGateway(ctx context.Context, gateway types.Namespace
 	}
 
 	if len(errs) > 0 {
-		return fmt.Errorf("errors cleaning up certificates: %v", errs)
+		return fmt.Errorf("%w: %v", errErrorsCleaningUpCertificates, errs)
 	}
 
 	logger.Info("Cleaned up cert-manager Certificates for gateway",

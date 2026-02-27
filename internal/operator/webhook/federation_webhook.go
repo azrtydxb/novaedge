@@ -20,6 +20,7 @@ package webhook
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"regexp"
@@ -29,6 +30,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+)
+
+var (
+	errFederationIDIsImmutableCannotChangeFrom    = errors.New("federation ID is immutable: cannot change from")
+	errLocalMemberNameIsImmutableCannotChangeFrom = errors.New("local member name is immutable: cannot change from")
+	errValidationFailed                           = errors.New("validation failed")
+	errInvalidName                                = errors.New("invalid name")
+	errName                                       = errors.New("name")
+	errInvalidEndpoint                            = errors.New("invalid endpoint")
+	errEndpoint                                   = errors.New("endpoint")
+	errTLSEnabledButNoCASecretSpecifiedAnd        = errors.New("TLS enabled but no CA secret specified and insecureSkipVerify is false")
 )
 
 // FederationValidator validates NovaEdgeFederation resources
@@ -55,14 +67,14 @@ func (v *FederationValidator) ValidateCreate(_ context.Context, obj *novaedgev1a
 func (v *FederationValidator) ValidateUpdate(_ context.Context, oldObj, newObj *novaedgev1alpha1.NovaEdgeFederation) (warnings admission.Warnings, err error) {
 	// Federation ID is immutable
 	if oldObj.Spec.FederationID != newObj.Spec.FederationID {
-		return nil, fmt.Errorf("federation ID is immutable: cannot change from %q to %q",
-			oldObj.Spec.FederationID, newObj.Spec.FederationID)
+		return nil, fmt.Errorf("%w %q to %q",
+			errFederationIDIsImmutableCannotChangeFrom, oldObj.Spec.FederationID, newObj.Spec.FederationID)
 	}
 
 	// Local member name is immutable
 	if oldObj.Spec.LocalMember.Name != newObj.Spec.LocalMember.Name {
-		return nil, fmt.Errorf("local member name is immutable: cannot change from %q to %q",
-			oldObj.Spec.LocalMember.Name, newObj.Spec.LocalMember.Name)
+		return nil, fmt.Errorf("%w %q to %q",
+			errLocalMemberNameIsImmutableCannotChangeFrom, oldObj.Spec.LocalMember.Name, newObj.Spec.LocalMember.Name)
 	}
 
 	return v.validateFederation(newObj)
@@ -206,7 +218,7 @@ func (v *FederationValidator) validateFederation(fed *novaedgev1alpha1.NovaEdgeF
 
 	// Combine errors
 	if len(errs) > 0 {
-		return warns, fmt.Errorf("validation failed: %s", strings.Join(errs, "; "))
+		return warns, fmt.Errorf("%w: %s", errValidationFailed, strings.Join(errs, "; "))
 	}
 
 	return warns, nil
@@ -216,25 +228,25 @@ func (v *FederationValidator) validateFederation(fed *novaedgev1alpha1.NovaEdgeF
 func (v *FederationValidator) validateMember(name, endpoint string) error {
 	// Validate name
 	if !memberNameRegex.MatchString(name) {
-		return fmt.Errorf("invalid name %q: must be lowercase alphanumeric with hyphens", name)
+		return fmt.Errorf("%w: %q: must be lowercase alphanumeric with hyphens", errInvalidName, name)
 	}
 
 	if len(name) > 63 {
-		return fmt.Errorf("name %q is too long: max 63 characters", name)
+		return fmt.Errorf("%w: %q is too long: max 63 characters", errName, name)
 	}
 
 	// Validate endpoint
 	host, port, err := net.SplitHostPort(endpoint)
 	if err != nil {
-		return fmt.Errorf("invalid endpoint %q: must be host:port format", endpoint)
+		return fmt.Errorf("%w: %q: must be host:port format", errInvalidEndpoint, endpoint)
 	}
 
 	if host == "" {
-		return fmt.Errorf("endpoint %q has empty host", endpoint)
+		return fmt.Errorf("%w: %q has empty host", errEndpoint, endpoint)
 	}
 
 	if port == "" {
-		return fmt.Errorf("endpoint %q has empty port", endpoint)
+		return fmt.Errorf("%w: %q has empty port", errEndpoint, endpoint)
 	}
 
 	return nil
@@ -245,7 +257,7 @@ func (v *FederationValidator) validateTLS(tls *novaedgev1alpha1.FederationTLS, p
 	// If TLS is enabled, should have at least CA or be insecure
 	if tls.Enabled != nil && *tls.Enabled {
 		if tls.CASecretRef == nil && !tls.InsecureSkipVerify {
-			return fmt.Errorf("TLS enabled but no CA secret specified and insecureSkipVerify is false")
+			return errTLSEnabledButNoCASecretSpecifiedAnd
 		}
 
 		if tls.InsecureSkipVerify {
