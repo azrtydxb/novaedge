@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["novaedge-common", "novaedge-dataplane", "novaedge-ebpf"]
+default-members = ["novaedge-common", "novaedge-dataplane"]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+tonic = "0.12"
+prost = "0.13"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+anyhow = "1"
