@@ -134,19 +134,19 @@ spec:
             path: /healthz
             port: health
             scheme: HTTP
-          initialDelaySeconds: 30
-          periodSeconds: 20
-          timeoutSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: {{ .Values.agent.livenessProbe.initialDelaySeconds | default 30 }}
+          periodSeconds: {{ .Values.agent.livenessProbe.periodSeconds | default 20 }}
+          timeoutSeconds: {{ .Values.agent.livenessProbe.timeoutSeconds | default 5 }}
+          failureThreshold: {{ .Values.agent.livenessProbe.failureThreshold | default 3 }}
         readinessProbe:
           httpGet:
             path: /readyz
             port: health
             scheme: HTTP
-          initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
-          failureThreshold: 3
+          initialDelaySeconds: {{ .Values.agent.readinessProbe.initialDelaySeconds | default 30 }}
+          periodSeconds: {{ .Values.agent.readinessProbe.periodSeconds | default 10 }}
+          timeoutSeconds: {{ .Values.agent.readinessProbe.timeoutSeconds | default 5 }}
+          failureThreshold: {{ .Values.agent.readinessProbe.failureThreshold | default 6 }}
         resources:
           {{- toYaml .Values.agent.resources | nindent 10 }}
         securityContext:

@@ -29,9 +29,11 @@ spec:
 
       serviceAccountName: novaedge-agent
 
-      # Node selector for edge nodes (optional - remove if agents should run on all nodes)
-      nodeSelector:
-        novaedge.io/role: edge
+      # Node selector for edge nodes (optional)
+      # Uncomment the following for production edge-only deployments:
+      # nodeSelector:
+      #   novaedge.io/role: edge
+      nodeSelector: {}
 
       # Tolerations to allow running on control plane nodes if needed
       tolerations:
@@ -120,10 +122,10 @@ spec:
             path: /readyz
             port: health
             scheme: HTTP
-          initialDelaySeconds: 10
+          initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 5
-          failureThreshold: 3
+          failureThreshold: 6
 
         resources:
           # Resource recommendations based on traffic load:
