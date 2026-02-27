@@ -41,6 +41,7 @@ jobs:
               - 'go.sum'
               - 'Makefile'
               - '.golangci.yml'
+              - 'bpf/**'
             helm:
               - 'charts/**'
               - 'config/crd/**'
@@ -67,6 +68,22 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          # Create asm symlink for eBPF compilation on multiarch Ubuntu
+          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+
+      - name: Generate eBPF code (bpf2go)
+        run: |
+          go generate ./internal/agent/ebpf/conntrack/
+          go generate ./internal/agent/ebpf/maglev/
+          go generate ./internal/agent/xdplb/
+          go generate ./internal/agent/ebpfmesh/
+          go generate ./internal/agent/afxdp/
+
       - name: Run gofmt
         run: |
           if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
@@ -78,7 +95,7 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: v1.62.0
+          version: v2.10.1
           args: --timeout=10m
 
       - name: Check go mod tidy
@@ -133,6 +150,25 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
+
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          # Create asm symlink for eBPF compilation on multiarch Ubuntu
+          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+
+      - name: Generate eBPF code (bpf2go)
+        run: |
+          go generate ./internal/agent/ebpf/conntrack/
+          go generate ./internal/agent/ebpf/maglev/
+          go generate ./internal/agent/xdplb/
+          go generate ./internal/agent/ebpfmesh/
+          go generate ./internal/agent/afxdp/
+
+      - name: Raise MEMLOCK rlimit for eBPF tests
+        run: ulimit -l unlimited || true
 
       - name: Run unit tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -189,6 +225,22 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
+
+      - name: Install eBPF toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          # Create asm symlink for eBPF compilation on multiarch Ubuntu
+          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+
+      - name: Generate eBPF code (bpf2go)
+        run: |
+          go generate ./internal/agent/ebpf/conntrack/
+          go generate ./internal/agent/ebpf/maglev/
+          go generate ./internal/agent/xdplb/
+          go generate ./internal/agent/ebpfmesh/
+          go generate ./internal/agent/afxdp/
 
       - name: Build ${{ matrix.binary.name }}
         env:
