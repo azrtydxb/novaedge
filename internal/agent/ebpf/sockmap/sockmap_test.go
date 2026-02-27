@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/testutil"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -74,8 +75,9 @@ func TestNewSockMapManager(t *testing.T) {
 
 	// On Linux, the manager may or may not succeed depending on
 	// kernel capabilities and permissions.
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("SOCKMAP manager creation failed (expected in unprivileged environments): %v", err)
+		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 	defer mgr.Close()
 
@@ -91,8 +93,9 @@ func TestManagerCloseIdempotent(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	mgr, err := NewSockMapManager(logger)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("SOCKMAP manager creation failed: %v", err)
+		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 
 	// First close should succeed.
@@ -113,8 +116,9 @@ func TestManagerAddRemoveEndpoint(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	mgr, err := NewSockMapManager(logger)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("SOCKMAP manager creation failed: %v", err)
+		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 	defer mgr.Close()
 
@@ -147,8 +151,9 @@ func TestManagerSyncEndpoints(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	mgr, err := NewSockMapManager(logger)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("SOCKMAP manager creation failed: %v", err)
+		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 	defer mgr.Close()
 
@@ -178,8 +183,9 @@ func TestManagerGetStats(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	mgr, err := NewSockMapManager(logger)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("SOCKMAP manager creation failed: %v", err)
+		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 	defer mgr.Close()
 
@@ -204,8 +210,9 @@ func TestManagerOperationsAfterClose(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	mgr, err := NewSockMapManager(logger)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("SOCKMAP manager creation failed: %v", err)
+		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 
 	mgr.Close()
@@ -229,8 +236,9 @@ func TestManagerAddInvalidIP(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	mgr, err := NewSockMapManager(logger)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("SOCKMAP manager creation failed: %v", err)
+		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 	defer mgr.Close()
 

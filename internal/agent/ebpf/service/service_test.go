@@ -20,6 +20,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/piwi3910/novaedge/internal/agent/ebpf/testutil"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -145,8 +146,9 @@ func TestNewServiceMap(t *testing.T) {
 		return
 	}
 
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("ServiceMap creation failed (expected in unprivileged environments): %v", err)
+		t.Fatalf("NewServiceMap() returned error: %v", err)
 	}
 	defer sm.Close()
 }
@@ -158,8 +160,9 @@ func TestServiceMapCloseIdempotent(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	sm, err := NewServiceMap(logger, 100, 32)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("ServiceMap creation failed: %v", err)
+		t.Fatalf("NewServiceMap() returned error: %v", err)
 	}
 
 	if err := sm.Close(); err != nil {
@@ -177,8 +180,9 @@ func TestServiceMapUpsertAndDelete(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	sm, err := NewServiceMap(logger, 100, 32)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("ServiceMap creation failed: %v", err)
+		t.Fatalf("NewServiceMap() returned error: %v", err)
 	}
 	defer sm.Close()
 
@@ -216,8 +220,9 @@ func TestServiceMapReconcile(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	sm, err := NewServiceMap(logger, 100, 32)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("ServiceMap creation failed: %v", err)
+		t.Fatalf("NewServiceMap() returned error: %v", err)
 	}
 	defer sm.Close()
 
@@ -253,8 +258,9 @@ func TestServiceMapOperationsAfterClose(t *testing.T) {
 
 	logger := zaptest.NewLogger(t)
 	sm, err := NewServiceMap(logger, 100, 32)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("ServiceMap creation failed: %v", err)
+		t.Fatalf("NewServiceMap() returned error: %v", err)
 	}
 
 	sm.Close()
@@ -279,8 +285,9 @@ func TestServiceMapDefaultParams(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	// Pass 0 for both params to test defaults.
 	sm, err := NewServiceMap(logger, 0, 0)
+	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Skipf("ServiceMap creation with defaults failed: %v", err)
+		t.Fatalf("NewServiceMap() returned error: %v", err)
 	}
 	defer sm.Close()
 }
