@@ -1,0 +1,5 @@
+[target.bpfel-unknown-none]
+rustflags = ["-C", "link-arg=--btf"]
+
+[build]
+target-dir = "target"

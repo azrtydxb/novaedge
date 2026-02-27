@@ -1,0 +1,34 @@
+//! gRPC server for the DataplaneControl service.
+//!
+//! Listens on a Unix domain socket and processes commands from the Go agent.
+
+use std::sync::Arc;
+use tokio::net::UnixListener;
+use tokio_stream::wrappers::UnixListenerStream;
+use tracing::info;
+
+use crate::maps::MapManager;
+
+/// Run the gRPC server on a Unix domain socket.
+pub async fn run(map_manager: MapManager, socket_path: &str) -> anyhow::Result<()> {
+    // Remove stale socket file if it exists.
+    let _ = std::fs::remove_file(socket_path);
+
+    // Ensure parent directory exists.
+    if let Some(parent) = std::path::Path::new(socket_path).parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    let uds = UnixListener::bind(socket_path)?;
+    let _uds_stream = UnixListenerStream::new(uds);
+
+    let _map_manager = Arc::new(map_manager);
+
+    info!(socket = %socket_path, "gRPC server listening");
+
+    // TODO: Register DataplaneControl service once proto is defined (Phase 1.2).
+    // For now, await shutdown signal.
+    tokio::signal::ctrl_c().await?;
+
+    Ok(())
+}

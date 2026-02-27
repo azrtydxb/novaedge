@@ -24,6 +24,7 @@ bin/
 novactl
 novaedge-*
 !novaedge-*.go
+!dataplane/novaedge-*/
 
 # Implementation plans
 PLAN.md
@@ -78,3 +79,6 @@ site/
 # Frontend build output
 web/dist/
 web/node_modules/
+
+# Rust build output
+dataplane/target/
