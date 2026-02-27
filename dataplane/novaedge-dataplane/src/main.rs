@@ -14,6 +14,7 @@ mod l4;
 mod lb;
 mod loader;
 mod maps;
+mod middleware;
 mod proto;
 mod proxy;
 mod server;
