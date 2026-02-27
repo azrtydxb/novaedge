@@ -56,6 +56,7 @@ spec:
         - -metrics-port=9090
         - -health-probe-port=9091
         - -log-level=info
+        - --dataplane-socket=/run/novaedge/dataplane.sock
 
         env:
         # Controller gRPC service address
@@ -167,6 +168,46 @@ spec:
           mountPath: /etc/novaedge/config
           readOnly: true
 
+        # Shared Unix socket directory for dataplane communication
+        - name: dataplane-socket
+          mountPath: /run/novaedge
+
+      # Rust eBPF dataplane sidecar
+      - name: novaedge-dataplane
+        image: ghcr.io/piwi3910/novaedge/novaedge-dataplane:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --socket-path=/run/novaedge/dataplane.sock
+        - --ebpf-path=/opt/novaedge/novaedge-ebpf
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+        readinessProbe:
+          exec:
+            command:
+            - test
+            - -S
+            - /run/novaedge/dataplane.sock
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+        volumeMounts:
+        - name: dataplane-socket
+          mountPath: /run/novaedge
+        - name: dataplane-bpffs
+          mountPath: /sys/fs/bpf
+
       volumes:
       # Optional: Certificate volume (can be populated from Secrets)
       - name: certs
@@ -177,6 +218,16 @@ spec:
         configMap:
           name: novaedge-agent-config
           optional: true
+
+      # Shared emptyDir for Unix socket communication between agent and dataplane
+      - name: dataplane-socket
+        emptyDir: {}
+
+      # BPF filesystem for eBPF dataplane
+      - name: dataplane-bpffs
+        hostPath:
+          path: /sys/fs/bpf
+          type: DirectoryOrCreate
 
       # Priority class for system-critical workload
       priorityClassName: system-node-critical

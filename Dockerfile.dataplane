@@ -1,0 +1,39 @@
+FROM rust:bookworm AS builder
+
+RUN apt-get update && apt-get install -y \
+    clang llvm libelf-dev \
+    protobuf-compiler \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup toolchain install nightly --component rust-src
+RUN rustup target add --toolchain nightly bpfel-unknown-none
+RUN cargo install bpf-linker
+
+WORKDIR /build
+COPY . .
+
+# Build eBPF
+RUN cd dataplane && cargo +nightly build \
+    --package novaedge-ebpf \
+    --target bpfel-unknown-none \
+    -Z build-std=core \
+    --release
+
+# Build dataplane
+RUN cd dataplane && cargo build \
+    --package novaedge-dataplane \
+    --release
+
+# --- Runtime stage ---
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    libelf1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /build/dataplane/target/release/novaedge-dataplane /usr/local/bin/
+COPY --from=builder /build/dataplane/target/bpfel-unknown-none/release/novaedge-ebpf /opt/novaedge/
+
+ENTRYPOINT ["novaedge-dataplane"]
+CMD ["--socket-path=/run/novaedge/dataplane.sock", "--ebpf-path=/opt/novaedge/novaedge-ebpf"]

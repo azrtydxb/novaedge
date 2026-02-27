@@ -82,6 +82,9 @@ spec:
         {{- if .Values.agent.mesh.enabled }}
         - -mesh-enabled
         {{- end }}
+        {{- if and .Values.dataplane .Values.dataplane.enabled }}
+        - --dataplane-socket={{ .Values.dataplane.socketPath }}
+        {{- end }}
         {{- if .Values.agent.tracing.enabled }}
         - -tracing-enabled
         - -tracing-endpoint={{ .Values.agent.tracing.endpoint }}
@@ -181,9 +184,44 @@ spec:
         - name: bpffs
           mountPath: /sys/fs/bpf
         {{- end }}
+        {{- if and .Values.dataplane .Values.dataplane.enabled }}
+        - name: dataplane-socket
+          mountPath: /run/novaedge
+        {{- end }}
         {{- with .Values.agent.extraVolumeMounts }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+      {{- if and .Values.dataplane .Values.dataplane.enabled }}
+      - name: novaedge-dataplane
+        image: "{{ .Values.dataplane.image.repository }}:{{ .Values.dataplane.image.tag }}"
+        imagePullPolicy: {{ .Values.dataplane.image.pullPolicy }}
+        args:
+        - --socket-path={{ .Values.dataplane.socketPath }}
+        - --ebpf-path={{ .Values.dataplane.ebpfPath }}
+        securityContext:
+          privileged: true
+          capabilities:
+            add:
+            - NET_ADMIN
+            - NET_RAW
+        readinessProbe:
+          exec:
+            command:
+            - test
+            - -S
+            - {{ .Values.dataplane.socketPath }}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 2
+          failureThreshold: 3
+        resources:
+          {{- toYaml .Values.dataplane.resources | nindent 10 }}
+        volumeMounts:
+        - name: dataplane-socket
+          mountPath: /run/novaedge
+        - name: dataplane-bpffs
+          mountPath: /sys/fs/bpf
+      {{- end }}
       volumes:
       - name: certs
         emptyDir: {}
@@ -193,6 +231,14 @@ spec:
           optional: true
       {{- if .Values.agent.ebpf.enabled }}
       - name: bpffs
+        hostPath:
+          path: /sys/fs/bpf
+          type: DirectoryOrCreate
+      {{- end }}
+      {{- if and .Values.dataplane .Values.dataplane.enabled }}
+      - name: dataplane-socket
+        emptyDir: {}
+      - name: dataplane-bpffs
         hostPath:
           path: /sys/fs/bpf
           type: DirectoryOrCreate
