@@ -95,10 +95,11 @@ type BGPConfig struct {
 	// +kubebuilder:validation:Pattern=`^([0-9]{1,3}\.){3}[0-9]{1,3}$`
 	RouterID string `json:"routerID"`
 
-	// Peers lists BGP peer configurations
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MinItems=1
-	Peers []BGPPeer `json:"peers"`
+	// Peers lists BGP peer configurations.
+	// Required when using the built-in GoBGP backend.
+	// Optional (can be empty) when using NovaRoute, which manages peering externally.
+	// +optional
+	Peers []BGPPeer `json:"peers,omitempty"`
 
 	// LocalASBase enables eBGP mode with per-node unique AS numbers.
 	// When set, each announcing node's local AS = LocalASBase + last octet of its InternalIP.
