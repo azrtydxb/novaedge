@@ -1,0 +1,966 @@
+syntax = "proto3";
+
+package novaedge.dataplane.v1;
+
+option go_package = "github.com/piwi3910/novaedge/api/proto/dataplane";
+
+// DataplaneControl is the gRPC service for agent→dataplane communication.
+// The Go agent pushes configuration to the Rust dataplane daemon over a
+// Unix domain socket. The dataplane manages eBPF programs, L4/L7 forwarding,
+// VIP operations, and observability telemetry.
+service DataplaneControl {
+  // ── Full config push ─────────────────────────────────────────────────
+  // ApplyConfig pushes a full configuration snapshot to the dataplane.
+  // The dataplane atomically replaces its running config with the snapshot.
+  rpc ApplyConfig(ApplyConfigRequest) returns (ApplyConfigResponse);
+
+  // ── Gateway / Listener management ────────────────────────────────────
+  // UpsertGateway creates or updates an HTTP/HTTPS/HTTP3/TCP/UDP listener.
+  rpc UpsertGateway(UpsertGatewayRequest) returns (UpsertGatewayResponse);
+  // DeleteGateway removes a listener by name.
+  rpc DeleteGateway(DeleteGatewayRequest) returns (DeleteGatewayResponse);
+
+  // ── L7 Route management ──────────────────────────────────────────────
+  // UpsertRoute creates or updates an L7 routing rule.
+  rpc UpsertRoute(UpsertRouteRequest) returns (UpsertRouteResponse);
+  // DeleteRoute removes a route by name.
+  rpc DeleteRoute(DeleteRouteRequest) returns (DeleteRouteResponse);
+
+  // ── Backend cluster management ───────────────────────────────────────
+  // UpsertCluster creates or updates a backend cluster (endpoint list,
+  // load balancing, health check, circuit breaker).
+  rpc UpsertCluster(UpsertClusterRequest) returns (UpsertClusterResponse);
+  // DeleteCluster removes a backend cluster by name.
+  rpc DeleteCluster(DeleteClusterRequest) returns (DeleteClusterResponse);
+
+  // ── VIP management ───────────────────────────────────────────────────
+  // UpsertVIP creates or updates a Virtual IP address.
+  rpc UpsertVIP(UpsertVIPRequest) returns (UpsertVIPResponse);
+  // DeleteVIP removes a VIP by name.
+  rpc DeleteVIP(DeleteVIPRequest) returns (DeleteVIPResponse);
+
+  // ── L4 Listener management ──────────────────────────────────────────
+  // UpsertL4Listener creates or updates a TCP/UDP/TLS passthrough listener.
+  rpc UpsertL4Listener(UpsertL4ListenerRequest) returns (UpsertL4ListenerResponse);
+  // DeleteL4Listener removes an L4 listener by name.
+  rpc DeleteL4Listener(DeleteL4ListenerRequest) returns (DeleteL4ListenerResponse);
+
+  // ── Policy management ────────────────────────────────────────────────
+  // UpsertPolicy creates or updates a typed policy (rate-limit, auth, WAF, etc.).
+  rpc UpsertPolicy(UpsertPolicyRequest) returns (UpsertPolicyResponse);
+  // DeletePolicy removes a policy by name.
+  rpc DeletePolicy(DeletePolicyRequest) returns (DeletePolicyResponse);
+
+  // ── Mesh config ──────────────────────────────────────────────────────
+  // UpsertMeshConfig creates or updates the service-mesh configuration.
+  rpc UpsertMeshConfig(UpsertMeshConfigRequest) returns (UpsertMeshConfigResponse);
+  // DeleteMeshConfig removes the mesh configuration.
+  rpc DeleteMeshConfig(DeleteMeshConfigRequest) returns (DeleteMeshConfigResponse);
+
+  // ── SD-WAN ───────────────────────────────────────────────────────────
+  // UpsertWANLink creates or updates a WAN link.
+  rpc UpsertWANLink(UpsertWANLinkRequest) returns (UpsertWANLinkResponse);
+  // DeleteWANLink removes a WAN link by name.
+  rpc DeleteWANLink(DeleteWANLinkRequest) returns (DeleteWANLinkResponse);
+
+  // ── eBPF lifecycle ───────────────────────────────────────────────────
+  // AttachProgram loads and attaches an eBPF program.
+  rpc AttachProgram(AttachProgramRequest) returns (AttachProgramResponse);
+  // DetachProgram detaches and unloads an eBPF program.
+  rpc DetachProgram(DetachProgramRequest) returns (DetachProgramResponse);
+
+  // ── Observability ────────────────────────────────────────────────────
+  // StreamFlows streams flow events captured from the eBPF ring buffer.
+  rpc StreamFlows(StreamFlowsRequest) returns (stream FlowEvent);
+  // GetDataplaneStatus returns the current dataplane status.
+  rpc GetDataplaneStatus(GetDataplaneStatusRequest) returns (DataplaneStatus);
+  // StreamMetrics streams periodic metrics snapshots from the dataplane.
+  rpc StreamMetrics(StreamMetricsRequest) returns (stream MetricsSnapshot);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Common types
+// ═══════════════════════════════════════════════════════════════════════
+
+// OperationStatus indicates the result of a mutating RPC.
+enum OperationStatus {
+  OPERATION_STATUS_UNSPECIFIED = 0;
+  // OK indicates the operation completed successfully.
+  OK = 1;
+  // ERROR indicates the operation failed; see message for details.
+  ERROR = 2;
+  // NOOP indicates no change was needed (already in desired state).
+  NOOP = 3;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Full config push
+// ═══════════════════════════════════════════════════════════════════════
+
+// ApplyConfigRequest sends a full configuration snapshot to the dataplane.
+message ApplyConfigRequest {
+  // version is a monotonically increasing version identifier.
+  string version = 1;
+  // gateways are the listener configurations.
+  repeated GatewayConfig gateways = 2;
+  // routes are the L7 routing rules.
+  repeated RouteConfig routes = 3;
+  // clusters are the backend clusters with endpoints.
+  repeated ClusterConfig clusters = 4;
+  // vips are the virtual IP configurations.
+  repeated VIPConfig vips = 5;
+  // l4_listeners are the L4 TCP/UDP/TLS listeners.
+  repeated L4ListenerConfig l4_listeners = 6;
+  // policies are the typed policies.
+  repeated PolicyConfig policies = 7;
+  // mesh_config is the service-mesh configuration.
+  MeshConfig mesh_config = 8;
+  // wan_links are the SD-WAN link configurations.
+  repeated WANLinkConfig wan_links = 9;
+}
+
+message ApplyConfigResponse {
+  OperationStatus status = 1;
+  string message = 2;
+  // version echoes back the applied version.
+  string applied_version = 3;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Gateway / Listener
+// ═══════════════════════════════════════════════════════════════════════
+
+// GatewayProtocol defines the protocol for a gateway listener.
+enum GatewayProtocol {
+  GATEWAY_PROTOCOL_UNSPECIFIED = 0;
+  GATEWAY_PROTOCOL_HTTP = 1;
+  GATEWAY_PROTOCOL_HTTPS = 2;
+  GATEWAY_PROTOCOL_HTTP3 = 3;
+  GATEWAY_PROTOCOL_TCP = 4;
+  GATEWAY_PROTOCOL_UDP = 5;
+}
+
+// TLSConfig holds TLS certificate material and version constraints.
+message TLSConfig {
+  // PEM-encoded certificate chain.
+  bytes cert_pem = 1;
+  // PEM-encoded private key.
+  bytes key_pem = 2;
+  // PEM-encoded CA certificate bundle (for client verification).
+  bytes ca_pem = 3;
+  // Minimum TLS version (e.g. "1.2", "1.3").
+  string min_version = 4;
+  // Maximum TLS version.
+  string max_version = 5;
+  // Allowed cipher suites (empty = use defaults).
+  repeated string cipher_suites = 6;
+  // ALPN protocols to negotiate.
+  repeated string alpn_protocols = 7;
+}
+
+// HTTP2Settings holds HTTP/2-specific tuning parameters.
+message HTTP2Settings {
+  // Maximum number of concurrent streams per connection.
+  uint32 max_concurrent_streams = 1;
+  // Initial window size in bytes.
+  uint32 initial_window_size = 2;
+  // Maximum frame size in bytes.
+  uint32 max_frame_size = 3;
+  // Maximum header list size in bytes.
+  uint32 max_header_list_size = 4;
+  // Enable server push.
+  bool enable_server_push = 5;
+}
+
+// ProxyProtocolConfig configures PROXY protocol support.
+message ProxyProtocolConfig {
+  // Whether PROXY protocol is enabled.
+  bool enabled = 1;
+  // Version to accept: 1, 2, or 0 for both.
+  int32 version = 2;
+}
+
+// GatewayConfig describes a listener (HTTP/HTTPS/HTTP3/TCP/UDP).
+message GatewayConfig {
+  // Unique name for the gateway.
+  string name = 1;
+  // Bind address (e.g. "0.0.0.0", "::").
+  string bind_address = 2;
+  // Port number.
+  uint32 port = 3;
+  // Protocol for this listener.
+  GatewayProtocol protocol = 4;
+  // TLS configuration (required for HTTPS and HTTP3).
+  TLSConfig tls_config = 5;
+  // HTTP/2 settings.
+  HTTP2Settings http2_settings = 6;
+  // PROXY protocol configuration.
+  ProxyProtocolConfig proxy_protocol = 7;
+  // Hostnames this gateway serves (SNI matching).
+  repeated string hostnames = 8;
+  // Maximum request body size in bytes (0 = unlimited).
+  uint64 max_request_body_bytes = 9;
+  // Idle timeout in milliseconds.
+  uint64 idle_timeout_ms = 10;
+}
+
+message UpsertGatewayRequest {
+  GatewayConfig gateway = 1;
+}
+
+message UpsertGatewayResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeleteGatewayRequest {
+  string name = 1;
+}
+
+message DeleteGatewayResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// L7 Route
+// ═══════════════════════════════════════════════════════════════════════
+
+// PathMatchType defines how a path is matched.
+enum PathMatchType {
+  PATH_MATCH_TYPE_UNSPECIFIED = 0;
+  PATH_MATCH_PREFIX = 1;
+  PATH_MATCH_EXACT = 2;
+  PATH_MATCH_REGEX = 3;
+}
+
+// PathMatch specifies a path matching rule.
+message PathMatch {
+  PathMatchType match_type = 1;
+  string value = 2;
+}
+
+// HeaderMatch specifies a header matching rule.
+message HeaderMatch {
+  // Header name.
+  string name = 1;
+  // Value to match.
+  string value = 2;
+  // Whether the value is a regex (default: exact match).
+  bool is_regex = 3;
+  // Invert the match (true = header must NOT match).
+  bool invert = 4;
+}
+
+// BackendRef references a backend cluster with an optional weight.
+message BackendRef {
+  // Cluster name.
+  string cluster_name = 1;
+  // Traffic weight (for weighted load balancing across clusters).
+  uint32 weight = 2;
+}
+
+// RetryPolicy defines automatic retry behavior.
+message RetryPolicy {
+  // Maximum number of retries.
+  uint32 max_retries = 1;
+  // Per-try timeout in milliseconds.
+  uint64 per_try_timeout_ms = 2;
+  // Conditions that trigger a retry (e.g. "5xx", "reset", "connect-failure").
+  repeated string retry_on = 3;
+  // Base interval for exponential backoff in milliseconds.
+  uint64 backoff_base_ms = 4;
+}
+
+// RouteConfig describes an L7 routing rule.
+message RouteConfig {
+  // Unique name for the route.
+  string name = 1;
+  // Reference to the parent gateway name.
+  string gateway_ref = 2;
+  // Hostnames to match (empty = match all).
+  repeated string hostnames = 3;
+  // Path matching rule.
+  PathMatch path_match = 4;
+  // Header matching rules (all must match).
+  repeated HeaderMatch header_matches = 5;
+  // Backend references with weights.
+  repeated BackendRef backend_refs = 6;
+  // Ordered middleware/policy names to apply to this route.
+  repeated string middleware_refs = 7;
+  // Request timeout in milliseconds (0 = no timeout).
+  uint64 timeout_ms = 8;
+  // Retry policy for failed requests.
+  RetryPolicy retry = 9;
+  // Priority for route ordering (lower = higher priority).
+  int32 priority = 10;
+}
+
+message UpsertRouteRequest {
+  RouteConfig route = 1;
+}
+
+message UpsertRouteResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeleteRouteRequest {
+  string name = 1;
+}
+
+message DeleteRouteResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Backend cluster
+// ═══════════════════════════════════════════════════════════════════════
+
+// LBAlgorithm defines the load balancing algorithm.
+enum LBAlgorithm {
+  LB_ALGORITHM_UNSPECIFIED = 0;
+  LB_ALGORITHM_ROUND_ROBIN = 1;
+  LB_ALGORITHM_LEAST_CONN = 2;
+  LB_ALGORITHM_P2C = 3;
+  LB_ALGORITHM_EWMA = 4;
+  LB_ALGORITHM_RING_HASH = 5;
+  LB_ALGORITHM_MAGLEV = 6;
+  LB_ALGORITHM_RANDOM = 7;
+}
+
+// Endpoint describes a single backend endpoint.
+message Endpoint {
+  // IP address (IPv4 or IPv6).
+  string ip = 1;
+  // Port number.
+  uint32 port = 2;
+  // Weight for weighted load balancing (0 = default weight).
+  uint32 weight = 3;
+  // Whether this endpoint is currently healthy.
+  bool healthy = 4;
+}
+
+// HealthCheckConfig defines active health check parameters.
+message HealthCheckConfig {
+  // Check interval in milliseconds.
+  uint64 interval_ms = 1;
+  // Timeout per check in milliseconds.
+  uint64 timeout_ms = 2;
+  // Number of consecutive successes required to mark healthy.
+  uint32 healthy_threshold = 3;
+  // Number of consecutive failures required to mark unhealthy.
+  uint32 unhealthy_threshold = 4;
+  // HTTP path for HTTP health checks (empty for TCP checks).
+  string http_path = 5;
+  // Expected HTTP status codes for a healthy response.
+  repeated uint32 expected_statuses = 6;
+}
+
+// CircuitBreakerConfig defines circuit breaker thresholds.
+message CircuitBreakerConfig {
+  // Maximum number of connections.
+  uint32 max_connections = 1;
+  // Maximum number of pending requests.
+  uint32 max_pending_requests = 2;
+  // Maximum number of concurrent requests.
+  uint32 max_requests = 3;
+  // Maximum number of retries.
+  uint32 max_retries = 4;
+  // Consecutive 5xx errors to trip the breaker.
+  uint32 consecutive_errors = 5;
+  // Time in milliseconds before trying a half-open probe.
+  uint64 open_duration_ms = 6;
+}
+
+// ConnectionPoolConfig defines connection pool settings for a cluster.
+message ConnectionPoolConfig {
+  // Maximum total connections.
+  uint32 max_connections = 1;
+  // Maximum idle connections.
+  uint32 max_idle = 2;
+  // Idle connection timeout in milliseconds.
+  uint64 idle_timeout_ms = 3;
+  // Connection timeout in milliseconds.
+  uint64 connect_timeout_ms = 4;
+}
+
+// ClusterConfig describes a backend cluster.
+message ClusterConfig {
+  // Unique name for the cluster.
+  string name = 1;
+  // Backend endpoints.
+  repeated Endpoint endpoints = 2;
+  // Load balancing algorithm.
+  LBAlgorithm lb_algorithm = 3;
+  // Active health check configuration.
+  HealthCheckConfig health_check = 4;
+  // Circuit breaker configuration.
+  CircuitBreakerConfig circuit_breaker = 5;
+  // Connection pool configuration.
+  ConnectionPoolConfig connection_pool = 6;
+  // TLS settings for backend connections.
+  TLSConfig backend_tls = 7;
+  // Connect timeout in milliseconds (overrides connection pool setting).
+  uint64 connect_timeout_ms = 8;
+}
+
+message UpsertClusterRequest {
+  ClusterConfig cluster = 1;
+}
+
+message UpsertClusterResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeleteClusterRequest {
+  string name = 1;
+}
+
+message DeleteClusterResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// VIP management
+// ═══════════════════════════════════════════════════════════════════════
+
+// VIPMode defines the announcement mode for a VIP.
+enum VIPMode {
+  VIP_MODE_UNSPECIFIED = 0;
+  VIP_MODE_L2 = 1;
+  VIP_MODE_BGP = 2;
+  VIP_MODE_OSPF = 3;
+}
+
+// BGPConfig defines BGP announcement parameters.
+message BGPConfig {
+  // Local autonomous system number.
+  uint32 local_asn = 1;
+  // BGP router ID (typically an IP address).
+  string router_id = 2;
+  // Peer addresses.
+  repeated string peer_addresses = 3;
+  // BGP communities to attach to the announcement.
+  repeated string communities = 4;
+  // Local preference value.
+  uint32 local_preference = 5;
+}
+
+// VIPConfig describes a Virtual IP address.
+message VIPConfig {
+  // Unique name for the VIP.
+  string name = 1;
+  // VIP address (IPv4 or IPv6 CIDR, e.g. "10.0.0.1/32").
+  string address = 2;
+  // Announcement mode.
+  VIPMode mode = 3;
+  // Network interface to bind the VIP to.
+  string interface = 4;
+  // BGP configuration (when mode = BGP).
+  BGPConfig bgp_config = 5;
+  // ARP interface for Gratuitous ARP (when mode = L2).
+  string arp_interface = 6;
+  // OSPF area ID (when mode = OSPF).
+  uint32 ospf_area_id = 7;
+}
+
+message UpsertVIPRequest {
+  VIPConfig vip = 1;
+}
+
+message UpsertVIPResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeleteVIPRequest {
+  string name = 1;
+}
+
+message DeleteVIPResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// L4 Listener
+// ═══════════════════════════════════════════════════════════════════════
+
+// L4Protocol defines the protocol for an L4 listener.
+enum L4Protocol {
+  L4_PROTOCOL_UNSPECIFIED = 0;
+  L4_PROTOCOL_TCP = 1;
+  L4_PROTOCOL_UDP = 2;
+  L4_PROTOCOL_TLS_PASSTHROUGH = 3;
+}
+
+// L4ListenerConfig describes a TCP/UDP/TLS passthrough listener.
+message L4ListenerConfig {
+  // Unique name for the L4 listener.
+  string name = 1;
+  // Bind address.
+  string bind_address = 2;
+  // Port number.
+  uint32 port = 3;
+  // L4 protocol.
+  L4Protocol protocol = 4;
+  // Backend references for forwarding.
+  repeated BackendRef backend_refs = 5;
+  // Idle timeout in milliseconds.
+  uint64 idle_timeout_ms = 6;
+  // Connect timeout in milliseconds.
+  uint64 connect_timeout_ms = 7;
+}
+
+message UpsertL4ListenerRequest {
+  L4ListenerConfig listener = 1;
+}
+
+message UpsertL4ListenerResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeleteL4ListenerRequest {
+  string name = 1;
+}
+
+message DeleteL4ListenerResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Policy
+// ═══════════════════════════════════════════════════════════════════════
+
+// PolicyType identifies the kind of policy.
+enum PolicyType {
+  POLICY_TYPE_UNSPECIFIED = 0;
+  POLICY_TYPE_RATE_LIMIT = 1;
+  POLICY_TYPE_JWT = 2;
+  POLICY_TYPE_BASIC_AUTH = 3;
+  POLICY_TYPE_FORWARD_AUTH = 4;
+  POLICY_TYPE_OAUTH2 = 5;
+  POLICY_TYPE_WAF = 6;
+  POLICY_TYPE_CORS = 7;
+  POLICY_TYPE_IP_FILTER = 8;
+}
+
+// RateLimitPolicyConfig defines rate limiting parameters.
+message RateLimitPolicyConfig {
+  // Maximum requests per second.
+  uint32 requests_per_second = 1;
+  // Burst size.
+  uint32 burst = 2;
+  // Key for rate limiting (e.g. "source-ip", "header:X-API-Key").
+  string key = 3;
+}
+
+// JWTPolicyConfig defines JWT validation parameters.
+message JWTPolicyConfig {
+  // Issuer to validate.
+  string issuer = 1;
+  // Allowed audiences.
+  repeated string audiences = 2;
+  // JWKS URI for key retrieval.
+  string jwks_uri = 3;
+  // Header name containing the token.
+  string header_name = 4;
+  // Token prefix (e.g. "Bearer").
+  string header_prefix = 5;
+  // Allowed signing algorithms.
+  repeated string allowed_algorithms = 6;
+  // Required claims (claim name -> expected value).
+  map<string, string> required_claims = 7;
+}
+
+// BasicAuthPolicyConfig defines HTTP Basic Authentication parameters.
+message BasicAuthPolicyConfig {
+  // Realm for the WWW-Authenticate header.
+  string realm = 1;
+  // htpasswd-formatted credentials.
+  string htpasswd = 2;
+  // Strip the Authorization header before forwarding.
+  bool strip_authorization = 3;
+}
+
+// ForwardAuthPolicyConfig defines external authentication delegation.
+message ForwardAuthPolicyConfig {
+  // URL of the external auth service.
+  string address = 1;
+  // Headers to forward from the original request.
+  repeated string auth_request_headers = 2;
+  // Headers to copy from auth response to upstream request.
+  repeated string auth_response_headers = 3;
+  // Timeout in milliseconds for the auth subrequest.
+  uint64 timeout_ms = 4;
+}
+
+// OAuth2PolicyConfig defines OAuth2/OIDC flow parameters.
+message OAuth2PolicyConfig {
+  // OIDC issuer URL.
+  string issuer_url = 1;
+  // OAuth2 client ID.
+  string client_id = 2;
+  // OAuth2 client secret.
+  string client_secret = 3;
+  // Redirect URL after authentication.
+  string redirect_url = 4;
+  // OAuth2 scopes to request.
+  repeated string scopes = 5;
+  // Session encryption key (32 bytes).
+  bytes session_secret = 6;
+}
+
+// WAFPolicyConfig defines Web Application Firewall parameters.
+message WAFPolicyConfig {
+  // Whether WAF is enabled.
+  bool enabled = 1;
+  // Mode: "detection" or "prevention".
+  string mode = 2;
+  // Paranoia level (1-4).
+  uint32 paranoia_level = 3;
+  // Anomaly score threshold.
+  uint32 anomaly_threshold = 4;
+  // Rule IDs to exclude.
+  repeated string rule_exclusions = 5;
+  // Maximum request body size to inspect in bytes (0 = skip body).
+  uint64 max_body_size = 6;
+}
+
+// CORSPolicyConfig defines Cross-Origin Resource Sharing parameters.
+message CORSPolicyConfig {
+  // Allowed origins.
+  repeated string allow_origins = 1;
+  // Allowed HTTP methods.
+  repeated string allow_methods = 2;
+  // Allowed headers.
+  repeated string allow_headers = 3;
+  // Headers exposed to the client.
+  repeated string expose_headers = 4;
+  // Max age for preflight cache in seconds.
+  uint64 max_age_seconds = 5;
+  // Whether to allow credentials.
+  bool allow_credentials = 6;
+}
+
+// IPFilterPolicyConfig defines IP allow/deny list parameters.
+message IPFilterPolicyConfig {
+  // Action: "allow" or "deny".
+  string action = 1;
+  // CIDR ranges.
+  repeated string cidrs = 2;
+  // Header to extract the source IP from (e.g. "X-Forwarded-For").
+  string source_header = 3;
+}
+
+// PolicyConfig describes a typed policy.
+message PolicyConfig {
+  // Unique name for the policy.
+  string name = 1;
+  // Policy type.
+  PolicyType policy_type = 2;
+  // Exactly one of the following must be set, corresponding to policy_type.
+  oneof config {
+    RateLimitPolicyConfig rate_limit = 10;
+    JWTPolicyConfig jwt = 11;
+    BasicAuthPolicyConfig basic_auth = 12;
+    ForwardAuthPolicyConfig forward_auth = 13;
+    OAuth2PolicyConfig oauth2 = 14;
+    WAFPolicyConfig waf = 15;
+    CORSPolicyConfig cors = 16;
+    IPFilterPolicyConfig ip_filter = 17;
+  }
+}
+
+message UpsertPolicyRequest {
+  PolicyConfig policy = 1;
+}
+
+message UpsertPolicyResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeletePolicyRequest {
+  string name = 1;
+}
+
+message DeletePolicyResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Mesh config
+// ═══════════════════════════════════════════════════════════════════════
+
+// MeshConfig describes service-mesh settings for the dataplane.
+message MeshConfig {
+  // Whether the mesh is enabled.
+  bool enabled = 1;
+  // mTLS mode: "strict", "permissive", or "disabled".
+  string mtls_mode = 2;
+  // SPIFFE ID for this workload.
+  string spiffe_id = 3;
+  // Ports to intercept for transparent proxying.
+  repeated uint32 intercept_ports = 4;
+  // PEM-encoded CA certificate for mesh trust.
+  bytes ca_cert_pem = 5;
+  // PEM-encoded workload certificate.
+  bytes cert_pem = 6;
+  // PEM-encoded workload private key.
+  bytes key_pem = 7;
+  // Trust domain (e.g. "cluster.local").
+  string trust_domain = 8;
+}
+
+message UpsertMeshConfigRequest {
+  MeshConfig mesh_config = 1;
+}
+
+message UpsertMeshConfigResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeleteMeshConfigRequest {}
+
+message DeleteMeshConfigResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// SD-WAN
+// ═══════════════════════════════════════════════════════════════════════
+
+// SLATarget defines SLA constraints for a WAN link.
+message SLATarget {
+  // Maximum latency in milliseconds.
+  uint64 max_latency_ms = 1;
+  // Maximum jitter in milliseconds.
+  uint64 max_jitter_ms = 2;
+  // Maximum packet loss percentage (0.0 - 100.0).
+  double max_packet_loss_pct = 3;
+}
+
+// WANLinkConfig describes an SD-WAN link.
+message WANLinkConfig {
+  // Unique name for the WAN link.
+  string name = 1;
+  // Network interface name.
+  string interface = 2;
+  // Gateway IP address.
+  string gateway = 3;
+  // Priority (lower = preferred).
+  uint32 priority = 4;
+  // SLA target for this link.
+  SLATarget sla_target = 5;
+  // Bandwidth in Mbps.
+  uint32 bandwidth_mbps = 6;
+  // Provider name (e.g. "ISP-A").
+  string provider = 7;
+}
+
+message UpsertWANLinkRequest {
+  WANLinkConfig wan_link = 1;
+}
+
+message UpsertWANLinkResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+message DeleteWANLinkRequest {
+  string name = 1;
+}
+
+message DeleteWANLinkResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// eBPF lifecycle
+// ═══════════════════════════════════════════════════════════════════════
+
+// EBPFAttachType defines where an eBPF program is attached.
+enum EBPFAttachType {
+  EBPF_ATTACH_TYPE_UNSPECIFIED = 0;
+  EBPF_ATTACH_XDP = 1;
+  EBPF_ATTACH_TC_INGRESS = 2;
+  EBPF_ATTACH_TC_EGRESS = 3;
+  EBPF_ATTACH_CGROUP = 4;
+  EBPF_ATTACH_SOCKOPS = 5;
+  EBPF_ATTACH_TRACEPOINT = 6;
+}
+
+message AttachProgramRequest {
+  // Name to identify this program.
+  string name = 1;
+  // Path to the compiled eBPF object file.
+  string object_path = 2;
+  // Attach type (XDP, TC, cgroup, etc.).
+  EBPFAttachType attach_type = 3;
+  // Network interface to attach to (for XDP/TC).
+  string interface = 4;
+  // Section name within the ELF object (e.g. "xdp", "classifier/ingress").
+  string section = 5;
+  // Pin path in the BPF filesystem (e.g. "/sys/fs/bpf/novaedge/prog_name").
+  string pin_path = 6;
+}
+
+message AttachProgramResponse {
+  OperationStatus status = 1;
+  string message = 2;
+  // Program FD or identifier for later detach.
+  uint32 program_id = 3;
+}
+
+message DetachProgramRequest {
+  // Name of the program to detach.
+  string name = 1;
+}
+
+message DetachProgramResponse {
+  OperationStatus status = 1;
+  string message = 2;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Observability — Flow streaming
+// ═══════════════════════════════════════════════════════════════════════
+
+message StreamFlowsRequest {
+  // Maximum number of events to buffer before backpressure.
+  uint32 buffer_size = 1;
+  // Optional filter: only stream flows matching this protocol.
+  uint32 filter_protocol = 2;
+  // Optional filter: only stream flows matching this source CIDR.
+  string filter_src_cidr = 3;
+  // Optional filter: only stream flows matching this destination CIDR.
+  string filter_dst_cidr = 4;
+}
+
+// Verdict describes the outcome of a flow through the dataplane.
+enum FlowVerdict {
+  FLOW_VERDICT_UNSPECIFIED = 0;
+  FLOW_VERDICT_FORWARDED = 1;
+  FLOW_VERDICT_DROPPED = 2;
+  FLOW_VERDICT_REJECTED = 3;
+}
+
+// FlowEvent represents a single observed network flow.
+message FlowEvent {
+  // Source IP address.
+  string src_ip = 1;
+  // Destination IP address.
+  string dst_ip = 2;
+  // Source port.
+  uint32 src_port = 3;
+  // Destination port.
+  uint32 dst_port = 4;
+  // IP protocol number (6=TCP, 17=UDP, etc.).
+  uint32 protocol = 5;
+  // Verdict: forwarded, dropped, rejected.
+  FlowVerdict verdict = 6;
+  // Latency in nanoseconds (0 if not measured).
+  uint64 latency_ns = 7;
+  // Bytes transferred in this flow.
+  uint64 bytes = 8;
+  // Name of the backend endpoint selected.
+  string backend_selected = 9;
+  // Load balancing algorithm used.
+  string lb_algorithm = 10;
+  // Timestamp in nanoseconds since epoch.
+  uint64 timestamp_ns = 11;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Observability — Dataplane status
+// ═══════════════════════════════════════════════════════════════════════
+
+message GetDataplaneStatusRequest {}
+
+// EBPFProgramInfo describes a loaded eBPF program.
+message EBPFProgramInfo {
+  // Program name.
+  string name = 1;
+  // Attach type.
+  EBPFAttachType attach_type = 2;
+  // Network interface (if applicable).
+  string interface = 3;
+  // Whether the program is currently attached.
+  bool attached = 4;
+}
+
+// MapInfo describes an eBPF map.
+message MapInfo {
+  // Map name.
+  string name = 1;
+  // Current number of entries.
+  uint64 entries = 2;
+  // Maximum number of entries.
+  uint64 max_entries = 3;
+}
+
+// DataplaneStatus reports the current state of the dataplane.
+message DataplaneStatus {
+  // Dataplane operating mode ("ebpf" or "mock").
+  string mode = 1;
+  // Loaded eBPF programs.
+  repeated EBPFProgramInfo loaded_programs = 2;
+  // Active connections count.
+  uint64 active_connections = 3;
+  // eBPF map information.
+  repeated MapInfo map_sizes = 4;
+  // Uptime in seconds since daemon start.
+  uint64 uptime_seconds = 5;
+  // Applied config version.
+  string config_version = 6;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Observability — Metrics streaming
+// ═══════════════════════════════════════════════════════════════════════
+
+message StreamMetricsRequest {
+  // Interval between metric snapshots in milliseconds.
+  uint64 interval_ms = 1;
+}
+
+// HistogramValue holds a histogram snapshot.
+message HistogramValue {
+  // Total count of observations.
+  uint64 count = 1;
+  // Sum of all observed values.
+  double sum = 2;
+  // Bucket boundaries and cumulative counts.
+  repeated HistogramBucket buckets = 3;
+}
+
+// HistogramBucket represents a single histogram bucket.
+message HistogramBucket {
+  // Upper bound of the bucket.
+  double upper_bound = 1;
+  // Cumulative count of observations in this bucket.
+  uint64 cumulative_count = 2;
+}
+
+// MetricsSnapshot contains a point-in-time snapshot of dataplane metrics.
+message MetricsSnapshot {
+  // Timestamp in nanoseconds since epoch.
+  uint64 timestamp_ns = 1;
+  // Counter metrics (monotonically increasing).
+  map<string, uint64> counters = 2;
+  // Gauge metrics (can go up or down).
+  map<string, double> gauges = 3;
+  // Histogram metrics.
+  map<string, HistogramValue> histograms = 4;
+}

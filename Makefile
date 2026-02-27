@@ -48,6 +48,11 @@ generate-proto: protoc-gen-go protoc-gen-go-grpc ## Generate Go code from protob
 		--go-grpc_out=internal/proto/gen --go-grpc_opt=paths=source_relative \
 		--proto_path=api/proto \
 		api/proto/config.proto api/proto/federation.proto
+	mkdir -p api/proto/dataplane
+	PATH=$(LOCALBIN):$$PATH protoc --go_out=api/proto/dataplane --go_opt=paths=source_relative \
+		--go-grpc_out=api/proto/dataplane --go-grpc_opt=paths=source_relative \
+		--proto_path=api/proto \
+		api/proto/dataplane.proto
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
