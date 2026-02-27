@@ -185,6 +185,7 @@ const (
 	EventType_EVENT_TYPE_OWNER_REGISTERED   EventType = 11
 	EventType_EVENT_TYPE_OWNER_DEREGISTERED EventType = 12
 	EventType_EVENT_TYPE_POLICY_VIOLATION   EventType = 13
+	EventType_EVENT_TYPE_BGP_CONFIG_CHANGED EventType = 14
 )
 
 // Enum value maps for EventType.
@@ -204,6 +205,7 @@ var (
 		11: "EVENT_TYPE_OWNER_REGISTERED",
 		12: "EVENT_TYPE_OWNER_DEREGISTERED",
 		13: "EVENT_TYPE_POLICY_VIOLATION",
+		14: "EVENT_TYPE_BGP_CONFIG_CHANGED",
 	}
 	EventType_value = map[string]int32{
 		"EVENT_TYPE_UNSPECIFIED":        0,
@@ -220,6 +222,7 @@ var (
 		"EVENT_TYPE_OWNER_REGISTERED":   11,
 		"EVENT_TYPE_OWNER_DEREGISTERED": 12,
 		"EVENT_TYPE_POLICY_VIOLATION":   13,
+		"EVENT_TYPE_BGP_CONFIG_CHANGED": 14,
 	}
 )
 
@@ -647,20 +650,24 @@ func (x *ApplyPeerRequest) GetPeer() *BGPPeer {
 }
 
 type BGPPeer struct {
-	state           protoimpl.MessageState `protogen:"open.v1"`
-	NeighborAddress string                 `protobuf:"bytes,1,opt,name=neighbor_address,json=neighborAddress,proto3" json:"neighbor_address,omitempty"`
-	RemoteAs        uint32                 `protobuf:"varint,2,opt,name=remote_as,json=remoteAs,proto3" json:"remote_as,omitempty"`
-	PeerType        PeerType               `protobuf:"varint,3,opt,name=peer_type,json=peerType,proto3,enum=novaroute.v1.PeerType" json:"peer_type,omitempty"`
-	Keepalive       uint32                 `protobuf:"varint,4,opt,name=keepalive,proto3" json:"keepalive,omitempty"`
-	HoldTime        uint32                 `protobuf:"varint,5,opt,name=hold_time,json=holdTime,proto3" json:"hold_time,omitempty"`
-	BfdEnabled      bool                   `protobuf:"varint,6,opt,name=bfd_enabled,json=bfdEnabled,proto3" json:"bfd_enabled,omitempty"`
-	Description     string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
-	AddressFamilies []AddressFamily        `protobuf:"varint,8,rep,packed,name=address_families,json=addressFamilies,proto3,enum=novaroute.v1.AddressFamily" json:"address_families,omitempty"`
-	SourceAddress   string                 `protobuf:"bytes,9,opt,name=source_address,json=sourceAddress,proto3" json:"source_address,omitempty"`
-	EbgpMultihop    uint32                 `protobuf:"varint,10,opt,name=ebgp_multihop,json=ebgpMultihop,proto3" json:"ebgp_multihop,omitempty"`
-	Password        string                 `protobuf:"bytes,11,opt,name=password,proto3" json:"password,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	NeighborAddress     string                 `protobuf:"bytes,1,opt,name=neighbor_address,json=neighborAddress,proto3" json:"neighbor_address,omitempty"`
+	RemoteAs            uint32                 `protobuf:"varint,2,opt,name=remote_as,json=remoteAs,proto3" json:"remote_as,omitempty"`
+	PeerType            PeerType               `protobuf:"varint,3,opt,name=peer_type,json=peerType,proto3,enum=novaroute.v1.PeerType" json:"peer_type,omitempty"`
+	Keepalive           uint32                 `protobuf:"varint,4,opt,name=keepalive,proto3" json:"keepalive,omitempty"`
+	HoldTime            uint32                 `protobuf:"varint,5,opt,name=hold_time,json=holdTime,proto3" json:"hold_time,omitempty"`
+	BfdEnabled          bool                   `protobuf:"varint,6,opt,name=bfd_enabled,json=bfdEnabled,proto3" json:"bfd_enabled,omitempty"`
+	Description         string                 `protobuf:"bytes,7,opt,name=description,proto3" json:"description,omitempty"`
+	AddressFamilies     []AddressFamily        `protobuf:"varint,8,rep,packed,name=address_families,json=addressFamilies,proto3,enum=novaroute.v1.AddressFamily" json:"address_families,omitempty"`
+	SourceAddress       string                 `protobuf:"bytes,9,opt,name=source_address,json=sourceAddress,proto3" json:"source_address,omitempty"`
+	EbgpMultihop        uint32                 `protobuf:"varint,10,opt,name=ebgp_multihop,json=ebgpMultihop,proto3" json:"ebgp_multihop,omitempty"`
+	Password            string                 `protobuf:"bytes,11,opt,name=password,proto3" json:"password,omitempty"`
+	MaxPrefix           uint32                 `protobuf:"varint,12,opt,name=max_prefix,json=maxPrefix,proto3" json:"max_prefix,omitempty"`
+	BfdMinRxMs          uint32                 `protobuf:"varint,13,opt,name=bfd_min_rx_ms,json=bfdMinRxMs,proto3" json:"bfd_min_rx_ms,omitempty"`
+	BfdMinTxMs          uint32                 `protobuf:"varint,14,opt,name=bfd_min_tx_ms,json=bfdMinTxMs,proto3" json:"bfd_min_tx_ms,omitempty"`
+	BfdDetectMultiplier uint32                 `protobuf:"varint,15,opt,name=bfd_detect_multiplier,json=bfdDetectMultiplier,proto3" json:"bfd_detect_multiplier,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *BGPPeer) Reset() {
@@ -768,6 +775,34 @@ func (x *BGPPeer) GetPassword() string {
 		return x.Password
 	}
 	return ""
+}
+
+func (x *BGPPeer) GetMaxPrefix() uint32 {
+	if x != nil {
+		return x.MaxPrefix
+	}
+	return 0
+}
+
+func (x *BGPPeer) GetBfdMinRxMs() uint32 {
+	if x != nil {
+		return x.BfdMinRxMs
+	}
+	return 0
+}
+
+func (x *BGPPeer) GetBfdMinTxMs() uint32 {
+	if x != nil {
+		return x.BfdMinTxMs
+	}
+	return 0
+}
+
+func (x *BGPPeer) GetBfdDetectMultiplier() uint32 {
+	if x != nil {
+		return x.BfdDetectMultiplier
+	}
+	return 0
 }
 
 type ApplyPeerResponse struct {
@@ -1773,6 +1808,7 @@ type PeerStatus struct {
 	Uptime           string                 `protobuf:"bytes,7,opt,name=uptime,proto3" json:"uptime,omitempty"`
 	BfdEnabled       bool                   `protobuf:"varint,8,opt,name=bfd_enabled,json=bfdEnabled,proto3" json:"bfd_enabled,omitempty"`
 	BfdStatus        string                 `protobuf:"bytes,9,opt,name=bfd_status,json=bfdStatus,proto3" json:"bfd_status,omitempty"`
+	Description      string                 `protobuf:"bytes,10,opt,name=description,proto3" json:"description,omitempty"`
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -1866,6 +1902,13 @@ func (x *PeerStatus) GetBfdEnabled() bool {
 func (x *PeerStatus) GetBfdStatus() string {
 	if x != nil {
 		return x.BfdStatus
+	}
+	return ""
+}
+
+func (x *PeerStatus) GetDescription() string {
+	if x != nil {
+		return x.Description
 	}
 	return ""
 }
@@ -2333,7 +2376,7 @@ const file_api_novaroute_v1_novaroute_proto_rawDesc = "" +
 	"\x10ApplyPeerRequest\x12\x14\n" +
 	"\x05owner\x18\x01 \x01(\tR\x05owner\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x12)\n" +
-	"\x04peer\x18\x03 \x01(\v2\x15.novaroute.v1.BGPPeerR\x04peer\"\xb4\x03\n" +
+	"\x04peer\x18\x03 \x01(\v2\x15.novaroute.v1.BGPPeerR\x04peer\"\xcd\x04\n" +
 	"\aBGPPeer\x12)\n" +
 	"\x10neighbor_address\x18\x01 \x01(\tR\x0fneighborAddress\x12\x1b\n" +
 	"\tremote_as\x18\x02 \x01(\rR\bremoteAs\x123\n" +
@@ -2347,7 +2390,14 @@ const file_api_novaroute_v1_novaroute_proto_rawDesc = "" +
 	"\x0esource_address\x18\t \x01(\tR\rsourceAddress\x12#\n" +
 	"\rebgp_multihop\x18\n" +
 	" \x01(\rR\febgpMultihop\x12\x1a\n" +
-	"\bpassword\x18\v \x01(\tR\bpassword\"\x13\n" +
+	"\bpassword\x18\v \x01(\tR\bpassword\x12\x1d\n" +
+	"\n" +
+	"max_prefix\x18\f \x01(\rR\tmaxPrefix\x12!\n" +
+	"\rbfd_min_rx_ms\x18\r \x01(\rR\n" +
+	"bfdMinRxMs\x12!\n" +
+	"\rbfd_min_tx_ms\x18\x0e \x01(\rR\n" +
+	"bfdMinTxMs\x122\n" +
+	"\x15bfd_detect_multiplier\x18\x0f \x01(\rR\x13bfdDetectMultiplier\"\x13\n" +
 	"\x11ApplyPeerResponse\"j\n" +
 	"\x11RemovePeerRequest\x12\x14\n" +
 	"\x05owner\x18\x01 \x01(\tR\x05owner\x12\x14\n" +
@@ -2411,7 +2461,7 @@ const file_api_novaroute_v1_novaroute_proto_rawDesc = "" +
 	"\fbfd_sessions\x18\x03 \x03(\v2\x1e.novaroute.v1.BFDSessionStatusR\vbfdSessions\x12J\n" +
 	"\x0fospf_interfaces\x18\x04 \x03(\v2!.novaroute.v1.OSPFInterfaceStatusR\x0eospfInterfaces\x126\n" +
 	"\n" +
-	"frr_status\x18\x05 \x01(\v2\x17.novaroute.v1.FRRStatusR\tfrrStatus\"\xaa\x02\n" +
+	"frr_status\x18\x05 \x01(\v2\x17.novaroute.v1.FRRStatusR\tfrrStatus\"\xcc\x02\n" +
 	"\n" +
 	"PeerStatus\x12)\n" +
 	"\x10neighbor_address\x18\x01 \x01(\tR\x0fneighborAddress\x12\x1b\n" +
@@ -2424,7 +2474,9 @@ const file_api_novaroute_v1_novaroute_proto_rawDesc = "" +
 	"\vbfd_enabled\x18\b \x01(\bR\n" +
 	"bfdEnabled\x12\x1d\n" +
 	"\n" +
-	"bfd_status\x18\t \x01(\tR\tbfdStatus\"\x86\x01\n" +
+	"bfd_status\x18\t \x01(\tR\tbfdStatus\x12 \n" +
+	"\vdescription\x18\n" +
+	" \x01(\tR\vdescription\"\x86\x01\n" +
 	"\fPrefixStatus\x12\x16\n" +
 	"\x06prefix\x18\x01 \x01(\tR\x06prefix\x122\n" +
 	"\bprotocol\x18\x02 \x01(\x0e2\x16.novaroute.v1.ProtocolR\bprotocol\x12\x14\n" +
@@ -2474,7 +2526,7 @@ const file_api_novaroute_v1_novaroute_proto_rawDesc = "" +
 	"\bProtocol\x12\x18\n" +
 	"\x14PROTOCOL_UNSPECIFIED\x10\x00\x12\x10\n" +
 	"\fPROTOCOL_BGP\x10\x01\x12\x11\n" +
-	"\rPROTOCOL_OSPF\x10\x02*\xb4\x03\n" +
+	"\rPROTOCOL_OSPF\x10\x02*\xd7\x03\n" +
 	"\tEventType\x12\x1a\n" +
 	"\x16EVENT_TYPE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12EVENT_TYPE_PEER_UP\x10\x01\x12\x18\n" +
@@ -2490,7 +2542,8 @@ const file_api_novaroute_v1_novaroute_proto_rawDesc = "" +
 	"\x12\x1f\n" +
 	"\x1bEVENT_TYPE_OWNER_REGISTERED\x10\v\x12!\n" +
 	"\x1dEVENT_TYPE_OWNER_DEREGISTERED\x10\f\x12\x1f\n" +
-	"\x1bEVENT_TYPE_POLICY_VIOLATION\x10\r2\xbe\b\n" +
+	"\x1bEVENT_TYPE_POLICY_VIOLATION\x10\r\x12!\n" +
+	"\x1dEVENT_TYPE_BGP_CONFIG_CHANGED\x10\x0e2\xbe\b\n" +
 	"\fRouteControl\x12I\n" +
 	"\bRegister\x12\x1d.novaroute.v1.RegisterRequest\x1a\x1e.novaroute.v1.RegisterResponse\x12O\n" +
 	"\n" +
