@@ -1039,9 +1039,9 @@ func buildL4Routes(
 			protocol = 17
 		case pb.Protocol_TCP, pb.Protocol_TLS:
 			protocol = 6
-		default:
-			// HTTP/HTTPS/HTTP3/UNSPECIFIED are L7 protocols handled by the
-			// Rust dataplane, not XDP L4 LB. Fall through with TCP default.
+		case pb.Protocol_PROTOCOL_UNSPECIFIED, pb.Protocol_HTTP, pb.Protocol_HTTPS, pb.Protocol_HTTP3:
+			// L7 protocols handled by the Rust dataplane, not XDP L4 LB.
+			// Fall through with TCP default.
 		}
 
 		var backends []xdplb.Backend
