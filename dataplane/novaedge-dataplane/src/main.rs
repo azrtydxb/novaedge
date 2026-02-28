@@ -120,6 +120,9 @@ async fn main() -> anyhow::Result<()> {
 
     let map_manager = Arc::new(map_manager);
 
+    // Create runtime config store (shared between gRPC handlers and proxy).
+    let runtime_config = Arc::new(config::RuntimeConfig::new());
+
     // Create flow event broadcast channel.
     let (flow_tx, _flow_rx) = flows::flow_channel();
 
@@ -131,7 +134,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Start gRPC server (blocks until shutdown signal).
     let socket_path = args.socket.clone();
-    let server_result = server::run(map_manager, flow_tx, &args.socket).await;
+    let server_result =
+        server::run(map_manager, runtime_config, flow_tx, &args.socket).await;
 
     // Abort the flow reader task on server shutdown.
     flow_reader_handle.abort();
