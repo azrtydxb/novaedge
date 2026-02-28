@@ -28,6 +28,8 @@ pub fn load_ebpf(path: &str) -> anyhow::Result<LoadResult> {
     use aya::Ebpf;
     use tracing::info;
 
+    use std::cell::UnsafeCell;
+
     use crate::maps::RealMaps;
 
     info!(path = %path, "Loading eBPF programs");
@@ -66,12 +68,12 @@ pub fn load_ebpf(path: &str) -> anyhow::Result<LoadResult> {
     info!("eBPF maps extracted successfully");
 
     let maps = RealMaps {
-        vips,
-        backends,
-        conntrack,
-        rate_limits,
-        rate_limit_cfg,
-        vip_addrs,
+        vips: UnsafeCell::new(vips),
+        backends: UnsafeCell::new(backends),
+        conntrack: UnsafeCell::new(conntrack),
+        rate_limits: UnsafeCell::new(rate_limits),
+        rate_limit_cfg: UnsafeCell::new(rate_limit_cfg),
+        vip_addrs: UnsafeCell::new(vip_addrs),
     };
 
     Ok(LoadResult {
