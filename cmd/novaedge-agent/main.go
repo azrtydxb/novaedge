@@ -1035,6 +1035,9 @@ func buildL4Routes(
 			protocol = 17
 		case pb.Protocol_TCP, pb.Protocol_TLS:
 			protocol = 6
+		default:
+			// HTTP/HTTPS/HTTP3/UNSPECIFIED are L7 protocols handled by the
+			// Rust dataplane, not XDP L4 LB. Fall through with TCP default.
 		}
 
 		var backends []xdplb.Backend
@@ -1112,8 +1115,16 @@ func configureEBPFRateLimiter(rl *ebpfratelimit.RateLimiter, policies []*pb.Poli
 		if rlCfg == nil {
 			continue
 		}
-		rate := uint64(rlCfg.GetRequestsPerSecond())
-		burst := uint64(rlCfg.GetBurst())
+		rps := rlCfg.GetRequestsPerSecond()
+		b := rlCfg.GetBurst()
+		if rps < 0 {
+			rps = 0
+		}
+		if b < 0 {
+			b = 0
+		}
+		rate := uint64(rps)  //nolint:gosec // guarded above
+		burst := uint64(b)   //nolint:gosec // guarded above
 		if rate == 0 {
 			continue
 		}
