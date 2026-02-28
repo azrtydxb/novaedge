@@ -148,7 +148,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.vips.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.vips.keys().map_or(0, |keys| keys.count()),
+            MapManagerInner::Real(m) => m.vips.keys().count(),
         }
     }
 
@@ -259,7 +259,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.backends.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.backends.keys().map_or(0, |keys| keys.count()),
+            MapManagerInner::Real(m) => m.backends.keys().count(),
         }
     }
 
@@ -311,7 +311,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.conntrack.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.conntrack.keys().map_or(0, |keys| keys.count()),
+            MapManagerInner::Real(m) => m.conntrack.keys().count(),
         }
     }
 
@@ -367,7 +367,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.rate_limits.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.rate_limits.keys().map_or(0, |keys| keys.count()),
+            MapManagerInner::Real(m) => m.rate_limits.keys().count(),
         }
     }
 
