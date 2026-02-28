@@ -58,4 +58,4 @@ COPY --from=builder /build/out/novaedge-dataplane /usr/local/bin/
 COPY --from=builder /build/dataplane/target/bpfel-unknown-none/release/novaedge-ebpf /opt/novaedge/
 
 ENTRYPOINT ["novaedge-dataplane"]
-CMD ["--socket-path=/run/novaedge/dataplane.sock", "--ebpf-path=/opt/novaedge/novaedge-ebpf"]
+CMD ["--socket=/run/novaedge/dataplane.sock", "--ebpf-path=/opt/novaedge/novaedge-ebpf"]

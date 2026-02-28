@@ -179,7 +179,7 @@ spec:
         image: ghcr.io/piwi3910/novaedge-dataplane:latest
         imagePullPolicy: IfNotPresent
         args:
-        - --socket-path=/run/novaedge/dataplane.sock
+        - --socket=/run/novaedge/dataplane.sock
         - --ebpf-path=/opt/novaedge/novaedge-ebpf
         securityContext:
           privileged: true

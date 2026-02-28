@@ -196,7 +196,7 @@ spec:
         image: "{{ .Values.dataplane.image.repository }}:{{ .Values.dataplane.image.tag }}"
         imagePullPolicy: {{ .Values.dataplane.image.pullPolicy }}
         args:
-        - --socket-path={{ .Values.dataplane.socketPath }}
+        - --socket={{ .Values.dataplane.socketPath }}
         - --ebpf-path={{ .Values.dataplane.ebpfPath }}
         securityContext:
           privileged: true
