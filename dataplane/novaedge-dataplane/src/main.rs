@@ -12,10 +12,12 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing::{info, warn};
 
+mod config;
 mod flows;
 mod health;
 mod l4;
 mod lb;
+mod listener;
 mod loader;
 mod maps;
 mod mesh;
@@ -42,6 +44,10 @@ struct Args {
     /// Path to compiled eBPF object file.
     #[arg(long, default_value = "/opt/novaedge/novaedge-ebpf")]
     ebpf_path: String,
+
+    /// Network interface for eBPF program attachment.
+    #[arg(long, default_value = "eth0")]
+    interface: String,
 }
 
 #[tokio::main]
@@ -72,9 +78,28 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(target_os = "linux")]
         {
             match loader::load_ebpf(&args.ebpf_path) {
-                Ok(result) => {
+                Ok(mut result) => {
                     if result.is_real {
                         info!("eBPF programs loaded successfully");
+
+                        // Attach eBPF programs to the network interface.
+                        if let Some(ref mut bpf) = result.bpf {
+                            if let Err(e) =
+                                loader::attach_xdp(bpf, "novaedge_xdp", &args.interface)
+                            {
+                                warn!("Failed to attach XDP L4 LB program: {e:#}");
+                            }
+                            if let Err(e) =
+                                loader::attach_xdp(bpf, "novaedge_arp", &args.interface)
+                            {
+                                warn!("Failed to attach XDP ARP responder: {e:#}");
+                            }
+                            if let Err(e) =
+                                loader::attach_tc(bpf, "novaedge_ratelimit", &args.interface)
+                            {
+                                warn!("Failed to attach TC rate limiter: {e:#}");
+                            }
+                        }
                     } else {
                         info!("eBPF loader returned mock maps (programs not yet available)");
                     }
@@ -96,6 +121,31 @@ async fn main() -> anyhow::Result<()> {
 
     let map_manager = Arc::new(map_manager);
 
+    // Create runtime config store (shared between gRPC handlers and proxy).
+    let runtime_config = Arc::new(config::RuntimeConfig::new());
+
+    // Create the HTTP proxy handler.
+    let router = Arc::new(tokio::sync::RwLock::new(proxy::router::Router::new()));
+    let proxy_handler = Arc::new(proxy::handler::ProxyHandler::new(
+        router,
+        runtime_config.clone(),
+    ));
+
+    // Create the listener manager.
+    let listener_mgr = Arc::new(listener::ListenerManager::new(
+        runtime_config.clone(),
+        proxy_handler,
+    ));
+
+    // Create shutdown signal for listener manager.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+    // Spawn listener manager (watches config and starts/stops listeners).
+    let listener_mgr_clone = listener_mgr.clone();
+    let listener_handle = tokio::spawn(async move {
+        listener_mgr_clone.run(shutdown_rx).await;
+    });
+
     // Create flow event broadcast channel.
     let (flow_tx, _flow_rx) = flows::flow_channel();
 
@@ -107,7 +157,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Start gRPC server (blocks until shutdown signal).
     let socket_path = args.socket.clone();
-    let server_result = server::run(map_manager, flow_tx, &args.socket).await;
+    let server_result =
+        server::run(map_manager, runtime_config, flow_tx, &args.socket).await;
+
+    // Signal listener manager to shut down.
+    let _ = shutdown_tx.send(true);
+    listener_handle.abort();
+    let _ = listener_handle.await;
 
     // Abort the flow reader task on server shutdown.
     flow_reader_handle.abort();

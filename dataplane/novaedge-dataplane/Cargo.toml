@@ -17,6 +17,11 @@ async-stream = "0.3"
 rand = "0.8"
 base64 = "0.22"
 dashmap = "6"
+hyper = { version = "1", features = ["client", "http1", "http2", "server"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "tokio", "http1", "http2"] }
+http-body-util = "0.1"
+http = "1"
+bytes = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 aya = "0.13"

@@ -60,7 +60,6 @@ import (
 	"github.com/piwi3910/novaedge/internal/observability"
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 var (
@@ -149,8 +148,7 @@ var (
 	cpBFDTxInterval string
 	cpBFDRxInterval string
 
-	// Forwarding plane delegation (go, rust, or shadow)
-	forwardingPlane string
+	// Rust dataplane connection
 	dataplaneSocket string
 )
 
@@ -220,9 +218,7 @@ func main() {
 	flag.StringVar(&cpBFDTxInterval, "cp-bfd-tx-interval", "300ms", "BFD minimum TX interval for CP VIP")
 	flag.StringVar(&cpBFDRxInterval, "cp-bfd-rx-interval", "300ms", "BFD minimum RX interval for CP VIP")
 
-	// Forwarding plane delegation flags
-	flag.StringVar(&forwardingPlane, "forwarding-plane", "go",
-		"Forwarding plane implementation: go (default), rust (delegate to Rust dataplane), shadow (run both, compare)")
+	// Rust dataplane socket
 	flag.StringVar(&dataplaneSocket, "dataplane-socket", dpctl.DefaultDataplaneSocket,
 		"Unix domain socket path for the Rust dataplane daemon")
 
@@ -250,17 +246,9 @@ func main() {
 		zap.String("controller", controllerAddr),
 	)
 
-	// Validate forwarding plane flag
-	fwdPlane, fwdErr := dpctl.ValidateForwardingPlane(forwardingPlane)
-	if fwdErr != nil {
-		logger.Fatal("Invalid forwarding plane", zap.Error(fwdErr))
-	}
-	if fwdPlane != dpctl.ForwardingPlaneGo {
-		logger.Info("Forwarding plane configured",
-			zap.String("mode", string(fwdPlane)),
-			zap.String("dataplane_socket", dataplaneSocket),
-		)
-	}
+	logger.Info("Rust dataplane configured",
+		zap.String("dataplane_socket", dataplaneSocket),
+	)
 
 	// Control-plane VIP mode: run a simplified agent that only manages
 	// a VIP for kube-apiserver HA, without connecting to the controller.
@@ -496,29 +484,15 @@ func main() {
 	httpServer.SetEBPFHealthMonitor(ebpfHealthMon)
 	httpServer.SetEBPFRateLimiter(ebpfRL)
 
-	// Create dataplane client and translator (for rust/shadow modes)
-	var dpClient *dpctl.Client
-	var dpTranslator *dpctl.Translator
-	var shadowComparator *dpctl.ShadowComparator
-
-	if fwdPlane == dpctl.ForwardingPlaneRust || fwdPlane == dpctl.ForwardingPlaneShadow {
-		var dpErr error
-		dpClient, dpErr = dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
-		if dpErr != nil {
-			logger.Fatal("Failed to connect to Rust dataplane",
-				zap.String("socket", dataplaneSocket),
-				zap.Error(dpErr))
-		}
-		dpTranslator = dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
-
-		if fwdPlane == dpctl.ForwardingPlaneShadow {
-			shadowComparator = dpctl.NewShadowComparator(dpTranslator, dpClient, logger)
-			shadowComparator.Start(ctx)
-			logger.Info("Shadow mode active: Go forwarding primary, Rust dataplane secondary")
-		} else {
-			logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
-		}
+	// Create dataplane client and translator for Rust forwarding plane
+	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
+	if dpErr != nil {
+		logger.Fatal("Failed to connect to Rust dataplane",
+			zap.String("socket", dataplaneSocket),
+			zap.Error(dpErr))
 	}
+	dpTranslator := dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
+	logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
 
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
@@ -576,80 +550,38 @@ func main() {
 				zap.Int("gateways", len(snapshot.Gateways)),
 				zap.Int("routes", len(snapshot.Routes)),
 				zap.Int("vips", len(snapshot.VipAssignments)),
-				zap.String("forwarding_plane", string(fwdPlane)),
 			)
 
 			// Store snapshot for introspection
 			snapshotHolder.Store(snapshot.ConfigSnapshot)
 
-			// ── Rust-only mode: delegate forwarding to the dataplane ──
-			if fwdPlane == dpctl.ForwardingPlaneRust {
-				if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
-					logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
-					healthServer.SetReady(false)
-					adminServer.SetReady(false)
-					return syncErr
-				}
-
-				// VIP management still runs in Go (kernel netlink ops)
-				if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
-					logger.Error("Failed to apply VIP assignments", zap.Error(err))
-				}
-
-				healthServer.SetReady(true)
-				adminServer.SetSnapshot(snapshot)
-				adminServer.SetReady(true)
-				return nil
+			// Sync forwarding config to Rust dataplane
+			if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
+				logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
+				healthServer.SetReady(false)
+				adminServer.SetReady(false)
+				return syncErr
 			}
 
-			// ── Shadow mode: send config to Rust dataplane in parallel ──
-			if fwdPlane == dpctl.ForwardingPlaneShadow && shadowComparator != nil {
-				shadowComparator.SyncConfig(ctx, snapshot.ConfigSnapshot)
-			}
-
-			// ── Go forwarding path (default, also used in shadow mode) ──
-
-			// Apply L4 config (TCP/UDP/TLS passthrough)
-			if applyErr := applyL4Config(ctx, l4Manager, snapshot, logger); applyErr != nil {
-				logger.Error("Failed to apply L4 config", zap.Error(applyErr))
-				// Don't fail the whole config update for L4 errors
-			}
-
-			// Sync XDP LB backends (if XDP manager is active)
-			if xdpManager != nil && xdpManager.IsRunning() {
-				xdpRoutes := buildXDPRoutes(snapshot, logger)
-				if syncErr := xdpManager.SyncBackends(xdpRoutes); syncErr != nil {
-					logger.Error("Failed to sync XDP LB backends", zap.Error(syncErr))
-				}
-			}
-
-			// Apply VIP assignments
+			// VIP management runs in Go (kernel netlink ops)
 			if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
 				logger.Error("Failed to apply VIP assignments", zap.Error(err))
-				// Don't fail the whole config update
 			}
 
-			// Apply mesh config (east-west traffic interception + authorization)
+			// Mesh config runs in Go (TPROXY + mTLS)
 			if meshManager != nil {
 				if applyErr := meshManager.ApplyConfig(snapshot.InternalServices, snapshot.MeshAuthzPolicies); applyErr != nil {
 					logger.Error("Failed to apply mesh config", zap.Error(applyErr))
 				}
 			}
 
-			// Apply SD-WAN config (WAN links and path-selection policies)
+			// SD-WAN config runs in Go (WireGuard tunnels + SLA policies)
 			if sdwanManager != nil {
 				if applyErr := applySDWANConfig(sdwanManager, snapshot, logger); applyErr != nil {
 					logger.Error("Failed to apply SD-WAN config", zap.Error(applyErr))
 				}
 			}
-			// Apply HTTP server config
-			if err := httpServer.ApplyConfig(ctx, snapshot); err != nil {
-				healthServer.SetReady(false)
-				adminServer.SetReady(false)
-				return err
-			}
 
-			// Mark agent as ready after successful config application
 			healthServer.SetReady(true)
 			adminServer.SetSnapshot(snapshot)
 			adminServer.SetReady(true)
@@ -733,11 +665,6 @@ func main() {
 		}
 	}
 
-	// Shutdown shadow comparator (if running)
-	if shadowComparator != nil {
-		shadowComparator.Stop()
-	}
-
 	// Shutdown dataplane client
 	if dpClient != nil {
 		if err := dpClient.Close(); err != nil {
@@ -811,157 +738,6 @@ func main() {
 	}
 
 	logger.Info("Agent stopped")
-}
-
-// applyL4Config converts snapshot L4 listeners to L4 manager config and applies it
-func applyL4Config(ctx context.Context, manager *l4.Manager, snapshot *config.Snapshot, logger *zap.Logger) error {
-	if len(snapshot.L4Listeners) == 0 {
-		// No L4 listeners, clear any existing ones
-		return manager.ApplyConfig(ctx, nil)
-	}
-
-	configs := make([]l4.ListenerConfig, 0, len(snapshot.L4Listeners))
-	for _, l4Listener := range snapshot.L4Listeners {
-		cfg := l4.ListenerConfig{
-			Name:        l4Listener.Name,
-			Port:        l4Listener.Port,
-			BackendName: l4Listener.BackendName,
-			Backends:    l4Listener.Backends,
-		}
-
-		switch l4Listener.Protocol {
-		case pb.Protocol_TCP:
-			cfg.Type = l4.ListenerTypeTCP
-			if l4Listener.TcpConfig != nil {
-				cfg.TCPConfig = &l4.TCPProxyConfig{
-					ConnectTimeout: time.Duration(l4Listener.TcpConfig.ConnectTimeoutMs) * time.Millisecond,
-					IdleTimeout:    time.Duration(l4Listener.TcpConfig.IdleTimeoutMs) * time.Millisecond,
-					BufferSize:     int(l4Listener.TcpConfig.BufferSize),
-					DrainTimeout:   time.Duration(l4Listener.TcpConfig.DrainTimeoutMs) * time.Millisecond,
-				}
-			}
-		case pb.Protocol_TLS:
-			cfg.Type = l4.ListenerTypeTLSPassthrough
-			routes := make(map[string]*l4.TLSRoute)
-			for _, tlsRoute := range l4Listener.TlsRoutes {
-				routes[tlsRoute.Hostname] = &l4.TLSRoute{
-					Hostname:    tlsRoute.Hostname,
-					Backends:    tlsRoute.Backends,
-					BackendName: tlsRoute.BackendName,
-				}
-			}
-			var defaultBackend *l4.TLSRoute
-			if l4Listener.DefaultTlsBackend != nil {
-				defaultBackend = &l4.TLSRoute{
-					Hostname:    l4Listener.DefaultTlsBackend.Hostname,
-					Backends:    l4Listener.DefaultTlsBackend.Backends,
-					BackendName: l4Listener.DefaultTlsBackend.BackendName,
-				}
-			}
-			cfg.TLSPassthroughConfig = &l4.TLSPassthroughConfig{
-				Routes:         routes,
-				DefaultBackend: defaultBackend,
-			}
-		case pb.Protocol_UDP:
-			cfg.Type = l4.ListenerTypeUDP
-			if l4Listener.UdpConfig != nil {
-				cfg.UDPConfig = &l4.UDPProxyConfig{
-					SessionTimeout: time.Duration(l4Listener.UdpConfig.SessionTimeoutMs) * time.Millisecond,
-					BufferSize:     int(l4Listener.UdpConfig.BufferSize),
-				}
-			}
-		default:
-			logger.Warn("Unknown L4 listener protocol",
-				zap.Int32("protocol", int32(l4Listener.Protocol)))
-			continue
-		}
-
-		configs = append(configs, cfg)
-	}
-
-	logger.Info("Applying L4 configuration",
-		zap.Int("listeners", len(configs)))
-	return manager.ApplyConfig(ctx, configs)
-}
-
-// buildXDPRoutes builds XDP L4 routes from the config snapshot.
-// It correlates VIP assignments with L4 listeners to create VIP-to-backend
-// mappings for XDP fast-path load balancing. Only plain TCP/UDP listeners
-// are eligible; TLS passthrough listeners remain in userspace.
-func buildXDPRoutes(snapshot *config.Snapshot, logger *zap.Logger) []xdplb.L4Route {
-	if len(snapshot.L4Listeners) == 0 || len(snapshot.VipAssignments) == 0 {
-		return nil
-	}
-
-	// Build a map of port → L4Listener for eligible (TCP/UDP) listeners.
-	type l4Info struct {
-		protocol uint8
-		backends []*pb.Endpoint
-	}
-	portMap := make(map[int32]l4Info)
-	for _, listener := range snapshot.L4Listeners {
-		var proto uint8
-		switch listener.Protocol {
-		case pb.Protocol_TCP:
-			proto = 6
-		case pb.Protocol_UDP:
-			proto = 17
-		default:
-			// TLS passthrough and other protocols stay in userspace
-			continue
-		}
-		portMap[listener.Port] = l4Info{protocol: proto, backends: listener.Backends}
-	}
-
-	if len(portMap) == 0 {
-		return nil
-	}
-
-	// For each VIP assignment, create XDP routes for matching ports.
-	var routes []xdplb.L4Route
-	for _, vipAssign := range snapshot.VipAssignments {
-		if vipAssign.Address == "" {
-			continue
-		}
-		for _, port := range vipAssign.Ports {
-			info, ok := portMap[port]
-			if !ok {
-				continue
-			}
-
-			backends := make([]xdplb.Backend, 0, len(info.backends))
-			for _, ep := range info.backends {
-				if !ep.Ready {
-					continue
-				}
-				if ep.Port <= 0 || ep.Port > 65535 {
-					continue
-				}
-				backends = append(backends, xdplb.Backend{
-					Addr: ep.Address,
-					Port: uint16(ep.Port), //nolint:gosec // bounds checked above
-				})
-			}
-
-			if len(backends) == 0 {
-				continue
-			}
-
-			routes = append(routes, xdplb.L4Route{
-				VIP:      vipAssign.Address,
-				Port:     uint16(port), //nolint:gosec // port is a valid int32
-				Protocol: info.protocol,
-				Backends: backends,
-			})
-		}
-	}
-
-	if len(routes) > 0 {
-		logger.Info("Built XDP LB routes",
-			zap.Int("routes", len(routes)))
-	}
-
-	return routes
 }
 
 // parseBGPPeer parses a peer string in the format "IP:AS[:PORT]" into a BGPPeerConfig.
