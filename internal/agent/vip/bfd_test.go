@@ -27,6 +27,48 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
+// Test helpers that access internal BFD state directly (same package).
+
+func testGetSessionState(m *BFDManager, peerIP net.IP) BFDSessionState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if session, exists := m.sessions[peerIP.String()]; exists {
+		session.mu.RLock()
+		defer session.mu.RUnlock()
+		return session.state
+	}
+	return BFDStateDown
+}
+
+func testGetSessionCount(m *BFDManager) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.sessions)
+}
+
+func testGetAllSessionStates(m *BFDManager) map[string]BFDSessionState {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	states := make(map[string]BFDSessionState, len(m.sessions))
+	for peerKey, session := range m.sessions {
+		session.mu.RLock()
+		states[peerKey] = session.state
+		session.mu.RUnlock()
+	}
+	return states
+}
+
+func testGetSessionStats(m *BFDManager, peerIP net.IP) (packetsRx, packetsTx, flaps uint64, ok bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if session, exists := m.sessions[peerIP.String()]; exists {
+		session.mu.RLock()
+		defer session.mu.RUnlock()
+		return session.packetsRx, session.packetsTx, session.sessionFlaps, true
+	}
+	return 0, 0, 0, false
+}
+
 func TestBFDSessionState_String(t *testing.T) {
 	tests := []struct {
 		state    BFDSessionState
@@ -64,11 +106,11 @@ func TestBFDManager_AddRemoveSession(t *testing.T) {
 			t.Fatalf("Failed to add BFD session: %v", err)
 		}
 
-		if manager.GetSessionCount() != 1 {
-			t.Errorf("Expected 1 session, got %d", manager.GetSessionCount())
+		if testGetSessionCount(manager) != 1 {
+			t.Errorf("Expected 1 session, got %d", testGetSessionCount(manager))
 		}
 
-		state := manager.GetSessionState(peerIP)
+		state := testGetSessionState(manager, peerIP)
 		if state != BFDStateDown {
 			t.Errorf("Expected initial state Down, got %s", state.String())
 		}
@@ -80,21 +122,21 @@ func TestBFDManager_AddRemoveSession(t *testing.T) {
 			t.Fatalf("Duplicate add should not error: %v", err)
 		}
 
-		if manager.GetSessionCount() != 1 {
-			t.Errorf("Expected still 1 session, got %d", manager.GetSessionCount())
+		if testGetSessionCount(manager) != 1 {
+			t.Errorf("Expected still 1 session, got %d", testGetSessionCount(manager))
 		}
 	})
 
 	t.Run("remove session", func(t *testing.T) {
 		manager.RemoveSession(peerIP)
 
-		if manager.GetSessionCount() != 0 {
-			t.Errorf("Expected 0 sessions, got %d", manager.GetSessionCount())
+		if testGetSessionCount(manager) != 0 {
+			t.Errorf("Expected 0 sessions, got %d", testGetSessionCount(manager))
 		}
 	})
 
 	t.Run("get state of non-existent session", func(t *testing.T) {
-		state := manager.GetSessionState(net.ParseIP("10.0.0.99"))
+		state := testGetSessionState(manager, net.ParseIP("10.0.0.99"))
 		if state != BFDStateDown {
 			t.Errorf("Expected Down for non-existent session, got %s", state.String())
 		}
@@ -120,14 +162,14 @@ func TestBFDManager_MultipleSessions(t *testing.T) {
 		}
 	}
 
-	if manager.GetSessionCount() != 3 {
-		t.Errorf("Expected 3 sessions, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 3 {
+		t.Errorf("Expected 3 sessions, got %d", testGetSessionCount(manager))
 	}
 
 	// Verify each session exists
 	for _, peer := range peers {
 		peerIP := net.ParseIP(peer)
-		state := manager.GetSessionState(peerIP)
+		state := testGetSessionState(manager, peerIP)
 		if state == BFDStateAdminDown {
 			t.Errorf("Session for %s should not be AdminDown", peer)
 		}
@@ -136,8 +178,8 @@ func TestBFDManager_MultipleSessions(t *testing.T) {
 	// Remove one session
 	manager.RemoveSession(net.ParseIP(peers[1]))
 
-	if manager.GetSessionCount() != 2 {
-		t.Errorf("Expected 2 sessions after removal, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 2 {
+		t.Errorf("Expected 2 sessions after removal, got %d", testGetSessionCount(manager))
 	}
 }
 
@@ -172,12 +214,12 @@ func TestBFDManager_UpdateSession(t *testing.T) {
 	}
 
 	// Verify still only one session
-	if manager.GetSessionCount() != 1 {
-		t.Errorf("Expected 1 session after update, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 1 {
+		t.Errorf("Expected 1 session after update, got %d", testGetSessionCount(manager))
 	}
 
 	// Verify state is still valid
-	state := manager.GetSessionState(peerIP)
+	state := testGetSessionState(manager, peerIP)
 	if state == BFDStateAdminDown {
 		t.Error("Session should not be AdminDown after update")
 	}
@@ -201,8 +243,8 @@ func TestBFDManager_UpdateNonExistentSession(t *testing.T) {
 	}
 
 	// Verify session was created
-	if manager.GetSessionCount() != 1 {
-		t.Errorf("Expected 1 session after update of non-existent, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 1 {
+		t.Errorf("Expected 1 session after update of non-existent, got %d", testGetSessionCount(manager))
 	}
 }
 
@@ -219,7 +261,7 @@ func TestBFDManager_GetSessionStats(t *testing.T) {
 
 	_ = manager.AddSession(peerIP, config)
 
-	packetsRx, packetsTx, flaps, ok := manager.GetSessionStats(peerIP)
+	packetsRx, packetsTx, flaps, ok := testGetSessionStats(manager, peerIP)
 	if !ok {
 		t.Fatal("Expected stats for active session")
 	}
@@ -235,7 +277,7 @@ func TestBFDManager_GetSessionStatsNonExistent(t *testing.T) {
 	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.99")
-	_, _, _, ok := manager.GetSessionStats(peerIP)
+	_, _, _, ok := testGetSessionStats(manager, peerIP)
 	if ok {
 		t.Error("Expected no stats for non-existent session")
 	}
@@ -370,11 +412,11 @@ func TestBFDManager_IPv6Session(t *testing.T) {
 		t.Fatalf("Failed to add IPv6 BFD session: %v", err)
 	}
 
-	if manager.GetSessionCount() != 1 {
-		t.Errorf("Expected 1 IPv6 session, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 1 {
+		t.Errorf("Expected 1 IPv6 session, got %d", testGetSessionCount(manager))
 	}
 
-	state := manager.GetSessionState(peerIP)
+	state := testGetSessionState(manager, peerIP)
 	if state == BFDStateAdminDown {
 		t.Error("IPv6 session should not be AdminDown")
 	}
@@ -397,8 +439,8 @@ func TestBFDManager_EchoMode(t *testing.T) {
 		t.Fatalf("Failed to add session with echo mode: %v", err)
 	}
 
-	if manager.GetSessionCount() != 1 {
-		t.Errorf("Expected 1 session with echo mode, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 1 {
+		t.Errorf("Expected 1 session with echo mode, got %d", testGetSessionCount(manager))
 	}
 }
 
@@ -462,8 +504,8 @@ func TestBFDManager_IntervalVariations(t *testing.T) {
 				t.Fatalf("Failed to add session with intervals %v/%v: %v", tt.txInterval, tt.rxInterval, err)
 			}
 
-			if manager.GetSessionCount() != 1 {
-				t.Errorf("Expected 1 session, got %d", manager.GetSessionCount())
+			if testGetSessionCount(manager) != 1 {
+				t.Errorf("Expected 1 session, got %d", testGetSessionCount(manager))
 			}
 		})
 	}
@@ -496,8 +538,8 @@ func TestBFDManager_ConcurrentOperations(t *testing.T) {
 	}
 	wg.Wait()
 
-	if manager.GetSessionCount() != 10 {
-		t.Errorf("Expected 10 sessions after concurrent adds, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 10 {
+		t.Errorf("Expected 10 sessions after concurrent adds, got %d", testGetSessionCount(manager))
 	}
 
 	// Concurrent removes
@@ -511,8 +553,8 @@ func TestBFDManager_ConcurrentOperations(t *testing.T) {
 	}
 	wg.Wait()
 
-	if manager.GetSessionCount() != 5 {
-		t.Errorf("Expected 5 sessions after concurrent removes, got %d", manager.GetSessionCount())
+	if testGetSessionCount(manager) != 5 {
+		t.Errorf("Expected 5 sessions after concurrent removes, got %d", testGetSessionCount(manager))
 	}
 }
 
@@ -530,7 +572,7 @@ func TestBFDManager_StateTransitions(t *testing.T) {
 	_ = manager.AddSession(peerIP, config)
 
 	// Verify initial state
-	state := manager.GetSessionState(peerIP)
+	state := testGetSessionState(manager, peerIP)
 	if state != BFDStateDown {
 		t.Errorf("Expected initial state Down, got %s", state.String())
 	}
@@ -542,7 +584,7 @@ func TestBFDManager_StateTransitions(t *testing.T) {
 	}
 	manager.mu.Unlock()
 
-	state = manager.GetSessionState(peerIP)
+	state = testGetSessionState(manager, peerIP)
 	if state != BFDStateInit {
 		t.Errorf("Expected state Init, got %s", state.String())
 	}
@@ -553,7 +595,7 @@ func TestBFDManager_StateTransitions(t *testing.T) {
 	}
 	manager.mu.Unlock()
 
-	state = manager.GetSessionState(peerIP)
+	state = testGetSessionState(manager, peerIP)
 	if state != BFDStateUp {
 		t.Errorf("Expected state Up, got %s", state.String())
 	}
@@ -574,14 +616,14 @@ func TestBFDManager_StateMachine(t *testing.T) {
 
 		// Remote sends Down -> local goes to Init
 		manager.ProcessPacket(peerIP, BFDStateDown, 100)
-		state := manager.GetSessionState(peerIP)
+		state := testGetSessionState(manager, peerIP)
 		if state != BFDStateInit {
 			t.Errorf("Expected Init after receiving Down, got %s", state.String())
 		}
 
 		// Remote sends Init -> local goes to Up
 		manager.ProcessPacket(peerIP, BFDStateInit, 100)
-		state = manager.GetSessionState(peerIP)
+		state = testGetSessionState(manager, peerIP)
 		if state != BFDStateUp {
 			t.Errorf("Expected Up after receiving Init, got %s", state.String())
 		}
@@ -608,14 +650,14 @@ func TestBFDManager_StateMachine(t *testing.T) {
 		manager.ProcessPacket(peerIP, BFDStateDown, 200)
 		manager.ProcessPacket(peerIP, BFDStateInit, 200)
 
-		state := manager.GetSessionState(peerIP)
+		state := testGetSessionState(manager, peerIP)
 		if state != BFDStateUp {
 			t.Fatalf("Expected Up, got %s", state.String())
 		}
 
 		// Remote goes AdminDown
 		manager.ProcessPacket(peerIP, BFDStateAdminDown, 200)
-		state = manager.GetSessionState(peerIP)
+		state = testGetSessionState(manager, peerIP)
 		if state != BFDStateDown {
 			t.Errorf("Expected Down after AdminDown, got %s", state.String())
 		}
@@ -646,7 +688,7 @@ func TestBFDManager_StateMachine(t *testing.T) {
 		// Flap down
 		manager.ProcessPacket(peerIP, BFDStateDown, 300)
 
-		_, _, flaps, ok := manager.GetSessionStats(peerIP)
+		_, _, flaps, ok := testGetSessionStats(manager, peerIP)
 		if !ok {
 			t.Fatal("Session should exist")
 		}
@@ -675,7 +717,7 @@ func TestBFDManager_DetectionTimeout(t *testing.T) {
 	manager.ProcessPacket(peerIP, BFDStateDown, 100)
 	manager.ProcessPacket(peerIP, BFDStateInit, 100)
 
-	state := manager.GetSessionState(peerIP)
+	state := testGetSessionState(manager, peerIP)
 	if state != BFDStateUp {
 		t.Fatalf("Expected Up, got %s", state.String())
 	}
@@ -685,7 +727,7 @@ func TestBFDManager_DetectionTimeout(t *testing.T) {
 	time.Sleep(150 * time.Millisecond)
 	manager.checkDetectionTimeouts()
 
-	state = manager.GetSessionState(peerIP)
+	state = testGetSessionState(manager, peerIP)
 	if state != BFDStateDown {
 		t.Errorf("Expected Down after timeout, got %s", state.String())
 	}
@@ -704,7 +746,7 @@ func TestBFDManager_GetAllSessionStates(t *testing.T) {
 		}
 	}
 
-	states := manager.GetAllSessionStates()
+	states := testGetAllSessionStates(manager)
 	if len(states) != 3 {
 		t.Errorf("Expected 3 states, got %d", len(states))
 	}
@@ -758,9 +800,9 @@ func TestBFDManager_ConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			peerIP := net.ParseIP(net.IPv4(10, 0, 0, byte(id)).String())
 			_ = manager.AddSession(peerIP, config)
-			_ = manager.GetSessionState(peerIP)
-			_ = manager.GetSessionCount()
-			manager.GetAllSessionStates()
+			_ = testGetSessionState(manager, peerIP)
+			_ = testGetSessionCount(manager)
+			testGetAllSessionStates(manager)
 		}(i)
 	}
 
@@ -865,7 +907,7 @@ func TestBFDTransport_SendReceive(t *testing.T) {
 	}
 
 	// Verify the session transitioned from Down to Init
-	state := manager.GetSessionState(peerIP)
+	state := testGetSessionState(manager, peerIP)
 	if state != BFDStateInit {
 		t.Errorf("Expected Init after receiving Down packet, got %s", state.String())
 	}
@@ -958,13 +1000,13 @@ func TestBFDManager_TwoPeersIntegration(t *testing.T) {
 	for {
 		select {
 		case <-deadline:
-			state1 := manager1.GetSessionState(loopback)
-			state2 := manager2.GetSessionState(loopback)
+			state1 := testGetSessionState(manager1, loopback)
+			state2 := testGetSessionState(manager2, loopback)
 			t.Fatalf("Timed out waiting for sessions to reach Up: manager1=%s, manager2=%s",
 				state1.String(), state2.String())
 		case <-ticker.C:
-			state1 := manager1.GetSessionState(loopback)
-			state2 := manager2.GetSessionState(loopback)
+			state1 := testGetSessionState(manager1, loopback)
+			state2 := testGetSessionState(manager2, loopback)
 			if state1 == BFDStateUp && state2 == BFDStateUp {
 				// Both peers are Up
 				t.Logf("Both BFD sessions reached Up state")
@@ -995,7 +1037,7 @@ func TestBFDManager_NilTransportSkipsSending(t *testing.T) {
 	manager.sendControlPackets()
 
 	// Verify metrics were still updated
-	_, tx, _, ok := manager.GetSessionStats(peerIP)
+	_, tx, _, ok := testGetSessionStats(manager, peerIP)
 	if !ok {
 		t.Fatal("Session should exist")
 	}
@@ -1036,7 +1078,7 @@ func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	manager.ProcessPacket(peerIP, BFDStateDown, 600)
 	manager.ProcessPacket(peerIP, BFDStateInit, 600)
 
-	state := manager.GetSessionState(peerIP)
+	state := testGetSessionState(manager, peerIP)
 	if state != BFDStateUp {
 		t.Fatalf("Expected Up, got %s", state.String())
 	}
@@ -1044,7 +1086,7 @@ func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	// 2. Peer goes Down: Up -> Down (triggers onNeighborDown)
 	manager.ProcessPacket(peerIP, BFDStateDown, 600)
 
-	state = manager.GetSessionState(peerIP)
+	state = testGetSessionState(manager, peerIP)
 	if state != BFDStateDown {
 		t.Fatalf("Expected Down, got %s", state.String())
 	}
@@ -1062,7 +1104,7 @@ func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	manager.ProcessPacket(peerIP, BFDStateDown, 600) // Both Down -> Init
 	manager.ProcessPacket(peerIP, BFDStateInit, 600) // Init -> Up
 
-	state = manager.GetSessionState(peerIP)
+	state = testGetSessionState(manager, peerIP)
 	if state != BFDStateUp {
 		t.Fatalf("Expected Up after recovery, got %s", state.String())
 	}
@@ -1075,7 +1117,7 @@ func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	mu.Unlock()
 
 	// 4. Verify flap count
-	_, _, flaps, ok := manager.GetSessionStats(peerIP)
+	_, _, flaps, ok := testGetSessionStats(manager, peerIP)
 	if !ok {
 		t.Fatal("Session should exist")
 	}

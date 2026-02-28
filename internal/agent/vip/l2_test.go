@@ -81,73 +81,6 @@ func TestState_IPv6(t *testing.T) {
 	}
 }
 
-func TestL2Handler_GetActiveVIPCount(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	handler := &L2Handler{
-		logger:        logger,
-		activeVIPs:    make(map[string]*State),
-		interfaceName: "eth0",
-	}
-
-	t.Run("initially zero", func(t *testing.T) {
-		count := handler.GetActiveVIPCount()
-		if count != 0 {
-			t.Errorf("Expected 0 active VIPs, got %d", count)
-		}
-	})
-
-	t.Run("after adding VIPs to state", func(t *testing.T) {
-		handler.mu.Lock()
-		handler.activeVIPs["vip1"] = &State{
-			Assignment: &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/24"},
-			IP:         net.ParseIP("192.168.1.100"),
-			AddedAt:    time.Now(),
-		}
-		handler.activeVIPs["vip2"] = &State{
-			Assignment: &pb.VIPAssignment{VipName: "vip2", Address: "192.168.1.101/24"},
-			IP:         net.ParseIP("192.168.1.101"),
-			AddedAt:    time.Now(),
-		}
-		handler.mu.Unlock()
-
-		count := handler.GetActiveVIPCount()
-		if count != 2 {
-			t.Errorf("Expected 2 active VIPs, got %d", count)
-		}
-	})
-
-	t.Run("with IPv6 VIPs", func(t *testing.T) {
-		handler.mu.Lock()
-		handler.activeVIPs["vip3"] = &State{
-			Assignment: &pb.VIPAssignment{VipName: "vip3", Address: "2001:db8::1/128"},
-			IP:         net.ParseIP("2001:db8::1"),
-			AddedAt:    time.Now(),
-			IsIPv6:     true,
-		}
-		handler.mu.Unlock()
-
-		count := handler.GetActiveVIPCount()
-		if count != 3 {
-			t.Errorf("Expected 3 active VIPs (including IPv6), got %d", count)
-		}
-	})
-
-	t.Run("concurrent access", func(_ *testing.T) {
-		var wg sync.WaitGroup
-		numGoroutines := 100
-
-		for i := 0; i < numGoroutines; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				_ = handler.GetActiveVIPCount()
-			}()
-		}
-
-		wg.Wait()
-	})
-}
-
 func TestL2Handler_StateManagement(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler := &L2Handler{
@@ -296,7 +229,9 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				_ = handler.GetActiveVIPCount()
+				handler.mu.RLock()
+				_ = len(handler.activeVIPs)
+				handler.mu.RUnlock()
 			}()
 		}
 

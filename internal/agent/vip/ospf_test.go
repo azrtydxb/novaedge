@@ -26,6 +26,36 @@ import (
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
+// Test helpers that access internal OSPF state directly (same package).
+
+func testOSPFGetActiveVIPCount(h *OSPFHandler) int {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return len(h.activeVIPs)
+}
+
+func testOSPFGetNeighborStates(h *OSPFHandler) map[string]string {
+	if h.ospfServer == nil {
+		return nil
+	}
+	h.ospfServer.mu.RLock()
+	defer h.ospfServer.mu.RUnlock()
+	states := make(map[string]string, len(h.ospfServer.neighbors))
+	for addr, neighbor := range h.ospfServer.neighbors {
+		states[addr] = neighbor.State
+	}
+	return states
+}
+
+func testOSPFGetLSDBCount(h *OSPFHandler) int {
+	if h.ospfServer == nil {
+		return 0
+	}
+	h.ospfServer.mu.RLock()
+	defer h.ospfServer.mu.RUnlock()
+	return len(h.ospfServer.lsdb)
+}
+
 func TestOSPFHandler_AddRemoveVIP(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	handler, err := NewOSPFHandler(logger)
@@ -58,8 +88,8 @@ func TestOSPFHandler_AddRemoveVIP(t *testing.T) {
 			t.Fatalf("Failed to add VIP: %v", err)
 		}
 
-		if handler.GetActiveVIPCount() != 1 {
-			t.Errorf("Expected 1 active VIP, got %d", handler.GetActiveVIPCount())
+		if testOSPFGetActiveVIPCount(handler) != 1 {
+			t.Errorf("Expected 1 active VIP, got %d", testOSPFGetActiveVIPCount(handler))
 		}
 	})
 
@@ -68,20 +98,20 @@ func TestOSPFHandler_AddRemoveVIP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Duplicate add should not error: %v", err)
 		}
-		if handler.GetActiveVIPCount() != 1 {
-			t.Errorf("Expected still 1 active VIP, got %d", handler.GetActiveVIPCount())
+		if testOSPFGetActiveVIPCount(handler) != 1 {
+			t.Errorf("Expected still 1 active VIP, got %d", testOSPFGetActiveVIPCount(handler))
 		}
 	})
 
 	t.Run("LSDB count", func(t *testing.T) {
-		count := handler.GetLSDBCount()
+		count := testOSPFGetLSDBCount(handler)
 		if count != 1 {
 			t.Errorf("Expected 1 LSA in LSDB, got %d", count)
 		}
 	})
 
 	t.Run("neighbor states", func(t *testing.T) {
-		states := handler.GetNeighborStates()
+		states := testOSPFGetNeighborStates(handler)
 		// No neighbors configured in this test
 		if len(states) != 0 {
 			t.Errorf("Expected 0 neighbor states, got %d", len(states))
@@ -94,8 +124,8 @@ func TestOSPFHandler_AddRemoveVIP(t *testing.T) {
 			t.Fatalf("Failed to remove VIP: %v", err)
 		}
 
-		if handler.GetActiveVIPCount() != 0 {
-			t.Errorf("Expected 0 active VIPs, got %d", handler.GetActiveVIPCount())
+		if testOSPFGetActiveVIPCount(handler) != 0 {
+			t.Errorf("Expected 0 active VIPs, got %d", testOSPFGetActiveVIPCount(handler))
 		}
 	})
 
@@ -139,8 +169,8 @@ func TestOSPFHandler_IPv6(t *testing.T) {
 		t.Fatalf("Failed to add IPv6 VIP: %v", err)
 	}
 
-	if handler.GetActiveVIPCount() != 1 {
-		t.Errorf("Expected 1 active VIP, got %d", handler.GetActiveVIPCount())
+	if testOSPFGetActiveVIPCount(handler) != 1 {
+		t.Errorf("Expected 1 active VIP, got %d", testOSPFGetActiveVIPCount(handler))
 	}
 
 	// Verify LSA is IPv6
@@ -233,7 +263,7 @@ func TestOSPFHandler_WithNeighbors(t *testing.T) {
 		t.Fatalf("Failed to add VIP: %v", err)
 	}
 
-	states := handler.GetNeighborStates()
+	states := testOSPFGetNeighborStates(handler)
 	if len(states) != 2 {
 		t.Errorf("Expected 2 neighbors, got %d", len(states))
 	}
@@ -272,8 +302,8 @@ func TestOSPFHandler_Shutdown(t *testing.T) {
 
 	handler.Shutdown()
 
-	if handler.GetActiveVIPCount() != 0 {
-		t.Errorf("Expected 0 active VIPs after shutdown, got %d", handler.GetActiveVIPCount())
+	if testOSPFGetActiveVIPCount(handler) != 0 {
+		t.Errorf("Expected 0 active VIPs after shutdown, got %d", testOSPFGetActiveVIPCount(handler))
 	}
 }
 
@@ -471,7 +501,7 @@ func TestOSPFHandler_Reconfigure_NeighborsChange(t *testing.T) {
 		t.Fatalf("Reconfiguration with neighbor change failed: %v", err)
 	}
 
-	states := handler.GetNeighborStates()
+	states := testOSPFGetNeighborStates(handler)
 	if len(states) != 2 {
 		t.Errorf("Expected 2 neighbors after reconfiguration, got %d", len(states))
 	}
@@ -524,12 +554,12 @@ func TestOSPFHandler_MultipleVIPs(t *testing.T) {
 		}
 	}
 
-	if handler.GetActiveVIPCount() != 3 {
-		t.Errorf("Expected 3 active VIPs, got %d", handler.GetActiveVIPCount())
+	if testOSPFGetActiveVIPCount(handler) != 3 {
+		t.Errorf("Expected 3 active VIPs, got %d", testOSPFGetActiveVIPCount(handler))
 	}
 
 	// Verify LSDB has entries for all VIPs
-	lsdbCount := handler.GetLSDBCount()
+	lsdbCount := testOSPFGetLSDBCount(handler)
 	if lsdbCount < 3 {
 		t.Errorf("Expected at least 3 LSAs in LSDB, got %d", lsdbCount)
 	}
@@ -539,8 +569,8 @@ func TestOSPFHandler_MultipleVIPs(t *testing.T) {
 		t.Fatalf("Failed to remove VIP: %v", err)
 	}
 
-	if handler.GetActiveVIPCount() != 2 {
-		t.Errorf("Expected 2 active VIPs after removal, got %d", handler.GetActiveVIPCount())
+	if testOSPFGetActiveVIPCount(handler) != 2 {
+		t.Errorf("Expected 2 active VIPs after removal, got %d", testOSPFGetActiveVIPCount(handler))
 	}
 }
 
@@ -578,8 +608,8 @@ func TestOSPFHandler_DifferentAreaIDs(t *testing.T) {
 		}
 	}
 
-	if handler.GetActiveVIPCount() != 2 {
-		t.Errorf("Expected 2 active VIPs with different areas, got %d", handler.GetActiveVIPCount())
+	if testOSPFGetActiveVIPCount(handler) != 2 {
+		t.Errorf("Expected 2 active VIPs with different areas, got %d", testOSPFGetActiveVIPCount(handler))
 	}
 }
 

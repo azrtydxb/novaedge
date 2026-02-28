@@ -274,16 +274,6 @@ func RecordPassiveHealthDropped(cluster string) {
 	PassiveHealthDroppedTotal.WithLabelValues(cluster).Inc()
 }
 
-// RecordLoadBalancerSelection records a load balancer selection
-func RecordLoadBalancerSelection(cluster, algorithm, endpoint string) {
-	endpoint = resolveEndpointLabel(cluster, endpoint)
-
-	// Sample this high-frequency metric
-	if shouldSample(cluster + ":" + endpoint) {
-		LoadBalancerSelections.WithLabelValues(cluster, algorithm, endpoint).Inc()
-	}
-}
-
 // CleanupClusterMetrics removes tracking for a cluster that no longer exists.
 // This also deletes all associated Prometheus metric series to prevent stale data.
 func CleanupClusterMetrics(cluster string) {
@@ -300,37 +290,3 @@ func CleanupClusterMetrics(cluster string) {
 	InsecureBackendConnectionsTotal.DeleteLabelValues(cluster)
 }
 
-// CleanupEndpointMetrics removes tracking for a single endpoint in a cluster.
-// Call this when an endpoint is removed from a cluster's endpoint list.
-func CleanupEndpointMetrics(cluster, endpoint string) {
-	endpointTracker.removeEndpoint(cluster, endpoint)
-}
-
-// SyncClusterEndpoints synchronizes the tracked endpoints for a cluster with the
-// given current set. Endpoints that are no longer in the current set are cleaned up.
-func SyncClusterEndpoints(cluster string, currentEndpoints []string) {
-	endpointTracker.mu.Lock()
-	tracked := endpointTracker.endpoints[cluster]
-	var stale []string
-	for ep := range tracked {
-		found := false
-		for _, current := range currentEndpoints {
-			if ep == current {
-				found = true
-				break
-			}
-		}
-		if !found {
-			stale = append(stale, ep)
-		}
-	}
-	for _, ep := range stale {
-		delete(tracked, ep)
-	}
-	endpointTracker.mu.Unlock()
-
-	// Delete Prometheus series for stale endpoints outside the lock
-	for _, ep := range stale {
-		deleteEndpointMetrics(cluster, ep)
-	}
-}

@@ -1222,11 +1222,6 @@ func (h *BGPHandler) withdrawRoute(ctx context.Context, ip net.IP, config *pb.BG
 	return nil
 }
 
-// GetBFDManager returns the BFD manager for external access
-func (h *BGPHandler) GetBFDManager() *BFDManager {
-	return h.bfdManager
-}
-
 // Shutdown gracefully shuts down the BGP handler
 func (h *BGPHandler) Shutdown() {
 	h.mu.Lock()
@@ -1244,11 +1239,4 @@ func (h *BGPHandler) Shutdown() {
 
 	h.activeVIPs = make(map[string]*BGPVIPState)
 	h.started = false
-}
-
-// GetActiveVIPCount returns the number of active VIPs
-func (h *BGPHandler) GetActiveVIPCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.activeVIPs)
 }

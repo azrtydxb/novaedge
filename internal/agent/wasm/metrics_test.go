@@ -77,35 +77,6 @@ func TestRecordPluginError(t *testing.T) {
 	assert.Equal(t, float64(2), count)
 }
 
-func TestSetPluginsLoaded(t *testing.T) {
-	SetPluginsLoaded(5)
-
-	count := testutil.ToFloat64(wasmPluginsLoaded)
-	assert.Equal(t, float64(5), count)
-
-	// Update the value
-	SetPluginsLoaded(10)
-	count = testutil.ToFloat64(wasmPluginsLoaded)
-	assert.Equal(t, float64(10), count)
-
-	// Set to zero
-	SetPluginsLoaded(0)
-	count = testutil.ToFloat64(wasmPluginsLoaded)
-	assert.Equal(t, float64(0), count)
-}
-
-func TestSetInstancePoolSize(t *testing.T) {
-	SetInstancePoolSize("pool-plugin", 4)
-
-	count := testutil.ToFloat64(wasmInstancePoolSize.WithLabelValues("pool-plugin"))
-	assert.Equal(t, float64(4), count)
-
-	// Update the value
-	SetInstancePoolSize("pool-plugin", 8)
-	count = testutil.ToFloat64(wasmInstancePoolSize.WithLabelValues("pool-plugin"))
-	assert.Equal(t, float64(8), count)
-}
-
 func TestRecordPluginTimeout(t *testing.T) {
 	// Reset the metric before testing
 	wasmPluginTimeoutsTotal.Reset()

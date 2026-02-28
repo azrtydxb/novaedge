@@ -366,28 +366,6 @@ func (m *BFDManager) RemoveSession(peerIP net.IP) {
 	}
 }
 
-// GetSessionState returns the state of a BFD session
-func (m *BFDManager) GetSessionState(peerIP net.IP) BFDSessionState {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	peerKey := peerIP.String()
-	if session, exists := m.sessions[peerKey]; exists {
-		session.mu.RLock()
-		defer session.mu.RUnlock()
-		return session.state
-	}
-
-	return BFDStateDown
-}
-
-// GetSessionCount returns the number of active BFD sessions
-func (m *BFDManager) GetSessionCount() int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return len(m.sessions)
-}
-
 // ProcessPacket processes a received BFD control packet from a peer
 func (m *BFDManager) ProcessPacket(peerIP net.IP, remoteState BFDSessionState, remoteDiscriminator uint32) {
 	m.mu.RLock()
@@ -627,34 +605,6 @@ func (m *BFDManager) sendControlPackets() {
 
 		session.mu.Unlock()
 	}
-}
-
-// GetAllSessionStates returns the state of all BFD sessions
-func (m *BFDManager) GetAllSessionStates() map[string]BFDSessionState {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	states := make(map[string]BFDSessionState, len(m.sessions))
-	for peerKey, session := range m.sessions {
-		session.mu.RLock()
-		states[peerKey] = session.state
-		session.mu.RUnlock()
-	}
-	return states
-}
-
-// GetSessionStats returns statistics for a BFD session
-func (m *BFDManager) GetSessionStats(peerIP net.IP) (packetsRx, packetsTx, flaps uint64, ok bool) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	peerKey := peerIP.String()
-	if session, exists := m.sessions[peerKey]; exists {
-		session.mu.RLock()
-		defer session.mu.RUnlock()
-		return session.packetsRx, session.packetsTx, session.sessionFlaps, true
-	}
-	return 0, 0, 0, false
 }
 
 // clampDurationToMicroseconds safely converts a time.Duration to microseconds
