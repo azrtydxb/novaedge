@@ -7,6 +7,9 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::Instant;
 
+#[cfg(target_os = "linux")]
+use std::cell::UnsafeCell;
+
 use novaedge_common::{
     BackendKey, BackendValue, ConnTrackKey, ConnTrackValue, RateLimitKey, RateLimitValue, VipKey,
     VipValue,
@@ -51,15 +54,30 @@ struct MockMaps {
 }
 
 /// Real eBPF map handles (Linux only).
+///
+/// Uses `UnsafeCell` for interior mutability because aya's `HashMap::insert`
+/// and `HashMap::remove` require `&mut self`, but `MapManager` exposes `&self`
+/// methods for ergonomic usage behind `Arc`. External synchronization (single
+/// writer from the gRPC thread) ensures safety.
 #[cfg(target_os = "linux")]
 pub struct RealMaps {
-    pub vips: aya::maps::HashMap<aya::maps::MapData, VipKey, VipValue>,
-    pub backends: aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>,
-    pub conntrack: aya::maps::HashMap<aya::maps::MapData, ConnTrackKey, ConnTrackValue>,
-    pub rate_limits: aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>,
-    pub rate_limit_cfg: aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitCfg>,
-    pub vip_addrs: aya::maps::HashMap<aya::maps::MapData, u32, [u8; 6]>,
+    pub vips: UnsafeCell<aya::maps::HashMap<aya::maps::MapData, VipKey, VipValue>>,
+    pub backends: UnsafeCell<aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>>,
+    pub conntrack: UnsafeCell<aya::maps::HashMap<aya::maps::MapData, ConnTrackKey, ConnTrackValue>>,
+    pub rate_limits:
+        UnsafeCell<aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>>,
+    pub rate_limit_cfg:
+        UnsafeCell<aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitCfg>>,
+    pub vip_addrs: UnsafeCell<aya::maps::HashMap<aya::maps::MapData, u32, [u8; 6]>>,
 }
+
+// SAFETY: RealMaps is safe to send between threads because the aya map
+// handles are just file descriptors. External synchronization (single
+// writer from gRPC thread) ensures no data races.
+#[cfg(target_os = "linux")]
+unsafe impl Send for RealMaps {}
+#[cfg(target_os = "linux")]
+unsafe impl Sync for RealMaps {}
 
 impl MapManager {
     /// Create a new mock MapManager (for macOS, standalone, or testing).
@@ -111,12 +129,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                // SAFETY: RealMaps requires &self but aya HashMap::insert needs &mut.
-                // We rely on external synchronization (single writer from gRPC thread).
-                let map_ptr = &m.vips
-                    as *const aya::maps::HashMap<aya::maps::MapData, VipKey, VipValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, VipKey, VipValue>;
-                unsafe { &mut *map_ptr }
+                // SAFETY: External synchronization ensures single-writer access.
+                unsafe { &mut *m.vips.get() }
                     .insert(key, value, 0)
                     .map_err(|e| anyhow::anyhow!("vips insert: {e}"))?;
                 Ok(())
@@ -134,10 +148,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.vips
-                    as *const aya::maps::HashMap<aya::maps::MapData, VipKey, VipValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, VipKey, VipValue>;
-                let _ = unsafe { &mut *map_ptr }.remove(key);
+                // SAFETY: External synchronization ensures single-writer access.
+                let _ = unsafe { &mut *m.vips.get() }.remove(key);
                 Ok(())
             }
         }
@@ -148,7 +160,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.vips.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.vips.keys().count(),
+            MapManagerInner::Real(m) => unsafe { &*m.vips.get() }.keys().count(),
         }
     }
 
@@ -165,10 +177,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.backends
-                    as *const aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>;
-                unsafe { &mut *map_ptr }
+                // SAFETY: External synchronization ensures single-writer access.
+                unsafe { &mut *m.backends.get() }
                     .insert(key, value, 0)
                     .map_err(|e| anyhow::anyhow!("backends insert: {e}"))?;
                 Ok(())
@@ -186,10 +196,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.backends
-                    as *const aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>;
-                let _ = unsafe { &mut *map_ptr }.remove(key);
+                // SAFETY: External synchronization ensures single-writer access.
+                let _ = unsafe { &mut *m.backends.get() }.remove(key);
                 Ok(())
             }
         }
@@ -221,20 +229,19 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.backends
-                    as *const aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, BackendKey, BackendValue>;
-                let map_mut = unsafe { &mut *map_ptr };
+                let ptr = m.backends.get();
 
                 // Collect keys to remove (cannot remove while iterating).
-                let keys_to_remove: Vec<BackendKey> = m
-                    .backends
+                // SAFETY: No mutable reference is live during this read.
+                let keys_to_remove: Vec<BackendKey> = unsafe { &*ptr }
                     .keys()
                     .into_iter()
                     .flatten()
                     .filter(|k| k.vip_id == vip_id)
                     .collect();
 
+                // SAFETY: External synchronization ensures single-writer access.
+                let map_mut = unsafe { &mut *ptr };
                 for k in keys_to_remove {
                     let _ = map_mut.remove(&k);
                 }
@@ -259,7 +266,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.backends.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.backends.keys().count(),
+            MapManagerInner::Real(m) => unsafe { &*m.backends.get() }.keys().count(),
         }
     }
 
@@ -276,10 +283,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.conntrack
-                    as *const aya::maps::HashMap<aya::maps::MapData, ConnTrackKey, ConnTrackValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, ConnTrackKey, ConnTrackValue>;
-                unsafe { &mut *map_ptr }
+                // SAFETY: External synchronization ensures single-writer access.
+                unsafe { &mut *m.conntrack.get() }
                     .insert(key, value, 0)
                     .map_err(|e| anyhow::anyhow!("conntrack insert: {e}"))?;
                 Ok(())
@@ -297,10 +302,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.conntrack
-                    as *const aya::maps::HashMap<aya::maps::MapData, ConnTrackKey, ConnTrackValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, ConnTrackKey, ConnTrackValue>;
-                let _ = unsafe { &mut *map_ptr }.remove(key);
+                // SAFETY: External synchronization ensures single-writer access.
+                let _ = unsafe { &mut *m.conntrack.get() }.remove(key);
                 Ok(())
             }
         }
@@ -311,7 +314,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.conntrack.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.conntrack.keys().count(),
+            MapManagerInner::Real(m) => unsafe { &*m.conntrack.get() }.keys().count(),
         }
     }
 
@@ -332,10 +335,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.rate_limits
-                    as *const aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>;
-                unsafe { &mut *map_ptr }
+                // SAFETY: External synchronization ensures single-writer access.
+                unsafe { &mut *m.rate_limits.get() }
                     .insert(key, value, 0)
                     .map_err(|e| anyhow::anyhow!("rate_limits insert: {e}"))?;
                 Ok(())
@@ -353,10 +354,8 @@ impl MapManager {
             }
             #[cfg(target_os = "linux")]
             MapManagerInner::Real(m) => {
-                let map_ptr = &m.rate_limits
-                    as *const aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>
-                    as *mut aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>;
-                let _ = unsafe { &mut *map_ptr }.remove(key);
+                // SAFETY: External synchronization ensures single-writer access.
+                let _ = unsafe { &mut *m.rate_limits.get() }.remove(key);
                 Ok(())
             }
         }
@@ -367,7 +366,7 @@ impl MapManager {
         match &self.inner {
             MapManagerInner::Mock(m) => m.rate_limits.read().unwrap().len(),
             #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => m.rate_limits.keys().count(),
+            MapManagerInner::Real(m) => unsafe { &*m.rate_limits.get() }.keys().count(),
         }
     }
 
