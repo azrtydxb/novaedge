@@ -176,7 +176,7 @@ run-standalone: fmt vet ## Run standalone agent from your host.
 	go run ./cmd/novaedge-standalone/main.go --config=$(CONFIG_FILE)
 
 .PHONY: docker-build
-docker-build: docker-build-controller docker-build-agent docker-build-novactl docker-build-standalone docker-build-webui ## Build all docker images.
+docker-build: docker-build-controller docker-build-agent docker-build-novactl docker-build-standalone docker-build-operator docker-build-webui ## Build all docker images.
 
 .PHONY: test-agent
 test-agent: ## Run agent tests.
