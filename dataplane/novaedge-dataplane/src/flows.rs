@@ -8,6 +8,9 @@ use std::net::Ipv4Addr;
 use tokio::sync::broadcast;
 use tracing::{debug, info};
 
+#[cfg(target_os = "linux")]
+use tracing::warn;
+
 use crate::proto;
 
 /// Capacity of the broadcast channel for flow events.
@@ -18,7 +21,10 @@ const FLOW_CHANNEL_CAPACITY: usize = 4096;
 /// Returns `(sender, receiver)`. The sender is cloneable and should be passed
 /// to the flow reader task and the gRPC service. Additional receivers can be
 /// created via `sender.subscribe()`.
-pub fn flow_channel() -> (broadcast::Sender<proto::FlowEvent>, broadcast::Receiver<proto::FlowEvent>) {
+pub fn flow_channel() -> (
+    broadcast::Sender<proto::FlowEvent>,
+    broadcast::Receiver<proto::FlowEvent>,
+) {
     broadcast::channel(FLOW_CHANNEL_CAPACITY)
 }
 
@@ -80,6 +86,54 @@ impl MockFlowInjector {
     }
 }
 
+/// Start the real flow reader on Linux, reading from the eBPF ring buffer.
+///
+/// This uses `AsyncFd` to efficiently wait for ring buffer data availability,
+/// then reads and broadcasts each event.
+#[cfg(target_os = "linux")]
+pub async fn run_flow_reader_real(
+    mut ring_buf: aya::maps::RingBuf<aya::maps::MapData>,
+    tx: broadcast::Sender<proto::FlowEvent>,
+) {
+    use std::os::fd::AsRawFd;
+    use tokio::io::unix::AsyncFd;
+
+    info!("Flow reader: starting eBPF ring buffer reader");
+
+    let fd = ring_buf.as_raw_fd();
+    let async_fd = match AsyncFd::new(fd) {
+        Ok(afd) => afd,
+        Err(e) => {
+            warn!("Flow reader: failed to create AsyncFd: {e}");
+            return;
+        }
+    };
+
+    loop {
+        // Wait for the ring buffer to become readable.
+        let mut guard = match async_fd.readable().await {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("Flow reader: readable() error: {e}");
+                break;
+            }
+        };
+
+        // Drain all available events.
+        while let Some(event_data) = ring_buf.next() {
+            if event_data.len() < core::mem::size_of::<novaedge_common::FlowEvent>() {
+                continue;
+            }
+            let raw: &novaedge_common::FlowEvent =
+                unsafe { &*(event_data.as_ptr() as *const novaedge_common::FlowEvent) };
+            let proto_event = raw_to_proto(raw);
+            let _ = tx.send(proto_event);
+        }
+
+        guard.clear_ready();
+    }
+}
+
 /// Start the flow reader task.
 ///
 /// On Linux with a real ring buffer, this would read from the eBPF ring buffer
@@ -88,10 +142,7 @@ impl MockFlowInjector {
 ///
 /// Flow events are broadcast via the sender. The gRPC `StreamFlows` RPC
 /// subscribes to this channel to deliver events to clients.
-pub async fn run_flow_reader(
-    tx: broadcast::Sender<proto::FlowEvent>,
-    mock_mode: bool,
-) {
+pub async fn run_flow_reader(tx: broadcast::Sender<proto::FlowEvent>, mock_mode: bool) {
     if mock_mode {
         info!("Flow reader running in mock mode (no eBPF ring buffer)");
         // In mock mode, we just keep the task alive. Events can be injected
@@ -101,22 +152,12 @@ pub async fn run_flow_reader(
         return;
     }
 
-    // On Linux with real eBPF, we would read from the ring buffer here.
-    // This is stubbed for Phase 2 when eBPF programs are implemented.
+    // On Linux with real eBPF, the ring buffer reader is started via
+    // `run_flow_reader_real()` with the actual RingBuf handle.
+    // If we reach here in non-mock mode without a ring buffer, just wait.
     #[cfg(target_os = "linux")]
     {
-        info!("Flow reader: eBPF ring buffer reader not yet implemented");
-        // TODO(Phase 2): Use aya::maps::RingBuf with AsyncFd to poll events.
-        //   let async_fd = AsyncFd::new(ring_buf_fd)?;
-        //   loop {
-        //       let guard = async_fd.readable().await?;
-        //       while let Some(event) = ring_buf.next() {
-        //           let raw = parse_flow_event(event);
-        //           let proto_event = raw_to_proto(&raw);
-        //           let _ = tx.send(proto_event);
-        //       }
-        //       guard.clear_ready();
-        //   }
+        info!("Flow reader: waiting for ring buffer (use run_flow_reader_real for eBPF)");
         let _ = std::future::pending::<()>().await;
     }
 

@@ -105,6 +105,16 @@ pub struct RateLimitKey {
     pub src_ip: u32,
 }
 
+/// Rate limiting configuration (per source IP).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RateLimitCfg {
+    /// Tokens per second (refill rate).
+    pub rate: u64,
+    /// Maximum tokens (bucket capacity).
+    pub burst: u64,
+}
+
 /// Rate limiting value (token bucket state).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,6 +169,7 @@ impl_pod!(
     ConnTrackKey,
     ConnTrackValue,
     RateLimitKey,
+    RateLimitCfg,
     RateLimitValue,
     FlowEvent,
 );
@@ -204,6 +215,11 @@ mod tests {
     }
 
     #[test]
+    fn test_rate_limit_cfg_size() {
+        assert_eq!(mem::size_of::<RateLimitCfg>(), 16);
+    }
+
+    #[test]
     fn test_rate_limit_value_size() {
         assert_eq!(mem::size_of::<RateLimitValue>(), 16);
     }
@@ -220,7 +236,12 @@ mod tests {
 
     #[test]
     fn test_vip_key_fields() {
-        let key = VipKey { vip: 0x0A000001, port: 80, protocol: 6, _pad: 0 };
+        let key = VipKey {
+            vip: 0x0A000001,
+            port: 80,
+            protocol: 6,
+            _pad: 0,
+        };
         assert_eq!(key.vip, 0x0A000001);
         assert_eq!(key.port, 80);
         assert_eq!(key.protocol, 6);
@@ -228,7 +249,11 @@ mod tests {
 
     #[test]
     fn test_backend_value_fields() {
-        let val = BackendValue { addr: 0x0A000002, port: 8080, weight: 100 };
+        let val = BackendValue {
+            addr: 0x0A000002,
+            port: 8080,
+            weight: 100,
+        };
         assert_eq!(val.addr, 0x0A000002);
         assert_eq!(val.port, 8080);
         assert_eq!(val.weight, 100);
@@ -260,7 +285,12 @@ mod tests {
 
     #[test]
     fn test_default_values() {
-        let key = VipKey { vip: 0, port: 0, protocol: 0, _pad: 0 };
+        let key = VipKey {
+            vip: 0,
+            port: 0,
+            protocol: 0,
+            _pad: 0,
+        };
         assert_eq!(key.vip, 0);
     }
 }

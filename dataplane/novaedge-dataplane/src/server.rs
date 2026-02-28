@@ -27,10 +27,7 @@ pub struct DataplaneService {
 
 impl DataplaneService {
     /// Create a new `DataplaneService`.
-    pub fn new(
-        map_manager: Arc<MapManager>,
-        flow_tx: broadcast::Sender<proto::FlowEvent>,
-    ) -> Self {
+    pub fn new(map_manager: Arc<MapManager>, flow_tx: broadcast::Sender<proto::FlowEvent>) -> Self {
         Self {
             map_manager,
             flow_tx,
@@ -80,12 +77,17 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertGatewayRequest>,
     ) -> Result<Response<proto::UpsertGatewayResponse>, Status> {
         let req = request.into_inner();
-        let gw = req.gateway.as_ref()
+        let gw = req
+            .gateway
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing gateway config"))?;
         info!(name = %gw.name, port = gw.port, protocol = gw.protocol, "UpsertGateway");
         // TODO: Configure the listener.
         let (status, message) = Self::ok_response(format!("gateway '{}' upserted", gw.name));
-        Ok(Response::new(proto::UpsertGatewayResponse { status, message }))
+        Ok(Response::new(proto::UpsertGatewayResponse {
+            status,
+            message,
+        }))
     }
 
     async fn delete_gateway(
@@ -95,7 +97,10 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteGateway");
         let (status, message) = Self::ok_response(format!("gateway '{}' deleted", req.name));
-        Ok(Response::new(proto::DeleteGatewayResponse { status, message }))
+        Ok(Response::new(proto::DeleteGatewayResponse {
+            status,
+            message,
+        }))
     }
 
     async fn upsert_route(
@@ -103,11 +108,16 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertRouteRequest>,
     ) -> Result<Response<proto::UpsertRouteResponse>, Status> {
         let req = request.into_inner();
-        let route = req.route.as_ref()
+        let route = req
+            .route
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing route config"))?;
         info!(name = %route.name, gateway_ref = %route.gateway_ref, "UpsertRoute");
         let (status, message) = Self::ok_response(format!("route '{}' upserted", route.name));
-        Ok(Response::new(proto::UpsertRouteResponse { status, message }))
+        Ok(Response::new(proto::UpsertRouteResponse {
+            status,
+            message,
+        }))
     }
 
     async fn delete_route(
@@ -117,7 +127,10 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteRoute");
         let (status, message) = Self::ok_response(format!("route '{}' deleted", req.name));
-        Ok(Response::new(proto::DeleteRouteResponse { status, message }))
+        Ok(Response::new(proto::DeleteRouteResponse {
+            status,
+            message,
+        }))
     }
 
     async fn upsert_cluster(
@@ -125,11 +138,16 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertClusterRequest>,
     ) -> Result<Response<proto::UpsertClusterResponse>, Status> {
         let req = request.into_inner();
-        let cluster = req.cluster.as_ref()
+        let cluster = req
+            .cluster
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing cluster config"))?;
         info!(name = %cluster.name, endpoints = cluster.endpoints.len(), "UpsertCluster");
         let (status, message) = Self::ok_response(format!("cluster '{}' upserted", cluster.name));
-        Ok(Response::new(proto::UpsertClusterResponse { status, message }))
+        Ok(Response::new(proto::UpsertClusterResponse {
+            status,
+            message,
+        }))
     }
 
     async fn delete_cluster(
@@ -139,7 +157,10 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteCluster");
         let (status, message) = Self::ok_response(format!("cluster '{}' deleted", req.name));
-        Ok(Response::new(proto::DeleteClusterResponse { status, message }))
+        Ok(Response::new(proto::DeleteClusterResponse {
+            status,
+            message,
+        }))
     }
 
     async fn upsert_vip(
@@ -147,7 +168,9 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertVipRequest>,
     ) -> Result<Response<proto::UpsertVipResponse>, Status> {
         let req = request.into_inner();
-        let vip = req.vip.as_ref()
+        let vip = req
+            .vip
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing VIP config"))?;
         info!(name = %vip.name, address = %vip.address, mode = vip.mode, "UpsertVIP");
         let (status, message) = Self::ok_response(format!("VIP '{}' upserted", vip.name));
@@ -169,11 +192,17 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertL4ListenerRequest>,
     ) -> Result<Response<proto::UpsertL4ListenerResponse>, Status> {
         let req = request.into_inner();
-        let listener = req.listener.as_ref()
+        let listener = req
+            .listener
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing L4 listener config"))?;
         info!(name = %listener.name, port = listener.port, "UpsertL4Listener");
-        let (status, message) = Self::ok_response(format!("L4 listener '{}' upserted", listener.name));
-        Ok(Response::new(proto::UpsertL4ListenerResponse { status, message }))
+        let (status, message) =
+            Self::ok_response(format!("L4 listener '{}' upserted", listener.name));
+        Ok(Response::new(proto::UpsertL4ListenerResponse {
+            status,
+            message,
+        }))
     }
 
     async fn delete_l4_listener(
@@ -183,7 +212,10 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteL4Listener");
         let (status, message) = Self::ok_response(format!("L4 listener '{}' deleted", req.name));
-        Ok(Response::new(proto::DeleteL4ListenerResponse { status, message }))
+        Ok(Response::new(proto::DeleteL4ListenerResponse {
+            status,
+            message,
+        }))
     }
 
     async fn upsert_policy(
@@ -191,11 +223,16 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertPolicyRequest>,
     ) -> Result<Response<proto::UpsertPolicyResponse>, Status> {
         let req = request.into_inner();
-        let policy = req.policy.as_ref()
+        let policy = req
+            .policy
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing policy config"))?;
         info!(name = %policy.name, policy_type = policy.policy_type, "UpsertPolicy");
         let (status, message) = Self::ok_response(format!("policy '{}' upserted", policy.name));
-        Ok(Response::new(proto::UpsertPolicyResponse { status, message }))
+        Ok(Response::new(proto::UpsertPolicyResponse {
+            status,
+            message,
+        }))
     }
 
     async fn delete_policy(
@@ -205,7 +242,10 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeletePolicy");
         let (status, message) = Self::ok_response(format!("policy '{}' deleted", req.name));
-        Ok(Response::new(proto::DeletePolicyResponse { status, message }))
+        Ok(Response::new(proto::DeletePolicyResponse {
+            status,
+            message,
+        }))
     }
 
     async fn upsert_mesh_config(
@@ -213,11 +253,16 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertMeshConfigRequest>,
     ) -> Result<Response<proto::UpsertMeshConfigResponse>, Status> {
         let req = request.into_inner();
-        let mesh = req.mesh_config.as_ref()
+        let mesh = req
+            .mesh_config
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing mesh config"))?;
         info!(enabled = mesh.enabled, mtls_mode = %mesh.mtls_mode, "UpsertMeshConfig");
         let (status, message) = Self::ok_response("mesh config upserted");
-        Ok(Response::new(proto::UpsertMeshConfigResponse { status, message }))
+        Ok(Response::new(proto::UpsertMeshConfigResponse {
+            status,
+            message,
+        }))
     }
 
     async fn delete_mesh_config(
@@ -227,7 +272,10 @@ impl DataplaneControl for DataplaneService {
         let _req = request.into_inner();
         info!("DeleteMeshConfig");
         let (status, message) = Self::ok_response("mesh config deleted");
-        Ok(Response::new(proto::DeleteMeshConfigResponse { status, message }))
+        Ok(Response::new(proto::DeleteMeshConfigResponse {
+            status,
+            message,
+        }))
     }
 
     async fn upsert_wan_link(
@@ -235,11 +283,16 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertWanLinkRequest>,
     ) -> Result<Response<proto::UpsertWanLinkResponse>, Status> {
         let req = request.into_inner();
-        let link = req.wan_link.as_ref()
+        let link = req
+            .wan_link
+            .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing WAN link config"))?;
         info!(name = %link.name, interface = %link.interface, "UpsertWANLink");
         let (status, message) = Self::ok_response(format!("WAN link '{}' upserted", link.name));
-        Ok(Response::new(proto::UpsertWanLinkResponse { status, message }))
+        Ok(Response::new(proto::UpsertWanLinkResponse {
+            status,
+            message,
+        }))
     }
 
     async fn delete_wan_link(
@@ -249,7 +302,10 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteWANLink");
         let (status, message) = Self::ok_response(format!("WAN link '{}' deleted", req.name));
-        Ok(Response::new(proto::DeleteWanLinkResponse { status, message }))
+        Ok(Response::new(proto::DeleteWanLinkResponse {
+            status,
+            message,
+        }))
     }
 
     async fn attach_program(
@@ -260,7 +316,11 @@ impl DataplaneControl for DataplaneService {
         info!(name = %req.name, object_path = %req.object_path, "AttachProgram");
         // TODO: Load and attach eBPF program using aya.
         let (status, message) = Self::ok_response(format!("program '{}' attached", req.name));
-        Ok(Response::new(proto::AttachProgramResponse { status, message, program_id: 0 }))
+        Ok(Response::new(proto::AttachProgramResponse {
+            status,
+            message,
+            program_id: 0,
+        }))
     }
 
     async fn detach_program(
@@ -270,7 +330,10 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DetachProgram");
         let (status, message) = Self::ok_response(format!("program '{}' detached", req.name));
-        Ok(Response::new(proto::DetachProgramResponse { status, message }))
+        Ok(Response::new(proto::DetachProgramResponse {
+            status,
+            message,
+        }))
     }
 
     type StreamFlowsStream =
@@ -281,7 +344,11 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::StreamFlowsRequest>,
     ) -> Result<Response<Self::StreamFlowsStream>, Status> {
         let req = request.into_inner();
-        info!(buffer_size = req.buffer_size, filter_protocol = req.filter_protocol, "StreamFlows");
+        info!(
+            buffer_size = req.buffer_size,
+            filter_protocol = req.filter_protocol,
+            "StreamFlows"
+        );
 
         let mut rx = self.flow_tx.subscribe();
         let filter_protocol = req.filter_protocol;
@@ -322,10 +389,26 @@ impl DataplaneControl for DataplaneService {
         let config_version = self.config_version.read().await.clone();
 
         let map_sizes = vec![
-            proto::MapInfo { name: "vips".into(), entries: map_status.vip_count as u64, max_entries: 65536 },
-            proto::MapInfo { name: "backends".into(), entries: map_status.backend_count as u64, max_entries: 262144 },
-            proto::MapInfo { name: "conntrack".into(), entries: map_status.conntrack_count as u64, max_entries: 1048576 },
-            proto::MapInfo { name: "rate_limits".into(), entries: map_status.rate_limit_count as u64, max_entries: 65536 },
+            proto::MapInfo {
+                name: "vips".into(),
+                entries: map_status.vip_count as u64,
+                max_entries: 65536,
+            },
+            proto::MapInfo {
+                name: "backends".into(),
+                entries: map_status.backend_count as u64,
+                max_entries: 262144,
+            },
+            proto::MapInfo {
+                name: "conntrack".into(),
+                entries: map_status.conntrack_count as u64,
+                max_entries: 1048576,
+            },
+            proto::MapInfo {
+                name: "rate_limits".into(),
+                entries: map_status.rate_limit_count as u64,
+                max_entries: 65536,
+            },
         ];
 
         Ok(Response::new(proto::DataplaneStatus {
@@ -346,7 +429,11 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::StreamMetricsRequest>,
     ) -> Result<Response<Self::StreamMetricsStream>, Status> {
         let req = request.into_inner();
-        let interval_ms = if req.interval_ms == 0 { 5000 } else { req.interval_ms };
+        let interval_ms = if req.interval_ms == 0 {
+            5000
+        } else {
+            req.interval_ms
+        };
         info!(interval_ms = interval_ms, "StreamMetrics");
 
         let map_manager = Arc::clone(&self.map_manager);
@@ -416,8 +503,15 @@ mod tests {
         let (tx, _rx) = crate::flows::flow_channel();
         let svc = DataplaneService::new(mgr, tx);
         let req = Request::new(proto::ApplyConfigRequest {
-            version: "v1".into(), gateways: vec![], routes: vec![], clusters: vec![],
-            vips: vec![], l4_listeners: vec![], policies: vec![], mesh_config: None, wan_links: vec![],
+            version: "v1".into(),
+            gateways: vec![],
+            routes: vec![],
+            clusters: vec![],
+            vips: vec![],
+            l4_listeners: vec![],
+            policies: vec![],
+            mesh_config: None,
+            wan_links: vec![],
         });
         let resp = svc.apply_config(req).await.unwrap();
         let inner = resp.into_inner();
@@ -430,7 +524,10 @@ mod tests {
         let mgr = Arc::new(MapManager::new_mock());
         let (tx, _rx) = crate::flows::flow_channel();
         let svc = DataplaneService::new(mgr, tx);
-        let resp = svc.get_dataplane_status(Request::new(proto::GetDataplaneStatusRequest {})).await.unwrap();
+        let resp = svc
+            .get_dataplane_status(Request::new(proto::GetDataplaneStatusRequest {}))
+            .await
+            .unwrap();
         let status = resp.into_inner();
         assert_eq!(status.mode, "mock");
         assert_eq!(status.map_sizes.len(), 4);
@@ -443,10 +540,16 @@ mod tests {
         let svc = DataplaneService::new(mgr, tx);
         let req = Request::new(proto::UpsertGatewayRequest {
             gateway: Some(proto::GatewayConfig {
-                name: "test-gw".into(), bind_address: "0.0.0.0".into(), port: 8080,
+                name: "test-gw".into(),
+                bind_address: "0.0.0.0".into(),
+                port: 8080,
                 protocol: proto::GatewayProtocol::Http as i32,
-                tls_config: None, http2_settings: None, proxy_protocol: None,
-                hostnames: vec![], max_request_body_bytes: 0, idle_timeout_ms: 0,
+                tls_config: None,
+                http2_settings: None,
+                proxy_protocol: None,
+                hostnames: vec![],
+                max_request_body_bytes: 0,
+                idle_timeout_ms: 0,
             }),
         });
         let resp = svc.upsert_gateway(req).await.unwrap();
@@ -471,14 +574,20 @@ mod tests {
         let svc = DataplaneService::new(mgr, tx);
         let req = Request::new(proto::UpsertVipRequest {
             vip: Some(proto::VipConfig {
-                name: "test-vip".into(), address: "10.0.0.1/32".into(),
-                mode: proto::VipMode::L2 as i32, interface: "eth0".into(),
-                bgp_config: None, arp_interface: String::new(), ospf_area_id: 0,
+                name: "test-vip".into(),
+                address: "10.0.0.1/32".into(),
+                mode: proto::VipMode::L2 as i32,
+                interface: "eth0".into(),
+                bgp_config: None,
+                arp_interface: String::new(),
+                ospf_area_id: 0,
             }),
         });
         let resp = svc.upsert_vip(req).await.unwrap();
         assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
-        let req = Request::new(proto::DeleteVipRequest { name: "test-vip".into() });
+        let req = Request::new(proto::DeleteVipRequest {
+            name: "test-vip".into(),
+        });
         let resp = svc.delete_vip(req).await.unwrap();
         assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
     }
@@ -489,13 +598,18 @@ mod tests {
         let (tx, _rx) = crate::flows::flow_channel();
         let svc = DataplaneService::new(mgr, tx);
         let req = Request::new(proto::AttachProgramRequest {
-            name: "test-prog".into(), object_path: "/tmp/test.o".into(),
-            attach_type: proto::EbpfAttachType::EbpfAttachXdp as i32, interface: "eth0".into(),
-            section: "xdp".into(), pin_path: String::new(),
+            name: "test-prog".into(),
+            object_path: "/tmp/test.o".into(),
+            attach_type: proto::EbpfAttachType::EbpfAttachXdp as i32,
+            interface: "eth0".into(),
+            section: "xdp".into(),
+            pin_path: String::new(),
         });
         let resp = svc.attach_program(req).await.unwrap();
         assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
-        let req = Request::new(proto::DetachProgramRequest { name: "test-prog".into() });
+        let req = Request::new(proto::DetachProgramRequest {
+            name: "test-prog".into(),
+        });
         let resp = svc.detach_program(req).await.unwrap();
         assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
     }
@@ -510,7 +624,11 @@ mod tests {
                 name: "test-rl".into(),
                 policy_type: proto::PolicyType::RateLimit as i32,
                 config: Some(proto::policy_config::Config::RateLimit(
-                    proto::RateLimitPolicyConfig { requests_per_second: 100, burst: 10, key: "source-ip".into() },
+                    proto::RateLimitPolicyConfig {
+                        requests_per_second: 100,
+                        burst: 10,
+                        key: "source-ip".into(),
+                    },
                 )),
             }),
         });
@@ -525,10 +643,14 @@ mod tests {
         let svc = DataplaneService::new(mgr, tx);
         let req = Request::new(proto::UpsertMeshConfigRequest {
             mesh_config: Some(proto::MeshConfig {
-                enabled: true, mtls_mode: "strict".into(),
+                enabled: true,
+                mtls_mode: "strict".into(),
                 spiffe_id: "spiffe://cluster.local/agent/node-1".into(),
-                intercept_ports: vec![80, 443], ca_cert_pem: vec![], cert_pem: vec![],
-                key_pem: vec![], trust_domain: "cluster.local".into(),
+                intercept_ports: vec![80, 443],
+                ca_cert_pem: vec![],
+                cert_pem: vec![],
+                key_pem: vec![],
+                trust_domain: "cluster.local".into(),
             }),
         });
         let resp = svc.upsert_mesh_config(req).await.unwrap();
@@ -545,8 +667,13 @@ mod tests {
         let svc = DataplaneService::new(mgr, tx);
         let req = Request::new(proto::UpsertWanLinkRequest {
             wan_link: Some(proto::WanLinkConfig {
-                name: "wan-1".into(), interface: "eth1".into(), gateway: "192.168.1.1".into(),
-                priority: 1, sla_target: None, bandwidth_mbps: 1000, provider: "ISP-A".into(),
+                name: "wan-1".into(),
+                interface: "eth1".into(),
+                gateway: "192.168.1.1".into(),
+                priority: 1,
+                sla_target: None,
+                bandwidth_mbps: 1000,
+                provider: "ISP-A".into(),
             }),
         });
         let resp = svc.upsert_wan_link(req).await.unwrap();
