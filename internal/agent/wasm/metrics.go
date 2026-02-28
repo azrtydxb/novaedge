@@ -101,16 +101,6 @@ func RecordPluginError(plugin, phase string) {
 	wasmPluginErrorsTotal.WithLabelValues(plugin, phase).Inc()
 }
 
-// SetPluginsLoaded sets the gauge for loaded plugins.
-func SetPluginsLoaded(count int) {
-	wasmPluginsLoaded.Set(float64(count))
-}
-
-// SetInstancePoolSize sets the gauge for instance pool size.
-func SetInstancePoolSize(plugin string, size int) {
-	wasmInstancePoolSize.WithLabelValues(plugin).Set(float64(size))
-}
-
 // RecordPluginTimeout records a WASM plugin execution timeout.
 func RecordPluginTimeout(plugin, phase string) {
 	wasmPluginTimeoutsTotal.WithLabelValues(plugin, phase).Inc()

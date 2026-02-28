@@ -329,7 +329,7 @@ func TestBGPHandler_WithBFD(t *testing.T) {
 	}
 
 	// Verify BFD sessions were created
-	sessionCount := handler.bfdManager.GetSessionCount()
+	sessionCount := testGetSessionCount(handler.bfdManager)
 	if sessionCount != 2 {
 		t.Errorf("Expected 2 BFD sessions, got %d", sessionCount)
 	}
@@ -338,8 +338,8 @@ func TestBGPHandler_WithBFD(t *testing.T) {
 	peer1IP := net.ParseIP("10.0.0.2")
 	peer2IP := net.ParseIP("10.0.0.3")
 
-	state1 := handler.bfdManager.GetSessionState(peer1IP)
-	state2 := handler.bfdManager.GetSessionState(peer2IP)
+	state1 := testGetSessionState(handler.bfdManager, peer1IP)
+	state2 := testGetSessionState(handler.bfdManager, peer2IP)
 
 	if state1 == BFDStateAdminDown {
 		t.Error("Expected BFD session 1 to not be AdminDown")
@@ -354,7 +354,7 @@ func TestBGPHandler_WithBFD(t *testing.T) {
 		t.Fatalf("Failed to remove VIP: %v", err)
 	}
 
-	sessionCount = handler.bfdManager.GetSessionCount()
+	sessionCount = testGetSessionCount(handler.bfdManager)
 	if sessionCount != 0 {
 		t.Errorf("Expected 0 BFD sessions after removal, got %d", sessionCount)
 	}
@@ -545,7 +545,7 @@ func TestBGPHandler_Reconfigure_BFD(t *testing.T) {
 			}
 			_ = handler.AddVIP(ctx, updatedAssignment)
 
-			sessionCount := handler.bfdManager.GetSessionCount()
+			sessionCount := testGetSessionCount(handler.bfdManager)
 			if sessionCount != tt.wantSessions {
 				t.Errorf("Expected %d BFD sessions, got %d", tt.wantSessions, sessionCount)
 			}
@@ -758,38 +758,6 @@ func TestBGPHandler_Shutdown(t *testing.T) {
 	}
 }
 
-func TestBGPHandler_GetActiveVIPCount(t *testing.T) {
-	logger := zaptest.NewLogger(t)
-	handler, _ := NewBGPHandler(logger)
-	ctx := context.Background()
-	if err := handler.Start(ctx); err != nil {
-		skipIfBGPUnavailable(t, err)
-	}
-
-	if count := handler.GetActiveVIPCount(); count != 0 {
-		t.Errorf("Expected 0 active VIPs initially, got %d", count)
-	}
-
-	assignment := &pb.VIPAssignment{
-		VipName: "test-count",
-		Address: "10.100.0.1/32",
-		Mode:    pb.VIPMode_BGP,
-		BgpConfig: &pb.BGPConfig{
-			LocalAs:  65001,
-			RouterId: "10.0.0.1",
-		},
-	}
-
-	if err := handler.AddVIP(ctx, assignment); err != nil {
-		skipIfBGPUnavailable(t, err)
-		t.Fatalf("Failed to add VIP: %v", err)
-	}
-
-	if count := handler.GetActiveVIPCount(); count != 1 {
-		t.Errorf("Expected 1 active VIP, got %d", count)
-	}
-}
-
 func TestCommunitiesEqual(t *testing.T) {
 	tests := []struct {
 		name string
@@ -876,7 +844,7 @@ func TestBGPHandler_InvalidBFDInterval(t *testing.T) {
 		t.Fatalf("AddVIP with invalid BFD intervals should not fail: %v", err)
 	}
 
-	sessionCount := handler.bfdManager.GetSessionCount()
+	sessionCount := testGetSessionCount(handler.bfdManager)
 	if sessionCount != 1 {
 		t.Errorf("Expected 1 BFD session despite invalid intervals, got %d", sessionCount)
 	}

@@ -232,17 +232,6 @@ func (c *LocalCoordinator) IsLeader(vipAddress string) bool {
 	return false
 }
 
-// GetLeader returns the current leader for a VIP
-func (c *LocalCoordinator) GetLeader(vipAddress string) string {
-	c.vipsMu.RLock()
-	defer c.vipsMu.RUnlock()
-
-	if state, ok := c.vips[vipAddress]; ok {
-		return state.Leader
-	}
-	return ""
-}
-
 // OnBecomeLeader sets the callback for when we become leader
 func (c *LocalCoordinator) OnBecomeLeader(fn func(vip string)) {
 	c.onBecomeLeader = fn
@@ -427,14 +416,3 @@ func (c *LocalCoordinator) sendMessage(vip string, msgType MessageType) {
 	}
 }
 
-// GetStatus returns the status of all coordinated VIPs
-func (c *LocalCoordinator) GetStatus() map[string]CoordinatedVIPState {
-	c.vipsMu.RLock()
-	defer c.vipsMu.RUnlock()
-
-	result := make(map[string]CoordinatedVIPState)
-	for k, v := range c.vips {
-		result[k] = *v
-	}
-	return result
-}

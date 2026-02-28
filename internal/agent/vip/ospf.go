@@ -903,33 +903,6 @@ func (h *OSPFHandler) withdrawLSA(ip net.IP, _ *pb.OSPFConfig, isIPv6 bool) erro
 	return nil
 }
 
-// GetNeighborStates returns the current state of all OSPF neighbors
-func (h *OSPFHandler) GetNeighborStates() map[string]string {
-	if h.ospfServer == nil {
-		return nil
-	}
-
-	h.ospfServer.mu.RLock()
-	defer h.ospfServer.mu.RUnlock()
-
-	states := make(map[string]string, len(h.ospfServer.neighbors))
-	for addr, neighbor := range h.ospfServer.neighbors {
-		states[addr] = neighbor.State
-	}
-	return states
-}
-
-// GetLSDBCount returns the number of LSAs in the LSDB
-func (h *OSPFHandler) GetLSDBCount() int {
-	if h.ospfServer == nil {
-		return 0
-	}
-
-	h.ospfServer.mu.RLock()
-	defer h.ospfServer.mu.RUnlock()
-	return len(h.ospfServer.lsdb)
-}
-
 // Shutdown gracefully shuts down the OSPF handler
 func (h *OSPFHandler) Shutdown() {
 	h.logger.Info("Shutting down OSPF handler")
@@ -960,11 +933,4 @@ func (h *OSPFHandler) Shutdown() {
 
 	h.activeVIPs = make(map[string]*OSPFVIPState)
 	h.started = false
-}
-
-// GetActiveVIPCount returns the number of active VIPs
-func (h *OSPFHandler) GetActiveVIPCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.activeVIPs)
 }

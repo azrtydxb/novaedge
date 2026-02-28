@@ -129,7 +129,7 @@ func (h *L2Handler) AddVIP(_ context.Context, assignment *pb.VIPAssignment) erro
 	}
 
 	// Phase 2: Jitter + GARP/NDP outside the lock so concurrent AddVIP /
-	// RemoveVIP / GetActiveVIPCount calls are not blocked.
+	// RemoveVIP calls are not blocked.
 	jitter := time.Duration(rand.Int63n(int64(maxFailoverJitter))) //nolint:gosec // jitter does not need crypto rand
 	h.logger.Debug("Delaying GARP/NDP announcement",
 		zap.String("vip", assignment.VipName),
@@ -482,11 +482,4 @@ func detectPrimaryInterface() (string, error) {
 	}
 
 	return "", errNoSuitableNetworkInterfaceFound
-}
-
-// GetActiveVIPCount returns the number of active VIPs
-func (h *L2Handler) GetActiveVIPCount() int {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return len(h.activeVIPs)
 }

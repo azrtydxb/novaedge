@@ -150,20 +150,3 @@ func (rc *RedisClient) HealthCheck(ctx context.Context) bool {
 func (rc *RedisClient) Close() error {
 	return rc.client.Close()
 }
-
-// StartHealthChecker starts a background health checker
-func (rc *RedisClient) StartHealthChecker(ctx context.Context, interval time.Duration) {
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				rc.HealthCheck(ctx)
-			}
-		}
-	}()
-}
