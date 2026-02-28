@@ -91,9 +91,10 @@ jobs:
 
       - name: Verify generated eBPF files are committed
         run: |
-          if [ -n "$(git diff --name-only)" ]; then
-            echo "::error::Generated eBPF files are out of date. Run 'go generate ./internal/agent/ebpf/...' on Linux and commit the results."
-            git diff --name-only
+          # Only check generated Go files, not .o binaries which vary by clang/llvm version
+          if [ -n "$(git diff --name-only -- '*.go')" ]; then
+            echo "::error::Generated eBPF Go files are out of date. Run 'go generate ./internal/agent/ebpf/...' on Linux and commit the results."
+            git diff --name-only -- '*.go'
             exit 1
           fi
 
