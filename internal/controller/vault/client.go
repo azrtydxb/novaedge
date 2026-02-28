@@ -345,6 +345,8 @@ func (c *Client) Write(ctx context.Context, path string, data map[string]interfa
 }
 
 // Close releases resources held by the client.
+// TODO: Close should cancel any in-flight token renewal goroutines and
+// clean up the underlying HTTP transport when connection pooling is added.
 func (c *Client) Close() error {
 	return nil
 }

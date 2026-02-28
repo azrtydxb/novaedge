@@ -15,7 +15,6 @@ import (
 var (
 	errExactlyOneArgumentRequiredHostname    = errors.New("exactly one argument required: hostname")
 	errExactlyOneArgumentRequiredBackendName = errors.New("exactly one argument required: backend-name")
-	errExactlyOneArgumentRequiredRequestID   = errors.New("exactly one argument required: request-id")
 )
 
 func newDebugCommand() *cobra.Command {
@@ -27,7 +26,6 @@ func newDebugCommand() *cobra.Command {
 
 	cmd.AddCommand(newDebugRoutesCommand())
 	cmd.AddCommand(newDebugBackendsCommand())
-	cmd.AddCommand(newDebugTraceCommand())
 
 	return cmd
 }
@@ -232,28 +230,3 @@ func runDebugBackends(_ *cobra.Command, args []string) error {
 	return nil
 }
 
-func newDebugTraceCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "trace [request-id]",
-		Short: "Show trace for a request",
-		Long:  `Display distributed trace information for a specific request ID.`,
-		Example: `  # Show trace for a request
-  novactl debug trace abc123`,
-		RunE: runDebugTrace,
-	}
-
-	return cmd
-}
-
-func runDebugTrace(_ *cobra.Command, args []string) error {
-	if len(args) != 1 {
-		return errExactlyOneArgumentRequiredRequestID
-	}
-
-	requestID := args[0]
-	fmt.Printf("Trace for request ID: %s\n", requestID)
-	fmt.Println("(Trace retrieval requires connection to OpenTelemetry backend)")
-	fmt.Println("This feature requires implementing trace query from the OTLP endpoint.")
-
-	return nil
-}

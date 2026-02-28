@@ -21,7 +21,6 @@ func newAgentsCommand() *cobra.Command {
 
 	cmd.AddCommand(newAgentsListCommand())
 	cmd.AddCommand(newAgentsDescribeCommand())
-	cmd.AddCommand(newAgentsConfigCommand())
 
 	return cmd
 }
@@ -155,32 +154,6 @@ func runAgentsDescribe(_ *cobra.Command, args []string) error {
 			fmt.Printf("  %s: %s\n", cond.Type, cond.Status)
 		}
 	}
-
-	return nil
-}
-
-func newAgentsConfigCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "config [node-name]",
-		Short: "Show agent's current configuration",
-		Long:  `Display the current configuration snapshot for an agent on a specific node.`,
-		Example: `  # Show agent config
-  novactl agents config worker-1`,
-		RunE: runAgentsConfig,
-	}
-
-	return cmd
-}
-
-func runAgentsConfig(_ *cobra.Command, args []string) error {
-	if len(args) != 1 {
-		return errExactlyOneArgumentRequiredNodeName
-	}
-
-	nodeName := args[0]
-	fmt.Printf("Config for agent on node %s:\n", nodeName)
-	fmt.Println("(Config snapshot retrieval requires connection to agent's gRPC API)")
-	fmt.Println("This feature requires implementing a client for the agent's gRPC service.")
 
 	return nil
 }

@@ -314,10 +314,13 @@ func (d *SplitBrainDetector) RecordPeerContact(peerName string) {
 	d.checkPartitionHealing()
 }
 
-// RecordPeerFailure records a failure to contact a peer
-func (d *SplitBrainDetector) RecordPeerFailure(_ string) {
-	// No state mutation needed: we intentionally do not remove the peer entry,
-	// we just skip updating the timestamp so it will age out naturally.
+// RecordPeerFailure records a failure to contact a peer.
+// The peer's last-contact timestamp is intentionally not removed so it ages
+// out naturally via the partition timeout.
+func (d *SplitBrainDetector) RecordPeerFailure(peerName string) {
+	d.logger.Warn("Peer contact failure recorded",
+		zap.String("peer", peerName),
+	)
 
 	// Check for partition
 	d.checkForPartition()
