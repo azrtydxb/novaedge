@@ -42,6 +42,10 @@ struct Args {
     /// Path to compiled eBPF object file.
     #[arg(long, default_value = "/opt/novaedge/novaedge-ebpf")]
     ebpf_path: String,
+
+    /// Network interface for eBPF program attachment.
+    #[arg(long, default_value = "eth0")]
+    interface: String,
 }
 
 #[tokio::main]
@@ -72,9 +76,28 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(target_os = "linux")]
         {
             match loader::load_ebpf(&args.ebpf_path) {
-                Ok(result) => {
+                Ok(mut result) => {
                     if result.is_real {
                         info!("eBPF programs loaded successfully");
+
+                        // Attach eBPF programs to the network interface.
+                        if let Some(ref mut bpf) = result.bpf {
+                            if let Err(e) =
+                                loader::attach_xdp(bpf, "novaedge_xdp", &args.interface)
+                            {
+                                warn!("Failed to attach XDP L4 LB program: {e:#}");
+                            }
+                            if let Err(e) =
+                                loader::attach_xdp(bpf, "novaedge_arp", &args.interface)
+                            {
+                                warn!("Failed to attach XDP ARP responder: {e:#}");
+                            }
+                            if let Err(e) =
+                                loader::attach_tc(bpf, "novaedge_ratelimit", &args.interface)
+                            {
+                                warn!("Failed to attach TC rate limiter: {e:#}");
+                            }
+                        }
                     } else {
                         info!("eBPF loader returned mock maps (programs not yet available)");
                     }

@@ -15,6 +15,9 @@ pub struct LoadResult {
     /// Ring buffer for flow events (Linux only, None in mock mode).
     #[cfg(target_os = "linux")]
     pub flow_ring_buf: Option<aya::maps::RingBuf<aya::maps::MapData>>,
+    /// The loaded eBPF handle, needed for attaching programs to interfaces.
+    #[cfg(target_os = "linux")]
+    pub bpf: Option<aya::Ebpf>,
 }
 
 /// Load eBPF programs from the compiled object file and return a `LoadResult`.
@@ -80,6 +83,7 @@ pub fn load_ebpf(path: &str) -> anyhow::Result<LoadResult> {
         map_manager: MapManager::new_real(maps),
         is_real: true,
         flow_ring_buf: Some(flow_ring_buf),
+        bpf: Some(bpf),
     })
 }
 
@@ -146,6 +150,8 @@ mod tests {
             is_real: false,
             #[cfg(target_os = "linux")]
             flow_ring_buf: None,
+            #[cfg(target_os = "linux")]
+            bpf: None,
         };
         assert!(!result.is_real);
         assert_eq!(result.map_manager.mode(), "mock");
