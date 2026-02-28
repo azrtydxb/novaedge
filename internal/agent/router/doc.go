@@ -119,4 +119,8 @@ limitations under the License.
 //   - Connection pools are thread-safe
 //
 // Configuration updates are atomic - either fully applied or rolled back.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles all L7 routing natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package router

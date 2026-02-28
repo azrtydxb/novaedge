@@ -14,6 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package wasm provides a WebAssembly plugin runtime using Wazero for the NovaEdge agent.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles WASM plugins natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package wasm
 
 import (

@@ -55,4 +55,8 @@ limitations under the License.
 //
 // Protocol detection is performed early in the request handling pipeline
 // to route requests to appropriate handlers.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles all protocol detection natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package protocol

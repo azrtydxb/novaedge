@@ -156,4 +156,8 @@ limitations under the License.
 //
 // All algorithms automatically filter out unhealthy endpoints and handle
 // endpoint additions/removals gracefully.
+//
+// DEPRECATED: This package will be removed once --forwarding-plane=rust is
+// validated and the Rust dataplane handles all load balancing natively.
+// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package lb
