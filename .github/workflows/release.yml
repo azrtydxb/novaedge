@@ -138,6 +138,7 @@ jobs:
     name: Docker Images
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         image:
           - name: novaedge-controller
