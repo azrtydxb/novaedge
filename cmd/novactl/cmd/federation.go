@@ -3,7 +3,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -18,9 +17,6 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
-var (
-	errMustSpecifyEitherLocalOrRemote = errors.New("must specify either --local or --remote")
-)
 
 // newFederationCommand creates the federation command
 func newFederationCommand() *cobra.Command {
@@ -41,8 +37,6 @@ between multiple NovaEdge controllers, including:
 
 	cmd.AddCommand(newFederationStatusCommand())
 	cmd.AddCommand(newFederationPeersCommand())
-	cmd.AddCommand(newFederationConflictsCommand())
-	cmd.AddCommand(newFederationSyncCommand())
 	cmd.AddCommand(newFederationVectorClockCommand())
 
 	return cmd
@@ -100,83 +94,6 @@ func newFederationPeersCommand() *cobra.Command {
 			return showFederationPeers(ctx, k8sClient, args[0], namespace)
 		},
 	}
-
-	return cmd
-}
-
-// newFederationConflictsCommand creates the federation conflicts command
-func newFederationConflictsCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "conflicts NAME",
-		Short: "Show and manage federation conflicts",
-		Long:  "Display and resolve conflicts in federation sync.",
-		Args:  cobra.ExactArgs(1),
-	}
-
-	// List conflicts
-	listCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List pending conflicts",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Get parent's first arg (federation name)
-			fedName := cmd.Parent().Use
-			if len(args) > 0 {
-				fedName = args[0]
-			}
-			fmt.Printf("Listing conflicts for federation: %s\n", fedName)
-			fmt.Println("(Federation conflict API not yet available - use novaedge-controller metrics)")
-			return nil
-		},
-	}
-
-	// Resolve conflict
-	resolveCmd := &cobra.Command{
-		Use:   "resolve RESOURCE-KEY [--local|--remote]",
-		Short: "Resolve a conflict",
-		Long:  "Resolve a federation conflict by choosing the local or remote version.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			useLocal, _ := cmd.Flags().GetBool("local")
-			useRemote, _ := cmd.Flags().GetBool("remote")
-
-			if useLocal == useRemote {
-				return errMustSpecifyEitherLocalOrRemote
-			}
-
-			fmt.Printf("Resolving conflict for %s (local=%v)\n", args[0], useLocal)
-			fmt.Println("(Federation conflict resolution API not yet available)")
-			return nil
-		},
-	}
-	resolveCmd.Flags().Bool("local", false, "Use local version")
-	resolveCmd.Flags().Bool("remote", false, "Use remote version")
-
-	cmd.AddCommand(listCmd)
-	cmd.AddCommand(resolveCmd)
-
-	return cmd
-}
-
-// newFederationSyncCommand creates the federation sync command
-func newFederationSyncCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "sync NAME",
-		Short: "Trigger federation sync",
-		Long:  "Trigger a manual full sync with federation peers.",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			peer, _ := cmd.Flags().GetString("peer")
-			if peer != "" {
-				fmt.Printf("Triggering full sync with peer: %s\n", peer)
-			} else {
-				fmt.Println("Triggering full sync with all peers")
-			}
-			fmt.Println("(Federation sync API not yet available)")
-			return nil
-		},
-	}
-
-	cmd.Flags().String("peer", "", "Sync with specific peer only")
 
 	return cmd
 }

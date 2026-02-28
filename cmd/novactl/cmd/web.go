@@ -28,15 +28,11 @@ var (
 	webTLSCert    string
 	webTLSKey     string
 	webTLSAuto    bool
-	webACMEEmail  string
 	webACMEDomain string
 	// Auth flags
-	webAuthUser       string
-	webAuthPassword   string
-	webOIDCIssuerURL  string
-	webOIDCClientID   string
-	webOIDCSecret     string
-	webSessionTTL     time.Duration
+	webAuthUser     string
+	webAuthPassword string
+	webSessionTTL   time.Duration
 	webJaegerEndpoint string
 )
 
@@ -106,8 +102,6 @@ The mode is auto-detected but can be explicitly set with --mode.`,
 		"Path to TLS private key file (PEM format)")
 	cmd.Flags().BoolVar(&webTLSAuto, "tls-auto", false,
 		"Auto-generate a self-signed certificate")
-	cmd.Flags().StringVar(&webACMEEmail, "acme-email", "",
-		"Email for ACME/Let's Encrypt certificate (reserved for future use)")
 	cmd.Flags().StringVar(&webACMEDomain, "acme-domain", "",
 		"Domain name for certificate (used with --tls-auto)")
 
@@ -116,12 +110,6 @@ The mode is auto-detected but can be explicitly set with --mode.`,
 		"Username for basic authentication (env: NOVACTL_AUTH_USER)")
 	cmd.Flags().StringVar(&webAuthPassword, "auth-password", "",
 		"Password for basic authentication (env: NOVACTL_AUTH_PASSWORD)")
-	cmd.Flags().StringVar(&webOIDCIssuerURL, "oidc-issuer-url", "",
-		"OIDC issuer URL (reserved for future use)")
-	cmd.Flags().StringVar(&webOIDCClientID, "oidc-client-id", "",
-		"OIDC client ID (reserved for future use)")
-	cmd.Flags().StringVar(&webOIDCSecret, "oidc-client-secret", "",
-		"OIDC client secret (reserved for future use)")
 	cmd.Flags().DurationVar(&webSessionTTL, "session-ttl", 8*time.Hour,
 		"Session token time-to-live")
 	cmd.Flags().StringVar(&webJaegerEndpoint, "jaeger-endpoint",
@@ -153,16 +141,12 @@ func runWeb(_ *cobra.Command, _ []string) error {
 		TLSCert:    webTLSCert,
 		TLSKey:     webTLSKey,
 		TLSAuto:    webTLSAuto,
-		ACMEEmail:  webACMEEmail,
 		ACMEDomain: webACMEDomain,
 		// Auth configuration
 		AuthConfig: auth.Config{
-			BasicUser:    authUser,
-			BasicPass:    authPass,
-			OIDCIssuer:   webOIDCIssuerURL,
-			OIDCClientID: webOIDCClientID,
-			OIDCSecret:   webOIDCSecret,
-			SessionTTL:   webSessionTTL,
+			BasicUser:  authUser,
+			BasicPass:  authPass,
+			SessionTTL: webSessionTTL,
 		},
 		JaegerEndpoint: webJaegerEndpoint,
 	}

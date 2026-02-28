@@ -485,24 +485,6 @@ type ProxyGatewaySpec struct {
 	// +optional
 	RedirectScheme *RedirectSchemeConfig `json:"redirectScheme,omitempty"`
 
-	// HTTP3 defines HTTP/3 (QUIC) protocol configuration at the gateway level.
-	// RESERVED FOR FUTURE USE: this field is not currently consumed by the controller.
-	// To enable HTTP/3, configure QUIC settings on individual listeners instead.
-	// +optional
-	HTTP3 *HTTP3Config `json:"http3,omitempty"`
-
-	// SSE defines Server-Sent Events configuration at the gateway level.
-	// RESERVED FOR FUTURE USE: this field is not currently consumed by the controller.
-	// SSE behaviour is configured through ProxyRoute middleware today.
-	// +optional
-	SSE *SSEConfig `json:"sse,omitempty"`
-
-	// GRPCRoute defines gRPC-specific routing configuration at the gateway level.
-	// RESERVED FOR FUTURE USE: this field is not currently consumed by the controller.
-	// gRPC routing is handled via ProxyRoute resources with gRPC match rules.
-	// +optional
-	GRPCRoute *GRPCRouteConfig `json:"grpcRoute,omitempty"`
-
 	// ExtProc configures external processing via a gRPC service.
 	// The external processor can inspect and modify request/response headers and bodies.
 	// +optional
