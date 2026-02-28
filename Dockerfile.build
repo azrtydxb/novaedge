@@ -1,0 +1,26 @@
+FROM rust:bookworm AS builder
+
+RUN apt-get update && apt-get install -y \
+    clang llvm libelf-dev \
+    protobuf-compiler \
+    pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup toolchain install nightly --component rust-src
+RUN rustup target add --toolchain nightly bpfel-unknown-none
+RUN cargo install bpf-linker
+
+WORKDIR /build
+COPY . .
+
+# Build eBPF programs (nightly, no_std)
+RUN cd dataplane && cargo +nightly build \
+    --package novaedge-ebpf \
+    --target bpfel-unknown-none \
+    -Z build-std=core \
+    --release
+
+# Build userspace dataplane (stable)
+RUN cd dataplane && cargo build \
+    --package novaedge-dataplane \
+    --release
