@@ -176,7 +176,7 @@ spec:
 
       # Rust eBPF dataplane sidecar
       - name: novaedge-dataplane
-        image: ghcr.io/piwi3910/novaedge/novaedge-dataplane:latest
+        image: ghcr.io/piwi3910/novaedge-dataplane:latest
         imagePullPolicy: IfNotPresent
         args:
         - --socket-path=/run/novaedge/dataplane.sock
