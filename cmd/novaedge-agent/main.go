@@ -1123,8 +1123,8 @@ func configureEBPFRateLimiter(rl *ebpfratelimit.RateLimiter, policies []*pb.Poli
 		if b < 0 {
 			b = 0
 		}
-		rate := uint64(rps)  //nolint:gosec // guarded above
-		burst := uint64(b)   //nolint:gosec // guarded above
+		rate := uint64(rps) //nolint:gosec // guarded above
+		burst := uint64(b)  //nolint:gosec // guarded above
 		if rate == 0 {
 			continue
 		}
