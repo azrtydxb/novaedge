@@ -12,6 +12,7 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing::{info, warn};
 
+mod config;
 mod flows;
 mod health;
 mod l4;

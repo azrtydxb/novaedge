@@ -1,0 +1,367 @@
+//! Runtime configuration state for the dataplane.
+//!
+//! Stores gateways, routes, and clusters received via gRPC. Written by
+//! gRPC handlers, read by proxy handlers and the listener manager.
+
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+use dashmap::DashMap;
+use tokio::sync::{watch, RwLock};
+
+/// Gateway listener state.
+#[derive(Debug, Clone)]
+pub struct GatewayState {
+    pub name: String,
+    pub bind_address: String,
+    pub port: u32,
+    pub protocol: String,
+    pub tls: Option<TlsState>,
+    pub hostnames: Vec<String>,
+}
+
+/// TLS configuration for a gateway.
+#[derive(Debug, Clone)]
+pub struct TlsState {
+    pub cert_pem: Vec<u8>,
+    pub key_pem: Vec<u8>,
+}
+
+/// Route state mapping requests to backends.
+#[derive(Debug, Clone)]
+pub struct RouteState {
+    pub name: String,
+    pub gateway_ref: String,
+    pub hostnames: Vec<String>,
+    pub path_prefix: String,
+    pub path_exact: String,
+    pub methods: Vec<String>,
+    pub backend_ref: String,
+    pub priority: i32,
+    pub rewrite_path: Option<String>,
+    pub add_headers: HashMap<String, String>,
+}
+
+/// Backend cluster state with endpoints.
+#[derive(Debug, Clone)]
+pub struct ClusterState {
+    pub name: String,
+    pub endpoints: Vec<EndpointState>,
+    pub lb_algorithm: String,
+    pub health_check_path: String,
+}
+
+/// A single backend endpoint.
+#[derive(Debug, Clone)]
+pub struct EndpointState {
+    pub address: String,
+    pub port: u32,
+    pub weight: u32,
+    pub healthy: bool,
+}
+
+/// Snapshot of all runtime configuration at a point in time.
+#[derive(Debug, Clone)]
+pub struct ConfigSnapshot {
+    pub gateways: HashMap<String, GatewayState>,
+    pub routes: HashMap<String, RouteState>,
+    pub clusters: HashMap<String, ClusterState>,
+    pub version: String,
+}
+
+/// Thread-safe runtime configuration store.
+///
+/// Written by gRPC handlers, read by proxy and listener tasks.
+/// Uses `DashMap` for lock-free concurrent access and a `watch` channel
+/// to notify listeners of configuration changes.
+pub struct RuntimeConfig {
+    gateways: DashMap<String, GatewayState>,
+    routes: DashMap<String, RouteState>,
+    clusters: DashMap<String, ClusterState>,
+    version: RwLock<String>,
+    notify: watch::Sender<u64>,
+    notify_rx: watch::Receiver<u64>,
+    generation: AtomicU64,
+}
+
+impl RuntimeConfig {
+    /// Create a new empty runtime configuration.
+    pub fn new() -> Self {
+        let (notify, notify_rx) = watch::channel(0u64);
+        Self {
+            gateways: DashMap::new(),
+            routes: DashMap::new(),
+            clusters: DashMap::new(),
+            version: RwLock::new(String::new()),
+            notify,
+            notify_rx,
+            generation: AtomicU64::new(0),
+        }
+    }
+
+    /// Insert or update a gateway.
+    pub fn upsert_gateway(&self, gw: GatewayState) {
+        self.gateways.insert(gw.name.clone(), gw);
+        self.bump();
+    }
+
+    /// Remove a gateway by name.
+    pub fn delete_gateway(&self, name: &str) {
+        self.gateways.remove(name);
+        self.bump();
+    }
+
+    /// Insert or update a route.
+    pub fn upsert_route(&self, route: RouteState) {
+        self.routes.insert(route.name.clone(), route);
+        self.bump();
+    }
+
+    /// Remove a route by name.
+    pub fn delete_route(&self, name: &str) {
+        self.routes.remove(name);
+        self.bump();
+    }
+
+    /// Insert or update a cluster.
+    pub fn upsert_cluster(&self, cluster: ClusterState) {
+        self.clusters.insert(cluster.name.clone(), cluster);
+        self.bump();
+    }
+
+    /// Remove a cluster by name.
+    pub fn delete_cluster(&self, name: &str) {
+        self.clusters.remove(name);
+        self.bump();
+    }
+
+    /// Get a cluster by name.
+    pub fn get_cluster(&self, name: &str) -> Option<ClusterState> {
+        self.clusters.get(name).map(|c| c.value().clone())
+    }
+
+    /// Subscribe to configuration change notifications.
+    pub fn subscribe(&self) -> watch::Receiver<u64> {
+        self.notify_rx.clone()
+    }
+
+    /// Take a point-in-time snapshot of all configuration.
+    pub fn snapshot(&self) -> ConfigSnapshot {
+        ConfigSnapshot {
+            gateways: self
+                .gateways
+                .iter()
+                .map(|e| (e.key().clone(), e.value().clone()))
+                .collect(),
+            routes: self
+                .routes
+                .iter()
+                .map(|e| (e.key().clone(), e.value().clone()))
+                .collect(),
+            clusters: self
+                .clusters
+                .iter()
+                .map(|e| (e.key().clone(), e.value().clone()))
+                .collect(),
+            version: self
+                .version
+                .try_read()
+                .map(|v| v.clone())
+                .unwrap_or_default(),
+        }
+    }
+
+    /// Apply a full configuration snapshot, replacing all existing state.
+    pub async fn apply_full(
+        &self,
+        version: String,
+        gateways: Vec<GatewayState>,
+        routes: Vec<RouteState>,
+        clusters: Vec<ClusterState>,
+    ) {
+        self.gateways.clear();
+        for gw in gateways {
+            self.gateways.insert(gw.name.clone(), gw);
+        }
+        self.routes.clear();
+        for r in routes {
+            self.routes.insert(r.name.clone(), r);
+        }
+        self.clusters.clear();
+        for c in clusters {
+            self.clusters.insert(c.name.clone(), c);
+        }
+        *self.version.write().await = version;
+        self.bump();
+    }
+
+    /// Get the current config generation number.
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+
+    fn bump(&self) {
+        let gen = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
+        let _ = self.notify.send(gen);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_gateway(name: &str, port: u32) -> GatewayState {
+        GatewayState {
+            name: name.into(),
+            bind_address: "0.0.0.0".into(),
+            port,
+            protocol: "HTTP".into(),
+            tls: None,
+            hostnames: vec![],
+        }
+    }
+
+    fn test_route(name: &str, backend: &str) -> RouteState {
+        RouteState {
+            name: name.into(),
+            gateway_ref: "gw-1".into(),
+            hostnames: vec!["example.com".into()],
+            path_prefix: "/api/".into(),
+            path_exact: String::new(),
+            methods: vec![],
+            backend_ref: backend.into(),
+            priority: 10,
+            rewrite_path: None,
+            add_headers: HashMap::new(),
+        }
+    }
+
+    fn test_cluster(name: &str) -> ClusterState {
+        ClusterState {
+            name: name.into(),
+            endpoints: vec![EndpointState {
+                address: "10.0.0.1".into(),
+                port: 8080,
+                weight: 1,
+                healthy: true,
+            }],
+            lb_algorithm: "round-robin".into(),
+            health_check_path: "/healthz".into(),
+        }
+    }
+
+    #[test]
+    fn test_upsert_and_get_gateway() {
+        let cfg = RuntimeConfig::new();
+        cfg.upsert_gateway(test_gateway("gw-1", 8080));
+        let snap = cfg.snapshot();
+        assert_eq!(snap.gateways.len(), 1);
+        assert_eq!(snap.gateways["gw-1"].port, 8080);
+    }
+
+    #[test]
+    fn test_upsert_and_get_route() {
+        let cfg = RuntimeConfig::new();
+        cfg.upsert_route(test_route("route-1", "backend-1"));
+        let snap = cfg.snapshot();
+        assert_eq!(snap.routes.len(), 1);
+        assert_eq!(snap.routes["route-1"].backend_ref, "backend-1");
+    }
+
+    #[test]
+    fn test_upsert_and_get_cluster() {
+        let cfg = RuntimeConfig::new();
+        cfg.upsert_cluster(test_cluster("cluster-1"));
+        let snap = cfg.snapshot();
+        assert_eq!(snap.clusters.len(), 1);
+        assert_eq!(snap.clusters["cluster-1"].endpoints.len(), 1);
+    }
+
+    #[test]
+    fn test_get_cluster() {
+        let cfg = RuntimeConfig::new();
+        assert!(cfg.get_cluster("missing").is_none());
+        cfg.upsert_cluster(test_cluster("cluster-1"));
+        let c = cfg.get_cluster("cluster-1").unwrap();
+        assert_eq!(c.endpoints.len(), 1);
+    }
+
+    #[test]
+    fn test_delete_removes_entry() {
+        let cfg = RuntimeConfig::new();
+        cfg.upsert_gateway(test_gateway("gw-1", 8080));
+        cfg.upsert_route(test_route("route-1", "b"));
+        cfg.upsert_cluster(test_cluster("cluster-1"));
+
+        cfg.delete_gateway("gw-1");
+        cfg.delete_route("route-1");
+        cfg.delete_cluster("cluster-1");
+
+        let snap = cfg.snapshot();
+        assert!(snap.gateways.is_empty());
+        assert!(snap.routes.is_empty());
+        assert!(snap.clusters.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_apply_full_replaces_all() {
+        let cfg = RuntimeConfig::new();
+        cfg.upsert_gateway(test_gateway("old-gw", 80));
+        cfg.upsert_route(test_route("old-route", "b"));
+
+        cfg.apply_full(
+            "v2".into(),
+            vec![test_gateway("new-gw", 443)],
+            vec![test_route("new-route", "new-b")],
+            vec![test_cluster("new-cluster")],
+        )
+        .await;
+
+        let snap = cfg.snapshot();
+        assert_eq!(snap.version, "v2");
+        assert_eq!(snap.gateways.len(), 1);
+        assert!(snap.gateways.contains_key("new-gw"));
+        assert_eq!(snap.routes.len(), 1);
+        assert!(snap.routes.contains_key("new-route"));
+        assert_eq!(snap.clusters.len(), 1);
+        assert!(snap.clusters.contains_key("new-cluster"));
+    }
+
+    #[test]
+    fn test_generation_increments() {
+        let cfg = RuntimeConfig::new();
+        assert_eq!(cfg.generation(), 0);
+        cfg.upsert_gateway(test_gateway("gw", 80));
+        assert_eq!(cfg.generation(), 1);
+        cfg.upsert_route(test_route("r", "b"));
+        assert_eq!(cfg.generation(), 2);
+        cfg.delete_gateway("gw");
+        assert_eq!(cfg.generation(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_subscribe_notifies_on_change() {
+        let cfg = Arc::new(RuntimeConfig::new());
+        let mut rx = cfg.subscribe();
+
+        // Initial value is 0
+        assert_eq!(*rx.borrow(), 0);
+
+        cfg.upsert_gateway(test_gateway("gw", 80));
+
+        // Wait for notification
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), 1);
+    }
+
+    #[test]
+    fn test_upsert_overwrites() {
+        let cfg = RuntimeConfig::new();
+        cfg.upsert_gateway(test_gateway("gw-1", 80));
+        cfg.upsert_gateway(test_gateway("gw-1", 443));
+        let snap = cfg.snapshot();
+        assert_eq!(snap.gateways.len(), 1);
+        assert_eq!(snap.gateways["gw-1"].port, 443);
+    }
+}
