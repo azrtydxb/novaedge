@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -1007,9 +1008,12 @@ func buildL4Routes(
 	l4Listeners []*pb.L4Listener,
 	endpoints map[string]*pb.EndpointList,
 ) []xdplb.L4Route {
-	// Build a VIP address set for quick lookup.
+	// Build a VIP address set for quick lookup (active VIPs only).
 	vipAddrs := make(map[string]bool, len(vips))
 	for _, v := range vips {
+		if !v.GetIsActive() {
+			continue // only programme XDP for VIPs active on this node
+		}
 		// Strip CIDR suffix if present (e.g., "10.0.0.1/32" -> "10.0.0.1").
 		addr := v.GetAddress()
 		if idx := strings.IndexByte(addr, '/'); idx >= 0 {
@@ -1045,14 +1049,17 @@ func buildL4Routes(
 			if !ep.GetReady() {
 				continue
 			}
+			addr := ep.GetAddress()
+			ip := net.ParseIP(addr)
+			if ip == nil || ip.To4() == nil {
+				continue // XDP L4 routes only support IPv4 literal addresses
+			}
 			backends = append(backends, xdplb.Backend{
-				Addr: ep.GetAddress(),
+				Addr: addr,
 				Port: uint16(ep.GetPort()), //nolint:gosec // port range
 			})
 			// Note: Backend.MAC is left as zero value. The XDP program will
 			// need ARP resolution or a neighbor-cache lookup to fill this.
-			// For now, the backends are populated without MAC addresses;
-			// XDP_TX will fall back to the kernel stack for MAC resolution.
 		}
 
 		if len(backends) == 0 {
@@ -1061,8 +1068,14 @@ func buildL4Routes(
 
 		// Create a route for each VIP address that matches.
 		// L4 listeners don't specify a VIP directly, so we create a route
-		// for every VIP on the matching port.
-		for vipAddr := range vipAddrs {
+		// for every active VIP on the matching port.
+		// Sort VIP addresses for deterministic eBPF map ordering.
+		sortedVIPs := make([]string, 0, len(vipAddrs))
+		for addr := range vipAddrs {
+			sortedVIPs = append(sortedVIPs, addr)
+		}
+		sort.Strings(sortedVIPs)
+		for _, vipAddr := range sortedVIPs {
 			routes = append(routes, xdplb.L4Route{
 				VIP:      vipAddr,
 				Port:     uint16(l4.GetPort()), //nolint:gosec // port range
@@ -1152,7 +1165,7 @@ var ebpfHealthPollerOnce sync.Once
 // startEBPFHealthPoller starts the eBPF passive health monitor's polling goroutine
 // exactly once (on first config snapshot). Subsequent calls are no-ops.
 func startEBPFHealthPoller(mon *ebpfhealth.HealthMonitor, logger *zap.Logger) {
-	if mon == nil {
+	if mon == nil || !mon.IsActive() {
 		return
 	}
 	ebpfHealthPollerOnce.Do(func() {

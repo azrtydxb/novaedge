@@ -5,6 +5,7 @@ package dataplane
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"go.uber.org/zap"
@@ -584,6 +585,7 @@ func translateMeshConfig(snapshot *configpb.ConfigSnapshot) *pb.MeshConfig {
 	}
 
 	// Populate intercept ports from mesh-enabled internal services.
+	// Derive Enabled from the presence of mesh-enabled services (not all services).
 	portSet := make(map[uint32]bool)
 	for _, svc := range snapshot.GetInternalServices() {
 		if !svc.GetMeshEnabled() {
@@ -597,9 +599,12 @@ func translateMeshConfig(snapshot *configpb.ConfigSnapshot) *pb.MeshConfig {
 			}
 		}
 	}
+	mc.Enabled = len(mc.InterceptPorts) > 0
+	// Sort for deterministic config output.
+	sort.Slice(mc.InterceptPorts, func(i, j int) bool { return mc.InterceptPorts[i] < mc.InterceptPorts[j] })
 
 	// Default mTLS mode: permissive when mesh is enabled but no explicit mode set.
-	if mc.Enabled {
+	if mc.Enabled && mc.MtlsMode == "" {
 		mc.MtlsMode = "permissive"
 	}
 
