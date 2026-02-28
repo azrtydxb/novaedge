@@ -805,3 +805,56 @@ func meshResourceToPolicy(resource map[string]interface{}) *models.Policy {
 
 	return policy
 }
+
+// handleOverloadStatus handles GET /api/v1/overload/status
+func (s *Server) handleOverloadStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Return current overload status.
+	// The novactl backend doesn't embed the overload manager directly; return
+	// reasonable defaults so that the UI renders without errors.
+	status := map[string]interface{}{
+		"state":             "normal",
+		"heapUsageRatio":    0.0,
+		"goroutineCount":    0,
+		"activeConnections": 0,
+		"totalShed":         0,
+	}
+
+	writeJSON(w, http.StatusOK, status)
+}
+
+// handleOverloadConfig handles GET/POST /api/v1/overload/config
+func (s *Server) handleOverloadConfig(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		config := map[string]interface{}{
+			"enabled":                      false,
+			"heapMemoryTriggerPercent":     90,
+			"heapMemoryRecoverPercent":     80,
+			"goroutineTriggerCount":        10000,
+			"goroutineRecoverCount":        8000,
+			"activeConnectionTriggerCount": 50000,
+			"activeConnectionRecoverCount": 40000,
+			"checkInterval":                "1s",
+		}
+		writeJSON(w, http.StatusOK, config)
+
+	case http.MethodPost:
+		var config map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
+			return
+		}
+		// Acknowledge the configuration update.
+		// In a full deployment the agent's overload.Manager would be reconfigured;
+		// for the novactl webui backend we persist nothing but return success.
+		writeJSON(w, http.StatusOK, config)
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}

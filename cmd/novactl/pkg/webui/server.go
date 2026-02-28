@@ -216,6 +216,10 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/mesh/policies/", s.handleMeshPolicy)
 	mux.HandleFunc("/api/v1/mesh/policies", s.handleMeshPolicies)
 
+	// Overload / load-shedding endpoints
+	mux.HandleFunc("/api/v1/overload/status", s.handleOverloadStatus)
+	mux.HandleFunc("/api/v1/overload/config", s.handleOverloadConfig)
+
 	// SD-WAN endpoints
 	mux.HandleFunc("/api/v1/sdwan/links", s.handleSDWANLinks)
 	mux.HandleFunc("/api/v1/sdwan/topology", s.handleSDWANTopology)

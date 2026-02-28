@@ -152,6 +152,8 @@ message Listener {
   ClientAuthConfig client_auth = 11; // mTLS client authentication configuration
   bool ocsp_stapling = 12; // Enable OCSP stapling for TLS certificates
   ProxyProtocolConfig proxy_protocol = 13; // PROXY protocol configuration
+  bool ssl_redirect = 14; // Automatic redirect from HTTP to HTTPS
+  repeated string allowed_source_ranges = 15; // CIDR ranges allowed to access this listener
 }
 
 // Protocol defines the application protocol
@@ -213,6 +215,32 @@ message RouteRule {
   BackendRef mirror_backend = 6;        // Mirror backend reference (optional)
   int32 mirror_percent = 7;             // Percentage of requests to mirror (0-100)
   RetryConfig retry = 8; // Retry configuration for failed requests
+  FaultInjectionConfig fault_injection = 9; // Fault injection for chaos engineering
+  BodyTransformConfig body_transform = 10;  // JSON body transformation
+}
+
+// FaultInjectionConfig configures fault injection for chaos engineering
+message FaultInjectionConfig {
+  int64 delay_duration_ms = 1;  // Fixed delay to inject in milliseconds
+  int32 delay_percent = 2;      // Percentage of requests to delay (0-100)
+  int32 abort_status_code = 3;  // HTTP status code for aborted requests
+  int32 abort_percent = 4;      // Percentage of requests to abort (0-100)
+  string header_activation = 5; // Optional header that must be present to activate
+}
+
+// TransformOperation represents a single JSON Patch operation (RFC 6902)
+message TransformOperation {
+  string op = 1;    // Operation: add, remove, replace, move, copy
+  string path = 2;  // JSON Pointer (RFC 6901) target path
+  string value = 3; // JSON-encoded value for add/replace operations
+  string from = 4;  // Source path for move/copy operations
+}
+
+// BodyTransformConfig configures JSON body transformation
+message BodyTransformConfig {
+  repeated TransformOperation request = 1;  // Transforms for request bodies
+  repeated TransformOperation response = 2; // Transforms for response bodies
+  int64 max_body_size = 3;                  // Maximum body size for transformation in bytes
 }
 
 // RetryConfig defines automatic request retry behavior

@@ -580,10 +580,12 @@ func (b *Builder) buildGateways(ctx context.Context, bc *buildContext) ([]*pb.Ga
 
 		for _, listener := range gw.Spec.Listeners {
 			pbListener := &pb.Listener{
-				Name:      listener.Name,
-				Port:      listener.Port,
-				Protocol:  convertProtocol(listener.Protocol),
-				Hostnames: listener.Hostnames,
+				Name:                listener.Name,
+				Port:                listener.Port,
+				Protocol:            convertProtocol(listener.Protocol),
+				Hostnames:           listener.Hostnames,
+				SslRedirect:         listener.SSLRedirect,
+				AllowedSourceRanges: listener.AllowedSourceRanges,
 			}
 
 			// Load TLS configuration if present
@@ -704,6 +706,16 @@ func (b *Builder) buildRoutes(_ context.Context, bc *buildContext) []*pb.Route {
 			// Convert retry configuration
 			if rule.Retry != nil {
 				pbRule.Retry = convertRetryConfig(rule.Retry)
+			}
+
+			// Convert fault injection configuration
+			if rule.FaultInjection != nil {
+				pbRule.FaultInjection = convertFaultInjectionConfig(rule.FaultInjection)
+			}
+
+			// Convert body transform configuration
+			if rule.BodyTransform != nil {
+				pbRule.BodyTransform = convertBodyTransformConfig(rule.BodyTransform)
 			}
 
 			route.Rules = append(route.Rules, pbRule)

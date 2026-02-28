@@ -800,6 +800,68 @@ func extractLastOctet(ip string) int {
 	return 0
 }
 
+// convertFaultInjectionConfig converts CRD FaultInjectionConfig to protobuf FaultInjectionConfig
+func convertFaultInjectionConfig(fi *novaedgev1alpha1.FaultInjectionConfig) *pb.FaultInjectionConfig {
+	if fi == nil {
+		return nil
+	}
+
+	pbFI := &pb.FaultInjectionConfig{
+		HeaderActivation: fi.HeaderActivation,
+	}
+
+	if fi.DelayDuration != nil {
+		pbFI.DelayDurationMs = fi.DelayDuration.Milliseconds()
+	}
+	if fi.DelayPercent != nil {
+		pbFI.DelayPercent = *fi.DelayPercent
+	}
+	if fi.AbortStatusCode != nil {
+		pbFI.AbortStatusCode = *fi.AbortStatusCode
+	}
+	if fi.AbortPercent != nil {
+		pbFI.AbortPercent = *fi.AbortPercent
+	}
+
+	return pbFI
+}
+
+// convertBodyTransformConfig converts CRD BodyTransformConfig to protobuf BodyTransformConfig
+func convertBodyTransformConfig(bt *novaedgev1alpha1.BodyTransformConfig) *pb.BodyTransformConfig {
+	if bt == nil {
+		return nil
+	}
+
+	pbBT := &pb.BodyTransformConfig{}
+
+	if bt.MaxBodySize != nil {
+		pbBT.MaxBodySize = *bt.MaxBodySize
+	}
+
+	pbBT.Request = convertTransformOperations(bt.Request)
+	pbBT.Response = convertTransformOperations(bt.Response)
+
+	return pbBT
+}
+
+// convertTransformOperations converts a slice of CRD TransformOperations to protobuf
+func convertTransformOperations(ops []novaedgev1alpha1.TransformOperation) []*pb.TransformOperation {
+	if len(ops) == 0 {
+		return nil
+	}
+
+	result := make([]*pb.TransformOperation, 0, len(ops))
+	for _, op := range ops {
+		result = append(result, &pb.TransformOperation{
+			Op:    op.Op,
+			Path:  op.Path,
+			Value: op.Value,
+			From:  op.From,
+		})
+	}
+	return result
+}
+
 // convertExtProc converts CRD ExtProcCRDConfig to protobuf ExtProcConfig
 func convertExtProc(ep *novaedgev1alpha1.ExtProcCRDConfig) *pb.ExtProcConfig {
 	if ep == nil {
