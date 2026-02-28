@@ -1,4 +1,8 @@
-FROM rust:bookworm AS builder
+# Build stage: compile eBPF programs and Rust dataplane binary.
+# Uses TARGETARCH for multi-arch builds via docker buildx.
+FROM --platform=$BUILDPLATFORM rust:bookworm AS builder
+
+ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y \
     clang llvm libelf-dev \
@@ -8,22 +12,47 @@ RUN apt-get update && apt-get install -y \
 
 RUN rustup toolchain install nightly --component rust-src
 RUN rustup target add --toolchain nightly bpfel-unknown-none
+
+# Add cross-compilation targets for arm64/amd64
+RUN case "$TARGETARCH" in \
+      arm64) rustup target add aarch64-unknown-linux-gnu ;; \
+      amd64) rustup target add x86_64-unknown-linux-gnu ;; \
+    esac
+
+# Install cross-compilation linker for arm64 when building on amd64
+RUN if [ "$TARGETARCH" = "arm64" ] && [ "$(dpkg --print-architecture)" != "arm64" ]; then \
+      apt-get update && apt-get install -y gcc-aarch64-linux-gnu && rm -rf /var/lib/apt/lists/*; \
+    fi
+
 RUN cargo install bpf-linker
 
 WORKDIR /build
 COPY . .
 
-# Build eBPF
+# Build eBPF programs (BPF bytecode is architecture-independent)
 RUN cd dataplane && cargo +nightly build \
     --package novaedge-ebpf \
     --target bpfel-unknown-none \
     -Z build-std=core \
     --release
 
-# Build dataplane
-RUN cd dataplane && cargo build \
-    --package novaedge-dataplane \
-    --release
+# Build dataplane binary for target architecture
+RUN RUST_TARGET="" && \
+    LINKER_ENV="" && \
+    case "$TARGETARCH" in \
+      arm64) RUST_TARGET="aarch64-unknown-linux-gnu" && \
+             if [ "$(dpkg --print-architecture)" != "arm64" ]; then \
+               LINKER_ENV="CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc"; \
+             fi ;; \
+      amd64) RUST_TARGET="x86_64-unknown-linux-gnu" ;; \
+    esac && \
+    cd dataplane && \
+    eval $LINKER_ENV cargo build \
+      --package novaedge-dataplane \
+      --target "$RUST_TARGET" \
+      --release && \
+    mkdir -p /build/out && \
+    cp "/build/dataplane/target/$RUST_TARGET/release/novaedge-dataplane" /build/out/
 
 # --- Runtime stage ---
 FROM debian:bookworm-slim
@@ -32,7 +61,7 @@ RUN apt-get update && apt-get install -y \
     libelf1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /build/dataplane/target/release/novaedge-dataplane /usr/local/bin/
+COPY --from=builder /build/out/novaedge-dataplane /usr/local/bin/
 COPY --from=builder /build/dataplane/target/bpfel-unknown-none/release/novaedge-ebpf /opt/novaedge/
 
 ENTRYPOINT ["novaedge-dataplane"]

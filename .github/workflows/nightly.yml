@@ -210,6 +210,8 @@ jobs:
             dockerfile: Dockerfile.operator
           - name: novaedge-webui
             dockerfile: Dockerfile.webui
+          - name: novaedge-dataplane
+            dockerfile: Dockerfile.dataplane
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -256,6 +258,7 @@ jobs:
           - novaedge-standalone
           - novaedge-operator
           - novaedge-webui
+          - novaedge-dataplane
     steps:
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
@@ -298,6 +301,7 @@ jobs:
           - novaedge-standalone
           - novaedge-operator
           - novaedge-webui
+          - novaedge-dataplane
     steps:
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
@@ -331,6 +335,7 @@ jobs:
           - novaedge-standalone
           - novaedge-operator
           - novaedge-webui
+          - novaedge-dataplane
     steps:
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
