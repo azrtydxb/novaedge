@@ -8,17 +8,11 @@ RUN apt-get update && apt-get install -y \
     clang llvm libelf-dev \
     protobuf-compiler \
     pkg-config \
+    gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup toolchain install nightly --component rust-src
-
-# Add cross-compilation targets for both architectures unconditionally.
-# rustup target add is idempotent; the host-native target is already present.
-# Note: bpfel-unknown-none is NOT a rustup target; it's compiled via -Z build-std=core.
-RUN rustup target add aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
-
-# Install cross-compilation linker for arm64 (needed when building on amd64 host)
-RUN apt-get update && apt-get install -y gcc-aarch64-linux-gnu && rm -rf /var/lib/apt/lists/*
+RUN rustup toolchain install nightly --component rust-src && \
+    rustup target add --toolchain nightly aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
 
 RUN cargo install bpf-linker
 
@@ -32,8 +26,11 @@ RUN cd dataplane && cargo +nightly build \
     -Z build-std=core \
     --release
 
-# Build dataplane binary for target architecture
-RUN RUST_TARGET="" && \
+# Build dataplane binary for target architecture.
+# Re-run rustup target add to guarantee targets are present regardless of
+# Docker layer caching (rustup target add is idempotent and instant).
+RUN rustup target add --toolchain nightly aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu && \
+    RUST_TARGET="" && \
     LINKER_ENV="" && \
     case "$TARGETARCH" in \
       arm64) RUST_TARGET="aarch64-unknown-linux-gnu" && \
