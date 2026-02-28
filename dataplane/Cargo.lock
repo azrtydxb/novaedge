@@ -870,6 +870,7 @@ dependencies = [
  "async-stream",
  "aya",
  "aya-log",
+ "base64",
  "clap",
  "dashmap",
  "novaedge-common",
