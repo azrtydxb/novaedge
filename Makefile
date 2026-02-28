@@ -7,6 +7,7 @@ IMG_NOVACTL ?= novaedge-novactl:latest
 IMG_STANDALONE ?= novaedge-standalone:latest
 IMG_OPERATOR ?= novaedge-operator:latest
 IMG_WEBUI ?= novaedge-webui:latest
+IMG_DATAPLANE ?= novaedge-dataplane:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -176,7 +177,7 @@ run-standalone: fmt vet ## Run standalone agent from your host.
 	go run ./cmd/novaedge-standalone/main.go --config=$(CONFIG_FILE)
 
 .PHONY: docker-build
-docker-build: docker-build-controller docker-build-agent docker-build-novactl docker-build-standalone docker-build-operator docker-build-webui ## Build all docker images.
+docker-build: docker-build-controller docker-build-agent docker-build-novactl docker-build-standalone docker-build-operator docker-build-webui docker-build-dataplane ## Build all docker images.
 
 .PHONY: test-agent
 test-agent: ## Run agent tests.
@@ -206,8 +207,12 @@ docker-build-standalone: ## Build standalone agent docker image.
 docker-build-operator: ## Build operator docker image.
 	docker build -t ${IMG_OPERATOR} -f Dockerfile.operator .
 
+.PHONY: docker-build-dataplane
+docker-build-dataplane: ## Build Rust dataplane docker image.
+	docker build -t ${IMG_DATAPLANE} -f Dockerfile.dataplane .
+
 .PHONY: docker-push
-docker-push: docker-push-controller docker-push-agent docker-push-novactl docker-push-operator docker-push-webui ## Push all docker images.
+docker-push: docker-push-controller docker-push-agent docker-push-novactl docker-push-operator docker-push-webui docker-push-dataplane ## Push all docker images.
 
 .PHONY: docker-push-controller
 docker-push-controller: ## Push controller docker image.
@@ -228,6 +233,10 @@ docker-push-operator: ## Push operator docker image.
 .PHONY: docker-push-webui
 docker-push-webui: ## Push web UI frontend docker image.
 	docker push ${IMG_WEBUI}
+
+.PHONY: docker-push-dataplane
+docker-push-dataplane: ## Push Rust dataplane docker image.
+	docker push ${IMG_DATAPLANE}
 
 ##@ Deployment
 

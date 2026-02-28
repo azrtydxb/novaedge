@@ -150,6 +150,8 @@ jobs:
             dockerfile: Dockerfile.standalone
           - name: novaedge-operator
             dockerfile: Dockerfile.operator
+          - name: novaedge-dataplane
+            dockerfile: Dockerfile.dataplane
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -290,7 +292,7 @@ jobs:
       - name: Sign images
         env:
           COSIGN_EXPERIMENTAL: true
-          IMAGES: novaedge-controller novaedge-agent novactl novaedge-standalone novaedge-operator novaedge-webui
+          IMAGES: novaedge-controller novaedge-agent novactl novaedge-standalone novaedge-operator novaedge-webui novaedge-dataplane
         run: |
           for image in $IMAGES; do
             echo "Signing ${IMAGE_PREFIX}/${image}:${GITHUB_REF_NAME}"
