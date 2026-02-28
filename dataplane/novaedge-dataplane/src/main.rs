@@ -3,6 +3,10 @@
 //! Receives configuration from the Go agent via gRPC and manages
 //! L4/L7 forwarding, eBPF programs, and VIP operations.
 
+// Modules are scaffolded but not yet fully wired into main().
+// Allow dead code until integration is complete.
+#![allow(dead_code, unused_imports)]
+
 use std::sync::Arc;
 
 use clap::Parser;
