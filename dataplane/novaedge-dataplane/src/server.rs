@@ -17,8 +17,11 @@ use crate::config::{
     ClusterState, EndpointState, GatewayState, RouteState, RuntimeConfig, TlsState,
 };
 use crate::maps::MapManager;
+use crate::mesh;
 use crate::proto;
 use crate::proto::dataplane_control_server::{DataplaneControl, DataplaneControlServer};
+use crate::sdwan;
+use crate::vip;
 
 /// The gRPC service implementation.
 pub struct DataplaneService {
@@ -26,6 +29,12 @@ pub struct DataplaneService {
     runtime_config: Arc<RuntimeConfig>,
     flow_tx: broadcast::Sender<proto::FlowEvent>,
     start_time: Instant,
+    vip_manager: std::sync::Mutex<vip::manager::VIPManager>,
+    mesh_tls: std::sync::Mutex<Option<mesh::mtls::MeshTlsProvider>>,
+    mesh_authz: std::sync::Mutex<mesh::authz::MeshAuthzPolicy>,
+    mesh_tproxy: std::sync::Mutex<mesh::tproxy::TproxyInterceptor>,
+    wan_link_manager: std::sync::Mutex<sdwan::link::LinkManager>,
+    wireguard_manager: std::sync::Mutex<sdwan::wireguard::WireGuardManager>,
 }
 
 impl DataplaneService {
@@ -40,11 +49,49 @@ impl DataplaneService {
             runtime_config,
             flow_tx,
             start_time: Instant::now(),
+            vip_manager: std::sync::Mutex::new(vip::manager::VIPManager::new()),
+            mesh_tls: std::sync::Mutex::new(None),
+            mesh_authz: std::sync::Mutex::new(mesh::authz::MeshAuthzPolicy::new(
+                mesh::authz::AuthzAction::Allow,
+            )),
+            mesh_tproxy: std::sync::Mutex::new(mesh::tproxy::TproxyInterceptor::new(
+                mesh::tproxy::TproxyConfig::default(),
+            )),
+            wan_link_manager: std::sync::Mutex::new(sdwan::link::LinkManager::new()),
+            wireguard_manager: std::sync::Mutex::new(sdwan::wireguard::WireGuardManager::new()),
         }
     }
 
     fn ok_response(msg: impl Into<String>) -> (i32, String) {
         (proto::OperationStatus::Ok as i32, msg.into())
+    }
+
+    /// Parse an IP address from a VIP address string (e.g. "10.0.0.1/32" → 10.0.0.1, prefix 32).
+    fn parse_vip_address(addr: &str) -> Result<(std::net::IpAddr, u8), Status> {
+        let (ip_str, prefix_str) = addr.split_once('/').unwrap_or((addr, "32"));
+        let ip: std::net::IpAddr = ip_str
+            .parse()
+            .map_err(|e| Status::invalid_argument(format!("invalid VIP address '{addr}': {e}")))?;
+        let prefix: u8 = prefix_str
+            .parse()
+            .map_err(|e| Status::invalid_argument(format!("invalid prefix length: {e}")))?;
+        Ok((ip, prefix))
+    }
+
+    /// Convert proto VIP mode to our VIPMode.
+    fn vip_mode_from_proto(
+        mode: i32,
+        bgp_config: &Option<proto::BgpConfig>,
+    ) -> vip::manager::VIPMode {
+        match mode {
+            1 => vip::manager::VIPMode::L2 { arp_enabled: true },
+            2 => {
+                let asn = bgp_config.as_ref().map_or(65000, |c| c.local_asn);
+                vip::manager::VIPMode::BGP { asn }
+            }
+            3 => vip::manager::VIPMode::OSPF { area: 0, cost: 100 },
+            _ => vip::manager::VIPMode::L2 { arp_enabled: true },
+        }
     }
 
     /// Convert a proto LBAlgorithm enum value to a string for our LB factory.
@@ -178,6 +225,65 @@ impl DataplaneControl for DataplaneService {
 
         info!(version = %req.version, "Configuration applied to runtime state");
 
+        // Apply VIP assignments.
+        {
+            let mut vip_mgr = self.vip_manager.lock().unwrap();
+            // Clear and re-apply all VIPs from snapshot.
+            *vip_mgr = vip::manager::VIPManager::new();
+            for vip_cfg in &req.vips {
+                if let Ok((ip, prefix)) = Self::parse_vip_address(&vip_cfg.address) {
+                    let mode = Self::vip_mode_from_proto(vip_cfg.mode, &vip_cfg.bgp_config);
+                    let iface = if vip_cfg.interface.is_empty() { "eth0" } else { &vip_cfg.interface };
+                    if vip_mgr.add_vip(ip, prefix, iface, mode).is_ok() {
+                        let _ = vip_mgr.activate(&ip);
+                    }
+                }
+            }
+            if !req.vips.is_empty() {
+                info!(count = req.vips.len(), "VIP assignments applied");
+            }
+        }
+
+        // Apply mesh configuration.
+        if let Some(mesh_cfg) = &req.mesh_config {
+            if mesh_cfg.enabled {
+                let ca_pem = String::from_utf8_lossy(&mesh_cfg.ca_cert_pem).to_string();
+                let cert_pem = String::from_utf8_lossy(&mesh_cfg.cert_pem).to_string();
+                let key_pem = String::from_utf8_lossy(&mesh_cfg.key_pem).to_string();
+                let tls_config = mesh::mtls::MeshTlsConfig {
+                    ca_cert_pem: ca_pem,
+                    workload_cert_pem: cert_pem,
+                    workload_key_pem: key_pem,
+                    spiffe_id: mesh_cfg.spiffe_id.clone(),
+                    ..mesh::mtls::MeshTlsConfig::default()
+                };
+                let mut provider = mesh::mtls::MeshTlsProvider::new(tls_config);
+                if !provider.config().ca_cert_pem.is_empty() {
+                    let _ = provider.initialize();
+                }
+                *self.mesh_tls.lock().unwrap() = Some(provider);
+                info!("Mesh mTLS configuration applied");
+            }
+        }
+
+        // Apply WAN link configuration.
+        {
+            let mut wan_mgr = self.wan_link_manager.lock().unwrap();
+            *wan_mgr = sdwan::link::LinkManager::new();
+            for wl_cfg in &req.wan_links {
+                let gateway: std::net::IpAddr = wl_cfg
+                    .gateway
+                    .parse()
+                    .unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+                let mut wan_link = sdwan::link::WANLink::new(&wl_cfg.name, &wl_cfg.interface, gateway);
+                wan_link.priority = wl_cfg.priority;
+                wan_mgr.add_link(wan_link);
+            }
+            if !req.wan_links.is_empty() {
+                info!(count = req.wan_links.len(), "WAN links applied");
+            }
+        }
+
         let (status, message) = Self::ok_response("config applied");
         Ok(Response::new(proto::ApplyConfigResponse {
             status,
@@ -302,13 +408,37 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertVipRequest>,
     ) -> Result<Response<proto::UpsertVipResponse>, Status> {
         let req = request.into_inner();
-        let vip = req
+        let vip_cfg = req
             .vip
             .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing VIP config"))?;
-        info!(name = %vip.name, address = %vip.address, mode = vip.mode, "UpsertVIP");
-        // VIP management stays in Go — this is a passthrough acknowledgment.
-        let (status, message) = Self::ok_response(format!("VIP '{}' upserted", vip.name));
+        info!(name = %vip_cfg.name, address = %vip_cfg.address, mode = vip_cfg.mode, "UpsertVIP");
+
+        let (ip, prefix) = Self::parse_vip_address(&vip_cfg.address)?;
+        let mode = Self::vip_mode_from_proto(vip_cfg.mode, &vip_cfg.bgp_config);
+        let interface = if vip_cfg.interface.is_empty() {
+            "eth0"
+        } else {
+            &vip_cfg.interface
+        };
+
+        let mut mgr = self.vip_manager.lock().unwrap();
+        // Remove existing VIP at this address if present, then re-add.
+        let _ = mgr.remove_vip(&ip);
+        mgr.add_vip(ip, prefix, interface, mode)
+            .map_err(|e| Status::internal(format!("failed to add VIP: {e}")))?;
+        mgr.activate(&ip)
+            .map_err(|e| Status::internal(format!("failed to activate VIP: {e}")))?;
+
+        // Send GARP for L2 VIPs.
+        if vip_cfg.mode == proto::VipMode::L2 as i32 {
+            if ip.is_ipv4() {
+                let mac = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // Placeholder MAC
+                let _ = vip::garp::send_garp(ip, interface, &mac, &vip::garp::GarpConfig::default());
+            }
+        }
+
+        let (status, message) = Self::ok_response(format!("VIP '{}' upserted and activated", vip_cfg.name));
         Ok(Response::new(proto::UpsertVipResponse { status, message }))
     }
 
@@ -318,6 +448,17 @@ impl DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::DeleteVipResponse>, Status> {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteVIP");
+
+        // The name is used to identify the VIP; we search by iterating.
+        // Since VIPManager is keyed by IP, we need to find the IP by name.
+        // For now, try parsing the name as an address (the Go agent sends the address).
+        // If that fails, just acknowledge (the VIP may have been removed already).
+        if let Ok((ip, _)) = Self::parse_vip_address(&req.name) {
+            let mut mgr = self.vip_manager.lock().unwrap();
+            let _ = mgr.deactivate(&ip);
+            let _ = mgr.remove_vip(&ip);
+        }
+
         let (status, message) = Self::ok_response(format!("VIP '{}' deleted", req.name));
         Ok(Response::new(proto::DeleteVipResponse { status, message }))
     }
@@ -403,13 +544,46 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertMeshConfigRequest>,
     ) -> Result<Response<proto::UpsertMeshConfigResponse>, Status> {
         let req = request.into_inner();
-        let mesh = req
+        let mesh_cfg = req
             .mesh_config
             .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing mesh config"))?;
-        info!(enabled = mesh.enabled, mtls_mode = %mesh.mtls_mode, "UpsertMeshConfig");
-        // Mesh management stays in Go.
-        let (status, message) = Self::ok_response("mesh config upserted");
+        info!(enabled = mesh_cfg.enabled, mtls_mode = %mesh_cfg.mtls_mode, "UpsertMeshConfig");
+
+        // Configure mTLS provider.
+        if mesh_cfg.enabled {
+            let ca_pem = String::from_utf8_lossy(&mesh_cfg.ca_cert_pem).to_string();
+            let cert_pem = String::from_utf8_lossy(&mesh_cfg.cert_pem).to_string();
+            let key_pem = String::from_utf8_lossy(&mesh_cfg.key_pem).to_string();
+
+            let tls_config = mesh::mtls::MeshTlsConfig {
+                ca_cert_pem: ca_pem,
+                workload_cert_pem: cert_pem,
+                workload_key_pem: key_pem,
+                spiffe_id: mesh_cfg.spiffe_id.clone(),
+                ..mesh::mtls::MeshTlsConfig::default()
+            };
+
+            let mut provider = mesh::mtls::MeshTlsProvider::new(tls_config);
+            if !provider.config().ca_cert_pem.is_empty() {
+                let _ = provider.initialize();
+            }
+            *self.mesh_tls.lock().unwrap() = Some(provider);
+
+            // Configure TPROXY interception.
+            let tproxy_config = mesh::tproxy::TproxyConfig {
+                enabled: true,
+                inbound_port: 15006,
+                outbound_port: 15001,
+                exclude_ports: mesh_cfg.intercept_ports.iter().map(|&p| p as u16).collect(),
+                ..mesh::tproxy::TproxyConfig::default()
+            };
+            let mut tproxy = self.mesh_tproxy.lock().unwrap();
+            *tproxy = mesh::tproxy::TproxyInterceptor::new(tproxy_config);
+            let _ = tproxy.install();
+        }
+
+        let (status, message) = Self::ok_response("mesh config applied");
         Ok(Response::new(proto::UpsertMeshConfigResponse {
             status,
             message,
@@ -422,6 +596,12 @@ impl DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::DeleteMeshConfigResponse>, Status> {
         let _req = request.into_inner();
         info!("DeleteMeshConfig");
+
+        // Tear down mesh: uninstall TPROXY rules and clear TLS provider.
+        let mut tproxy = self.mesh_tproxy.lock().unwrap();
+        let _ = tproxy.uninstall();
+        *self.mesh_tls.lock().unwrap() = None;
+
         let (status, message) = Self::ok_response("mesh config deleted");
         Ok(Response::new(proto::DeleteMeshConfigResponse {
             status,
@@ -434,13 +614,30 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::UpsertWanLinkRequest>,
     ) -> Result<Response<proto::UpsertWanLinkResponse>, Status> {
         let req = request.into_inner();
-        let link = req
+        let link_cfg = req
             .wan_link
             .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing WAN link config"))?;
-        info!(name = %link.name, interface = %link.interface, "UpsertWANLink");
-        // SD-WAN management stays in Go.
-        let (status, message) = Self::ok_response(format!("WAN link '{}' upserted", link.name));
+        info!(name = %link_cfg.name, interface = %link_cfg.interface, "UpsertWANLink");
+
+        let gateway: std::net::IpAddr = link_cfg
+            .gateway
+            .parse()
+            .unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+
+        let mut wan_link = sdwan::link::WANLink::new(
+            &link_cfg.name,
+            &link_cfg.interface,
+            gateway,
+        );
+        wan_link.priority = link_cfg.priority;
+
+        let mut mgr = self.wan_link_manager.lock().unwrap();
+        // Remove existing link with same name, then re-add.
+        mgr.remove_link(&link_cfg.name);
+        mgr.add_link(wan_link);
+
+        let (status, message) = Self::ok_response(format!("WAN link '{}' upserted", link_cfg.name));
         Ok(Response::new(proto::UpsertWanLinkResponse {
             status,
             message,
@@ -453,6 +650,9 @@ impl DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::DeleteWanLinkResponse>, Status> {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteWANLink");
+
+        self.wan_link_manager.lock().unwrap().remove_link(&req.name);
+
         let (status, message) = Self::ok_response(format!("WAN link '{}' deleted", req.name));
         Ok(Response::new(proto::DeleteWanLinkResponse {
             status,

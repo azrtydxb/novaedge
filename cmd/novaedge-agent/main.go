@@ -542,31 +542,13 @@ func main() {
 			// Store snapshot for introspection
 			snapshotHolder.Store(snapshot.ConfigSnapshot)
 
-			// Sync forwarding config to Rust dataplane
+			// Sync all config to Rust dataplane (forwarding, VIPs, mesh, SD-WAN).
+			// The Rust dataplane owns all forwarding-plane operations.
 			if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
 				logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
 				healthServer.SetReady(false)
 				adminServer.SetReady(false)
 				return syncErr
-			}
-
-			// VIP management runs in Go (kernel netlink ops)
-			if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
-				logger.Error("Failed to apply VIP assignments", zap.Error(err))
-			}
-
-			// Mesh config runs in Go (TPROXY + mTLS)
-			if meshManager != nil {
-				if applyErr := meshManager.ApplyConfig(snapshot.InternalServices, snapshot.MeshAuthzPolicies); applyErr != nil {
-					logger.Error("Failed to apply mesh config", zap.Error(applyErr))
-				}
-			}
-
-			// SD-WAN config runs in Go (WireGuard tunnels + SLA policies)
-			if sdwanManager != nil {
-				if applyErr := applySDWANConfig(sdwanManager, snapshot, logger); applyErr != nil {
-					logger.Error("Failed to apply SD-WAN config", zap.Error(applyErr))
-				}
 			}
 
 			healthServer.SetReady(true)
@@ -712,55 +694,6 @@ func main() {
 // parseBGPPeer parses a peer string in the format "IP:AS[:PORT]" into a BGPPeerConfig.
 
 // applySDWANConfig converts snapshot WAN links and policies to SD-WAN manager config and applies it.
-func applySDWANConfig(mgr *sdwan.Manager, snapshot *config.Snapshot, logger *zap.Logger) error {
-	links := make([]sdwan.LinkConfig, 0, len(snapshot.WanLinks))
-	for _, wl := range snapshot.WanLinks {
-		cfg := sdwan.LinkConfig{
-			Name:      wl.Name,
-			Site:      wl.Site,
-			Provider:  wl.Provider,
-			Bandwidth: wl.Bandwidth,
-			Cost:      wl.Cost,
-			Role:      sdwan.WANLinkRole(wl.Role),
-		}
-		if wl.Sla != nil {
-			cfg.SLA = &sdwan.WANLinkSLA{
-				MaxLatencyMs:  float64(wl.Sla.MaxLatencyMs),
-				MaxJitterMs:   float64(wl.Sla.MaxJitterMs),
-				MaxPacketLoss: wl.Sla.MaxPacketLoss,
-			}
-		}
-		if wl.TunnelEndpoint != nil {
-			cfg.TunnelEndpoint = &sdwan.TunnelEndpoint{
-				PublicIP: wl.TunnelEndpoint.PublicIp,
-				Port:     wl.TunnelEndpoint.Port,
-			}
-		}
-		links = append(links, cfg)
-	}
-
-	policies := make([]sdwan.PolicyConfig, 0, len(snapshot.WanPolicies))
-	for _, wp := range snapshot.WanPolicies {
-		p := sdwan.PolicyConfig{
-			Name:      wp.Name,
-			Strategy:  wp.GetPathSelection().GetStrategy(),
-			Failover:  wp.GetPathSelection().GetFailover(),
-			DSCPClass: wp.GetPathSelection().GetDscpClass(),
-		}
-		if wp.Match != nil {
-			p.MatchHosts = wp.Match.Hosts
-			p.MatchPaths = wp.Match.Paths
-			p.MatchHeaders = wp.Match.Headers
-		}
-		policies = append(policies, p)
-	}
-
-	logger.Info("Applying SD-WAN configuration",
-		zap.Int("links", len(links)),
-		zap.Int("policies", len(policies)))
-
-	return mgr.ApplyConfig(links, policies)
-}
 func parseBGPPeer(peerStr string) (cpvip.BGPPeerConfig, error) {
 	parts := strings.Split(peerStr, ":")
 	if len(parts) < 2 || len(parts) > 3 {

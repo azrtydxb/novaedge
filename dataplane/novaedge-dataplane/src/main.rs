@@ -1,10 +1,8 @@
 //! NovaEdge dataplane daemon — Rust forwarding plane.
 //!
 //! Receives configuration from the Go agent via gRPC and manages
-//! L4/L7 forwarding and eBPF programs.
-//!
-//! VIP management, service mesh, and SD-WAN remain in the Go agent
-//! (kernel netlink / TPROXY / WireGuard operations).
+//! L4/L7 forwarding, eBPF programs, VIP management, service mesh,
+//! and SD-WAN operations.
 
 // Allow dead code for modules not yet wired into the request pipeline
 // (health checking, middleware, upstream pooling, L4 proxy).
@@ -24,11 +22,14 @@ mod lb;
 mod listener;
 mod loader;
 mod maps;
+mod mesh;
 mod middleware;
 mod proto;
 mod proxy;
+mod sdwan;
 mod server;
 mod upstream;
+mod vip;
 
 /// NovaEdge Rust dataplane daemon.
 #[derive(Parser, Debug)]
