@@ -17,7 +17,6 @@ import (
 	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
 )
 
-
 // newFederationCommand creates the federation command
 func newFederationCommand() *cobra.Command {
 	cmd := &cobra.Command{

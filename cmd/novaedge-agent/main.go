@@ -58,9 +58,9 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/xdplb"
 	dpctl "github.com/piwi3910/novaedge/internal/dataplane"
 	"github.com/piwi3910/novaedge/internal/observability"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 var (
