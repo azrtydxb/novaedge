@@ -415,4 +415,3 @@ func (c *LocalCoordinator) sendMessage(vip string, msgType MessageType) {
 		}
 	}
 }
-

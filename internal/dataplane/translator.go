@@ -5,6 +5,7 @@ package dataplane
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"go.uber.org/zap"
@@ -48,6 +49,7 @@ func (t *Translator) Sync(ctx context.Context, snapshot *configpb.ConfigSnapshot
 		zap.Int("l4_listeners", len(req.GetL4Listeners())),
 		zap.Int("policies", len(req.GetPolicies())),
 		zap.Int("wan_links", len(req.GetWanLinks())),
+		zap.Bool("mesh_enabled", req.GetMeshConfig().GetEnabled()),
 	)
 
 	resp, err := t.client.ApplyConfig(ctx, req)
@@ -493,6 +495,19 @@ func translatePolicies(policies []*configpb.Policy) []*pb.PolicyConfig {
 					},
 				}
 			}
+		case configpb.PolicyType_OIDC:
+			if oidc := pol.GetOidc(); oidc != nil {
+				dpPol.Config = &pb.PolicyConfig_Oauth2{
+					Oauth2: &pb.OAuth2PolicyConfig{
+						IssuerUrl:     oidc.GetIssuerUrl(),
+						ClientId:      oidc.GetClientId(),
+						ClientSecret:  oidc.GetClientSecret(),
+						RedirectUrl:   oidc.GetRedirectUrl(),
+						Scopes:        oidc.GetScopes(),
+						SessionSecret: oidc.GetSessionSecret(),
+					},
+				}
+			}
 		}
 
 		result = append(result, dpPol)
@@ -518,6 +533,8 @@ func translatePolicyType(t configpb.PolicyType) pb.PolicyType {
 		return pb.PolicyType_POLICY_TYPE_IP_FILTER
 	case configpb.PolicyType_OIDC:
 		return pb.PolicyType_POLICY_TYPE_OAUTH2
+	case configpb.PolicyType_SECURITY_HEADERS:
+		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED // no Rust equivalent yet
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}
@@ -565,6 +582,30 @@ func translateMeshConfig(snapshot *configpb.ConfigSnapshot) *pb.MeshConfig {
 		mc.CaCertPem = tls.GetCaCertificate()
 		mc.CertPem = tls.GetCertificate()
 		mc.KeyPem = tls.GetPrivateKey()
+	}
+
+	// Populate intercept ports from mesh-enabled internal services.
+	// Derive Enabled from the presence of mesh-enabled services (not all services).
+	portSet := make(map[uint32]bool)
+	for _, svc := range snapshot.GetInternalServices() {
+		if !svc.GetMeshEnabled() {
+			continue
+		}
+		for _, port := range svc.GetPorts() {
+			p := uint32(port.GetPort()) //nolint:gosec // port range
+			if p > 0 && !portSet[p] {
+				portSet[p] = true
+				mc.InterceptPorts = append(mc.InterceptPorts, p)
+			}
+		}
+	}
+	mc.Enabled = len(mc.InterceptPorts) > 0
+	// Sort for deterministic config output.
+	sort.Slice(mc.InterceptPorts, func(i, j int) bool { return mc.InterceptPorts[i] < mc.InterceptPorts[j] })
+
+	// Default mTLS mode: permissive when mesh is enabled but no explicit mode set.
+	if mc.Enabled && mc.MtlsMode == "" {
+		mc.MtlsMode = "permissive"
 	}
 
 	return mc

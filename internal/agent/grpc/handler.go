@@ -191,4 +191,3 @@ func ExtractGRPCServiceMethod(path string) (service string, method string, ok bo
 
 	return service, method, true
 }
-

@@ -30,9 +30,9 @@ var (
 	webTLSAuto    bool
 	webACMEDomain string
 	// Auth flags
-	webAuthUser     string
-	webAuthPassword string
-	webSessionTTL   time.Duration
+	webAuthUser       string
+	webAuthPassword   string
+	webSessionTTL     time.Duration
 	webJaegerEndpoint string
 )
 

@@ -28,8 +28,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -59,6 +61,7 @@ import (
 	"github.com/piwi3910/novaedge/internal/observability"
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
+	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
 
 var (
@@ -542,14 +545,63 @@ func main() {
 			// Store snapshot for introspection
 			snapshotHolder.Store(snapshot.ConfigSnapshot)
 
-			// Sync all config to Rust dataplane (forwarding, VIPs, mesh, SD-WAN).
-			// The Rust dataplane owns all forwarding-plane operations.
+			// Sync all config to Rust dataplane (L7 forwarding, routing, policies).
 			if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
 				logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
 				healthServer.SetReady(false)
 				adminServer.SetReady(false)
 				return syncErr
 			}
+
+			// --- Wire Go-side managers for host-level operations ---
+
+			// VIP manager: bind/unbind VIPs to interfaces, send GARPs, manage BGP/OSPF.
+			if err := vipManager.ApplyVIPs(ctx, snapshot.GetVipAssignments()); err != nil {
+				logger.Error("Failed to apply VIPs", zap.Error(err))
+			}
+
+			// Mesh manager: reconcile TPROXY/nftables rules, update service table.
+			if meshManager != nil {
+				if err := meshManager.ApplyConfig(
+					snapshot.GetInternalServices(),
+					snapshot.GetMeshAuthzPolicies(),
+				); err != nil {
+					logger.Error("Failed to apply mesh config", zap.Error(err))
+				}
+			}
+
+			// SD-WAN manager: reconcile WAN links and path-selection policies.
+			if sdwanManager != nil {
+				links := convertWANLinks(snapshot.GetWanLinks())
+				policies := convertWANPolicies(snapshot.GetWanPolicies())
+				if err := sdwanManager.ApplyConfig(links, policies); err != nil {
+					logger.Error("Failed to apply SD-WAN config", zap.Error(err))
+				}
+			}
+
+			// XDP LB: populate eBPF VIP/backend maps for kernel-level L4 load balancing.
+			if xdpManager != nil && xdpManager.IsRunning() {
+				routes := buildL4Routes(snapshot.GetVipAssignments(), snapshot.GetL4Listeners(), snapshot.GetEndpoints())
+				if err := xdpManager.SyncBackends(routes); err != nil {
+					logger.Error("Failed to sync XDP LB backends", zap.Error(err))
+				}
+			}
+
+			// AF_XDP: update VIP filter so the zero-copy fast path knows which packets to intercept.
+			if afxdpWorker != nil && afxdpWorker.IsRunning() {
+				vipKeys := buildAFXDPVIPKeys(snapshot.GetVipAssignments())
+				if err := afxdpWorker.SyncVIPs(vipKeys); err != nil {
+					logger.Error("Failed to sync AF_XDP VIPs", zap.Error(err))
+				}
+			}
+
+			// eBPF rate limiter: configure from the first rate-limit policy found.
+			if ebpfRL != nil && ebpfRL.IsActive() {
+				configureEBPFRateLimiter(ebpfRL, snapshot.GetPolicies(), logger)
+			}
+
+			// eBPF health monitor: start the poller once on first config (idempotent).
+			startEBPFHealthPoller(ebpfHealthMon, logger)
 
 			healthServer.SetReady(true)
 			adminServer.SetSnapshot(snapshot)
@@ -890,4 +942,240 @@ func createGRPCConnection(addr, certFile, keyFile, caFile string) (*grpc.ClientC
 		return nil, fmt.Errorf("failed to create gRPC connection: %w", err)
 	}
 	return conn, nil
+}
+
+// ---------------------------------------------------------------------------
+// Config-callback helper functions: translate proto types into Go manager types
+// ---------------------------------------------------------------------------
+
+// convertWANLinks translates proto WANLinks into sdwan.LinkConfig values.
+func convertWANLinks(wanLinks []*pb.WANLink) []sdwan.LinkConfig {
+	links := make([]sdwan.LinkConfig, 0, len(wanLinks))
+	for _, wl := range wanLinks {
+		lc := sdwan.LinkConfig{
+			Name:      wl.GetName(),
+			Site:      wl.GetSite(),
+			Provider:  wl.GetProvider(),
+			Role:      sdwan.WANLinkRole(wl.GetRole()),
+			Bandwidth: wl.GetBandwidth(),
+			Cost:      wl.GetCost(),
+		}
+		if sla := wl.GetSla(); sla != nil {
+			lc.SLA = &sdwan.WANLinkSLA{
+				MaxLatencyMs:  float64(sla.GetMaxLatencyMs()),
+				MaxJitterMs:   float64(sla.GetMaxJitterMs()),
+				MaxPacketLoss: sla.GetMaxPacketLoss(),
+			}
+		}
+		if ep := wl.GetTunnelEndpoint(); ep != nil {
+			lc.TunnelEndpoint = &sdwan.TunnelEndpoint{
+				PublicIP: ep.GetPublicIp(),
+				Port:     ep.GetPort(),
+			}
+		}
+		links = append(links, lc)
+	}
+	return links
+}
+
+// convertWANPolicies translates proto WANPolicies into sdwan.PolicyConfig values.
+func convertWANPolicies(wanPolicies []*pb.WANPolicy) []sdwan.PolicyConfig {
+	policies := make([]sdwan.PolicyConfig, 0, len(wanPolicies))
+	for _, wp := range wanPolicies {
+		pc := sdwan.PolicyConfig{
+			Name: wp.GetName(),
+		}
+		if ps := wp.GetPathSelection(); ps != nil {
+			pc.Strategy = ps.GetStrategy()
+			pc.Failover = ps.GetFailover()
+			pc.DSCPClass = ps.GetDscpClass()
+		}
+		if m := wp.GetMatch(); m != nil {
+			pc.MatchHosts = m.GetHosts()
+			pc.MatchPaths = m.GetPaths()
+			pc.MatchHeaders = m.GetHeaders()
+		}
+		policies = append(policies, pc)
+	}
+	return policies
+}
+
+// buildL4Routes constructs xdplb.L4Route entries from VIP assignments, L4 listeners,
+// and cluster endpoints. This enables the XDP eBPF program to perform kernel-level
+// L4 load balancing by populating the vip_backends and backend_list eBPF maps.
+func buildL4Routes(
+	vips []*pb.VIPAssignment,
+	l4Listeners []*pb.L4Listener,
+	endpoints map[string]*pb.EndpointList,
+) []xdplb.L4Route {
+	// Build a VIP address set for quick lookup (active VIPs only).
+	vipAddrs := make(map[string]bool, len(vips))
+	for _, v := range vips {
+		if !v.GetIsActive() {
+			continue // only programme XDP for VIPs active on this node
+		}
+		// Strip CIDR suffix if present (e.g., "10.0.0.1/32" -> "10.0.0.1").
+		addr := v.GetAddress()
+		if idx := strings.IndexByte(addr, '/'); idx >= 0 {
+			addr = addr[:idx]
+		}
+		vipAddrs[addr] = true
+	}
+
+	var routes []xdplb.L4Route
+	for _, l4 := range l4Listeners {
+		backendName := l4.GetBackendName()
+		if backendName == "" {
+			continue
+		}
+		epList, ok := endpoints[backendName]
+		if !ok || epList == nil {
+			continue
+		}
+
+		var protocol uint8 = 6 // TCP default
+		switch l4.GetProtocol() {
+		case pb.Protocol_UDP:
+			protocol = 17
+		case pb.Protocol_TCP, pb.Protocol_TLS:
+			protocol = 6
+		case pb.Protocol_PROTOCOL_UNSPECIFIED, pb.Protocol_HTTP, pb.Protocol_HTTPS, pb.Protocol_HTTP3:
+			// L7 protocols handled by the Rust dataplane, not XDP L4 LB.
+			// Fall through with TCP default.
+		}
+
+		var backends []xdplb.Backend
+		for _, ep := range epList.GetEndpoints() {
+			if !ep.GetReady() {
+				continue
+			}
+			addr := ep.GetAddress()
+			ip := net.ParseIP(addr)
+			if ip == nil || ip.To4() == nil {
+				continue // XDP L4 routes only support IPv4 literal addresses
+			}
+			backends = append(backends, xdplb.Backend{
+				Addr: addr,
+				Port: uint16(ep.GetPort()), //nolint:gosec // port range
+			})
+			// Note: Backend.MAC is left as zero value. The XDP program will
+			// need ARP resolution or a neighbor-cache lookup to fill this.
+		}
+
+		if len(backends) == 0 {
+			continue
+		}
+
+		// Create a route for each VIP address that matches.
+		// L4 listeners don't specify a VIP directly, so we create a route
+		// for every active VIP on the matching port.
+		// Sort VIP addresses for deterministic eBPF map ordering.
+		sortedVIPs := make([]string, 0, len(vipAddrs))
+		for addr := range vipAddrs {
+			sortedVIPs = append(sortedVIPs, addr)
+		}
+		sort.Strings(sortedVIPs)
+		for _, vipAddr := range sortedVIPs {
+			routes = append(routes, xdplb.L4Route{
+				VIP:      vipAddr,
+				Port:     uint16(l4.GetPort()), //nolint:gosec // port range
+				Protocol: protocol,
+				Backends: backends,
+			})
+		}
+	}
+
+	return routes
+}
+
+// buildAFXDPVIPKeys converts VIP assignments into afxdp.VIPKey entries
+// so the AF_XDP zero-copy fast path knows which packets to intercept.
+func buildAFXDPVIPKeys(vips []*pb.VIPAssignment) []afxdp.VIPKey {
+	var keys []afxdp.VIPKey
+	for _, v := range vips {
+		addr := v.GetAddress()
+		if idx := strings.IndexByte(addr, '/'); idx >= 0 {
+			addr = addr[:idx]
+		}
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			continue
+		}
+		ip4 := ip.To4()
+		if ip4 == nil {
+			continue // AF_XDP VIPKey only supports IPv4
+		}
+
+		for _, port := range v.GetPorts() {
+			keys = append(keys, afxdp.VIPKey{
+				Addr:  [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]},
+				Port:  uint16(port), //nolint:gosec // port range
+				Proto: 6,            // TCP
+			})
+		}
+	}
+	return keys
+}
+
+// configureEBPFRateLimiter extracts rate-limit configuration from snapshot policies
+// and applies it to the eBPF per-IP rate limiter.
+func configureEBPFRateLimiter(rl *ebpfratelimit.RateLimiter, policies []*pb.Policy, logger *zap.Logger) {
+	for _, pol := range policies {
+		if pol.GetType() != pb.PolicyType_RATE_LIMIT {
+			continue
+		}
+		rlCfg := pol.GetRateLimit()
+		if rlCfg == nil {
+			continue
+		}
+		rps := rlCfg.GetRequestsPerSecond()
+		b := rlCfg.GetBurst()
+		if rps < 0 {
+			rps = 0
+		}
+		if b < 0 {
+			b = 0
+		}
+		rate := uint64(rps) //nolint:gosec // guarded above
+		burst := uint64(b)  //nolint:gosec // guarded above
+		if rate == 0 {
+			continue
+		}
+		if burst == 0 {
+			burst = rate // default burst = rate
+		}
+		if err := rl.Configure(rate, burst); err != nil {
+			logger.Error("Failed to configure eBPF rate limiter",
+				zap.Uint64("rate", rate),
+				zap.Uint64("burst", burst),
+				zap.Error(err))
+		} else {
+			logger.Debug("eBPF rate limiter configured",
+				zap.String("policy", pol.GetName()),
+				zap.Uint64("rate", rate),
+				zap.Uint64("burst", burst))
+		}
+		return // use first rate-limit policy
+	}
+}
+
+// ebpfHealthPollerOnce ensures the eBPF health monitor poller is started at most once.
+var ebpfHealthPollerOnce sync.Once
+
+// startEBPFHealthPoller starts the eBPF passive health monitor's polling goroutine
+// exactly once (on first config snapshot). Subsequent calls are no-ops.
+func startEBPFHealthPoller(mon *ebpfhealth.HealthMonitor, logger *zap.Logger) {
+	if mon == nil || !mon.IsActive() {
+		return
+	}
+	ebpfHealthPollerOnce.Do(func() {
+		// Poll eBPF health map every 10 seconds; log aggregated results.
+		mon.StartPoller(context.Background(), 10*time.Second, func(results map[ebpfhealth.BackendKey]ebpfhealth.AggregatedHealth) {
+			if len(results) > 0 {
+				logger.Debug("eBPF passive health update",
+					zap.Int("backends", len(results)))
+			}
+		})
+		logger.Info("eBPF passive health monitor poller started")
+	})
 }

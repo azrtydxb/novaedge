@@ -289,4 +289,3 @@ func CleanupClusterMetrics(cluster string) {
 	PassiveHealthDroppedTotal.DeleteLabelValues(cluster)
 	InsecureBackendConnectionsTotal.DeleteLabelValues(cluster)
 }
-
