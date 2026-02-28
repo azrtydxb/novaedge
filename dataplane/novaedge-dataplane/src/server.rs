@@ -513,7 +513,8 @@ impl DataplaneControl for DataplaneService {
                         if filter_protocol > 0 && event.protocol != filter_protocol {
                             continue;
                         }
-                        // TODO: Apply CIDR filters.
+                        // CIDR filters are accepted but not yet applied.
+                        // The Go agent does not currently send CIDR filters.
                         let _ = (&filter_src_cidr, &filter_dst_cidr);
                         yield event;
                     }
