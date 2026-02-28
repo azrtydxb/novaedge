@@ -692,8 +692,6 @@ func main() {
 }
 
 // parseBGPPeer parses a peer string in the format "IP:AS[:PORT]" into a BGPPeerConfig.
-
-// applySDWANConfig converts snapshot WAN links and policies to SD-WAN manager config and applies it.
 func parseBGPPeer(peerStr string) (cpvip.BGPPeerConfig, error) {
 	parts := strings.Split(peerStr, ":")
 	if len(parts) < 2 || len(parts) > 3 {

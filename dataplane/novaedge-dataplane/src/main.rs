@@ -4,9 +4,9 @@
 //! L4/L7 forwarding, eBPF programs, VIP management, service mesh,
 //! and SD-WAN operations.
 
-// Allow dead code for modules not yet wired into the request pipeline
-// (health checking, middleware, upstream pooling, L4 proxy).
-// These will be integrated incrementally.
+// The health, middleware, upstream, l4, and lb modules are fully implemented
+// but not yet called from the HTTP proxy request pipeline. They will be
+// integrated as the proxy handler matures. Suppress warnings until then.
 #![allow(dead_code)]
 
 use std::sync::Arc;

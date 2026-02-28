@@ -43,6 +43,15 @@ pub struct RouteState {
     pub add_headers: HashMap<String, String>,
 }
 
+/// Policy state for rate-limiting, auth, CORS, etc.
+#[derive(Debug, Clone)]
+pub struct PolicyState {
+    pub name: String,
+    pub policy_type: String,
+    pub target_ref: String,
+    pub config_json: String,
+}
+
 /// Backend cluster state with endpoints.
 #[derive(Debug, Clone)]
 pub struct ClusterState {
@@ -67,6 +76,7 @@ pub struct ConfigSnapshot {
     pub gateways: HashMap<String, GatewayState>,
     pub routes: HashMap<String, RouteState>,
     pub clusters: HashMap<String, ClusterState>,
+    pub policies: HashMap<String, PolicyState>,
     pub version: String,
 }
 
@@ -79,6 +89,7 @@ pub struct RuntimeConfig {
     gateways: DashMap<String, GatewayState>,
     routes: DashMap<String, RouteState>,
     clusters: DashMap<String, ClusterState>,
+    policies: DashMap<String, PolicyState>,
     version: RwLock<String>,
     notify: watch::Sender<u64>,
     notify_rx: watch::Receiver<u64>,
@@ -93,6 +104,7 @@ impl RuntimeConfig {
             gateways: DashMap::new(),
             routes: DashMap::new(),
             clusters: DashMap::new(),
+            policies: DashMap::new(),
             version: RwLock::new(String::new()),
             notify,
             notify_rx,
@@ -141,6 +153,23 @@ impl RuntimeConfig {
         self.clusters.get(name).map(|c| c.value().clone())
     }
 
+    /// Insert or update a policy.
+    pub fn upsert_policy(&self, policy: PolicyState) {
+        self.policies.insert(policy.name.clone(), policy);
+        self.bump();
+    }
+
+    /// Remove a policy by name.
+    pub fn delete_policy(&self, name: &str) {
+        self.policies.remove(name);
+        self.bump();
+    }
+
+    /// Get a policy by name.
+    pub fn get_policy(&self, name: &str) -> Option<PolicyState> {
+        self.policies.get(name).map(|p| p.value().clone())
+    }
+
     /// Subscribe to configuration change notifications.
     pub fn subscribe(&self) -> watch::Receiver<u64> {
         self.notify_rx.clone()
@@ -164,6 +193,11 @@ impl RuntimeConfig {
                 .iter()
                 .map(|e| (e.key().clone(), e.value().clone()))
                 .collect(),
+            policies: self
+                .policies
+                .iter()
+                .map(|e| (e.key().clone(), e.value().clone()))
+                .collect(),
             version: self
                 .version
                 .try_read()
@@ -179,6 +213,7 @@ impl RuntimeConfig {
         gateways: Vec<GatewayState>,
         routes: Vec<RouteState>,
         clusters: Vec<ClusterState>,
+        policies: Vec<PolicyState>,
     ) {
         self.gateways.clear();
         for gw in gateways {
@@ -191,6 +226,10 @@ impl RuntimeConfig {
         self.clusters.clear();
         for c in clusters {
             self.clusters.insert(c.name.clone(), c);
+        }
+        self.policies.clear();
+        for p in policies {
+            self.policies.insert(p.name.clone(), p);
         }
         *self.version.write().await = version;
         self.bump();
@@ -315,6 +354,7 @@ mod tests {
             vec![test_gateway("new-gw", 443)],
             vec![test_route("new-route", "new-b")],
             vec![test_cluster("new-cluster")],
+            vec![],
         )
         .await;
 
@@ -326,6 +366,27 @@ mod tests {
         assert!(snap.routes.contains_key("new-route"));
         assert_eq!(snap.clusters.len(), 1);
         assert!(snap.clusters.contains_key("new-cluster"));
+    }
+
+    #[test]
+    fn test_upsert_and_get_policy() {
+        let cfg = RuntimeConfig::new();
+        cfg.upsert_policy(PolicyState {
+            name: "rate-limit-1".into(),
+            policy_type: "rate-limit".into(),
+            target_ref: "route-1".into(),
+            config_json: r#"{"rps": 100}"#.into(),
+        });
+        let snap = cfg.snapshot();
+        assert_eq!(snap.policies.len(), 1);
+        assert_eq!(snap.policies["rate-limit-1"].policy_type, "rate-limit");
+
+        let p = cfg.get_policy("rate-limit-1").unwrap();
+        assert_eq!(p.target_ref, "route-1");
+        assert!(cfg.get_policy("missing").is_none());
+
+        cfg.delete_policy("rate-limit-1");
+        assert!(cfg.get_policy("rate-limit-1").is_none());
     }
 
     #[test]

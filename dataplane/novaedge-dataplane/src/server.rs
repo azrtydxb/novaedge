@@ -14,7 +14,7 @@ use tonic::{Request, Response, Status};
 use tracing::{info, warn};
 
 use crate::config::{
-    ClusterState, EndpointState, GatewayState, RouteState, RuntimeConfig, TlsState,
+    ClusterState, EndpointState, GatewayState, PolicyState, RouteState, RuntimeConfig, TlsState,
 };
 use crate::maps::MapManager;
 use crate::mesh;
@@ -92,6 +92,92 @@ impl DataplaneService {
             3 => vip::manager::VIPMode::OSPF { area: 0, cost: 100 },
             _ => vip::manager::VIPMode::L2 { arp_enabled: true },
         }
+    }
+
+    /// Convert a proto PolicyConfig to our PolicyState.
+    fn policy_from_proto(p: &proto::PolicyConfig) -> PolicyState {
+        let policy_type_str = match p.policy_type {
+            x if x == proto::PolicyType::RateLimit as i32 => "rate-limit",
+            x if x == proto::PolicyType::Jwt as i32 => "jwt",
+            x if x == proto::PolicyType::BasicAuth as i32 => "basic-auth",
+            x if x == proto::PolicyType::ForwardAuth as i32 => "forward-auth",
+            x if x == proto::PolicyType::Oauth2 as i32 => "oauth2",
+            x if x == proto::PolicyType::Waf as i32 => "waf",
+            x if x == proto::PolicyType::Cors as i32 => "cors",
+            x if x == proto::PolicyType::IpFilter as i32 => "ip-filter",
+            _ => "unknown",
+        };
+        // Serialize the config variant as a debug string for storage.
+        let config_json = match &p.config {
+            Some(c) => format!("{c:?}"),
+            None => String::new(),
+        };
+        PolicyState {
+            name: p.name.clone(),
+            policy_type: policy_type_str.into(),
+            target_ref: String::new(),
+            config_json,
+        }
+    }
+
+    /// Check if an IP address string matches a CIDR block.
+    fn ip_in_cidr(ip_str: &str, network: std::net::IpAddr, prefix_len: u8) -> bool {
+        let ip: std::net::IpAddr = match ip_str.parse() {
+            Ok(ip) => ip,
+            Err(_) => return false,
+        };
+        match (ip, network) {
+            (std::net::IpAddr::V4(addr), std::net::IpAddr::V4(net)) => {
+                if prefix_len >= 32 {
+                    return addr == net;
+                }
+                let mask = u32::MAX << (32 - prefix_len);
+                (u32::from(addr) & mask) == (u32::from(net) & mask)
+            }
+            (std::net::IpAddr::V6(addr), std::net::IpAddr::V6(net)) => {
+                if prefix_len >= 128 {
+                    return addr == net;
+                }
+                let a = u128::from(addr);
+                let n = u128::from(net);
+                let mask = u128::MAX << (128 - prefix_len);
+                (a & mask) == (n & mask)
+            }
+            _ => false, // v4/v6 mismatch
+        }
+    }
+
+    /// Read the MAC address of a network interface.
+    /// Falls back to a broadcast MAC if the interface cannot be read.
+    #[cfg(target_os = "linux")]
+    fn read_interface_mac(interface: &str) -> [u8; 6] {
+        let path = format!("/sys/class/net/{interface}/address");
+        match std::fs::read_to_string(&path) {
+            Ok(contents) => {
+                let mac_str = contents.trim();
+                let parts: Vec<&str> = mac_str.split(':').collect();
+                if parts.len() == 6 {
+                    let mut mac = [0u8; 6];
+                    for (i, part) in parts.iter().enumerate() {
+                        mac[i] = u8::from_str_radix(part, 16).unwrap_or(0);
+                    }
+                    mac
+                } else {
+                    warn!(interface, "unexpected MAC format, using broadcast");
+                    [0xff; 6]
+                }
+            }
+            Err(e) => {
+                warn!(interface, error = %e, "cannot read interface MAC, using broadcast");
+                [0xff; 6]
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    fn read_interface_mac(interface: &str) -> [u8; 6] {
+        warn!(interface, "MAC address lookup not available on non-Linux, using broadcast");
+        [0xff; 6]
     }
 
     /// Convert a proto LBAlgorithm enum value to a string for our LB factory.
@@ -217,10 +303,15 @@ impl DataplaneControl for DataplaneService {
         let routes: Vec<RouteState> = req.routes.iter().map(Self::route_from_proto).collect();
         let clusters: Vec<ClusterState> =
             req.clusters.iter().map(Self::cluster_from_proto).collect();
+        let policies: Vec<PolicyState> = req
+            .policies
+            .iter()
+            .map(|p| Self::policy_from_proto(p))
+            .collect();
 
         // Atomically replace all runtime config.
         self.runtime_config
-            .apply_full(req.version.clone(), gateways, routes, clusters)
+            .apply_full(req.version.clone(), gateways, routes, clusters, policies)
             .await;
 
         info!(version = %req.version, "Configuration applied to runtime state");
@@ -433,7 +524,7 @@ impl DataplaneControl for DataplaneService {
         // Send GARP for L2 VIPs.
         if vip_cfg.mode == proto::VipMode::L2 as i32 {
             if ip.is_ipv4() {
-                let mac = [0x00, 0x00, 0x00, 0x00, 0x00, 0x00]; // Placeholder MAC
+                let mac = Self::read_interface_mac(interface);
                 let _ = vip::garp::send_garp(ip, interface, &mac, &vip::garp::GarpConfig::default());
             }
         }
@@ -518,7 +609,10 @@ impl DataplaneControl for DataplaneService {
             .as_ref()
             .ok_or_else(|| Status::invalid_argument("missing policy config"))?;
         info!(name = %policy.name, policy_type = policy.policy_type, "UpsertPolicy");
-        // Policy application is handled via middleware pipeline — acknowledge receipt.
+
+        self.runtime_config
+            .upsert_policy(Self::policy_from_proto(policy));
+
         let (status, message) = Self::ok_response(format!("policy '{}' upserted", policy.name));
         Ok(Response::new(proto::UpsertPolicyResponse {
             status,
@@ -532,6 +626,9 @@ impl DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::DeletePolicyResponse>, Status> {
         let req = request.into_inner();
         info!(name = %req.name, "DeletePolicy");
+
+        self.runtime_config.delete_policy(&req.name);
+
         let (status, message) = Self::ok_response(format!("policy '{}' deleted", req.name));
         Ok(Response::new(proto::DeletePolicyResponse {
             status,
@@ -665,13 +762,51 @@ impl DataplaneControl for DataplaneService {
         request: Request<proto::AttachProgramRequest>,
     ) -> Result<Response<proto::AttachProgramResponse>, Status> {
         let req = request.into_inner();
-        info!(name = %req.name, object_path = %req.object_path, "AttachProgram");
-        let (status, message) = Self::ok_response(format!("program '{}' attached", req.name));
-        Ok(Response::new(proto::AttachProgramResponse {
-            status,
-            message,
-            program_id: 0,
-        }))
+        info!(
+            name = %req.name,
+            object_path = %req.object_path,
+            interface = %req.interface,
+            attach_type = req.attach_type,
+            "AttachProgram"
+        );
+
+        #[cfg(target_os = "linux")]
+        {
+            // Load the eBPF object file and attach the specified program.
+            let mut load_result = crate::loader::load_ebpf(&req.object_path)
+                .map_err(|e| Status::internal(format!("failed to load eBPF object: {e}")))?;
+
+            if let Some(ref mut bpf) = load_result.bpf {
+                let iface = if req.interface.is_empty() {
+                    "eth0"
+                } else {
+                    &req.interface
+                };
+                // attach_type: 1 = XDP, 2 = TC
+                match req.attach_type {
+                    2 => crate::loader::attach_tc(bpf, &req.name, iface)
+                        .map_err(|e| Status::internal(format!("TC attach failed: {e}")))?,
+                    _ => crate::loader::attach_xdp(bpf, &req.name, iface)
+                        .map_err(|e| Status::internal(format!("XDP attach failed: {e}")))?,
+                }
+            } else {
+                return Err(Status::internal("eBPF handle not available after load"));
+            }
+
+            let (status, message) = Self::ok_response(format!("program '{}' attached", req.name));
+            Ok(Response::new(proto::AttachProgramResponse {
+                status,
+                message,
+                program_id: 1,
+            }))
+        }
+
+        #[cfg(not(target_os = "linux"))]
+        {
+            Err(Status::unimplemented(
+                "eBPF program attachment requires Linux",
+            ))
+        }
     }
 
     async fn detach_program(
@@ -680,6 +815,15 @@ impl DataplaneControl for DataplaneService {
     ) -> Result<Response<proto::DetachProgramResponse>, Status> {
         let req = request.into_inner();
         info!(name = %req.name, "DetachProgram");
+
+        // eBPF programs attached via aya are detached when the Ebpf handle is dropped.
+        // For runtime detachment, the caller must stop the dataplane or reload programs.
+        // Log the detach request; actual cleanup happens on process shutdown.
+        warn!(
+            name = %req.name,
+            "Program detach acknowledged — eBPF programs detach on handle drop"
+        );
+
         let (status, message) = Self::ok_response(format!("program '{}' detached", req.name));
         Ok(Response::new(proto::DetachProgramResponse {
             status,
@@ -706,6 +850,18 @@ impl DataplaneControl for DataplaneService {
         let filter_src_cidr = req.filter_src_cidr;
         let filter_dst_cidr = req.filter_dst_cidr;
 
+        // Parse CIDR filters once at stream setup.
+        let src_net: Option<(std::net::IpAddr, u8)> = if filter_src_cidr.is_empty() {
+            None
+        } else {
+            Self::parse_vip_address(&filter_src_cidr).ok()
+        };
+        let dst_net: Option<(std::net::IpAddr, u8)> = if filter_dst_cidr.is_empty() {
+            None
+        } else {
+            Self::parse_vip_address(&filter_dst_cidr).ok()
+        };
+
         let stream = async_stream::try_stream! {
             loop {
                 match rx.recv().await {
@@ -713,9 +869,17 @@ impl DataplaneControl for DataplaneService {
                         if filter_protocol > 0 && event.protocol != filter_protocol {
                             continue;
                         }
-                        // CIDR filters are accepted but not yet applied.
-                        // The Go agent does not currently send CIDR filters.
-                        let _ = (&filter_src_cidr, &filter_dst_cidr);
+                        // Apply CIDR filters if specified.
+                        if let Some((net_ip, prefix)) = &src_net {
+                            if !Self::ip_in_cidr(&event.src_ip, *net_ip, *prefix) {
+                                continue;
+                            }
+                        }
+                        if let Some((net_ip, prefix)) = &dst_net {
+                            if !Self::ip_in_cidr(&event.dst_ip, *net_ip, *prefix) {
+                                continue;
+                            }
+                        }
                         yield event;
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
@@ -1094,7 +1258,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_attach_detach_program() {
+    async fn test_attach_program_requires_linux() {
         let svc = make_service();
         let req = Request::new(proto::AttachProgramRequest {
             name: "test-prog".into(),
@@ -1104,8 +1268,15 @@ mod tests {
             section: "xdp".into(),
             pin_path: String::new(),
         });
-        let resp = svc.attach_program(req).await.unwrap();
-        assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
+        let result = svc.attach_program(req).await;
+        // On non-Linux, attach_program returns Unimplemented.
+        // On Linux, it will fail with a load error (no object at /tmp/test.o).
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_detach_program() {
+        let svc = make_service();
         let req = Request::new(proto::DetachProgramRequest {
             name: "test-prog".into(),
         });
@@ -1131,6 +1302,18 @@ mod tests {
         });
         let resp = svc.upsert_policy(req).await.unwrap();
         assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
+
+        // Verify policy was stored in RuntimeConfig.
+        let p = svc.runtime_config.get_policy("test-rl").unwrap();
+        assert_eq!(p.policy_type, "rate-limit");
+
+        // Delete it.
+        let del_req = Request::new(proto::DeletePolicyRequest {
+            name: "test-rl".into(),
+        });
+        let resp = svc.delete_policy(del_req).await.unwrap();
+        assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
+        assert!(svc.runtime_config.get_policy("test-rl").is_none());
     }
 
     #[tokio::test]

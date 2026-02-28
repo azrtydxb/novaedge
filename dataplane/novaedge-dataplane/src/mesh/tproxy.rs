@@ -44,12 +44,32 @@ impl TproxyInterceptor {
     /// Install TPROXY interception rules.
     #[cfg(target_os = "linux")]
     pub fn install(&mut self) -> anyhow::Result<()> {
-        // Install nftables/iptables rules for TPROXY
         tracing::info!(
             inbound_port = self.config.inbound_port,
             outbound_port = self.config.outbound_port,
             "Installing TPROXY rules"
         );
+        for cmd_str in self.iptables_commands() {
+            let parts: Vec<&str> = cmd_str.split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+            let output = std::process::Command::new(parts[0])
+                .args(&parts[1..])
+                .output();
+            match output {
+                Ok(out) if out.status.success() => {
+                    tracing::debug!(cmd = %cmd_str, "iptables rule applied");
+                }
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    tracing::warn!(cmd = %cmd_str, stderr = %stderr, "iptables rule failed (may already exist)");
+                }
+                Err(e) => {
+                    tracing::warn!(cmd = %cmd_str, error = %e, "failed to execute iptables");
+                }
+            }
+        }
         self.active = true;
         Ok(())
     }
@@ -62,9 +82,40 @@ impl TproxyInterceptor {
     }
 
     /// Remove TPROXY interception rules.
+    #[cfg(target_os = "linux")]
+    pub fn uninstall(&mut self) -> anyhow::Result<()> {
+        tracing::info!("Removing TPROXY rules");
+        // Remove rules by changing -A (append) / -I (insert) to -D (delete).
+        for cmd_str in self.iptables_commands() {
+            let del_cmd = cmd_str.replace(" -A ", " -D ").replace(" -I ", " -D ");
+            let parts: Vec<&str> = del_cmd.split_whitespace().collect();
+            if parts.is_empty() {
+                continue;
+            }
+            let output = std::process::Command::new(parts[0])
+                .args(&parts[1..])
+                .output();
+            match output {
+                Ok(out) if out.status.success() => {
+                    tracing::debug!(cmd = %del_cmd, "iptables rule removed");
+                }
+                Ok(out) => {
+                    let stderr = String::from_utf8_lossy(&out.stderr);
+                    tracing::warn!(cmd = %del_cmd, stderr = %stderr, "iptables rule removal failed (may not exist)");
+                }
+                Err(e) => {
+                    tracing::warn!(cmd = %del_cmd, error = %e, "failed to execute iptables");
+                }
+            }
+        }
+        self.active = false;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "linux"))]
     pub fn uninstall(&mut self) -> anyhow::Result<()> {
         self.active = false;
-        tracing::info!("TPROXY rules removed");
+        tracing::info!("TPROXY rules removed (mock mode)");
         Ok(())
     }
 
