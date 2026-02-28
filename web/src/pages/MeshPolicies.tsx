@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api } from '@/api/client'
 import type { GenericResource } from '@/api/types'
 import { useApp } from '@/contexts/AppContext'
 import { DataTable, Column } from '@/components/common/DataTable'
@@ -67,9 +66,6 @@ spec:
     - methods: ["GET", "POST"]
       paths: ["/api/*"]
 `
-
-// Suppress unused import warning for api - it's used indirectly through the pattern
-void api
 
 export default function MeshPolicies() {
   const { namespace, readOnly } = useApp()
