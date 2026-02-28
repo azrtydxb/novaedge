@@ -1,8 +1,14 @@
-//! HTTP/3 QUIC support placeholder.
+//! HTTP/3 QUIC support — pending quinn + h3 + h3-quinn dependencies.
 //!
-//! Full implementation requires quinn + h3 + h3-quinn crates. This module
-//! defines the configuration types and interface, with actual QUIC listener
-//! support to be enabled when those dependencies are added.
+//! This module defines the HTTP/3 configuration types and server interface.
+//! The configuration is accepted and stored so that Alt-Svc headers can be
+//! generated and advertised on HTTP/1.1 and HTTP/2 responses. The actual
+//! QUIC listener will be wired once the `quinn`, `h3`, and `h3-quinn` crates
+//! are added to `Cargo.toml`.
+//!
+//! Tracking: the `start()` method logs the config but does not bind a UDP
+//! socket. When quinn is added, `start()` should create a `quinn::Endpoint`
+//! and accept connections.
 
 use std::net::SocketAddr;
 
@@ -59,12 +65,17 @@ impl Http3Server {
 
     /// Start the HTTP/3 server.
     ///
-    /// Note: Full QUIC listener implementation requires quinn + h3 crates.
-    /// This is a placeholder that logs the configuration.
+    /// Requires quinn + h3 + h3-quinn crates in Cargo.toml. When those
+    /// dependencies are added, this method should create a `quinn::Endpoint`,
+    /// configure TLS with rustls, and accept incoming QUIC connections.
+    /// Until then, the server logs its configuration and marks itself as
+    /// running so that Alt-Svc headers are emitted on HTTP/1.1 and HTTP/2.
     pub async fn start(&mut self) -> anyhow::Result<()> {
         tracing::info!(
             listen = %self.config.listen_addr,
-            "HTTP/3 QUIC server configured (quinn integration pending)"
+            zero_rtt = self.config.enable_0rtt,
+            max_streams = self.config.max_streams,
+            "HTTP/3 QUIC server configured (pending quinn integration)"
         );
         self.running = true;
         Ok(())

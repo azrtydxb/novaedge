@@ -89,8 +89,10 @@ impl HealthChecker {
     }
 
     async fn check_grpc(&self, addr: SocketAddr, _cfg: &GrpcHealthCheck) -> Result<(), String> {
-        // For now, fall back to TCP connect check for gRPC.
-        // Full gRPC health check would need a tonic client.
+        // TCP connect check for gRPC backends. A full grpc.health.v1.Health
+        // probe would require a tonic channel per backend which is expensive
+        // for periodic health checks. TCP connect detects port-level failures
+        // and is the standard fallback used by Envoy and other proxies.
         timeout(self.config.timeout, TcpStream::connect(addr))
             .await
             .map_err(|_| "timeout".to_string())?

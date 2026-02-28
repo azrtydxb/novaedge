@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Mesh mTLS configuration.
 #[derive(Debug, Clone)]
@@ -28,6 +28,7 @@ impl Default for MeshTlsConfig {
 pub struct MeshTlsProvider {
     config: MeshTlsConfig,
     initialized: bool,
+    initialized_at: Option<Instant>,
 }
 
 impl MeshTlsProvider {
@@ -35,6 +36,7 @@ impl MeshTlsProvider {
         Self {
             config,
             initialized: false,
+            initialized_at: None,
         }
     }
 
@@ -47,6 +49,7 @@ impl MeshTlsProvider {
             anyhow::bail!("CA certificate not configured");
         }
         self.initialized = true;
+        self.initialized_at = Some(Instant::now());
         tracing::info!(spiffe_id = %self.config.spiffe_id, "mTLS provider initialized");
         Ok(())
     }
@@ -56,13 +59,24 @@ impl MeshTlsProvider {
     }
 
     pub fn needs_renewal(&self) -> bool {
-        // In a real implementation, check certificate expiry
-        false
+        if !self.initialized {
+            return false;
+        }
+        let Some(init_time) = self.initialized_at else {
+            return false;
+        };
+        let elapsed = init_time.elapsed();
+        let threshold = self
+            .config
+            .cert_lifetime
+            .mul_f64(self.config.renewal_threshold);
+        elapsed >= threshold
     }
 
     pub fn update_certificates(&mut self, cert_pem: String, key_pem: String) {
         self.config.workload_cert_pem = cert_pem;
         self.config.workload_key_pem = key_pem;
+        self.initialized_at = Some(Instant::now());
         tracing::info!("Mesh certificates updated");
     }
 
@@ -120,10 +134,42 @@ mod tests {
     }
 
     #[test]
-    fn test_needs_renewal() {
+    fn test_needs_renewal_not_initialized() {
         let config = MeshTlsConfig::default();
         let provider = MeshTlsProvider::new(config);
-        // Default implementation always returns false
+        // Not initialized — never needs renewal.
+        assert!(!provider.needs_renewal());
+    }
+
+    #[test]
+    fn test_needs_renewal_after_threshold() {
+        let config = MeshTlsConfig {
+            ca_cert_pem: "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----".into(),
+            spiffe_id: "spiffe://test/ns/default/sa/test".into(),
+            // Use a very short lifetime so the threshold is exceeded immediately.
+            cert_lifetime: Duration::from_millis(1),
+            renewal_threshold: 0.8,
+            ..MeshTlsConfig::default()
+        };
+        let mut provider = MeshTlsProvider::new(config);
+        provider.initialize().unwrap();
+        // Sleep briefly to exceed 0.8ms threshold.
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(provider.needs_renewal());
+    }
+
+    #[test]
+    fn test_needs_renewal_fresh_cert() {
+        let config = MeshTlsConfig {
+            ca_cert_pem: "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----".into(),
+            spiffe_id: "spiffe://test/ns/default/sa/test".into(),
+            cert_lifetime: Duration::from_secs(86400),
+            renewal_threshold: 0.8,
+            ..MeshTlsConfig::default()
+        };
+        let mut provider = MeshTlsProvider::new(config);
+        provider.initialize().unwrap();
+        // Just initialized — should not need renewal yet.
         assert!(!provider.needs_renewal());
     }
 
