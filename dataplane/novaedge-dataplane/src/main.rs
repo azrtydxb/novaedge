@@ -17,6 +17,7 @@ mod flows;
 mod health;
 mod l4;
 mod lb;
+mod listener;
 mod loader;
 mod maps;
 mod mesh;
@@ -123,6 +124,28 @@ async fn main() -> anyhow::Result<()> {
     // Create runtime config store (shared between gRPC handlers and proxy).
     let runtime_config = Arc::new(config::RuntimeConfig::new());
 
+    // Create the HTTP proxy handler.
+    let router = Arc::new(tokio::sync::RwLock::new(proxy::router::Router::new()));
+    let proxy_handler = Arc::new(proxy::handler::ProxyHandler::new(
+        router,
+        runtime_config.clone(),
+    ));
+
+    // Create the listener manager.
+    let listener_mgr = Arc::new(listener::ListenerManager::new(
+        runtime_config.clone(),
+        proxy_handler,
+    ));
+
+    // Create shutdown signal for listener manager.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+    // Spawn listener manager (watches config and starts/stops listeners).
+    let listener_mgr_clone = listener_mgr.clone();
+    let listener_handle = tokio::spawn(async move {
+        listener_mgr_clone.run(shutdown_rx).await;
+    });
+
     // Create flow event broadcast channel.
     let (flow_tx, _flow_rx) = flows::flow_channel();
 
@@ -136,6 +159,11 @@ async fn main() -> anyhow::Result<()> {
     let socket_path = args.socket.clone();
     let server_result =
         server::run(map_manager, runtime_config, flow_tx, &args.socket).await;
+
+    // Signal listener manager to shut down.
+    let _ = shutdown_tx.send(true);
+    listener_handle.abort();
+    let _ = listener_handle.await;
 
     // Abort the flow reader task on server shutdown.
     flow_reader_handle.abort();
