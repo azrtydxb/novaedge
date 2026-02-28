@@ -50,7 +50,6 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
 	"github.com/piwi3910/novaedge/internal/agent/ebpfmesh"
 	"github.com/piwi3910/novaedge/internal/agent/introspection"
-	"github.com/piwi3910/novaedge/internal/agent/l4"
 	"github.com/piwi3910/novaedge/internal/agent/mesh"
 	"github.com/piwi3910/novaedge/internal/agent/sdwan"
 	"github.com/piwi3910/novaedge/internal/agent/server"
@@ -355,12 +354,6 @@ func main() {
 		logger.Fatal("Failed to create VIP manager", zap.Error(err))
 	}
 
-	// Create HTTP server
-	httpServer := server.NewHTTPServer(logger)
-
-	// Create L4 manager
-	l4Manager := l4.NewManager(logger)
-
 	// Create XDP LB manager — auto-attempted when xdpInterface is set
 	var xdpManager *xdplb.Manager
 	if !forceLegacyLB && xdpInterface != "" {
@@ -371,7 +364,6 @@ func main() {
 				zap.Error(err))
 			xdpManager = nil
 		} else {
-			l4Manager.XDP = xdpManager
 			logger.Info("XDP L4 load balancing active",
 				zap.String("interface", xdpInterface))
 		}
@@ -479,11 +471,6 @@ func main() {
 		logger.Info("eBPF per-IP rate limiter enabled")
 	}
 
-	// Pass eBPF health monitor and rate limiter to the HTTP server so it
-	// can forward them to the Router -> pools/policies on config apply.
-	httpServer.SetEBPFHealthMonitor(ebpfHealthMon)
-	httpServer.SetEBPFRateLimiter(ebpfRL)
-
 	// Create dataplane client and translator for Rust forwarding plane
 	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
 	if dpErr != nil {
@@ -589,12 +576,6 @@ func main() {
 		})
 	}()
 
-	// Start HTTP server
-	serverChan := make(chan error, 1)
-	go func() {
-		serverChan <- httpServer.Start(ctx)
-	}()
-
 	// Start metrics server
 	metricsChan := make(chan error, 1)
 	go func() {
@@ -620,8 +601,6 @@ func main() {
 	select {
 	case err := <-configChan:
 		logger.Error("Config watcher failed", zap.Error(err))
-	case err := <-serverChan:
-		logger.Error("HTTP server failed", zap.Error(err))
 	case err := <-metricsChan:
 		logger.Error("Metrics server failed", zap.Error(err))
 	case err := <-healthChan:
@@ -716,16 +695,6 @@ func main() {
 		}
 	}
 	// Note: sockMapMgr and ebpfSvcMap are closed by meshManager.Shutdown() above.
-
-	// Shutdown L4 listeners
-	if err := l4Manager.Shutdown(shutdownCtx); err != nil {
-		logger.Error("Error during L4 manager shutdown", zap.Error(err))
-	}
-
-	// Shutdown HTTP server
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logger.Error("Error during HTTP server shutdown", zap.Error(err))
-	}
 
 	// Shutdown metrics server
 	if err := metricsServer.Shutdown(shutdownCtx); err != nil {

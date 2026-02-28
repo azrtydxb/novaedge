@@ -17,9 +17,9 @@ limitations under the License.
 // Package l4 provides L4 (TCP/UDP) load balancing, proxying, and TLS passthrough
 // capabilities for the NovaEdge data plane agent.
 //
-// DEPRECATED: This package will be removed once --forwarding-plane=rust is
-// validated and the Rust dataplane handles all L4 proxying natively.
-// See docs/plans/forwarding-deprecation.md for the removal timeline.
+// DEPRECATED: The Rust dataplane now handles all L4/L7 forwarding. This package
+// is no longer used by the agent and is retained only for reference during the
+// transition period. It will be removed in a future release.
 package l4
 
 import (
