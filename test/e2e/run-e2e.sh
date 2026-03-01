@@ -600,26 +600,53 @@ fi
 if should_run "ingress"; then
     group "Ingress Controller"
 
+    # Wait for existing ingress reconciler to create proxy resources
+    echo "  Waiting for ingress-managed proxy resources..."
+    for i in $(seq 1 24); do
+        GW_EXISTS=$(kubectl get proxygateway echo-ingress-gateway -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        ROUTE_EXISTS=$(kubectl get proxyroute echo-ingress-route-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        BACKEND_EXISTS=$(kubectl get proxybackend echo-ingress-backend-0-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        if [[ -n "$GW_EXISTS" && -n "$ROUTE_EXISTS" && -n "$BACKEND_EXISTS" ]]; then
+            break
+        fi
+        $VERBOSE && echo "  [wait $i/24] Waiting for ingress proxy resources (gw=$GW_EXISTS route=$ROUTE_EXISTS backend=$BACKEND_EXISTS)"
+        sleep 5
+    done
+
     # Verify existing ingress was translated correctly
-    GW_EXISTS=$(kubectl get proxygateway echo-ingress-gateway -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     assert_eq "Ingress created ProxyGateway" "echo-ingress-gateway" "$GW_EXISTS"
-
-    ROUTE_EXISTS=$(kubectl get proxyroute echo-ingress-route-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     assert_eq "Ingress created ProxyRoute" "echo-ingress-route-0" "$ROUTE_EXISTS"
-
-    BACKEND_EXISTS=$(kubectl get proxybackend echo-ingress-backend-0-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
     assert_eq "Ingress created ProxyBackend" "echo-ingress-backend-0-0" "$BACKEND_EXISTS"
 
     # VIP mode-aware LB policy (the fix from PR #293)
     INGRESS_LB=$(kubectl get proxybackend echo-ingress-backend-0-0 -o jsonpath='{.spec.lbPolicy}' 2>/dev/null || echo "")
     assert_eq "Ingress backend auto-detected Maglev for BGP VIP" "Maglev" "$INGRESS_LB"
 
+    # Verify the VIP mode annotation on the ingress to confirm Maglev auto-detection context
+    VIP_MODE_ANN=$(kubectl get proxyvip "$VIP_NAME" -o jsonpath='{.spec.mode}' 2>/dev/null || echo "")
+    if [[ "$VIP_MODE_ANN" == "BGP" ]]; then
+        pass "VIP mode is BGP (Maglev auto-detection expected)"
+    else
+        skip "VIP mode is $VIP_MODE_ANN (Maglev auto-detection only for BGP)"
+    fi
+
+    # Wait for ingress host route to become routable before testing traffic
+    wait_route_ready "echo.test.local" "/" || true
+
     # Ingress host routing works
     STATUS=$(timeout 5 curl -s -o /dev/null -w "%{http_code}" -H "Host: echo.test.local" "http://$VIP_ADDRESS/" 2>/dev/null || echo "000")
     assert_eq "Ingress host routing works" "200" "$STATUS"
 
-    # Ingress status has LoadBalancer IP
-    LB_IP=$(kubectl get ingress echo-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+    # Wait for Ingress status to be updated with LoadBalancer IP (reconciler may take time)
+    LB_IP=""
+    for i in $(seq 1 24); do
+        LB_IP=$(kubectl get ingress echo-ingress -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || echo "")
+        if [[ -n "$LB_IP" ]]; then
+            break
+        fi
+        $VERBOSE && echo "  [wait $i/24] Waiting for Ingress status LB IP..."
+        sleep 5
+    done
     assert_eq "Ingress status has VIP" "$VIP_ADDRESS" "$LB_IP"
 
     # Test annotation-based Ingress creation with explicit LB override
@@ -647,7 +674,19 @@ spec:
             port:
               number: 8080
 EOF
-    wait_snapshot
+
+    # Wait for ingress reconciler to create the proxy resources
+    echo "  Waiting for annotation-ingress proxy resources..."
+    for i in $(seq 1 24); do
+        ANNOT_GW=$(kubectl get proxygateway e2e-annotation-ingress-gateway -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        ANNOT_RT=$(kubectl get proxyroute e2e-annotation-ingress-route-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        ANNOT_BE=$(kubectl get proxybackend e2e-annotation-ingress-backend-0-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        if [[ -n "$ANNOT_GW" && -n "$ANNOT_RT" && -n "$ANNOT_BE" ]]; then
+            break
+        fi
+        $VERBOSE && echo "  [wait $i/24] Waiting for annotation-ingress proxy resources..."
+        sleep 5
+    done
 
     # Annotation override should force RoundRobin despite BGP VIP
     ANNOT_LB=$(kubectl get proxybackend e2e-annotation-ingress-backend-0-0 -o jsonpath='{.spec.lbPolicy}' 2>/dev/null || echo "")
@@ -678,22 +717,25 @@ spec:
             port:
               number: 8080
 EOF
-    # Ingress translation + snapshot propagation can take 30-60s
-    # Poll until routable or timeout
-    INGRESS_OK=false
-    for i in $(seq 1 12); do
-        sleep 5
-        STATUS=$(timeout 5 curl -s -o /dev/null -w "%{http_code}" -H "Host: e2e-maglev.test.local" "http://$VIP_ADDRESS/" 2>/dev/null || echo "000")
-        if [ "$STATUS" = "200" ]; then
-            INGRESS_OK=true
+
+    # Wait for ingress reconciler to create the proxy resources first
+    echo "  Waiting for maglev-ingress proxy resources..."
+    for i in $(seq 1 24); do
+        MAG_GW=$(kubectl get proxygateway e2e-maglev-ingress-gateway -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        MAG_RT=$(kubectl get proxyroute e2e-maglev-ingress-route-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        MAG_BE=$(kubectl get proxybackend e2e-maglev-ingress-backend-0-0 -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
+        if [[ -n "$MAG_GW" && -n "$MAG_RT" && -n "$MAG_BE" ]]; then
             break
         fi
-        $VERBOSE && echo "  [retry $i/12] Maglev Ingress status=$STATUS, waiting..."
+        $VERBOSE && echo "  [wait $i/24] Waiting for maglev-ingress proxy resources..."
+        sleep 5
     done
-    if $INGRESS_OK; then
+
+    # Now wait for the route to become routable (traffic test)
+    if wait_route_ready "e2e-maglev.test.local" "/"; then
         pass "Maglev Ingress routable on ECMP VIP"
     else
-        fail "Maglev Ingress routable on ECMP VIP (expected=200, got=$STATUS)"
+        fail "Maglev Ingress routable on ECMP VIP" "route not ready after 120s"
     fi
 
     kubectl delete ingress e2e-annotation-ingress e2e-maglev-ingress --ignore-not-found >/dev/null 2>&1
