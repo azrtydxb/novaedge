@@ -6,7 +6,7 @@
 use std::net::Ipv4Addr;
 
 use tokio::sync::broadcast;
-use tracing::{debug, info};
+use tracing::info;
 
 #[cfg(target_os = "linux")]
 use tracing::warn;
@@ -142,7 +142,7 @@ pub async fn run_flow_reader_real(
 ///
 /// Flow events are broadcast via the sender. The gRPC `StreamFlows` RPC
 /// subscribes to this channel to deliver events to clients.
-pub async fn run_flow_reader(tx: broadcast::Sender<proto::FlowEvent>, mock_mode: bool) {
+pub async fn run_flow_reader(_tx: broadcast::Sender<proto::FlowEvent>, mock_mode: bool) {
     if mock_mode {
         info!("Flow reader running in mock mode (no eBPF ring buffer)");
         // In mock mode, we just keep the task alive. Events can be injected
@@ -163,8 +163,8 @@ pub async fn run_flow_reader(tx: broadcast::Sender<proto::FlowEvent>, mock_mode:
 
     #[cfg(not(target_os = "linux"))]
     {
-        debug!("Flow reader: non-Linux platform, no ring buffer available");
-        let _ = &tx;
+        tracing::debug!("Flow reader: non-Linux platform, no ring buffer available");
+        let _ = &_tx;
         let _ = std::future::pending::<()>().await;
     }
 }

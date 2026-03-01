@@ -8,8 +8,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bytes::Bytes;
-use http_body_util::Full;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use rustls::ServerConfig;
@@ -96,6 +94,21 @@ impl ListenerManager {
         // Start new listeners for gateways not yet running.
         for (name, gw) in &snapshot.gateways {
             if !listeners.contains_key(name) {
+                // Check if another gateway already has a listener on this port.
+                // On hostNetwork, multiple gateways sharing a port is expected;
+                // a single listener serves routes from all gateways via
+                // hostname/path-based routing.
+                let desired_port = gw.port;
+                let port_already_bound = listeners.values().any(|h| h.port == desired_port);
+                if port_already_bound {
+                    info!(
+                        gateway = %name,
+                        port = desired_port,
+                        "Port already bound by another gateway, sharing listener"
+                    );
+                    continue;
+                }
+
                 let bind = if gw.bind_address.is_empty() {
                     "0.0.0.0"
                 } else {
@@ -113,22 +126,21 @@ impl ListenerManager {
 
                 match gw.protocol.as_str() {
                     "HTTP" | "HTTPS" => {
-                        let handle =
-                            self.start_http_listener(name, addr, &gw.tls, &gw.protocol).await;
+                        let handle = self
+                            .start_http_listener(name, addr, &gw.tls, &gw.protocol)
+                            .await;
                         if let Some(h) = handle {
                             listeners.insert(name.clone(), h);
                         }
                     }
                     "HTTP3" => {
-                        let handle =
-                            self.start_h3_listener(name, addr, &gw.tls).await;
+                        let handle = self.start_h3_listener(name, addr, &gw.tls).await;
                         if let Some(h) = handle {
                             listeners.insert(name.clone(), h);
                         }
                     }
                     "TCP" | "UDP" => {
-                        let handle =
-                            self.start_l4_listener(name, addr).await;
+                        let handle = self.start_l4_listener(name, addr).await;
                         if let Some(h) = handle {
                             listeners.insert(name.clone(), h);
                         }
@@ -140,10 +152,26 @@ impl ListenerManager {
             }
         }
 
-        // Stop listeners for removed gateways.
+        // Stop listeners for removed gateways, but only if no other gateway
+        // in the current snapshot still needs the same port.
         let to_remove: Vec<String> = listeners
             .keys()
-            .filter(|name| !snapshot.gateways.contains_key(*name))
+            .filter(|name| {
+                if snapshot.gateways.contains_key(*name) {
+                    return false; // Gateway still exists, keep listener
+                }
+                // Gateway was removed. Check if another gateway needs this port.
+                let port = listeners.get(*name).map(|h| h.port).unwrap_or(0);
+                let port_still_needed = snapshot.gateways.values().any(|g| g.port == port);
+                if port_still_needed {
+                    info!(
+                        gateway = %name,
+                        port = port,
+                        "Gateway removed but port still needed by another gateway, keeping listener"
+                    );
+                }
+                !port_still_needed // Only remove if no gateway needs this port
+            })
             .cloned()
             .collect();
         for name in to_remove {
@@ -331,11 +359,7 @@ impl ListenerManager {
     }
 
     /// Start an L4 TCP listener using bidirectional copy.
-    async fn start_l4_listener(
-        &self,
-        name: &str,
-        addr: SocketAddr,
-    ) -> Option<ListenerHandle> {
+    async fn start_l4_listener(&self, name: &str, addr: SocketAddr) -> Option<ListenerHandle> {
         let listener = match TcpListener::bind(addr).await {
             Ok(l) => l,
             Err(e) => {
@@ -425,6 +449,8 @@ mod tests {
         ClusterState, EndpointState, GatewayState, RouteState, RuntimeConfig, TlsState,
     };
     use crate::proxy::router::Router;
+    use bytes::Bytes;
+    use http_body_util::Full;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::RwLock;
 
@@ -590,7 +616,10 @@ mod tests {
         let handle = mgr
             .start_http_listener("https-gw", "127.0.0.1:0".parse().unwrap(), &None, "HTTPS")
             .await;
-        assert!(handle.is_none(), "HTTPS listener without TLS config should fail");
+        assert!(
+            handle.is_none(),
+            "HTTPS listener without TLS config should fail"
+        );
     }
 
     #[test]

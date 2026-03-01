@@ -91,9 +91,8 @@ impl Http3Server {
         tls_config.alpn_protocols = vec![b"h3".to_vec()];
 
         // Convert to quinn-compatible QUIC server config.
-        let quic_server_config =
-            quinn::crypto::rustls::QuicServerConfig::try_from(tls_config)
-                .map_err(|e| format!("QUIC TLS config: {e}"))?;
+        let quic_server_config = quinn::crypto::rustls::QuicServerConfig::try_from(tls_config)
+            .map_err(|e| format!("QUIC TLS config: {e}"))?;
 
         let mut server_config = quinn::ServerConfig::with_crypto(Arc::new(quic_server_config));
 
@@ -115,7 +114,9 @@ impl Http3Server {
         let endpoint = quinn::Endpoint::server(server_config, self.config.listen_addr)
             .map_err(|e| format!("bind QUIC endpoint: {e}"))?;
 
-        let actual_addr = endpoint.local_addr().map_err(|e| format!("local addr: {e}"))?;
+        let actual_addr = endpoint
+            .local_addr()
+            .map_err(|e| format!("local addr: {e}"))?;
         info!(
             addr = %actual_addr,
             zero_rtt = self.config.enable_0rtt,
@@ -193,10 +194,7 @@ async fn handle_h3_connection(
                     // Full proxy handler integration (converting h3 requests to
                     // hyper requests and forwarding to backends) is a future
                     // enhancement.
-                    let resp = http::Response::builder()
-                        .status(200)
-                        .body(())
-                        .unwrap();
+                    let resp = http::Response::builder().status(200).body(()).unwrap();
 
                     if let Err(e) = stream.send_response(resp).await {
                         debug!(error = %e, "HTTP/3 send response failed");

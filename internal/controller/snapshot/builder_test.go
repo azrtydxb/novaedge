@@ -476,6 +476,106 @@ func TestResolveEndpointsTargetPort(t *testing.T) {
 	}
 }
 
+// TestResolveServiceEndpointsNilReadyTreatedAsReady verifies that endpoints
+// with a nil Ready condition are treated as ready, per the Kubernetes API
+// convention (nil means ready).
+func TestResolveServiceEndpointsNilReadyTreatedAsReady(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = novaedgev1alpha1.AddToScheme(scheme)
+	_ = corev1.AddToScheme(scheme)
+	_ = discoveryv1.AddToScheme(scheme)
+
+	svc := &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-svc",
+			Namespace: "default",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Name:       testPortNameHTTP,
+					Port:       80,
+					TargetPort: intstr.FromInt32(8080),
+				},
+			},
+		},
+	}
+
+	readyTrue := true
+	readyFalse := false
+	portName := testPortNameHTTP
+	port8080 := int32(8080)
+	es := &discoveryv1.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-svc-abc",
+			Namespace: "default",
+			Labels: map[string]string{
+				"kubernetes.io/service-name": "my-svc",
+			},
+		},
+		AddressType: discoveryv1.AddressTypeIPv4,
+		Endpoints: []discoveryv1.Endpoint{
+			{
+				// nil Ready — should be treated as ready per K8s convention
+				Addresses:  []string{"10.0.0.1"},
+				Conditions: discoveryv1.EndpointConditions{Ready: nil},
+			},
+			{
+				// explicit true — should be ready
+				Addresses:  []string{"10.0.0.2"},
+				Conditions: discoveryv1.EndpointConditions{Ready: &readyTrue},
+			},
+			{
+				// explicit false — should NOT be ready
+				Addresses:  []string{"10.0.0.3"},
+				Conditions: discoveryv1.EndpointConditions{Ready: &readyFalse},
+			},
+		},
+		Ports: []discoveryv1.EndpointPort{
+			{
+				Name: &portName,
+				Port: &port8080,
+			},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(svc, es).
+		Build()
+
+	builder := NewBuilder(fakeClient)
+	serviceRef := &novaedgev1alpha1.ServiceReference{
+		Name: "my-svc",
+		Port: 80,
+	}
+
+	bc := newBuildContextForTest(nil, nil)
+	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default", bc)
+	if err != nil {
+		t.Fatalf("resolveServiceEndpoints failed: %v", err)
+	}
+
+	if len(result.Endpoints) != 3 {
+		t.Fatalf("Expected 3 endpoints, got %d", len(result.Endpoints))
+	}
+
+	// Endpoint with nil Ready should be treated as ready
+	if !result.Endpoints[0].Ready {
+		t.Errorf("Endpoint 0 (nil Ready): expected Ready=true, got Ready=false")
+	}
+
+	// Endpoint with explicit true should be ready
+	if !result.Endpoints[1].Ready {
+		t.Errorf("Endpoint 1 (Ready=true): expected Ready=true, got Ready=false")
+	}
+
+	// Endpoint with explicit false should NOT be ready
+	if result.Endpoints[2].Ready {
+		t.Errorf("Endpoint 2 (Ready=false): expected Ready=false, got Ready=true")
+	}
+}
+
 func TestBuildClustersECMPAutoPromoteToMaglev(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)

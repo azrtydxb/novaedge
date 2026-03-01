@@ -62,7 +62,7 @@ impl Router {
     /// Replace the current route list (sorted by descending priority).
     pub fn set_routes(&mut self, routes: Vec<Route>) {
         let mut routes = routes;
-        routes.sort_by(|a, b| b.priority.cmp(&a.priority));
+        routes.sort_by_key(|r| std::cmp::Reverse(r.priority));
         self.routes = routes;
     }
 
@@ -84,12 +84,9 @@ impl Router {
         method: &str,
         headers: &[(String, String)],
     ) -> Option<&Route> {
-        for route in &self.routes {
-            if self.matches_route(route, host, path, method, headers) {
-                return Some(route);
-            }
-        }
-        None
+        self.routes
+            .iter()
+            .find(|route| self.matches_route(route, host, path, method, headers))
     }
 
     fn matches_route(

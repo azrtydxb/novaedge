@@ -39,10 +39,11 @@ pub struct MapManager {
     start_time: Instant,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum MapManagerInner {
     Mock(MockMaps),
     #[cfg(target_os = "linux")]
-    Real(RealMaps),
+    Real(Box<RealMaps>),
 }
 
 /// Mock map implementation using in-memory HashMaps.
@@ -97,7 +98,7 @@ impl MapManager {
     #[cfg(target_os = "linux")]
     pub fn new_real(maps: RealMaps) -> Self {
         Self {
-            inner: MapManagerInner::Real(maps),
+            inner: MapManagerInner::Real(Box::new(maps)),
             start_time: Instant::now(),
         }
     }
@@ -235,7 +236,6 @@ impl MapManager {
                 // SAFETY: No mutable reference is live during this read.
                 let keys_to_remove: Vec<BackendKey> = unsafe { &*ptr }
                     .keys()
-                    .into_iter()
                     .flatten()
                     .filter(|k| k.vip_id == vip_id)
                     .collect();
