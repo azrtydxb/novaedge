@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -13,6 +14,12 @@ import (
 
 	pb "github.com/piwi3910/novaedge/api/proto/dataplane"
 )
+
+// defaultRPCTimeout bounds how long any single unary RPC will wait for the
+// dataplane to respond. This prevents callers from blocking indefinitely when
+// the Rust daemon is not running, while still allowing WaitForReady retries
+// within the window.
+const defaultRPCTimeout = 5 * time.Second
 
 // Client wraps the gRPC connection to the Rust dataplane daemon.
 type Client struct {
@@ -57,7 +64,9 @@ func (c *Client) Close() error {
 
 // ApplyConfig pushes a full configuration snapshot to the dataplane.
 func (c *Client) ApplyConfig(ctx context.Context, req *pb.ApplyConfigRequest) (*pb.ApplyConfigResponse, error) {
-	resp, err := c.client.ApplyConfig(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.ApplyConfig(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: ApplyConfig: %w", err)
 	}
@@ -70,7 +79,9 @@ func (c *Client) ApplyConfig(ctx context.Context, req *pb.ApplyConfigRequest) (*
 
 // UpsertGateway creates or updates an HTTP/HTTPS/HTTP3/TCP/UDP listener.
 func (c *Client) UpsertGateway(ctx context.Context, req *pb.UpsertGatewayRequest) (*pb.UpsertGatewayResponse, error) {
-	resp, err := c.client.UpsertGateway(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertGateway(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertGateway: %w", err)
 	}
@@ -79,7 +90,9 @@ func (c *Client) UpsertGateway(ctx context.Context, req *pb.UpsertGatewayRequest
 
 // DeleteGateway removes a listener by name.
 func (c *Client) DeleteGateway(ctx context.Context, req *pb.DeleteGatewayRequest) (*pb.DeleteGatewayResponse, error) {
-	resp, err := c.client.DeleteGateway(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeleteGateway(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeleteGateway: %w", err)
 	}
@@ -92,7 +105,9 @@ func (c *Client) DeleteGateway(ctx context.Context, req *pb.DeleteGatewayRequest
 
 // UpsertRoute creates or updates an L7 routing rule.
 func (c *Client) UpsertRoute(ctx context.Context, req *pb.UpsertRouteRequest) (*pb.UpsertRouteResponse, error) {
-	resp, err := c.client.UpsertRoute(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertRoute(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertRoute: %w", err)
 	}
@@ -101,7 +116,9 @@ func (c *Client) UpsertRoute(ctx context.Context, req *pb.UpsertRouteRequest) (*
 
 // DeleteRoute removes a route by name.
 func (c *Client) DeleteRoute(ctx context.Context, req *pb.DeleteRouteRequest) (*pb.DeleteRouteResponse, error) {
-	resp, err := c.client.DeleteRoute(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeleteRoute(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeleteRoute: %w", err)
 	}
@@ -114,7 +131,9 @@ func (c *Client) DeleteRoute(ctx context.Context, req *pb.DeleteRouteRequest) (*
 
 // UpsertCluster creates or updates a backend cluster.
 func (c *Client) UpsertCluster(ctx context.Context, req *pb.UpsertClusterRequest) (*pb.UpsertClusterResponse, error) {
-	resp, err := c.client.UpsertCluster(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertCluster(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertCluster: %w", err)
 	}
@@ -123,7 +142,9 @@ func (c *Client) UpsertCluster(ctx context.Context, req *pb.UpsertClusterRequest
 
 // DeleteCluster removes a backend cluster by name.
 func (c *Client) DeleteCluster(ctx context.Context, req *pb.DeleteClusterRequest) (*pb.DeleteClusterResponse, error) {
-	resp, err := c.client.DeleteCluster(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeleteCluster(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeleteCluster: %w", err)
 	}
@@ -136,7 +157,9 @@ func (c *Client) DeleteCluster(ctx context.Context, req *pb.DeleteClusterRequest
 
 // UpsertVIP creates or updates a Virtual IP address.
 func (c *Client) UpsertVIP(ctx context.Context, req *pb.UpsertVIPRequest) (*pb.UpsertVIPResponse, error) {
-	resp, err := c.client.UpsertVIP(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertVIP(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertVIP: %w", err)
 	}
@@ -145,7 +168,9 @@ func (c *Client) UpsertVIP(ctx context.Context, req *pb.UpsertVIPRequest) (*pb.U
 
 // DeleteVIP removes a VIP by name.
 func (c *Client) DeleteVIP(ctx context.Context, req *pb.DeleteVIPRequest) (*pb.DeleteVIPResponse, error) {
-	resp, err := c.client.DeleteVIP(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeleteVIP(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeleteVIP: %w", err)
 	}
@@ -158,7 +183,9 @@ func (c *Client) DeleteVIP(ctx context.Context, req *pb.DeleteVIPRequest) (*pb.D
 
 // UpsertL4Listener creates or updates a TCP/UDP/TLS passthrough listener.
 func (c *Client) UpsertL4Listener(ctx context.Context, req *pb.UpsertL4ListenerRequest) (*pb.UpsertL4ListenerResponse, error) {
-	resp, err := c.client.UpsertL4Listener(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertL4Listener(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertL4Listener: %w", err)
 	}
@@ -167,7 +194,9 @@ func (c *Client) UpsertL4Listener(ctx context.Context, req *pb.UpsertL4ListenerR
 
 // DeleteL4Listener removes an L4 listener by name.
 func (c *Client) DeleteL4Listener(ctx context.Context, req *pb.DeleteL4ListenerRequest) (*pb.DeleteL4ListenerResponse, error) {
-	resp, err := c.client.DeleteL4Listener(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeleteL4Listener(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeleteL4Listener: %w", err)
 	}
@@ -180,7 +209,9 @@ func (c *Client) DeleteL4Listener(ctx context.Context, req *pb.DeleteL4ListenerR
 
 // UpsertPolicy creates or updates a typed policy (rate-limit, auth, WAF, etc.).
 func (c *Client) UpsertPolicy(ctx context.Context, req *pb.UpsertPolicyRequest) (*pb.UpsertPolicyResponse, error) {
-	resp, err := c.client.UpsertPolicy(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertPolicy(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertPolicy: %w", err)
 	}
@@ -189,7 +220,9 @@ func (c *Client) UpsertPolicy(ctx context.Context, req *pb.UpsertPolicyRequest) 
 
 // DeletePolicy removes a policy by name.
 func (c *Client) DeletePolicy(ctx context.Context, req *pb.DeletePolicyRequest) (*pb.DeletePolicyResponse, error) {
-	resp, err := c.client.DeletePolicy(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeletePolicy(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeletePolicy: %w", err)
 	}
@@ -202,7 +235,9 @@ func (c *Client) DeletePolicy(ctx context.Context, req *pb.DeletePolicyRequest) 
 
 // UpsertMeshConfig creates or updates the service-mesh configuration.
 func (c *Client) UpsertMeshConfig(ctx context.Context, req *pb.UpsertMeshConfigRequest) (*pb.UpsertMeshConfigResponse, error) {
-	resp, err := c.client.UpsertMeshConfig(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertMeshConfig(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertMeshConfig: %w", err)
 	}
@@ -211,7 +246,9 @@ func (c *Client) UpsertMeshConfig(ctx context.Context, req *pb.UpsertMeshConfigR
 
 // DeleteMeshConfig removes the mesh configuration.
 func (c *Client) DeleteMeshConfig(ctx context.Context, req *pb.DeleteMeshConfigRequest) (*pb.DeleteMeshConfigResponse, error) {
-	resp, err := c.client.DeleteMeshConfig(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeleteMeshConfig(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeleteMeshConfig: %w", err)
 	}
@@ -224,7 +261,9 @@ func (c *Client) DeleteMeshConfig(ctx context.Context, req *pb.DeleteMeshConfigR
 
 // UpsertWANLink creates or updates a WAN link.
 func (c *Client) UpsertWANLink(ctx context.Context, req *pb.UpsertWANLinkRequest) (*pb.UpsertWANLinkResponse, error) {
-	resp, err := c.client.UpsertWANLink(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.UpsertWANLink(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: UpsertWANLink: %w", err)
 	}
@@ -233,7 +272,9 @@ func (c *Client) UpsertWANLink(ctx context.Context, req *pb.UpsertWANLinkRequest
 
 // DeleteWANLink removes a WAN link by name.
 func (c *Client) DeleteWANLink(ctx context.Context, req *pb.DeleteWANLinkRequest) (*pb.DeleteWANLinkResponse, error) {
-	resp, err := c.client.DeleteWANLink(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DeleteWANLink(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DeleteWANLink: %w", err)
 	}
@@ -246,7 +287,9 @@ func (c *Client) DeleteWANLink(ctx context.Context, req *pb.DeleteWANLinkRequest
 
 // AttachProgram loads and attaches an eBPF program.
 func (c *Client) AttachProgram(ctx context.Context, req *pb.AttachProgramRequest) (*pb.AttachProgramResponse, error) {
-	resp, err := c.client.AttachProgram(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.AttachProgram(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: AttachProgram: %w", err)
 	}
@@ -255,7 +298,9 @@ func (c *Client) AttachProgram(ctx context.Context, req *pb.AttachProgramRequest
 
 // DetachProgram detaches and unloads an eBPF program.
 func (c *Client) DetachProgram(ctx context.Context, req *pb.DetachProgramRequest) (*pb.DetachProgramResponse, error) {
-	resp, err := c.client.DetachProgram(ctx, req)
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.DetachProgram(callCtx, req)
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: DetachProgram: %w", err)
 	}
@@ -330,7 +375,9 @@ func (c *Client) StreamMetrics(ctx context.Context, req *pb.StreamMetricsRequest
 
 // GetDataplaneStatus returns the current dataplane status.
 func (c *Client) GetDataplaneStatus(ctx context.Context) (*pb.DataplaneStatus, error) {
-	resp, err := c.client.GetDataplaneStatus(ctx, &pb.GetDataplaneStatusRequest{})
+	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	resp, err := c.client.GetDataplaneStatus(callCtx, &pb.GetDataplaneStatusRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("dataplane: GetDataplaneStatus: %w", err)
 	}
