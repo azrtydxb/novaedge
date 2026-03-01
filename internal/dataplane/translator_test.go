@@ -847,7 +847,13 @@ func TestTranslateSnapshot_MeshConfig(t *testing.T) {
 			PrivateKey:    []byte("key-pem"),
 		},
 		InternalServices: []*configpb.InternalService{
-			{Name: "my-svc"},
+			{
+				Name:        "my-svc",
+				MeshEnabled: true,
+				Ports: []*configpb.ServicePort{
+					{Name: "http", Port: 8080},
+				},
+			},
 		},
 	}
 

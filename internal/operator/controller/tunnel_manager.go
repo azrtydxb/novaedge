@@ -61,7 +61,7 @@ func (m *InMemoryTunnelManager) RemoveTunnel(clusterName string) error {
 	defer m.mu.Unlock()
 
 	if !m.tunnels[clusterName] {
-		return fmt.Errorf("%w: %q not found", errTunnelForCluster, clusterName)
+		return fmt.Errorf("%w %q not found", errTunnelForCluster, clusterName)
 	}
 
 	delete(m.tunnels, clusterName)
