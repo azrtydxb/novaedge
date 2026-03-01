@@ -70,6 +70,7 @@ impl DataplaneService {
     }
 
     /// Parse an IP address from a VIP address string (e.g. "10.0.0.1/32" → 10.0.0.1, prefix 32).
+    #[allow(clippy::result_large_err)]
     fn parse_vip_address(addr: &str) -> Result<(std::net::IpAddr, u8), Status> {
         let (ip_str, prefix_str) = addr.split_once('/').unwrap_or((addr, "32"));
         let ip: std::net::IpAddr = ip_str
@@ -90,9 +91,9 @@ impl DataplaneService {
             1 => vip::manager::VIPMode::L2 { arp_enabled: true },
             2 => {
                 let asn = bgp_config.as_ref().map_or(65000, |c| c.local_asn);
-                vip::manager::VIPMode::BGP { asn }
+                vip::manager::VIPMode::Bgp { asn }
             }
-            3 => vip::manager::VIPMode::OSPF { area: 0, cost: 100 },
+            3 => vip::manager::VIPMode::Ospf { area: 0, cost: 100 },
             _ => vip::manager::VIPMode::L2 { arp_enabled: true },
         }
     }
@@ -227,7 +228,10 @@ impl DataplaneService {
 
     #[cfg(not(target_os = "linux"))]
     fn read_interface_mac(interface: &str) -> [u8; 6] {
-        warn!(interface, "MAC address lookup not available on non-Linux, using broadcast");
+        warn!(
+            interface,
+            "MAC address lookup not available on non-Linux, using broadcast"
+        );
         [0xff; 6]
     }
 
@@ -301,7 +305,11 @@ impl DataplaneService {
             methods: route.methods.clone(),
             backend_ref,
             priority: route.priority,
-            rewrite_path: if route.rewrite_path.is_empty() { None } else { Some(route.rewrite_path.clone()) },
+            rewrite_path: if route.rewrite_path.is_empty() {
+                None
+            } else {
+                Some(route.rewrite_path.clone())
+            },
             add_headers: route.add_headers.clone(),
             middleware_refs: route.middleware_refs.clone(),
         }
@@ -351,48 +359,52 @@ impl DataplaneControl for DataplaneService {
         );
 
         // Convert proto messages to runtime config types.
-        let gateways: Vec<GatewayState> = req.gateways.iter().map(Self::gateway_from_proto).collect();
+        let gateways: Vec<GatewayState> =
+            req.gateways.iter().map(Self::gateway_from_proto).collect();
         let routes: Vec<RouteState> = req.routes.iter().map(Self::route_from_proto).collect();
         let clusters: Vec<ClusterState> =
             req.clusters.iter().map(Self::cluster_from_proto).collect();
-        let policies: Vec<PolicyState> = req
-            .policies
-            .iter()
-            .map(|p| Self::policy_from_proto(p))
-            .collect();
+        let policies: Vec<PolicyState> = req.policies.iter().map(Self::policy_from_proto).collect();
 
         // Build proxy router routes before consuming the RouteState vec.
-        let router_routes: Vec<crate::proxy::router::Route> = routes.iter().map(|rs| {
-            use crate::proxy::router::{HostMatch, PathMatch, Route as ProxyRoute};
-            let hostnames = rs.hostnames.iter().map(|h| {
-                if h.starts_with("*.") {
-                    HostMatch::Wildcard(h.clone())
-                } else {
-                    HostMatch::Exact(h.clone())
+        let router_routes: Vec<crate::proxy::router::Route> = routes
+            .iter()
+            .map(|rs| {
+                use crate::proxy::router::{HostMatch, PathMatch, Route as ProxyRoute};
+                let hostnames = rs
+                    .hostnames
+                    .iter()
+                    .map(|h| {
+                        if h.starts_with("*.") {
+                            HostMatch::Wildcard(h.clone())
+                        } else {
+                            HostMatch::Exact(h.clone())
+                        }
+                    })
+                    .collect();
+
+                let mut paths = Vec::new();
+                if !rs.path_exact.is_empty() {
+                    paths.push(PathMatch::Exact(rs.path_exact.clone()));
                 }
-            }).collect();
+                if !rs.path_prefix.is_empty() {
+                    paths.push(PathMatch::Prefix(rs.path_prefix.clone()));
+                }
 
-            let mut paths = Vec::new();
-            if !rs.path_exact.is_empty() {
-                paths.push(PathMatch::Exact(rs.path_exact.clone()));
-            }
-            if !rs.path_prefix.is_empty() {
-                paths.push(PathMatch::Prefix(rs.path_prefix.clone()));
-            }
-
-            ProxyRoute {
-                name: rs.name.clone(),
-                hostnames,
-                paths,
-                methods: rs.methods.clone(),
-                headers: Vec::new(),
-                backend: rs.backend_ref.clone(),
-                priority: rs.priority,
-                rewrite_path: rs.rewrite_path.clone(),
-                add_headers: rs.add_headers.clone(),
-                middleware_refs: rs.middleware_refs.clone(),
-            }
-        }).collect();
+                ProxyRoute {
+                    name: rs.name.clone(),
+                    hostnames,
+                    paths,
+                    methods: rs.methods.clone(),
+                    headers: Vec::new(),
+                    backend: rs.backend_ref.clone(),
+                    priority: rs.priority,
+                    rewrite_path: rs.rewrite_path.clone(),
+                    add_headers: rs.add_headers.clone(),
+                    middleware_refs: rs.middleware_refs.clone(),
+                }
+            })
+            .collect();
 
         // Atomically replace all runtime config.
         self.runtime_config
@@ -416,7 +428,11 @@ impl DataplaneControl for DataplaneService {
             for vip_cfg in &req.vips {
                 if let Ok((ip, prefix)) = Self::parse_vip_address(&vip_cfg.address) {
                     let mode = Self::vip_mode_from_proto(vip_cfg.mode, &vip_cfg.bgp_config);
-                    let iface = if vip_cfg.interface.is_empty() { "eth0" } else { &vip_cfg.interface };
+                    let iface = if vip_cfg.interface.is_empty() {
+                        "eth0"
+                    } else {
+                        &vip_cfg.interface
+                    };
                     if vip_mgr.add_vip(ip, prefix, iface, mode).is_ok() {
                         let _ = vip_mgr.activate(&ip);
                     }
@@ -457,8 +473,9 @@ impl DataplaneControl for DataplaneService {
                 let gateway: std::net::IpAddr = wl_cfg
                     .gateway
                     .parse()
-                    .unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
-                let mut wan_link = sdwan::link::WANLink::new(&wl_cfg.name, &wl_cfg.interface, gateway);
+                    .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+                let mut wan_link =
+                    sdwan::link::WANLink::new(&wl_cfg.name, &wl_cfg.interface, gateway);
                 wan_link.priority = wl_cfg.priority;
                 wan_mgr.add_link(wan_link);
             }
@@ -614,14 +631,13 @@ impl DataplaneControl for DataplaneService {
             .map_err(|e| Status::internal(format!("failed to activate VIP: {e}")))?;
 
         // Send GARP for L2 VIPs.
-        if vip_cfg.mode == proto::VipMode::L2 as i32 {
-            if ip.is_ipv4() {
-                let mac = Self::read_interface_mac(interface);
-                let _ = vip::garp::send_garp(ip, interface, &mac, &vip::garp::GarpConfig::default());
-            }
+        if vip_cfg.mode == proto::VipMode::L2 as i32 && ip.is_ipv4() {
+            let mac = Self::read_interface_mac(interface);
+            let _ = vip::garp::send_garp(ip, interface, &mac, &vip::garp::GarpConfig::default());
         }
 
-        let (status, message) = Self::ok_response(format!("VIP '{}' upserted and activated", vip_cfg.name));
+        let (status, message) =
+            Self::ok_response(format!("VIP '{}' upserted and activated", vip_cfg.name));
         Ok(Response::new(proto::UpsertVipResponse { status, message }))
     }
 
@@ -812,13 +828,9 @@ impl DataplaneControl for DataplaneService {
         let gateway: std::net::IpAddr = link_cfg
             .gateway
             .parse()
-            .unwrap_or_else(|_| std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
+            .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED));
 
-        let mut wan_link = sdwan::link::WANLink::new(
-            &link_cfg.name,
-            &link_cfg.interface,
-            gateway,
-        );
+        let mut wan_link = sdwan::link::WANLink::new(&link_cfg.name, &link_cfg.interface, gateway);
         wan_link.priority = link_cfg.priority;
 
         let mut mgr = self.wan_link_manager.lock().unwrap();
@@ -1110,9 +1122,7 @@ mod tests {
     fn make_service() -> DataplaneService {
         let mgr = Arc::new(MapManager::new_mock());
         let cfg = Arc::new(RuntimeConfig::new());
-        let router = Arc::new(tokio::sync::RwLock::new(
-            crate::proxy::router::Router::new(),
-        ));
+        let router = Arc::new(tokio::sync::RwLock::new(crate::proxy::router::Router::new()));
         let (tx, _rx) = crate::flows::flow_channel();
         DataplaneService::new(mgr, cfg, router, tx)
     }

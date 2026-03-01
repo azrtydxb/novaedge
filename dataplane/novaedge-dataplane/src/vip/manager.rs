@@ -5,8 +5,8 @@ use std::net::IpAddr;
 #[derive(Debug, Clone, PartialEq)]
 pub enum VIPMode {
     L2 { arp_enabled: bool },
-    BGP { asn: u32 },
-    OSPF { area: u32, cost: u32 },
+    Bgp { asn: u32 },
+    Ospf { area: u32, cost: u32 },
 }
 
 /// VIP status.
@@ -196,7 +196,7 @@ mod tests {
         let mut mgr = VIPManager::new();
         mgr.add_vip(test_ip(), 32, "eth0", VIPMode::L2 { arp_enabled: true })
             .unwrap();
-        mgr.add_vip(test_ip2(), 32, "eth0", VIPMode::BGP { asn: 65000 })
+        mgr.add_vip(test_ip2(), 32, "eth0", VIPMode::Bgp { asn: 65000 })
             .unwrap();
 
         mgr.activate(&test_ip()).unwrap();
@@ -225,7 +225,7 @@ mod tests {
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 2)),
             32,
             "eth0",
-            VIPMode::BGP { asn: 65000 },
+            VIPMode::Bgp { asn: 65000 },
         )
         .unwrap();
 
@@ -234,7 +234,7 @@ mod tests {
             IpAddr::V4(Ipv4Addr::new(10, 0, 0, 3)),
             32,
             "eth0",
-            VIPMode::OSPF { area: 0, cost: 100 },
+            VIPMode::Ospf { area: 0, cost: 100 },
         )
         .unwrap();
 

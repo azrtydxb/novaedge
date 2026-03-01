@@ -26,10 +26,9 @@ pub struct ProxyHandler {
 impl ProxyHandler {
     /// Create a new proxy handler.
     pub fn new(router: Arc<RwLock<Router>>, config: Arc<RuntimeConfig>) -> Self {
-        let client = hyper_util::client::legacy::Client::builder(
-            hyper_util::rt::TokioExecutor::new(),
-        )
-        .build_http();
+        let client =
+            hyper_util::client::legacy::Client::builder(hyper_util::rt::TokioExecutor::new())
+                .build_http();
 
         Self {
             router,
@@ -109,9 +108,7 @@ impl ProxyHandler {
                             }
                         }
                     }
-                    return Ok(builder
-                        .body(Full::new(Bytes::from(resp.body)))
-                        .unwrap());
+                    return Ok(builder.body(Full::new(Bytes::from(resp.body))).unwrap());
                 }
                 crate::middleware::MiddlewareResult::Continue(_) => {
                     // Proceed with normal request handling.
@@ -140,7 +137,10 @@ impl ProxyHandler {
             .endpoints
             .iter()
             .map(|e| lb::Backend {
-                addr: e.address.parse().unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                addr: e
+                    .address
+                    .parse()
+                    .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
                 port: e.port as u16,
                 weight: e.weight as u16,
                 healthy: e.healthy,
@@ -381,9 +381,9 @@ mod tests {
                         .serve_connection(
                             io,
                             service_fn(|_req| async {
-                                Ok::<_, hyper::Error>(hyper::Response::new(Full::new(
-                                    Bytes::from("Hello Rust!"),
-                                )))
+                                Ok::<_, hyper::Error>(hyper::Response::new(Full::new(Bytes::from(
+                                    "Hello Rust!",
+                                ))))
                             }),
                         )
                         .await;

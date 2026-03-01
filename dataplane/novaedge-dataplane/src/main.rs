@@ -86,13 +86,11 @@ async fn main() -> anyhow::Result<()> {
 
                         // Attach eBPF programs to the network interface.
                         if let Some(ref mut bpf) = result.bpf {
-                            if let Err(e) =
-                                loader::attach_xdp(bpf, "novaedge_xdp", &args.interface)
+                            if let Err(e) = loader::attach_xdp(bpf, "novaedge_xdp", &args.interface)
                             {
                                 warn!("Failed to attach XDP L4 LB program: {e:#}");
                             }
-                            if let Err(e) =
-                                loader::attach_xdp(bpf, "novaedge_arp", &args.interface)
+                            if let Err(e) = loader::attach_xdp(bpf, "novaedge_arp", &args.interface)
                             {
                                 warn!("Failed to attach XDP ARP responder: {e:#}");
                             }

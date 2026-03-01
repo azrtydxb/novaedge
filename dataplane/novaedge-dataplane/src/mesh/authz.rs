@@ -40,7 +40,7 @@ impl MeshAuthzPolicy {
     /// Check if a request from source to destination port is allowed.
     pub fn check(&self, source: &SpiffeId, dest_port: u16) -> AuthzAction {
         for rule in &self.rules {
-            let port_matches = rule.destination_port.map_or(true, |p| p == dest_port);
+            let port_matches = rule.destination_port.is_none_or(|p| p == dest_port);
             let source_matches = rule
                 .source_patterns
                 .iter()

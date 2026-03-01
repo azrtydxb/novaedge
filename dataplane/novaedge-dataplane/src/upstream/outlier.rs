@@ -30,22 +30,12 @@ impl Default for OutlierConfig {
     }
 }
 
+#[derive(Default)]
 struct BackendStats {
     consecutive_errors: u32,
     ejected_until: Option<Instant>,
     total_requests: u64,
     total_errors: u64,
-}
-
-impl Default for BackendStats {
-    fn default() -> Self {
-        Self {
-            consecutive_errors: 0,
-            ejected_until: None,
-            total_requests: 0,
-            total_errors: 0,
-        }
-    }
 }
 
 /// Outlier detector that ejects misbehaving backends.

@@ -84,12 +84,9 @@ impl Router {
         method: &str,
         headers: &[(String, String)],
     ) -> Option<&Route> {
-        for route in &self.routes {
-            if self.matches_route(route, host, path, method, headers) {
-                return Some(route);
-            }
-        }
-        None
+        self.routes
+            .iter()
+            .find(|route| self.matches_route(route, host, path, method, headers))
     }
 
     fn matches_route(

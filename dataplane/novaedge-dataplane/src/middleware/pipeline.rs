@@ -81,9 +81,7 @@ fn run_rate_limit(policy_name: &str, config_json: &str, req: &Request) -> Middle
         }
     };
 
-    let rps = config["requests_per_second"]
-        .as_f64()
-        .unwrap_or(100.0);
+    let rps = config["requests_per_second"].as_f64().unwrap_or(100.0);
     let burst = config["burst"].as_u64().unwrap_or(10) as u32;
 
     // Get or create a cached TokenBucket for this policy.
@@ -107,10 +105,7 @@ fn run_rate_limit(policy_name: &str, config_json: &str, req: &Request) -> Middle
                 status: 429,
                 headers: vec![
                     ("Content-Type".into(), "text/plain".into()),
-                    (
-                        "Retry-After".into(),
-                        retry_after.as_secs().to_string(),
-                    ),
+                    ("Retry-After".into(), retry_after.as_secs().to_string()),
                 ],
                 body: b"Too Many Requests".to_vec(),
             })
@@ -148,9 +143,7 @@ fn run_basic_auth(policy_name: &str, config_json: &str, req: &Request) -> Middle
 
     let auth = super::auth::basic::BasicAuth::new(realm, users);
     match auth.check(req) {
-        super::auth::AuthResult::Authenticated { .. } => {
-            MiddlewareResult::Continue(req.clone())
-        }
+        super::auth::AuthResult::Authenticated { .. } => MiddlewareResult::Continue(req.clone()),
         super::auth::AuthResult::Denied { status, message } => {
             MiddlewareResult::Respond(Response {
                 status,
@@ -439,10 +432,7 @@ mod tests {
             host: "example.com".into(),
             headers: vec![
                 ("Origin".into(), "http://example.com".into()),
-                (
-                    "Access-Control-Request-Method".into(),
-                    "POST".into(),
-                ),
+                ("Access-Control-Request-Method".into(), "POST".into()),
             ],
             body: None,
             client_ip: "127.0.0.1".into(),

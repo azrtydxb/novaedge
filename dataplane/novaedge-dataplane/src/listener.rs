@@ -8,8 +8,6 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bytes::Bytes;
-use http_body_util::Full;
 use hyper::service::service_fn;
 use hyper_util::rt::TokioIo;
 use rustls::ServerConfig;
@@ -128,22 +126,21 @@ impl ListenerManager {
 
                 match gw.protocol.as_str() {
                     "HTTP" | "HTTPS" => {
-                        let handle =
-                            self.start_http_listener(name, addr, &gw.tls, &gw.protocol).await;
+                        let handle = self
+                            .start_http_listener(name, addr, &gw.tls, &gw.protocol)
+                            .await;
                         if let Some(h) = handle {
                             listeners.insert(name.clone(), h);
                         }
                     }
                     "HTTP3" => {
-                        let handle =
-                            self.start_h3_listener(name, addr, &gw.tls).await;
+                        let handle = self.start_h3_listener(name, addr, &gw.tls).await;
                         if let Some(h) = handle {
                             listeners.insert(name.clone(), h);
                         }
                     }
                     "TCP" | "UDP" => {
-                        let handle =
-                            self.start_l4_listener(name, addr).await;
+                        let handle = self.start_l4_listener(name, addr).await;
                         if let Some(h) = handle {
                             listeners.insert(name.clone(), h);
                         }
@@ -362,11 +359,7 @@ impl ListenerManager {
     }
 
     /// Start an L4 TCP listener using bidirectional copy.
-    async fn start_l4_listener(
-        &self,
-        name: &str,
-        addr: SocketAddr,
-    ) -> Option<ListenerHandle> {
+    async fn start_l4_listener(&self, name: &str, addr: SocketAddr) -> Option<ListenerHandle> {
         let listener = match TcpListener::bind(addr).await {
             Ok(l) => l,
             Err(e) => {
@@ -456,6 +449,8 @@ mod tests {
         ClusterState, EndpointState, GatewayState, RouteState, RuntimeConfig, TlsState,
     };
     use crate::proxy::router::Router;
+    use bytes::Bytes;
+    use http_body_util::Full;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::sync::RwLock;
 
@@ -621,7 +616,10 @@ mod tests {
         let handle = mgr
             .start_http_listener("https-gw", "127.0.0.1:0".parse().unwrap(), &None, "HTTPS")
             .await;
-        assert!(handle.is_none(), "HTTPS listener without TLS config should fail");
+        assert!(
+            handle.is_none(),
+            "HTTPS listener without TLS config should fail"
+        );
     }
 
     #[test]

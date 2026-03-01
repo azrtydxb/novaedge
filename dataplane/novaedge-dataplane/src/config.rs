@@ -3,11 +3,9 @@
 //! Stores gateways, routes, and clusters received via gRPC. Written by
 //! gRPC handlers, read by proxy handlers and the listener manager.
 
+use dashmap::DashMap;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-
-use dashmap::DashMap;
 use tokio::sync::{watch, RwLock};
 
 /// Gateway listener state.
@@ -264,6 +262,7 @@ impl RuntimeConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     fn test_gateway(name: &str, port: u32) -> GatewayState {
         GatewayState {
