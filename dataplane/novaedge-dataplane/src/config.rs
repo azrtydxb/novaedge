@@ -3,7 +3,7 @@
 //! Stores gateways, routes, and clusters received via gRPC. Written by
 //! gRPC handlers, read by proxy handlers and the listener manager.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -208,6 +208,10 @@ impl RuntimeConfig {
     }
 
     /// Apply a full configuration snapshot, replacing all existing state.
+    ///
+    /// Uses `retain()` + insert instead of `clear()` + insert to avoid a race
+    /// condition where concurrent readers (e.g. `ListenerManager::reconcile_listeners`)
+    /// could observe an empty config between the clear and first insert.
     pub async fn apply_full(
         &self,
         version: String,
@@ -216,22 +220,32 @@ impl RuntimeConfig {
         clusters: Vec<ClusterState>,
         policies: Vec<PolicyState>,
     ) {
-        self.gateways.clear();
+        // Build new key sets
+        let gw_keys: HashSet<String> = gateways.iter().map(|g| g.name.clone()).collect();
+        let rt_keys: HashSet<String> = routes.iter().map(|r| r.name.clone()).collect();
+        let cl_keys: HashSet<String> = clusters.iter().map(|c| c.name.clone()).collect();
+        let pl_keys: HashSet<String> = policies.iter().map(|p| p.name.clone()).collect();
+
+        // Remove stale entries (never empties the map if new entries exist)
+        self.gateways.retain(|k, _| gw_keys.contains(k));
+        self.routes.retain(|k, _| rt_keys.contains(k));
+        self.clusters.retain(|k, _| cl_keys.contains(k));
+        self.policies.retain(|k, _| pl_keys.contains(k));
+
+        // Insert/update entries
         for gw in gateways {
             self.gateways.insert(gw.name.clone(), gw);
         }
-        self.routes.clear();
         for r in routes {
             self.routes.insert(r.name.clone(), r);
         }
-        self.clusters.clear();
         for c in clusters {
             self.clusters.insert(c.name.clone(), c);
         }
-        self.policies.clear();
         for p in policies {
             self.policies.insert(p.name.clone(), p);
         }
+
         *self.version.write().await = version;
         self.bump();
     }
