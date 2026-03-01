@@ -1165,9 +1165,9 @@ func TestTranslateSnapshot_VIPs_OSPFAndBFD(t *testing.T) {
 					AreaId: 100,
 				},
 				BfdConfig: &configpb.BFDConfig{
-					Enabled:               true,
-					DetectMultiplier:      3,
-					DesiredMinTxInterval:  "300ms",
+					Enabled:              true,
+					DetectMultiplier:     3,
+					DesiredMinTxInterval: "300ms",
 				},
 			},
 		},
