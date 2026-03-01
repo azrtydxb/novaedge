@@ -112,9 +112,16 @@ impl ListenerManager {
                 };
 
                 match gw.protocol.as_str() {
-                    "HTTP" | "HTTPS" | "HTTP3" => {
+                    "HTTP" | "HTTPS" => {
                         let handle =
                             self.start_http_listener(name, addr, &gw.tls, &gw.protocol).await;
+                        if let Some(h) = handle {
+                            listeners.insert(name.clone(), h);
+                        }
+                    }
+                    "HTTP3" => {
+                        let handle =
+                            self.start_h3_listener(name, addr, &gw.tls).await;
                         if let Some(h) = handle {
                             listeners.insert(name.clone(), h);
                         }
@@ -156,8 +163,7 @@ impl ListenerManager {
     ///
     /// When `protocol` is `"HTTPS"`, TLS termination is performed using the
     /// certificate and key from `tls_config` before handing the connection to
-    /// hyper.  Plain `"HTTP"` (and `"HTTP3"`) connections are served without
-    /// TLS wrapping.
+    /// hyper.  Plain `"HTTP"` connections are served without TLS wrapping.
     async fn start_http_listener(
         &self,
         name: &str,
@@ -272,6 +278,53 @@ impl ListenerManager {
         Some(ListenerHandle {
             port: actual_addr.port() as u32,
             protocol: proto_label,
+            cancel: cancel_tx,
+            task,
+        })
+    }
+
+    /// Start an HTTP/3 QUIC listener using quinn + h3.
+    ///
+    /// HTTP/3 requires TLS configuration since QUIC mandates encryption.
+    /// The listener binds to a UDP socket and accepts QUIC connections.
+    async fn start_h3_listener(
+        &self,
+        name: &str,
+        addr: SocketAddr,
+        tls_config: &Option<crate::config::TlsState>,
+    ) -> Option<ListenerHandle> {
+        let tls = match tls_config.as_ref() {
+            Some(t) => t,
+            None => {
+                warn!(gateway = %name, "HTTP3 gateway requires TLS config, skipping");
+                return None;
+            }
+        };
+
+        let h3_config = crate::proxy::http3::Http3Config {
+            listen_addr: addr,
+            enable_0rtt: false,
+            max_streams: 100,
+            idle_timeout_ms: 30000,
+        };
+
+        let server = crate::proxy::http3::Http3Server::new(h3_config, self.proxy_handler.clone());
+        let tls_clone = tls.clone();
+
+        let (cancel_tx, cancel_rx) = tokio::sync::watch::channel(false);
+        let gw_name = name.to_string();
+
+        let task = tokio::spawn(async move {
+            if let Err(e) = server.start(&tls_clone, cancel_rx).await {
+                warn!(gateway = %gw_name, error = %e, "HTTP/3 listener failed");
+            }
+        });
+
+        info!(gateway = %name, addr = %addr, "HTTP/3 listener spawned");
+
+        Some(ListenerHandle {
+            port: addr.port() as u32,
+            protocol: "HTTP3".into(),
             cancel: cancel_tx,
             task,
         })
