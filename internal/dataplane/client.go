@@ -18,8 +18,10 @@ import (
 // defaultRPCTimeout bounds how long any single unary RPC will wait for the
 // dataplane to respond. This prevents callers from blocking indefinitely when
 // the Rust daemon is not running, while still allowing WaitForReady retries
-// within the window.
-const defaultRPCTimeout = 5 * time.Second
+// within the window. The value is set to 30s to accommodate the startup race
+// where the Go agent receives config before the Rust dataplane socket exists
+// (eBPF loading on ARM64 can take several seconds on first boot).
+const defaultRPCTimeout = 30 * time.Second
 
 // Client wraps the gRPC connection to the Rust dataplane daemon.
 type Client struct {
