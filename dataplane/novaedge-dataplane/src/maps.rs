@@ -39,6 +39,7 @@ pub struct MapManager {
     start_time: Instant,
 }
 
+#[allow(clippy::large_enum_variant)]
 enum MapManagerInner {
     Mock(MockMaps),
     #[cfg(target_os = "linux")]
