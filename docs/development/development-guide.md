@@ -322,7 +322,7 @@ func TestContextCancellation(t *testing.T) {
 
 ### Mocking with Interfaces
 
-Use the interfaces in `internal/agent/interfaces.go` for mocking:
+Use standard Go interfaces for mocking (define them alongside the component under test):
 
 ```go
 // Production

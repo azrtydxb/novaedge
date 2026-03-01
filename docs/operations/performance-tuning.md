@@ -26,7 +26,7 @@ NovaEdge sets the `SO_REUSEPORT` socket option on all listener sockets. This all
 
 For L4 TCP forwarding, NovaEdge uses the Linux `splice()` system call to move data directly between socket file descriptors through a kernel pipe, bypassing userspace entirely. Data never crosses the kernel-userspace boundary, eliminating memory copies and reducing CPU overhead.
 
-**Applies to:** L4 TCP proxy (`internal/agent/l4/tcp_proxy.go`) and TLS passthrough mode (`internal/agent/l4/tls_passthrough.go`).
+**Applies to:** L4 TCP and TLS passthrough forwarding in the Rust dataplane (`dataplane/novaedge-dataplane/src/l4/`).
 
 **How it works:**
 

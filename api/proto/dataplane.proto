@@ -66,7 +66,10 @@ service DataplaneControl {
   // ── eBPF lifecycle ───────────────────────────────────────────────────
   // AttachProgram loads and attaches an eBPF program.
   rpc AttachProgram(AttachProgramRequest) returns (AttachProgramResponse);
-  // DetachProgram detaches and unloads an eBPF program.
+  // DetachProgram is a no-op by design. eBPF programs attached via aya are
+  // automatically detached when the Ebpf handle is dropped (i.e. on process
+  // shutdown). The RPC exists for API completeness; the Go agent manages
+  // eBPF lifecycle via cilium/ebpf and does not call this endpoint.
   rpc DetachProgram(DetachProgramRequest) returns (DetachProgramResponse);
 
   // ── Observability ────────────────────────────────────────────────────
