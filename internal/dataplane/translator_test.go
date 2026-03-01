@@ -1351,6 +1351,71 @@ func TestTranslateSnapshot_WANLinks_Gateway(t *testing.T) {
 	}
 }
 
+func TestTranslateSnapshot_Routes_RewriteAndHeaders(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		Routes: []*configpb.Route{
+			{
+				Name: "route-with-filters",
+				Rules: []*configpb.RouteRule{
+					{
+						Filters: []*configpb.RouteFilter{
+							{
+								Type:        configpb.RouteFilterType_URL_REWRITE,
+								RewritePath: "/api/v2",
+							},
+							{
+								Type: configpb.RouteFilterType_ADD_HEADER,
+								AddHeaders: []*configpb.HTTPHeader{
+									{Name: "X-Custom", Value: "hello"},
+									{Name: "X-Source", Value: "novaedge"},
+								},
+							},
+						},
+						Matches: []*configpb.RouteMatch{
+							{Method: "GET"},
+							{Method: "POST"},
+						},
+					},
+					{
+						Matches: []*configpb.RouteMatch{
+							{Method: "POST"}, // duplicate, should be deduped
+							{Method: "DELETE"},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	rt := req.GetRoutes()[0]
+
+	if rt.GetRewritePath() != "/api/v2" {
+		t.Errorf("rewrite_path = %q, want %q", rt.GetRewritePath(), "/api/v2")
+	}
+
+	wantHeaders := map[string]string{"X-Custom": "hello", "X-Source": "novaedge"}
+	if len(rt.GetAddHeaders()) != len(wantHeaders) {
+		t.Fatalf("add_headers len = %d, want %d", len(rt.GetAddHeaders()), len(wantHeaders))
+	}
+	for k, v := range wantHeaders {
+		if got := rt.GetAddHeaders()[k]; got != v {
+			t.Errorf("add_headers[%q] = %q, want %q", k, got, v)
+		}
+	}
+
+	// Methods should be deduplicated: GET, POST, DELETE
+	wantMethods := map[string]bool{"GET": true, "POST": true, "DELETE": true}
+	if len(rt.GetMethods()) != 3 {
+		t.Fatalf("methods len = %d, want 3; got %v", len(rt.GetMethods()), rt.GetMethods())
+	}
+	for _, m := range rt.GetMethods() {
+		if !wantMethods[m] {
+			t.Errorf("unexpected method %q", m)
+		}
+	}
+}
+
 func TestTranslateSnapshot_PolicyTypes_SecurityHeaders(t *testing.T) {
 	got := translatePolicyType(configpb.PolicyType_SECURITY_HEADERS)
 	if got != pb.PolicyType_POLICY_TYPE_SECURITY_HEADERS {
