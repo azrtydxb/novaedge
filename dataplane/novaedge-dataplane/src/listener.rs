@@ -96,6 +96,21 @@ impl ListenerManager {
         // Start new listeners for gateways not yet running.
         for (name, gw) in &snapshot.gateways {
             if !listeners.contains_key(name) {
+                // Check if another gateway already has a listener on this port.
+                // On hostNetwork, multiple gateways sharing a port is expected;
+                // a single listener serves routes from all gateways via
+                // hostname/path-based routing.
+                let desired_port = gw.port;
+                let port_already_bound = listeners.values().any(|h| h.port == desired_port);
+                if port_already_bound {
+                    info!(
+                        gateway = %name,
+                        port = desired_port,
+                        "Port already bound by another gateway, sharing listener"
+                    );
+                    continue;
+                }
+
                 let bind = if gw.bind_address.is_empty() {
                     "0.0.0.0"
                 } else {
@@ -140,10 +155,26 @@ impl ListenerManager {
             }
         }
 
-        // Stop listeners for removed gateways.
+        // Stop listeners for removed gateways, but only if no other gateway
+        // in the current snapshot still needs the same port.
         let to_remove: Vec<String> = listeners
             .keys()
-            .filter(|name| !snapshot.gateways.contains_key(*name))
+            .filter(|name| {
+                if snapshot.gateways.contains_key(*name) {
+                    return false; // Gateway still exists, keep listener
+                }
+                // Gateway was removed. Check if another gateway needs this port.
+                let port = listeners.get(*name).map(|h| h.port).unwrap_or(0);
+                let port_still_needed = snapshot.gateways.values().any(|g| g.port == port);
+                if port_still_needed {
+                    info!(
+                        gateway = %name,
+                        port = port,
+                        "Gateway removed but port still needed by another gateway, keeping listener"
+                    );
+                }
+                !port_still_needed // Only remove if no gateway needs this port
+            })
             .cloned()
             .collect();
         for name in to_remove {
