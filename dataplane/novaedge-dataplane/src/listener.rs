@@ -408,6 +408,7 @@ mod tests {
             priority: 0,
             rewrite_path: None,
             add_headers: HashMap::new(),
+            middleware_refs: Vec::new(),
         });
         config.upsert_cluster(ClusterState {
             name: "tcp-cluster".into(),

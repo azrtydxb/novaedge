@@ -881,6 +881,8 @@ dependencies = [
  "novaedge-common",
  "prost",
  "rand",
+ "serde",
+ "serde_json",
  "tokio",
  "tokio-stream",
  "tonic",

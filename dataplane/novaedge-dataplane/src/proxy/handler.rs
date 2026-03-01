@@ -84,6 +84,41 @@ impl ProxyHandler {
             "Matched route for {method} {path}"
         );
 
+        // Run middleware pipeline for this route.
+        if !route.middleware_refs.is_empty() {
+            let mw_request = crate::middleware::Request {
+                method: method.clone(),
+                path: path.clone(),
+                host: host.clone(),
+                headers: headers.clone(),
+                body: None, // Body not available yet at this point.
+                client_ip: client_addr.ip().to_string(),
+            };
+
+            match crate::middleware::pipeline::run_pipeline(
+                &self.config,
+                &route.middleware_refs,
+                mw_request,
+            ) {
+                crate::middleware::MiddlewareResult::Respond(resp) => {
+                    let mut builder = hyper::Response::builder().status(resp.status);
+                    for (k, v) in &resp.headers {
+                        if let Ok(name) = hyper::header::HeaderName::from_bytes(k.as_bytes()) {
+                            if let Ok(val) = hyper::header::HeaderValue::from_str(v) {
+                                builder = builder.header(name, val);
+                            }
+                        }
+                    }
+                    return Ok(builder
+                        .body(Full::new(Bytes::from(resp.body)))
+                        .unwrap());
+                }
+                crate::middleware::MiddlewareResult::Continue(_) => {
+                    // Proceed with normal request handling.
+                }
+            }
+        }
+
         // Look up cluster endpoints.
         let cluster = match self.config.get_cluster(&route.backend) {
             Some(c) => c,
@@ -287,6 +322,7 @@ mod tests {
             priority: 10,
             rewrite_path: None,
             add_headers: HashMap::new(),
+            middleware_refs: Vec::new(),
         }
     }
 

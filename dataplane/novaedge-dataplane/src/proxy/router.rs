@@ -12,6 +12,7 @@ pub struct Route {
     pub priority: i32,
     pub rewrite_path: Option<String>,
     pub add_headers: HashMap<String, String>,
+    pub middleware_refs: Vec<String>,
 }
 
 /// Hostname matching strategy.
@@ -175,6 +176,7 @@ mod tests {
             priority,
             rewrite_path: None,
             add_headers: HashMap::new(),
+            middleware_refs: Vec::new(),
         }
     }
 

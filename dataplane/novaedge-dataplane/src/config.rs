@@ -41,6 +41,7 @@ pub struct RouteState {
     pub priority: i32,
     pub rewrite_path: Option<String>,
     pub add_headers: HashMap<String, String>,
+    pub middleware_refs: Vec<String>,
 }
 
 /// Policy state for rate-limiting, auth, CORS, etc.
@@ -273,6 +274,7 @@ mod tests {
             priority: 10,
             rewrite_path: None,
             add_headers: HashMap::new(),
+            middleware_refs: Vec::new(),
         }
     }
 

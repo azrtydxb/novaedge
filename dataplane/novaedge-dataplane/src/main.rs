@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
     // Create the HTTP proxy handler.
     let router = Arc::new(tokio::sync::RwLock::new(proxy::router::Router::new()));
     let proxy_handler = Arc::new(proxy::handler::ProxyHandler::new(
-        router,
+        router.clone(),
         runtime_config.clone(),
     ));
 
@@ -160,7 +160,7 @@ async fn main() -> anyhow::Result<()> {
     // Start gRPC server (blocks until shutdown signal).
     let socket_path = args.socket.clone();
     let server_result =
-        server::run(map_manager, runtime_config, flow_tx, &args.socket).await;
+        server::run(map_manager, runtime_config, router, flow_tx, &args.socket).await;
 
     // Signal listener manager to shut down.
     let _ = shutdown_tx.send(true);

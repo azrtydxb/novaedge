@@ -9,6 +9,7 @@ pub mod cache;
 pub mod compression;
 pub mod cors;
 pub mod ip_filter;
+pub mod pipeline;
 pub mod ratelimit;
 pub mod security_headers;
 pub mod waf;

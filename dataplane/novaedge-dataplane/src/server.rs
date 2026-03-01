@@ -27,6 +27,7 @@ use crate::vip;
 pub struct DataplaneService {
     map_manager: Arc<MapManager>,
     runtime_config: Arc<RuntimeConfig>,
+    router: Arc<tokio::sync::RwLock<crate::proxy::router::Router>>,
     flow_tx: broadcast::Sender<proto::FlowEvent>,
     start_time: Instant,
     vip_manager: std::sync::Mutex<vip::manager::VIPManager>,
@@ -42,11 +43,13 @@ impl DataplaneService {
     pub fn new(
         map_manager: Arc<MapManager>,
         runtime_config: Arc<RuntimeConfig>,
+        router: Arc<tokio::sync::RwLock<crate::proxy::router::Router>>,
         flow_tx: broadcast::Sender<proto::FlowEvent>,
     ) -> Self {
         Self {
             map_manager,
             runtime_config,
+            router,
             flow_tx,
             start_time: Instant::now(),
             vip_manager: std::sync::Mutex::new(vip::manager::VIPManager::new()),
@@ -94,6 +97,54 @@ impl DataplaneService {
         }
     }
 
+    /// Serialize a proto policy config variant to a JSON string.
+    fn policy_config_to_json(config: &proto::policy_config::Config) -> String {
+        use proto::policy_config::Config;
+        let val = match config {
+            Config::RateLimit(rl) => serde_json::json!({
+                "requests_per_second": rl.requests_per_second,
+                "burst": rl.burst,
+                "key": rl.key,
+            }),
+            Config::BasicAuth(ba) => serde_json::json!({
+                "realm": ba.realm,
+                "htpasswd": ba.htpasswd,
+                "strip_authorization": ba.strip_authorization,
+            }),
+            Config::Cors(cors) => serde_json::json!({
+                "allow_origins": cors.allow_origins,
+                "allow_methods": cors.allow_methods,
+                "allow_headers": cors.allow_headers,
+                "expose_headers": cors.expose_headers,
+                "allow_credentials": cors.allow_credentials,
+                "max_age_seconds": cors.max_age_seconds,
+            }),
+            Config::IpFilter(ipf) => serde_json::json!({
+                "action": ipf.action,
+                "cidrs": ipf.cidrs,
+                "source_header": ipf.source_header,
+            }),
+            Config::Waf(w) => serde_json::json!({
+                "enabled": w.enabled,
+                "mode": w.mode,
+                "paranoia_level": w.paranoia_level,
+                "anomaly_threshold": w.anomaly_threshold,
+                "rule_exclusions": w.rule_exclusions,
+                "max_body_size": w.max_body_size,
+            }),
+            Config::SecurityHeaders(sh) => serde_json::json!({
+                "content_security_policy": sh.content_security_policy,
+                "x_frame_options": sh.x_frame_options,
+                "x_content_type_options": sh.x_content_type_options,
+                "strict_transport_security": sh.strict_transport_security,
+                "referrer_policy": sh.referrer_policy,
+                "permissions_policy": sh.permissions_policy,
+            }),
+            _ => serde_json::json!({}),
+        };
+        val.to_string()
+    }
+
     /// Convert a proto PolicyConfig to our PolicyState.
     fn policy_from_proto(p: &proto::PolicyConfig) -> PolicyState {
         let policy_type_str = match p.policy_type {
@@ -105,11 +156,11 @@ impl DataplaneService {
             x if x == proto::PolicyType::Waf as i32 => "waf",
             x if x == proto::PolicyType::Cors as i32 => "cors",
             x if x == proto::PolicyType::IpFilter as i32 => "ip-filter",
+            x if x == proto::PolicyType::SecurityHeaders as i32 => "security-headers",
             _ => "unknown",
         };
-        // Serialize the config variant as a debug string for storage.
         let config_json = match &p.config {
-            Some(c) => format!("{c:?}"),
+            Some(c) => Self::policy_config_to_json(c),
             None => String::new(),
         };
         PolicyState {
@@ -252,6 +303,7 @@ impl DataplaneService {
             priority: route.priority,
             rewrite_path: if route.rewrite_path.is_empty() { None } else { Some(route.rewrite_path.clone()) },
             add_headers: route.add_headers.clone(),
+            middleware_refs: route.middleware_refs.clone(),
         }
     }
 
@@ -309,10 +361,50 @@ impl DataplaneControl for DataplaneService {
             .map(|p| Self::policy_from_proto(p))
             .collect();
 
+        // Build proxy router routes before consuming the RouteState vec.
+        let router_routes: Vec<crate::proxy::router::Route> = routes.iter().map(|rs| {
+            use crate::proxy::router::{HostMatch, PathMatch, Route as ProxyRoute};
+            let hostnames = rs.hostnames.iter().map(|h| {
+                if h.starts_with("*.") {
+                    HostMatch::Wildcard(h.clone())
+                } else {
+                    HostMatch::Exact(h.clone())
+                }
+            }).collect();
+
+            let mut paths = Vec::new();
+            if !rs.path_exact.is_empty() {
+                paths.push(PathMatch::Exact(rs.path_exact.clone()));
+            }
+            if !rs.path_prefix.is_empty() {
+                paths.push(PathMatch::Prefix(rs.path_prefix.clone()));
+            }
+
+            ProxyRoute {
+                name: rs.name.clone(),
+                hostnames,
+                paths,
+                methods: rs.methods.clone(),
+                headers: Vec::new(),
+                backend: rs.backend_ref.clone(),
+                priority: rs.priority,
+                rewrite_path: rs.rewrite_path.clone(),
+                add_headers: rs.add_headers.clone(),
+                middleware_refs: rs.middleware_refs.clone(),
+            }
+        }).collect();
+
         // Atomically replace all runtime config.
         self.runtime_config
             .apply_full(req.version.clone(), gateways, routes, clusters, policies)
             .await;
+
+        // Push routes to the proxy router.
+        {
+            let route_count = router_routes.len();
+            self.router.write().await.set_routes(router_routes);
+            info!(count = route_count, "Routes pushed to proxy router");
+        }
 
         info!(version = %req.version, "Configuration applied to runtime state");
 
@@ -985,6 +1077,7 @@ impl DataplaneControl for DataplaneService {
 pub async fn run(
     map_manager: Arc<MapManager>,
     runtime_config: Arc<RuntimeConfig>,
+    router: Arc<tokio::sync::RwLock<crate::proxy::router::Router>>,
     flow_tx: broadcast::Sender<proto::FlowEvent>,
     socket_path: &str,
 ) -> anyhow::Result<()> {
@@ -994,7 +1087,7 @@ pub async fn run(
     }
     let uds = UnixListener::bind(socket_path)?;
     let uds_stream = UnixListenerStream::new(uds);
-    let service = DataplaneService::new(map_manager, runtime_config, flow_tx);
+    let service = DataplaneService::new(map_manager, runtime_config, router, flow_tx);
     info!(socket = %socket_path, "gRPC server listening");
 
     tonic::transport::Server::builder()
@@ -1017,8 +1110,11 @@ mod tests {
     fn make_service() -> DataplaneService {
         let mgr = Arc::new(MapManager::new_mock());
         let cfg = Arc::new(RuntimeConfig::new());
+        let router = Arc::new(tokio::sync::RwLock::new(
+            crate::proxy::router::Router::new(),
+        ));
         let (tx, _rx) = crate::flows::flow_channel();
-        DataplaneService::new(mgr, cfg, tx)
+        DataplaneService::new(mgr, cfg, router, tx)
     }
 
     #[tokio::test]
