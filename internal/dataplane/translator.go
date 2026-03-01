@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -367,8 +368,11 @@ func translateVIPs(vips []*configpb.VIPAssignment) []*pb.VIPConfig {
 		}
 		if bfd := v.GetBfdConfig(); bfd != nil {
 			dpVIP.BfdEnabled = bfd.GetEnabled()
-			// BFD intervals in config are strings like "300ms"; use detect_multiplier directly.
 			dpVIP.BfdMultiplier = uint32(bfd.GetDetectMultiplier()) //nolint:gosec // proto field
+			// BFD intervals in config are strings like "300ms"; parse to milliseconds.
+			if d, err := time.ParseDuration(bfd.GetDesiredMinTxInterval()); err == nil {
+				dpVIP.BfdIntervalMs = uint64(d.Milliseconds()) //nolint:gosec // duration to ms
+			}
 		}
 
 		result = append(result, dpVIP)
