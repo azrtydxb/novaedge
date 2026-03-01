@@ -156,6 +156,8 @@ message TLSConfig {
   repeated string cipher_suites = 6;
   // ALPN protocols to negotiate.
   repeated string alpn_protocols = 7;
+  // Skip TLS certificate verification (for backend connections).
+  bool insecure_skip_verify = 8;
 }
 
 // HTTP2Settings holds HTTP/2-specific tuning parameters.
@@ -448,6 +450,10 @@ message BGPConfig {
   repeated string communities = 4;
   // Local preference value.
   uint32 local_preference = 5;
+  // Peer autonomous system numbers (parallel to peer_addresses).
+  repeated uint32 peer_as_numbers = 6;
+  // Peer ports (parallel to peer_addresses).
+  repeated uint32 peer_ports = 7;
 }
 
 // VIPConfig describes a Virtual IP address.
@@ -466,6 +472,12 @@ message VIPConfig {
   string arp_interface = 6;
   // OSPF area ID (when mode = OSPF).
   uint32 ospf_area_id = 7;
+  // Whether BFD (Bidirectional Forwarding Detection) is enabled.
+  bool bfd_enabled = 8;
+  // BFD detection interval in milliseconds.
+  uint64 bfd_interval_ms = 9;
+  // BFD detection multiplier.
+  uint32 bfd_multiplier = 10;
 }
 
 message UpsertVIPRequest {
@@ -549,6 +561,7 @@ enum PolicyType {
   POLICY_TYPE_WAF = 6;
   POLICY_TYPE_CORS = 7;
   POLICY_TYPE_IP_FILTER = 8;
+  POLICY_TYPE_SECURITY_HEADERS = 9;
 }
 
 // RateLimitPolicyConfig defines rate limiting parameters.
@@ -659,6 +672,22 @@ message IPFilterPolicyConfig {
   string source_header = 3;
 }
 
+// SecurityHeadersPolicyConfig defines security header injection parameters.
+message SecurityHeadersPolicyConfig {
+  // Content-Security-Policy header value.
+  string content_security_policy = 1;
+  // X-Frame-Options header value.
+  string x_frame_options = 2;
+  // Whether to set X-Content-Type-Options: nosniff.
+  bool x_content_type_options = 3;
+  // Strict-Transport-Security header value.
+  string strict_transport_security = 4;
+  // Referrer-Policy header value.
+  string referrer_policy = 5;
+  // Permissions-Policy header value.
+  string permissions_policy = 6;
+}
+
 // PolicyConfig describes a typed policy.
 message PolicyConfig {
   // Unique name for the policy.
@@ -675,6 +704,7 @@ message PolicyConfig {
     WAFPolicyConfig waf = 15;
     CORSPolicyConfig cors = 16;
     IPFilterPolicyConfig ip_filter = 17;
+    SecurityHeadersPolicyConfig security_headers = 18;
   }
 }
 

@@ -210,6 +210,17 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 			}
 		}
 
+		// Map middleware pipeline references.
+		for _, mw := range rt.GetPipeline().GetMiddleware() {
+			dpRoute.MiddlewareRefs = append(dpRoute.MiddlewareRefs, mw.GetName())
+		}
+		// Map timeout from first rule's limits.
+		if len(rt.GetRules()) > 0 {
+			if lim := rt.GetRules()[0].GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
+				dpRoute.TimeoutMs = uint64(lim.GetRequestTimeoutMs())
+			}
+		}
+
 		result = append(result, dpRoute)
 	}
 	return result
@@ -286,6 +297,14 @@ func translateClusters(
 			}
 		}
 
+		// Translate backend TLS.
+		if btls := cl.GetTls(); btls != nil && btls.GetEnabled() {
+			dpCluster.BackendTls = &pb.TLSConfig{
+				CaPem:              btls.GetCaCert(),
+				InsecureSkipVerify: btls.GetInsecureSkipVerify(),
+			}
+		}
+
 		result = append(result, dpCluster)
 	}
 	return result
@@ -325,16 +344,31 @@ func translateVIPs(vips []*configpb.VIPAssignment) []*pb.VIPConfig {
 
 		if bgp := v.GetBgpConfig(); bgp != nil {
 			peerAddresses := make([]string, 0, len(bgp.GetPeers()))
+			peerASNumbers := make([]uint32, 0, len(bgp.GetPeers()))
+			peerPorts := make([]uint32, 0, len(bgp.GetPeers()))
 			for _, peer := range bgp.GetPeers() {
 				peerAddresses = append(peerAddresses, peer.GetAddress())
+				peerASNumbers = append(peerASNumbers, peer.GetAs())
+				peerPorts = append(peerPorts, peer.GetPort())
 			}
 			dpVIP.BgpConfig = &pb.BGPConfig{
 				LocalAsn:        bgp.GetLocalAs(),
 				RouterId:        bgp.GetRouterId(),
 				PeerAddresses:   peerAddresses,
+				PeerAsNumbers:   peerASNumbers,
+				PeerPorts:       peerPorts,
 				Communities:     bgp.GetCommunities(),
 				LocalPreference: bgp.GetLocalPreference(),
 			}
+		}
+
+		if ospf := v.GetOspfConfig(); ospf != nil {
+			dpVIP.OspfAreaId = ospf.GetAreaId()
+		}
+		if bfd := v.GetBfdConfig(); bfd != nil {
+			dpVIP.BfdEnabled = bfd.GetEnabled()
+			// BFD intervals in config are strings like "300ms"; use detect_multiplier directly.
+			dpVIP.BfdMultiplier = uint32(bfd.GetDetectMultiplier()) //nolint:gosec // proto field
 		}
 
 		result = append(result, dpVIP)
@@ -443,7 +477,9 @@ func translatePolicies(policies []*configpb.Policy) []*pb.PolicyConfig {
 			if ba := pol.GetBasicAuth(); ba != nil {
 				dpPol.Config = &pb.PolicyConfig_BasicAuth{
 					BasicAuth: &pb.BasicAuthPolicyConfig{
-						Realm: ba.GetRealm(),
+						Realm:              ba.GetRealm(),
+						Htpasswd:           ba.GetHtpasswd(),
+						StripAuthorization: ba.GetStripAuth(),
 					},
 				}
 			}
@@ -451,7 +487,10 @@ func translatePolicies(policies []*configpb.Policy) []*pb.PolicyConfig {
 			if fa := pol.GetForwardAuth(); fa != nil {
 				dpPol.Config = &pb.PolicyConfig_ForwardAuth{
 					ForwardAuth: &pb.ForwardAuthPolicyConfig{
-						Address: fa.GetAddress(),
+						Address:             fa.GetAddress(),
+						AuthRequestHeaders:  fa.GetAuthHeaders(),
+						AuthResponseHeaders: fa.GetResponseHeaders(),
+						TimeoutMs:           uint64(fa.GetTimeoutMs()),
 					},
 				}
 			}
@@ -508,6 +547,33 @@ func translatePolicies(policies []*configpb.Policy) []*pb.PolicyConfig {
 					},
 				}
 			}
+		case configpb.PolicyType_SECURITY_HEADERS:
+			if sh := pol.GetSecurityHeaders(); sh != nil {
+				stsValue := ""
+				if hsts := sh.GetHsts(); hsts != nil && hsts.GetEnabled() {
+					stsValue = fmt.Sprintf("max-age=%d", hsts.GetMaxAgeSeconds())
+					if hsts.GetIncludeSubdomains() {
+						stsValue += "; includeSubDomains"
+					}
+					if hsts.GetPreload() {
+						stsValue += "; preload"
+					}
+				}
+				dpPol.Config = &pb.PolicyConfig_SecurityHeaders{
+					SecurityHeaders: &pb.SecurityHeadersPolicyConfig{
+						ContentSecurityPolicy:   sh.GetContentSecurityPolicy(),
+						XFrameOptions:           sh.GetXFrameOptions(),
+						XContentTypeOptions:     sh.GetXContentTypeOptions(),
+						StrictTransportSecurity: stsValue,
+						ReferrerPolicy:          sh.GetReferrerPolicy(),
+						PermissionsPolicy:       sh.GetPermissionsPolicy(),
+					},
+				}
+			}
+		case configpb.PolicyType_WASM_PLUGIN,
+			configpb.PolicyType_DISTRIBUTED_RATE_LIMIT,
+			configpb.PolicyType_MESH_AUTHORIZATION:
+			// These policy types have no dataplane equivalent yet; skip.
 		}
 
 		result = append(result, dpPol)
@@ -534,7 +600,7 @@ func translatePolicyType(t configpb.PolicyType) pb.PolicyType {
 	case configpb.PolicyType_OIDC:
 		return pb.PolicyType_POLICY_TYPE_OAUTH2
 	case configpb.PolicyType_SECURITY_HEADERS:
-		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED // no Rust equivalent yet
+		return pb.PolicyType_POLICY_TYPE_SECURITY_HEADERS
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}
@@ -552,6 +618,7 @@ func translateWANLinks(wanLinks []*configpb.WANLink) []*pb.WANLinkConfig {
 			Interface: wl.GetIface(),
 			Provider:  wl.GetProvider(),
 			Priority:  uint32(wl.GetCost()), //nolint:gosec // proto field
+			Gateway:   wl.GetTunnelEndpoint().GetPublicIp(),
 		}
 
 		if sla := wl.GetSla(); sla != nil {
