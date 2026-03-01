@@ -1109,7 +1109,7 @@ func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *core
 				continue
 			}
 
-			ready := ep.Conditions.Ready != nil && *ep.Conditions.Ready
+			ready := ep.Conditions.Ready == nil || *ep.Conditions.Ready
 
 			// For each port in the EndpointSlice, create endpoints
 			for _, p := range es.Ports {
@@ -1217,7 +1217,7 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 				continue
 			}
 
-			ready := ep.Conditions.Ready != nil && *ep.Conditions.Ready
+			ready := ep.Conditions.Ready == nil || *ep.Conditions.Ready
 
 			// Build topology labels for locality-aware routing.
 			// Use the pre-loaded node map from buildContext instead of
