@@ -18,10 +18,11 @@ package router
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand/v2"
 	"net"
 	"net/http"
 	"os"
@@ -299,13 +300,17 @@ func (alm *AccessLogMiddleware) Wrap(next http.Handler) http.Handler {
 	})
 }
 
-// shouldSample returns true if this request should be logged based on sample rate.
-// Uses math/rand/v2 (ChaCha8 PRNG) instead of crypto/rand to avoid a syscall per request.
+// shouldSample returns true if this request should be logged based on sample rate
 func (alm *AccessLogMiddleware) shouldSample() bool {
 	if alm.sampleRate >= 1.0 {
 		return true
 	}
-	return rand.Float64() < alm.sampleRate
+	var buf [8]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return true // on error, default to logging
+	}
+	randVal := float64(binary.LittleEndian.Uint64(buf[:])) / float64(^uint64(0))
+	return randVal < alm.sampleRate
 }
 
 // shouldLog returns true if the given status code should be logged

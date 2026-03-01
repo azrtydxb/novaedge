@@ -127,11 +127,11 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 	}
 	writeBufferSize := int(poolConfig.WriteBufferSize)
 	if writeBufferSize <= 0 {
-		writeBufferSize = 64 * 1024 // Default: 64KB
+		writeBufferSize = 32 * 1024 // Default: 32KB
 	}
 	readBufferSize := int(poolConfig.ReadBufferSize)
 	if readBufferSize <= 0 {
-		readBufferSize = 64 * 1024 // Default: 64KB
+		readBufferSize = 32 * 1024 // Default: 32KB
 	}
 
 	// Create HTTP transport with connection pooling
@@ -154,7 +154,7 @@ func NewPool(ctx context.Context, cluster *pb.Cluster, endpoints []*pb.Endpoint,
 		ForceAttemptHTTP2:      true,
 		WriteBufferSize:        writeBufferSize,
 		ReadBufferSize:         readBufferSize,
-		DisableCompression:     true, // Proxy handles compression; avoid double-compress to backends
+		// DisableCompression intentionally left at default (false) — see perf bisect
 	}
 
 	// Configure backend TLS if enabled

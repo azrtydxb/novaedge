@@ -36,18 +36,6 @@ func reusePortControl(_, _ string, c syscall.RawConn) error {
 	var opErr error
 	err := c.Control(func(fd uintptr) {
 		opErr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_REUSEPORT, 1)
-		if opErr != nil {
-			return
-		}
-
-		// Disable delayed ACKs so the kernel ACKs SYN-ACK and early data
-		// immediately, shaving ~40ms off the first RTT on Linux.
-		_ = unix.SetsockoptInt(int(fd), unix.IPPROTO_TCP, unix.TCP_QUICKACK, 1)
-
-		// Increase socket buffer sizes to 256KB for better throughput
-		// under high concurrency. Errors are non-fatal (kernel may cap).
-		_ = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_RCVBUF, 256*1024)
-		_ = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, unix.SO_SNDBUF, 256*1024)
 	})
 	if err != nil {
 		return err

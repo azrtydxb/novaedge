@@ -6,10 +6,16 @@
 
 use std::sync::Arc;
 
+use dashmap::DashMap;
 use tracing::warn;
 
 use super::{MiddlewareResult, Request, Response};
 use crate::config::RuntimeConfig;
+
+/// Shared cache of rate-limiter instances keyed by policy name.
+/// This ensures rate-limit state is preserved across requests.
+static RATE_LIMITERS: std::sync::LazyLock<DashMap<String, super::ratelimit::TokenBucket>> =
+    std::sync::LazyLock::new(DashMap::new);
 
 /// Run the middleware pipeline for a route's `middleware_refs`.
 ///
@@ -31,11 +37,11 @@ pub fn run_pipeline(
         };
 
         let result = match policy.policy_type.as_str() {
-            "rate-limit" => run_rate_limit(&policy.config_json, &request),
-            "basic-auth" => run_basic_auth(&policy.config_json, &request),
+            "rate-limit" => run_rate_limit(policy_name, &policy.config_json, &request),
+            "basic-auth" => run_basic_auth(policy_name, &policy.config_json, &request),
             "cors" => run_cors(&policy.config_json, &request),
-            "ip-filter" => run_ip_filter(&policy.config_json, &request),
-            "waf" => run_waf(&policy.config_json, &request),
+            "ip-filter" => run_ip_filter(policy_name, &policy.config_json, &request),
+            "waf" => run_waf(policy_name, &policy.config_json, &request),
             "security-headers" => {
                 // Security headers are applied on the response path; skip in request phase.
                 MiddlewareResult::Continue(request.clone())
@@ -64,13 +70,15 @@ pub fn run_pipeline(
 
 /// Run the rate-limit middleware.
 ///
-/// TODO: A new `TokenBucket` is created per request so rate-limit state is NOT
-/// preserved across requests.  A proper fix would cache middleware instances
-/// keyed by policy name.
-fn run_rate_limit(config_json: &str, req: &Request) -> MiddlewareResult {
+/// Uses a shared `TokenBucket` cache (keyed by policy name) so rate-limit
+/// state is preserved across requests.
+fn run_rate_limit(policy_name: &str, config_json: &str, req: &Request) -> MiddlewareResult {
     let config: serde_json::Value = match serde_json::from_str(config_json) {
         Ok(v) => v,
-        Err(_) => return MiddlewareResult::Continue(req.clone()),
+        Err(e) => {
+            warn!(policy = %policy_name, error = %e, "malformed rate-limit config JSON, skipping");
+            return MiddlewareResult::Continue(req.clone());
+        }
     };
 
     let rps = config["requests_per_second"]
@@ -78,11 +86,16 @@ fn run_rate_limit(config_json: &str, req: &Request) -> MiddlewareResult {
         .unwrap_or(100.0);
     let burst = config["burst"].as_u64().unwrap_or(10) as u32;
 
-    let limiter = super::ratelimit::TokenBucket::new(super::ratelimit::RateLimitConfig {
-        requests_per_second: rps,
-        burst,
-        key_type: super::ratelimit::RateLimitKeyType::SourceIP,
-    });
+    // Get or create a cached TokenBucket for this policy.
+    let limiter = RATE_LIMITERS
+        .entry(policy_name.to_string())
+        .or_insert_with(|| {
+            super::ratelimit::TokenBucket::new(super::ratelimit::RateLimitConfig {
+                requests_per_second: rps,
+                burst,
+                key_type: super::ratelimit::RateLimitKeyType::SourceIP,
+            })
+        });
 
     let key = &req.client_ip;
     match limiter.check(key) {
@@ -106,10 +119,15 @@ fn run_rate_limit(config_json: &str, req: &Request) -> MiddlewareResult {
 }
 
 /// Run the basic-auth middleware.
-fn run_basic_auth(config_json: &str, req: &Request) -> MiddlewareResult {
+///
+/// Fails closed: malformed config returns 500 rather than allowing the request.
+fn run_basic_auth(policy_name: &str, config_json: &str, req: &Request) -> MiddlewareResult {
     let config: serde_json::Value = match serde_json::from_str(config_json) {
         Ok(v) => v,
-        Err(_) => return MiddlewareResult::Continue(req.clone()),
+        Err(e) => {
+            warn!(policy = %policy_name, error = %e, "malformed basic-auth config JSON, denying request");
+            return MiddlewareResult::Respond(Response::with_status(500, "Internal Server Error"));
+        }
     };
 
     let realm = config["realm"].as_str().unwrap_or("Restricted");
@@ -153,7 +171,10 @@ fn run_basic_auth(config_json: &str, req: &Request) -> MiddlewareResult {
 fn run_cors(config_json: &str, req: &Request) -> MiddlewareResult {
     let config: serde_json::Value = match serde_json::from_str(config_json) {
         Ok(v) => v,
-        Err(_) => return MiddlewareResult::Continue(req.clone()),
+        Err(e) => {
+            warn!(error = %e, "malformed CORS config JSON, skipping");
+            return MiddlewareResult::Continue(req.clone());
+        }
     };
 
     let allowed_origins: Vec<String> = config["allow_origins"]
@@ -215,10 +236,15 @@ fn run_cors(config_json: &str, req: &Request) -> MiddlewareResult {
 }
 
 /// Run the IP filter middleware.
-fn run_ip_filter(config_json: &str, req: &Request) -> MiddlewareResult {
+///
+/// Fails closed: malformed config returns 500 rather than allowing the request.
+fn run_ip_filter(policy_name: &str, config_json: &str, req: &Request) -> MiddlewareResult {
     let config: serde_json::Value = match serde_json::from_str(config_json) {
         Ok(v) => v,
-        Err(_) => return MiddlewareResult::Continue(req.clone()),
+        Err(e) => {
+            warn!(policy = %policy_name, error = %e, "malformed ip-filter config JSON, denying request");
+            return MiddlewareResult::Respond(Response::with_status(500, "Internal Server Error"));
+        }
     };
 
     let action = config["action"].as_str().unwrap_or("allow");
@@ -268,10 +294,15 @@ fn run_ip_filter(config_json: &str, req: &Request) -> MiddlewareResult {
 }
 
 /// Run the WAF middleware.
-fn run_waf(config_json: &str, req: &Request) -> MiddlewareResult {
+///
+/// Fails closed: malformed config returns 500 rather than allowing the request.
+fn run_waf(policy_name: &str, config_json: &str, req: &Request) -> MiddlewareResult {
     let config: serde_json::Value = match serde_json::from_str(config_json) {
         Ok(v) => v,
-        Err(_) => return MiddlewareResult::Continue(req.clone()),
+        Err(e) => {
+            warn!(policy = %policy_name, error = %e, "malformed WAF config JSON, denying request");
+            return MiddlewareResult::Respond(Response::with_status(500, "Internal Server Error"));
+        }
     };
 
     let enabled = config["enabled"].as_bool().unwrap_or(true);
@@ -301,7 +332,7 @@ fn run_waf(config_json: &str, req: &Request) -> MiddlewareResult {
             MiddlewareResult::Respond(Response {
                 status: 403,
                 headers: vec![("Content-Type".into(), "text/plain".into())],
-                body: format!("Forbidden: {description}").into_bytes(),
+                body: b"Forbidden".to_vec(),
             })
         }
         super::waf::WafDecision::Detect {
