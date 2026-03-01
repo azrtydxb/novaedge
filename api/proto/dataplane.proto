@@ -296,6 +296,12 @@ message RouteConfig {
   RetryPolicy retry = 9;
   // Priority for route ordering (lower = higher priority).
   int32 priority = 10;
+  // HTTP methods to match (empty = match all).
+  repeated string methods = 11;
+  // Path rewrite (empty = no rewrite).
+  string rewrite_path = 12;
+  // Headers to add to the proxied request.
+  map<string, string> add_headers = 13;
 }
 
 message UpsertRouteRequest {

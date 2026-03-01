@@ -247,11 +247,11 @@ impl DataplaneService {
             hostnames: route.hostnames.clone(),
             path_prefix,
             path_exact,
-            methods: vec![],
+            methods: route.methods.clone(),
             backend_ref,
             priority: route.priority,
-            rewrite_path: None,
-            add_headers: std::collections::HashMap::new(),
+            rewrite_path: if route.rewrite_path.is_empty() { None } else { Some(route.rewrite_path.clone()) },
+            add_headers: route.add_headers.clone(),
         }
     }
 
@@ -1055,6 +1055,9 @@ mod tests {
                 timeout_ms: 0,
                 retry: None,
                 priority: 10,
+                methods: vec![],
+                rewrite_path: String::new(),
+                add_headers: std::collections::HashMap::new(),
             }],
             clusters: vec![proto::ClusterConfig {
                 name: "cluster-1".into(),
@@ -1161,6 +1164,9 @@ mod tests {
                 timeout_ms: 0,
                 retry: None,
                 priority: 10,
+                methods: vec![],
+                rewrite_path: String::new(),
+                add_headers: std::collections::HashMap::new(),
             }),
         });
         let resp = svc.upsert_route(req).await.unwrap();
@@ -1222,6 +1228,9 @@ mod tests {
                 bgp_config: None,
                 arp_interface: String::new(),
                 ospf_area_id: 0,
+                bfd_enabled: false,
+                bfd_interval_ms: 0,
+                bfd_multiplier: 0,
             }),
         });
         let resp = svc.upsert_vip(req).await.unwrap();

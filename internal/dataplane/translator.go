@@ -222,6 +222,31 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 			}
 		}
 
+		// Map route filters: rewrite_path and add_headers from first matching filter.
+		for _, rule := range rt.GetRules() {
+			for _, f := range rule.GetFilters() {
+				if f.GetType() == configpb.RouteFilterType_URL_REWRITE && f.GetRewritePath() != "" && dpRoute.RewritePath == "" {
+					dpRoute.RewritePath = f.GetRewritePath()
+				}
+				if f.GetType() == configpb.RouteFilterType_ADD_HEADER && len(f.GetAddHeaders()) > 0 && len(dpRoute.AddHeaders) == 0 {
+					dpRoute.AddHeaders = make(map[string]string)
+					for _, hdr := range f.GetAddHeaders() {
+						dpRoute.AddHeaders[hdr.GetName()] = hdr.GetValue()
+					}
+				}
+			}
+		}
+		// Map methods from route matches.
+		methodSet := make(map[string]bool)
+		for _, rule := range rt.GetRules() {
+			for _, match := range rule.GetMatches() {
+				if m := match.GetMethod(); m != "" && !methodSet[m] {
+					methodSet[m] = true
+					dpRoute.Methods = append(dpRoute.Methods, m)
+				}
+			}
+		}
+
 		result = append(result, dpRoute)
 	}
 	return result
