@@ -175,6 +175,50 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 		} else if len(policy.Spec.CORS.AllowOrigins) == 0 {
 			validationErrors = append(validationErrors, "CORS AllowOrigins must not be empty")
 		}
+	case novaedgev1alpha1.PolicyTypeWAF:
+		if policy.Spec.WAF == nil {
+			validationErrors = append(validationErrors, "WAF configuration is required for WAF policy type")
+		}
+	case novaedgev1alpha1.PolicyTypeBasicAuth:
+		if policy.Spec.BasicAuth == nil {
+			validationErrors = append(validationErrors, "BasicAuth configuration is required for BasicAuth policy type")
+		} else if policy.Spec.BasicAuth.SecretRef.Name == "" {
+			validationErrors = append(validationErrors, "BasicAuth SecretRef name must not be empty")
+		}
+	case novaedgev1alpha1.PolicyTypeSecurityHeaders:
+		if policy.Spec.SecurityHeaders == nil {
+			validationErrors = append(validationErrors, "SecurityHeaders configuration is required for SecurityHeaders policy type")
+		}
+	case novaedgev1alpha1.PolicyTypeForwardAuth:
+		if policy.Spec.ForwardAuth == nil {
+			validationErrors = append(validationErrors, "ForwardAuth configuration is required for ForwardAuth policy type")
+		} else if policy.Spec.ForwardAuth.Address == "" {
+			validationErrors = append(validationErrors, "ForwardAuth Address must not be empty")
+		}
+	case novaedgev1alpha1.PolicyTypeOIDC:
+		if policy.Spec.OIDC == nil {
+			validationErrors = append(validationErrors, "OIDC configuration is required for OIDC policy type")
+		} else if policy.Spec.OIDC.ClientID == "" {
+			validationErrors = append(validationErrors, "OIDC ClientID must not be empty")
+		}
+	case novaedgev1alpha1.PolicyTypeWASMPlugin:
+		if policy.Spec.WASMPlugin == nil {
+			validationErrors = append(validationErrors, "WASMPlugin configuration is required for WASMPlugin policy type")
+		} else if policy.Spec.WASMPlugin.Source == "" {
+			validationErrors = append(validationErrors, "WASMPlugin Source must not be empty")
+		}
+	case novaedgev1alpha1.PolicyTypeDistributedRateLimit:
+		if policy.Spec.DistributedRateLimit == nil {
+			validationErrors = append(validationErrors, "DistributedRateLimit configuration is required for DistributedRateLimit policy type")
+		} else if policy.Spec.DistributedRateLimit.RequestsPerSecond <= 0 {
+			validationErrors = append(validationErrors, "DistributedRateLimit RequestsPerSecond must be > 0")
+		}
+	case novaedgev1alpha1.PolicyTypeMeshAuthorization:
+		if policy.Spec.MeshAuthorization == nil {
+			validationErrors = append(validationErrors, "MeshAuthorization configuration is required for MeshAuthorization policy type")
+		} else if len(policy.Spec.MeshAuthorization.Rules) == 0 {
+			validationErrors = append(validationErrors, "MeshAuthorization Rules must not be empty")
+		}
 	default:
 		validationErrors = append(validationErrors,
 			fmt.Sprintf("Invalid policy type %s", policy.Spec.Type))

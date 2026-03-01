@@ -847,7 +847,13 @@ func TestTranslateSnapshot_MeshConfig(t *testing.T) {
 			PrivateKey:    []byte("key-pem"),
 		},
 		InternalServices: []*configpb.InternalService{
-			{Name: "my-svc"},
+			{
+				Name:        "my-svc",
+				MeshEnabled: true,
+				Ports: []*configpb.ServicePort{
+					{Name: "http", Port: 8080},
+				},
+			},
 		},
 	}
 
@@ -1159,9 +1165,9 @@ func TestTranslateSnapshot_VIPs_OSPFAndBFD(t *testing.T) {
 					AreaId: 100,
 				},
 				BfdConfig: &configpb.BFDConfig{
-					Enabled:               true,
-					DetectMultiplier:      3,
-					DesiredMinTxInterval:  "300ms",
+					Enabled:              true,
+					DetectMultiplier:     3,
+					DesiredMinTxInterval: "300ms",
 				},
 			},
 		},

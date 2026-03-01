@@ -76,8 +76,6 @@ func formatEndpointKey(address string, port int32) string {
 // tracerName is the instrumentation name for the router tracer
 const tracerName = "github.com/piwi3910/novaedge/internal/agent/router"
 
-
-
 // routerState holds the immutable routing state that is atomically swapped
 // on each configuration update. ServeHTTP loads a snapshot of this state
 // once per request, so in-flight requests are never blocked by config updates.
