@@ -1075,3 +1075,285 @@ func TestTranslateSnapshot_FullRoundTrip(t *testing.T) {
 		t.Error("expected mesh config")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Tests for newly mapped fields (Batch 2)
+// ---------------------------------------------------------------------------
+
+func TestTranslateSnapshot_Routes_MiddlewareAndTimeout(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		Routes: []*configpb.Route{
+			{
+				Name:      "mw-route",
+				Hostnames: []string{"mw.example.com"},
+				Pipeline: &configpb.MiddlewarePipeline{
+					Middleware: []*configpb.MiddlewareRef{
+						{Name: "rate-limit"},
+						{Name: "jwt-auth"},
+					},
+				},
+				Rules: []*configpb.RouteRule{
+					{
+						Limits: &configpb.RouteLimitsConfig{
+							RequestTimeoutMs: 5000,
+						},
+						BackendRefs: []*configpb.BackendRef{
+							{Name: "svc", Weight: 100},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	rt := req.GetRoutes()[0]
+
+	if len(rt.GetMiddlewareRefs()) != 2 {
+		t.Fatalf("expected 2 middleware refs, got %d", len(rt.GetMiddlewareRefs()))
+	}
+	if rt.GetMiddlewareRefs()[0] != "rate-limit" || rt.GetMiddlewareRefs()[1] != "jwt-auth" {
+		t.Errorf("middleware refs = %v, want [rate-limit, jwt-auth]", rt.GetMiddlewareRefs())
+	}
+	if rt.GetTimeoutMs() != 5000 {
+		t.Errorf("timeout_ms = %d, want %d", rt.GetTimeoutMs(), 5000)
+	}
+}
+
+func TestTranslateSnapshot_Clusters_BackendTLS(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		Clusters: []*configpb.Cluster{
+			{
+				Name: "tls-backend",
+				Tls: &configpb.BackendTLS{
+					Enabled:            true,
+					InsecureSkipVerify: true,
+					CaCert:             []byte("ca-pem"),
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	cl := req.GetClusters()[0]
+
+	if cl.GetBackendTls() == nil {
+		t.Fatal("expected backend TLS config")
+	}
+	if !cl.GetBackendTls().GetInsecureSkipVerify() {
+		t.Error("expected insecure_skip_verify = true")
+	}
+	if string(cl.GetBackendTls().GetCaPem()) != "ca-pem" {
+		t.Errorf("ca_pem = %q, want %q", string(cl.GetBackendTls().GetCaPem()), "ca-pem")
+	}
+}
+
+func TestTranslateSnapshot_VIPs_OSPFAndBFD(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		VipAssignments: []*configpb.VIPAssignment{
+			{
+				VipName: "ospf-vip",
+				Address: "10.0.0.1/32",
+				Mode:    configpb.VIPMode_OSPF,
+				OspfConfig: &configpb.OSPFConfig{
+					AreaId: 100,
+				},
+				BfdConfig: &configpb.BFDConfig{
+					Enabled:               true,
+					DetectMultiplier:      3,
+					DesiredMinTxInterval:  "300ms",
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	vip := req.GetVips()[0]
+
+	if vip.GetOspfAreaId() != 100 {
+		t.Errorf("ospf_area_id = %d, want %d", vip.GetOspfAreaId(), 100)
+	}
+	if !vip.GetBfdEnabled() {
+		t.Error("expected bfd_enabled = true")
+	}
+	if vip.GetBfdMultiplier() != 3 {
+		t.Errorf("bfd_multiplier = %d, want %d", vip.GetBfdMultiplier(), 3)
+	}
+	if vip.GetBfdIntervalMs() != 300 {
+		t.Errorf("bfd_interval_ms = %d, want %d", vip.GetBfdIntervalMs(), 300)
+	}
+}
+
+func TestTranslateSnapshot_VIPs_BGPPeerDetails(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		VipAssignments: []*configpb.VIPAssignment{
+			{
+				VipName: "bgp-detailed",
+				Address: "10.0.0.2/32",
+				Mode:    configpb.VIPMode_BGP,
+				BgpConfig: &configpb.BGPConfig{
+					LocalAs:  65001,
+					RouterId: "10.0.0.1",
+					Peers: []*configpb.BGPPeer{
+						{Address: "10.0.0.254", As: 65002, Port: 179},
+						{Address: "10.0.0.253", As: 65003, Port: 1179},
+					},
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	bgp := req.GetVips()[0].GetBgpConfig()
+
+	if len(bgp.GetPeerAsNumbers()) != 2 {
+		t.Fatalf("expected 2 peer AS numbers, got %d", len(bgp.GetPeerAsNumbers()))
+	}
+	if bgp.GetPeerAsNumbers()[0] != 65002 || bgp.GetPeerAsNumbers()[1] != 65003 {
+		t.Errorf("peer AS numbers = %v, want [65002, 65003]", bgp.GetPeerAsNumbers())
+	}
+	if bgp.GetPeerPorts()[0] != 179 || bgp.GetPeerPorts()[1] != 1179 {
+		t.Errorf("peer ports = %v, want [179, 1179]", bgp.GetPeerPorts())
+	}
+}
+
+func TestTranslateSnapshot_Policies_BasicAuth_FullFields(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		Policies: []*configpb.Policy{
+			{
+				Name: "full-basic-auth",
+				Type: configpb.PolicyType_BASIC_AUTH,
+				BasicAuth: &configpb.BasicAuthConfig{
+					Realm:     "Admin",
+					Htpasswd:  "admin:$apr1$hash",
+					StripAuth: true,
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	ba := req.GetPolicies()[0].GetBasicAuth()
+
+	if ba.GetHtpasswd() != "admin:$apr1$hash" {
+		t.Errorf("htpasswd = %q, want %q", ba.GetHtpasswd(), "admin:$apr1$hash")
+	}
+	if !ba.GetStripAuthorization() {
+		t.Error("expected strip_authorization = true")
+	}
+}
+
+func TestTranslateSnapshot_Policies_ForwardAuth_FullFields(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		Policies: []*configpb.Policy{
+			{
+				Name: "full-fwd-auth",
+				Type: configpb.PolicyType_FORWARD_AUTH,
+				ForwardAuth: &configpb.ForwardAuthConfig{
+					Address:         "http://auth:8080/verify",
+					AuthHeaders:     []string{"Authorization", "X-Custom"},
+					ResponseHeaders: []string{"X-User-Id"},
+					TimeoutMs:       3000,
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	fa := req.GetPolicies()[0].GetForwardAuth()
+
+	if len(fa.GetAuthRequestHeaders()) != 2 {
+		t.Fatalf("expected 2 auth request headers, got %d", len(fa.GetAuthRequestHeaders()))
+	}
+	if fa.GetAuthRequestHeaders()[0] != "Authorization" {
+		t.Errorf("auth request header[0] = %q", fa.GetAuthRequestHeaders()[0])
+	}
+	if len(fa.GetAuthResponseHeaders()) != 1 || fa.GetAuthResponseHeaders()[0] != "X-User-Id" {
+		t.Errorf("auth response headers = %v, want [X-User-Id]", fa.GetAuthResponseHeaders())
+	}
+	if fa.GetTimeoutMs() != 3000 {
+		t.Errorf("timeout_ms = %d, want %d", fa.GetTimeoutMs(), 3000)
+	}
+}
+
+func TestTranslateSnapshot_Policies_SecurityHeaders(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		Policies: []*configpb.Policy{
+			{
+				Name: "sec-headers",
+				Type: configpb.PolicyType_SECURITY_HEADERS,
+				SecurityHeaders: &configpb.SecurityHeadersConfig{
+					ContentSecurityPolicy: "default-src 'self'",
+					XFrameOptions:         "DENY",
+					XContentTypeOptions:   true,
+					ReferrerPolicy:        "no-referrer",
+					PermissionsPolicy:     "geolocation=()",
+					Hsts: &configpb.HSTSConfig{
+						Enabled:           true,
+						MaxAgeSeconds:     31536000,
+						IncludeSubdomains: true,
+						Preload:           true,
+					},
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	pol := req.GetPolicies()[0]
+
+	if pol.GetPolicyType() != pb.PolicyType_POLICY_TYPE_SECURITY_HEADERS {
+		t.Errorf("policy type = %v, want SECURITY_HEADERS", pol.GetPolicyType())
+	}
+
+	sh := pol.GetSecurityHeaders()
+	if sh == nil {
+		t.Fatal("expected security headers config")
+	}
+	if sh.GetContentSecurityPolicy() != "default-src 'self'" {
+		t.Errorf("CSP = %q", sh.GetContentSecurityPolicy())
+	}
+	if sh.GetXFrameOptions() != "DENY" {
+		t.Errorf("X-Frame-Options = %q", sh.GetXFrameOptions())
+	}
+	if !sh.GetXContentTypeOptions() {
+		t.Error("expected x_content_type_options = true")
+	}
+	if sh.GetStrictTransportSecurity() != "max-age=31536000; includeSubDomains; preload" {
+		t.Errorf("STS = %q", sh.GetStrictTransportSecurity())
+	}
+	if sh.GetReferrerPolicy() != "no-referrer" {
+		t.Errorf("referrer policy = %q", sh.GetReferrerPolicy())
+	}
+}
+
+func TestTranslateSnapshot_WANLinks_Gateway(t *testing.T) {
+	snap := &configpb.ConfigSnapshot{
+		WanLinks: []*configpb.WANLink{
+			{
+				Name:     "wan-with-gw",
+				Iface:    "eth0",
+				Provider: "ISP-B",
+				Cost:     5,
+				TunnelEndpoint: &configpb.WANTunnelEndpoint{
+					PublicIp: "203.0.113.1",
+					Port:     51820,
+				},
+			},
+		},
+	}
+
+	req := TranslateSnapshot(snap)
+	wl := req.GetWanLinks()[0]
+
+	if wl.GetGateway() != "203.0.113.1" {
+		t.Errorf("gateway = %q, want %q", wl.GetGateway(), "203.0.113.1")
+	}
+}
+
+func TestTranslateSnapshot_PolicyTypes_SecurityHeaders(t *testing.T) {
+	got := translatePolicyType(configpb.PolicyType_SECURITY_HEADERS)
+	if got != pb.PolicyType_POLICY_TYPE_SECURITY_HEADERS {
+		t.Errorf("translatePolicyType(SECURITY_HEADERS) = %v, want POLICY_TYPE_SECURITY_HEADERS", got)
+	}
+}

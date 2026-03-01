@@ -370,8 +370,8 @@ func translateVIPs(vips []*configpb.VIPAssignment) []*pb.VIPConfig {
 			dpVIP.BfdEnabled = bfd.GetEnabled()
 			dpVIP.BfdMultiplier = uint32(bfd.GetDetectMultiplier()) //nolint:gosec // proto field
 			// BFD intervals in config are strings like "300ms"; parse to milliseconds.
-			if d, err := time.ParseDuration(bfd.GetDesiredMinTxInterval()); err == nil {
-				dpVIP.BfdIntervalMs = uint64(d.Milliseconds()) //nolint:gosec // duration to ms
+			if d, err := time.ParseDuration(bfd.GetDesiredMinTxInterval()); err == nil && d > 0 {
+				dpVIP.BfdIntervalMs = uint64(d.Milliseconds())
 			}
 		}
 
@@ -489,13 +489,16 @@ func translatePolicies(policies []*configpb.Policy) []*pb.PolicyConfig {
 			}
 		case configpb.PolicyType_FORWARD_AUTH:
 			if fa := pol.GetForwardAuth(); fa != nil {
+				faCfg := &pb.ForwardAuthPolicyConfig{
+					Address:             fa.GetAddress(),
+					AuthRequestHeaders:  fa.GetAuthHeaders(),
+					AuthResponseHeaders: fa.GetResponseHeaders(),
+				}
+				if fa.GetTimeoutMs() > 0 {
+					faCfg.TimeoutMs = uint64(fa.GetTimeoutMs())
+				}
 				dpPol.Config = &pb.PolicyConfig_ForwardAuth{
-					ForwardAuth: &pb.ForwardAuthPolicyConfig{
-						Address:             fa.GetAddress(),
-						AuthRequestHeaders:  fa.GetAuthHeaders(),
-						AuthResponseHeaders: fa.GetResponseHeaders(),
-						TimeoutMs:           uint64(fa.GetTimeoutMs()),
-					},
+					ForwardAuth: faCfg,
 				}
 			}
 		case configpb.PolicyType_WAF:
