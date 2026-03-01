@@ -27,7 +27,6 @@ pub struct LoadResult {
 /// `MapManager` wrapping the real maps plus the flow-event ring buffer.
 #[cfg(target_os = "linux")]
 pub fn load_ebpf(path: &str) -> anyhow::Result<LoadResult> {
-    use aya::programs::{tc, SchedClassifier, TcAttachType, Xdp, XdpFlags};
     use aya::Ebpf;
     use tracing::info;
 
