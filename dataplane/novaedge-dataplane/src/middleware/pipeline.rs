@@ -109,7 +109,7 @@ fn apply_security_headers(config_json: &str, resp: &mut Response) {
         hsts_include_subdomains: true,
         content_type_nosniff: config["x_content_type_options"]
             .as_str()
-            .map_or(true, |v| v == "nosniff"),
+            .is_none_or(|v| v == "nosniff"),
         frame_options: config["x_frame_options"].as_str().map(String::from),
         xss_protection: true,
         referrer_policy: config["referrer_policy"].as_str().map(String::from),
