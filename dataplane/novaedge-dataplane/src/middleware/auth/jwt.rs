@@ -1,12 +1,13 @@
 //! JWT (JSON Web Token) validation middleware.
 //!
 //! Provides claim-level validation (expiration, not-before, issuer, audience)
-//! without full cryptographic signature verification (which would require a
-//! crypto library such as `ring` or `jsonwebtoken`).
+//! with HMAC-SHA256 signature verification when a secret is configured.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::Engine;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 
 /// JWT validator configuration.
 #[derive(Debug, Clone)]
@@ -53,13 +54,26 @@ impl JwtValidator {
 
     /// Parse and validate a JWT token.
     ///
-    /// Performs structural validation and claim checks (expiration, not-before,
-    /// issuer, audience). Full cryptographic signature verification is not
-    /// implemented -- that would require a dependency like `ring`.
+    /// Verifies the HMAC-SHA256 signature when a secret is configured,
+    /// then validates claims (expiration, not-before, issuer, audience).
     pub fn validate(&self, token: &str) -> Result<JwtClaims, String> {
         let parts: Vec<&str> = token.split('.').collect();
         if parts.len() != 3 {
             return Err("invalid JWT format".into());
+        }
+
+        // Verify HMAC-SHA256 signature if a secret is configured.
+        if let Some(ref secret) = self.config.secret {
+            let signing_input = format!("{}.{}", parts[0], parts[1]);
+            let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(parts[2])
+                .map_err(|e| format!("signature base64 decode error: {e}"))?;
+
+            let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+                .map_err(|e| format!("HMAC key error: {e}"))?;
+            mac.update(signing_input.as_bytes());
+            mac.verify_slice(&signature)
+                .map_err(|_| "invalid signature".to_string())?;
         }
 
         // Decode payload (part 1).
@@ -483,5 +497,65 @@ mod tests {
     #[test]
     fn parse_claims_invalid_json() {
         assert!(parse_jwt_claims("not json").is_err());
+    }
+
+    /// Helper: build a JWT with valid HMAC-SHA256 signature.
+    fn make_signed_jwt(payload_json: &str, secret: &str) -> String {
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(r#"{"alg":"HS256","typ":"JWT"}"#);
+        let payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json);
+        let signing_input = format!("{header}.{payload}");
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        mac.update(signing_input.as_bytes());
+        let sig = mac.finalize().into_bytes();
+        let sig_b64 =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig);
+        format!("{signing_input}.{sig_b64}")
+    }
+
+    #[test]
+    fn valid_signature_accepted() {
+        let secret = "my-secret-key";
+        let validator = JwtValidator::new(JwtConfig {
+            secret: Some(secret.into()),
+            issuer: None,
+            audiences: vec![],
+            required_claims: vec![],
+        });
+
+        let payload = format!(r#"{{"sub":"user1","exp":{}}}"#, future_ts());
+        let token = make_signed_jwt(&payload, secret);
+        assert!(validator.validate(&token).is_ok());
+    }
+
+    #[test]
+    fn invalid_signature_rejected() {
+        let validator = JwtValidator::new(JwtConfig {
+            secret: Some("correct-secret".into()),
+            issuer: None,
+            audiences: vec![],
+            required_claims: vec![],
+        });
+
+        let payload = format!(r#"{{"sub":"user1","exp":{}}}"#, future_ts());
+        let token = make_signed_jwt(&payload, "wrong-secret");
+        assert_eq!(validator.validate(&token).unwrap_err(), "invalid signature");
+    }
+
+    #[test]
+    fn no_secret_skips_verification() {
+        let validator = JwtValidator::new(JwtConfig {
+            secret: None,
+            issuer: None,
+            audiences: vec![],
+            required_claims: vec![],
+        });
+
+        // Token with garbage signature still passes when no secret is set.
+        let payload = format!(r#"{{"sub":"user1","exp":{}}}"#, future_ts());
+        let token = make_jwt(&payload);
+        assert!(validator.validate(&token).is_ok());
     }
 }
