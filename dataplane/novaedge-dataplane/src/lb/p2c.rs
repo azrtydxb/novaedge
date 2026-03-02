@@ -62,12 +62,19 @@ impl LoadBalancer for PowerOfTwoChoices {
         }
 
         let mut rng = rand::thread_rng();
-        let a = healthy[rng.gen_range(0..healthy.len())];
-        let mut b = healthy[rng.gen_range(0..healthy.len())];
-        // Ensure we pick two distinct candidates (if possible).
-        if b == a && healthy.len() > 1 {
-            b = healthy[rng.gen_range(0..healthy.len())];
-        }
+        let ai = rng.gen_range(0..healthy.len());
+        let a = healthy[ai];
+        // Ensure we pick two distinct candidates.
+        let bi = if healthy.len() == 2 {
+            1 - ai
+        } else {
+            let mut idx = rng.gen_range(0..healthy.len() - 1);
+            if idx >= ai {
+                idx += 1;
+            }
+            idx
+        };
+        let b = healthy[bi];
 
         let ca = self.connections[a].load(Ordering::Relaxed);
         let cb = self.connections[b].load(Ordering::Relaxed);
