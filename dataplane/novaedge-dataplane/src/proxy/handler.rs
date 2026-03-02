@@ -321,14 +321,33 @@ impl ProxyHandler {
 
         // --- Normal HTTP forwarding ---
 
-        // Collect the incoming body.
-        let body_bytes = match req.into_body().collect().await {
+        // Check Content-Length against max body size (default 10 MiB).
+        const MAX_BODY_SIZE: u64 = 10 * 1024 * 1024;
+        if let Some(cl) = req
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+        {
+            if cl > MAX_BODY_SIZE {
+                return Ok(hyper::Response::builder()
+                    .status(413)
+                    .body(Full::new(Bytes::from("Payload Too Large")))
+                    .unwrap());
+            }
+        }
+
+        // Collect the incoming body with size limit.
+        let body_bytes = match http_body_util::Limited::new(req.into_body(), MAX_BODY_SIZE as usize)
+            .collect()
+            .await
+        {
             Ok(collected) => collected.to_bytes(),
             Err(e) => {
                 warn!("Failed to read request body: {e}");
                 return Ok(hyper::Response::builder()
-                    .status(400)
-                    .body(Full::new(Bytes::from("Bad request body")))
+                    .status(413)
+                    .body(Full::new(Bytes::from("Payload Too Large")))
                     .unwrap());
             }
         };
@@ -373,18 +392,23 @@ impl ProxyHandler {
             }
         };
 
-        // Send the request to the upstream.
+        // Send the request to the upstream and measure latency.
+        let upstream_start = std::time::Instant::now();
         let result = match self.client.request(upstream_req).await {
             Ok(upstream_resp) => {
                 let status = upstream_resp.status();
+
+                let upstream_latency = upstream_start.elapsed();
 
                 // Record success/failure based on status code.
                 if status.is_server_error() {
                     cb.record_failure();
                     self.outlier_detector.record_failure(backend_addr);
+                    balancer.report(backend_idx, upstream_latency, false);
                 } else {
                     cb.record_success();
                     self.outlier_detector.record_success(backend_addr);
+                    balancer.report(backend_idx, upstream_latency, true);
                 }
 
                 let resp_headers: Vec<(String, String)> = upstream_resp
@@ -458,8 +482,10 @@ impl ProxyHandler {
             }
             Err(e) => {
                 // Record failure for circuit breaker and outlier detection.
+                let upstream_latency = upstream_start.elapsed();
                 cb.record_failure();
                 self.outlier_detector.record_failure(backend_addr);
+                balancer.report(backend_idx, upstream_latency, false);
 
                 warn!(
                     backend = %backend_addr,
@@ -469,7 +495,7 @@ impl ProxyHandler {
                 Ok(hyper::Response::builder()
                     .status(502)
                     .header("X-Route", route.name.as_str())
-                    .body(Full::new(Bytes::from(format!("Upstream error: {e}"))))
+                    .body(Full::new(Bytes::from("Bad Gateway")))
                     .unwrap())
             }
         };

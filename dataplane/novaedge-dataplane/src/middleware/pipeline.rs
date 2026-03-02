@@ -12,6 +12,10 @@ use tracing::warn;
 use super::{MiddlewareResult, Request, Response};
 use crate::config::RuntimeConfig;
 
+/// Maximum number of rate-limiter instances to cache.
+/// Beyond this, the oldest entries are evicted to prevent unbounded memory growth.
+const MAX_RATE_LIMITERS: usize = 10_000;
+
 /// Shared cache of rate-limiter instances keyed by policy name.
 /// This ensures rate-limit state is preserved across requests.
 static RATE_LIMITERS: std::sync::LazyLock<DashMap<String, super::ratelimit::TokenBucket>> =
@@ -206,13 +210,21 @@ fn run_rate_limit(policy_name: &str, config_json: &str, req: &Request) -> Middle
     let config: serde_json::Value = match serde_json::from_str(config_json) {
         Ok(v) => v,
         Err(e) => {
-            warn!(policy = %policy_name, error = %e, "malformed rate-limit config JSON, skipping");
-            return MiddlewareResult::Continue(req.clone());
+            warn!(policy = %policy_name, error = %e, "malformed rate-limit config JSON, denying request");
+            return MiddlewareResult::Respond(Response::with_status(500, "Internal Server Error"));
         }
     };
 
     let rps = config["requests_per_second"].as_f64().unwrap_or(100.0);
     let burst = config["burst"].as_u64().unwrap_or(10) as u32;
+
+    // Evict stale entries if cache is too large.
+    if RATE_LIMITERS.len() > MAX_RATE_LIMITERS {
+        // Cleanup stale per-key state inside each limiter.
+        for entry in RATE_LIMITERS.iter() {
+            entry.value().cleanup(std::time::Duration::from_secs(300));
+        }
+    }
 
     // Get or create a cached TokenBucket for this policy.
     let limiter = RATE_LIMITERS

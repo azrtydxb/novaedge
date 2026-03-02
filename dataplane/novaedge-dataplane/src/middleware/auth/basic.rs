@@ -4,6 +4,18 @@ use std::collections::HashMap;
 
 use base64::Engine;
 
+/// Constant-time byte comparison to prevent timing attacks.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
 /// HTTP Basic authentication handler.
 pub struct BasicAuth {
     /// Realm string for the WWW-Authenticate header.
@@ -36,7 +48,7 @@ impl BasicAuth {
                     if let Ok(creds) = String::from_utf8(decoded) {
                         if let Some((user, pass)) = creds.split_once(':') {
                             if let Some(expected) = self.users.get(user) {
-                                if expected == pass {
+                                if constant_time_eq(expected.as_bytes(), pass.as_bytes()) {
                                     return super::AuthResult::Authenticated {
                                         user: user.to_string(),
                                         claims: vec![],

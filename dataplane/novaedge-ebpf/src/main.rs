@@ -455,9 +455,7 @@ fn try_novaedge_arp(ctx: &XdpContext) -> Result<u32, ()> {
         (*arp).sha = mac;
         (*arp).spa = target_ip;
 
-        // Ethernet: swap src/dst and set our MAC as source
-        let eth_dst = (*eth).dst_addr;
-        (*eth).dst_addr = eth_dst; // Will be overwritten below
+        // Ethernet: set dst to original sender, src to our VIP MAC
         (*eth).dst_addr = sender_mac;
         (*eth).src_addr = mac;
     }

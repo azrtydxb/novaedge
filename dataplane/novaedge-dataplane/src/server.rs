@@ -1118,6 +1118,18 @@ pub async fn run(
         std::fs::create_dir_all(parent)?;
     }
     let uds = UnixListener::bind(socket_path)?;
+
+    // Restrict socket permissions to owner only (0o600) to prevent
+    // unauthorized processes from sending config to the dataplane.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        if let Err(e) = std::fs::set_permissions(socket_path, perms) {
+            warn!(error = %e, "Failed to set socket permissions");
+        }
+    }
+
     let uds_stream = UnixListenerStream::new(uds);
     let service = DataplaneService::new(map_manager, runtime_config, router, flow_tx);
     info!(socket = %socket_path, "gRPC server listening");

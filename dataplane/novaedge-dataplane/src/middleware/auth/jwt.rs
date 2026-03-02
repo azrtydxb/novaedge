@@ -161,47 +161,37 @@ impl JwtValidator {
     }
 }
 
-/// Simple JWT claims parser (avoids `serde_json` dependency).
+/// Parse JWT claims from a JSON payload using serde_json.
 fn parse_jwt_claims(json: &str) -> Result<JwtClaims, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(json).map_err(|e| format!("invalid JSON payload: {e}"))?;
+
+    let obj = value
+        .as_object()
+        .ok_or_else(|| "JWT payload is not a JSON object".to_string())?;
+
+    let mut extra = Vec::new();
+    for (k, v) in obj {
+        match k.as_str() {
+            "sub" | "iss" | "aud" | "exp" | "nbf" | "iat" => {} // handled below
+            _ => {
+                let val_str = match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                extra.push((k.clone(), val_str));
+            }
+        }
+    }
+
     Ok(JwtClaims {
-        sub: extract_json_string(json, "sub"),
-        iss: extract_json_string(json, "iss"),
-        aud: extract_json_string(json, "aud"),
-        exp: extract_json_number(json, "exp"),
-        nbf: extract_json_number(json, "nbf"),
-        iat: extract_json_number(json, "iat"),
-        extra: vec![],
-    })
-}
-
-/// Extract a string value from a simple JSON object by key.
-fn extract_json_string(json: &str, key: &str) -> Option<String> {
-    let pattern = format!("\"{}\":\"", key);
-    // Also try with a space after the colon.
-    let pattern_space = format!("\"{}\": \"", key);
-    let (start, plen) = if let Some(pos) = json.find(&pattern) {
-        (pos, pattern.len())
-    } else if let Some(pos) = json.find(&pattern_space) {
-        (pos, pattern_space.len())
-    } else {
-        return None;
-    };
-    let value_start = start + plen;
-    json[value_start..]
-        .find('"')
-        .map(|end| json[value_start..value_start + end].to_string())
-}
-
-/// Extract a numeric value from a simple JSON object by key.
-fn extract_json_number(json: &str, key: &str) -> Option<u64> {
-    let pattern = format!("\"{}\":", key);
-    json.find(&pattern).and_then(|start| {
-        let value_start = start + pattern.len();
-        let rest = json[value_start..].trim_start();
-        let end = rest
-            .find(|c: char| !c.is_ascii_digit())
-            .unwrap_or(rest.len());
-        rest[..end].parse().ok()
+        sub: obj.get("sub").and_then(|v| v.as_str()).map(String::from),
+        iss: obj.get("iss").and_then(|v| v.as_str()).map(String::from),
+        aud: obj.get("aud").and_then(|v| v.as_str()).map(String::from),
+        exp: obj.get("exp").and_then(|v| v.as_u64()),
+        nbf: obj.get("nbf").and_then(|v| v.as_u64()),
+        iat: obj.get("iat").and_then(|v| v.as_u64()),
+        extra,
     })
 }
 
@@ -475,28 +465,23 @@ mod tests {
     }
 
     #[test]
-    fn extract_json_string_works() {
-        assert_eq!(
-            extract_json_string(r#"{"sub":"hello","iss":"world"}"#, "sub"),
-            Some("hello".into())
-        );
-        assert_eq!(
-            extract_json_string(r#"{"sub":"hello","iss":"world"}"#, "iss"),
-            Some("world".into())
-        );
-        assert_eq!(extract_json_string(r#"{"sub":"hello"}"#, "missing"), None);
+    fn parse_claims_with_serde() {
+        let claims = parse_jwt_claims(r#"{"sub":"hello","iss":"world","exp":1234567890}"#).unwrap();
+        assert_eq!(claims.sub, Some("hello".into()));
+        assert_eq!(claims.iss, Some("world".into()));
+        assert_eq!(claims.exp, Some(1234567890));
     }
 
     #[test]
-    fn extract_json_number_works() {
-        assert_eq!(
-            extract_json_number(r#"{"exp":1234567890}"#, "exp"),
-            Some(1234567890)
-        );
-        assert_eq!(
-            extract_json_number(r#"{"exp":1234567890,"nbf":999}"#, "nbf"),
-            Some(999)
-        );
-        assert_eq!(extract_json_number(r#"{"exp":"notnum"}"#, "exp"), None);
+    fn parse_claims_extra_fields() {
+        let claims =
+            parse_jwt_claims(r#"{"sub":"u1","role":"admin","exp":9999999999}"#).unwrap();
+        assert_eq!(claims.sub, Some("u1".into()));
+        assert!(claims.extra.iter().any(|(k, v)| k == "role" && v == "admin"));
+    }
+
+    #[test]
+    fn parse_claims_invalid_json() {
+        assert!(parse_jwt_claims("not json").is_err());
     }
 }
