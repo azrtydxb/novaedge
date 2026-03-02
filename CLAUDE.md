@@ -4,6 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Critical Rules
 
+- **DATAPLANE ARCHITECTURE: ALL traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC) MUST flow through the Rust dataplane + eBPF.** The Go agent is a CONFIG AGENT ONLY — it handles Kubernetes API interaction, config translation, VIP management, iptables/nftables, and eBPF program lifecycle. It does NOT serve user traffic. The Rust dataplane (`dataplane/`) is the traffic handler. Any Go code in `internal/agent/server/`, `internal/agent/router/`, `internal/agent/lb/`, `internal/agent/upstream/`, `internal/agent/policy/` that handles live traffic is LEGACY and must be migrated to Rust then removed. NEVER claim the migration is done until Rust binds ports 80/443, E2E tests pass through Rust, and legacy Go traffic-handling code is removed.
 - **NEVER create version tags (`git tag`) or push tags after merging PRs unless the user explicitly asks for a new release/version.** Tagging triggers the release workflow which builds and publishes Docker images and GitHub releases. Only tag when specifically instructed.
 - **ALWAYS file GitHub issues for pre-existing problems discovered during work.** When you encounter bugs, lint failures, broken tests, or other issues unrelated to the current task, create a `gh issue` for each one instead of ignoring them.
 - **ALWAYS use git worktrees for all code changes.** Never commit directly to `main`. The workflow is:
@@ -29,12 +30,13 @@ NovaEdge is a distributed Kubernetes-native load balancer, reverse proxy, VIP co
 
 ## Architecture
 
-The system consists of four major components:
+The system consists of five major components:
 
 1. **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
 2. **Kubernetes Controller (Control-Plane)**: Runs as a Deployment, watches CRDs/Ingress/Gateway API, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
-3. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L4/L7 load balancing, VIP management (ARP/BGP/OSPF), and executes routing/filtering/policy logic
-4. **CRDs** (12 types):
+3. **Node Agent (Config Agent)**: Runs as a DaemonSet sidecar with hostNetwork. This is a **config-only agent** — it receives ConfigSnapshots from the controller, translates them to dataplane config, pushes to the Rust dataplane via gRPC, manages VIP binding (ARP/BGP/OSPF/BFD), iptables/nftables rules, and eBPF program lifecycle. **It does NOT handle user traffic.**
+4. **Rust Dataplane (Traffic Handler)**: Runs as a DaemonSet sidecar alongside the Go agent. This is the **actual data plane** — it binds ports 80/443, handles ALL L4/L7 traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC), executes routing, middleware, policies, load balancing, and connection pooling. Optionally accelerated by eBPF XDP for L4 fast path.
+5. **CRDs** (12 types):
    - Core: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
    - Certificate & IP: `ProxyCertificate`, `ProxyIPPool`
    - SD-WAN: `ProxyWANLink`, `ProxyWANPolicy`
