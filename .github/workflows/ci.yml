@@ -66,6 +66,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -110,8 +112,7 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.10.1
-          args: --timeout=10m
-          only-new-issues: true
+          args: --timeout=10m --new-from-rev=origin/main
 
       - name: Check go mod tidy
         run: |

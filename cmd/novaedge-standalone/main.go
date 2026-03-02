@@ -16,6 +16,7 @@ limitations under the License.
 
 // Package main provides the standalone NovaEdge load balancer entry point.
 // This runs NovaEdge without Kubernetes, reading configuration from a YAML file.
+// Traffic handling is delegated to the Rust dataplane sidecar.
 package main
 
 import (
@@ -33,6 +34,7 @@ import (
 	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
 	"github.com/piwi3910/novaedge/internal/agent/server"
 	"github.com/piwi3910/novaedge/internal/agent/vip"
+	dpctl "github.com/piwi3910/novaedge/internal/dataplane"
 	"github.com/piwi3910/novaedge/internal/standalone"
 )
 
@@ -49,6 +51,7 @@ var (
 	metricsPort     int
 	healthProbePort int
 	logLevel        string
+	dataplaneSocket string
 )
 
 func main() {
@@ -57,6 +60,8 @@ func main() {
 	flag.IntVar(&metricsPort, "metrics-port", 9090, "Port for Prometheus metrics")
 	flag.IntVar(&healthProbePort, "health-probe-port", 8080, "Port for health probes")
 	flag.StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
+	flag.StringVar(&dataplaneSocket, "dataplane-socket", dpctl.DefaultDataplaneSocket,
+		"Unix domain socket path for the Rust dataplane daemon")
 	flag.Parse()
 
 	// Setup logger
@@ -98,8 +103,15 @@ func main() {
 		vipManager = nil
 	}
 
-	// Create HTTP server
-	httpServer := server.NewHTTPServer(logger)
+	// Create dataplane client for Rust forwarding plane
+	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
+	if dpErr != nil {
+		logger.Fatal("Failed to connect to Rust dataplane",
+			zap.String("socket", dataplaneSocket),
+			zap.Error(dpErr))
+	}
+	dpTranslator := dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
+	logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
 
 	// Create metrics server
 	metricsServer := server.NewMetricsServer(logger, metricsPort)
@@ -125,7 +137,7 @@ func main() {
 	configChan := make(chan error, 1)
 	go func() {
 		configChan <- configWatcher.Start(ctx, func(snapshot *agentconfig.Snapshot) error {
-			// Apply new configuration to HTTP server and VIP manager
+			// Apply new configuration to VIP manager and Rust dataplane
 			logger.Info("Applying new configuration",
 				zap.String("version", snapshot.Version),
 				zap.Int("gateways", len(snapshot.Gateways)),
@@ -137,26 +149,20 @@ func main() {
 			if vipManager != nil {
 				if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
 					logger.Error("Failed to apply VIP assignments", zap.Error(err))
-					// Don't fail the whole config update
 				}
 			}
 
-			// Apply HTTP server config
-			if err := httpServer.ApplyConfig(ctx, snapshot); err != nil {
+			// Sync all config to Rust dataplane (L7 forwarding, routing, policies).
+			if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
+				logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
 				healthServer.SetReady(false)
-				return err
+				return syncErr
 			}
 
 			// Mark agent as ready after successful config application
 			healthServer.SetReady(true)
 			return nil
 		})
-	}()
-
-	// Start HTTP server
-	serverChan := make(chan error, 1)
-	go func() {
-		serverChan <- httpServer.Start(ctx)
 	}()
 
 	// Start metrics server
@@ -177,8 +183,6 @@ func main() {
 		if err != nil && ctx.Err() == nil {
 			logger.Error("Config watcher failed", zap.Error(err))
 		}
-	case err := <-serverChan:
-		logger.Error("HTTP server failed", zap.Error(err))
 	case err := <-metricsChan:
 		logger.Error("Metrics server failed", zap.Error(err))
 	case err := <-healthChan:
@@ -202,9 +206,11 @@ func main() {
 		}
 	}
 
-	// Shutdown HTTP server
-	if err := httpServer.Shutdown(shutdownCtx); err != nil {
-		logger.Error("Error during HTTP server shutdown", zap.Error(err))
+	// Shutdown dataplane client
+	if dpClient != nil {
+		if err := dpClient.Close(); err != nil {
+			logger.Error("Error closing dataplane client", zap.Error(err))
+		}
 	}
 
 	// Shutdown metrics server

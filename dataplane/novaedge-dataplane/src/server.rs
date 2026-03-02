@@ -278,14 +278,17 @@ impl DataplaneService {
 
     /// Convert a proto RouteConfig to our RouteState.
     fn route_from_proto(route: &proto::RouteConfig) -> RouteState {
-        let (path_prefix, path_exact) = route
+        let (path_prefix, path_exact, path_regex) = route
             .path_match
             .as_ref()
             .map(|pm| {
                 if pm.match_type == proto::PathMatchType::PathMatchPrefix as i32 {
-                    (pm.value.clone(), String::new())
+                    (pm.value.clone(), String::new(), String::new())
+                } else if pm.match_type == proto::PathMatchType::PathMatchRegex as i32 {
+                    (String::new(), String::new(), pm.value.clone())
                 } else {
-                    (String::new(), pm.value.clone())
+                    // Exact match (default for EXACT and UNSPECIFIED)
+                    (String::new(), pm.value.clone(), String::new())
                 }
             })
             .unwrap_or_default();
@@ -302,6 +305,7 @@ impl DataplaneService {
             hostnames: route.hostnames.clone(),
             path_prefix,
             path_exact,
+            path_regex,
             methods: route.methods.clone(),
             backend_ref,
             priority: route.priority,
@@ -390,6 +394,21 @@ impl DataplaneControl for DataplaneService {
                 if !rs.path_prefix.is_empty() {
                     paths.push(PathMatch::Prefix(rs.path_prefix.clone()));
                 }
+                if !rs.path_regex.is_empty() {
+                    match regex::Regex::new(&rs.path_regex) {
+                        Ok(re) => paths.push(PathMatch::Regex(re)),
+                        Err(e) => {
+                            warn!(route = %rs.name, regex = %rs.path_regex, error = %e, "Invalid path regex, skipping regex match");
+                            // If no other path constraints exist, add a catch-none to avoid
+                            // accidentally matching all paths.
+                            if paths.is_empty() {
+                                warn!(route = %rs.name, "Route has no valid path constraints after regex failure, route will never match");
+                            }
+                        }
+                    }
+                }
+                // If paths is empty (no path constraints at all), the route matches all paths
+                // which is valid Gateway API behavior (no pathMatch = match everything).
 
                 ProxyRoute {
                     name: rs.name.clone(),
@@ -397,6 +416,7 @@ impl DataplaneControl for DataplaneService {
                     paths,
                     methods: rs.methods.clone(),
                     headers: Vec::new(),
+                    query_params: Vec::new(),
                     backend: rs.backend_ref.clone(),
                     priority: rs.priority,
                     rewrite_path: rs.rewrite_path.clone(),

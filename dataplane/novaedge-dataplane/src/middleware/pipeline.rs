@@ -64,6 +64,136 @@ pub fn run_pipeline(
     MiddlewareResult::Continue(request)
 }
 
+/// Run the response-phase middleware pipeline.
+///
+/// Applies security headers, CORS response headers, and compression headers
+/// to the response after it has been received from the upstream.
+pub fn run_response_pipeline(
+    config: &Arc<RuntimeConfig>,
+    middleware_refs: &[String],
+    request: &Request,
+    resp: &mut Response,
+) {
+    for policy_name in middleware_refs {
+        let policy = match config.get_policy(policy_name) {
+            Some(p) => p,
+            None => continue,
+        };
+
+        match policy.policy_type.as_str() {
+            "security-headers" => {
+                apply_security_headers(&policy.config_json, resp);
+            }
+            "cors" => {
+                apply_cors_response(&policy.config_json, request, resp);
+            }
+            "compression" => {
+                apply_compression_headers(&policy.config_json, request, resp);
+            }
+            _ => {
+                // Other middleware types are request-phase only.
+            }
+        }
+    }
+}
+
+/// Apply security headers from a policy config to the response.
+fn apply_security_headers(config_json: &str, resp: &mut Response) {
+    let config: serde_json::Value = match serde_json::from_str(config_json) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let sh_config = super::security_headers::SecurityHeadersConfig {
+        hsts_max_age: Some(31_536_000),
+        hsts_include_subdomains: true,
+        content_type_nosniff: config["x_content_type_options"]
+            .as_str()
+            .is_none_or(|v| v == "nosniff"),
+        frame_options: config["x_frame_options"].as_str().map(String::from),
+        xss_protection: true,
+        referrer_policy: config["referrer_policy"].as_str().map(String::from),
+        csp: config["content_security_policy"].as_str().map(String::from),
+        permissions_policy: config["permissions_policy"].as_str().map(String::from),
+        custom_headers: vec![],
+    };
+
+    let sh = super::security_headers::SecurityHeaders::new(sh_config);
+    sh.apply(resp);
+}
+
+/// Apply CORS headers to a non-preflight response.
+fn apply_cors_response(config_json: &str, request: &Request, resp: &mut Response) {
+    let config: serde_json::Value = match serde_json::from_str(config_json) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let allowed_origins: Vec<String> = config["allow_origins"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_else(|| vec!["*".into()]);
+
+    let exposed_headers: Vec<String> = config["expose_headers"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let allow_credentials = config["allow_credentials"].as_bool().unwrap_or(false);
+
+    let cors = super::cors::CorsMiddleware::new(super::cors::CorsConfig {
+        allowed_origins,
+        allowed_methods: vec![],
+        allowed_headers: vec![],
+        exposed_headers,
+        allow_credentials,
+        max_age: 0,
+    });
+
+    cors.add_cors_headers(request, resp);
+}
+
+/// Apply compression headers based on Accept-Encoding.
+fn apply_compression_headers(config_json: &str, request: &Request, resp: &mut Response) {
+    let _config: serde_json::Value = match serde_json::from_str(config_json) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let accept_encoding = request
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("accept-encoding"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+
+    let compressor =
+        super::compression::Compression::new(super::compression::CompressionConfig::default());
+
+    // Determine content type from response headers.
+    let content_type = resp
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("content-type"))
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+
+    // Compression negotiation and eligibility check.
+    // Note: actual byte-level compression (flate2/brotli) is not yet implemented.
+    // We intentionally do NOT set Content-Encoding headers without compressing the body,
+    // as that would produce invalid responses.
+    let _algo = compressor.negotiate(accept_encoding);
+    let _should = compressor.should_compress(content_type, resp.body.len());
+}
+
 // ---------------------------------------------------------------------------
 // Per-middleware helpers
 // ---------------------------------------------------------------------------

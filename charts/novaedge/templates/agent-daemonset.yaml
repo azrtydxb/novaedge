@@ -52,6 +52,7 @@ spec:
       initContainers:
       - name: mount-bpffs
         image: {{ include "novaedge.agent.image" . }}
+        imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
         command:
         - sh
         - -c
@@ -118,14 +119,6 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
         ports:
-        - name: http
-          containerPort: {{ .Values.agent.ports.http }}
-          hostPort: {{ .Values.agent.ports.http }}
-          protocol: TCP
-        - name: https
-          containerPort: {{ .Values.agent.ports.https }}
-          hostPort: {{ .Values.agent.ports.https }}
-          protocol: TCP
         - name: metrics
           containerPort: {{ .Values.agent.metrics.port }}
           protocol: TCP
@@ -198,6 +191,15 @@ spec:
         args:
         - --socket={{ .Values.dataplane.socketPath }}
         - --ebpf-path={{ .Values.dataplane.ebpfPath }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.agent.ports.http | default 80 }}
+          hostPort: {{ .Values.agent.ports.http | default 80 }}
+          protocol: TCP
+        - name: https
+          containerPort: {{ .Values.agent.ports.https | default 443 }}
+          hostPort: {{ .Values.agent.ports.https | default 443 }}
+          protocol: TCP
         securityContext:
           privileged: true
           capabilities:

@@ -849,6 +849,26 @@ networkPolicy:
   # extraIngress: []
   # extraEgress: []
 
+# -- Rust dataplane sidecar configuration
+dataplane:
+  # -- Enable Rust dataplane sidecar (handles all L4/L7 traffic)
+  enabled: true
+  image:
+    repository: ghcr.io/piwi3910/novaedge/novaedge-dataplane
+    tag: latest
+    pullPolicy: IfNotPresent
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+  # -- Unix socket path for Go agent ↔ Rust dataplane communication
+  socketPath: /run/novaedge/dataplane.sock
+  # -- Path to eBPF programs
+  ebpfPath: /opt/novaedge/novaedge-ebpf
+
 # -- RBAC configuration
 rbac:
   create: true

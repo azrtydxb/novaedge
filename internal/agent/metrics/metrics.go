@@ -194,17 +194,6 @@ func (t *endpointCardinalityTracker) StartCleanupLoop(ctx context.Context, inter
 	}()
 }
 
-// removeEndpoint removes a single endpoint from tracking and cleans up its metrics
-func (t *endpointCardinalityTracker) removeEndpoint(cluster, endpoint string) {
-	t.mu.Lock()
-	if clusterEndpoints, ok := t.endpoints[cluster]; ok {
-		delete(clusterEndpoints, endpoint)
-	}
-	t.mu.Unlock()
-
-	deleteEndpointMetrics(cluster, endpoint)
-}
-
 // deleteEndpointMetrics removes Prometheus metric series for a specific cluster/endpoint pair
 func deleteEndpointMetrics(cluster, endpoint string) {
 	BackendRequestsTotal.DeleteLabelValues(cluster, endpoint, "success")

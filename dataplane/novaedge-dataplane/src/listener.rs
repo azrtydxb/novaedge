@@ -456,7 +456,16 @@ mod tests {
 
     fn make_handler(config: Arc<RuntimeConfig>) -> Arc<ProxyHandler> {
         let router = Arc::new(RwLock::new(Router::new()));
-        Arc::new(ProxyHandler::new(router, config))
+        Arc::new(ProxyHandler::new(
+            router,
+            config,
+            Arc::new(crate::upstream::outlier::OutlierDetector::new(
+                crate::upstream::outlier::OutlierConfig::default(),
+            )),
+            Arc::new(crate::upstream::pool::ConnectionPool::new(
+                crate::upstream::pool::PoolConfig::default(),
+            )),
+        ))
     }
 
     #[tokio::test]
@@ -561,6 +570,7 @@ mod tests {
             hostnames: vec![],
             path_prefix: String::new(),
             path_exact: String::new(),
+            path_regex: String::new(),
             methods: vec![],
             backend_ref: "tcp-cluster".into(),
             priority: 0,
