@@ -181,8 +181,8 @@ func TestTranslateSnapshot_Routes(t *testing.T) {
 	}
 
 	rt := req.GetRoutes()[0]
-	if rt.GetName() != "api-route" {
-		t.Errorf("route name = %q, want %q", rt.GetName(), "api-route")
+	if rt.GetName() != "api-route/rule-0" {
+		t.Errorf("route name = %q, want %q", rt.GetName(), "api-route/rule-0")
 	}
 	if len(rt.GetHostnames()) != 1 || rt.GetHostnames()[0] != "api.example.com" {
 		t.Errorf("route hostnames = %v, want [api.example.com]", rt.GetHostnames())
@@ -249,6 +249,7 @@ func TestTranslateSnapshot_Clusters(t *testing.T) {
 		Clusters: []*configpb.Cluster{
 			{
 				Name:             "api-svc",
+				Namespace:        "default",
 				LbPolicy:         configpb.LoadBalancingPolicy_LEAST_CONN,
 				ConnectTimeoutMs: 5000,
 				HealthCheck: &configpb.HealthCheck{
@@ -272,7 +273,7 @@ func TestTranslateSnapshot_Clusters(t *testing.T) {
 			},
 		},
 		Endpoints: map[string]*configpb.EndpointList{
-			"api-svc": {
+			"default/api-svc": {
 				Endpoints: []*configpb.Endpoint{
 					{Address: "10.0.0.1", Port: 8080, Ready: true},
 					{Address: "10.0.0.2", Port: 8080, Ready: false},
@@ -1019,10 +1020,10 @@ func TestTranslateSnapshot_FullRoundTrip(t *testing.T) {
 			},
 		},
 		Clusters: []*configpb.Cluster{
-			{Name: "web-svc", LbPolicy: configpb.LoadBalancingPolicy_ROUND_ROBIN},
+			{Name: "web-svc", Namespace: "default", LbPolicy: configpb.LoadBalancingPolicy_ROUND_ROBIN},
 		},
 		Endpoints: map[string]*configpb.EndpointList{
-			"web-svc": {
+			"default/web-svc": {
 				Endpoints: []*configpb.Endpoint{
 					{Address: "10.0.0.1", Port: 8080, Ready: true},
 				},
@@ -1384,7 +1385,7 @@ func TestTranslateSnapshot_Routes_RewriteAndHeaders(t *testing.T) {
 					},
 					{
 						Matches: []*configpb.RouteMatch{
-							{Method: "POST"}, // duplicate, should be deduped
+							{Method: "POST"},
 							{Method: "DELETE"},
 						},
 					},
@@ -1394,31 +1395,37 @@ func TestTranslateSnapshot_Routes_RewriteAndHeaders(t *testing.T) {
 	}
 
 	req := TranslateSnapshot(snap)
-	rt := req.GetRoutes()[0]
 
-	if rt.GetRewritePath() != "/api/v2" {
-		t.Errorf("rewrite_path = %q, want %q", rt.GetRewritePath(), "/api/v2")
+	// Each rule produces a separate RouteConfig.
+	if len(req.GetRoutes()) != 2 {
+		t.Fatalf("expected 2 routes (one per rule), got %d", len(req.GetRoutes()))
 	}
 
+	// Rule 0: has filters and method from first match (GET).
+	rt0 := req.GetRoutes()[0]
+	if rt0.GetRewritePath() != "/api/v2" {
+		t.Errorf("rule-0 rewrite_path = %q, want %q", rt0.GetRewritePath(), "/api/v2")
+	}
 	wantHeaders := map[string]string{"X-Custom": "hello", "X-Source": "novaedge"}
-	if len(rt.GetAddHeaders()) != len(wantHeaders) {
-		t.Fatalf("add_headers len = %d, want %d", len(rt.GetAddHeaders()), len(wantHeaders))
+	if len(rt0.GetAddHeaders()) != len(wantHeaders) {
+		t.Fatalf("rule-0 add_headers len = %d, want %d", len(rt0.GetAddHeaders()), len(wantHeaders))
 	}
 	for k, v := range wantHeaders {
-		if got := rt.GetAddHeaders()[k]; got != v {
-			t.Errorf("add_headers[%q] = %q, want %q", k, got, v)
+		if got := rt0.GetAddHeaders()[k]; got != v {
+			t.Errorf("rule-0 add_headers[%q] = %q, want %q", k, got, v)
 		}
+	}
+	if len(rt0.GetMethods()) != 1 || rt0.GetMethods()[0] != "GET" {
+		t.Errorf("rule-0 methods = %v, want [GET]", rt0.GetMethods())
 	}
 
-	// Methods should be deduplicated: GET, POST, DELETE
-	wantMethods := map[string]bool{"GET": true, "POST": true, "DELETE": true}
-	if len(rt.GetMethods()) != 3 {
-		t.Fatalf("methods len = %d, want 3; got %v", len(rt.GetMethods()), rt.GetMethods())
+	// Rule 1: no filters, method from first match (POST).
+	rt1 := req.GetRoutes()[1]
+	if rt1.GetRewritePath() != "" {
+		t.Errorf("rule-1 rewrite_path = %q, want empty", rt1.GetRewritePath())
 	}
-	for _, m := range rt.GetMethods() {
-		if !wantMethods[m] {
-			t.Errorf("unexpected method %q", m)
-		}
+	if len(rt1.GetMethods()) != 1 || rt1.GetMethods()[0] != "POST" {
+		t.Errorf("rule-1 methods = %v, want [POST]", rt1.GetMethods())
 	}
 }
 
