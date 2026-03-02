@@ -62,6 +62,9 @@ import (
 	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
 	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+
+	// Blank import: registers WASM plugin Prometheus metrics via promauto init().
+	_ "github.com/piwi3910/novaedge/internal/agent/wasm"
 )
 
 var (
