@@ -52,6 +52,7 @@ spec:
       initContainers:
       - name: mount-bpffs
         image: {{ include "novaedge.agent.image" . }}
+        imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
         command:
         - sh
         - -c
