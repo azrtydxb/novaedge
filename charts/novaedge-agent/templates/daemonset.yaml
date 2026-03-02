@@ -106,6 +106,9 @@ spec:
             {{- if .Values.ebpf.forceLegacyMesh }}
             - --force-legacy-mesh=true
             {{- end }}
+            {{- if and .Values.dataplane .Values.dataplane.enabled }}
+            - --dataplane-socket={{ .Values.dataplane.socketPath }}
+            {{- end }}
             {{- with .Values.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -152,14 +155,6 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           ports:
-            - name: http
-              containerPort: {{ .Values.ports.http }}
-              hostPort: {{ .Values.ports.http }}
-              protocol: TCP
-            - name: https
-              containerPort: {{ .Values.ports.https }}
-              hostPort: {{ .Values.ports.https }}
-              protocol: TCP
             - name: metrics
               containerPort: {{ .Values.ports.metrics }}
               protocol: TCP
@@ -203,6 +198,10 @@ spec:
               readOnly: true
             {{- end }}
             {{- end }}
+            {{- if and .Values.dataplane .Values.dataplane.enabled }}
+            - name: dataplane-socket
+              mountPath: /run/novaedge
+            {{- end }}
             {{- if .Values.ebpf.bpffsMount }}
             - name: bpffs
               mountPath: /sys/fs/bpf
@@ -210,6 +209,48 @@ spec:
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+      {{- if and .Values.dataplane .Values.dataplane.enabled }}
+        - name: novaedge-dataplane
+          image: "{{ .Values.dataplane.image.repository }}:{{ .Values.dataplane.image.tag }}"
+          imagePullPolicy: {{ .Values.dataplane.image.pullPolicy }}
+          args:
+            - --socket={{ .Values.dataplane.socketPath }}
+            - --ebpf-path={{ .Values.dataplane.ebpfPath }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.ports.http }}
+              hostPort: {{ .Values.ports.http }}
+              protocol: TCP
+            - name: https
+              containerPort: {{ .Values.ports.https }}
+              hostPort: {{ .Values.ports.https }}
+              protocol: TCP
+          securityContext:
+            privileged: true
+            capabilities:
+              add:
+              - NET_ADMIN
+              - NET_RAW
+          readinessProbe:
+            exec:
+              command:
+              - test
+              - -S
+              - {{ .Values.dataplane.socketPath }}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          {{- with .Values.dataplane.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: dataplane-socket
+              mountPath: /run/novaedge
+            - name: dataplane-bpffs
+              mountPath: /sys/fs/bpf
+      {{- end }}
       volumes:
         - name: config
           configMap:
@@ -231,6 +272,14 @@ spec:
         {{- end }}
         {{- if .Values.ebpf.bpffsMount }}
         - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: DirectoryOrCreate
+        {{- end }}
+        {{- if and .Values.dataplane .Values.dataplane.enabled }}
+        - name: dataplane-socket
+          emptyDir: {}
+        - name: dataplane-bpffs
           hostPath:
             path: /sys/fs/bpf
             type: DirectoryOrCreate

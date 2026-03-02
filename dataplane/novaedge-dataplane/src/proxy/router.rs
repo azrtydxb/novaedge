@@ -8,11 +8,19 @@ pub struct Route {
     pub paths: Vec<PathMatch>,
     pub methods: Vec<String>,
     pub headers: Vec<HeaderMatch>,
+    pub query_params: Vec<QueryParamMatch>,
     pub backend: String,
     pub priority: i32,
     pub rewrite_path: Option<String>,
     pub add_headers: HashMap<String, String>,
     pub middleware_refs: Vec<String>,
+}
+
+/// Query parameter matching criterion.
+#[derive(Debug, Clone)]
+pub struct QueryParamMatch {
+    pub name: String,
+    pub value: String,
 }
 
 /// Hostname matching strategy.
@@ -28,6 +36,7 @@ pub enum HostMatch {
 pub enum PathMatch {
     Exact(String),
     Prefix(String),
+    Regex(regex::Regex),
 }
 
 /// Header matching criterion.
@@ -84,9 +93,21 @@ impl Router {
         method: &str,
         headers: &[(String, String)],
     ) -> Option<&Route> {
+        self.match_request_with_query(host, path, method, headers, None)
+    }
+
+    /// Find the first route that matches, including query parameters.
+    pub fn match_request_with_query(
+        &self,
+        host: &str,
+        path: &str,
+        method: &str,
+        headers: &[(String, String)],
+        query: Option<&str>,
+    ) -> Option<&Route> {
         self.routes
             .iter()
-            .find(|route| self.matches_route(route, host, path, method, headers))
+            .find(|route| self.matches_route(route, host, path, method, headers, query))
     }
 
     fn matches_route(
@@ -96,6 +117,7 @@ impl Router {
         path: &str,
         method: &str,
         headers: &[(String, String)],
+        query: Option<&str>,
     ) -> bool {
         // Check hostname.
         if !route.hostnames.is_empty() && !route.hostnames.iter().any(|h| match_host(h, host)) {
@@ -115,6 +137,15 @@ impl Router {
         for header_match in &route.headers {
             if !match_header(header_match, headers) {
                 return false;
+            }
+        }
+        // Check query parameters.
+        if !route.query_params.is_empty() {
+            let query_str = query.unwrap_or("");
+            for qp in &route.query_params {
+                if !match_query_param(&qp.name, &qp.value, query_str) {
+                    return false;
+                }
             }
         }
         true
@@ -139,7 +170,19 @@ fn match_path(path_match: &PathMatch, path: &str) -> bool {
     match path_match {
         PathMatch::Exact(p) => p == path,
         PathMatch::Prefix(p) => path.starts_with(p.as_str()),
+        PathMatch::Regex(re) => re.is_match(path),
     }
+}
+
+fn match_query_param(name: &str, value: &str, query_str: &str) -> bool {
+    for pair in query_str.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == name && v == value {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn match_header(header_match: &HeaderMatch, headers: &[(String, String)]) -> bool {
@@ -169,6 +212,7 @@ mod tests {
             paths: Vec::new(),
             methods: Vec::new(),
             headers: Vec::new(),
+            query_params: Vec::new(),
             backend: format!("{name}-backend"),
             priority,
             rewrite_path: None,
@@ -341,5 +385,59 @@ mod tests {
         assert!(router.default_backend().is_none());
         router.set_default_backend("fallback".into());
         assert_eq!(router.default_backend(), Some("fallback"));
+    }
+
+    #[test]
+    fn test_regex_path_match() {
+        let mut router = Router::new();
+        let mut route = make_route("regex-path", 10);
+        let re = regex::Regex::new(r"^/api/v\d+/users$").unwrap();
+        route.paths = vec![PathMatch::Regex(re)];
+        router.set_routes(vec![route]);
+
+        assert!(router.match_request("", "/api/v1/users", "GET", &[]).is_some());
+        assert!(router.match_request("", "/api/v2/users", "GET", &[]).is_some());
+        assert!(router.match_request("", "/api/v1/posts", "GET", &[]).is_none());
+        assert!(router.match_request("", "/other", "GET", &[]).is_none());
+    }
+
+    #[test]
+    fn test_query_param_match() {
+        let mut router = Router::new();
+        let mut route = make_route("query-route", 10);
+        route.paths = vec![PathMatch::Prefix("/search".into())];
+        route.query_params = vec![QueryParamMatch {
+            name: "type".into(),
+            value: "users".into(),
+        }];
+        router.set_routes(vec![route]);
+
+        assert!(router
+            .match_request_with_query("", "/search", "GET", &[], Some("type=users"))
+            .is_some());
+        assert!(router
+            .match_request_with_query("", "/search", "GET", &[], Some("type=posts"))
+            .is_none());
+        assert!(router
+            .match_request_with_query("", "/search", "GET", &[], None)
+            .is_none());
+    }
+
+    #[test]
+    fn test_query_param_multiple() {
+        let mut router = Router::new();
+        let mut route = make_route("multi-query", 10);
+        route.query_params = vec![
+            QueryParamMatch { name: "a".into(), value: "1".into() },
+            QueryParamMatch { name: "b".into(), value: "2".into() },
+        ];
+        router.set_routes(vec![route]);
+
+        assert!(router
+            .match_request_with_query("", "/", "GET", &[], Some("a=1&b=2"))
+            .is_some());
+        assert!(router
+            .match_request_with_query("", "/", "GET", &[], Some("a=1&b=3"))
+            .is_none());
     }
 }

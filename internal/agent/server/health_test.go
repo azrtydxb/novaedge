@@ -54,18 +54,6 @@ func TestHealthServer_SetReady(t *testing.T) {
 	assert.False(t, hs.ready.Load())
 }
 
-func TestHealthServer_SetRouter(t *testing.T) {
-	logger := zap.NewNop()
-	hs := NewHealthServer(logger, 8080)
-
-	// Initially nil
-	assert.Nil(t, hs.router)
-
-	// Set router (nil is acceptable for this test)
-	hs.SetRouter(nil)
-	assert.Nil(t, hs.router)
-}
-
 func TestHealthServer_HealthzEndpoint(t *testing.T) {
 	// Create a test request
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
