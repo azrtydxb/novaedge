@@ -169,30 +169,43 @@ func translateTLS(tls *configpb.TLSConfig) *pb.TLSConfig {
 func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 	var result []*pb.RouteConfig
 	for _, rt := range routes {
-		dpRoute := &pb.RouteConfig{
-			Name:      rt.GetName(),
-			Hostnames: rt.GetHostnames(),
+		// Shared properties from the route-level middleware pipeline.
+		var middlewareRefs []string
+		for _, mw := range rt.GetPipeline().GetMiddleware() {
+			middlewareRefs = append(middlewareRefs, mw.GetName())
 		}
 
-		// Translate rules into backend refs and path/header matches.
-		for _, rule := range rt.GetRules() {
-			// Translate matches into path match (take first match's path).
-			for _, match := range rule.GetMatches() {
-				if match.GetPath() != nil && dpRoute.PathMatch == nil {
+		// Each rule becomes a separate RouteConfig so path/method/header
+		// constraints are independent (mixing DELETE-only rules with
+		// catch-all rules previously broke matching).
+		for ruleIdx, rule := range rt.GetRules() {
+			dpRoute := &pb.RouteConfig{
+				Name:           fmt.Sprintf("%s/rule-%d", rt.GetName(), ruleIdx),
+				Hostnames:      rt.GetHostnames(),
+				MiddlewareRefs: middlewareRefs,
+			}
+
+			// Path and header matches from the first match entry.
+			if len(rule.GetMatches()) > 0 {
+				m := rule.GetMatches()[0]
+				if m.GetPath() != nil {
 					dpRoute.PathMatch = &pb.PathMatch{
-						MatchType: translatePathMatchType(match.GetPath().GetType()),
-						Value:     match.GetPath().GetValue(),
+						MatchType: translatePathMatchType(m.GetPath().GetType()),
+						Value:     m.GetPath().GetValue(),
 					}
 				}
-				for _, hdr := range match.GetHeaders() {
+				for _, hdr := range m.GetHeaders() {
 					dpRoute.HeaderMatches = append(dpRoute.HeaderMatches, &pb.HeaderMatch{
 						Name:  hdr.GetName(),
 						Value: hdr.GetValue(),
 					})
 				}
+				if method := m.GetMethod(); method != "" {
+					dpRoute.Methods = append(dpRoute.Methods, method)
+				}
 			}
 
-			// Translate backend refs.
+			// Backend refs for this rule.
 			for _, br := range rule.GetBackendRefs() {
 				dpRoute.BackendRefs = append(dpRoute.BackendRefs, &pb.BackendRef{
 					ClusterName: br.GetName(),
@@ -200,8 +213,8 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 				})
 			}
 
-			// Translate retry config.
-			if rule.GetRetry() != nil && dpRoute.Retry == nil {
+			// Retry config.
+			if rule.GetRetry() != nil {
 				dpRoute.Retry = &pb.RetryPolicy{
 					MaxRetries:      uint32(rule.GetRetry().GetMaxRetries()), //nolint:gosec // proto field
 					PerTryTimeoutMs: uint64(rule.GetRetry().GetPerTryTimeoutMs()),
@@ -209,21 +222,13 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 					BackoffBaseMs:   uint64(rule.GetRetry().GetBackoffBaseMs()),
 				}
 			}
-		}
 
-		// Map middleware pipeline references.
-		for _, mw := range rt.GetPipeline().GetMiddleware() {
-			dpRoute.MiddlewareRefs = append(dpRoute.MiddlewareRefs, mw.GetName())
-		}
-		// Map timeout from first rule's limits.
-		if len(rt.GetRules()) > 0 {
-			if lim := rt.GetRules()[0].GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
+			// Timeout.
+			if lim := rule.GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
 				dpRoute.TimeoutMs = uint64(lim.GetRequestTimeoutMs())
 			}
-		}
 
-		// Map route filters: rewrite_path and add_headers from first matching filter.
-		for _, rule := range rt.GetRules() {
+			// Filters: rewrite_path and add_headers.
 			for _, f := range rule.GetFilters() {
 				if f.GetType() == configpb.RouteFilterType_URL_REWRITE && f.GetRewritePath() != "" && dpRoute.RewritePath == "" {
 					dpRoute.RewritePath = f.GetRewritePath()
@@ -235,19 +240,9 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 					}
 				}
 			}
-		}
-		// Map methods from route matches.
-		methodSet := make(map[string]bool)
-		for _, rule := range rt.GetRules() {
-			for _, match := range rule.GetMatches() {
-				if m := match.GetMethod(); m != "" && !methodSet[m] {
-					methodSet[m] = true
-					dpRoute.Methods = append(dpRoute.Methods, m)
-				}
-			}
-		}
 
-		result = append(result, dpRoute)
+			result = append(result, dpRoute)
+		}
 	}
 	return result
 }
@@ -282,7 +277,9 @@ func translateClusters(
 		}
 
 		// Map endpoints for this cluster.
-		if epList, ok := endpoints[cl.GetName()]; ok && epList != nil {
+		// Endpoint map keys use "namespace/name" format (set by snapshot builder).
+		clusterKey := cl.GetNamespace() + "/" + cl.GetName()
+		if epList, ok := endpoints[clusterKey]; ok && epList != nil {
 			for _, ep := range epList.GetEndpoints() {
 				dpCluster.Endpoints = append(dpCluster.Endpoints, &pb.Endpoint{
 					Ip:      ep.GetAddress(),
