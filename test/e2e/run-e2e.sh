@@ -326,6 +326,10 @@ apply_fixture "filter-tests.yaml" || echo "  WARN: filter-tests.yaml apply faile
 apply_fixture "lb-routing.yaml" || echo "  WARN: lb-routing.yaml apply failed"
 apply_fixture "ingress-tests.yaml" || echo "  WARN: ingress-tests.yaml apply failed"
 
+# Force config push after applying all fixtures to ensure all agents receive routes
+# (needed because NotifyAll only reaches locally-connected agents in multi-replica controller)
+force_config_push
+
 # Active wait: poll until the catch-all route for e2e.test.local serves traffic
 echo "Waiting for routes to become active..."
 if wait_route_ready "$ECHO_HOST" "/" 20; then
