@@ -249,6 +249,24 @@ impl RuntimeConfig {
         self.bump();
     }
 
+    /// Find a backend endpoint address for an L4 gateway by name.
+    ///
+    /// Iterates only the routes DashMap to find the first route referencing
+    /// this gateway, then looks up a single cluster—avoiding a full
+    /// config snapshot clone on every L4 connection.
+    pub fn resolve_l4_backend(&self, gateway_name: &str) -> Option<std::net::SocketAddr> {
+        let backend_ref = self
+            .routes
+            .iter()
+            .find(|r| r.gateway_ref == gateway_name)
+            .map(|r| r.backend_ref.clone())?;
+        let cluster = self.clusters.get(&backend_ref)?;
+        let ep = cluster.endpoints.first()?;
+        format!("{}:{}", ep.address, ep.port)
+            .parse::<std::net::SocketAddr>()
+            .ok()
+    }
+
     /// Get the current config generation number.
     pub fn generation(&self) -> u64 {
         self.generation.load(Ordering::Relaxed)

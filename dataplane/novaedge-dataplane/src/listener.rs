@@ -381,14 +381,9 @@ impl ListenerManager {
                     result = listener.accept() => {
                         match result {
                             Ok((mut client, _client_addr)) => {
-                                // For L4, we need to select a backend from the config.
-                                // Use the gateway name to find associated routes/clusters.
-                                let snap = config.snapshot();
-                                let backend_addr = snap.routes.values()
-                                    .find(|r| r.gateway_ref == gw_name)
-                                    .and_then(|r| snap.clusters.get(&r.backend_ref))
-                                    .and_then(|c| c.endpoints.first())
-                                    .and_then(|e| format!("{}:{}", e.address, e.port).parse::<SocketAddr>().ok());
+                                // For L4, resolve the backend directly from
+                                // config without cloning the entire snapshot.
+                                let backend_addr = config.resolve_l4_backend(&gw_name);
 
                                 if let Some(backend) = backend_addr {
                                     tokio::spawn(async move {
@@ -452,10 +447,8 @@ mod tests {
     use bytes::Bytes;
     use http_body_util::Full;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::sync::RwLock;
-
     fn make_handler(config: Arc<RuntimeConfig>) -> Arc<ProxyHandler> {
-        let router = Arc::new(RwLock::new(Router::new()));
+        let router = Arc::new(std::sync::RwLock::new(Router::new()));
         Arc::new(ProxyHandler::new(
             router,
             config,

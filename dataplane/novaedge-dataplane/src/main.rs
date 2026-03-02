@@ -128,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // Create the HTTP proxy handler.
-    let router = Arc::new(tokio::sync::RwLock::new(proxy::router::Router::new()));
+    let router = Arc::new(std::sync::RwLock::new(proxy::router::Router::new()));
     let proxy_handler = Arc::new(proxy::handler::ProxyHandler::new(
         router.clone(),
         runtime_config.clone(),

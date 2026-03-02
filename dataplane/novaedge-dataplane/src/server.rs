@@ -27,7 +27,7 @@ use crate::vip;
 pub struct DataplaneService {
     map_manager: Arc<MapManager>,
     runtime_config: Arc<RuntimeConfig>,
-    router: Arc<tokio::sync::RwLock<crate::proxy::router::Router>>,
+    router: Arc<std::sync::RwLock<crate::proxy::router::Router>>,
     flow_tx: broadcast::Sender<proto::FlowEvent>,
     start_time: Instant,
     vip_manager: std::sync::Mutex<vip::manager::VIPManager>,
@@ -43,7 +43,7 @@ impl DataplaneService {
     pub fn new(
         map_manager: Arc<MapManager>,
         runtime_config: Arc<RuntimeConfig>,
-        router: Arc<tokio::sync::RwLock<crate::proxy::router::Router>>,
+        router: Arc<std::sync::RwLock<crate::proxy::router::Router>>,
         flow_tx: broadcast::Sender<proto::FlowEvent>,
     ) -> Self {
         Self {
@@ -434,7 +434,7 @@ impl DataplaneControl for DataplaneService {
         // Push routes to the proxy router.
         {
             let route_count = router_routes.len();
-            self.router.write().await.set_routes(router_routes);
+            self.router.write().unwrap().set_routes(router_routes);
             info!(count = route_count, "Routes pushed to proxy router");
         }
 
@@ -1109,7 +1109,7 @@ impl DataplaneControl for DataplaneService {
 pub async fn run(
     map_manager: Arc<MapManager>,
     runtime_config: Arc<RuntimeConfig>,
-    router: Arc<tokio::sync::RwLock<crate::proxy::router::Router>>,
+    router: Arc<std::sync::RwLock<crate::proxy::router::Router>>,
     flow_tx: broadcast::Sender<proto::FlowEvent>,
     socket_path: &str,
 ) -> anyhow::Result<()> {
@@ -1154,7 +1154,7 @@ mod tests {
     fn make_service() -> DataplaneService {
         let mgr = Arc::new(MapManager::new_mock());
         let cfg = Arc::new(RuntimeConfig::new());
-        let router = Arc::new(tokio::sync::RwLock::new(crate::proxy::router::Router::new()));
+        let router = Arc::new(std::sync::RwLock::new(crate::proxy::router::Router::new()));
         let (tx, _rx) = crate::flows::flow_channel();
         DataplaneService::new(mgr, cfg, router, tx)
     }
