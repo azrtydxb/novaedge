@@ -55,7 +55,7 @@ var (
 		[]string{"plugin", "phase"},
 	)
 
-	wasmPluginsLoaded = promauto.NewGauge(
+	_ = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: "novaedge",
 			Subsystem: "wasm",
@@ -64,7 +64,7 @@ var (
 		},
 	)
 
-	wasmInstancePoolSize = promauto.NewGaugeVec(
+	_ = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "novaedge",
 			Subsystem: "wasm",
