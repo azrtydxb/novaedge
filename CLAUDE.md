@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Critical Rules
 
-- **DATAPLANE ARCHITECTURE: ALL traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC) MUST flow through the Rust dataplane + eBPF.** The Go agent is a CONFIG AGENT ONLY — it handles Kubernetes API interaction, config translation, VIP management, iptables/nftables, and eBPF program lifecycle. It does NOT serve user traffic. The Rust dataplane (`dataplane/`) is the traffic handler. Any Go code in `internal/agent/server/`, `internal/agent/router/`, `internal/agent/lb/`, `internal/agent/upstream/`, `internal/agent/policy/` that handles live traffic is LEGACY and must be migrated to Rust then removed. NEVER claim the migration is done until Rust binds ports 80/443, E2E tests pass through Rust, and legacy Go traffic-handling code is removed.
+- **DATAPLANE ARCHITECTURE: ALL traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC) flows through the Rust dataplane + eBPF.** The Go agent is a CONFIG AGENT ONLY — it handles Kubernetes API interaction, config translation, VIP management, iptables/nftables, and eBPF program lifecycle. It does NOT serve user traffic. The Rust dataplane (`dataplane/`) is the sole traffic handler. Legacy Go traffic-handling code (`internal/agent/router/`, `lb/`, `upstream/`, `policy/`, `health/`, and traffic-serving files from `server/`) has been removed. Do NOT reintroduce Go-based traffic handling.
 - **NEVER create version tags (`git tag`) or push tags after merging PRs unless the user explicitly asks for a new release/version.** Tagging triggers the release workflow which builds and publishes Docker images and GitHub releases. Only tag when specifically instructed.
 - **ALWAYS file GitHub issues for pre-existing problems discovered during work.** When you encounter bugs, lint failures, broken tests, or other issues unrelated to the current task, create a `gh issue` for each one instead of ignoring them.
 - **ALWAYS use git worktrees for all code changes.** Never commit directly to `main`. The workflow is:
@@ -66,24 +66,17 @@ novaedge/
 │   │   ├── ipam/                     # IP address management
 │   │   ├── meshca/                   # Mesh certificate authority
 │   │   └── snapshot/                 # Config snapshot builder
-│   ├── agent/                        # Agent implementation
+│   ├── agent/                        # Agent implementation (config agent only)
 │   │   ├── vip/                      # VIP management (L2/BGP/OSPF/BFD)
-│   │   ├── lb/                       # Load balancing algorithms (12 types)
-│   │   ├── router/                   # Request routing, middleware, caching, compression
-│   │   ├── policy/                   # Policy enforcement (rate-limit, auth, CORS, JWT, WAF, mTLS)
-│   │   ├── server/                   # HTTP/HTTPS/HTTP3 servers, mTLS, OCSP, PROXY protocol
-│   │   ├── l4/                       # L4 TCP/UDP proxying, TLS passthrough
-│   │   ├── wasm/                     # WASM plugin runtime (Wazero)
-│   │   ├── upstream/                 # Connection pooling
-│   │   ├── health/                   # Health checking and circuit breaking
+│   │   ├── server/                   # Health probes, metrics, admin API (no traffic serving)
 │   │   ├── config/                   # Config snapshot handling
 │   │   ├── metrics/                  # Prometheus metrics
 │   │   ├── grpc/                     # gRPC handler
 │   │   ├── protocol/                 # Protocol detection
 │   │   ├── mesh/                     # Service mesh (mTLS, TPROXY, tunnel, authz, certs)
 │   │   ├── cpvip/                    # Control-plane VIP management
-│   │   ├── filters/                  # Request/response filter chains
-│   │   └── websocket/               # WebSocket upgrade handling
+│   │   ├── ebpf/                     # eBPF program management
+│   │   └── wasm/                     # WASM plugin runtime (Wazero)
 │   ├── acme/                         # ACME client (Let's Encrypt)
 │   │   └── dns/                      # DNS-01 providers (Cloudflare, Route53, Google)
 │   ├── standalone/                   # Standalone mode config
@@ -101,6 +94,25 @@ novaedge/
 │   ├── controller/                   # Controller deployment
 │   ├── agent/                        # Agent DaemonSet
 │   └── kustomize/                    # Kustomize overlays (dev, production)
+├── dataplane/                        # Rust dataplane (traffic handler)
+│   └── novaedge-dataplane/           # Rust binary (hyper HTTP proxy, eBPF maps)
+│       └── src/
+│           ├── proxy/                # HTTP proxy handler, router
+│           ├── middleware/           # Middleware pipeline (rate-limit, JWT, CORS, etc.)
+│           ├── lb/                   # Load balancing algorithms (12 types)
+│           ├── upstream/             # Connection pool, circuit breaker, outlier detection
+│           ├── health/               # Active health checking
+│           ├── listener/             # Dynamic listener management
+│           ├── l4/                   # L4 TCP/UDP proxying
+│           ├── vip/                  # VIP management (dataplane side)
+│           ├── mesh/                 # Service mesh support
+│           ├── sdwan/                # SD-WAN support
+│           ├── maps/                 # eBPF map management
+│           ├── loader/               # eBPF program loader
+│           ├── flows/                # Flow event streaming
+│           ├── config/               # Runtime config store
+│           ├── server/               # gRPC server (receives config from Go agent)
+│           └── proto/                # Protobuf definitions
 ├── docs/                             # Documentation site
 ├── test/                             # Integration tests
 └── Makefile                          # Build automation
@@ -148,7 +160,7 @@ make test-conformance
 make test-coverage
 
 # Run specific package tests
-go test -v ./internal/agent/lb/
+go test -v ./internal/agent/vip/
 ```
 
 ### Linting and Code Quality
@@ -210,9 +222,9 @@ kubectl apply -f config/samples/
 
 ### Networking Code
 - All VIP operations (L2 ARP/BGP/OSPF) must handle node failures gracefully
-- Connection pools must implement circuit breaking and outlier detection
-- Health checks must use both active probing and passive failure detection
-- TLS termination must support SNI and certificate rotation
+- Connection pools, circuit breaking, and outlier detection are in the Rust dataplane
+- Health checks are in the Rust dataplane (active probing + passive failure detection)
+- TLS termination is handled by the Rust dataplane
 
 ## CRD Development
 
@@ -235,7 +247,7 @@ make manifests
 
 ## Load Balancing Algorithms
 
-When implementing LB algorithms in `internal/agent/lb/`:
+Load balancing is implemented in the Rust dataplane (`dataplane/novaedge-dataplane/src/lb/`):
 - **Round Robin**: Simple rotation through endpoints
 - **LeastConn**: Route to endpoint with fewest active connections
 - **P2C (Power of Two Choices)**: Pick best of two random endpoints
@@ -293,20 +305,17 @@ The service mesh provides transparent mTLS between Kubernetes services:
 
 ## Policy & Middleware Architecture
 
-Policies and middleware are spread across two packages:
+Policies and middleware are implemented in the Rust dataplane (`dataplane/novaedge-dataplane/src/middleware/`):
 
-- **`internal/agent/policy/`**: Security and access control policies
-  - Rate limiting (local token bucket + distributed Redis)
-  - Authentication: basic auth, forward auth, OAuth2/OIDC, Keycloak
-  - JWT validation, CORS, IP filtering, security headers
-  - mTLS enforcement, WAF (Coraza)
+- **Rate limiting**: Token bucket with configurable burst
+- **Authentication**: JWT validation, basic auth
+- **CORS**: Cross-origin resource sharing headers
+- **Security headers**: Strict-Transport-Security, X-Content-Type-Options, etc.
+- **Compression**: gzip/Brotli response compression
+- **URL rewrite**: Path prefix stripping and replacement
+- **Request/response headers**: Add, set, remove headers on requests and responses
 
-- **`internal/agent/router/`**: Traffic processing middleware
-  - Composable middleware pipelines with boolean routing expressions
-  - Response caching, gzip/Brotli compression, buffering
-  - Traffic mirroring, traffic splitting/canary
-  - Custom error pages, access logging, request retry
-  - SSE support, HTTP-to-HTTPS redirect, URL rewrite
+The Go agent no longer has traffic-handling middleware. Config is translated by the Go agent's `internal/dataplane/translator.go` and pushed to the Rust dataplane via gRPC.
 
 ## Configuration Snapshot Model
 
@@ -407,11 +416,15 @@ Agents must atomically swap runtime config when receiving new snapshots.
 - Use rate-limited workqueues to prevent API server overload
 - Handle resource deletion with finalizers when needed
 
-### Agent Development
-- Atomic config swaps are critical to avoid request failures
-- Connection pools must be drained gracefully on config changes
+### Agent Development (Go config agent)
+- Atomic config pushes to Rust dataplane are critical to avoid request failures
 - VIP binding/unbinding must be idempotent
+- The Go agent does NOT handle traffic — all traffic flows through the Rust dataplane
+
+### Dataplane Development (Rust)
+- Connection pools must be drained gracefully on config changes
 - Health check failures must not cause cascading failures
+- Circuit breakers use lock-free atomics for fast-path checks
 
 ### Kubernetes Integration
 - EndpointSlices can be large - use pagination and filtering
