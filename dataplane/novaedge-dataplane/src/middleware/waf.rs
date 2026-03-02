@@ -1,7 +1,12 @@
 //! Web Application Firewall (WAF) middleware.
 //!
-//! Provides a rule-based engine with OWASP-style patterns for detecting
+//! Provides a rule-based engine with OWASP-style regex patterns for detecting
 //! common web attacks (XSS, SQL injection, path traversal, etc.).
+//!
+//! Uses compiled regex patterns (case-insensitive) and URL decoding for
+//! evasion resistance.
+
+use regex::RegexSet;
 
 /// WAF configuration.
 #[derive(Debug, Clone)]
@@ -30,7 +35,7 @@ pub struct WafRule {
     pub description: String,
     /// Which part of the request to inspect.
     pub target: WafTarget,
-    /// Substring pattern to match (case-insensitive).
+    /// Regex pattern to match (case-insensitive).
     pub pattern: String,
     /// Severity classification.
     pub severity: WafSeverity,
@@ -71,15 +76,95 @@ pub enum WafDecision {
     Detect { rule_id: u32, description: String },
 }
 
-/// WAF rule engine.
+/// WAF rule engine with compiled regex patterns.
 pub struct WafEngine {
     config: WafConfig,
+    /// Pre-compiled regex sets per target type for fast matching.
+    compiled: CompiledRules,
+}
+
+/// Pre-compiled regex patterns grouped by target.
+struct CompiledRules {
+    /// (rule_index, regex) pairs per target type.
+    uri_set: Option<(RegexSet, Vec<usize>)>,
+    query_set: Option<(RegexSet, Vec<usize>)>,
+    headers_set: Option<(RegexSet, Vec<usize>)>,
+    user_agent_set: Option<(RegexSet, Vec<usize>)>,
+    body_set: Option<(RegexSet, Vec<usize>)>,
+}
+
+impl CompiledRules {
+    fn compile(rules: &[WafRule]) -> Self {
+        fn build_set(rules: &[WafRule], target: &WafTarget) -> Option<(RegexSet, Vec<usize>)> {
+            let mut patterns = Vec::new();
+            let mut indices = Vec::new();
+            for (i, rule) in rules.iter().enumerate() {
+                if rule.pattern.is_empty() {
+                    continue;
+                }
+                if std::mem::discriminant(&rule.target) == std::mem::discriminant(target) {
+                    // Wrap pattern with case-insensitive flag.
+                    patterns.push(format!("(?i){}", rule.pattern));
+                    indices.push(i);
+                }
+            }
+            if patterns.is_empty() {
+                return None;
+            }
+            match RegexSet::new(&patterns) {
+                Ok(set) => Some((set, indices)),
+                Err(_) => None,
+            }
+        }
+
+        Self {
+            uri_set: build_set(rules, &WafTarget::Uri),
+            query_set: build_set(rules, &WafTarget::QueryString),
+            headers_set: build_set(rules, &WafTarget::Headers),
+            user_agent_set: build_set(rules, &WafTarget::UserAgent),
+            body_set: build_set(rules, &WafTarget::Body),
+        }
+    }
+}
+
+/// URL-decode a string (handles %XX sequences).
+fn url_decode(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    let mut chars = input.bytes();
+    while let Some(b) = chars.next() {
+        if b == b'%' {
+            let hi = chars.next();
+            let lo = chars.next();
+            if let (Some(h), Some(l)) = (hi, lo) {
+                if let (Some(hv), Some(lv)) = (hex_val(h), hex_val(l)) {
+                    result.push((hv << 4 | lv) as char);
+                    continue;
+                }
+            }
+            result.push('%');
+        } else if b == b'+' {
+            result.push(' ');
+        } else {
+            result.push(b as char);
+        }
+    }
+    result
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 impl WafEngine {
     /// Create a WAF engine with the given configuration.
     pub fn new(config: WafConfig) -> Self {
-        Self { config }
+        let compiled = CompiledRules::compile(&config.rules);
+        Self { config, compiled }
     }
 
     /// Create a WAF engine pre-loaded with basic OWASP-style rules.
@@ -89,63 +174,49 @@ impl WafEngine {
                 id: 941100,
                 description: "XSS Attack: Script Tag".into(),
                 target: WafTarget::QueryString,
-                pattern: "<script".into(),
+                pattern: r"<\s*script".into(),
                 severity: WafSeverity::Critical,
             },
             WafRule {
                 id: 941110,
                 description: "XSS Attack: Event Handler".into(),
                 target: WafTarget::QueryString,
-                pattern: "onerror=".into(),
+                pattern: r"on\w+\s*=".into(),
                 severity: WafSeverity::Critical,
             },
             WafRule {
                 id: 942100,
                 description: "SQL Injection: Common Keywords".into(),
                 target: WafTarget::QueryString,
-                pattern: "union select".into(),
+                pattern: r"union\s+select".into(),
                 severity: WafSeverity::Critical,
             },
             WafRule {
                 id: 942110,
                 description: "SQL Injection: OR/AND Bypass".into(),
                 target: WafTarget::QueryString,
-                pattern: "' or '1'='1".into(),
+                pattern: r"'\s*or\s+'[^']*'\s*=\s*'".into(),
                 severity: WafSeverity::Critical,
-            },
-            WafRule {
-                id: 942120,
-                description: "SQL Injection: Comment Sequence".into(),
-                target: WafTarget::QueryString,
-                pattern: "--".into(),
-                severity: WafSeverity::High,
             },
             WafRule {
                 id: 930100,
                 description: "Path Traversal".into(),
                 target: WafTarget::Uri,
-                pattern: "../".into(),
-                severity: WafSeverity::High,
-            },
-            WafRule {
-                id: 930110,
-                description: "Path Traversal: Encoded".into(),
-                target: WafTarget::Uri,
-                pattern: "..%2f".into(),
+                pattern: r"\.\.[\\/]".into(),
                 severity: WafSeverity::High,
             },
             WafRule {
                 id: 913100,
                 description: "Scanner/Bot Detection".into(),
                 target: WafTarget::UserAgent,
-                pattern: "sqlmap".into(),
+                pattern: r"sqlmap".into(),
                 severity: WafSeverity::Medium,
             },
             WafRule {
                 id: 913110,
                 description: "Scanner/Bot Detection: Nikto".into(),
                 target: WafTarget::UserAgent,
-                pattern: "nikto".into(),
+                pattern: r"nikto".into(),
                 severity: WafSeverity::Medium,
             },
         ];
@@ -154,60 +225,75 @@ impl WafEngine {
 
     /// Evaluate all rules against a request.
     pub fn check(&self, req: &super::Request) -> WafDecision {
-        for rule in &self.config.rules {
-            if rule.pattern.is_empty() {
-                continue;
+        // Check URI rules (with URL decoding).
+        if let Some((ref set, ref indices)) = self.compiled.uri_set {
+            let decoded = url_decode(&req.path);
+            for idx in set.matches(&decoded) {
+                let rule = &self.config.rules[indices[idx]];
+                return self.make_decision(rule);
             }
+        }
 
-            let matched = match &rule.target {
-                WafTarget::Uri => req
-                    .path
-                    .to_lowercase()
-                    .contains(&rule.pattern.to_lowercase()),
-                WafTarget::QueryString => {
-                    if let Some(qs) = req.path.split_once('?').map(|(_, q)| q) {
-                        qs.to_lowercase().contains(&rule.pattern.to_lowercase())
-                    } else {
-                        false
-                    }
+        // Check query string rules (with URL decoding).
+        if let Some((ref set, ref indices)) = self.compiled.query_set {
+            if let Some(qs) = req.path.split_once('?').map(|(_, q)| q) {
+                let decoded = url_decode(qs);
+                for idx in set.matches(&decoded) {
+                    let rule = &self.config.rules[indices[idx]];
+                    return self.make_decision(rule);
                 }
-                WafTarget::Headers => req
-                    .headers
-                    .iter()
-                    .any(|(_, value)| value.to_lowercase().contains(&rule.pattern.to_lowercase())),
-                WafTarget::UserAgent => req
-                    .headers
-                    .iter()
-                    .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
-                    .map(|(_, ua)| ua.to_lowercase().contains(&rule.pattern.to_lowercase()))
-                    .unwrap_or(false),
-                WafTarget::Body => {
-                    if let Some(body) = &req.body {
-                        let body_str = String::from_utf8_lossy(body);
-                        body_str
-                            .to_lowercase()
-                            .contains(&rule.pattern.to_lowercase())
-                    } else {
-                        false
-                    }
-                }
-            };
+            }
+        }
 
-            if matched {
-                return match self.config.mode {
-                    WafMode::Block => WafDecision::Block {
-                        rule_id: rule.id,
-                        description: rule.description.clone(),
-                    },
-                    WafMode::Detect => WafDecision::Detect {
-                        rule_id: rule.id,
-                        description: rule.description.clone(),
-                    },
-                };
+        // Check header rules.
+        if let Some((ref set, ref indices)) = self.compiled.headers_set {
+            for (_, value) in &req.headers {
+                for idx in set.matches(value) {
+                    let rule = &self.config.rules[indices[idx]];
+                    return self.make_decision(rule);
+                }
+            }
+        }
+
+        // Check User-Agent rules.
+        if let Some((ref set, ref indices)) = self.compiled.user_agent_set {
+            if let Some((_, ua)) = req
+                .headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
+            {
+                for idx in set.matches(ua) {
+                    let rule = &self.config.rules[indices[idx]];
+                    return self.make_decision(rule);
+                }
+            }
+        }
+
+        // Check body rules.
+        if let Some((ref set, ref indices)) = self.compiled.body_set {
+            if let Some(body) = &req.body {
+                let body_str = String::from_utf8_lossy(body);
+                for idx in set.matches(&body_str) {
+                    let rule = &self.config.rules[indices[idx]];
+                    return self.make_decision(rule);
+                }
             }
         }
 
         WafDecision::Allow
+    }
+
+    fn make_decision(&self, rule: &WafRule) -> WafDecision {
+        match self.config.mode {
+            WafMode::Block => WafDecision::Block {
+                rule_id: rule.id,
+                description: rule.description.clone(),
+            },
+            WafMode::Detect => WafDecision::Detect {
+                rule_id: rule.id,
+                description: rule.description.clone(),
+            },
+        }
     }
 
     /// Return the number of rules loaded.
@@ -324,11 +410,12 @@ mod tests {
     #[test]
     fn path_traversal_encoded() {
         let waf = WafEngine::with_default_rules(WafMode::Block);
+        // URL-encoded ../ should be decoded and caught by the same rule.
         let req = make_req("GET", "/files/..%2f..%2fetc/passwd");
         assert!(matches!(
             waf.check(&req),
             WafDecision::Block {
-                rule_id: 930110,
+                rule_id: 930100,
                 ..
             }
         ));
@@ -455,7 +542,23 @@ mod tests {
     #[test]
     fn rule_count() {
         let waf = WafEngine::with_default_rules(WafMode::Block);
-        assert!(waf.rule_count() >= 9);
+        assert!(waf.rule_count() >= 7);
+    }
+
+    #[test]
+    fn url_decode_works() {
+        assert_eq!(url_decode("..%2f..%2f"), "../../");
+        assert_eq!(url_decode("hello+world"), "hello world");
+        assert_eq!(url_decode("%3Cscript%3E"), "<script>");
+        assert_eq!(url_decode("normal"), "normal");
+    }
+
+    #[test]
+    fn no_false_positive_on_dashes() {
+        // Removed the `--` rule to prevent false positives on normal URLs.
+        let waf = WafEngine::with_default_rules(WafMode::Block);
+        let req = make_req("GET", "/api/some-path?key=value--more");
+        assert!(matches!(waf.check(&req), WafDecision::Allow));
     }
 
     #[test]
