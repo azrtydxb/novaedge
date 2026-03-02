@@ -177,12 +177,47 @@ fn match_path(path_match: &PathMatch, path: &str) -> bool {
 fn match_query_param(name: &str, value: &str, query_str: &str) -> bool {
     for pair in query_str.split('&') {
         if let Some((k, v)) = pair.split_once('=') {
-            if k == name && v == value {
+            let decoded_k = percent_decode(k);
+            let decoded_v = percent_decode(v);
+            if decoded_k == name && decoded_v == value {
                 return true;
             }
         }
     }
     false
+}
+
+/// Simple percent-decoding for query parameter keys/values.
+fn percent_decode(input: &str) -> String {
+    let mut result = Vec::with_capacity(input.len());
+    let bytes = input.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(hi), Some(lo)) = (hex_val(bytes[i + 1]), hex_val(bytes[i + 2])) {
+                result.push(hi << 4 | lo);
+                i += 3;
+                continue;
+            }
+        }
+        // Also decode '+' as space (form encoding).
+        if bytes[i] == b'+' {
+            result.push(b' ');
+        } else {
+            result.push(bytes[i]);
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&result).into_owned()
+}
+
+fn hex_val(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn match_header(header_match: &HeaderMatch, headers: &[(String, String)]) -> bool {
@@ -395,9 +430,15 @@ mod tests {
         route.paths = vec![PathMatch::Regex(re)];
         router.set_routes(vec![route]);
 
-        assert!(router.match_request("", "/api/v1/users", "GET", &[]).is_some());
-        assert!(router.match_request("", "/api/v2/users", "GET", &[]).is_some());
-        assert!(router.match_request("", "/api/v1/posts", "GET", &[]).is_none());
+        assert!(router
+            .match_request("", "/api/v1/users", "GET", &[])
+            .is_some());
+        assert!(router
+            .match_request("", "/api/v2/users", "GET", &[])
+            .is_some());
+        assert!(router
+            .match_request("", "/api/v1/posts", "GET", &[])
+            .is_none());
         assert!(router.match_request("", "/other", "GET", &[]).is_none());
     }
 
@@ -428,8 +469,14 @@ mod tests {
         let mut router = Router::new();
         let mut route = make_route("multi-query", 10);
         route.query_params = vec![
-            QueryParamMatch { name: "a".into(), value: "1".into() },
-            QueryParamMatch { name: "b".into(), value: "2".into() },
+            QueryParamMatch {
+                name: "a".into(),
+                value: "1".into(),
+            },
+            QueryParamMatch {
+                name: "b".into(),
+                value: "2".into(),
+            },
         ];
         router.set_routes(vec![route]);
 

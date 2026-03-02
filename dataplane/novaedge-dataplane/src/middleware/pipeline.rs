@@ -131,12 +131,20 @@ fn apply_cors_response(config_json: &str, request: &Request, resp: &mut Response
 
     let allowed_origins: Vec<String> = config["allow_origins"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_else(|| vec!["*".into()]);
 
     let exposed_headers: Vec<String> = config["expose_headers"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     let allow_credentials = config["allow_credentials"].as_bool().unwrap_or(false);
@@ -167,7 +175,8 @@ fn apply_compression_headers(config_json: &str, request: &Request, resp: &mut Re
         .map(|(_, v)| v.as_str())
         .unwrap_or("");
 
-    let compressor = super::compression::Compression::new(super::compression::CompressionConfig::default());
+    let compressor =
+        super::compression::Compression::new(super::compression::CompressionConfig::default());
 
     // Determine content type from response headers.
     let content_type = resp
@@ -177,13 +186,12 @@ fn apply_compression_headers(config_json: &str, request: &Request, resp: &mut Re
         .map(|(_, v)| v.as_str())
         .unwrap_or("");
 
-    if let Some(algo) = compressor.negotiate(accept_encoding) {
-        if compressor.should_compress(content_type, resp.body.len()) {
-            compressor.apply_headers(&algo, resp);
-            // Note: actual byte-level compression would be applied here with flate2/brotli.
-            // For now we set the headers to indicate the compression intent.
-        }
-    }
+    // Compression negotiation and eligibility check.
+    // Note: actual byte-level compression (flate2/brotli) is not yet implemented.
+    // We intentionally do NOT set Content-Encoding headers without compressing the body,
+    // as that would produce invalid responses.
+    let _algo = compressor.negotiate(accept_encoding);
+    let _should = compressor.should_compress(content_type, resp.body.len());
 }
 
 // ---------------------------------------------------------------------------

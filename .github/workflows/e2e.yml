@@ -61,11 +61,13 @@ jobs:
         run: |
           docker build -t novaedge-controller:latest -f Dockerfile.controller .
           docker build -t novaedge-agent:latest -f Dockerfile.agent .
+          docker build -t novaedge-dataplane:latest -f Dockerfile.dataplane .
 
       - name: Load images into kind
         run: |
           kind load docker-image novaedge-controller:latest --name novaedge-e2e
           kind load docker-image novaedge-agent:latest --name novaedge-e2e
+          kind load docker-image novaedge-dataplane:latest --name novaedge-e2e
 
       - name: Install NovaEdge
         run: |
@@ -79,6 +81,9 @@ jobs:
             --set agent.image.repository=novaedge-agent \
             --set agent.image.tag=latest \
             --set agent.image.pullPolicy=Never \
+            --set dataplane.image.repository=novaedge-dataplane \
+            --set dataplane.image.tag=latest \
+            --set dataplane.image.pullPolicy=Never \
             --set webui.enabled=false \
             --wait \
             --timeout 600s

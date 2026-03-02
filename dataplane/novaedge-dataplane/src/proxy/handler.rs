@@ -99,21 +99,15 @@ impl ProxyHandler {
             .collect();
 
         // Detect WebSocket upgrade request.
-        let is_websocket = headers.iter().any(|(k, v)| {
-            k.eq_ignore_ascii_case("upgrade") && v.eq_ignore_ascii_case("websocket")
-        });
+        let is_websocket = headers
+            .iter()
+            .any(|(k, v)| k.eq_ignore_ascii_case("upgrade") && v.eq_ignore_ascii_case("websocket"));
 
         // Match route (with query param support).
         let matched_route = {
             let router = self.router.read().await;
             router
-                .match_request_with_query(
-                    &host,
-                    &path,
-                    &method,
-                    &headers,
-                    query_string.as_deref(),
-                )
+                .match_request_with_query(&host, &path, &method, &headers, query_string.as_deref())
                 .cloned()
         };
 
@@ -254,14 +248,17 @@ impl ProxyHandler {
             }
         } else {
             // Build a filtered slice for LB selection.
-            let filtered: Vec<lb::Backend> = healthy_backends.iter().map(|b| (*b).clone()).collect();
+            let filtered: Vec<lb::Backend> =
+                healthy_backends.iter().map(|b| (*b).clone()).collect();
             match balancer.select(&ctx, &filtered) {
                 Some(idx) => {
                     // Map back to original index.
                     let selected_backend = &filtered[idx];
                     let original_idx = backends
                         .iter()
-                        .position(|b| b.addr == selected_backend.addr && b.port == selected_backend.port)
+                        .position(|b| {
+                            b.addr == selected_backend.addr && b.port == selected_backend.port
+                        })
                         .unwrap_or(idx);
                     (original_idx, false)
                 }
@@ -512,14 +509,14 @@ impl ProxyHandler {
         };
 
         // Parse the URI path for the HTTP upgrade request.
-        let path = req.uri().path_and_query()
+        let path = req
+            .uri()
+            .path_and_query()
             .map(|pq| pq.to_string())
             .unwrap_or_else(|| "/".to_string());
 
         // Build the HTTP upgrade request to send to upstream.
-        let mut upgrade_request = format!(
-            "GET {path} HTTP/1.1\r\nHost: {backend_addr}\r\n"
-        );
+        let mut upgrade_request = format!("GET {path} HTTP/1.1\r\nHost: {backend_addr}\r\n");
         for (key, value) in headers {
             if key.eq_ignore_ascii_case("host") {
                 continue; // We already set Host above.
@@ -564,7 +561,9 @@ impl ProxyHandler {
                     if response_buf.len() > 8192 {
                         return Ok(hyper::Response::builder()
                             .status(502)
-                            .body(Full::new(Bytes::from("WebSocket upgrade response too large")))
+                            .body(Full::new(Bytes::from(
+                                "WebSocket upgrade response too large",
+                            )))
                             .unwrap());
                     }
                 }
@@ -591,7 +590,9 @@ impl ProxyHandler {
         if status_code != 101 {
             return Ok(hyper::Response::builder()
                 .status(status_code)
-                .body(Full::new(Bytes::from("WebSocket upgrade rejected by upstream")))
+                .body(Full::new(Bytes::from(
+                    "WebSocket upgrade rejected by upstream",
+                )))
                 .unwrap());
         }
 

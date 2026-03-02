@@ -398,10 +398,17 @@ impl DataplaneControl for DataplaneService {
                     match regex::Regex::new(&rs.path_regex) {
                         Ok(re) => paths.push(PathMatch::Regex(re)),
                         Err(e) => {
-                            warn!(route = %rs.name, regex = %rs.path_regex, error = %e, "Invalid path regex, skipping");
+                            warn!(route = %rs.name, regex = %rs.path_regex, error = %e, "Invalid path regex, skipping regex match");
+                            // If no other path constraints exist, add a catch-none to avoid
+                            // accidentally matching all paths.
+                            if paths.is_empty() {
+                                warn!(route = %rs.name, "Route has no valid path constraints after regex failure, route will never match");
+                            }
                         }
                     }
                 }
+                // If paths is empty (no path constraints at all), the route matches all paths
+                // which is valid Gateway API behavior (no pathMatch = match everything).
 
                 ProxyRoute {
                     name: rs.name.clone(),
