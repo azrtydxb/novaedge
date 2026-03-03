@@ -856,14 +856,19 @@ jobs:
       matrix:
         image:
           - name: novaedge-controller
+            registry_path: novaedge-controller
             dockerfile: Dockerfile.controller
           - name: novaedge-agent
+            registry_path: novaedge-agent
             dockerfile: Dockerfile.agent
           - name: novaedge-operator
+            registry_path: novaedge-operator
             dockerfile: Dockerfile.operator
           - name: novaedge-dataplane
+            registry_path: novaedge/novaedge-dataplane
             dockerfile: Dockerfile.dataplane
           - name: novaedge-webui
+            registry_path: novaedge-webui
             dockerfile: Dockerfile.webui
     steps:
       - name: Checkout code
@@ -886,8 +891,8 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           push: true
           tags: |
-            ghcr.io/piwi3910/${{ matrix.image.name }}:sha-${{ github.sha }}
-            ghcr.io/piwi3910/${{ matrix.image.name }}:latest
+            ghcr.io/piwi3910/${{ matrix.image.registry_path }}:sha-${{ github.sha }}
+            ghcr.io/piwi3910/${{ matrix.image.registry_path }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
