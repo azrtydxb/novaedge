@@ -14,7 +14,7 @@ use rustls::ServerConfig;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 use tokio_rustls::TlsAcceptor;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::RuntimeConfig;
 use crate::proxy::handler::ProxyHandler;
@@ -22,6 +22,8 @@ use crate::proxy::handler::ProxyHandler;
 /// Handle for a running listener task.
 struct ListenerHandle {
     port: u32,
+    /// Protocol type for logging and diagnostics.
+    #[allow(dead_code)]
     protocol: String,
     cancel: tokio::sync::watch::Sender<bool>,
     task: tokio::task::JoinHandle<()>,
@@ -93,6 +95,13 @@ impl ListenerManager {
 
         // Start new listeners for gateways not yet running.
         for (name, gw) in &snapshot.gateways {
+            if !gw.hostnames.is_empty() {
+                debug!(
+                    gateway = %name,
+                    hostnames = ?gw.hostnames,
+                    "Gateway hostnames configured"
+                );
+            }
             if !listeners.contains_key(name) {
                 // Check if another gateway already has a listener on this port.
                 // On hostNetwork, multiple gateways sharing a port is expected;
@@ -578,6 +587,8 @@ mod tests {
                 port: backend_addr.port() as u32,
                 weight: 1,
                 healthy: true,
+                zone: None,
+                priority: 0,
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),

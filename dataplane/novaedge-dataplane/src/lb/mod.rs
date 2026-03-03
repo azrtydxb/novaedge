@@ -26,6 +26,8 @@ pub struct Backend {
     pub weight: u16,
     pub healthy: bool,
     pub zone: Option<String>,
+    /// Priority group for failover (0 = highest). Used by priority-based LB.
+    #[allow(dead_code)]
     pub priority: u32,
 }
 
@@ -89,6 +91,28 @@ fn healthy_indices(backends: &[Backend]) -> Vec<usize> {
         .filter(|(_, b)| b.healthy)
         .map(|(i, _)| i)
         .collect()
+}
+
+/// Filter healthy backends to prefer those in the same zone as the request.
+///
+/// If the request has a zone set and there are healthy backends in that zone,
+/// returns only those backends. Otherwise falls back to all healthy backends.
+pub fn prefer_same_zone<'a>(
+    ctx: &RequestContext,
+    backends: &'a [Backend],
+    healthy: &[usize],
+) -> Vec<usize> {
+    if let Some(ref req_zone) = ctx.zone {
+        let same_zone: Vec<usize> = healthy
+            .iter()
+            .copied()
+            .filter(|&i| backends[i].zone.as_deref() == Some(req_zone.as_str()))
+            .collect();
+        if !same_zone.is_empty() {
+            return same_zone;
+        }
+    }
+    healthy.to_vec()
 }
 
 #[cfg(test)]

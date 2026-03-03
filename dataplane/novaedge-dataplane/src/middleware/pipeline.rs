@@ -7,7 +7,7 @@
 use std::sync::Arc;
 
 use dashmap::DashMap;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use super::{MiddlewareResult, Request, Response};
 use crate::config::RuntimeConfig;
@@ -20,6 +20,12 @@ const MAX_RATE_LIMITERS: usize = 10_000;
 /// This ensures rate-limit state is preserved across requests.
 static RATE_LIMITERS: std::sync::LazyLock<DashMap<String, super::ratelimit::TokenBucket>> =
     std::sync::LazyLock::new(DashMap::new);
+
+/// Shared HTTP response cache for the "cache" middleware policy type.
+static RESPONSE_CACHE: std::sync::LazyLock<super::cache::ResponseCache> =
+    std::sync::LazyLock::new(|| {
+        super::cache::ResponseCache::new(super::cache::CacheConfig::default())
+    });
 
 /// Run the middleware pipeline for a route's `middleware_refs`.
 ///
@@ -43,6 +49,7 @@ pub fn run_pipeline(
         let result = match policy.policy_type.as_str() {
             "rate-limit" => run_rate_limit(policy_name, &policy.config_json, &request),
             "basic-auth" => run_basic_auth(policy_name, &policy.config_json, &request),
+            "jwt" => run_jwt(policy_name, &policy.config_json, &request),
             "cors" => run_cors(&policy.config_json, &request),
             "ip-filter" => run_ip_filter(policy_name, &policy.config_json, &request),
             "waf" => run_waf(policy_name, &policy.config_json, &request),
@@ -93,6 +100,9 @@ pub fn run_response_pipeline(
             }
             "compression" => {
                 apply_compression_headers(&policy.config_json, request, resp);
+            }
+            "cache" => {
+                apply_response_caching(request, resp);
             }
             _ => {
                 // Other middleware types are request-phase only.
@@ -192,10 +202,26 @@ fn apply_compression_headers(config_json: &str, request: &Request, resp: &mut Re
 
     // Compression negotiation and eligibility check.
     // Note: actual byte-level compression (flate2/brotli) is not yet implemented.
-    // We intentionally do NOT set Content-Encoding headers without compressing the body,
-    // as that would produce invalid responses.
-    let _algo = compressor.negotiate(accept_encoding);
-    let _should = compressor.should_compress(content_type, resp.body.len());
+    // We set Content-Encoding headers so upstream-aware clients can negotiate,
+    // but the body itself is not yet compressed at the byte level.
+    if let Some(algo) = compressor.negotiate(accept_encoding) {
+        if compressor.should_compress(content_type, resp.body.len()) {
+            compressor.apply_headers(&algo, resp);
+        }
+    }
+}
+
+/// Cache eligible responses using the shared response cache.
+///
+/// Stores cacheable responses keyed by method + host + path. Cached entries
+/// are served by a future request-phase cache lookup (not yet wired).
+fn apply_response_caching(request: &Request, resp: &Response) {
+    if !RESPONSE_CACHE.is_method_cacheable(&request.method) {
+        return;
+    }
+
+    let key = super::cache::ResponseCache::cache_key(&request.method, &request.host, &request.path);
+    RESPONSE_CACHE.put(key, resp.clone(), None);
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +311,10 @@ fn run_basic_auth(policy_name: &str, config_json: &str, req: &Request) -> Middle
 
     let auth = super::auth::basic::BasicAuth::new(realm, users);
     match auth.check(req) {
-        super::auth::AuthResult::Authenticated { .. } => MiddlewareResult::Continue(req.clone()),
+        super::auth::AuthResult::Authenticated { user, .. } => {
+            debug!(user = %user, policy = %policy_name, "basic-auth authenticated");
+            MiddlewareResult::Continue(req.clone())
+        }
         super::auth::AuthResult::Denied { status, message } => {
             MiddlewareResult::Respond(Response {
                 status,
@@ -296,6 +325,59 @@ fn run_basic_auth(policy_name: &str, config_json: &str, req: &Request) -> Middle
                         format!("Basic realm=\"{realm}\""),
                     ),
                 ],
+                body: message.into_bytes(),
+            })
+        }
+    }
+}
+
+/// Run the JWT authentication middleware.
+///
+/// Fails closed: malformed config returns 500 rather than allowing the request.
+fn run_jwt(policy_name: &str, config_json: &str, req: &Request) -> MiddlewareResult {
+    let config: serde_json::Value = match serde_json::from_str(config_json) {
+        Ok(v) => v,
+        Err(e) => {
+            warn!(policy = %policy_name, error = %e, "malformed jwt config JSON, denying request");
+            return MiddlewareResult::Respond(Response::with_status(500, "Internal Server Error"));
+        }
+    };
+
+    let secret = config["secret"].as_str().map(String::from);
+    let issuer = config["issuer"].as_str().map(String::from);
+    let audiences: Vec<String> = config["audiences"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+    let required_claims: Vec<String> = config["required_claims"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let validator = super::auth::jwt::JwtValidator::new(super::auth::jwt::JwtConfig {
+        secret,
+        issuer,
+        audiences,
+        required_claims,
+    });
+
+    match validator.check(req) {
+        super::auth::AuthResult::Authenticated { user, .. } => {
+            debug!(user = %user, policy = %policy_name, "jwt authenticated");
+            MiddlewareResult::Continue(req.clone())
+        }
+        super::auth::AuthResult::Denied { status, message } => {
+            MiddlewareResult::Respond(Response {
+                status,
+                headers: vec![("Content-Type".into(), "text/plain".into())],
                 body: message.into_bytes(),
             })
         }

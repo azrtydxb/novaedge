@@ -7,6 +7,7 @@
 use crate::maps::MapManager;
 
 /// Result of loading eBPF programs.
+#[allow(dead_code)]
 pub struct LoadResult {
     /// The map manager wrapping eBPF map handles.
     pub map_manager: MapManager,
@@ -134,6 +135,7 @@ pub fn attach_tc(bpf: &mut aya::Ebpf, program_name: &str, interface: &str) -> an
 
 /// Stub for non-Linux platforms.
 #[cfg(not(target_os = "linux"))]
+#[allow(dead_code)]
 pub fn load_ebpf(_path: &str) -> anyhow::Result<LoadResult> {
     anyhow::bail!("eBPF loading is only supported on Linux")
 }

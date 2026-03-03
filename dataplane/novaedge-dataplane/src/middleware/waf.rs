@@ -38,6 +38,7 @@ pub struct WafRule {
     /// Regex pattern to match (case-insensitive).
     pub pattern: String,
     /// Severity classification.
+    #[allow(dead_code)] // Metadata for logging/reporting; not read by the check() fast path.
     pub severity: WafSeverity,
 }
 
@@ -62,6 +63,7 @@ pub enum WafSeverity {
     Critical,
     High,
     Medium,
+    #[allow(dead_code)]
     Low,
 }
 
@@ -297,6 +299,7 @@ impl WafEngine {
     }
 
     /// Return the number of rules loaded.
+    #[allow(dead_code)]
     pub fn rule_count(&self) -> usize {
         self.config.rules.len()
     }

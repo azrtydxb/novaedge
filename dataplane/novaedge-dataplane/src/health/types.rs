@@ -1,9 +1,15 @@
 //! Health check types and configuration.
+//!
+//! Many variants and fields are config-gated: they are constructed by the
+//! gRPC config translation layer when specific health check types (HTTP,
+//! gRPC) are configured via the Go agent. The `#[allow(dead_code)]`
+//! annotations suppress warnings for these config-driven constructs.
 
 use std::time::Duration;
 
 /// Type of health check to perform.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum HealthCheckType {
     /// HTTP health check.
     Http(HttpHealthCheck),
@@ -39,6 +45,7 @@ impl Default for HttpHealthCheck {
 
 /// TCP health check configuration.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct TcpHealthCheck {
     /// Optional bytes to send after connecting.
     pub send: Option<Vec<u8>>,
@@ -48,6 +55,7 @@ pub struct TcpHealthCheck {
 
 /// gRPC health check configuration.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct GrpcHealthCheck {
     /// Service name for the gRPC health check.
     pub service: String,
@@ -55,6 +63,7 @@ pub struct GrpcHealthCheck {
 
 /// Health check configuration.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct HealthCheckConfig {
     /// Interval between health checks.
     pub interval: Duration,
@@ -85,6 +94,7 @@ impl Default for HealthCheckConfig {
 
 /// Health state of a backend.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum HealthState {
     /// Backend is healthy.
     Healthy {
@@ -104,6 +114,7 @@ pub enum HealthState {
 
 impl HealthState {
     /// Returns `true` if the backend is in the healthy state.
+    #[allow(dead_code)]
     pub fn is_healthy(&self) -> bool {
         matches!(self, HealthState::Healthy { .. })
     }

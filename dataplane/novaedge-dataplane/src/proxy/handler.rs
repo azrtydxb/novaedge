@@ -10,6 +10,7 @@ use hyper::body::Incoming;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::{debug, info, warn};
 
+use super::response::{apply_header_actions, find_error_page, ErrorPage, HeaderAction};
 use super::router::Router;
 use crate::config::RuntimeConfig;
 use crate::lb;
@@ -31,6 +32,10 @@ pub struct ProxyHandler {
     outlier_detector: Arc<OutlierDetector>,
     /// Connection pool for concurrency limiting.
     connection_pool: Arc<ConnectionPool>,
+    /// Custom error pages for specific HTTP status codes.
+    error_pages: Vec<ErrorPage>,
+    /// Response header actions applied to all upstream responses.
+    response_header_actions: Vec<HeaderAction>,
 }
 
 impl ProxyHandler {
@@ -52,6 +57,8 @@ impl ProxyHandler {
             circuit_breakers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             outlier_detector,
             connection_pool,
+            error_pages: Vec::new(),
+            response_header_actions: Vec::new(),
         }
     }
 
@@ -81,6 +88,11 @@ impl ProxyHandler {
         req: hyper::Request<Incoming>,
         client_addr: SocketAddr,
     ) -> Result<hyper::Response<Full<Bytes>>, hyper::Error> {
+        let ejected = self.outlier_detector.ejected_count();
+        if ejected > 0 {
+            debug!(ejected_backends = ejected, "Outlier detector: backends currently ejected");
+        }
+
         let method = req.method().to_string();
         let path = req.uri().path().to_string();
         let query_string = req.uri().query().map(String::from);
@@ -113,11 +125,33 @@ impl ProxyHandler {
         let route = match matched_route {
             Some(r) => r,
             None => {
-                debug!("No route matched for {method} {host}{path}");
-                return Ok(hyper::Response::builder()
-                    .status(404)
-                    .body(Full::new(Bytes::from("Not Found")))
-                    .unwrap());
+                // Try the default backend as a fallback when no route matches.
+                let default_backend = {
+                    let router = self.router.read().unwrap();
+                    router.default_backend().map(String::from)
+                };
+                if let Some(backend) = default_backend {
+                    debug!("No route matched for {method} {host}{path}, using default backend");
+                    super::router::Route {
+                        name: "__default__".to_string(),
+                        hostnames: Vec::new(),
+                        paths: Vec::new(),
+                        methods: Vec::new(),
+                        headers: Vec::new(),
+                        query_params: Vec::new(),
+                        backend,
+                        priority: 0,
+                        rewrite_path: None,
+                        add_headers: HashMap::new(),
+                        middleware_refs: Vec::new(),
+                    }
+                } else {
+                    debug!("No route matched for {method} {host}{path}");
+                    return Ok(hyper::Response::builder()
+                        .status(404)
+                        .body(Full::new(Bytes::from("Not Found")))
+                        .unwrap());
+                }
             }
         };
 
@@ -177,7 +211,16 @@ impl ProxyHandler {
             }
         };
 
-        // Convert endpoints to LB Backend type.
+        // Log health check path if configured for this cluster.
+        if !cluster.health_check_path.is_empty() {
+            debug!(
+                cluster = %cluster.name,
+                health_check_path = %cluster.health_check_path,
+                "Cluster has health check path configured"
+            );
+        }
+
+        // Convert endpoints to LB Backend type, preserving zone/priority.
         let backends: Vec<lb::Backend> = cluster
             .endpoints
             .iter()
@@ -189,8 +232,8 @@ impl ProxyHandler {
                 port: e.port as u16,
                 weight: e.weight as u16,
                 healthy: e.healthy,
-                zone: None,
-                priority: 0,
+                zone: e.zone.clone(),
+                priority: e.priority,
             })
             .collect();
 
@@ -226,6 +269,11 @@ impl ProxyHandler {
             .collect();
 
         let balancer = lb::new_load_balancer(&cluster.lb_algorithm);
+        debug!(
+            cluster = %cluster.name,
+            algorithm = balancer.name(),
+            "Using load balancer"
+        );
 
         // Select from non-ejected backends if available, fall back to all.
         let (backend_idx, use_all) = if healthy_backends.is_empty() {
@@ -275,13 +323,28 @@ impl ProxyHandler {
                 }
             }
         };
-        let _ = use_all; // suppress warning
+        if use_all {
+            warn!(
+                cluster = %cluster.name,
+                "Panic mode: all backends ejected, using unfiltered pool"
+            );
+        }
 
         let selected = &backends[backend_idx];
         let backend_addr = SocketAddr::new(selected.addr, selected.port);
 
+        // Log active connection count for the selected backend.
+        let active = self.connection_pool.active_count(&backend_addr);
+        if active > 0 {
+            debug!(
+                backend = %backend_addr,
+                active_connections = active,
+                "Connection pool status before acquire"
+            );
+        }
+
         // Acquire a connection pool slot.
-        let _pool_guard = match self.connection_pool.acquire(backend_addr).await {
+        let pool_guard = match self.connection_pool.acquire(backend_addr).await {
             Ok(guard) => Some(guard),
             Err(e) => {
                 warn!(
@@ -391,6 +454,18 @@ impl ProxyHandler {
             }
         };
 
+        // Log pool guard info for debugging slow pool acquisition.
+        if let Some(ref guard) = pool_guard {
+            let wait_time = guard.acquired_at.elapsed();
+            if wait_time > std::time::Duration::from_millis(100) {
+                debug!(
+                    backend = %guard.addr,
+                    wait_ms = wait_time.as_millis(),
+                    "Slow pool acquisition"
+                );
+            }
+        }
+
         // Send the request to the upstream and measure latency.
         let upstream_start = std::time::Instant::now();
         let result = match self.client.request(upstream_req).await {
@@ -474,6 +549,46 @@ impl ProxyHandler {
                                 resp = resp.header(name, val);
                             }
                         }
+                    }
+                }
+
+                // Apply configured response header actions.
+                if !self.response_header_actions.is_empty() {
+                    let mut action_headers: Vec<(String, String)> = resp_headers.clone();
+                    apply_header_actions(&mut action_headers, &self.response_header_actions);
+                    for (k, v) in &action_headers {
+                        if resp_headers.iter().any(|(rk, rv)| rk == k && rv == v) {
+                            continue;
+                        }
+                        if let Ok(name) = hyper::header::HeaderName::from_bytes(k.as_bytes()) {
+                            if let Ok(val) = hyper::header::HeaderValue::from_str(v) {
+                                resp = resp.header(name, val);
+                            }
+                        }
+                    }
+                }
+
+                // Advertise HTTP/3 support via Alt-Svc header when on HTTPS.
+                // Port 443 is the standard QUIC port; the alt_svc_header
+                // function generates the appropriate header value.
+                if client_addr.port() == 443 || client_addr.port() == 8443 {
+                    let alt_svc = super::http3::alt_svc_header(client_addr.port());
+                    resp = resp.header("Alt-Svc", alt_svc);
+                }
+
+                // Check for custom error pages on 4xx/5xx responses.
+                if (status.is_client_error() || status.is_server_error())
+                    && !self.error_pages.is_empty()
+                {
+                    if let Some(error_page) = find_error_page(status.as_u16(), &self.error_pages) {
+                        debug!(
+                            status = status.as_u16(),
+                            "Serving custom error page"
+                        );
+                        resp = resp.header("Content-Type", error_page.content_type.as_str());
+                        return Ok(resp
+                            .body(Full::new(Bytes::from(error_page.body.clone())))
+                            .unwrap());
                     }
                 }
 
@@ -671,7 +786,25 @@ impl ProxyHandler {
         Ok(resp_builder.body(Full::new(Bytes::new())).unwrap())
     }
 
+    /// Reset the circuit breaker for a named cluster.
+    ///
+    /// Called when a cluster is updated to clear any tripped state,
+    /// giving the refreshed endpoints a clean slate.
+    #[allow(dead_code)]
+    pub async fn reset_circuit_breaker(&self, cluster_name: &str) {
+        let cbs = self.circuit_breakers.read().await;
+        if let Some(cb) = cbs.get(cluster_name) {
+            debug!(cluster = %cluster_name, "Resetting circuit breaker for updated cluster");
+            cb.reset();
+        }
+    }
+
     /// Update the router's routes.
+    ///
+    /// This is a public API intended for use by server.rs when route
+    /// configuration is updated. Currently server.rs accesses the router
+    /// directly, but this method provides a higher-level alternative.
+    #[allow(dead_code)]
     pub async fn update_routes(&self, routes: Vec<super::router::Route>) {
         self.router.write().unwrap().set_routes(routes);
     }
@@ -735,6 +868,8 @@ mod tests {
                 port: 8080,
                 weight: 1,
                 healthy: true,
+                zone: None,
+                priority: 0,
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
@@ -790,6 +925,8 @@ mod tests {
                 port: backend_addr.port() as u32,
                 weight: 1,
                 healthy: true,
+                zone: None,
+                priority: 0,
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),

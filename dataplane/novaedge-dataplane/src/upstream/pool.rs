@@ -148,16 +148,21 @@ impl ConnectionPool {
         }
     }
 
-    /// Remove idle connections that have exceeded the idle timeout.
+    /// Remove idle connections that have exceeded the idle timeout or max age.
+    ///
+    /// Connections are removed if they have been idle longer than the configured
+    /// `idle_timeout`, or if they were created more than 10 minutes ago (max age).
     pub async fn cleanup_idle(&self) {
+        const MAX_CONN_AGE: Duration = Duration::from_secs(600);
         let mut pools = self.pools.lock().await;
         let timeout = self.config.idle_timeout;
         let now = Instant::now();
         for (_addr, host_pool) in pools.iter_mut() {
             let before = host_pool.idle.len();
-            host_pool
-                .idle
-                .retain(|c| now.duration_since(c.last_used) < timeout);
+            host_pool.idle.retain(|c| {
+                now.duration_since(c.last_used) < timeout
+                    && c.created.elapsed() < MAX_CONN_AGE
+            });
             let removed = before - host_pool.idle.len();
             // Return permits for removed idle connections.
             if removed > 0 {

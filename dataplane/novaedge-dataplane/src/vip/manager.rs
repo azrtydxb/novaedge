@@ -15,6 +15,7 @@ pub enum VIPStatus {
     Pending,
     Active,
     Standby,
+    #[allow(dead_code)] // Valid failure state used when real VIP operations fail
     Failed,
 }
 

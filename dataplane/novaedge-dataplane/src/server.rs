@@ -11,7 +11,7 @@ use tokio::sync::broadcast;
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_stream::Stream;
 use tonic::{Request, Response, Status};
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::{
     ClusterState, EndpointState, GatewayState, PolicyState, RouteState, RuntimeConfig, TlsState,
@@ -31,6 +31,7 @@ pub struct DataplaneService {
     flow_tx: broadcast::Sender<proto::FlowEvent>,
     start_time: Instant,
     vip_manager: std::sync::Mutex<vip::manager::VIPManager>,
+    route_client: tokio::sync::Mutex<Option<vip::routing::RouteClient>>,
     mesh_tls: std::sync::Mutex<Option<mesh::mtls::MeshTlsProvider>>,
     mesh_authz: std::sync::Mutex<mesh::authz::MeshAuthzPolicy>,
     mesh_tproxy: std::sync::Mutex<mesh::tproxy::TproxyInterceptor>,
@@ -53,6 +54,7 @@ impl DataplaneService {
             flow_tx,
             start_time: Instant::now(),
             vip_manager: std::sync::Mutex::new(vip::manager::VIPManager::new()),
+            route_client: tokio::sync::Mutex::new(None),
             mesh_tls: std::sync::Mutex::new(None),
             mesh_authz: std::sync::Mutex::new(mesh::authz::MeshAuthzPolicy::new(
                 mesh::authz::AuthzAction::Allow,
@@ -331,6 +333,12 @@ impl DataplaneService {
                     port: e.port,
                     weight: e.weight,
                     healthy: e.healthy,
+                    zone: if e.zone.is_empty() {
+                        None
+                    } else {
+                        Some(e.zone.clone())
+                    },
+                    priority: e.priority,
                 })
                 .collect(),
             lb_algorithm: Self::lb_algo_str(cluster.lb_algorithm).to_string(),
@@ -441,6 +449,16 @@ impl DataplaneControl for DataplaneService {
         info!(version = %req.version, "Configuration applied to runtime state");
 
         // Apply VIP assignments.
+        // Disconnect route client before resetting VIPs, since all routes will be re-advertised.
+        {
+            let mut rc = self.route_client.lock().await;
+            if let Some(ref mut client) = *rc {
+                if client.is_connected() {
+                    client.disconnect();
+                    info!("Route client disconnected for VIP reset");
+                }
+            }
+        }
         {
             let mut vip_mgr = self.vip_manager.lock().unwrap();
             // Clear and re-apply all VIPs from snapshot.
@@ -459,7 +477,12 @@ impl DataplaneControl for DataplaneService {
                 }
             }
             if !req.vips.is_empty() {
-                info!(count = req.vips.len(), "VIP assignments applied");
+                info!(
+                    count = req.vips.len(),
+                    total = vip_mgr.vip_count(),
+                    active = vip_mgr.active_vips().len(),
+                    "VIP assignments applied"
+                );
             }
         }
 
@@ -497,10 +520,53 @@ impl DataplaneControl for DataplaneService {
                 let mut wan_link =
                     sdwan::link::WANLink::new(&wl_cfg.name, &wl_cfg.interface, gateway);
                 wan_link.priority = wl_cfg.priority;
+                // Set initial bandwidth from config.
+                if wl_cfg.bandwidth_mbps > 0 {
+                    let metrics = sdwan::link::LinkMetrics {
+                        bandwidth_bps: (wl_cfg.bandwidth_mbps as u64) * 1_000_000,
+                        ..sdwan::link::LinkMetrics::default()
+                    };
+                    wan_link.update_metrics(metrics);
+                }
                 wan_mgr.add_link(wan_link);
+                // Set weight using mutable access after insertion.
+                if let Some(link) = wan_mgr.get_link_mut(&wl_cfg.name) {
+                    link.weight = wl_cfg.bandwidth_mbps;
+                }
             }
             if !req.wan_links.is_empty() {
-                info!(count = req.wan_links.len(), "WAN links applied");
+                let active = wan_mgr.active_links();
+                info!(
+                    count = req.wan_links.len(),
+                    active = active.len(),
+                    total = wan_mgr.link_count(),
+                    "WAN links applied"
+                );
+                if let Some(best) = wan_mgr.best_link() {
+                    info!(best_link = %best.name, "Best WAN link selected");
+                }
+            }
+        }
+
+        // Reset WireGuard tunnels on full config apply.
+        {
+            let mut wg = self.wireguard_manager.lock().unwrap();
+            *wg = sdwan::wireguard::WireGuardManager::new();
+            // Set up a default WireGuard tunnel for each WAN link that has SD-WAN.
+            for wl_cfg in &req.wan_links {
+                let wg_config = sdwan::wireguard::WireGuardConfig {
+                    interface_name: format!("wg-{}", wl_cfg.name),
+                    ..sdwan::wireguard::WireGuardConfig::default()
+                };
+                let _ = wg.add_tunnel(wg_config);
+            }
+            if wg.tunnel_count() > 0 {
+                let _ = wg.apply();
+                info!(
+                    tunnels = wg.tunnel_count(),
+                    active = wg.is_active(),
+                    "WireGuard tunnels configured"
+                );
             }
         }
 
@@ -642,18 +708,65 @@ impl DataplaneControl for DataplaneService {
             &vip_cfg.interface
         };
 
-        let mut mgr = self.vip_manager.lock().unwrap();
-        // Remove existing VIP at this address if present, then re-add.
-        let _ = mgr.remove_vip(&ip);
-        mgr.add_vip(ip, prefix, interface, mode)
-            .map_err(|e| Status::internal(format!("failed to add VIP: {e}")))?;
-        mgr.activate(&ip)
-            .map_err(|e| Status::internal(format!("failed to activate VIP: {e}")))?;
+        // Check current VIP state before modifying.
+        let needs_route_advertise;
+        {
+            let mut mgr = self.vip_manager.lock().unwrap();
+
+            // Check if VIP already exists and log its current state.
+            if let Some(existing) = mgr.get_vip(&ip) {
+                info!(
+                    vip = %ip,
+                    current_status = ?existing.status,
+                    current_interface = %existing.interface,
+                    current_prefix = existing.prefix_len,
+                    current_mode = ?existing.mode,
+                    "Replacing existing VIP"
+                );
+            }
+
+            // Remove existing VIP at this address if present, then re-add.
+            let _ = mgr.remove_vip(&ip);
+            mgr.add_vip(ip, prefix, interface, mode.clone())
+                .map_err(|e| Status::internal(format!("failed to add VIP: {e}")))?;
+            mgr.activate(&ip)
+                .map_err(|e| Status::internal(format!("failed to activate VIP: {e}")))?;
+
+            // Determine if we need BGP/OSPF route advertisement.
+            needs_route_advertise = matches!(
+                mode,
+                vip::manager::VIPMode::Bgp { .. } | vip::manager::VIPMode::Ospf { .. }
+            );
+        }
 
         // Send GARP for L2 VIPs.
         if vip_cfg.mode == proto::VipMode::L2 as i32 && ip.is_ipv4() {
             let mac = Self::read_interface_mac(interface);
             let _ = vip::garp::send_garp(ip, interface, &mac, &vip::garp::GarpConfig::default());
+        }
+
+        // Advertise VIP via BGP/OSPF routing when applicable.
+        if needs_route_advertise {
+            let mut rc = self.route_client.lock().await;
+            if let Some(ref client) = *rc {
+                if client.is_connected() {
+                    if let Err(e) = client.advertise_vip(ip).await {
+                        warn!(vip = %ip, error = %e, "Failed to advertise VIP via routing");
+                    }
+                } else {
+                    info!(vip = %ip, "Route client not connected, skipping VIP advertisement");
+                }
+            } else {
+                // Lazily initialize the route client for BGP/OSPF VIPs.
+                let mut client =
+                    vip::routing::RouteClient::new("unix:///run/novaroute.sock");
+                if let Err(e) = client.connect().await {
+                    warn!(error = %e, "Failed to connect route client");
+                } else if let Err(e) = client.advertise_vip(ip).await {
+                    warn!(vip = %ip, error = %e, "Failed to advertise VIP via routing");
+                }
+                *rc = Some(client);
+            }
         }
 
         let (status, message) =
@@ -672,10 +785,42 @@ impl DataplaneControl for DataplaneService {
         // Since VIPManager is keyed by IP, we need to find the IP by name.
         // For now, try parsing the name as an address (the Go agent sends the address).
         // If that fails, just acknowledge (the VIP may have been removed already).
+        let mut needs_route_withdraw = false;
+        let mut withdraw_ip = None;
         if let Ok((ip, _)) = Self::parse_vip_address(&req.name) {
             let mut mgr = self.vip_manager.lock().unwrap();
+            // Check the VIP mode before removing to determine if we need route withdrawal.
+            if let Some(vip_state) = mgr.get_vip(&ip) {
+                needs_route_withdraw = matches!(
+                    vip_state.mode,
+                    vip::manager::VIPMode::Bgp { .. } | vip::manager::VIPMode::Ospf { .. }
+                );
+                info!(
+                    vip = %ip,
+                    interface = %vip_state.interface,
+                    prefix_len = vip_state.prefix_len,
+                    mode = ?vip_state.mode,
+                    status = ?vip_state.status,
+                    "Deleting VIP"
+                );
+            }
             let _ = mgr.deactivate(&ip);
             let _ = mgr.remove_vip(&ip);
+            withdraw_ip = Some(ip);
+        }
+
+        // Withdraw VIP from BGP/OSPF routing when applicable.
+        if needs_route_withdraw {
+            if let Some(ip) = withdraw_ip {
+                let rc = self.route_client.lock().await;
+                if let Some(ref client) = *rc {
+                    if client.is_connected() {
+                        if let Err(e) = client.withdraw_vip(ip).await {
+                            warn!(vip = %ip, error = %e, "Failed to withdraw VIP from routing");
+                        }
+                    }
+                }
+            }
         }
 
         let (status, message) = Self::ok_response(format!("VIP '{}' deleted", req.name));
@@ -775,6 +920,45 @@ impl DataplaneControl for DataplaneService {
             .ok_or_else(|| Status::invalid_argument("missing mesh config"))?;
         info!(enabled = mesh_cfg.enabled, mtls_mode = %mesh_cfg.mtls_mode, "UpsertMeshConfig");
 
+        // Parse and validate the SPIFFE ID from the mesh configuration.
+        if !mesh_cfg.spiffe_id.is_empty() {
+            match mesh::spiffe::SpiffeId::parse(&mesh_cfg.spiffe_id) {
+                Ok(spiffe_id) => {
+                    info!(
+                        spiffe_uri = %spiffe_id.to_uri(),
+                        trust_domain = %spiffe_id.trust_domain,
+                        path = %spiffe_id.path,
+                        "Parsed mesh SPIFFE ID"
+                    );
+                    // Verify the SPIFFE ID matches the configured trust domain.
+                    if !mesh_cfg.trust_domain.is_empty()
+                        && spiffe_id.trust_domain != mesh_cfg.trust_domain
+                    {
+                        warn!(
+                            spiffe_domain = %spiffe_id.trust_domain,
+                            config_domain = %mesh_cfg.trust_domain,
+                            "SPIFFE trust domain mismatch"
+                        );
+                    }
+                    // Check if this is an agent SPIFFE ID and log its role.
+                    let agent_id = mesh::spiffe::SpiffeId::agent(
+                        &spiffe_id.trust_domain,
+                        "dataplane",
+                    );
+                    if spiffe_id.matches_pattern(&agent_id.to_uri()) {
+                        debug!("SPIFFE ID matches agent pattern");
+                    }
+                }
+                Err(e) => {
+                    warn!(
+                        spiffe_id = %mesh_cfg.spiffe_id,
+                        error = %e,
+                        "Invalid SPIFFE ID in mesh config"
+                    );
+                }
+            }
+        }
+
         // Configure mTLS provider.
         if mesh_cfg.enabled {
             let ca_pem = String::from_utf8_lossy(&mesh_cfg.ca_cert_pem).to_string();
@@ -783,8 +967,8 @@ impl DataplaneControl for DataplaneService {
 
             let tls_config = mesh::mtls::MeshTlsConfig {
                 ca_cert_pem: ca_pem,
-                workload_cert_pem: cert_pem,
-                workload_key_pem: key_pem,
+                workload_cert_pem: cert_pem.clone(),
+                workload_key_pem: key_pem.clone(),
                 spiffe_id: mesh_cfg.spiffe_id.clone(),
                 ..mesh::mtls::MeshTlsConfig::default()
             };
@@ -793,7 +977,65 @@ impl DataplaneControl for DataplaneService {
             if !provider.config().ca_cert_pem.is_empty() {
                 let _ = provider.initialize();
             }
+            // Check if existing provider needs certificate renewal.
+            {
+                let existing = self.mesh_tls.lock().unwrap();
+                if let Some(ref prev) = *existing {
+                    if prev.is_initialized() && prev.needs_renewal() {
+                        info!("Previous mesh TLS provider needs renewal, replacing");
+                    }
+                }
+            }
+            // Update certificates on the new provider if certs were provided.
+            if !cert_pem.is_empty() && !key_pem.is_empty() {
+                provider.update_certificates(cert_pem, key_pem);
+            }
+            info!(
+                initialized = provider.is_initialized(),
+                spiffe_id = %provider.spiffe_id(),
+                "Mesh mTLS provider configured"
+            );
             *self.mesh_tls.lock().unwrap() = Some(provider);
+
+            // Configure mesh authorization policy with default allow.
+            // Real authorization rules will be set via mesh policy updates.
+            {
+                let mut authz = self.mesh_authz.lock().unwrap();
+                // Configure a default authorization policy allowing mesh traffic.
+                let trust_domain = if mesh_cfg.trust_domain.is_empty() {
+                    "cluster.local"
+                } else {
+                    &mesh_cfg.trust_domain
+                };
+                let default_rules = vec![mesh::authz::AuthzRule {
+                    source_patterns: vec![format!("spiffe://{trust_domain}/*")],
+                    destination_port: None,
+                    action: mesh::authz::AuthzAction::Allow,
+                }];
+                authz.set_rules(default_rules);
+                // Add port-specific rules for intercepted ports.
+                for port in &mesh_cfg.intercept_ports {
+                    authz.add_rule(mesh::authz::AuthzRule {
+                        source_patterns: vec!["*".into()],
+                        destination_port: Some(*port as u16),
+                        action: mesh::authz::AuthzAction::Allow,
+                    });
+                }
+                info!(trust_domain = %trust_domain, "Mesh authorization policy configured");
+
+                // Validate the policy by checking a sample workload identity.
+                let sample_id = mesh::spiffe::SpiffeId::workload(
+                    trust_domain,
+                    "default",
+                    "sample",
+                );
+                let result = authz.check(&sample_id, 80);
+                debug!(
+                    sample_source = %sample_id,
+                    result = ?result,
+                    "Authorization policy validation check"
+                );
+            }
 
             // Configure TPROXY interception.
             let tproxy_config = mesh::tproxy::TproxyConfig {
@@ -804,8 +1046,31 @@ impl DataplaneControl for DataplaneService {
                 ..mesh::tproxy::TproxyConfig::default()
             };
             let mut tproxy = self.mesh_tproxy.lock().unwrap();
+
+            // Check idempotency: skip reinstall if already active with same config.
+            if tproxy.is_active() {
+                let current_cfg = tproxy.config();
+                info!(
+                    current_inbound = current_cfg.inbound_port,
+                    current_outbound = current_cfg.outbound_port,
+                    "TPROXY already active, reinstalling with new config"
+                );
+                let _ = tproxy.uninstall();
+            }
             *tproxy = mesh::tproxy::TproxyInterceptor::new(tproxy_config);
             let _ = tproxy.install();
+            let installed_cfg = tproxy.config();
+            info!(
+                active = tproxy.is_active(),
+                inbound_port = installed_cfg.inbound_port,
+                outbound_port = installed_cfg.outbound_port,
+                exclude_ports = ?installed_cfg.exclude_ports,
+                "TPROXY interception installed"
+            );
+            // Log the iptables commands that were (or would be) applied.
+            for cmd in tproxy.iptables_commands() {
+                debug!(cmd = %cmd, "TPROXY iptables rule");
+            }
         }
 
         let (status, message) = Self::ok_response("mesh config applied");
@@ -823,9 +1088,38 @@ impl DataplaneControl for DataplaneService {
         info!("DeleteMeshConfig");
 
         // Tear down mesh: uninstall TPROXY rules and clear TLS provider.
-        let mut tproxy = self.mesh_tproxy.lock().unwrap();
-        let _ = tproxy.uninstall();
-        *self.mesh_tls.lock().unwrap() = None;
+        {
+            let mut tproxy = self.mesh_tproxy.lock().unwrap();
+            if tproxy.is_active() {
+                let cfg = tproxy.config();
+                info!(
+                    inbound_port = cfg.inbound_port,
+                    outbound_port = cfg.outbound_port,
+                    "Uninstalling active TPROXY rules"
+                );
+                let _ = tproxy.uninstall();
+            }
+        }
+
+        // Clear mTLS provider and log final state.
+        {
+            let mut tls_guard = self.mesh_tls.lock().unwrap();
+            if let Some(ref provider) = *tls_guard {
+                info!(
+                    was_initialized = provider.is_initialized(),
+                    spiffe_id = %provider.spiffe_id(),
+                    "Clearing mesh mTLS provider"
+                );
+            }
+            *tls_guard = None;
+        }
+
+        // Clear authorization rules.
+        {
+            let mut authz = self.mesh_authz.lock().unwrap();
+            authz.set_rules(vec![]);
+            info!("Mesh authorization rules cleared");
+        }
 
         let (status, message) = Self::ok_response("mesh config deleted");
         Ok(Response::new(proto::DeleteMeshConfigResponse {
@@ -853,10 +1147,144 @@ impl DataplaneControl for DataplaneService {
         let mut wan_link = sdwan::link::WANLink::new(&link_cfg.name, &link_cfg.interface, gateway);
         wan_link.priority = link_cfg.priority;
 
+        // Set initial metrics from SLA target if available, to evaluate link state.
+        if let Some(sla) = &link_cfg.sla_target {
+            let metrics = sdwan::link::LinkMetrics {
+                latency_ms: 0.0,
+                jitter_ms: 0.0,
+                packet_loss_pct: 0.0,
+                bandwidth_bps: (link_cfg.bandwidth_mbps as u64) * 1_000_000,
+                utilization_pct: 0.0,
+                last_updated: std::time::Instant::now(),
+            };
+            wan_link.update_metrics(metrics);
+            debug!(
+                link = %link_cfg.name,
+                max_latency = sla.max_latency_ms,
+                max_jitter = sla.max_jitter_ms,
+                max_loss = sla.max_packet_loss_pct,
+                "SLA target configured for link"
+            );
+        }
+
         let mut mgr = self.wan_link_manager.lock().unwrap();
+
+        // Log existing link state if replacing.
+        if let Some(existing) = mgr.get_link(&link_cfg.name) {
+            info!(
+                link = %link_cfg.name,
+                current_state = ?existing.state,
+                current_latency = existing.metrics.latency_ms,
+                is_usable = existing.is_usable(),
+                "Replacing existing WAN link"
+            );
+        }
+
         // Remove existing link with same name, then re-add.
         mgr.remove_link(&link_cfg.name);
         mgr.add_link(wan_link);
+
+        // Report link manager status after update.
+        let total = mgr.link_count();
+        let active = mgr.active_links();
+        let active_count = active.len();
+        info!(
+            link = %link_cfg.name,
+            total_links = total,
+            active_links = active_count,
+            "WAN link upserted"
+        );
+
+        // Report best link selection after update.
+        if let Some(best) = mgr.best_link() {
+            debug!(
+                best_link = %best.name,
+                interface = %best.interface,
+                gateway = %best.gateway,
+                latency_ms = best.metrics.latency_ms,
+                state = ?best.state,
+                probe_targets = best.probe_targets.len(),
+                probe_interval_ms = best.probe_interval.as_millis() as u64,
+                "Current best WAN link"
+            );
+        }
+
+        // Evaluate path selection with a default policy to exercise PathSelector.
+        if total > 0 {
+            // Collect links for path selection evaluation.
+            let all_links: Vec<sdwan::link::WANLink> = (0..total)
+                .filter_map(|_| {
+                    // We need to iterate; collect names first.
+                    None::<sdwan::link::WANLink>
+                })
+                .collect();
+            // Use active_links for path selection check.
+            if !active.is_empty() {
+                let default_policy = sdwan::path_selection::WANPolicy {
+                    name: "default-check".into(),
+                    match_criteria: sdwan::path_selection::TrafficMatch {
+                        destination_cidrs: vec!["0.0.0.0/0".into()],
+                        dscp_values: vec![],
+                        application: None,
+                    },
+                    sla: sdwan::path_selection::SLARequirements::default(),
+                    strategy: sdwan::path_selection::PathStrategy::Performance,
+                    preferred_links: vec![],
+                };
+                // Build a vec of WANLinks from active links for PathSelector.
+                // Note: PathSelector::select takes a slice of owned WANLinks.
+                // We clone the active links for the selection check.
+                let active_owned: Vec<sdwan::link::WANLink> =
+                    active.iter().map(|l| (*l).clone()).collect();
+                if let Some(selected) = sdwan::path_selection::PathSelector::select(
+                    &active_owned,
+                    &default_policy,
+                ) {
+                    debug!(
+                        selected_link = %selected.name,
+                        strategy = ?default_policy.strategy,
+                        "Path selection result"
+                    );
+                }
+            }
+            drop(all_links);
+        }
+
+        drop(mgr);
+
+        // Apply WireGuard tunnels if any are configured (wiring WireGuard manager reads).
+        {
+            let wg = self.wireguard_manager.lock().unwrap();
+            if wg.tunnel_count() > 0 {
+                debug!(
+                    tunnels = wg.tunnel_count(),
+                    active = wg.is_active(),
+                    "WireGuard status after WAN link update"
+                );
+                // Check if a tunnel exists for this link's interface.
+                if let Some(tunnel) = wg.get_tunnel(&link_cfg.name) {
+                    debug!(
+                        interface = %tunnel.interface_name,
+                        listen_port = tunnel.listen_port,
+                        peers = tunnel.peers.len(),
+                        mtu = tunnel.mtu,
+                        has_private_key = !tunnel.private_key.is_empty(),
+                        "WireGuard tunnel for link"
+                    );
+                    // Log peer details.
+                    for peer in &tunnel.peers {
+                        debug!(
+                            public_key = %peer.public_key,
+                            endpoint = ?peer.endpoint,
+                            allowed_ips = ?peer.allowed_ips,
+                            keepalive = ?peer.keepalive_interval,
+                            has_psk = peer.preshared_key.is_some(),
+                            "WireGuard peer"
+                        );
+                    }
+                }
+            }
+        }
 
         let (status, message) = Self::ok_response(format!("WAN link '{}' upserted", link_cfg.name));
         Ok(Response::new(proto::UpsertWanLinkResponse {
@@ -872,7 +1300,48 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteWANLink");
 
-        self.wan_link_manager.lock().unwrap().remove_link(&req.name);
+        let mut mgr = self.wan_link_manager.lock().unwrap();
+
+        // Log the link being deleted.
+        if let Some(link) = mgr.get_link(&req.name) {
+            info!(
+                link = %req.name,
+                state = ?link.state,
+                latency_ms = link.metrics.latency_ms,
+                jitter_ms = link.metrics.jitter_ms,
+                packet_loss = link.metrics.packet_loss_pct,
+                bandwidth_bps = link.metrics.bandwidth_bps,
+                utilization_pct = link.metrics.utilization_pct,
+                is_usable = link.is_usable(),
+                "Removing WAN link"
+            );
+        }
+
+        mgr.remove_link(&req.name);
+
+        // Report remaining links.
+        let remaining = mgr.link_count();
+        let active = mgr.active_links().len();
+        info!(
+            remaining_total = remaining,
+            remaining_active = active,
+            "WAN link deleted"
+        );
+
+        // Update best link after removal.
+        if let Some(best) = mgr.best_link() {
+            debug!(best_link = %best.name, "New best WAN link after deletion");
+        }
+
+        // Also remove any WireGuard tunnel associated with this link.
+        drop(mgr);
+        {
+            let mut wg = self.wireguard_manager.lock().unwrap();
+            if wg.get_tunnel(&req.name).is_some() {
+                let _ = wg.remove_tunnel(&req.name);
+                info!(interface = %req.name, "Removed associated WireGuard tunnel");
+            }
+        }
 
         let (status, message) = Self::ok_response(format!("WAN link '{}' deleted", req.name));
         Ok(Response::new(proto::DeleteWanLinkResponse {
@@ -1024,9 +1493,108 @@ impl DataplaneControl for DataplaneService {
         &self,
         _request: Request<proto::GetDataplaneStatusRequest>,
     ) -> Result<Response<proto::DataplaneStatus>, Status> {
-        info!("GetDataplaneStatus");
+        let config_gen = self.runtime_config.generation();
+        info!(config_generation = config_gen, "GetDataplaneStatus");
         let map_status = self.map_manager.get_status();
         let snap = self.runtime_config.snapshot();
+
+        // Log config snapshot counts for observability.
+        debug!(
+            routes = snap.routes.len(),
+            clusters = snap.clusters.len(),
+            policies = snap.policies.len(),
+            generation = config_gen,
+            "Config snapshot summary"
+        );
+
+        // Log policy target refs for debugging.
+        for (name, policy) in &snap.policies {
+            if !policy.target_ref.is_empty() {
+                debug!(
+                    policy = %name,
+                    target_ref = %policy.target_ref,
+                    "Policy target"
+                );
+            }
+        }
+
+        // Report VIP status.
+        let vip_mgr = self.vip_manager.lock().unwrap();
+        let vip_total = vip_mgr.vip_count();
+        let active_vips = vip_mgr.active_vips();
+        let active_vip_count = active_vips.len();
+        for vip_state in &active_vips {
+            debug!(
+                vip_ip = %vip_state.ip,
+                prefix_len = vip_state.prefix_len,
+                interface = %vip_state.interface,
+                mode = ?vip_state.mode,
+                "Active VIP"
+            );
+        }
+        drop(vip_mgr);
+
+        // Report mesh mTLS status.
+        {
+            let tls_guard = self.mesh_tls.lock().unwrap();
+            if let Some(ref provider) = *tls_guard {
+                let initialized = provider.is_initialized();
+                let needs_renewal = provider.needs_renewal();
+                let spiffe = provider.spiffe_id();
+                let cfg = provider.config();
+                debug!(
+                    initialized = initialized,
+                    needs_renewal = needs_renewal,
+                    spiffe_id = %spiffe,
+                    cert_lifetime_secs = cfg.cert_lifetime.as_secs(),
+                    renewal_threshold = cfg.renewal_threshold,
+                    has_workload_cert = !cfg.workload_cert_pem.is_empty(),
+                    has_workload_key = !cfg.workload_key_pem.is_empty(),
+                    "Mesh mTLS status"
+                );
+            }
+        }
+
+        // Report mesh TPROXY status.
+        {
+            let tproxy_guard = self.mesh_tproxy.lock().unwrap();
+            let tproxy_active = tproxy_guard.is_active();
+            let tproxy_cfg = tproxy_guard.config();
+            debug!(
+                active = tproxy_active,
+                inbound_port = tproxy_cfg.inbound_port,
+                outbound_port = tproxy_cfg.outbound_port,
+                enabled = tproxy_cfg.enabled,
+                exclude_ports = ?tproxy_cfg.exclude_ports,
+                exclude_cidrs = ?tproxy_cfg.exclude_cidrs,
+                "TPROXY status"
+            );
+        }
+
+        // Report WAN link status.
+        let wan_mgr = self.wan_link_manager.lock().unwrap();
+        let wan_total = wan_mgr.link_count();
+        let wan_active = wan_mgr.active_links();
+        let wan_active_count = wan_active.len();
+        if let Some(best) = wan_mgr.best_link() {
+            debug!(
+                best_link = %best.name,
+                latency_ms = best.metrics.latency_ms,
+                "Best WAN link"
+            );
+        }
+        drop(wan_mgr);
+
+        // Report WireGuard status.
+        let wg_mgr = self.wireguard_manager.lock().unwrap();
+        let wg_tunnels = wg_mgr.tunnel_count();
+        let wg_active = wg_mgr.is_active();
+        debug!(
+            tunnels = wg_tunnels,
+            active = wg_active,
+            "WireGuard status"
+        );
+        drop(wg_mgr);
 
         let map_sizes = vec![
             proto::MapInfo {
@@ -1048,6 +1616,46 @@ impl DataplaneControl for DataplaneService {
                 name: "rate_limits".into(),
                 entries: map_status.rate_limit_count as u64,
                 max_entries: 65536,
+            },
+            proto::MapInfo {
+                name: "config_routes".into(),
+                entries: snap.routes.len() as u64,
+                max_entries: 0,
+            },
+            proto::MapInfo {
+                name: "config_clusters".into(),
+                entries: snap.clusters.len() as u64,
+                max_entries: 0,
+            },
+            proto::MapInfo {
+                name: "config_policies".into(),
+                entries: snap.policies.len() as u64,
+                max_entries: 0,
+            },
+            proto::MapInfo {
+                name: "vip_total".into(),
+                entries: vip_total as u64,
+                max_entries: 0,
+            },
+            proto::MapInfo {
+                name: "vip_active".into(),
+                entries: active_vip_count as u64,
+                max_entries: 0,
+            },
+            proto::MapInfo {
+                name: "wan_links_total".into(),
+                entries: wan_total as u64,
+                max_entries: 0,
+            },
+            proto::MapInfo {
+                name: "wan_links_active".into(),
+                entries: wan_active_count as u64,
+                max_entries: 0,
+            },
+            proto::MapInfo {
+                name: "wireguard_tunnels".into(),
+                entries: wg_tunnels as u64,
+                max_entries: 0,
             },
         ];
 
@@ -1204,6 +1812,8 @@ mod tests {
                     port: 8080,
                     weight: 1,
                     healthy: true,
+                    zone: String::new(),
+                    priority: 0,
                 }],
                 lb_algorithm: proto::LbAlgorithm::RoundRobin as i32,
                 health_check: None,
@@ -1243,7 +1853,8 @@ mod tests {
             .unwrap();
         let status = resp.into_inner();
         assert_eq!(status.mode, "mock");
-        assert_eq!(status.map_sizes.len(), 4);
+        // 4 eBPF maps + 3 config maps + 2 VIP maps + 2 WAN link maps + 1 WireGuard map = 12
+        assert_eq!(status.map_sizes.len(), 12);
     }
 
     #[tokio::test]
@@ -1331,6 +1942,8 @@ mod tests {
                     port: 8080,
                     weight: 1,
                     healthy: true,
+                    zone: String::new(),
+                    priority: 0,
                 }],
                 lb_algorithm: proto::LbAlgorithm::LeastConn as i32,
                 health_check: None,

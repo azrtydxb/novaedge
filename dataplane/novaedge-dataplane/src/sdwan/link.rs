@@ -17,6 +17,7 @@ pub struct LinkMetrics {
     pub packet_loss_pct: f64,
     pub bandwidth_bps: u64,
     pub utilization_pct: f64,
+    #[allow(dead_code)] // Timestamp for staleness detection in monitoring
     pub last_updated: Instant,
 }
 

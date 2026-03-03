@@ -23,7 +23,9 @@ pub struct CompressionConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub enum CompressionAlgo {
     Gzip,
+    #[allow(dead_code)] // Available for configuration; only Gzip is in the default set.
     Brotli,
+    #[allow(dead_code)] // Available for configuration; only Gzip is in the default set.
     Zstd,
 }
 

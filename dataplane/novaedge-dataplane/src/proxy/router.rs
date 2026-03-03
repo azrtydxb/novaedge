@@ -47,7 +47,11 @@ pub struct HeaderMatch {
 }
 
 /// How a header value should be matched.
+///
+/// Variants are constructed by the gRPC config translation layer
+/// when routes with header-based matching are pushed from the Go agent.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum HeaderMatchValue {
     Exact(String),
     Present,
@@ -76,6 +80,10 @@ impl Router {
     }
 
     /// Set the default backend (used when no route matches).
+    ///
+    /// Called by the config translation layer when a gateway specifies a
+    /// default backend. The handler falls back to this when no route matches.
+    #[allow(dead_code)]
     pub fn set_default_backend(&mut self, backend: String) {
         self.default_backend = Some(backend);
     }
@@ -86,6 +94,10 @@ impl Router {
     }
 
     /// Find the first route that matches the given request parameters.
+    ///
+    /// Convenience wrapper over [`match_request_with_query`] for callers
+    /// that do not need query parameter matching.
+    #[allow(dead_code)]
     pub fn match_request(
         &self,
         host: &str,

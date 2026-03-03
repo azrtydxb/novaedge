@@ -30,8 +30,10 @@ impl Default for CacheConfig {
 
 /// A cached response entry.
 struct CacheEntry {
+    #[allow(dead_code)]
     response: super::Response,
     inserted: Instant,
+    #[allow(dead_code)]
     ttl: Duration,
     #[allow(dead_code)]
     etag: Option<String>,
@@ -43,6 +45,7 @@ pub struct ResponseCache {
     entries: RwLock<HashMap<String, CacheEntry>>,
 }
 
+#[allow(dead_code)]
 impl ResponseCache {
     /// Create a new response cache.
     pub fn new(config: CacheConfig) -> Self {

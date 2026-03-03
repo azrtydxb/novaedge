@@ -137,6 +137,7 @@ impl HealthChecker {
     }
 
     /// Get the current health state of a backend.
+    #[allow(dead_code)]
     pub async fn get_state(&self, addr: &SocketAddr) -> HealthState {
         self.states
             .read()
@@ -147,6 +148,10 @@ impl HealthChecker {
     }
 
     /// Check whether a backend is currently healthy.
+    ///
+    /// Can be used by the proxy handler to filter unhealthy backends
+    /// before load balancing selection.
+    #[allow(dead_code)]
     pub async fn is_healthy(&self, addr: &SocketAddr) -> bool {
         self.states
             .read()
@@ -158,7 +163,9 @@ impl HealthChecker {
 
     /// Run periodic health checks for a list of backends.
     ///
-    /// Runs until the `cancel` signal is received.
+    /// Runs until the `cancel` signal is received. An alternative to
+    /// the manual check loop in main.rs for static backend lists.
+    #[allow(dead_code)]
     pub async fn run(
         &self,
         backends: Vec<SocketAddr>,

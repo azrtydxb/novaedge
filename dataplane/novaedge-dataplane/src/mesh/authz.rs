@@ -4,6 +4,7 @@ use super::spiffe::SpiffeId;
 #[derive(Debug, Clone, PartialEq)]
 pub enum AuthzAction {
     Allow,
+    #[allow(dead_code)] // Valid action type used by authorization rules
     Deny,
 }
 

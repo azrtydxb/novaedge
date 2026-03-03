@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use super::{healthy_indices, Backend, LoadBalancer, RequestContext};
+use super::{healthy_indices, prefer_same_zone, Backend, LoadBalancer, RequestContext};
 
 /// Maximum number of backends tracked for connection counting.
 const MAX_BACKENDS: usize = 1024;
@@ -66,16 +66,19 @@ impl Default for LeastConn {
 }
 
 impl LoadBalancer for LeastConn {
-    fn select(&self, _ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
+    fn select(&self, ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
         let healthy = healthy_indices(backends);
         if healthy.is_empty() {
             return None;
         }
 
-        let mut min_idx = healthy[0];
-        let mut min_conn = self.connections[healthy[0]].load(Ordering::Relaxed);
+        // Prefer same-zone backends when zone is set.
+        let candidates = prefer_same_zone(ctx, backends, &healthy);
 
-        for &idx in &healthy[1..] {
+        let mut min_idx = candidates[0];
+        let mut min_conn = self.connections[candidates[0]].load(Ordering::Relaxed);
+
+        for &idx in &candidates[1..] {
             let conn = self.connections[idx].load(Ordering::Relaxed);
             if conn < min_conn {
                 min_conn = conn;
@@ -90,7 +93,10 @@ impl LoadBalancer for LeastConn {
         if success {
             self.increment(backend_idx);
         } else {
-            self.decrement(backend_idx);
+            // Only decrement if there are active connections to avoid underflow.
+            if self.active(backend_idx) > 0 {
+                self.decrement(backend_idx);
+            }
         }
     }
 

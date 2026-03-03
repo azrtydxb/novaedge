@@ -10,8 +10,10 @@ pub enum RateLimitKeyType {
     /// Key by source IP address.
     SourceIP,
     /// Key by a specific header value.
+    #[allow(dead_code)]
     Header(String),
     /// Key by request path.
+    #[allow(dead_code)]
     Path,
 }
 
@@ -23,6 +25,7 @@ pub struct RateLimitConfig {
     /// Maximum burst size (bucket capacity).
     pub burst: u32,
     /// How to extract the rate limit key from a request.
+    #[allow(dead_code)] // Read by TokenBucket::extract_key(); pipeline uses client_ip directly.
     pub key_type: RateLimitKeyType,
 }
 
@@ -47,6 +50,7 @@ impl TokenBucket {
     }
 
     /// Extract the rate limit key from a request.
+    #[allow(dead_code)]
     pub fn extract_key(&self, req: &super::Request) -> String {
         match &self.config.key_type {
             RateLimitKeyType::SourceIP => req.client_ip.clone(),
@@ -100,6 +104,7 @@ impl TokenBucket {
     }
 
     /// Return the number of active (tracked) keys.
+    #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
         self.buckets.read().unwrap().len()
     }
@@ -111,8 +116,10 @@ pub enum RateLimitResult {
     /// Request is allowed.
     Allowed {
         /// Remaining tokens in the bucket.
+        #[allow(dead_code)] // Informational; available for rate-limit response headers.
         remaining: u32,
         /// Total bucket capacity.
+        #[allow(dead_code)] // Informational; available for rate-limit response headers.
         limit: u32,
     },
     /// Request is denied (rate limited).
@@ -127,6 +134,7 @@ pub enum RateLimitResult {
 // ---------------------------------------------------------------------------
 
 /// Sliding window rate limiter configuration.
+#[allow(dead_code)] // Alternative algorithm to TokenBucket; available for future pipeline wiring.
 #[derive(Debug, Clone)]
 pub struct SlidingWindowConfig {
     /// Maximum number of requests in the window.
@@ -140,11 +148,13 @@ pub struct SlidingWindowConfig {
 /// Sliding window rate limiter — provides more accurate rate limiting than
 /// a simple fixed-window counter by interpolating between the current and
 /// previous window.
+#[allow(dead_code)] // Alternative algorithm to TokenBucket; available for future pipeline wiring.
 pub struct SlidingWindow {
     config: SlidingWindowConfig,
     windows: RwLock<HashMap<String, WindowState>>,
 }
 
+#[allow(dead_code)] // Used by SlidingWindow which is an alternative algorithm.
 struct WindowState {
     current_count: u64,
     previous_count: u64,
@@ -152,6 +162,7 @@ struct WindowState {
     window: Duration,
 }
 
+#[allow(dead_code)]
 impl SlidingWindow {
     /// Create a new sliding window rate limiter.
     pub fn new(config: SlidingWindowConfig) -> Self {

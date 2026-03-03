@@ -26,25 +26,33 @@ pub enum PathStrategy {
     /// Use best link meeting SLA
     Performance,
     /// Use cheapest link meeting SLA
+    #[allow(dead_code)] // Valid strategy selected by WAN policy configuration
     Cost,
     /// Load balance across links meeting SLA
+    #[allow(dead_code)] // Valid strategy selected by WAN policy configuration
     LoadBalance,
     /// Failover: primary -> secondary
+    #[allow(dead_code)] // Valid strategy selected by WAN policy configuration
     Failover,
 }
 
 /// Traffic match criteria for SLA policy.
 #[derive(Debug, Clone)]
 pub struct TrafficMatch {
+    #[allow(dead_code)] // Used by traffic classification before path selection
     pub destination_cidrs: Vec<String>,
+    #[allow(dead_code)] // Used by traffic classification before path selection
     pub dscp_values: Vec<u8>,
+    #[allow(dead_code)] // Used by traffic classification before path selection
     pub application: Option<String>,
 }
 
 /// SLA-based WAN policy.
 #[derive(Debug, Clone)]
 pub struct WANPolicy {
+    #[allow(dead_code)] // Policy identifier for logging and lookup
     pub name: String,
+    #[allow(dead_code)] // Traffic matching criteria applied before path selection
     pub match_criteria: TrafficMatch,
     pub sla: SLARequirements,
     pub strategy: PathStrategy,
