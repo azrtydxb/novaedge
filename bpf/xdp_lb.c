@@ -68,6 +68,15 @@ struct {
     __type(value, struct backend_entry);
 } backend_list SEC(".maps");
 
+// Local interface MAC address, populated by userspace at load time.
+// Single-entry array map: key 0 → 6-byte MAC address.
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u8[6]);
+} local_mac SEC(".maps");
+
 // Per-CPU stats counters.
 enum stats_idx {
     STATS_XDP_PASS      = 0,
@@ -204,10 +213,16 @@ int xdp_lb_prog(struct xdp_md *ctx) {
         return XDP_PASS;
     }
 
-    // Rewrite destination MAC (for direct-return on same L2 segment).
+    // Rewrite MACs: dst = backend MAC, src = local interface MAC.
+    __u32 mac_key = 0;
+    __u8 *iface_mac = bpf_map_lookup_elem(&local_mac, &mac_key);
+    if (!iface_mac) {
+        // Cannot rewrite MACs without local interface MAC; pass to stack.
+        bump_stat(STATS_XDP_PASS);
+        return XDP_PASS;
+    }
     __builtin_memcpy(eth->h_dest, be->mac, ETH_ALEN);
-    // Swap source MAC to our MAC (use existing dst as new src).
-    __builtin_memcpy(eth->h_source, eth->h_dest, ETH_ALEN);
+    __builtin_memcpy(eth->h_source, iface_mac, ETH_ALEN);
 
     // Rewrite destination IP.
     __be32 old_daddr = ip->daddr;

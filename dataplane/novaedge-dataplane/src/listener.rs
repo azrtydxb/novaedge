@@ -29,8 +29,13 @@ struct ListenerHandle {
     task: tokio::task::JoinHandle<()>,
 }
 
-/// Build a TLS acceptor from PEM-encoded certificate and private key.
-fn build_tls_acceptor(cert_pem: &[u8], key_pem: &[u8]) -> Result<TlsAcceptor, String> {
+/// Build a TLS acceptor from PEM-encoded certificate, private key,
+/// and optional client CA for mTLS.
+fn build_tls_acceptor(
+    cert_pem: &[u8],
+    key_pem: &[u8],
+    client_ca_pem: Option<&[u8]>,
+) -> Result<TlsAcceptor, String> {
     let certs = rustls_pemfile::certs(&mut std::io::BufReader::new(cert_pem))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("parse certs: {e}"))?;
@@ -39,10 +44,33 @@ fn build_tls_acceptor(cert_pem: &[u8], key_pem: &[u8]) -> Result<TlsAcceptor, St
         .map_err(|e| format!("parse key: {e}"))?
         .ok_or_else(|| "no private key found".to_string())?;
 
-    let config = ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)
-        .map_err(|e| format!("TLS config: {e}"))?;
+    let config = if let Some(ca_pem) = client_ca_pem {
+        // mTLS: require client certificates signed by the provided CA.
+        let ca_certs = rustls_pemfile::certs(&mut std::io::BufReader::new(ca_pem))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("parse client CA certs: {e}"))?;
+
+        let mut root_store = rustls::RootCertStore::empty();
+        for cert in ca_certs {
+            root_store
+                .add(cert)
+                .map_err(|e| format!("add client CA cert: {e}"))?;
+        }
+
+        let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
+            .build()
+            .map_err(|e| format!("build client verifier: {e}"))?;
+
+        ServerConfig::builder()
+            .with_client_cert_verifier(verifier)
+            .with_single_cert(certs, key)
+            .map_err(|e| format!("TLS config with mTLS: {e}"))?
+    } else {
+        ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(certs, key)
+            .map_err(|e| format!("TLS config: {e}"))?
+    };
 
     Ok(TlsAcceptor::from(Arc::new(config)))
 }
@@ -225,7 +253,7 @@ impl ListenerManager {
                     return None;
                 }
             };
-            match build_tls_acceptor(&tls.cert_pem, &tls.key_pem) {
+            match build_tls_acceptor(&tls.cert_pem, &tls.key_pem, tls.client_ca_pem.as_deref()) {
                 Ok(acceptor) => Some(acceptor),
                 Err(e) => {
                     warn!(gateway = %name, "Failed to build TLS config: {e}");
@@ -638,7 +666,7 @@ mod tests {
 
     #[test]
     fn test_build_tls_acceptor_rejects_invalid_pem() {
-        let result = build_tls_acceptor(b"not a cert", b"not a key");
+        let result = build_tls_acceptor(b"not a cert", b"not a key", None);
         assert!(result.is_err());
     }
 
@@ -674,7 +702,7 @@ JHvBo5bRYjMjGCqFVSsMce+YXQT+j
         //
         // If this test fails with a key-mismatch error, that is acceptable --
         // the important thing is that the code path is exercised.
-        let result = build_tls_acceptor(TEST_CERT_PEM, TEST_KEY_PEM);
+        let result = build_tls_acceptor(TEST_CERT_PEM, TEST_KEY_PEM, None);
         // Either succeeds or fails with a TLS config error (key mismatch) --
         // both are valid for a unit test; the important part is that PEM
         // parsing itself does not panic.
@@ -695,6 +723,7 @@ JHvBo5bRYjMjGCqFVSsMce+YXQT+j
         let tls = Some(TlsState {
             cert_pem: TEST_CERT_PEM.to_vec(),
             key_pem: TEST_KEY_PEM.to_vec(),
+            client_ca_pem: None,
         });
 
         // This may return None if the cert/key pair is invalid, but it must

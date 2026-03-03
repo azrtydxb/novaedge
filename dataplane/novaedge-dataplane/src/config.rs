@@ -24,6 +24,10 @@ pub struct GatewayState {
 pub struct TlsState {
     pub cert_pem: Vec<u8>,
     pub key_pem: Vec<u8>,
+    /// Optional CA certificate for mTLS client verification.
+    /// When present, the listener requires clients to present a certificate
+    /// signed by this CA.
+    pub client_ca_pem: Option<Vec<u8>>,
 }
 
 /// Route state mapping requests to backends.

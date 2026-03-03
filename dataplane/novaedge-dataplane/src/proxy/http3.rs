@@ -7,7 +7,8 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
+use http_body_util::BodyExt;
 use tokio::sync::watch;
 use tracing::{debug, info, warn};
 
@@ -84,11 +85,34 @@ impl Http3Server {
             .map_err(|e| format!("parse key: {e}"))?
             .ok_or_else(|| "no private key found".to_string())?;
 
-        // Build rustls ServerConfig with h3 ALPN.
-        let mut tls_config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|e| format!("TLS config: {e}"))?;
+        // Build rustls ServerConfig with h3 ALPN, optionally with mTLS.
+        let mut tls_config = if let Some(ref ca_pem) = tls.client_ca_pem {
+            let ca_certs = rustls_pemfile::certs(&mut std::io::BufReader::new(&ca_pem[..]))
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("parse client CA certs: {e}"))?;
+
+            let mut root_store = rustls::RootCertStore::empty();
+            for cert in ca_certs {
+                root_store
+                    .add(cert)
+                    .map_err(|e| format!("add client CA cert: {e}"))?;
+            }
+
+            let verifier =
+                rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
+                    .build()
+                    .map_err(|e| format!("build client verifier: {e}"))?;
+
+            rustls::ServerConfig::builder()
+                .with_client_cert_verifier(verifier)
+                .with_single_cert(certs, key)
+                .map_err(|e| format!("TLS config with mTLS: {e}"))?
+        } else {
+            rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(certs, key)
+                .map_err(|e| format!("TLS config: {e}"))?
+        };
         tls_config.alpn_protocols = vec![b"h3".to_vec()];
 
         // Convert to quinn-compatible QUIC server config.
@@ -158,11 +182,12 @@ impl Http3Server {
 /// Handle a single QUIC connection by negotiating HTTP/3 and serving requests.
 async fn handle_h3_connection(
     incoming: quinn::Incoming,
-    _handler: Arc<ProxyHandler>,
+    handler: Arc<ProxyHandler>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let conn = incoming.await?;
+    let remote_addr = conn.remote_address();
     debug!(
-        remote = %conn.remote_address(),
+        remote = %remote_addr,
         "Accepted QUIC connection"
     );
 
@@ -173,6 +198,8 @@ async fn handle_h3_connection(
     loop {
         match h3_conn.accept().await {
             Ok(Some(resolver)) => {
+                let handler = handler.clone();
+                let client_addr = remote_addr;
                 // Spawn a task to handle the request concurrently.
                 tokio::spawn(async move {
                     // Resolve the request from the resolver.
@@ -190,21 +217,78 @@ async fn handle_h3_connection(
                         "HTTP/3 request received"
                     );
 
-                    // Build and send the HTTP response.
-                    // NOTE: This is a basic implementation that returns 200 OK.
-                    // Full proxy handler integration (converting h3 requests to
-                    // hyper requests and forwarding to backends) is a future
-                    // enhancement.
-                    let resp = http::Response::builder().status(200).body(()).unwrap();
+                    // Extract request fields from h3 request (headers only, body is separate).
+                    let method = req.method().to_string();
+                    let path = req.uri().path().to_string();
+                    let query_string = req.uri().query().map(String::from);
+                    let host = req
+                        .headers()
+                        .get("host")
+                        .or_else(|| req.headers().get(":authority"))
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_string();
 
-                    if let Err(e) = stream.send_response(resp).await {
+                    let headers: Vec<(String, String)> = req
+                        .headers()
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                        .collect();
+
+                    // Read request body from h3 stream (if any).
+                    let mut body_data = Vec::new();
+                    while let Ok(Some(mut chunk)) = stream.recv_data().await {
+                        while chunk.has_remaining() {
+                            body_data.extend_from_slice(chunk.chunk());
+                            let len = chunk.chunk().len();
+                            chunk.advance(len);
+                        }
+                        if body_data.len() > 10 * 1024 * 1024 {
+                            // Body too large.
+                            let resp = http::Response::builder().status(413).body(()).unwrap();
+                            let _ = stream.send_response(resp).await;
+                            let _ = stream.send_data(Bytes::from("Payload Too Large")).await;
+                            let _ = stream.finish().await;
+                            return;
+                        }
+                    }
+                    let body_bytes = Bytes::from(body_data);
+
+                    // Call the shared proxy logic.
+                    let response = handler
+                        .handle_request_inner(
+                            &method,
+                            &path,
+                            query_string.as_deref(),
+                            &host,
+                            &headers,
+                            body_bytes,
+                            client_addr,
+                        )
+                        .await;
+
+                    // Convert hyper response back to h3 format.
+                    let (parts, full_body) = response.into_parts();
+
+                    // Build h3 response (headers only, body sent separately).
+                    let h3_resp = http::Response::from_parts(parts, ());
+
+                    if let Err(e) = stream.send_response(h3_resp).await {
                         debug!(error = %e, "HTTP/3 send response failed");
                         return;
                     }
 
-                    if let Err(e) = stream.send_data(Bytes::from("HTTP/3 OK")).await {
-                        debug!(error = %e, "HTTP/3 send data failed");
-                        return;
+                    // Send the response body.
+                    let body_bytes = full_body
+                        .collect()
+                        .await
+                        .expect("Full<Bytes> body collection is infallible")
+                        .to_bytes();
+                    if !body_bytes.is_empty() {
+                        if let Err(e) = stream.send_data(body_bytes).await {
+                            debug!(error = %e, "HTTP/3 send data failed");
+                            return;
+                        }
                     }
 
                     if let Err(e) = stream.finish().await {
@@ -213,7 +297,6 @@ async fn handle_h3_connection(
                 });
             }
             Ok(None) => {
-                // Connection closed gracefully.
                 debug!("HTTP/3 connection closed");
                 break;
             }

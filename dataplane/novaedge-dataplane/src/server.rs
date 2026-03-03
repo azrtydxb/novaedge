@@ -273,6 +273,11 @@ impl DataplaneService {
             tls: gw.tls_config.as_ref().map(|tls| TlsState {
                 cert_pem: tls.cert_pem.clone(),
                 key_pem: tls.key_pem.clone(),
+                client_ca_pem: if tls.ca_pem.is_empty() {
+                    None
+                } else {
+                    Some(tls.ca_pem.clone())
+                },
             }),
             hostnames: gw.hostnames.clone(),
         }
