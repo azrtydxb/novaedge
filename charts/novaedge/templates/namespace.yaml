@@ -1,6 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: {{ include "novaedge.namespace" . }}
-  labels:
-    {{- include "novaedge.labels" . | nindent 4 }}
