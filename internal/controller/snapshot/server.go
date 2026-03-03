@@ -203,11 +203,11 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 	defer s.cache.Unsubscribe(req.NodeName, updateCh)
 
 	// Listen for updates.
-	// The periodic ticker is a 5-minute fallback safety net. Actual changes
+	// The periodic ticker is a 30-second fallback safety net. Actual changes
 	// are delivered through updateCh (triggered by watch handlers). The
 	// periodic rebuild only fires when the dirty flag is set, avoiding
 	// unnecessary List() calls when nothing has changed.
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
 	for {

@@ -37,6 +37,7 @@ var (
 	errTLSConfigurationIsIncomplete                  = errors.New("TLS configuration is incomplete")
 	errTLSConfigurationIsRequiredForRemoteAgents     = errors.New("TLS configuration is required for remote agents")
 	errClusterConfigurationIsRequiredForRemoteAgents = errors.New("cluster configuration is required for remote agents")
+	errForceResyncByGossipQuorum                     = errors.New("force resync requested by gossip quorum")
 )
 
 // Snapshot is a wrapper around the protobuf ConfigSnapshot
@@ -74,6 +75,10 @@ type Watcher struct {
 	// complete new Snapshot then do a single atomic Store; readers use Load
 	// without any lock.
 	currentSnapshot atomic.Pointer[Snapshot]
+
+	// forceResyncCh is used by the gossip layer to trigger an immediate
+	// reconnect to the controller, bypassing version comparison.
+	forceResyncCh chan struct{}
 }
 
 // TLSConfig holds TLS configuration for the watcher
@@ -100,6 +105,7 @@ func NewWatcher(ctx context.Context, nodeName, agentVersion, controllerAddr stri
 		logger:         logger,
 		ctx:            ctx,
 		tlsEnabled:     false,
+		forceResyncCh:  make(chan struct{}, 1),
 	}, nil
 }
 
@@ -119,6 +125,7 @@ func NewWatcherWithTLS(ctx context.Context, nodeName, agentVersion, controllerAd
 		tlsKeyFile:     tlsConfig.KeyFile,
 		tlsCAFile:      tlsConfig.CAFile,
 		tlsEnabled:     true,
+		forceResyncCh:  make(chan struct{}, 1),
 	}, nil
 }
 
@@ -145,7 +152,20 @@ func NewRemoteWatcher(ctx context.Context, nodeName, agentVersion, controllerAdd
 		clusterRegion:  clusterConfig.Region,
 		clusterZone:    clusterConfig.Zone,
 		clusterLabels:  clusterConfig.Labels,
+		forceResyncCh:  make(chan struct{}, 1),
 	}, nil
+}
+
+// ForceResync forces the watcher to close the current stream and reconnect
+// to the controller, fetching a fresh config snapshot. Called by the gossip
+// layer when a quorum of peers have a newer config version.
+func (w *Watcher) ForceResync() {
+	select {
+	case w.forceResyncCh <- struct{}{}:
+		w.logger.Info("Force resync requested by gossip quorum")
+	default:
+		// Already pending
+	}
 }
 
 // Start begins watching for config updates and calls applyFunc when updates arrive
@@ -253,6 +273,13 @@ func (w *Watcher) connectWithRetry() (*grpc.ClientConn, error) {
 	}
 }
 
+// recvResult carries the result of a blocking stream.Recv() call so it can
+// be selected alongside other channels.
+type recvResult struct {
+	snapshot *pb.ConfigSnapshot
+	err      error
+}
+
 // streamConfig streams config snapshots from the controller
 func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFunc) error {
 	// Read the last applied version from the atomic snapshot pointer
@@ -284,22 +311,37 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 	statusTicker := time.NewTicker(30 * time.Second)
 	defer statusTicker.Stop()
 
+	// Run stream.Recv() in a goroutine so we can select on forceResyncCh.
+	recvCh := make(chan recvResult, 1)
+	go func() {
+		for {
+			snapshot, recvErr := stream.Recv()
+			recvCh <- recvResult{snapshot: snapshot, err: recvErr}
+			if recvErr != nil {
+				return
+			}
+		}
+	}()
+
 	// Receive snapshots
 	for {
 		select {
 		case <-w.ctx.Done():
 			return w.ctx.Err()
 
+		case <-w.forceResyncCh:
+			return errForceResyncByGossipQuorum
+
 		case <-statusTicker.C:
 			// Report status to controller
 			go w.reportStatus(w.ctx, client)
 
-		default:
-			snapshot, err := stream.Recv()
-			if err != nil {
-				return fmt.Errorf("error receiving config snapshot: %w", err)
+		case result := <-recvCh:
+			if result.err != nil {
+				return fmt.Errorf("error receiving config snapshot: %w", result.err)
 			}
 
+			snapshot := result.snapshot
 			w.logger.Info("Received config snapshot",
 				zap.String("version", snapshot.Version),
 				zap.Int64("generation_time", snapshot.GenerationTime),
