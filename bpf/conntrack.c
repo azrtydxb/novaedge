@@ -60,6 +60,8 @@ struct ct_entry {
     __u64 timestamp;     // last packet timestamp (ktime_ns)
     __u64 rx_bytes;      // bytes received from client
     __u64 tx_bytes;      // bytes sent to client
+    __u8  backend_mac[6]; // resolved backend MAC address for XDP_TX
+    __u8  pad2[2];       // alignment padding
 };
 
 // LRU hash map for connection tracking. The kernel automatically evicts
@@ -71,6 +73,14 @@ struct {
     __type(key, struct ct_key);
     __type(value, struct ct_entry);
 } novaedge_ct SEC(".maps");
+
+// Local interface MAC address, populated by userspace at load time.
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u8[6]);
+} ct_local_mac SEC(".maps");
 
 // Per-CPU statistics for conntrack operations.
 enum ct_stat_idx {
@@ -117,7 +127,7 @@ ct_lookup(struct ct_key *key) {
 // ct_insert creates a new conntrack entry for a flow.
 static __always_inline int
 ct_insert(struct ct_key *key, __u32 backend_ip, __u16 backend_port,
-          __u8 state, __u64 pkt_len) {
+          __u8 *backend_mac, __u8 state, __u64 pkt_len) {
     struct ct_entry entry = {
         .backend_ip   = backend_ip,
         .backend_port = backend_port,
@@ -126,6 +136,8 @@ ct_insert(struct ct_key *key, __u32 backend_ip, __u16 backend_port,
         .rx_bytes     = pkt_len,
         .tx_bytes     = 0,
     };
+    if (backend_mac)
+        __builtin_memcpy(entry.backend_mac, backend_mac, 6);
 
     int ret = bpf_map_update_elem(&novaedge_ct, key, &entry, BPF_ANY);
     if (ret == 0)
@@ -199,6 +211,16 @@ int ct_xdp_prog(struct xdp_md *ctx) {
     if (ct) {
         // Existing connection: use pinned backend.
         ct_update_bytes(ct, pkt_len, 0);
+
+        // Look up local interface MAC for source rewrite.
+        __u32 mac_key = 0;
+        __u8 *iface_mac = bpf_map_lookup_elem(&ct_local_mac, &mac_key);
+        if (!iface_mac)
+            return XDP_PASS;
+
+        // Rewrite MACs: dst = backend, src = local interface.
+        __builtin_memcpy(eth->h_dest, ct->backend_mac, ETH_ALEN);
+        __builtin_memcpy(eth->h_source, iface_mac, ETH_ALEN);
 
         // Rewrite destination to pinned backend.
         ip->daddr = ct->backend_ip;

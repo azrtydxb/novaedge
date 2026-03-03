@@ -110,6 +110,53 @@ pub fn attach_xdp(bpf: &mut aya::Ebpf, program_name: &str, interface: &str) -> a
     Ok(())
 }
 
+/// Populate the `local_mac` BPF array map with the interface's hardware MAC address.
+///
+/// Each XDP program that does MAC rewriting has its own `local_mac` map
+/// (named differently per program). This function writes the interface MAC
+/// to the map at key 0 so the XDP program can use it as the source MAC.
+#[cfg(target_os = "linux")]
+pub fn populate_local_mac(
+    bpf: &mut aya::Ebpf,
+    map_name: &str,
+    interface: &str,
+) -> anyhow::Result<()> {
+    use tracing::info;
+
+    // Read the interface's hardware MAC address from sysfs.
+    let mac_path = format!("/sys/class/net/{interface}/address");
+    let mac_str = std::fs::read_to_string(&mac_path)
+        .map_err(|e| anyhow::anyhow!("read MAC from {mac_path}: {e}"))?;
+    let mac_str = mac_str.trim();
+
+    // Parse "aa:bb:cc:dd:ee:ff" into [u8; 6].
+    let mac_bytes: Vec<u8> = mac_str
+        .split(':')
+        .map(|s| u8::from_str_radix(s, 16))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!("parse MAC '{mac_str}': {e}"))?;
+    if mac_bytes.len() != 6 {
+        anyhow::bail!("unexpected MAC length: {mac_str}");
+    }
+    let mut mac: [u8; 6] = [0u8; 6];
+    mac.copy_from_slice(&mac_bytes);
+
+    // Write to the BPF array map at key 0.
+    let mut map: aya::maps::Array<_, [u8; 6]> = aya::maps::Array::try_from(
+        bpf.map_mut(map_name)
+            .ok_or_else(|| anyhow::anyhow!("map '{map_name}' not found"))?,
+    )?;
+    map.set(0, mac, 0)?;
+
+    info!(
+        interface = interface,
+        map = map_name,
+        mac = mac_str,
+        "Populated local_mac BPF map"
+    );
+    Ok(())
+}
+
 /// Attach the TC classifier program to the specified network interface.
 #[cfg(target_os = "linux")]
 pub fn attach_tc(bpf: &mut aya::Ebpf, program_name: &str, interface: &str) -> anyhow::Result<()> {

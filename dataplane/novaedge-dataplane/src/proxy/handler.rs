@@ -88,11 +88,6 @@ impl ProxyHandler {
         req: hyper::Request<Incoming>,
         client_addr: SocketAddr,
     ) -> Result<hyper::Response<Full<Bytes>>, hyper::Error> {
-        let ejected = self.outlier_detector.ejected_count();
-        if ejected > 0 {
-            debug!(ejected_backends = ejected, "Outlier detector: backends currently ejected");
-        }
-
         let method = req.method().to_string();
         let path = req.uri().path().to_string();
         let query_string = req.uri().query().map(String::from);
@@ -114,18 +109,108 @@ impl ProxyHandler {
             .iter()
             .any(|(k, v)| k.eq_ignore_ascii_case("upgrade") && v.eq_ignore_ascii_case("websocket"));
 
+        // For WebSocket, we need the original hyper request for upgrade.
+        // Do early route/LB resolution so we can branch.
+        if is_websocket {
+            let (route, backend_addr, upstream_uri) = match self.resolve_route_and_backend(
+                &method, &path, &host, &headers, query_string.as_deref(), client_addr,
+            ).await {
+                Ok(resolved) => resolved,
+                Err(resp) => return Ok(resp),
+            };
+            return self
+                .handle_websocket_upgrade(req, &headers, &route, backend_addr, &upstream_uri)
+                .await;
+        }
+
+        // --- Normal HTTP forwarding ---
+
+        // Check Content-Length against max body size (default 10 MiB).
+        const MAX_BODY_SIZE: u64 = 10 * 1024 * 1024;
+
+        // For methods that don't carry a body, skip collection entirely.
+        let skip_body = matches!(
+            method.as_str(),
+            "GET" | "HEAD" | "DELETE" | "OPTIONS"
+        );
+
+        let body_bytes = if skip_body {
+            drop(req);
+            Bytes::new()
+        } else {
+            if let Some(cl) = headers
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+                .and_then(|(_, v)| v.parse::<u64>().ok())
+            {
+                if cl > MAX_BODY_SIZE {
+                    return Ok(hyper::Response::builder()
+                        .status(413)
+                        .body(Full::new(Bytes::from("Payload Too Large")))
+                        .unwrap());
+                }
+            }
+
+            match http_body_util::Limited::new(req.into_body(), MAX_BODY_SIZE as usize)
+                .collect()
+                .await
+            {
+                Ok(collected) => collected.to_bytes(),
+                Err(e) => {
+                    warn!("Failed to read request body: {e}");
+                    return Ok(hyper::Response::builder()
+                        .status(413)
+                        .body(Full::new(Bytes::from("Payload Too Large")))
+                        .unwrap());
+                }
+            }
+        };
+
+        Ok(self
+            .handle_request_inner(
+                &method,
+                &path,
+                query_string.as_deref(),
+                &host,
+                &headers,
+                body_bytes,
+                client_addr,
+            )
+            .await)
+    }
+
+    /// Core proxy logic shared by HTTP/1.1 (hyper) and HTTP/3 (h3) paths.
+    ///
+    /// Takes pre-parsed request fields and an already-collected body.
+    /// Returns a response with `Full<Bytes>` body. WebSocket upgrades are
+    /// NOT handled here — they require the original hyper request for the
+    /// upgrade handshake.
+    pub async fn handle_request_inner(
+        &self,
+        method: &str,
+        path: &str,
+        query_string: Option<&str>,
+        host: &str,
+        headers: &[(String, String)],
+        body_bytes: Bytes,
+        client_addr: SocketAddr,
+    ) -> hyper::Response<Full<Bytes>> {
+        let ejected = self.outlier_detector.ejected_count();
+        if ejected > 0 {
+            debug!(ejected_backends = ejected, "Outlier detector: backends currently ejected");
+        }
+
         // Match route (with query param support).
         let matched_route = {
             let router = self.router.read().unwrap();
             router
-                .match_request_with_query(&host, &path, &method, &headers, query_string.as_deref())
+                .match_request_with_query(host, path, method, headers, query_string)
                 .cloned()
         };
 
         let route = match matched_route {
             Some(r) => r,
             None => {
-                // Try the default backend as a fallback when no route matches.
                 let default_backend = {
                     let router = self.router.read().unwrap();
                     router.default_backend().map(String::from)
@@ -147,10 +232,10 @@ impl ProxyHandler {
                     }
                 } else {
                     debug!("No route matched for {method} {host}{path}");
-                    return Ok(hyper::Response::builder()
+                    return hyper::Response::builder()
                         .status(404)
                         .body(Full::new(Bytes::from("Not Found")))
-                        .unwrap());
+                        .unwrap();
                 }
             }
         };
@@ -163,10 +248,10 @@ impl ProxyHandler {
 
         // Build middleware request for pipeline evaluation.
         let mw_request = crate::middleware::Request {
-            method: method.clone(),
-            path: path.clone(),
-            host: host.clone(),
-            headers: headers.clone(),
+            method: method.to_string(),
+            path: path.to_string(),
+            host: host.to_string(),
+            headers: headers.to_vec(),
             body: None,
             client_ip: client_addr.ip().to_string(),
         };
@@ -187,7 +272,7 @@ impl ProxyHandler {
                             }
                         }
                     }
-                    return Ok(builder.body(Full::new(Bytes::from(resp.body))).unwrap());
+                    return builder.body(Full::new(Bytes::from(resp.body))).unwrap();
                 }
                 crate::middleware::MiddlewareResult::Continue(_) => {
                     // Proceed with normal request handling.
@@ -203,15 +288,14 @@ impl ProxyHandler {
                     backend = %route.backend,
                     "No cluster found for route '{}'", route.name
                 );
-                return Ok(hyper::Response::builder()
+                return hyper::Response::builder()
                     .status(502)
                     .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("No upstream cluster")))
-                    .unwrap());
+                    .unwrap();
             }
         };
 
-        // Log health check path if configured for this cluster.
         if !cluster.health_check_path.is_empty() {
             debug!(
                 cluster = %cluster.name,
@@ -220,7 +304,6 @@ impl ProxyHandler {
             );
         }
 
-        // Convert endpoints to LB Backend type, preserving zone/priority.
         let backends: Vec<lb::Backend> = cluster
             .endpoints
             .iter()
@@ -245,21 +328,19 @@ impl ProxyHandler {
             zone: None,
         };
 
-        // Check circuit breaker for this cluster.
         let cb = self.get_circuit_breaker(&cluster.name).await;
         if !cb.allow_request() {
             debug!(
                 cluster = %cluster.name,
                 "Circuit breaker open, rejecting request"
             );
-            return Ok(hyper::Response::builder()
+            return hyper::Response::builder()
                 .status(503)
                 .header("X-Route", route.name.as_str())
                 .body(Full::new(Bytes::from("Circuit breaker open")))
-                .unwrap());
+                .unwrap();
         }
 
-        // Filter out outlier-ejected backends.
         let healthy_backends: Vec<&lb::Backend> = backends
             .iter()
             .filter(|b| {
@@ -275,9 +356,7 @@ impl ProxyHandler {
             "Using load balancer"
         );
 
-        // Select from non-ejected backends if available, fall back to all.
         let (backend_idx, use_all) = if healthy_backends.is_empty() {
-            // Panic mode: all ejected, try all backends.
             match balancer.select(&ctx, &backends) {
                 Some(idx) => (idx, true),
                 None => {
@@ -286,20 +365,18 @@ impl ProxyHandler {
                         "No healthy endpoints for cluster"
                     );
                     cb.record_failure();
-                    return Ok(hyper::Response::builder()
+                    return hyper::Response::builder()
                         .status(503)
                         .header("X-Route", route.name.as_str())
                         .body(Full::new(Bytes::from("No healthy upstream")))
-                        .unwrap());
+                        .unwrap();
                 }
             }
         } else {
-            // Build a filtered slice for LB selection.
             let filtered: Vec<lb::Backend> =
                 healthy_backends.iter().map(|b| (*b).clone()).collect();
             match balancer.select(&ctx, &filtered) {
                 Some(idx) => {
-                    // Map back to original index.
                     let selected_backend = &filtered[idx];
                     let original_idx = backends
                         .iter()
@@ -315,11 +392,11 @@ impl ProxyHandler {
                         "No healthy endpoints for cluster"
                     );
                     cb.record_failure();
-                    return Ok(hyper::Response::builder()
+                    return hyper::Response::builder()
                         .status(503)
                         .header("X-Route", route.name.as_str())
                         .body(Full::new(Bytes::from("No healthy upstream")))
-                        .unwrap());
+                        .unwrap();
                 }
             }
         };
@@ -333,7 +410,6 @@ impl ProxyHandler {
         let selected = &backends[backend_idx];
         let backend_addr = SocketAddr::new(selected.addr, selected.port);
 
-        // Log active connection count for the selected backend.
         let active = self.connection_pool.active_count(&backend_addr);
         if active > 0 {
             debug!(
@@ -343,7 +419,6 @@ impl ProxyHandler {
             );
         }
 
-        // Acquire a connection pool slot.
         let pool_guard = match self.connection_pool.acquire(backend_addr).await {
             Ok(guard) => Some(guard),
             Err(e) => {
@@ -352,75 +427,31 @@ impl ProxyHandler {
                     error = %e,
                     "Connection pool limit reached"
                 );
-                return Ok(hyper::Response::builder()
+                return hyper::Response::builder()
                     .status(503)
                     .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("Connection pool exhausted")))
-                    .unwrap());
+                    .unwrap();
             }
         };
 
-        // Apply path rewrite if configured.
         let target_path = if let Some(ref rewrite) = route.rewrite_path {
             rewrite.clone()
         } else {
-            path.clone()
+            path.to_string()
         };
 
-        // Build the upstream URI query string.
         let query_suffix = query_string
-            .as_ref()
             .map(|q| format!("?{q}"))
             .unwrap_or_default();
         let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
 
-        // --- WebSocket upgrade handling ---
-        if is_websocket {
-            return self
-                .handle_websocket_upgrade(req, &headers, &route, backend_addr, &upstream_uri)
-                .await;
-        }
-
-        // --- Normal HTTP forwarding ---
-
-        // Check Content-Length against max body size (default 10 MiB).
-        const MAX_BODY_SIZE: u64 = 10 * 1024 * 1024;
-        if let Some(cl) = req
-            .headers()
-            .get("content-length")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|s| s.parse::<u64>().ok())
-        {
-            if cl > MAX_BODY_SIZE {
-                return Ok(hyper::Response::builder()
-                    .status(413)
-                    .body(Full::new(Bytes::from("Payload Too Large")))
-                    .unwrap());
-            }
-        }
-
-        // Collect the incoming body with size limit.
-        let body_bytes = match http_body_util::Limited::new(req.into_body(), MAX_BODY_SIZE as usize)
-            .collect()
-            .await
-        {
-            Ok(collected) => collected.to_bytes(),
-            Err(e) => {
-                warn!("Failed to read request body: {e}");
-                return Ok(hyper::Response::builder()
-                    .status(413)
-                    .body(Full::new(Bytes::from("Payload Too Large")))
-                    .unwrap());
-            }
-        };
-
         // Build upstream request.
         let mut upstream_req = hyper::Request::builder()
-            .method(method.as_str())
+            .method(method)
             .uri(&upstream_uri);
 
-        // Forward original headers (except Host which we set to upstream).
-        for (key, value) in &headers {
+        for (key, value) in headers {
             if key.eq_ignore_ascii_case("host") {
                 continue;
             }
@@ -431,10 +462,8 @@ impl ProxyHandler {
             }
         }
 
-        // Set the Host header to the upstream address.
         upstream_req = upstream_req.header("Host", backend_addr.to_string());
 
-        // Add route-specific headers to the request.
         for (key, value) in &route.add_headers {
             if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
                 if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
@@ -447,14 +476,13 @@ impl ProxyHandler {
             Ok(r) => r,
             Err(e) => {
                 warn!("Failed to build upstream request: {e}");
-                return Ok(hyper::Response::builder()
+                return hyper::Response::builder()
                     .status(500)
                     .body(Full::new(Bytes::from("Internal error")))
-                    .unwrap());
+                    .unwrap();
             }
         };
 
-        // Log pool guard info for debugging slow pool acquisition.
         if let Some(ref guard) = pool_guard {
             let wait_time = guard.acquired_at.elapsed();
             if wait_time > std::time::Duration::from_millis(100) {
@@ -466,15 +494,12 @@ impl ProxyHandler {
             }
         }
 
-        // Send the request to the upstream and measure latency.
         let upstream_start = std::time::Instant::now();
         let result = match self.client.request(upstream_req).await {
             Ok(upstream_resp) => {
                 let status = upstream_resp.status();
-
                 let upstream_latency = upstream_start.elapsed();
 
-                // Record success/failure based on status code.
                 if status.is_server_error() {
                     cb.record_failure();
                     self.outlier_detector.record_failure(backend_addr);
@@ -503,7 +528,6 @@ impl ProxyHandler {
                     .header("X-Route", route.name.as_str());
 
                 for (key, value) in &resp_headers {
-                    // Skip hop-by-hop headers.
                     if key.eq_ignore_ascii_case("transfer-encoding")
                         || key.eq_ignore_ascii_case("connection")
                     {
@@ -516,7 +540,6 @@ impl ProxyHandler {
                     }
                 }
 
-                // Apply route's add_headers to the response as well.
                 for (key, value) in &route.add_headers {
                     if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
                         if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
@@ -525,7 +548,6 @@ impl ProxyHandler {
                     }
                 }
 
-                // Apply response-phase middleware (security headers, CORS, compression).
                 if !route.middleware_refs.is_empty() {
                     let mut mw_resp = crate::middleware::Response {
                         status: status.as_u16(),
@@ -538,9 +560,7 @@ impl ProxyHandler {
                         &mw_request,
                         &mut mw_resp,
                     );
-                    // Apply response-phase headers to the hyper response builder.
                     for (k, v) in &mw_resp.headers {
-                        // Skip headers already copied from upstream to avoid duplicates.
                         if resp_headers.iter().any(|(rk, rv)| rk == k && rv == v) {
                             continue;
                         }
@@ -552,7 +572,6 @@ impl ProxyHandler {
                     }
                 }
 
-                // Apply configured response header actions.
                 if !self.response_header_actions.is_empty() {
                     let mut action_headers: Vec<(String, String)> = resp_headers.clone();
                     apply_header_actions(&mut action_headers, &self.response_header_actions);
@@ -568,15 +587,11 @@ impl ProxyHandler {
                     }
                 }
 
-                // Advertise HTTP/3 support via Alt-Svc header when on HTTPS.
-                // Port 443 is the standard QUIC port; the alt_svc_header
-                // function generates the appropriate header value.
                 if client_addr.port() == 443 || client_addr.port() == 8443 {
                     let alt_svc = super::http3::alt_svc_header(client_addr.port());
                     resp = resp.header("Alt-Svc", alt_svc);
                 }
 
-                // Check for custom error pages on 4xx/5xx responses.
                 if (status.is_client_error() || status.is_server_error())
                     && !self.error_pages.is_empty()
                 {
@@ -586,16 +601,15 @@ impl ProxyHandler {
                             "Serving custom error page"
                         );
                         resp = resp.header("Content-Type", error_page.content_type.as_str());
-                        return Ok(resp
+                        return resp
                             .body(Full::new(Bytes::from(error_page.body.clone())))
-                            .unwrap());
+                            .unwrap();
                     }
                 }
 
-                Ok(resp.body(Full::new(body)).unwrap())
+                resp.body(Full::new(body)).unwrap()
             }
             Err(e) => {
-                // Record failure for circuit breaker and outlier detection.
                 let upstream_latency = upstream_start.elapsed();
                 cb.record_failure();
                 self.outlier_detector.record_failure(backend_addr);
@@ -606,11 +620,11 @@ impl ProxyHandler {
                     error = %e,
                     "Failed to forward request to upstream"
                 );
-                Ok(hyper::Response::builder()
+                hyper::Response::builder()
                     .status(502)
                     .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("Bad Gateway")))
-                    .unwrap())
+                    .unwrap()
             }
         };
 
@@ -618,6 +632,115 @@ impl ProxyHandler {
         self.connection_pool.release(backend_addr).await;
 
         result
+    }
+
+    /// Resolve route and backend for WebSocket upgrade handling.
+    ///
+    /// Returns (route, backend_addr, upstream_uri) or an error response.
+    async fn resolve_route_and_backend(
+        &self,
+        method: &str,
+        path: &str,
+        host: &str,
+        headers: &[(String, String)],
+        query_string: Option<&str>,
+        client_addr: SocketAddr,
+    ) -> Result<(super::router::Route, SocketAddr, String), hyper::Response<Full<Bytes>>> {
+        let matched_route = {
+            let router = self.router.read().unwrap();
+            router
+                .match_request_with_query(host, path, method, headers, query_string)
+                .cloned()
+        };
+
+        let route = match matched_route {
+            Some(r) => r,
+            None => {
+                let default_backend = {
+                    let router = self.router.read().unwrap();
+                    router.default_backend().map(String::from)
+                };
+                if let Some(backend) = default_backend {
+                    super::router::Route {
+                        name: "__default__".to_string(),
+                        hostnames: Vec::new(),
+                        paths: Vec::new(),
+                        methods: Vec::new(),
+                        headers: Vec::new(),
+                        query_params: Vec::new(),
+                        backend,
+                        priority: 0,
+                        rewrite_path: None,
+                        add_headers: HashMap::new(),
+                        middleware_refs: Vec::new(),
+                    }
+                } else {
+                    return Err(hyper::Response::builder()
+                        .status(404)
+                        .body(Full::new(Bytes::from("Not Found")))
+                        .unwrap());
+                }
+            }
+        };
+
+        let cluster = match self.config.get_cluster(&route.backend) {
+            Some(c) => c,
+            None => {
+                return Err(hyper::Response::builder()
+                    .status(502)
+                    .header("X-Route", route.name.as_str())
+                    .body(Full::new(Bytes::from("No upstream cluster")))
+                    .unwrap());
+            }
+        };
+
+        let backends: Vec<lb::Backend> = cluster
+            .endpoints
+            .iter()
+            .map(|e| lb::Backend {
+                addr: e.address.parse().unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                port: e.port as u16,
+                weight: e.weight as u16,
+                healthy: e.healthy,
+                zone: e.zone.clone(),
+                priority: e.priority,
+            })
+            .collect();
+
+        let ctx = lb::RequestContext {
+            src_ip: client_addr.ip(),
+            src_port: client_addr.port(),
+            dst_port: 0,
+            sticky_cookie: None,
+            zone: None,
+        };
+
+        let balancer = lb::new_load_balancer(&cluster.lb_algorithm);
+        let backend_idx = match balancer.select(&ctx, &backends) {
+            Some(idx) => idx,
+            None => {
+                return Err(hyper::Response::builder()
+                    .status(503)
+                    .header("X-Route", route.name.as_str())
+                    .body(Full::new(Bytes::from("No healthy upstream")))
+                    .unwrap());
+            }
+        };
+
+        let selected = &backends[backend_idx];
+        let backend_addr = SocketAddr::new(selected.addr, selected.port);
+
+        let target_path = if let Some(ref rewrite) = route.rewrite_path {
+            rewrite.clone()
+        } else {
+            path.to_string()
+        };
+        let query_suffix = query_string
+            .map(|q| format!("?{q}"))
+            .unwrap_or_default();
+        let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
+
+        Ok((route, backend_addr, upstream_uri))
     }
 
     /// Handle a WebSocket upgrade by establishing a bidirectional TCP tunnel

@@ -50,7 +50,7 @@ struct backend_key {
 struct backend_value {
     __u32 addr;     // IPv4 address in network byte order
     __u16 port;     // port in network byte order
-    __u16 pad;
+    __u8  mac[6];   // backend MAC address for XDP_TX
 };
 
 // Inner map specification for bpf2go. This is the Maglev lookup table:
@@ -85,6 +85,14 @@ struct {
     __type(key, struct backend_key);
     __type(value, struct backend_value);
 } maglev_backends SEC(".maps");
+
+// Local interface MAC address, populated by userspace at load time.
+struct {
+    __uint(type, BPF_MAP_TYPE_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, __u32);
+    __type(value, __u8[6]);
+} maglev_local_mac SEC(".maps");
 
 // Per-CPU statistics.
 enum maglev_stat_idx {
@@ -202,6 +210,16 @@ int maglev_xdp_prog(struct xdp_md *ctx) {
     struct backend_value *bv = maglev_lookup(fhash);
     if (!bv)
         return XDP_PASS;
+
+    // Look up local interface MAC for source rewrite.
+    __u32 mac_key = 0;
+    __u8 *iface_mac = bpf_map_lookup_elem(&maglev_local_mac, &mac_key);
+    if (!iface_mac)
+        return XDP_PASS;
+
+    // Rewrite MACs: dst = backend, src = local interface.
+    __builtin_memcpy(eth->h_dest, bv->mac, ETH_ALEN);
+    __builtin_memcpy(eth->h_source, iface_mac, ETH_ALEN);
 
     // Rewrite destination IP and port.
     ip->daddr = bv->addr;
