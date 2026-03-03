@@ -1,6 +1,8 @@
 //! Source-IP hash load balancing.
 
-use super::{healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext};
+use super::{
+    healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext,
+};
 
 /// Source-hash load balancer — deterministically maps a client (src_ip, src_port)
 /// to a backend using FNV-1a hashing.

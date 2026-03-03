@@ -109,7 +109,11 @@ impl CircuitBreaker {
                 // Limit probes: decrement permits atomically.
                 self.half_open_permits
                     .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |p| {
-                        if p > 0 { Some(p - 1) } else { None }
+                        if p > 0 {
+                            Some(p - 1)
+                        } else {
+                            None
+                        }
                     })
                     .is_ok()
             }

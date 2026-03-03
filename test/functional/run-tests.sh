@@ -12,7 +12,7 @@ PORT_BASE=28080
 PF_PIDS=()
 
 cleanup() {
-    for pid in "${PF_PIDS[@]}"; do
+    for pid in "${PF_PIDS[@]+"${PF_PIDS[@]}"}"; do
         kill "$pid" 2>/dev/null || true
     done
     wait 2>/dev/null || true
@@ -40,10 +40,10 @@ result() {
     local name=$1 expected=$2 actual=$3
     if [ "$expected" = "$actual" ]; then
         echo "  PASS: $name (got: $actual)"
-        ((PASS++))
+        PASS=$((PASS + 1))
     else
         echo "  FAIL: $name (expected: $expected, got: $actual)"
-        ((FAIL++))
+        FAIL=$((FAIL + 1))
     fi
 }
 
@@ -51,10 +51,10 @@ result_contains() {
     local name=$1 expected=$2 actual=$3
     if echo "$actual" | grep -q "$expected"; then
         echo "  PASS: $name (contains: $expected)"
-        ((PASS++))
+        PASS=$((PASS + 1))
     else
         echo "  FAIL: $name (expected to contain: $expected, got: $actual)"
-        ((FAIL++))
+        FAIL=$((FAIL + 1))
     fi
 }
 
@@ -62,20 +62,25 @@ result_not_contains() {
     local name=$1 unexpected=$2 actual=$3
     if echo "$actual" | grep -q "$unexpected"; then
         echo "  FAIL: $name (unexpectedly contains: $unexpected)"
-        ((FAIL++))
+        FAIL=$((FAIL + 1))
     else
         echo "  PASS: $name (correctly does not contain: $unexpected)"
-        ((PASS++))
+        PASS=$((PASS + 1))
     fi
 }
 
 # ============================================================
 # Determine active agent pod
 # ============================================================
-ACTIVE_NODE=$(kubectl get proxyvip test-vip -o jsonpath='{.status.activeNode}' 2>/dev/null || echo "")
-if [ -z "$ACTIVE_NODE" ]; then
-    echo "ERROR: No active VIP node. Run setup.sh first."
-    exit 1
+if [ -n "${AGENT_NODE:-}" ]; then
+    ACTIVE_NODE="$AGENT_NODE"
+    echo "NOTE: Using override AGENT_NODE=$ACTIVE_NODE"
+else
+    ACTIVE_NODE=$(kubectl get proxyvip test-vip -o jsonpath='{.status.activeNode}' 2>/dev/null || echo "")
+    if [ -z "$ACTIVE_NODE" ]; then
+        echo "ERROR: No active VIP node. Run setup.sh first."
+        exit 1
+    fi
 fi
 
 AGENT_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent \
@@ -242,10 +247,10 @@ done
 
 if $GOT_429; then
     echo "  PASS: Rate limiting returns 429 after burst"
-    ((PASS++))
+    PASS=$((PASS + 1))
 else
     echo "  FAIL: Rate limiting never returned 429"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
 fi
 
 kubectl delete proxypolicy api-rate-limit -n default >/dev/null 2>&1
@@ -307,10 +312,10 @@ PF_PID=$(start_pf "$AGENT_POD" "$PORT" 9090)
 METRIC_COUNT=$(timeout 3 curl -s "http://localhost:$PORT/metrics" 2>/dev/null | grep -c novaedge || echo "0")
 if [ "$METRIC_COUNT" -gt 10 ]; then
     echo "  PASS: Agent exposes $METRIC_COUNT novaedge metrics"
-    ((PASS++))
+    PASS=$((PASS + 1))
 else
     echo "  FAIL: Agent exposes only $METRIC_COUNT novaedge metrics (expected > 10)"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
 fi
 stop_pf "$PF_PID"
 
@@ -348,10 +353,10 @@ sleep 12
 NEW_VERSION=$(kubectl logs "$AGENT_POD" -n nova-system --tail=5 | grep "Applied config" | tail -1 | grep -o '"version":"[^"]*"' || echo "none")
 if [ "$OLD_VERSION" != "$NEW_VERSION" ] && [ "$NEW_VERSION" != "none" ]; then
     echo "  PASS: Config snapshot updated ($OLD_VERSION -> $NEW_VERSION)"
-    ((PASS++))
+    PASS=$((PASS + 1))
 else
     echo "  FAIL: Config snapshot not updated (old=$OLD_VERSION, new=$NEW_VERSION)"
-    ((FAIL++))
+    FAIL=$((FAIL + 1))
 fi
 # Reset
 kubectl patch proxybackend api-backend -n default --type=merge -p '{"spec":{"idleTimeout":"60s"}}' >/dev/null 2>&1

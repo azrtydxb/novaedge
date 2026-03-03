@@ -120,7 +120,10 @@ mod tests {
         // Backend 0 should own ~75% of positions.
         let b0_count = ring.values().filter(|&&v| v == 0).count();
         let ratio = b0_count as f64 / ring.len() as f64;
-        assert!(ratio > 0.6, "weighted backend should own more ring space: {ratio:.2}");
+        assert!(
+            ratio > 0.6,
+            "weighted backend should own more ring space: {ratio:.2}"
+        );
     }
 
     #[test]

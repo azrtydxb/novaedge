@@ -485,8 +485,9 @@ impl ProxyHandler {
                 .map(|mut b| {
                     let key = format!("{}:{}", b.addr, b.port);
                     self.slow_start_tracker.register(&key);
-                    let multiplier =
-                        self.slow_start_tracker.weight_multiplier(&key, window, aggression);
+                    let multiplier = self
+                        .slow_start_tracker
+                        .weight_multiplier(&key, window, aggression);
                     b.weight = ((b.weight as f64) * multiplier).max(1.0) as u16;
                     b
                 })
@@ -529,7 +530,10 @@ impl ProxyHandler {
             if priority_indices.is_empty() {
                 backends.clone()
             } else {
-                priority_indices.iter().map(|&i| backends[i].clone()).collect()
+                priority_indices
+                    .iter()
+                    .map(|&i| backends[i].clone())
+                    .collect()
             }
         };
 
@@ -636,8 +640,7 @@ impl ProxyHandler {
                 }
                 self.retry_budget.record_retry(&cluster.name);
 
-                let backoff_ms =
-                    retry_backoff_base_ms.saturating_mul(1u64 << (attempt - 1).min(8));
+                let backoff_ms = retry_backoff_base_ms.saturating_mul(1u64 << (attempt - 1).min(8));
                 debug!(
                     attempt,
                     backoff_ms,
@@ -686,7 +689,9 @@ impl ProxyHandler {
                         attempt,
                         "Connection pool limit reached"
                     );
-                    self.connection_pool.record_connection_failure(backend_addr).await;
+                    self.connection_pool
+                        .record_connection_failure(backend_addr)
+                        .await;
                     if attempt < max_attempts - 1
                         && is_retryable_condition("connect-failure", &retry_on)
                     {
@@ -720,8 +725,7 @@ impl ProxyHandler {
                 }
             }
 
-            upstream_req_builder =
-                upstream_req_builder.header("Host", backend_addr.to_string());
+            upstream_req_builder = upstream_req_builder.header("Host", backend_addr.to_string());
 
             for (key, value) in &route.add_headers {
                 if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
@@ -731,61 +735,62 @@ impl ProxyHandler {
                 }
             }
 
-            let upstream_req =
-                match upstream_req_builder.body(Full::new(body_bytes.clone())) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        warn!("Failed to build upstream request: {e}");
-                        return hyper::Response::builder()
-                            .status(500)
-                            .body(Full::new(Bytes::from("Internal error")))
-                            .unwrap();
-                    }
-                };
+            let upstream_req = match upstream_req_builder.body(Full::new(body_bytes.clone())) {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!("Failed to build upstream request: {e}");
+                    return hyper::Response::builder()
+                        .status(500)
+                        .body(Full::new(Bytes::from("Internal error")))
+                        .unwrap();
+                }
+            };
 
             let upstream_start = std::time::Instant::now();
 
             // Hedging: on first attempt, if configured, race primary vs hedged request.
-            let upstream_result = if attempt == 0 && hedge_delay_ms > 0 && effective_backends.len() > 1 {
-                let hedge_delay = std::time::Duration::from_millis(hedge_delay_ms);
-                // Build hedge request to a different backend.
-                let hedge_idx = (backend_idx + 1) % backends.len();
-                let hedge_backend = &backends[hedge_idx];
-                let hedge_addr = SocketAddr::new(hedge_backend.addr, hedge_backend.port);
-                let hedge_uri = format!("http://{hedge_addr}{target_path}{query_suffix}");
-                let mut hedge_builder = hyper::Request::builder().method(method).uri(&hedge_uri);
-                for (key, value) in headers {
-                    if key.eq_ignore_ascii_case("host") {
-                        continue;
-                    }
-                    if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
-                        if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
-                            hedge_builder = hedge_builder.header(name, val);
+            let upstream_result =
+                if attempt == 0 && hedge_delay_ms > 0 && effective_backends.len() > 1 {
+                    let hedge_delay = std::time::Duration::from_millis(hedge_delay_ms);
+                    // Build hedge request to a different backend.
+                    let hedge_idx = (backend_idx + 1) % backends.len();
+                    let hedge_backend = &backends[hedge_idx];
+                    let hedge_addr = SocketAddr::new(hedge_backend.addr, hedge_backend.port);
+                    let hedge_uri = format!("http://{hedge_addr}{target_path}{query_suffix}");
+                    let mut hedge_builder =
+                        hyper::Request::builder().method(method).uri(&hedge_uri);
+                    for (key, value) in headers {
+                        if key.eq_ignore_ascii_case("host") {
+                            continue;
+                        }
+                        if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                            if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
+                                hedge_builder = hedge_builder.header(name, val);
+                            }
                         }
                     }
-                }
-                hedge_builder = hedge_builder.header("Host", hedge_addr.to_string());
-                let hedge_req = hedge_builder.body(Full::new(body_bytes.clone())).ok();
+                    hedge_builder = hedge_builder.header("Host", hedge_addr.to_string());
+                    let hedge_req = hedge_builder.body(Full::new(body_bytes.clone())).ok();
 
-                let primary_fut = self.client.request(upstream_req);
-                let client = &self.client;
+                    let primary_fut = self.client.request(upstream_req);
+                    let client = &self.client;
 
-                tokio::select! {
-                    result = primary_fut => result,
-                    result = async {
-                        tokio::time::sleep(hedge_delay).await;
-                        if let Some(req) = hedge_req {
-                            debug!(hedge_backend = %hedge_addr, "Sending hedged request");
-                            client.request(req).await
-                        } else {
-                            // Fallback: wait for primary forever (unreachable if hedge_req is Some).
-                            std::future::pending().await
-                        }
-                    } => result,
-                }
-            } else {
-                self.client.request(upstream_req).await
-            };
+                    tokio::select! {
+                        result = primary_fut => result,
+                        result = async {
+                            tokio::time::sleep(hedge_delay).await;
+                            if let Some(req) = hedge_req {
+                                debug!(hedge_backend = %hedge_addr, "Sending hedged request");
+                                client.request(req).await
+                            } else {
+                                // Fallback: wait for primary forever (unreachable if hedge_req is Some).
+                                std::future::pending().await
+                            }
+                        } => result,
+                    }
+                } else {
+                    self.client.request(upstream_req).await
+                };
 
             match upstream_result {
                 Ok(upstream_resp) => {
@@ -987,8 +992,13 @@ impl ProxyHandler {
         let _ = final_backend_idx;
 
         // Request mirroring: fire-and-forget copy of request to mirror cluster.
-        if let Some(ref mirror_cluster_name) = route_state.as_ref().and_then(|r| r.mirror_cluster.clone()) {
-            let mirror_percent = route_state.as_ref().map(|r| r.mirror_percent).unwrap_or(100);
+        if let Some(ref mirror_cluster_name) =
+            route_state.as_ref().and_then(|r| r.mirror_cluster.clone())
+        {
+            let mirror_percent = route_state
+                .as_ref()
+                .map(|r| r.mirror_percent)
+                .unwrap_or(100);
             let should_mirror = if mirror_percent >= 100 {
                 true
             } else {
@@ -1022,7 +1032,9 @@ impl ProxyHandler {
                                 if key.eq_ignore_ascii_case("host") {
                                     continue;
                                 }
-                                if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                                if let Ok(name) =
+                                    hyper::header::HeaderName::from_bytes(key.as_bytes())
+                                {
                                     if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
                                         req_builder = req_builder.header(name, val);
                                     }
@@ -1161,7 +1173,10 @@ impl ProxyHandler {
             if priority_indices.is_empty() {
                 backends.clone()
             } else {
-                priority_indices.iter().map(|&i| backends[i].clone()).collect()
+                priority_indices
+                    .iter()
+                    .map(|&i| backends[i].clone())
+                    .collect()
             }
         };
 

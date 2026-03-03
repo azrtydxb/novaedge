@@ -365,7 +365,13 @@ impl DataplaneService {
         let (sa_type, sa_cookie, sa_header) = cluster
             .session_affinity
             .as_ref()
-            .map(|sa| (sa.r#type.clone(), sa.cookie_name.clone(), sa.header_name.clone()))
+            .map(|sa| {
+                (
+                    sa.r#type.clone(),
+                    sa.cookie_name.clone(),
+                    sa.header_name.clone(),
+                )
+            })
             .unwrap_or_default();
 
         // Extract outlier detection config.

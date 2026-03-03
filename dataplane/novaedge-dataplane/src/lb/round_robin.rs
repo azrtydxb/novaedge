@@ -3,7 +3,9 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use super::{healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext};
+use super::{
+    healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext,
+};
 
 /// Weighted round-robin load balancer.
 ///

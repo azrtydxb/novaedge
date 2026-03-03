@@ -443,9 +443,10 @@ impl RuntimeConfig {
                             .map(|t| t.elapsed() < std::time::Duration::from_secs(30))
                             .unwrap_or(false)
                     {
-                        let already_present = c.endpoints.iter().any(|e| {
-                            e.address == old_ep.address && e.port == old_ep.port
-                        });
+                        let already_present = c
+                            .endpoints
+                            .iter()
+                            .any(|e| e.address == old_ep.address && e.port == old_ep.port);
                         if !already_present {
                             c.endpoints.push(old_ep.clone());
                         }

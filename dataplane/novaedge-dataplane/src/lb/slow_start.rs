@@ -76,11 +76,7 @@ mod tests {
     fn new_endpoint_gets_low_weight() {
         let tracker = SlowStartTracker::new();
         tracker.register("10.0.0.1:8080");
-        let m = tracker.weight_multiplier(
-            "10.0.0.1:8080",
-            Duration::from_secs(60),
-            1.0,
-        );
+        let m = tracker.weight_multiplier("10.0.0.1:8080", Duration::from_secs(60), 1.0);
         // Just registered, elapsed ~0, should be very low
         assert!(m < 0.1, "multiplier should be low for new endpoint: {m}");
     }
@@ -88,11 +84,7 @@ mod tests {
     #[test]
     fn unknown_endpoint_gets_full_weight() {
         let tracker = SlowStartTracker::new();
-        let m = tracker.weight_multiplier(
-            "10.0.0.1:8080",
-            Duration::from_secs(60),
-            1.0,
-        );
+        let m = tracker.weight_multiplier("10.0.0.1:8080", Duration::from_secs(60), 1.0);
         assert_eq!(m, 1.0);
     }
 
@@ -100,11 +92,7 @@ mod tests {
     fn zero_window_gives_full_weight() {
         let tracker = SlowStartTracker::new();
         tracker.register("10.0.0.1:8080");
-        let m = tracker.weight_multiplier(
-            "10.0.0.1:8080",
-            Duration::ZERO,
-            1.0,
-        );
+        let m = tracker.weight_multiplier("10.0.0.1:8080", Duration::ZERO, 1.0);
         assert_eq!(m, 1.0);
     }
 
@@ -115,11 +103,7 @@ mod tests {
         tracker.register("10.0.0.2:8080");
         tracker.retain_keys(&["10.0.0.1:8080".to_string()]);
         // 10.0.0.2 removed, should get full weight (unknown)
-        let m = tracker.weight_multiplier(
-            "10.0.0.2:8080",
-            Duration::from_secs(60),
-            1.0,
-        );
+        let m = tracker.weight_multiplier("10.0.0.2:8080", Duration::from_secs(60), 1.0);
         assert_eq!(m, 1.0);
     }
 
@@ -132,6 +116,9 @@ mod tests {
         let linear = tracker.weight_multiplier("a", Duration::from_secs(1), 1.0);
         let convex = tracker.weight_multiplier("a", Duration::from_secs(1), 2.0);
         // With aggression > 1, the weight should be lower than linear
-        assert!(convex < linear, "convex({convex}) should be < linear({linear})");
+        assert!(
+            convex < linear,
+            "convex({convex}) should be < linear({linear})"
+        );
     }
 }

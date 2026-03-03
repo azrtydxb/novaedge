@@ -2,7 +2,9 @@
 
 use rand::Rng;
 
-use super::{healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext};
+use super::{
+    healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext,
+};
 
 /// Random load balancer — selects a healthy backend at random.
 ///

@@ -146,8 +146,8 @@ impl OutlierDetector {
         // Only apply if enough hosts.
         if rates.len() >= self.config.sr_min_hosts as usize && !rates.is_empty() {
             let mean: f64 = rates.iter().map(|(_, r)| r).sum::<f64>() / rates.len() as f64;
-            let variance: f64 = rates.iter().map(|(_, r)| (r - mean).powi(2)).sum::<f64>()
-                / rates.len() as f64;
+            let variance: f64 =
+                rates.iter().map(|(_, r)| (r - mean).powi(2)).sum::<f64>() / rates.len() as f64;
             let stddev = variance.sqrt();
 
             let threshold = mean - self.config.sr_stdev_factor * stddev;
@@ -158,9 +158,8 @@ impl OutlierDetector {
                 .values()
                 .filter(|s| s.ejected_until.map(|t| t > now).unwrap_or(false))
                 .count();
-            let max_ejectable =
-                ((total_backends as f64) * self.config.max_ejection_percent / 100.0).floor()
-                    as usize;
+            let max_ejectable = ((total_backends as f64) * self.config.max_ejection_percent / 100.0)
+                .floor() as usize;
 
             let mut ejected = currently_ejected;
             for (addr, rate) in &rates {

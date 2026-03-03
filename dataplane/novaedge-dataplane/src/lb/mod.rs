@@ -200,7 +200,6 @@ pub fn locality_weighted(
     }
 }
 
-
 /// Filter backends to those in the lowest healthy priority group.
 ///
 /// Priority groups are numbered from 0 (highest). Returns indices of healthy
@@ -315,10 +314,7 @@ mod tests {
 
     #[test]
     fn filter_by_priority_empty_when_all_unhealthy() {
-        let backends = vec![
-            backend(1, 0, false, 1),
-            backend(2, 1, false, 1),
-        ];
+        let backends = vec![backend(1, 0, false, 1), backend(2, 1, false, 1)];
         let result = filter_by_priority(&backends);
         assert!(result.is_empty());
     }
@@ -377,16 +373,14 @@ mod tests {
 
     #[test]
     fn prefer_same_zone_falls_back_when_no_match() {
-        let backends = vec![
-            Backend {
-                addr: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
-                port: 8080,
-                weight: 1,
-                healthy: true,
-                zone: Some("us-west-2a".to_string()),
-                priority: 0,
-            },
-        ];
+        let backends = vec![Backend {
+            addr: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            port: 8080,
+            weight: 1,
+            healthy: true,
+            zone: Some("us-west-2a".to_string()),
+            priority: 0,
+        }];
         let healthy = vec![0];
         let ctx = RequestContext {
             src_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
@@ -447,16 +441,14 @@ mod tests {
 
     #[test]
     fn locality_weighted_no_zone_returns_all() {
-        let backends = vec![
-            Backend {
-                addr: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
-                port: 8080,
-                weight: 1,
-                healthy: true,
-                zone: Some("us-east-1a".to_string()),
-                priority: 0,
-            },
-        ];
+        let backends = vec![Backend {
+            addr: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            port: 8080,
+            weight: 1,
+            healthy: true,
+            zone: Some("us-east-1a".to_string()),
+            priority: 0,
+        }];
         let healthy = vec![0];
         let ctx = RequestContext {
             src_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
