@@ -394,7 +394,7 @@ export default function MetricsDashboard() {
                             border: '1px solid hsl(var(--border))',
                             borderRadius: '6px',
                           }}
-                          formatter={(value: number) => [`${value.toFixed(2)}%`, 'Hit Rate']}
+                          formatter={(value) => [`${Number(value ?? 0).toFixed(2)}%`, 'Hit Rate']}
                         />
                         <Area
                           type="monotone"

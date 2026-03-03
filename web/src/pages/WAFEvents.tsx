@@ -149,7 +149,7 @@ export default function WAFEvents() {
                       border: '1px solid hsl(var(--border))',
                       borderRadius: '6px',
                     }}
-                    formatter={(value: number) => [`${value} hits`, 'Count']}
+                    formatter={(value) => [`${value ?? 0} hits`, 'Count']}
                   />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                     {topRulesChartData.map((_, index) => (
