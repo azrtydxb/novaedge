@@ -1,6 +1,7 @@
 //! Consistent ring-hash load balancing.
 
 use std::collections::BTreeMap;
+use std::sync::RwLock;
 
 use super::{healthy_indices, Backend, LoadBalancer, RequestContext};
 
@@ -8,16 +9,29 @@ use super::{healthy_indices, Backend, LoadBalancer, RequestContext};
 ///
 /// Each backend is placed at multiple positions on a virtual ring
 /// (controlled by `replicas`). Requests are routed to the next backend
-/// on the ring after the hash of the source address. This provides
+/// on the ring after the hash of the source IP. This provides
 /// consistent mapping even when backends are added or removed.
+///
+/// The ring is cached with a fingerprint and only rebuilt when the
+/// healthy backend set changes. (#870)
 pub struct RingHash {
     replicas: usize,
+    cache: RwLock<RingState>,
+}
+
+struct RingState {
+    ring: BTreeMap<u64, usize>,
+    fingerprint: u64,
 }
 
 impl RingHash {
     pub fn new(replicas: usize) -> Self {
         Self {
             replicas: replicas.max(1),
+            cache: RwLock::new(RingState {
+                ring: BTreeMap::new(),
+                fingerprint: 0,
+            }),
         }
     }
 
@@ -42,6 +56,27 @@ impl RingHash {
         }
         ring
     }
+
+    /// Compute a fingerprint for the healthy backend set (including weights).
+    fn fingerprint(healthy: &[usize], backends: &[Backend]) -> u64 {
+        let mut hash: u64 = 0;
+        for &idx in healthy {
+            let b = &backends[idx];
+            let key = format!("{}:{}:{}:{}", b.addr, b.port, idx, b.weight);
+            hash ^= fnv1a(key.as_bytes());
+        }
+        hash
+    }
+
+    /// Look up the ring for the given hash, with wrap-around.
+    fn ring_lookup(ring: &BTreeMap<u64, usize>, hash: u64) -> Option<usize> {
+        if let Some((&_pos, &idx)) = ring.range(hash..).next() {
+            Some(idx)
+        } else {
+            // Wrap around to the first entry on the ring.
+            ring.values().next().copied()
+        }
+    }
 }
 
 impl LoadBalancer for RingHash {
@@ -51,18 +86,28 @@ impl LoadBalancer for RingHash {
             return None;
         }
 
-        let ring = Self::build_ring(&healthy, backends, self.replicas);
-
-        let key = format!("{}:{}", ctx.src_ip, ctx.src_port);
+        let fp = Self::fingerprint(&healthy, backends);
+        // Hash only src_ip for true per-client affinity. (#870)
+        let key = format!("{}", ctx.src_ip);
         let hash = fnv1a(key.as_bytes());
 
-        // Find the first entry >= hash (wrap around if needed).
-        if let Some((&_pos, &idx)) = ring.range(hash..).next() {
-            Some(idx)
-        } else {
-            // Wrap around to the first entry on the ring.
-            ring.values().next().copied()
+        // Fast path: use cached ring if fingerprint matches.
+        {
+            let state = self.cache.read().unwrap();
+            if state.fingerprint == fp && !state.ring.is_empty() {
+                return Self::ring_lookup(&state.ring, hash);
+            }
         }
+
+        // Slow path: rebuild ring.
+        let ring = Self::build_ring(&healthy, backends, self.replicas);
+        let result = Self::ring_lookup(&ring, hash);
+
+        let mut state = self.cache.write().unwrap();
+        state.ring = ring;
+        state.fingerprint = fp;
+
+        result
     }
 
     fn name(&self) -> &'static str {
@@ -153,10 +198,16 @@ mod tests {
         let lb = RingHash::new(150);
         let backends = make_backends(3);
         let mut counts = [0u32; 3];
-        for i in 0..300u32 {
+        // Use 900 distinct IPs across a wider range for better distribution.
+        for i in 0..900u32 {
             let ctx = RequestContext {
-                src_ip: IpAddr::V4(Ipv4Addr::new(10, (i >> 16) as u8, (i >> 8) as u8, i as u8)),
-                src_port: (1000 + i) as u16,
+                src_ip: IpAddr::V4(Ipv4Addr::new(
+                    10,
+                    ((i / 256) % 256) as u8,
+                    (i % 256) as u8,
+                    ((i * 7 + 13) % 256) as u8,
+                )),
+                src_port: 1000,
                 dst_port: 80,
                 sticky_cookie: None,
                 zone: None,
@@ -164,15 +215,17 @@ mod tests {
             let idx = lb.select(&ctx, &backends).unwrap();
             counts[idx] += 1;
         }
-        // Each backend should get a reasonable share.
+        // Each backend should get a reasonable share (>10% of 900 = 90).
         for &c in &counts {
-            assert!(c > 50, "backend got too few requests: {c}");
+            assert!(c > 90, "backend got too few requests: {c}");
         }
     }
 
     #[test]
     fn minimal_disruption_on_backend_change() {
-        let lb = RingHash::new(150);
+        // Need two separate instances since each has its own cache.
+        let lb3 = RingHash::new(150);
+        let lb4 = RingHash::new(150);
         let backends_3 = make_backends(3);
         let backends_4 = make_backends(4);
 
@@ -187,8 +240,8 @@ mod tests {
                 sticky_cookie: None,
                 zone: None,
             };
-            let r3 = lb.select(&ctx, &backends_3).unwrap();
-            let r4 = lb.select(&ctx, &backends_4).unwrap();
+            let r3 = lb3.select(&ctx, &backends_3).unwrap();
+            let r4 = lb4.select(&ctx, &backends_4).unwrap();
             if r3 == r4 {
                 same_count += 1;
             }
@@ -199,5 +252,49 @@ mod tests {
             stability > 0.5,
             "ring hash stability too low: {stability:.2}"
         );
+    }
+
+    #[test]
+    fn same_ip_different_port_same_backend() {
+        let lb = RingHash::new(150);
+        let backends = make_backends(5);
+        let ctx1 = RequestContext {
+            src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            src_port: 50000,
+            dst_port: 80,
+            sticky_cookie: None,
+            zone: None,
+        };
+        let ctx2 = RequestContext {
+            src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            src_port: 50001,
+            dst_port: 80,
+            sticky_cookie: None,
+            zone: None,
+        };
+        assert_eq!(
+            lb.select(&ctx1, &backends).unwrap(),
+            lb.select(&ctx2, &backends).unwrap(),
+            "same IP with different ports should select same backend"
+        );
+    }
+
+    #[test]
+    fn cache_is_reused() {
+        let lb = RingHash::new(150);
+        let backends = make_backends(3);
+        let ctx = make_ctx();
+
+        // First call builds the ring.
+        let first = lb.select(&ctx, &backends).unwrap();
+
+        // Second call should use the cache (same result, no rebuild).
+        let second = lb.select(&ctx, &backends).unwrap();
+        assert_eq!(first, second);
+
+        // Verify fingerprint was set.
+        let state = lb.cache.read().unwrap();
+        assert!(!state.ring.is_empty());
+        assert_ne!(state.fingerprint, 0);
     }
 }

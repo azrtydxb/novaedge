@@ -618,9 +618,11 @@ func main() {
 			adminServer.SetSnapshot(snapshot)
 			adminServer.SetReady(true)
 
-			// Update gossiper with the newly applied config version so
-			// peers can detect version divergence.
-			gossiper.UpdateVersion(snapshot.Version)
+			// Update gossiper with the generation time so peers can
+			// detect when this agent is behind. We use generation time
+			// (not version hash) because per-node snapshots have different
+			// VIP assignments, causing different hashes. (#866)
+			gossiper.UpdateGenTime(snapshot.GenerationTime)
 
 			return nil
 		})

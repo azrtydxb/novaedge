@@ -4,8 +4,10 @@ use super::{
     healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext,
 };
 
-/// Source-hash load balancer — deterministically maps a client (src_ip, src_port)
-/// to a backend using FNV-1a hashing.
+/// Source-hash load balancer — deterministically maps a client source IP
+/// to a backend using FNV-1a hashing. Only the source IP is hashed (not the
+/// port), because ephemeral source ports change per TCP connection, which
+/// would make the hash effectively random. (#868)
 pub struct SourceHash;
 
 impl SourceHash {
@@ -33,8 +35,8 @@ impl LoadBalancer for SourceHash {
         if weighted.is_empty() {
             return None;
         }
-        // Hash (src_ip, src_port).
-        let key = format!("{}:{}", ctx.src_ip, ctx.src_port);
+        // Hash only src_ip for true per-client affinity. (#868)
+        let key = format!("{}", ctx.src_ip);
         let h = Self::fnv1a(key.as_bytes());
         let idx = (h as usize) % weighted.len();
         Some(weighted[idx])
@@ -67,6 +69,7 @@ mod tests {
     fn different_clients_may_differ() {
         let lb = SourceHash;
         let backends = make_backends(10);
+        // Only source IP matters — same port, different IPs. (#868)
         let ctx1 = RequestContext {
             src_ip: IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)),
             src_port: 1000,
@@ -76,7 +79,7 @@ mod tests {
         };
         let ctx2 = RequestContext {
             src_ip: IpAddr::V4(Ipv4Addr::new(5, 6, 7, 8)),
-            src_port: 2000,
+            src_port: 1000,
             dst_port: 80,
             sticky_cookie: None,
             zone: None,
@@ -87,6 +90,32 @@ mod tests {
         // This is probabilistic so we just verify both are valid.
         assert!(r1 < 10);
         assert!(r2 < 10);
+    }
+
+    #[test]
+    fn same_ip_different_port_same_backend() {
+        let lb = SourceHash;
+        let backends = make_backends(5);
+        // Same IP with different ephemeral ports should always hash to same backend.
+        let ctx1 = RequestContext {
+            src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            src_port: 50000,
+            dst_port: 80,
+            sticky_cookie: None,
+            zone: None,
+        };
+        let ctx2 = RequestContext {
+            src_ip: IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+            src_port: 50001,
+            dst_port: 80,
+            sticky_cookie: None,
+            zone: None,
+        };
+        assert_eq!(
+            lb.select(&ctx1, &backends).unwrap(),
+            lb.select(&ctx2, &backends).unwrap(),
+            "same IP with different ports should select same backend"
+        );
     }
 
     #[test]

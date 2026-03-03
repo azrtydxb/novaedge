@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package gossip implements agent-to-agent config version gossip using
-// UDP multicast. When a quorum of peers report a different (newer) config
-// version, the lagging agent forces a resync from the controller.
+// UDP multicast. When a quorum of peers report a newer generation time,
+// the lagging agent forces a resync from the controller.
 package gossip
 
 import (
@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,13 +51,20 @@ const (
 	// Set to 3× BroadcastInterval.
 	PeerExpiry = 15 * time.Second
 
+	// GenTimeThreshold is the minimum difference in generation time (seconds)
+	// before considering a peer "newer". Per-node snapshots have different
+	// VIP assignments, so version hashes will always differ across nodes.
+	// Comparing generation times with a threshold avoids false-positive
+	// resync loops that cause config churn. (#866)
+	GenTimeThreshold int64 = 60
+
 	// messagePrefix identifies config gossip messages.
 	messagePrefix = "config_version"
 )
 
-// peerState tracks the last known config version and heartbeat of a peer.
+// peerState tracks the last known config generation time and heartbeat of a peer.
 type peerState struct {
-	version  string
+	genTime  int64
 	lastSeen time.Time
 }
 
@@ -65,8 +73,8 @@ type ConfigGossiper struct {
 	nodeName        string
 	multicastAddr   string
 	conn            *net.UDPConn
-	currentVersion  atomic.Value // string
-	peerVersions    sync.Map     // map[string]peerState
+	currentGenTime  atomic.Int64
+	peerVersions    sync.Map // map[string]peerState
 	forceResyncFunc func()
 	logger          *zap.Logger
 	ctx             context.Context
@@ -76,14 +84,12 @@ type ConfigGossiper struct {
 // NewConfigGossiper creates a new config version gossiper.
 // forceResyncFunc is called when quorum detects this agent is behind.
 func NewConfigGossiper(nodeName string, forceResyncFunc func(), logger *zap.Logger) *ConfigGossiper {
-	g := &ConfigGossiper{
+	return &ConfigGossiper{
 		nodeName:        nodeName,
 		multicastAddr:   fmt.Sprintf("%s:%d", MulticastAddr, GossipPort),
 		forceResyncFunc: forceResyncFunc,
 		logger:          logger.Named("gossip"),
 	}
-	g.currentVersion.Store("")
-	return g
 }
 
 // Start begins the gossip protocol. It launches three goroutines:
@@ -113,14 +119,14 @@ func (g *ConfigGossiper) Start(ctx context.Context) error {
 	return nil
 }
 
-// UpdateVersion updates the current config version. Called by the watcher
-// after successfully applying a new config snapshot.
-func (g *ConfigGossiper) UpdateVersion(version string) {
-	g.currentVersion.Store(version)
-	g.logger.Debug("Gossip version updated", zap.String("version", version))
+// UpdateGenTime updates the current config generation time. Called by the
+// watcher after successfully applying a new config snapshot. (#866)
+func (g *ConfigGossiper) UpdateGenTime(genTime int64) {
+	g.currentGenTime.Store(genTime)
+	g.logger.Debug("Gossip generation time updated", zap.Int64("genTime", genTime))
 }
 
-// broadcastLoop multicasts this node's config version at regular intervals.
+// broadcastLoop multicasts this node's config generation time at regular intervals.
 func (g *ConfigGossiper) broadcastLoop(addr *net.UDPAddr) {
 	ticker := time.NewTicker(BroadcastInterval)
 	defer ticker.Stop()
@@ -130,13 +136,13 @@ func (g *ConfigGossiper) broadcastLoop(addr *net.UDPAddr) {
 		case <-g.ctx.Done():
 			return
 		case <-ticker.C:
-			ver, _ := g.currentVersion.Load().(string)
-			if ver == "" {
+			genTime := g.currentGenTime.Load()
+			if genTime == 0 {
 				continue // no config applied yet
 			}
 
-			msg := fmt.Sprintf("%s|%s|%s|%d",
-				messagePrefix, g.nodeName, ver, time.Now().UnixNano())
+			msg := fmt.Sprintf("%s|%s|%d|%d",
+				messagePrefix, g.nodeName, genTime, time.Now().UnixNano())
 
 			if _, err := g.conn.WriteToUDP([]byte(msg), addr); err != nil {
 				g.logger.Debug("Failed to broadcast config version", zap.Error(err))
@@ -182,7 +188,7 @@ func (g *ConfigGossiper) receiveLoop() {
 }
 
 // handleMessage parses and processes a received gossip message.
-// Format: config_version|<nodeName>|<configVersion>|<timestamp>
+// Format: config_version|<nodeName>|<genTime>|<timestamp>
 func (g *ConfigGossiper) handleMessage(data string) {
 	parts := strings.SplitN(data, "|", 4)
 	if len(parts) != 4 || parts[0] != messagePrefix {
@@ -190,7 +196,10 @@ func (g *ConfigGossiper) handleMessage(data string) {
 	}
 
 	peerName := parts[1]
-	peerVersion := parts[2]
+	peerGenTime, err := strconv.ParseInt(parts[2], 10, 64)
+	if err != nil {
+		return
+	}
 
 	// Ignore our own messages
 	if peerName == g.nodeName {
@@ -198,13 +207,13 @@ func (g *ConfigGossiper) handleMessage(data string) {
 	}
 
 	g.peerVersions.Store(peerName, peerState{
-		version:  peerVersion,
+		genTime:  peerGenTime,
 		lastSeen: time.Now(),
 	})
 }
 
-// quorumCheckLoop periodically checks if a quorum of peers have a different
-// config version, indicating this agent is lagging.
+// quorumCheckLoop periodically checks if a quorum of peers have a newer
+// generation time, indicating this agent is lagging.
 func (g *ConfigGossiper) quorumCheckLoop() {
 	ticker := time.NewTicker(QuorumCheckInterval)
 	defer ticker.Stop()
@@ -219,11 +228,16 @@ func (g *ConfigGossiper) quorumCheckLoop() {
 	}
 }
 
-// checkQuorum determines if a majority of known peers have a different
-// (presumably newer) config version, and forces a resync if so.
+// checkQuorum determines if a majority of known peers have a significantly
+// newer generation time, and forces a resync if so. (#866)
+//
+// Per-node snapshots differ (VIP assignments vary by node), so version
+// hashes will always differ. Instead we compare GenerationTime (set once
+// per build cycle, identical for all nodes) with a threshold to avoid
+// false-positive resync loops.
 func (g *ConfigGossiper) checkQuorum() {
-	myVersion, _ := g.currentVersion.Load().(string)
-	if myVersion == "" {
+	myGenTime := g.currentGenTime.Load()
+	if myGenTime == 0 {
 		return // no config applied yet, nothing to compare
 	}
 
@@ -244,16 +258,16 @@ func (g *ConfigGossiper) checkQuorum() {
 		}
 
 		total++
-		if peer.version != myVersion {
+		if peer.genTime > myGenTime+GenTimeThreshold {
 			newerCount++
 		}
 		return true
 	})
 
-	// Quorum: majority of known peers have a different (newer) version
+	// Quorum: majority of known peers have a significantly newer generation time
 	if total > 0 && newerCount > total/2 {
-		g.logger.Warn("Config version behind quorum, forcing resync",
-			zap.String("myVersion", myVersion),
+		g.logger.Warn("Config generation time behind quorum, forcing resync",
+			zap.Int64("myGenTime", myGenTime),
 			zap.Int("peers", total),
 			zap.Int("newerPeers", newerCount),
 		)
