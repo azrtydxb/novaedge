@@ -300,11 +300,11 @@ impl DataplaneService {
             })
             .unwrap_or_default();
 
-        let backend_ref = route
+        let backend_refs: Vec<(String, u32)> = route
             .backend_refs
-            .first()
-            .map(|b| b.cluster_name.clone())
-            .unwrap_or_default();
+            .iter()
+            .map(|b| (b.cluster_name.clone(), b.weight))
+            .collect();
 
         RouteState {
             name: route.name.clone(),
@@ -314,7 +314,7 @@ impl DataplaneService {
             path_exact,
             path_regex,
             methods: route.methods.clone(),
-            backend_ref,
+            backend_refs,
             priority: route.priority,
             rewrite_path: if route.rewrite_path.is_empty() {
                 None
@@ -328,6 +328,33 @@ impl DataplaneService {
 
     /// Convert a proto ClusterConfig to our ClusterState.
     fn cluster_from_proto(cluster: &proto::ClusterConfig) -> ClusterState {
+        // Extract session affinity config.
+        let (sa_type, sa_cookie) = cluster
+            .session_affinity
+            .as_ref()
+            .map(|sa| (sa.r#type.clone(), sa.cookie_name.clone()))
+            .unwrap_or_default();
+
+        // Extract outlier detection config.
+        let (od_5xx, od_dur, od_pct) = cluster
+            .outlier_detection
+            .as_ref()
+            .map(|od| {
+                (
+                    od.consecutive_5xx_threshold,
+                    od.base_ejection_duration_ms,
+                    od.max_ejection_percent,
+                )
+            })
+            .unwrap_or_default();
+
+        // Extract slow start config.
+        let ss_window = cluster
+            .slow_start
+            .as_ref()
+            .map(|ss| ss.window_ms)
+            .unwrap_or_default();
+
         ClusterState {
             name: cluster.name.clone(),
             endpoints: cluster
@@ -352,6 +379,12 @@ impl DataplaneService {
                 .as_ref()
                 .map(|hc| hc.http_path.clone())
                 .unwrap_or_default(),
+            session_affinity_type: sa_type,
+            session_affinity_cookie: sa_cookie,
+            outlier_consecutive_5xx: od_5xx,
+            outlier_ejection_duration_ms: od_dur,
+            outlier_max_ejection_pct: od_pct,
+            slow_start_window_ms: ss_window,
         }
     }
 }
@@ -430,7 +463,7 @@ impl DataplaneControl for DataplaneService {
                     methods: rs.methods.clone(),
                     headers: Vec::new(),
                     query_params: Vec::new(),
-                    backend: rs.backend_ref.clone(),
+                    backend_refs: rs.backend_refs.clone(),
                     priority: rs.priority,
                     rewrite_path: rs.rewrite_path.clone(),
                     add_headers: rs.add_headers.clone(),
@@ -1826,6 +1859,9 @@ mod tests {
                 connection_pool: None,
                 backend_tls: None,
                 connect_timeout_ms: 0,
+                session_affinity: None,
+                outlier_detection: None,
+                slow_start: None,
             }],
             vips: vec![],
             l4_listeners: vec![],
@@ -1845,7 +1881,7 @@ mod tests {
         assert_eq!(snap.routes.len(), 1);
         assert_eq!(snap.clusters.len(), 1);
         assert_eq!(snap.gateways["gw-1"].port, 8080);
-        assert_eq!(snap.routes["route-1"].backend_ref, "cluster-1");
+        assert_eq!(snap.routes["route-1"].backend_refs[0].0, "cluster-1");
         assert_eq!(snap.clusters["cluster-1"].endpoints.len(), 1);
     }
 
@@ -1956,6 +1992,9 @@ mod tests {
                 connection_pool: None,
                 backend_tls: None,
                 connect_timeout_ms: 0,
+                session_affinity: None,
+                outlier_detection: None,
+                slow_start: None,
             }),
         });
         let resp = svc.upsert_cluster(req).await.unwrap();

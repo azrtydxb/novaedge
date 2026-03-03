@@ -6,7 +6,10 @@
 use dashmap::DashMap;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::sync::{watch, RwLock};
+
+use crate::lb::{self, LoadBalancer};
 
 /// Gateway listener state.
 #[derive(Debug, Clone)]
@@ -40,7 +43,8 @@ pub struct RouteState {
     pub path_exact: String,
     pub path_regex: String,
     pub methods: Vec<String>,
-    pub backend_ref: String,
+    /// Backend references with weights: `(cluster_name, weight)`.
+    pub backend_refs: Vec<(String, u32)>,
     pub priority: i32,
     pub rewrite_path: Option<String>,
     pub add_headers: HashMap<String, String>,
@@ -63,6 +67,18 @@ pub struct ClusterState {
     pub endpoints: Vec<EndpointState>,
     pub lb_algorithm: String,
     pub health_check_path: String,
+    /// Session affinity type: "cookie", "header", "source_ip", or empty.
+    pub session_affinity_type: String,
+    /// Cookie name for cookie-based session affinity.
+    pub session_affinity_cookie: String,
+    /// Consecutive 5xx threshold for outlier detection (0 = use default).
+    pub outlier_consecutive_5xx: u32,
+    /// Base ejection duration in ms for outlier detection (0 = use default).
+    pub outlier_ejection_duration_ms: u64,
+    /// Maximum ejection percentage for outlier detection (0 = use default).
+    pub outlier_max_ejection_pct: u32,
+    /// Slow start window in ms (0 = disabled).
+    pub slow_start_window_ms: u64,
 }
 
 /// A single backend endpoint.
@@ -102,6 +118,9 @@ pub struct RuntimeConfig {
     notify: watch::Sender<u64>,
     notify_rx: watch::Receiver<u64>,
     generation: AtomicU64,
+    /// Cached load balancer instances keyed by cluster name.
+    /// Cleared on config updates so that endpoint changes trigger LB rebuild.
+    lb_cache: RwLock<HashMap<String, Arc<dyn LoadBalancer>>>,
 }
 
 impl RuntimeConfig {
@@ -117,6 +136,7 @@ impl RuntimeConfig {
             notify,
             notify_rx,
             generation: AtomicU64::new(0),
+            lb_cache: RwLock::new(HashMap::new()),
         }
     }
 
@@ -145,14 +165,26 @@ impl RuntimeConfig {
     }
 
     /// Insert or update a cluster.
+    ///
+    /// Also invalidates the cached LB instance for this cluster so that
+    /// endpoint or algorithm changes take effect on the next request.
     pub fn upsert_cluster(&self, cluster: ClusterState) {
-        self.clusters.insert(cluster.name.clone(), cluster);
+        let name = cluster.name.clone();
+        self.clusters.insert(name.clone(), cluster);
+        // Invalidate the LB cache entry for this cluster (best-effort; uses try_write
+        // to avoid blocking the caller if the lock is held by an async task).
+        if let Ok(mut cache) = self.lb_cache.try_write() {
+            cache.remove(&name);
+        }
         self.bump();
     }
 
     /// Remove a cluster by name.
     pub fn delete_cluster(&self, name: &str) {
         self.clusters.remove(name);
+        if let Ok(mut cache) = self.lb_cache.try_write() {
+            cache.remove(name);
+        }
         self.bump();
     }
 
@@ -176,6 +208,41 @@ impl RuntimeConfig {
     /// Get a policy by name.
     pub fn get_policy(&self, name: &str) -> Option<PolicyState> {
         self.policies.get(name).map(|p| p.value().clone())
+    }
+
+    /// Get or create a cached load balancer for the given cluster and algorithm.
+    ///
+    /// Reuses an existing instance if one is cached, otherwise creates a new
+    /// one via [`lb::new_load_balancer`] and caches it. This ensures stateful
+    /// algorithms (RoundRobin counters, EWMA latency history, etc.) persist
+    /// across requests.
+    pub async fn get_or_create_lb(
+        &self,
+        cluster_name: &str,
+        algo: &str,
+    ) -> Arc<dyn LoadBalancer> {
+        // Fast path: check read lock.
+        {
+            let cache = self.lb_cache.read().await;
+            if let Some(balancer) = cache.get(cluster_name) {
+                return balancer.clone();
+            }
+        }
+        // Slow path: acquire write lock and insert.
+        let mut cache = self.lb_cache.write().await;
+        cache
+            .entry(cluster_name.to_string())
+            .or_insert_with(|| lb::new_load_balancer(algo))
+            .clone()
+    }
+
+    /// Clear the load balancer cache.
+    ///
+    /// Called after config updates so that endpoint/algorithm changes cause
+    /// fresh LB instances to be created.
+    #[allow(dead_code)]
+    pub async fn clear_lb_cache(&self) {
+        self.lb_cache.write().await.clear();
     }
 
     /// Subscribe to configuration change notifications.
@@ -254,6 +321,8 @@ impl RuntimeConfig {
         }
 
         *self.version.write().await = version;
+        // Clear LB cache so stateful balancers pick up new endpoints/algorithms.
+        self.lb_cache.write().await.clear();
         self.bump();
     }
 
@@ -267,7 +336,7 @@ impl RuntimeConfig {
             .routes
             .iter()
             .find(|r| r.gateway_ref == gateway_name)
-            .map(|r| r.backend_ref.clone())?;
+            .and_then(|r| r.backend_refs.first().map(|(name, _)| name.clone()))?;
         let cluster = self.clusters.get(&backend_ref)?;
         let ep = cluster.endpoints.first()?;
         format!("{}:{}", ep.address, ep.port)
@@ -311,7 +380,7 @@ mod tests {
             path_exact: String::new(),
             path_regex: String::new(),
             methods: vec![],
-            backend_ref: backend.into(),
+            backend_refs: vec![(backend.into(), 1)],
             priority: 10,
             rewrite_path: None,
             add_headers: HashMap::new(),
@@ -332,6 +401,12 @@ mod tests {
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: "/healthz".into(),
+            session_affinity_type: String::new(),
+            session_affinity_cookie: String::new(),
+            outlier_consecutive_5xx: 0,
+            outlier_ejection_duration_ms: 0,
+            outlier_max_ejection_pct: 0,
+            slow_start_window_ms: 0,
         }
     }
 
@@ -350,7 +425,7 @@ mod tests {
         cfg.upsert_route(test_route("route-1", "backend-1"));
         let snap = cfg.snapshot();
         assert_eq!(snap.routes.len(), 1);
-        assert_eq!(snap.routes["route-1"].backend_ref, "backend-1");
+        assert_eq!(snap.routes["route-1"].backend_refs[0].0, "backend-1");
     }
 
     #[test]

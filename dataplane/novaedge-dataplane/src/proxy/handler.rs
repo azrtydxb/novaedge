@@ -224,7 +224,7 @@ impl ProxyHandler {
                         methods: Vec::new(),
                         headers: Vec::new(),
                         query_params: Vec::new(),
-                        backend,
+                        backend_refs: vec![(backend, 1)],
                         priority: 0,
                         rewrite_path: None,
                         add_headers: HashMap::new(),
@@ -240,9 +240,22 @@ impl ProxyHandler {
             }
         };
 
+        // Select a backend cluster using weighted selection.
+        let selected_backend = match route.select_backend() {
+            Some(b) => b.to_string(),
+            None => {
+                warn!(route = %route.name, "Route has no backend_refs");
+                return hyper::Response::builder()
+                    .status(502)
+                    .header("X-Route", route.name.as_str())
+                    .body(Full::new(Bytes::from("No upstream cluster")))
+                    .unwrap();
+            }
+        };
+
         debug!(
             route = %route.name,
-            backend = %route.backend,
+            backend = %selected_backend,
             "Matched route for {method} {path}"
         );
 
@@ -281,11 +294,11 @@ impl ProxyHandler {
         }
 
         // Look up cluster endpoints.
-        let cluster = match self.config.get_cluster(&route.backend) {
+        let cluster = match self.config.get_cluster(&selected_backend) {
             Some(c) => c,
             None => {
                 warn!(
-                    backend = %route.backend,
+                    backend = %selected_backend,
                     "No cluster found for route '{}'", route.name
                 );
                 return hyper::Response::builder()
@@ -320,11 +333,20 @@ impl ProxyHandler {
             })
             .collect();
 
+        // Extract sticky cookie if session affinity is configured.
+        let sticky_cookie = if cluster.session_affinity_type == "cookie"
+            && !cluster.session_affinity_cookie.is_empty()
+        {
+            extract_cookie(headers, &cluster.session_affinity_cookie)
+        } else {
+            None
+        };
+
         let ctx = lb::RequestContext {
             src_ip: client_addr.ip(),
             src_port: client_addr.port(),
             dst_port: 0,
-            sticky_cookie: None,
+            sticky_cookie,
             zone: None,
         };
 
@@ -349,7 +371,10 @@ impl ProxyHandler {
             })
             .collect();
 
-        let balancer = lb::new_load_balancer(&cluster.lb_algorithm);
+        let balancer = self
+            .config
+            .get_or_create_lb(&cluster.name, &cluster.lb_algorithm)
+            .await;
         debug!(
             cluster = %cluster.name,
             algorithm = balancer.name(),
@@ -516,12 +541,21 @@ impl ProxyHandler {
                     .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                     .collect();
 
-                let body = upstream_resp
-                    .into_body()
-                    .collect()
-                    .await
-                    .map(|c| c.to_bytes())
-                    .unwrap_or_default();
+                let body = match upstream_resp.into_body().collect().await {
+                    Ok(collected) => collected.to_bytes(),
+                    Err(e) => {
+                        warn!(backend = %backend_addr, error = %e, "Failed to read upstream response body");
+                        cb.record_failure();
+                        self.outlier_detector.record_failure(backend_addr);
+                        balancer.report(backend_idx, upstream_start.elapsed(), false);
+                        self.connection_pool.release(backend_addr).await;
+                        return hyper::Response::builder()
+                            .status(502)
+                            .header("X-Route", route.name.as_str())
+                            .body(Full::new(Bytes::from("Bad Gateway")))
+                            .unwrap();
+                    }
+                };
 
                 let mut resp = hyper::Response::builder()
                     .status(status)
@@ -668,7 +702,7 @@ impl ProxyHandler {
                         methods: Vec::new(),
                         headers: Vec::new(),
                         query_params: Vec::new(),
-                        backend,
+                        backend_refs: vec![(backend, 1)],
                         priority: 0,
                         rewrite_path: None,
                         add_headers: HashMap::new(),
@@ -683,7 +717,18 @@ impl ProxyHandler {
             }
         };
 
-        let cluster = match self.config.get_cluster(&route.backend) {
+        let selected_backend = match route.select_backend() {
+            Some(b) => b.to_string(),
+            None => {
+                return Err(hyper::Response::builder()
+                    .status(502)
+                    .header("X-Route", route.name.as_str())
+                    .body(Full::new(Bytes::from("No upstream cluster")))
+                    .unwrap());
+            }
+        };
+
+        let cluster = match self.config.get_cluster(&selected_backend) {
             Some(c) => c,
             None => {
                 return Err(hyper::Response::builder()
@@ -715,7 +760,10 @@ impl ProxyHandler {
             zone: None,
         };
 
-        let balancer = lb::new_load_balancer(&cluster.lb_algorithm);
+        let balancer = self
+            .config
+            .get_or_create_lb(&cluster.name, &cluster.lb_algorithm)
+            .await;
         let backend_idx = match balancer.select(&ctx, &backends) {
             Some(idx) => idx,
             None => {
@@ -933,6 +981,23 @@ impl ProxyHandler {
     }
 }
 
+/// Extract a named cookie value from request headers.
+fn extract_cookie(headers: &[(String, String)], cookie_name: &str) -> Option<String> {
+    for (key, value) in headers {
+        if key.eq_ignore_ascii_case("cookie") {
+            for part in value.split(';') {
+                let part = part.trim();
+                if let Some((name, val)) = part.split_once('=') {
+                    if name.trim() == cookie_name {
+                        return Some(val.trim().to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -949,7 +1014,7 @@ mod tests {
             methods: Vec::new(),
             headers: Vec::new(),
             query_params: Vec::new(),
-            backend: backend.to_string(),
+            backend_refs: vec![(backend.to_string(), 1)],
             priority: 10,
             rewrite_path: None,
             add_headers: HashMap::new(),
@@ -996,6 +1061,12 @@ mod tests {
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
+            session_affinity_type: String::new(),
+            session_affinity_cookie: String::new(),
+            outlier_consecutive_5xx: 0,
+            outlier_ejection_duration_ms: 0,
+            outlier_max_ejection_pct: 0,
+            slow_start_window_ms: 0,
         });
 
         let _handler = test_handler(router, cfg.clone());
@@ -1053,6 +1124,12 @@ mod tests {
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
+            session_affinity_type: String::new(),
+            session_affinity_cookie: String::new(),
+            outlier_consecutive_5xx: 0,
+            outlier_ejection_duration_ms: 0,
+            outlier_max_ejection_pct: 0,
+            slow_start_window_ms: 0,
         });
 
         let handler = Arc::new(test_handler(router, cfg));

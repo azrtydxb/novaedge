@@ -100,7 +100,10 @@ type DataplaneControlClient interface {
 	// ── eBPF lifecycle ───────────────────────────────────────────────────
 	// AttachProgram loads and attaches an eBPF program.
 	AttachProgram(ctx context.Context, in *AttachProgramRequest, opts ...grpc.CallOption) (*AttachProgramResponse, error)
-	// DetachProgram detaches and unloads an eBPF program.
+	// DetachProgram is a no-op by design. eBPF programs attached via aya are
+	// automatically detached when the Ebpf handle is dropped (i.e. on process
+	// shutdown). The RPC exists for API completeness; the Go agent manages
+	// eBPF lifecycle via cilium/ebpf and does not call this endpoint.
 	DetachProgram(ctx context.Context, in *DetachProgramRequest, opts ...grpc.CallOption) (*DetachProgramResponse, error)
 	// ── Observability ────────────────────────────────────────────────────
 	// StreamFlows streams flow events captured from the eBPF ring buffer.
@@ -414,7 +417,10 @@ type DataplaneControlServer interface {
 	// ── eBPF lifecycle ───────────────────────────────────────────────────
 	// AttachProgram loads and attaches an eBPF program.
 	AttachProgram(context.Context, *AttachProgramRequest) (*AttachProgramResponse, error)
-	// DetachProgram detaches and unloads an eBPF program.
+	// DetachProgram is a no-op by design. eBPF programs attached via aya are
+	// automatically detached when the Ebpf handle is dropped (i.e. on process
+	// shutdown). The RPC exists for API completeness; the Go agent manages
+	// eBPF lifecycle via cilium/ebpf and does not call this endpoint.
 	DetachProgram(context.Context, *DetachProgramRequest) (*DetachProgramResponse, error)
 	// ── Observability ────────────────────────────────────────────────────
 	// StreamFlows streams flow events captured from the eBPF ring buffer.

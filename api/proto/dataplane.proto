@@ -419,6 +419,48 @@ message ClusterConfig {
   TLSConfig backend_tls = 7;
   // Connect timeout in milliseconds (overrides connection pool setting).
   uint64 connect_timeout_ms = 8;
+  // Session affinity configuration.
+  SessionAffinityConfig session_affinity = 9;
+  // Outlier detection configuration.
+  OutlierDetectionConfig outlier_detection = 10;
+  // Slow start configuration.
+  SlowStartConfig slow_start = 11;
+}
+
+// SessionAffinityConfig configures session affinity for a cluster.
+message SessionAffinityConfig {
+  // Affinity type: "cookie", "header", "source_ip".
+  string type = 1;
+  // Cookie name for cookie-based affinity.
+  string cookie_name = 2;
+  // Cookie TTL in seconds.
+  int64 cookie_ttl_seconds = 3;
+  // Cookie path.
+  string cookie_path = 4;
+  // Whether the cookie should be secure.
+  bool cookie_secure = 5;
+  // Cookie SameSite attribute.
+  string cookie_same_site = 6;
+}
+
+// OutlierDetectionConfig configures passive health checking.
+message OutlierDetectionConfig {
+  // Check interval in milliseconds.
+  uint64 interval_ms = 1;
+  // Number of consecutive 5xx errors before ejection.
+  uint32 consecutive_5xx_threshold = 2;
+  // Base ejection duration in milliseconds.
+  uint64 base_ejection_duration_ms = 3;
+  // Maximum percentage of endpoints that can be ejected.
+  uint32 max_ejection_percent = 4;
+}
+
+// SlowStartConfig configures gradual traffic ramp-up for new endpoints.
+message SlowStartConfig {
+  // Slow start window duration in milliseconds.
+  uint64 window_ms = 1;
+  // Aggression factor for the slow start curve.
+  double aggression = 2;
 }
 
 message UpsertClusterRequest {
