@@ -438,6 +438,14 @@ crds:
 rbac:
   create: true
 
+# PostSync test hooks for ArgoCD CT (Continuous Testing)
+tests:
+  image: bitnami/kubectl:latest
+  smoke:
+    enabled: true
+  integration:
+    enabled: true
+
 # Federation settings for multi-controller deployments
 federation:
   # Enable federation mode
