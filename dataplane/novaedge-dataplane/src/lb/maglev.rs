@@ -34,37 +34,44 @@ impl MaglevLb {
     }
 
     /// Build the Maglev lookup table for the given healthy backend indices.
+    ///
+    /// Backends are expanded by weight: a backend with weight 3 gets 3 entries
+    /// in the permutation list, giving it proportionally more table slots.
     fn build_table(healthy: &[usize], backends: &[Backend]) -> Vec<usize> {
-        let n = healthy.len();
-        if n == 0 {
+        if healthy.is_empty() {
             return Vec::new();
         }
 
-        // Compute offset and skip for each backend.
-        let mut permutations: Vec<(usize, usize)> = Vec::with_capacity(n);
+        // Expand backends by weight: each backend appears weight times with
+        // distinct hash keys (using replica index).
+        let mut expanded: Vec<(usize, usize, usize)> = Vec::new(); // (original_idx, offset, skip)
         for &idx in healthy {
             let b = &backends[idx];
-            let key = format!("{}:{}", b.addr, b.port);
-            let h1 = fnv1a(key.as_bytes());
-            let h2 = fnv1a_2(key.as_bytes());
-            let offset = (h1 as usize) % TABLE_SIZE;
-            let skip = ((h2 as usize) % (TABLE_SIZE - 1)) + 1;
-            permutations.push((offset, skip));
+            let w = b.weight.max(1) as usize;
+            for r in 0..w {
+                let key = format!("{}:{}:{}", b.addr, b.port, r);
+                let h1 = fnv1a(key.as_bytes());
+                let h2 = fnv1a_2(key.as_bytes());
+                let offset = (h1 as usize) % TABLE_SIZE;
+                let skip = ((h2 as usize) % (TABLE_SIZE - 1)) + 1;
+                expanded.push((idx, offset, skip));
+            }
         }
 
+        let n = expanded.len();
         let mut table = vec![usize::MAX; TABLE_SIZE];
         let mut next = vec![0usize; n];
         let mut filled = 0;
 
         while filled < TABLE_SIZE {
             for i in 0..n {
-                let (offset, skip) = permutations[i];
+                let (original_idx, offset, skip) = expanded[i];
                 let mut c = (offset + next[i] * skip) % TABLE_SIZE;
                 while table[c] != usize::MAX {
                     next[i] += 1;
                     c = (offset + next[i] * skip) % TABLE_SIZE;
                 }
-                table[c] = healthy[i];
+                table[c] = original_idx;
                 next[i] += 1;
                 filled += 1;
                 if filled >= TABLE_SIZE {
@@ -76,12 +83,12 @@ impl MaglevLb {
         table
     }
 
-    /// Compute a fingerprint for the healthy backend set.
+    /// Compute a fingerprint for the healthy backend set (including weights).
     fn fingerprint(healthy: &[usize], backends: &[Backend]) -> u64 {
         let mut hash: u64 = 0;
         for &idx in healthy {
             let b = &backends[idx];
-            let key = format!("{}:{}:{}", b.addr, b.port, idx);
+            let key = format!("{}:{}:{}:{}", b.addr, b.port, idx, b.weight);
             hash ^= fnv1a(key.as_bytes());
         }
         hash

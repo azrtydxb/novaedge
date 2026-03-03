@@ -3,7 +3,7 @@
 use std::sync::RwLock;
 use std::time::Duration;
 
-use super::{healthy_indices, Backend, LoadBalancer, RequestContext};
+use super::{healthy_indices, prefer_same_zone, Backend, LoadBalancer, RequestContext};
 
 /// Maximum number of backends tracked.
 const MAX_BACKENDS: usize = 1024;
@@ -42,20 +42,28 @@ impl Default for Ewma {
 }
 
 impl LoadBalancer for Ewma {
-    fn select(&self, _ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
+    fn select(&self, ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
         let healthy = healthy_indices(backends);
         if healthy.is_empty() {
             return None;
         }
 
-        let latencies = self.latencies.read().unwrap();
-        let mut min_idx = healthy[0];
-        let mut min_lat = latencies[healthy[0]];
+        // Prefer same-zone backends when zone is set.
+        let candidates = prefer_same_zone(ctx, backends, &healthy);
 
-        for &idx in &healthy[1..] {
+        let latencies = self.latencies.read().unwrap();
+        // Weight-normalized: effective_latency = latency / weight.
+        let mut min_idx = candidates[0];
+        let mut min_lat = latencies[candidates[0]];
+        let mut min_weight = backends[candidates[0]].weight.max(1) as f64;
+
+        for &idx in &candidates[1..] {
             let lat = latencies[idx];
-            if lat < min_lat {
+            let weight = backends[idx].weight.max(1) as f64;
+            // Compare lat/weight vs min_lat/min_weight.
+            if lat * min_weight < min_lat * weight {
                 min_lat = lat;
+                min_weight = weight;
                 min_idx = idx;
             }
         }

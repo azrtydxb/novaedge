@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use rand::Rng;
 
-use super::{healthy_indices, Backend, LoadBalancer, RequestContext};
+use super::{healthy_indices, prefer_same_zone, Backend, LoadBalancer, RequestContext};
 
 /// Maximum number of backends tracked.
 const MAX_BACKENDS: usize = 1024;
@@ -52,34 +52,41 @@ impl Default for PowerOfTwoChoices {
 }
 
 impl LoadBalancer for PowerOfTwoChoices {
-    fn select(&self, _ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
+    fn select(&self, ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
         let healthy = healthy_indices(backends);
         if healthy.is_empty() {
             return None;
         }
-        if healthy.len() == 1 {
-            return Some(healthy[0]);
+
+        // Prefer same-zone backends when zone is set.
+        let candidates = prefer_same_zone(ctx, backends, &healthy);
+
+        if candidates.len() == 1 {
+            return Some(candidates[0]);
         }
 
         let mut rng = rand::thread_rng();
-        let ai = rng.gen_range(0..healthy.len());
-        let a = healthy[ai];
+        let ai = rng.gen_range(0..candidates.len());
+        let a = candidates[ai];
         // Ensure we pick two distinct candidates.
-        let bi = if healthy.len() == 2 {
+        let bi = if candidates.len() == 2 {
             1 - ai
         } else {
-            let mut idx = rng.gen_range(0..healthy.len() - 1);
+            let mut idx = rng.gen_range(0..candidates.len() - 1);
             if idx >= ai {
                 idx += 1;
             }
             idx
         };
-        let b = healthy[bi];
+        let b = candidates[bi];
 
         let ca = self.connections[a].load(Ordering::Relaxed);
         let cb = self.connections[b].load(Ordering::Relaxed);
+        let wa = backends[a].weight.max(1) as u32;
+        let wb = backends[b].weight.max(1) as u32;
 
-        if ca <= cb {
+        // Weight-normalized: compare ca/wa vs cb/wb via cross-multiply.
+        if ca * wb <= cb * wa {
             Some(a)
         } else {
             Some(b)

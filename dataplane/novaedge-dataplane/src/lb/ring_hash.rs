@@ -22,6 +22,9 @@ impl RingHash {
     }
 
     /// Build the hash ring for the given healthy backends.
+    ///
+    /// Each backend gets `replicas * weight` virtual nodes, so higher-weight
+    /// backends occupy proportionally more of the ring.
     fn build_ring(
         healthy: &[usize],
         backends: &[Backend],
@@ -30,7 +33,8 @@ impl RingHash {
         let mut ring = BTreeMap::new();
         for &idx in healthy {
             let b = &backends[idx];
-            for r in 0..replicas {
+            let weight_replicas = replicas * b.weight.max(1) as usize;
+            for r in 0..weight_replicas {
                 let key = format!("{}:{}:{}", b.addr, b.port, r);
                 let hash = fnv1a(key.as_bytes());
                 ring.insert(hash, idx);
@@ -98,9 +102,25 @@ mod tests {
         let healthy: Vec<usize> = (0..3).collect();
         let backends = make_backends(3);
         let ring = RingHash::build_ring(&healthy, &backends, 150);
-        // 3 backends * 150 replicas = 450 entries (some may collide).
+        // 3 backends * 150 replicas * weight 1 = 450 entries (some may collide).
         assert!(ring.len() <= 450);
         assert!(ring.len() > 400); // Very unlikely to have >50 collisions.
+    }
+
+    #[test]
+    fn weighted_ring_entries() {
+        let mut backends = make_backends(2);
+        backends[0].weight = 3;
+        backends[1].weight = 1;
+        let healthy: Vec<usize> = vec![0, 1];
+        let ring = RingHash::build_ring(&healthy, &backends, 100);
+        // Backend 0: 100*3=300 replicas, Backend 1: 100*1=100 replicas = 400 total.
+        assert!(ring.len() <= 400);
+        assert!(ring.len() > 350);
+        // Backend 0 should own ~75% of positions.
+        let b0_count = ring.values().filter(|&&v| v == 0).count();
+        let ratio = b0_count as f64 / ring.len() as f64;
+        assert!(ratio > 0.6, "weighted backend should own more ring space: {ratio:.2}");
     }
 
     #[test]

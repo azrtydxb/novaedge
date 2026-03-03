@@ -75,13 +75,20 @@ impl LoadBalancer for LeastConn {
         // Prefer same-zone backends when zone is set.
         let candidates = prefer_same_zone(ctx, backends, &healthy);
 
+        // Weight-normalized comparison: effective_load = connections / weight.
+        // Use cross-multiplication to avoid floating point: prefer idx if
+        // conn_idx * weight_other < conn_other * weight_idx.
         let mut min_idx = candidates[0];
         let mut min_conn = self.connections[candidates[0]].load(Ordering::Relaxed);
+        let mut min_weight = backends[candidates[0]].weight.max(1) as u32;
 
         for &idx in &candidates[1..] {
             let conn = self.connections[idx].load(Ordering::Relaxed);
-            if conn < min_conn {
+            let weight = backends[idx].weight.max(1) as u32;
+            // Compare conn/weight vs min_conn/min_weight via cross-multiply.
+            if conn * min_weight < min_conn * weight {
                 min_conn = conn;
+                min_weight = weight;
                 min_idx = idx;
             }
         }
@@ -173,6 +180,25 @@ mod tests {
         backends[1].healthy = false;
         let ctx = make_ctx();
         assert!(lb.select(&ctx, &backends).is_none());
+    }
+
+    #[test]
+    fn weight_normalized_selection() {
+        let lb = LeastConn::new();
+        let mut backends = make_backends(2);
+        // Backend 0: weight 4, 8 connections → effective 8/4=2.0
+        // Backend 1: weight 1, 3 connections → effective 3/1=3.0
+        backends[0].weight = 4;
+        backends[1].weight = 1;
+        for _ in 0..8 {
+            lb.increment(0);
+        }
+        for _ in 0..3 {
+            lb.increment(1);
+        }
+        let ctx = make_ctx();
+        // Should prefer backend 0 (lower effective load).
+        assert_eq!(lb.select(&ctx, &backends).unwrap(), 0);
     }
 
     #[test]

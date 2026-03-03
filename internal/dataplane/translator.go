@@ -241,6 +241,16 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 				}
 			}
 
+			// Translate request mirroring (#846).
+			if rule.GetMirrorBackend() != nil && rule.GetMirrorBackend().GetName() != "" {
+				dpRoute.MirrorCluster = rule.GetMirrorBackend().GetName()
+				if rule.GetMirrorPercent() > 0 {
+					dpRoute.MirrorPercent = uint32(rule.GetMirrorPercent()) //nolint:gosec // proto field
+				} else {
+					dpRoute.MirrorPercent = 100
+				}
+			}
+
 			result = append(result, dpRoute)
 		}
 	}
@@ -342,6 +352,7 @@ func translateClusters(
 				CookiePath:       sa.GetCookiePath(),
 				CookieSecure:     sa.GetCookieSecure(),
 				CookieSameSite:   sa.GetCookieSameSite(),
+				HeaderName:       sa.GetHeaderName(),
 			}
 		}
 
@@ -351,7 +362,10 @@ func translateClusters(
 				IntervalMs:               uint64(od.GetIntervalMs()),
 				Consecutive_5XxThreshold: uint32(od.GetConsecutive_5XxThreshold()), //nolint:gosec // proto field
 				BaseEjectionDurationMs:   uint64(od.GetBaseEjectionDurationMs()),
-				MaxEjectionPercent:       uint32(od.GetMaxEjectionPercent()), //nolint:gosec // proto field
+				MaxEjectionPercent:       uint32(od.GetMaxEjectionPercent()),     //nolint:gosec // proto field
+				SuccessRateMinHosts:      uint32(od.GetSuccessRateMinHosts()),    //nolint:gosec // proto field
+				SuccessRateMinRequests:   uint32(od.GetSuccessRateMinRequests()), //nolint:gosec // proto field
+				SuccessRateStdevFactor:   od.GetSuccessRateStdevFactor(),
 			}
 		}
 
@@ -361,6 +375,19 @@ func translateClusters(
 				WindowMs:   uint64(ss.GetWindowMs()),
 				Aggression: ss.GetAggression(),
 			}
+		}
+
+		// Translate upstream proxy protocol (#841).
+		if upp := cl.GetUpstreamProxyProtocol(); upp != nil && upp.GetEnabled() {
+			dpCluster.UpstreamProxyProtocol = &pb.UpstreamProxyProtocolConfig{
+				Enabled: upp.GetEnabled(),
+				Version: uint32(upp.GetVersion()),
+			}
+		}
+
+		// Translate backend protocol (#843).
+		if cl.GetProtocol() != "" {
+			dpCluster.Protocol = cl.GetProtocol()
 		}
 
 		result = append(result, dpCluster)
@@ -382,6 +409,10 @@ func translateLBAlgorithm(policy configpb.LoadBalancingPolicy) pb.LBAlgorithm {
 		return pb.LBAlgorithm_LB_ALGORITHM_RING_HASH
 	case configpb.LoadBalancingPolicy_MAGLEV:
 		return pb.LBAlgorithm_LB_ALGORITHM_MAGLEV
+	case configpb.LoadBalancingPolicy_SOURCE_HASH:
+		return pb.LBAlgorithm_LB_ALGORITHM_SOURCE_HASH
+	case configpb.LoadBalancingPolicy_STICKY:
+		return pb.LBAlgorithm_LB_ALGORITHM_STICKY
 	default:
 		return pb.LBAlgorithm_LB_ALGORITHM_ROUND_ROBIN
 	}

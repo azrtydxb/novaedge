@@ -148,6 +148,10 @@ func convertLBPolicy(policy novaedgev1alpha1.LoadBalancingPolicy) pb.LoadBalanci
 		return pb.LoadBalancingPolicy_MAGLEV
 	case novaedgev1alpha1.LBPolicyLeastConn:
 		return pb.LoadBalancingPolicy_LEAST_CONN
+	case novaedgev1alpha1.LBPolicySourceHash:
+		return pb.LoadBalancingPolicy_SOURCE_HASH
+	case novaedgev1alpha1.LBPolicySticky:
+		return pb.LoadBalancingPolicy_STICKY
 	default:
 		return pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED
 	}
@@ -401,6 +405,7 @@ func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.Sess
 		CookiePath:       cookiePath,
 		CookieSecure:     sa.Secure,
 		CookieSameSite:   sa.SameSite,
+		HeaderName:       sa.HeaderName,
 	}
 }
 
