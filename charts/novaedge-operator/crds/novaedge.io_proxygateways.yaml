@@ -63,13 +63,24 @@ spec:
                     items:
                       type: string
                     type: array
+                  filePath:
+                    description: FilePath is the path to the log file (required when
+                      output is file or both)
+                    type: string
+                  filterStatusCodes:
+                    description: FilterStatusCodes limits logging to specific HTTP
+                      status codes
+                    items:
+                      format: int32
+                      type: integer
+                    type: array
                   format:
                     default: json
-                    description: Format specifies the log format (json, common, combined)
+                    description: Format specifies the log format (json, clf, custom)
                     enum:
                     - json
-                    - common
-                    - combined
+                    - clf
+                    - custom
                     type: string
                   includeHeaders:
                     description: IncludeHeaders includes specified request/response
@@ -77,6 +88,87 @@ spec:
                     items:
                       type: string
                     type: array
+                  maxBackups:
+                    description: MaxBackups is the maximum number of rotated log files
+                      to retain
+                    format: int32
+                    type: integer
+                  maxSize:
+                    description: MaxSize is the maximum size of a log file before
+                      rotation (e.g., "100Mi")
+                    type: string
+                  output:
+                    default: stdout
+                    description: Output defines where logs are written (stdout, file,
+                      both)
+                    enum:
+                    - stdout
+                    - file
+                    - both
+                    type: string
+                  template:
+                    description: Template defines a custom log format template (for
+                      format=custom)
+                    type: string
+                type: object
+              cache:
+                description: Cache configures response caching for this gateway
+                properties:
+                  defaultTTL:
+                    description: DefaultTTL is the default time-to-live for cached
+                      responses (e.g., "5m")
+                    type: string
+                  enabled:
+                    description: Enabled enables response caching
+                    type: boolean
+                  maxEntrySize:
+                    description: MaxEntrySize is the maximum size of a single cached
+                      response (e.g., "1Mi")
+                    type: string
+                  maxSize:
+                    description: MaxSize is the maximum cache memory (e.g., "256Mi")
+                    type: string
+                  maxTTL:
+                    description: MaxTTL is the maximum allowed TTL for cached responses
+                      (e.g., "1h")
+                    type: string
+                type: object
+              compression:
+                description: Compression defines response compression configuration
+                properties:
+                  algorithms:
+                    default:
+                    - gzip
+                    - br
+                    description: Algorithms is the list of supported compression algorithms
+                    items:
+                      type: string
+                    type: array
+                  enabled:
+                    default: false
+                    description: Enabled enables response compression
+                    type: boolean
+                  excludeTypes:
+                    description: |-
+                      ExcludeTypes is a list of content type patterns to skip compression
+                      Supports glob-style wildcards (e.g., "image/*", "video/*")
+                    items:
+                      type: string
+                    type: array
+                  level:
+                    default: 6
+                    description: Level is the compression level (1-9 for gzip, 0-11
+                      for brotli)
+                    format: int32
+                    maximum: 11
+                    minimum: 0
+                    type: integer
+                  minSize:
+                    default: "1024"
+                    description: |-
+                      MinSize is the minimum response body size in bytes before compression triggers
+                      Responses smaller than this are sent uncompressed
+                    type: string
                 type: object
               customErrorPages:
                 description: CustomErrorPages defines custom error pages
@@ -106,6 +198,43 @@ spec:
                   - codes
                   type: object
                 type: array
+              extProc:
+                description: |-
+                  ExtProc configures external processing via a gRPC service.
+                  The external processor can inspect and modify request/response headers and bodies.
+                properties:
+                  address:
+                    description: Address is the gRPC server address (host:port) of
+                      the external processor.
+                    type: string
+                  failOpen:
+                    default: true
+                    description: FailOpen passes requests through unchanged if the
+                      external service is unavailable.
+                    type: boolean
+                  processRequestBody:
+                    description: ProcessRequestBody enables sending request body to
+                      the external processor.
+                    type: boolean
+                  processRequestHeaders:
+                    description: ProcessRequestHeaders enables sending request headers
+                      to the external processor.
+                    type: boolean
+                  processResponseBody:
+                    description: ProcessResponseBody enables sending response body
+                      to the external processor.
+                    type: boolean
+                  processResponseHeaders:
+                    description: ProcessResponseHeaders enables sending response headers
+                      to the external processor.
+                    type: boolean
+                  timeout:
+                    description: 'Timeout for external processing calls (default:
+                      "200ms").'
+                    type: string
+                required:
+                - address
+                type: object
               ingressClassName:
                 description: IngressClassName is the ingress class name for Ingress
                   resource compatibility
@@ -123,6 +252,46 @@ spec:
                       items:
                         type: string
                       type: array
+                    clientAuth:
+                      description: ClientAuth configures mTLS client certificate authentication
+                      properties:
+                        caCertRef:
+                          description: |-
+                            CACertRef references a Kubernetes Secret containing the CA certificate bundle
+                            for verifying client certificates. The Secret should contain a "ca.crt" key.
+                          properties:
+                            name:
+                              description: name is unique within a namespace to reference
+                                a secret resource.
+                              type: string
+                            namespace:
+                              description: namespace defines the space within which
+                                the secret name must be unique.
+                              type: string
+                          type: object
+                          x-kubernetes-map-type: atomic
+                        mode:
+                          default: none
+                          description: Mode defines the client certificate authentication
+                            mode
+                          enum:
+                          - none
+                          - optional
+                          - require
+                          type: string
+                        requiredCNPatterns:
+                          description: RequiredCNPatterns are regex patterns that
+                            the client certificate Common Name must match
+                          items:
+                            type: string
+                          type: array
+                        requiredSANs:
+                          description: RequiredSANs are Subject Alternative Names
+                            that the client certificate must contain
+                          items:
+                            type: string
+                          type: array
+                      type: object
                     hostnames:
                       description: Hostnames is a list of hostnames this listener
                         accepts (for HTTP/HTTPS/HTTP3)
@@ -139,6 +308,10 @@ spec:
                       maxLength: 253
                       minLength: 1
                       type: string
+                    ocspStapling:
+                      description: OCSPStapling enables OCSP stapling for TLS certificates
+                        on this listener
+                      type: boolean
                     port:
                       description: Port is the network port to listen on
                       format: int32
@@ -152,7 +325,32 @@ spec:
                       - HTTPS
                       - TCP
                       - TLS
+                      - UDP
                       type: string
+                    proxyProtocol:
+                      description: ProxyProtocol configures PROXY protocol parsing
+                        on this listener
+                      properties:
+                        enabled:
+                          description: Enabled enables PROXY protocol parsing on this
+                            listener
+                          type: boolean
+                        trustedCIDRs:
+                          description: |-
+                            TrustedCIDRs defines source CIDR ranges from which PROXY protocol headers are trusted.
+                            If empty, PROXY protocol is accepted from any source.
+                          items:
+                            type: string
+                          type: array
+                        version:
+                          default: 0
+                          description: Version is the PROXY protocol version to accept
+                            (1, 2, or 0 for both)
+                          format: int32
+                          maximum: 2
+                          minimum: 0
+                          type: integer
+                      type: object
                     quic:
                       description: QUIC contains QUIC-specific configuration (optional
                         for HTTP3 protocol)
@@ -279,6 +477,29 @@ spec:
                                 (default: 8760h = 1 year)'
                               type: string
                           type: object
+                        vaultCertRef:
+                          description: |-
+                            VaultCertRef references a certificate from HashiCorp Vault PKI
+                            The controller will request the cert from Vault and cache it in a K8s Secret
+                          properties:
+                            cacheSecretName:
+                              description: CacheSecretName is the name of the K8s
+                                Secret to cache the Vault-issued cert
+                              type: string
+                            path:
+                              description: Path is the Vault PKI secrets engine mount
+                                path
+                              type: string
+                            role:
+                              description: Role is the Vault PKI role name
+                              type: string
+                            ttl:
+                              description: TTL is the requested certificate TTL
+                              type: string
+                          required:
+                          - path
+                          - role
+                          type: object
                       type: object
                     tlsCertificates:
                       additionalProperties:
@@ -375,6 +596,29 @@ spec:
                                   duration (default: 8760h = 1 year)'
                                 type: string
                             type: object
+                          vaultCertRef:
+                            description: |-
+                              VaultCertRef references a certificate from HashiCorp Vault PKI
+                              The controller will request the cert from Vault and cache it in a K8s Secret
+                            properties:
+                              cacheSecretName:
+                                description: CacheSecretName is the name of the K8s
+                                  Secret to cache the Vault-issued cert
+                                type: string
+                              path:
+                                description: Path is the Vault PKI secrets engine
+                                  mount path
+                                type: string
+                              role:
+                                description: Role is the Vault PKI role name
+                                type: string
+                              ttl:
+                                description: TTL is the requested certificate TTL
+                                type: string
+                            required:
+                            - path
+                            - role
+                            type: object
                         type: object
                       description: |-
                         TLSCertificates provides SNI support with multiple TLS certificates per listener
@@ -388,6 +632,43 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              loadBalancerClass:
+                description: |-
+                  LoadBalancerClass specifies the load balancer class this gateway belongs to.
+                  Controllers only reconcile gateways matching their configured class.
+                  Default: "novaedge.io/proxy"
+                type: string
+              redirectScheme:
+                description: RedirectScheme defines HTTP to HTTPS redirect configuration
+                properties:
+                  enabled:
+                    description: Enabled enables scheme redirection
+                    type: boolean
+                  exclusions:
+                    description: Exclusions is a list of path prefixes to exclude
+                      from redirection
+                    items:
+                      type: string
+                    type: array
+                  port:
+                    default: 443
+                    description: 'Port is the target port (default: 443)'
+                    format: int32
+                    type: integer
+                  scheme:
+                    default: https
+                    description: 'Scheme is the target scheme (default: "https")'
+                    type: string
+                  statusCode:
+                    default: 301
+                    description: 'StatusCode is the HTTP redirect status code (301
+                      or 302, default: 301)'
+                    enum:
+                    - 301
+                    - 302
+                    format: int32
+                    type: integer
+                type: object
               tracing:
                 description: Tracing defines request tracing configuration
                 properties:
