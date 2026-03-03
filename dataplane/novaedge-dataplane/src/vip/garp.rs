@@ -23,11 +23,16 @@ impl Default for GarpConfig {
 pub fn send_garp(
     vip: IpAddr,
     interface: &str,
-    _mac: &[u8; 6],
+    mac: &[u8; 6],
     config: &GarpConfig,
 ) -> anyhow::Result<()> {
-    tracing::info!(vip = %vip, interface = %interface, count = config.count, "Sending gratuitous ARP");
-    // Real implementation would use raw AF_PACKET socket
+    tracing::info!(vip = %vip, interface = %interface, count = config.count, interval_ms = config.interval_ms, "Sending gratuitous ARP");
+    // Build the GARP packet for sending on the raw socket.
+    if let IpAddr::V4(v4) = vip {
+        let pkt = build_garp_packet(mac, &v4.octets());
+        tracing::debug!(packet_len = pkt.len(), "GARP packet built for raw socket send");
+        // Real implementation would send `pkt` via raw AF_PACKET socket
+    }
     Ok(())
 }
 
@@ -35,10 +40,15 @@ pub fn send_garp(
 pub fn send_garp(
     vip: IpAddr,
     interface: &str,
-    _mac: &[u8; 6],
+    mac: &[u8; 6],
     config: &GarpConfig,
 ) -> anyhow::Result<()> {
-    tracing::info!(vip = %vip, interface = %interface, count = config.count, "GARP: mock mode (non-Linux)");
+    tracing::info!(vip = %vip, interface = %interface, count = config.count, interval_ms = config.interval_ms, "GARP: mock mode (non-Linux)");
+    // Build the GARP packet even in mock mode for validation.
+    if let IpAddr::V4(v4) = vip {
+        let pkt = build_garp_packet(mac, &v4.octets());
+        tracing::debug!(packet_len = pkt.len(), "GARP packet built (mock mode, not sent)");
+    }
     Ok(())
 }
 

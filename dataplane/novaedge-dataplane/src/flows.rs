@@ -3,6 +3,7 @@
 //! On Linux this reads from the eBPF ring buffer using `AsyncFd`.
 //! In mock mode a `MockFlowInjector` allows tests to push events.
 
+#[cfg(any(target_os = "linux", test))]
 use std::net::Ipv4Addr;
 
 use tokio::sync::broadcast;
@@ -29,6 +30,7 @@ pub fn flow_channel() -> (
 }
 
 /// Convert a raw `novaedge_common::FlowEvent` into a proto `FlowEvent`.
+#[cfg(any(target_os = "linux", test))]
 pub fn raw_to_proto(raw: &novaedge_common::FlowEvent) -> proto::FlowEvent {
     let src_ip = Ipv4Addr::from(raw.src_ip.to_be()).to_string();
     let dst_ip = Ipv4Addr::from(raw.dst_ip.to_be()).to_string();
@@ -55,13 +57,15 @@ pub fn raw_to_proto(raw: &novaedge_common::FlowEvent) -> proto::FlowEvent {
     }
 }
 
-/// Mock flow injector for testing and non-Linux platforms.
+/// Mock flow injector for testing.
 ///
-/// Allows tests and mock mode to inject flow events into the broadcast channel.
+/// Allows tests to inject flow events into the broadcast channel.
+#[cfg(test)]
 pub struct MockFlowInjector {
     tx: broadcast::Sender<proto::FlowEvent>,
 }
 
+#[cfg(test)]
 impl MockFlowInjector {
     /// Create a new mock flow injector wrapping the given sender.
     pub fn new(tx: broadcast::Sender<proto::FlowEvent>) -> Self {

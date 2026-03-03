@@ -129,12 +129,22 @@ async fn main() -> anyhow::Result<()> {
 
     // Create the HTTP proxy handler.
     let router = Arc::new(std::sync::RwLock::new(proxy::router::Router::new()));
+    let pool_for_cleanup = connection_pool.clone();
     let proxy_handler = Arc::new(proxy::handler::ProxyHandler::new(
         router.clone(),
         runtime_config.clone(),
         outlier_detector,
         connection_pool,
     ));
+
+    // Spawn periodic connection pool cleanup task.
+    let pool_cleanup_handle = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            pool_for_cleanup.cleanup_idle().await;
+        }
+    });
 
     // Create the listener manager.
     let listener_mgr = Arc::new(listener::ListenerManager::new(
@@ -150,6 +160,49 @@ async fn main() -> anyhow::Result<()> {
     let listener_handle = tokio::spawn(async move {
         listener_mgr_clone.run(shutdown_rx).await;
     });
+
+    // Create the health checker with default TCP health check config.
+    // It runs as a background task and periodically probes backend endpoints
+    // discovered from the runtime config's cluster health check paths.
+    let health_checker = std::sync::Arc::new(health::checker::HealthChecker::new(
+        health::types::HealthCheckConfig::default(),
+    ));
+    let health_shutdown_rx = shutdown_tx.subscribe();
+    let health_config = runtime_config.clone();
+    let health_checker_clone = health_checker.clone();
+    let health_handle = tokio::spawn(async move {
+        // Collect backend addresses from clusters that have health check paths.
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
+        let mut cancel = health_shutdown_rx;
+        loop {
+            tokio::select! {
+                _ = interval.tick() => {
+                    let snapshot = health_config.snapshot();
+                    let mut backends = Vec::new();
+                    for cluster in snapshot.clusters.values() {
+                        if !cluster.health_check_path.is_empty() {
+                            for ep in &cluster.endpoints {
+                                if let Ok(addr) = ep.address.parse::<std::net::IpAddr>() {
+                                    backends.push(std::net::SocketAddr::new(addr, ep.port as u16));
+                                }
+                            }
+                        }
+                    }
+                    for addr in &backends {
+                        health_checker_clone.check(*addr).await;
+                    }
+                }
+                _ = cancel.changed() => {
+                    info!("Health checker shutting down");
+                    break;
+                }
+            }
+        }
+    });
+
+    // Log health checker availability (is_healthy can be used by handler for
+    // endpoint health filtering).
+    let _health_checker_ref = health_checker;
 
     // Create flow event broadcast channel.
     let (flow_tx, _flow_rx) = flows::flow_channel();
@@ -170,9 +223,13 @@ async fn main() -> anyhow::Result<()> {
     listener_handle.abort();
     let _ = listener_handle.await;
 
-    // Abort the flow reader task on server shutdown.
+    // Abort the flow reader, pool cleanup, and health checker tasks on server shutdown.
     flow_reader_handle.abort();
     let _ = flow_reader_handle.await;
+    pool_cleanup_handle.abort();
+    let _ = pool_cleanup_handle.await;
+    health_handle.abort();
+    let _ = health_handle.await;
 
     // Clean up socket file.
     let _ = std::fs::remove_file(&socket_path);

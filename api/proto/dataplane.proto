@@ -351,6 +351,10 @@ message Endpoint {
   uint32 weight = 3;
   // Whether this endpoint is currently healthy.
   bool healthy = 4;
+  // Locality zone for zone-aware routing (e.g. "us-east-1a").
+  string zone = 5;
+  // Priority group for priority-based failover (0 = highest priority).
+  uint32 priority = 6;
 }
 
 // HealthCheckConfig defines active health check parameters.

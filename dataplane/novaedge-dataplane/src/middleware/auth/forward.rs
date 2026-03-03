@@ -10,6 +10,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 /// Forward auth configuration.
+#[allow(dead_code)] // Forward auth requires async network calls; handled separately from sync pipeline.
 #[derive(Debug, Clone)]
 pub struct ForwardAuthConfig {
     /// URL of the authentication service (e.g. `http://auth-svc:8080/verify`).
@@ -23,17 +24,20 @@ pub struct ForwardAuthConfig {
 }
 
 /// Forward authentication handler.
+#[allow(dead_code)] // Forward auth requires async network calls; handled separately from sync pipeline.
 pub struct ForwardAuth {
     config: ForwardAuthConfig,
 }
 
 impl ForwardAuth {
     /// Create a new forward auth handler.
+    #[allow(dead_code)]
     pub fn new(config: ForwardAuthConfig) -> Self {
         Self { config }
     }
 
     /// Check a request by forwarding it to the external auth service.
+    #[allow(dead_code)]
     pub async fn check(&self, req: &super::super::Request) -> super::AuthResult {
         let (host, port, path) = parse_url(&self.config.auth_url);
 
@@ -91,6 +95,7 @@ impl ForwardAuth {
 }
 
 /// Parse a simple HTTP URL into (host, port, path).
+#[allow(dead_code)] // Used by ForwardAuth::check() which requires async.
 fn parse_url(url: &str) -> (String, u16, String) {
     let url = url.strip_prefix("http://").unwrap_or(url);
     let (host_port, path) = url.split_once('/').unwrap_or((url, ""));

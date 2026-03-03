@@ -56,6 +56,7 @@ impl Http3Server {
     }
 
     /// Return a reference to the server configuration.
+    #[allow(dead_code)]
     pub fn config(&self) -> &Http3Config {
         &self.config
     }

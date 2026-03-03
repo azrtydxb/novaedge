@@ -68,6 +68,10 @@ pub struct EndpointState {
     pub port: u32,
     pub weight: u32,
     pub healthy: bool,
+    /// Locality zone for zone-aware routing.
+    pub zone: Option<String>,
+    /// Priority group for priority-based failover.
+    pub priority: u32,
 }
 
 /// Snapshot of all runtime configuration at a point in time.
@@ -319,6 +323,8 @@ mod tests {
                 port: 8080,
                 weight: 1,
                 healthy: true,
+                zone: None,
+                priority: 0,
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: "/healthz".into(),

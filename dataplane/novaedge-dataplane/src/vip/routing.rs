@@ -2,6 +2,7 @@ use std::net::IpAddr;
 
 /// Route delegation actions.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Represents BGP/OSPF actions, used by tests and future route batching
 pub enum RouteAction {
     Advertise {
         prefix: String,

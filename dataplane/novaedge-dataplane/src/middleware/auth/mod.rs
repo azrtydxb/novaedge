@@ -12,6 +12,7 @@ pub enum AuthResult {
         /// Authenticated user identifier.
         user: String,
         /// Additional claims/attributes extracted during authentication.
+        #[allow(dead_code)]
         claims: Vec<(String, String)>,
     },
     /// The request was denied.

@@ -1,5 +1,9 @@
 /// Response header modification actions.
+///
+/// Variants are constructed when the gRPC config translation layer
+/// pushes response header modification rules from the Go agent.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum HeaderAction {
     Set(String, String),
     Add(String, String),

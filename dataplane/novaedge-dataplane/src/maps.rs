@@ -36,6 +36,8 @@ pub struct MapStatus {
 /// MapManager abstracts over real eBPF maps and mock in-memory maps.
 pub struct MapManager {
     inner: MapManagerInner,
+    /// Used by `uptime_seconds()` for status reporting.
+    #[allow(dead_code)]
     start_time: Instant,
 }
 
@@ -113,6 +115,7 @@ impl MapManager {
     }
 
     /// Return uptime in seconds since the manager was created.
+    #[allow(dead_code)]
     pub fn uptime_seconds(&self) -> u64 {
         self.start_time.elapsed().as_secs()
     }
@@ -120,6 +123,7 @@ impl MapManager {
     // ── VIP operations ─────────────────────────────────────────────────
 
     /// Upsert a VIP entry.
+    #[allow(dead_code)]
     pub fn upsert_vip(&self, key: VipKey, value: VipValue) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
@@ -140,6 +144,7 @@ impl MapManager {
     }
 
     /// Delete a VIP entry.
+    #[allow(dead_code)]
     pub fn delete_vip(&self, key: &VipKey) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
@@ -168,6 +173,7 @@ impl MapManager {
     // ── Backend operations ─────────────────────────────────────────────
 
     /// Upsert a backend entry.
+    #[allow(dead_code)]
     pub fn upsert_backend(&self, key: BackendKey, value: BackendValue) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
@@ -188,6 +194,7 @@ impl MapManager {
     }
 
     /// Delete a backend entry.
+    #[allow(dead_code)]
     pub fn delete_backend(&self, key: &BackendKey) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
@@ -207,6 +214,7 @@ impl MapManager {
     /// Bulk replace all backends for a given VIP id.
     ///
     /// This removes all existing backends for the VIP and inserts the new set.
+    #[allow(dead_code)]
     pub fn sync_backends(&self, vip_id: u32, backends: &[(BackendValue,)]) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
@@ -273,6 +281,7 @@ impl MapManager {
     // ── Connection tracking operations ─────────────────────────────────
 
     /// Upsert a connection tracking entry.
+    #[allow(dead_code)]
     pub fn upsert_conntrack(&self, key: ConnTrackKey, value: ConnTrackValue) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
@@ -293,6 +302,7 @@ impl MapManager {
     }
 
     /// Delete a connection tracking entry.
+    #[allow(dead_code)]
     pub fn delete_conntrack(&self, key: &ConnTrackKey) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
@@ -321,6 +331,7 @@ impl MapManager {
     // ── Rate limiting operations ───────────────────────────────────────
 
     /// Upsert a rate limit entry.
+    #[allow(dead_code)]
     pub fn upsert_rate_limit(
         &self,
         key: RateLimitKey,
@@ -345,6 +356,7 @@ impl MapManager {
     }
 
     /// Delete a rate limit entry.
+    #[allow(dead_code)]
     pub fn delete_rate_limit(&self, key: &RateLimitKey) -> anyhow::Result<()> {
         match &self.inner {
             MapManagerInner::Mock(m) => {
