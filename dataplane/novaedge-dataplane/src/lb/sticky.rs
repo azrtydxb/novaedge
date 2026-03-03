@@ -50,9 +50,10 @@ impl LoadBalancer for StickySession {
             let map = self.affinity.read().unwrap();
             if let Some(&(addr, port)) = map.get(cookie) {
                 // Find the backend by address match (not index).
-                if let Some(&idx) = healthy.iter().find(|&&i| {
-                    backends[i].addr == addr && backends[i].port == port
-                }) {
+                if let Some(&idx) = healthy
+                    .iter()
+                    .find(|&&i| backends[i].addr == addr && backends[i].port == port)
+                {
                     return Some(idx);
                 }
                 // Backend gone or unhealthy — fall through to round-robin.
