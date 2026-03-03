@@ -1451,65 +1451,33 @@ func (b *Builder) loadWASMBinary(source, defaultNamespace string, bc *buildConte
 	return nil, fmt.Errorf("%w: %s/%s (expected key: plugin.wasm)", errWASMBinaryNotFoundInConfigMap, namespace, name)
 }
 
-// generateVersion generates a version string based on content hash.
-// The hash must include ALL mutable snapshot fields so that downstream
-// consumers (e.g. the agent's HTTPServer.ApplyConfig) detect changes.
+// generateVersion generates a version string by hashing the entire proto
+// snapshot with deterministic marshaling. This ensures ANY field change
+// (route rules, LB policies, weights, headers, etc.) produces a new version,
+// not just changes to resource identifiers.
 func (b *Builder) generateVersion(snapshot *pb.ConfigSnapshot) string {
-	// Create a deterministic string representation
-	parts := make([]string, 0, len(snapshot.Gateways)+len(snapshot.Routes)+len(snapshot.Clusters)+len(snapshot.VipAssignments)+len(snapshot.Policies))
+	// Temporarily zero out self-referential fields to avoid including
+	// the previous version or generation timestamp in the hash.
+	savedVersion := snapshot.Version
+	savedGenTime := snapshot.GenerationTime
+	snapshot.Version = ""
+	snapshot.GenerationTime = 0
 
-	// Add all component counts and names
-	for _, gw := range snapshot.Gateways {
-		parts = append(parts, fmt.Sprintf("gw:%s/%s", gw.Namespace, gw.Name))
-	}
-	for _, r := range snapshot.Routes {
-		parts = append(parts, fmt.Sprintf("route:%s/%s", r.Namespace, r.Name))
-	}
-	for _, c := range snapshot.Clusters {
-		parts = append(parts, fmt.Sprintf("cluster:%s/%s", c.Namespace, c.Name))
-	}
-	// Include endpoint addresses and ports so that pod IP changes
-	// (e.g. after a scale-down/up) produce a different version hash.
-	for clusterName, epList := range snapshot.Endpoints {
-		for _, ep := range epList.Endpoints {
-			parts = append(parts, fmt.Sprintf("ep:%s:%s:%d:%v", clusterName, ep.Address, ep.Port, ep.Ready))
-		}
-	}
-	for _, vip := range snapshot.VipAssignments {
-		part := fmt.Sprintf("vip:%s:%s", vip.VipName, vip.Address)
-		if vip.BgpConfig != nil {
-			part += fmt.Sprintf(":bgp:%d:%s:%d", vip.BgpConfig.LocalAs, vip.BgpConfig.RouterId, len(vip.BgpConfig.Peers))
-		}
-		if vip.OspfConfig != nil {
-			part += fmt.Sprintf(":ospf:%s", vip.OspfConfig.RouterId)
-		}
-		parts = append(parts, part)
-	}
-	for _, p := range snapshot.Policies {
-		parts = append(parts, fmt.Sprintf("policy:%s/%s", p.Namespace, p.Name))
-	}
-	for _, l := range snapshot.L4Listeners {
-		parts = append(parts, fmt.Sprintf("l4:%s:%d", l.Name, l.Port))
-	}
-	for _, wl := range snapshot.WanLinks {
-		parts = append(parts, fmt.Sprintf("wanlink:%s/%s", wl.Namespace, wl.Name))
-	}
-	for _, wp := range snapshot.WanPolicies {
-		parts = append(parts, fmt.Sprintf("wanpolicy:%s/%s", wp.Namespace, wp.Name))
+	data, err := proto.MarshalOptions{Deterministic: true}.Marshal(snapshot)
+
+	// Restore fields immediately.
+	snapshot.Version = savedVersion
+	snapshot.GenerationTime = savedGenTime
+
+	if err != nil {
+		// Proto marshal should never fail for a well-formed snapshot,
+		// but return a unique error version so the caller still detects
+		// a change and pushes the snapshot.
+		return fmt.Sprintf("err-%d", time.Now().UnixNano())
 	}
 
-	// Sort for determinism
-	sort.Strings(parts)
-
-	// Hash the concatenated parts
-	h := sha256.New()
-	for _, part := range parts {
-		h.Write([]byte(part))
-	}
-	hash := hex.EncodeToString(h.Sum(nil))
-
-	// Return content hash only for deterministic version comparison
-	return hash[:16]
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:8])
 }
 
 // buildMeshAuthorizationPolicies converts ProxyPolicy resources of type

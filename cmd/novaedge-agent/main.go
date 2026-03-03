@@ -51,6 +51,7 @@ import (
 	ebpfservice "github.com/piwi3910/novaedge/internal/agent/ebpf/service"
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
 	"github.com/piwi3910/novaedge/internal/agent/ebpfmesh"
+	"github.com/piwi3910/novaedge/internal/agent/gossip"
 	"github.com/piwi3910/novaedge/internal/agent/introspection"
 	"github.com/piwi3910/novaedge/internal/agent/mesh"
 	"github.com/piwi3910/novaedge/internal/agent/sdwan"
@@ -340,6 +341,13 @@ func main() {
 		logger.Warn("WARNING: Config watcher running without TLS (insecure)")
 	}
 
+	// Create config version gossiper for agent-to-agent consensus.
+	// Non-fatal: gossip is defense-in-depth, not critical path.
+	gossiper := gossip.NewConfigGossiper(nodeName, watcher.ForceResync, logger)
+	if err := gossiper.Start(ctx); err != nil {
+		logger.Warn("Failed to start config gossiper", zap.Error(err))
+	}
+
 	// Create VIP manager with selected BGP backend
 	var vipOpts []vip.ManagerOption
 	switch bgpBackend {
@@ -609,6 +617,11 @@ func main() {
 			healthServer.SetReady(true)
 			adminServer.SetSnapshot(snapshot)
 			adminServer.SetReady(true)
+
+			// Update gossiper with the newly applied config version so
+			// peers can detect version divergence.
+			gossiper.UpdateVersion(snapshot.Version)
+
 			return nil
 		})
 	}()
