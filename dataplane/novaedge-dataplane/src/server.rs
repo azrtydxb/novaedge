@@ -300,11 +300,11 @@ impl DataplaneService {
             })
             .unwrap_or_default();
 
-        let backend_ref = route
+        let backend_refs: Vec<(String, u32)> = route
             .backend_refs
-            .first()
-            .map(|b| b.cluster_name.clone())
-            .unwrap_or_default();
+            .iter()
+            .map(|b| (b.cluster_name.clone(), b.weight))
+            .collect();
 
         RouteState {
             name: route.name.clone(),
@@ -314,7 +314,7 @@ impl DataplaneService {
             path_exact,
             path_regex,
             methods: route.methods.clone(),
-            backend_ref,
+            backend_refs,
             priority: route.priority,
             rewrite_path: if route.rewrite_path.is_empty() {
                 None
@@ -328,6 +328,33 @@ impl DataplaneService {
 
     /// Convert a proto ClusterConfig to our ClusterState.
     fn cluster_from_proto(cluster: &proto::ClusterConfig) -> ClusterState {
+        // Extract session affinity config.
+        let (sa_type, sa_cookie) = cluster
+            .session_affinity
+            .as_ref()
+            .map(|sa| (sa.r#type.clone(), sa.cookie_name.clone()))
+            .unwrap_or_default();
+
+        // Extract outlier detection config.
+        let (od_5xx, od_dur, od_pct) = cluster
+            .outlier_detection
+            .as_ref()
+            .map(|od| {
+                (
+                    od.consecutive_5xx_threshold,
+                    od.base_ejection_duration_ms,
+                    od.max_ejection_percent,
+                )
+            })
+            .unwrap_or_default();
+
+        // Extract slow start config.
+        let ss_window = cluster
+            .slow_start
+            .as_ref()
+            .map(|ss| ss.window_ms)
+            .unwrap_or_default();
+
         ClusterState {
             name: cluster.name.clone(),
             endpoints: cluster
@@ -352,6 +379,12 @@ impl DataplaneService {
                 .as_ref()
                 .map(|hc| hc.http_path.clone())
                 .unwrap_or_default(),
+            session_affinity_type: sa_type,
+            session_affinity_cookie: sa_cookie,
+            outlier_consecutive_5xx: od_5xx,
+            outlier_ejection_duration_ms: od_dur,
+            outlier_max_ejection_pct: od_pct,
+            slow_start_window_ms: ss_window,
         }
     }
 }
@@ -430,7 +463,7 @@ impl DataplaneControl for DataplaneService {
                     methods: rs.methods.clone(),
                     headers: Vec::new(),
                     query_params: Vec::new(),
-                    backend: rs.backend_ref.clone(),
+                    backend_refs: rs.backend_refs.clone(),
                     priority: rs.priority,
                     rewrite_path: rs.rewrite_path.clone(),
                     add_headers: rs.add_headers.clone(),
@@ -763,8 +796,7 @@ impl DataplaneControl for DataplaneService {
                 }
             } else {
                 // Lazily initialize the route client for BGP/OSPF VIPs.
-                let mut client =
-                    vip::routing::RouteClient::new("unix:///run/novaroute.sock");
+                let mut client = vip::routing::RouteClient::new("unix:///run/novaroute.sock");
                 if let Err(e) = client.connect().await {
                     warn!(error = %e, "Failed to connect route client");
                 } else if let Err(e) = client.advertise_vip(ip).await {
@@ -946,10 +978,8 @@ impl DataplaneControl for DataplaneService {
                         );
                     }
                     // Check if this is an agent SPIFFE ID and log its role.
-                    let agent_id = mesh::spiffe::SpiffeId::agent(
-                        &spiffe_id.trust_domain,
-                        "dataplane",
-                    );
+                    let agent_id =
+                        mesh::spiffe::SpiffeId::agent(&spiffe_id.trust_domain, "dataplane");
                     if spiffe_id.matches_pattern(&agent_id.to_uri()) {
                         debug!("SPIFFE ID matches agent pattern");
                     }
@@ -1029,11 +1059,7 @@ impl DataplaneControl for DataplaneService {
                 info!(trust_domain = %trust_domain, "Mesh authorization policy configured");
 
                 // Validate the policy by checking a sample workload identity.
-                let sample_id = mesh::spiffe::SpiffeId::workload(
-                    trust_domain,
-                    "default",
-                    "sample",
-                );
+                let sample_id = mesh::spiffe::SpiffeId::workload(trust_domain, "default", "sample");
                 let result = authz.check(&sample_id, 80);
                 debug!(
                     sample_source = %sample_id,
@@ -1241,10 +1267,9 @@ impl DataplaneControl for DataplaneService {
                 // We clone the active links for the selection check.
                 let active_owned: Vec<sdwan::link::WANLink> =
                     active.iter().map(|l| (*l).clone()).collect();
-                if let Some(selected) = sdwan::path_selection::PathSelector::select(
-                    &active_owned,
-                    &default_policy,
-                ) {
+                if let Some(selected) =
+                    sdwan::path_selection::PathSelector::select(&active_owned, &default_policy)
+                {
                     debug!(
                         selected_link = %selected.name,
                         strategy = ?default_policy.strategy,
@@ -1594,11 +1619,7 @@ impl DataplaneControl for DataplaneService {
         let wg_mgr = self.wireguard_manager.lock().unwrap();
         let wg_tunnels = wg_mgr.tunnel_count();
         let wg_active = wg_mgr.is_active();
-        debug!(
-            tunnels = wg_tunnels,
-            active = wg_active,
-            "WireGuard status"
-        );
+        debug!(tunnels = wg_tunnels, active = wg_active, "WireGuard status");
         drop(wg_mgr);
 
         let map_sizes = vec![
@@ -1826,6 +1847,9 @@ mod tests {
                 connection_pool: None,
                 backend_tls: None,
                 connect_timeout_ms: 0,
+                session_affinity: None,
+                outlier_detection: None,
+                slow_start: None,
             }],
             vips: vec![],
             l4_listeners: vec![],
@@ -1845,7 +1869,7 @@ mod tests {
         assert_eq!(snap.routes.len(), 1);
         assert_eq!(snap.clusters.len(), 1);
         assert_eq!(snap.gateways["gw-1"].port, 8080);
-        assert_eq!(snap.routes["route-1"].backend_ref, "cluster-1");
+        assert_eq!(snap.routes["route-1"].backend_refs[0].0, "cluster-1");
         assert_eq!(snap.clusters["cluster-1"].endpoints.len(), 1);
     }
 
@@ -1956,6 +1980,9 @@ mod tests {
                 connection_pool: None,
                 backend_tls: None,
                 connect_timeout_ms: 0,
+                session_affinity: None,
+                outlier_detection: None,
+                slow_start: None,
             }),
         });
         let resp = svc.upsert_cluster(req).await.unwrap();

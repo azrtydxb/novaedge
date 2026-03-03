@@ -602,7 +602,7 @@ mod tests {
             path_exact: String::new(),
             path_regex: String::new(),
             methods: vec![],
-            backend_ref: "tcp-cluster".into(),
+            backend_refs: vec![("tcp-cluster".into(), 1)],
             priority: 0,
             rewrite_path: None,
             add_headers: HashMap::new(),
@@ -620,6 +620,12 @@ mod tests {
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
+            session_affinity_type: String::new(),
+            session_affinity_cookie: String::new(),
+            outlier_consecutive_5xx: 0,
+            outlier_ejection_duration_ms: 0,
+            outlier_max_ejection_pct: 0,
+            slow_start_window_ms: 0,
         });
 
         let handler = make_handler(config.clone());

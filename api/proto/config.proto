@@ -435,6 +435,8 @@ message Endpoint {
   int32 port = 2;
   bool ready = 3;
   map<string, string> labels = 4;
+  // Weight for weighted load balancing (0 = default weight of 1).
+  int32 weight = 5;
 }
 
 // VIPAssignment tells this node which VIPs to manage

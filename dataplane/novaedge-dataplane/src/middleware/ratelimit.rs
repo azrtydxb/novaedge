@@ -25,7 +25,8 @@ pub struct RateLimitConfig {
     /// Maximum burst size (bucket capacity).
     pub burst: u32,
     /// How to extract the rate limit key from a request.
-    #[allow(dead_code)] // Read by TokenBucket::extract_key(); pipeline uses client_ip directly.
+    #[allow(dead_code)]
+    // Read by TokenBucket::extract_key(); pipeline uses client_ip directly.
     pub key_type: RateLimitKeyType,
 }
 

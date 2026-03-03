@@ -488,10 +488,12 @@ mod tests {
 
     #[test]
     fn parse_claims_extra_fields() {
-        let claims =
-            parse_jwt_claims(r#"{"sub":"u1","role":"admin","exp":9999999999}"#).unwrap();
+        let claims = parse_jwt_claims(r#"{"sub":"u1","role":"admin","exp":9999999999}"#).unwrap();
         assert_eq!(claims.sub, Some("u1".into()));
-        assert!(claims.extra.iter().any(|(k, v)| k == "role" && v == "admin"));
+        assert!(claims
+            .extra
+            .iter()
+            .any(|(k, v)| k == "role" && v == "admin"));
     }
 
     #[test]
@@ -503,15 +505,12 @@ mod tests {
     fn make_signed_jwt(payload_json: &str, secret: &str) -> String {
         let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .encode(r#"{"alg":"HS256","typ":"JWT"}"#);
-        let payload =
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json);
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json);
         let signing_input = format!("{header}.{payload}");
-        let mut mac =
-            Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
+        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(signing_input.as_bytes());
         let sig = mac.finalize().into_bytes();
-        let sig_b64 =
-            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig);
+        let sig_b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sig);
         format!("{signing_input}.{sig_b64}")
     }
 

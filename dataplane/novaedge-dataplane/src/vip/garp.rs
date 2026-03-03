@@ -30,7 +30,10 @@ pub fn send_garp(
     // Build the GARP packet for sending on the raw socket.
     if let IpAddr::V4(v4) = vip {
         let pkt = build_garp_packet(mac, &v4.octets());
-        tracing::debug!(packet_len = pkt.len(), "GARP packet built for raw socket send");
+        tracing::debug!(
+            packet_len = pkt.len(),
+            "GARP packet built for raw socket send"
+        );
         // Real implementation would send `pkt` via raw AF_PACKET socket
     }
     Ok(())
@@ -47,7 +50,10 @@ pub fn send_garp(
     // Build the GARP packet even in mock mode for validation.
     if let IpAddr::V4(v4) = vip {
         let pkt = build_garp_packet(mac, &v4.octets());
-        tracing::debug!(packet_len = pkt.len(), "GARP packet built (mock mode, not sent)");
+        tracing::debug!(
+            packet_len = pkt.len(),
+            "GARP packet built (mock mode, not sent)"
+        );
     }
     Ok(())
 }

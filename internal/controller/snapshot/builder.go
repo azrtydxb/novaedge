@@ -369,18 +369,13 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	routes := b.buildRoutes(ctx, bc)
 	snapshot.Routes = routes
 
-	// Determine if this node has any BGP/OSPF (ECMP) VIP assignments.
-	// ECMP VIPs require hash-based LB for cross-node routing consistency.
-	hasECMPVIP := false
-	for _, v := range vips {
-		if v.Mode == pb.VIPMode_BGP || v.Mode == pb.VIPMode_OSPF {
-			hasECMPVIP = true
-			break
-		}
-	}
+	// Determine which backends are served exclusively through ECMP (BGP/OSPF)
+	// VIPs, so only those backends get the hash-based LB policy filter.
+	// Backends served through L2ARP VIPs can use any LB policy.
+	ecmpBackends := b.resolveECMPBackends(bc)
 
 	// Build backends/clusters
-	clusters, endpoints, err := b.buildClusters(ctx, hasECMPVIP, bc)
+	clusters, endpoints, err := b.buildClusters(ctx, ecmpBackends, bc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build clusters: %w", err)
 	}
@@ -741,9 +736,11 @@ func (b *Builder) buildRoutes(_ context.Context, bc *buildContext) []*pb.Route {
 }
 
 // buildClusters builds backend cluster configurations and their endpoints.
-// When hasECMPVIP is true, non-hash LB policies are rejected and unspecified
-// policies are auto-promoted to Maglev for cross-node routing consistency.
-func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool, bc *buildContext) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
+// ecmpBackends contains the set of backend keys ("namespace/name") that are
+// served through BGP/OSPF ECMP VIPs. Only those backends have their LB policy
+// validated/promoted for ECMP consistency; backends served through L2ARP VIPs
+// are unrestricted.
+func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]struct{}, bc *buildContext) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
 	clusters := make([]*pb.Cluster, 0, len(bc.backends))
 	endpoints := make(map[string]*pb.EndpointList)
 
@@ -803,8 +800,10 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool, bc *buildC
 			cluster.SessionAffinity = convertSessionAffinity(backend.Spec.SessionAffinity)
 		}
 
-		// ECMP consistency: validate and adjust LB policy for BGP/OSPF VIPs
-		if hasECMPVIP {
+		// ECMP consistency: validate and adjust LB policy for BGP/OSPF VIPs.
+		// Only applies to backends that are reachable through ECMP VIPs.
+		backendKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
+		if _, isECMP := ecmpBackends[backendKey]; isECMP {
 			switch cluster.LbPolicy {
 			case pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
 				// Auto-promote unspecified to Maglev for ECMP consistency
@@ -862,6 +861,64 @@ func (b *Builder) buildClusters(ctx context.Context, hasECMPVIP bool, bc *buildC
 	}
 
 	return clusters, endpoints, nil
+}
+
+// resolveECMPBackends determines which backends are served through BGP/OSPF
+// ECMP VIPs by tracing VIP → Gateway → listener hostnames → Route → BackendRefs.
+// Returns a set of backend keys ("namespace/name") that require hash-based LB.
+func (b *Builder) resolveECMPBackends(bc *buildContext) map[string]struct{} {
+	// Step 1: Build VIP name → mode lookup
+	vipModes := make(map[string]string, len(bc.vips))
+	for i := range bc.vips {
+		vipModes[bc.vips[i].Name] = string(bc.vips[i].Spec.Mode)
+	}
+
+	// Step 2: Collect hostnames served through ECMP gateways
+	ecmpHostnames := make(map[string]struct{})
+	for i := range bc.gateways {
+		gw := &bc.gateways[i]
+		mode := vipModes[gw.Spec.VIPRef]
+		if mode != string(novaedgev1alpha1.VIPModeBGP) && mode != string(novaedgev1alpha1.VIPModeOSPF) {
+			continue
+		}
+		// This gateway is backed by an ECMP VIP — collect its listener hostnames
+		for _, listener := range gw.Spec.Listeners {
+			for _, h := range listener.Hostnames {
+				ecmpHostnames[h] = struct{}{}
+			}
+		}
+	}
+
+	if len(ecmpHostnames) == 0 {
+		return nil
+	}
+
+	// Step 3: Find backends referenced by routes that match ECMP hostnames
+	ecmpBackends := make(map[string]struct{})
+	for i := range bc.routes {
+		route := &bc.routes[i]
+		routeIsECMP := false
+		for _, h := range route.Spec.Hostnames {
+			if _, ok := ecmpHostnames[h]; ok {
+				routeIsECMP = true
+				break
+			}
+		}
+		if !routeIsECMP {
+			continue
+		}
+		for _, rule := range route.Spec.Rules {
+			for _, ref := range rule.BackendRefs {
+				ns := route.Namespace
+				if ref.Namespace != nil && *ref.Namespace != "" {
+					ns = *ref.Namespace
+				}
+				ecmpBackends[ns+"/"+ref.Name] = struct{}{}
+			}
+		}
+	}
+
+	return ecmpBackends
 }
 
 // buildPolicies builds policy configurations

@@ -281,9 +281,14 @@ func translateClusters(
 		clusterKey := cl.GetNamespace() + "/" + cl.GetName()
 		if epList, ok := endpoints[clusterKey]; ok && epList != nil {
 			for _, ep := range epList.GetEndpoints() {
+				weight := uint32(ep.GetWeight()) //nolint:gosec // proto field
+				if weight == 0 {
+					weight = 1 // default weight
+				}
 				dpCluster.Endpoints = append(dpCluster.Endpoints, &pb.Endpoint{
 					Ip:      ep.GetAddress(),
 					Port:    uint32(ep.GetPort()), //nolint:gosec // proto field
+					Weight:  weight,
 					Healthy: ep.GetReady(),
 				})
 			}
@@ -325,6 +330,36 @@ func translateClusters(
 			dpCluster.BackendTls = &pb.TLSConfig{
 				CaPem:              btls.GetCaCert(),
 				InsecureSkipVerify: btls.GetInsecureSkipVerify(),
+			}
+		}
+
+		// Translate session affinity.
+		if sa := cl.GetSessionAffinity(); sa != nil {
+			dpCluster.SessionAffinity = &pb.SessionAffinityConfig{
+				Type:             sa.GetType(),
+				CookieName:       sa.GetCookieName(),
+				CookieTtlSeconds: sa.GetCookieTtlSeconds(),
+				CookiePath:       sa.GetCookiePath(),
+				CookieSecure:     sa.GetCookieSecure(),
+				CookieSameSite:   sa.GetCookieSameSite(),
+			}
+		}
+
+		// Translate outlier detection.
+		if od := cl.GetOutlierDetection(); od != nil {
+			dpCluster.OutlierDetection = &pb.OutlierDetectionConfig{
+				IntervalMs:               uint64(od.GetIntervalMs()),
+				Consecutive_5XxThreshold: uint32(od.GetConsecutive_5XxThreshold()), //nolint:gosec // proto field
+				BaseEjectionDurationMs:   uint64(od.GetBaseEjectionDurationMs()),
+				MaxEjectionPercent:       uint32(od.GetMaxEjectionPercent()), //nolint:gosec // proto field
+			}
+		}
+
+		// Translate slow start.
+		if ss := cl.GetSlowStart(); ss != nil {
+			dpCluster.SlowStart = &pb.SlowStartConfig{
+				WindowMs:   uint64(ss.GetWindowMs()),
+				Aggression: ss.GetAggression(),
 			}
 		}
 

@@ -160,8 +160,7 @@ impl ConnectionPool {
         for (_addr, host_pool) in pools.iter_mut() {
             let before = host_pool.idle.len();
             host_pool.idle.retain(|c| {
-                now.duration_since(c.last_used) < timeout
-                    && c.created.elapsed() < MAX_CONN_AGE
+                now.duration_since(c.last_used) < timeout && c.created.elapsed() < MAX_CONN_AGE
             });
             let removed = before - host_pool.idle.len();
             // Return permits for removed idle connections.

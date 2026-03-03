@@ -9,11 +9,49 @@ pub struct Route {
     pub methods: Vec<String>,
     pub headers: Vec<HeaderMatch>,
     pub query_params: Vec<QueryParamMatch>,
-    pub backend: String,
+    /// Backend references with weights: `(cluster_name, weight)`.
+    pub backend_refs: Vec<(String, u32)>,
     pub priority: i32,
     pub rewrite_path: Option<String>,
     pub add_headers: HashMap<String, String>,
     pub middleware_refs: Vec<String>,
+}
+
+impl Route {
+    /// Select a backend cluster name using weighted random selection.
+    ///
+    /// If there is only one backend, returns it directly. If multiple, picks
+    /// one randomly proportional to weights.
+    pub fn select_backend(&self) -> Option<&str> {
+        match self.backend_refs.len() {
+            0 => None,
+            1 => Some(&self.backend_refs[0].0),
+            _ => {
+                let total_weight: u32 = self.backend_refs.iter().map(|(_, w)| *w).sum();
+                if total_weight == 0 {
+                    return Some(&self.backend_refs[0].0);
+                }
+                let mut rng_val = {
+                    // Use a fast inline xorshift for weight selection to avoid
+                    // pulling in rand as a dependency just for this.
+                    use std::time::SystemTime;
+                    let seed = SystemTime::now()
+                        .duration_since(SystemTime::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .subsec_nanos();
+                    seed % total_weight
+                };
+                for (name, weight) in &self.backend_refs {
+                    if rng_val < *weight {
+                        return Some(name);
+                    }
+                    rng_val -= weight;
+                }
+                // Fallback (shouldn't reach here).
+                Some(&self.backend_refs[0].0)
+            }
+        }
+    }
 }
 
 /// Query parameter matching criterion.
@@ -260,7 +298,7 @@ mod tests {
             methods: Vec::new(),
             headers: Vec::new(),
             query_params: Vec::new(),
-            backend: format!("{name}-backend"),
+            backend_refs: vec![(format!("{name}-backend"), 1)],
             priority,
             rewrite_path: None,
             add_headers: HashMap::new(),

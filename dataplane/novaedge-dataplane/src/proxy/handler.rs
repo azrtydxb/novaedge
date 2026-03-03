@@ -112,9 +112,17 @@ impl ProxyHandler {
         // For WebSocket, we need the original hyper request for upgrade.
         // Do early route/LB resolution so we can branch.
         if is_websocket {
-            let (route, backend_addr, upstream_uri) = match self.resolve_route_and_backend(
-                &method, &path, &host, &headers, query_string.as_deref(), client_addr,
-            ).await {
+            let (route, backend_addr, upstream_uri) = match self
+                .resolve_route_and_backend(
+                    &method,
+                    &path,
+                    &host,
+                    &headers,
+                    query_string.as_deref(),
+                    client_addr,
+                )
+                .await
+            {
                 Ok(resolved) => resolved,
                 Err(resp) => return Ok(resp),
             };
@@ -129,10 +137,7 @@ impl ProxyHandler {
         const MAX_BODY_SIZE: u64 = 10 * 1024 * 1024;
 
         // For methods that don't carry a body, skip collection entirely.
-        let skip_body = matches!(
-            method.as_str(),
-            "GET" | "HEAD" | "DELETE" | "OPTIONS"
-        );
+        let skip_body = matches!(method.as_str(), "GET" | "HEAD" | "DELETE" | "OPTIONS");
 
         let body_bytes = if skip_body {
             drop(req);
@@ -185,6 +190,7 @@ impl ProxyHandler {
     /// Returns a response with `Full<Bytes>` body. WebSocket upgrades are
     /// NOT handled here — they require the original hyper request for the
     /// upgrade handshake.
+    #[allow(clippy::too_many_arguments)]
     pub async fn handle_request_inner(
         &self,
         method: &str,
@@ -197,7 +203,10 @@ impl ProxyHandler {
     ) -> hyper::Response<Full<Bytes>> {
         let ejected = self.outlier_detector.ejected_count();
         if ejected > 0 {
-            debug!(ejected_backends = ejected, "Outlier detector: backends currently ejected");
+            debug!(
+                ejected_backends = ejected,
+                "Outlier detector: backends currently ejected"
+            );
         }
 
         // Match route (with query param support).
@@ -224,7 +233,7 @@ impl ProxyHandler {
                         methods: Vec::new(),
                         headers: Vec::new(),
                         query_params: Vec::new(),
-                        backend,
+                        backend_refs: vec![(backend, 1)],
                         priority: 0,
                         rewrite_path: None,
                         add_headers: HashMap::new(),
@@ -240,9 +249,22 @@ impl ProxyHandler {
             }
         };
 
+        // Select a backend cluster using weighted selection.
+        let selected_backend = match route.select_backend() {
+            Some(b) => b.to_string(),
+            None => {
+                warn!(route = %route.name, "Route has no backend_refs");
+                return hyper::Response::builder()
+                    .status(502)
+                    .header("X-Route", route.name.as_str())
+                    .body(Full::new(Bytes::from("No upstream cluster")))
+                    .unwrap();
+            }
+        };
+
         debug!(
             route = %route.name,
-            backend = %route.backend,
+            backend = %selected_backend,
             "Matched route for {method} {path}"
         );
 
@@ -281,11 +303,11 @@ impl ProxyHandler {
         }
 
         // Look up cluster endpoints.
-        let cluster = match self.config.get_cluster(&route.backend) {
+        let cluster = match self.config.get_cluster(&selected_backend) {
             Some(c) => c,
             None => {
                 warn!(
-                    backend = %route.backend,
+                    backend = %selected_backend,
                     "No cluster found for route '{}'", route.name
                 );
                 return hyper::Response::builder()
@@ -320,11 +342,20 @@ impl ProxyHandler {
             })
             .collect();
 
+        // Extract sticky cookie if session affinity is configured.
+        let sticky_cookie = if cluster.session_affinity_type == "cookie"
+            && !cluster.session_affinity_cookie.is_empty()
+        {
+            extract_cookie(headers, &cluster.session_affinity_cookie)
+        } else {
+            None
+        };
+
         let ctx = lb::RequestContext {
             src_ip: client_addr.ip(),
             src_port: client_addr.port(),
             dst_port: 0,
-            sticky_cookie: None,
+            sticky_cookie,
             zone: None,
         };
 
@@ -349,7 +380,10 @@ impl ProxyHandler {
             })
             .collect();
 
-        let balancer = lb::new_load_balancer(&cluster.lb_algorithm);
+        let balancer = self
+            .config
+            .get_or_create_lb(&cluster.name, &cluster.lb_algorithm)
+            .await;
         debug!(
             cluster = %cluster.name,
             algorithm = balancer.name(),
@@ -441,15 +475,11 @@ impl ProxyHandler {
             path.to_string()
         };
 
-        let query_suffix = query_string
-            .map(|q| format!("?{q}"))
-            .unwrap_or_default();
+        let query_suffix = query_string.map(|q| format!("?{q}")).unwrap_or_default();
         let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
 
         // Build upstream request.
-        let mut upstream_req = hyper::Request::builder()
-            .method(method)
-            .uri(&upstream_uri);
+        let mut upstream_req = hyper::Request::builder().method(method).uri(&upstream_uri);
 
         for (key, value) in headers {
             if key.eq_ignore_ascii_case("host") {
@@ -516,12 +546,21 @@ impl ProxyHandler {
                     .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                     .collect();
 
-                let body = upstream_resp
-                    .into_body()
-                    .collect()
-                    .await
-                    .map(|c| c.to_bytes())
-                    .unwrap_or_default();
+                let body = match upstream_resp.into_body().collect().await {
+                    Ok(collected) => collected.to_bytes(),
+                    Err(e) => {
+                        warn!(backend = %backend_addr, error = %e, "Failed to read upstream response body");
+                        cb.record_failure();
+                        self.outlier_detector.record_failure(backend_addr);
+                        balancer.report(backend_idx, upstream_start.elapsed(), false);
+                        self.connection_pool.release(backend_addr).await;
+                        return hyper::Response::builder()
+                            .status(502)
+                            .header("X-Route", route.name.as_str())
+                            .body(Full::new(Bytes::from("Bad Gateway")))
+                            .unwrap();
+                    }
+                };
 
                 let mut resp = hyper::Response::builder()
                     .status(status)
@@ -596,10 +635,7 @@ impl ProxyHandler {
                     && !self.error_pages.is_empty()
                 {
                     if let Some(error_page) = find_error_page(status.as_u16(), &self.error_pages) {
-                        debug!(
-                            status = status.as_u16(),
-                            "Serving custom error page"
-                        );
+                        debug!(status = status.as_u16(), "Serving custom error page");
                         resp = resp.header("Content-Type", error_page.content_type.as_str());
                         return resp
                             .body(Full::new(Bytes::from(error_page.body.clone())))
@@ -668,7 +704,7 @@ impl ProxyHandler {
                         methods: Vec::new(),
                         headers: Vec::new(),
                         query_params: Vec::new(),
-                        backend,
+                        backend_refs: vec![(backend, 1)],
                         priority: 0,
                         rewrite_path: None,
                         add_headers: HashMap::new(),
@@ -683,7 +719,18 @@ impl ProxyHandler {
             }
         };
 
-        let cluster = match self.config.get_cluster(&route.backend) {
+        let selected_backend = match route.select_backend() {
+            Some(b) => b.to_string(),
+            None => {
+                return Err(hyper::Response::builder()
+                    .status(502)
+                    .header("X-Route", route.name.as_str())
+                    .body(Full::new(Bytes::from("No upstream cluster")))
+                    .unwrap());
+            }
+        };
+
+        let cluster = match self.config.get_cluster(&selected_backend) {
             Some(c) => c,
             None => {
                 return Err(hyper::Response::builder()
@@ -698,7 +745,10 @@ impl ProxyHandler {
             .endpoints
             .iter()
             .map(|e| lb::Backend {
-                addr: e.address.parse().unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                addr: e
+                    .address
+                    .parse()
+                    .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
                 port: e.port as u16,
                 weight: e.weight as u16,
                 healthy: e.healthy,
@@ -715,7 +765,10 @@ impl ProxyHandler {
             zone: None,
         };
 
-        let balancer = lb::new_load_balancer(&cluster.lb_algorithm);
+        let balancer = self
+            .config
+            .get_or_create_lb(&cluster.name, &cluster.lb_algorithm)
+            .await;
         let backend_idx = match balancer.select(&ctx, &backends) {
             Some(idx) => idx,
             None => {
@@ -735,9 +788,7 @@ impl ProxyHandler {
         } else {
             path.to_string()
         };
-        let query_suffix = query_string
-            .map(|q| format!("?{q}"))
-            .unwrap_or_default();
+        let query_suffix = query_string.map(|q| format!("?{q}")).unwrap_or_default();
         let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
 
         Ok((route, backend_addr, upstream_uri))
@@ -933,6 +984,23 @@ impl ProxyHandler {
     }
 }
 
+/// Extract a named cookie value from request headers.
+fn extract_cookie(headers: &[(String, String)], cookie_name: &str) -> Option<String> {
+    for (key, value) in headers {
+        if key.eq_ignore_ascii_case("cookie") {
+            for part in value.split(';') {
+                let part = part.trim();
+                if let Some((name, val)) = part.split_once('=') {
+                    if name.trim() == cookie_name {
+                        return Some(val.trim().to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -949,7 +1017,7 @@ mod tests {
             methods: Vec::new(),
             headers: Vec::new(),
             query_params: Vec::new(),
-            backend: backend.to_string(),
+            backend_refs: vec![(backend.to_string(), 1)],
             priority: 10,
             rewrite_path: None,
             add_headers: HashMap::new(),
@@ -957,7 +1025,10 @@ mod tests {
         }
     }
 
-    fn test_handler(router: Arc<std::sync::RwLock<Router>>, cfg: Arc<RuntimeConfig>) -> ProxyHandler {
+    fn test_handler(
+        router: Arc<std::sync::RwLock<Router>>,
+        cfg: Arc<RuntimeConfig>,
+    ) -> ProxyHandler {
         ProxyHandler::new(
             router,
             cfg,
@@ -996,6 +1067,12 @@ mod tests {
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
+            session_affinity_type: String::new(),
+            session_affinity_cookie: String::new(),
+            outlier_consecutive_5xx: 0,
+            outlier_ejection_duration_ms: 0,
+            outlier_max_ejection_pct: 0,
+            slow_start_window_ms: 0,
         });
 
         let _handler = test_handler(router, cfg.clone());
@@ -1053,6 +1130,12 @@ mod tests {
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
+            session_affinity_type: String::new(),
+            session_affinity_cookie: String::new(),
+            outlier_consecutive_5xx: 0,
+            outlier_ejection_duration_ms: 0,
+            outlier_max_ejection_pct: 0,
+            slow_start_window_ms: 0,
         });
 
         let handler = Arc::new(test_handler(router, cfg));

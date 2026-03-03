@@ -19,7 +19,8 @@ fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 /// HTTP Basic authentication handler.
 pub struct BasicAuth {
     /// Realm string for the WWW-Authenticate header.
-    #[allow(dead_code)] // Pipeline constructs BasicAuth with realm; used by caller for WWW-Authenticate header.
+    #[allow(dead_code)]
+    // Pipeline constructs BasicAuth with realm; used by caller for WWW-Authenticate header.
     pub realm: String,
     /// Mapping from username to password (plaintext comparison).
     pub users: HashMap<String, String>,
