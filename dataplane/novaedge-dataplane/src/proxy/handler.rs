@@ -8,7 +8,6 @@ use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 use super::router::Router;
@@ -20,14 +19,14 @@ use crate::upstream::pool::ConnectionPool;
 
 /// Proxy handler that routes incoming HTTP requests to upstream backends.
 pub struct ProxyHandler {
-    router: Arc<RwLock<Router>>,
+    router: Arc<std::sync::RwLock<Router>>,
     config: Arc<RuntimeConfig>,
     client: hyper_util::client::legacy::Client<
         hyper_util::client::legacy::connect::HttpConnector,
         Full<Bytes>,
     >,
     /// Per-cluster circuit breakers.
-    circuit_breakers: Arc<RwLock<HashMap<String, Arc<CircuitBreaker>>>>,
+    circuit_breakers: Arc<tokio::sync::RwLock<HashMap<String, Arc<CircuitBreaker>>>>,
     /// Outlier detector for passive failure tracking.
     outlier_detector: Arc<OutlierDetector>,
     /// Connection pool for concurrency limiting.
@@ -37,7 +36,7 @@ pub struct ProxyHandler {
 impl ProxyHandler {
     /// Create a new proxy handler.
     pub fn new(
-        router: Arc<RwLock<Router>>,
+        router: Arc<std::sync::RwLock<Router>>,
         config: Arc<RuntimeConfig>,
         outlier_detector: Arc<OutlierDetector>,
         connection_pool: Arc<ConnectionPool>,
@@ -50,7 +49,7 @@ impl ProxyHandler {
             router,
             config,
             client,
-            circuit_breakers: Arc::new(RwLock::new(HashMap::new())),
+            circuit_breakers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             outlier_detector,
             connection_pool,
         }
@@ -105,7 +104,7 @@ impl ProxyHandler {
 
         // Match route (with query param support).
         let matched_route = {
-            let router = self.router.read().await;
+            let router = self.router.read().unwrap();
             router
                 .match_request_with_query(&host, &path, &method, &headers, query_string.as_deref())
                 .cloned()
@@ -321,14 +320,33 @@ impl ProxyHandler {
 
         // --- Normal HTTP forwarding ---
 
-        // Collect the incoming body.
-        let body_bytes = match req.into_body().collect().await {
+        // Check Content-Length against max body size (default 10 MiB).
+        const MAX_BODY_SIZE: u64 = 10 * 1024 * 1024;
+        if let Some(cl) = req
+            .headers()
+            .get("content-length")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok())
+        {
+            if cl > MAX_BODY_SIZE {
+                return Ok(hyper::Response::builder()
+                    .status(413)
+                    .body(Full::new(Bytes::from("Payload Too Large")))
+                    .unwrap());
+            }
+        }
+
+        // Collect the incoming body with size limit.
+        let body_bytes = match http_body_util::Limited::new(req.into_body(), MAX_BODY_SIZE as usize)
+            .collect()
+            .await
+        {
             Ok(collected) => collected.to_bytes(),
             Err(e) => {
                 warn!("Failed to read request body: {e}");
                 return Ok(hyper::Response::builder()
-                    .status(400)
-                    .body(Full::new(Bytes::from("Bad request body")))
+                    .status(413)
+                    .body(Full::new(Bytes::from("Payload Too Large")))
                     .unwrap());
             }
         };
@@ -373,18 +391,23 @@ impl ProxyHandler {
             }
         };
 
-        // Send the request to the upstream.
+        // Send the request to the upstream and measure latency.
+        let upstream_start = std::time::Instant::now();
         let result = match self.client.request(upstream_req).await {
             Ok(upstream_resp) => {
                 let status = upstream_resp.status();
+
+                let upstream_latency = upstream_start.elapsed();
 
                 // Record success/failure based on status code.
                 if status.is_server_error() {
                     cb.record_failure();
                     self.outlier_detector.record_failure(backend_addr);
+                    balancer.report(backend_idx, upstream_latency, false);
                 } else {
                     cb.record_success();
                     self.outlier_detector.record_success(backend_addr);
+                    balancer.report(backend_idx, upstream_latency, true);
                 }
 
                 let resp_headers: Vec<(String, String)> = upstream_resp
@@ -458,8 +481,10 @@ impl ProxyHandler {
             }
             Err(e) => {
                 // Record failure for circuit breaker and outlier detection.
+                let upstream_latency = upstream_start.elapsed();
                 cb.record_failure();
                 self.outlier_detector.record_failure(backend_addr);
+                balancer.report(backend_idx, upstream_latency, false);
 
                 warn!(
                     backend = %backend_addr,
@@ -469,7 +494,7 @@ impl ProxyHandler {
                 Ok(hyper::Response::builder()
                     .status(502)
                     .header("X-Route", route.name.as_str())
-                    .body(Full::new(Bytes::from(format!("Upstream error: {e}"))))
+                    .body(Full::new(Bytes::from("Bad Gateway")))
                     .unwrap())
             }
         };
@@ -648,7 +673,7 @@ impl ProxyHandler {
 
     /// Update the router's routes.
     pub async fn update_routes(&self, routes: Vec<super::router::Route>) {
-        self.router.write().await.set_routes(routes);
+        self.router.write().unwrap().set_routes(routes);
     }
 }
 
@@ -676,7 +701,7 @@ mod tests {
         }
     }
 
-    fn test_handler(router: Arc<RwLock<Router>>, cfg: Arc<RuntimeConfig>) -> ProxyHandler {
+    fn test_handler(router: Arc<std::sync::RwLock<Router>>, cfg: Arc<RuntimeConfig>) -> ProxyHandler {
         ProxyHandler::new(
             router,
             cfg,
@@ -687,7 +712,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_handler_construction() {
-        let router = Arc::new(RwLock::new(Router::new()));
+        let router = Arc::new(std::sync::RwLock::new(Router::new()));
         let cfg = Arc::new(RuntimeConfig::new());
         let _handler = test_handler(router, cfg.clone());
         // Verify config is accessible.
@@ -696,10 +721,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_cluster_lookup() {
-        let router = Arc::new(RwLock::new(Router::new()));
+        let router = Arc::new(std::sync::RwLock::new(Router::new()));
         router
             .write()
-            .await
+            .unwrap()
             .set_routes(vec![test_route("my-route", "test-cluster")]);
 
         let cfg = Arc::new(RuntimeConfig::new());
@@ -751,10 +776,10 @@ mod tests {
         });
 
         // Set up router and config with a route pointing to the backend.
-        let router = Arc::new(RwLock::new(Router::new()));
+        let router = Arc::new(std::sync::RwLock::new(Router::new()));
         router
             .write()
-            .await
+            .unwrap()
             .set_routes(vec![test_route("perf-route", "perf-cluster")]);
 
         let cfg = Arc::new(RuntimeConfig::new());

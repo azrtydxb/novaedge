@@ -4,11 +4,6 @@
 //! L4/L7 forwarding, eBPF programs, VIP management, service mesh,
 //! and SD-WAN operations.
 
-// Allow dead code for modules not yet fully wired into the main pipeline
-// (e.g. l4, mesh, sdwan, vip, loader, flows, maps). These are integrated
-// incrementally as the dataplane matures.
-#![allow(dead_code)]
-
 use std::sync::Arc;
 
 use clap::Parser;
@@ -133,7 +128,7 @@ async fn main() -> anyhow::Result<()> {
     ));
 
     // Create the HTTP proxy handler.
-    let router = Arc::new(tokio::sync::RwLock::new(proxy::router::Router::new()));
+    let router = Arc::new(std::sync::RwLock::new(proxy::router::Router::new()));
     let proxy_handler = Arc::new(proxy::handler::ProxyHandler::new(
         router.clone(),
         runtime_config.clone(),
