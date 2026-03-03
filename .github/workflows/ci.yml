@@ -20,7 +20,7 @@ jobs:
   # Detect which paths changed to skip irrelevant jobs
   changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     outputs:
       go: ${{ steps.filter.outputs.go }}
       rust: ${{ steps.filter.outputs.rust }}
@@ -60,7 +60,7 @@ jobs:
   # Go code quality checks
   lint:
     name: Lint Code
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.go == 'true'
     steps:
@@ -78,10 +78,11 @@ jobs:
       - name: Install eBPF toolchain
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
           # Create asm symlink for eBPF compilation on multiarch Ubuntu
-          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
+          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
 
       - name: Generate eBPF code (bpf2go)
         run: |
@@ -126,7 +127,7 @@ jobs:
   # Security scanning
   security:
     name: Security Scan
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.go == 'true'
     steps:
@@ -144,10 +145,11 @@ jobs:
       - name: Install eBPF toolchain
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
           # Create asm symlink for eBPF compilation on multiarch Ubuntu
-          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
+          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
 
       - name: Generate eBPF code (bpf2go)
         run: |
@@ -170,7 +172,7 @@ jobs:
   # Unit tests
   test:
     name: Unit Tests
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.go == 'true'
     steps:
@@ -186,10 +188,11 @@ jobs:
       - name: Install eBPF toolchain
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
           # Create asm symlink for eBPF compilation on multiarch Ubuntu
-          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
+          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
 
       - name: Generate eBPF code (bpf2go)
         run: |
@@ -241,7 +244,7 @@ jobs:
   # Build verification
   build:
     name: Build Binaries
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.go == 'true'
     strategy:
@@ -270,10 +273,11 @@ jobs:
       - name: Install eBPF toolchain
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev
+          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
+            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
           # Create asm symlink for eBPF compilation on multiarch Ubuntu
-          sudo ln -sf /usr/include/x86_64-linux-gnu/asm /usr/include/asm 2>/dev/null || true
+          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
+          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
 
       - name: Generate eBPF code (bpf2go)
         run: |
@@ -298,7 +302,7 @@ jobs:
   # Rust dataplane checks
   rust:
     name: Rust
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.rust == 'true'
     steps:
@@ -306,8 +310,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rust-src, clippy, rustfmt
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler build-essential
       - name: Cache Cargo
         uses: actions/cache@v4
         with:
@@ -326,7 +330,7 @@ jobs:
   # Helm chart validation
   helm-lint:
     name: Helm Lint
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.helm == 'true'
     steps:
@@ -358,7 +362,7 @@ jobs:
   # Frontend build validation
   frontend-build:
     name: Frontend Build
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     steps:
@@ -391,7 +395,7 @@ jobs:
   # Documentation build validation
   docs:
     name: Docs Build
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.docs == 'true'
     steps:
@@ -414,7 +418,7 @@ jobs:
   # Container image vulnerability scanning
   container-scan:
     name: Container Security Scan
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: changes
     if: needs.changes.outputs.go == 'true'
     strategy:
@@ -460,7 +464,7 @@ jobs:
   # Status check (all jobs must pass or be skipped)
   status-check:
     name: Status Check
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-novaedge
     needs: [lint, security, test, build, rust, helm-lint, frontend-build, docs, container-scan]
     if: always()
     steps:
