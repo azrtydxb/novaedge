@@ -29,7 +29,7 @@ jobs:
         k8s-version: ['v1.28.0', 'v1.29.0', 'v1.30.0']
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -166,7 +166,7 @@ jobs:
     if: false  # Disabled: test/e2e/envtest/ directory does not exist yet
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Go
         uses: actions/setup-go@v6
