@@ -216,11 +216,7 @@ impl RuntimeConfig {
     /// one via [`lb::new_load_balancer`] and caches it. This ensures stateful
     /// algorithms (RoundRobin counters, EWMA latency history, etc.) persist
     /// across requests.
-    pub async fn get_or_create_lb(
-        &self,
-        cluster_name: &str,
-        algo: &str,
-    ) -> Arc<dyn LoadBalancer> {
+    pub async fn get_or_create_lb(&self, cluster_name: &str, algo: &str) -> Arc<dyn LoadBalancer> {
         // Fast path: check read lock.
         {
             let cache = self.lb_cache.read().await;

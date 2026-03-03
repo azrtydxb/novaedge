@@ -796,8 +796,7 @@ impl DataplaneControl for DataplaneService {
                 }
             } else {
                 // Lazily initialize the route client for BGP/OSPF VIPs.
-                let mut client =
-                    vip::routing::RouteClient::new("unix:///run/novaroute.sock");
+                let mut client = vip::routing::RouteClient::new("unix:///run/novaroute.sock");
                 if let Err(e) = client.connect().await {
                     warn!(error = %e, "Failed to connect route client");
                 } else if let Err(e) = client.advertise_vip(ip).await {
@@ -979,10 +978,8 @@ impl DataplaneControl for DataplaneService {
                         );
                     }
                     // Check if this is an agent SPIFFE ID and log its role.
-                    let agent_id = mesh::spiffe::SpiffeId::agent(
-                        &spiffe_id.trust_domain,
-                        "dataplane",
-                    );
+                    let agent_id =
+                        mesh::spiffe::SpiffeId::agent(&spiffe_id.trust_domain, "dataplane");
                     if spiffe_id.matches_pattern(&agent_id.to_uri()) {
                         debug!("SPIFFE ID matches agent pattern");
                     }
@@ -1062,11 +1059,7 @@ impl DataplaneControl for DataplaneService {
                 info!(trust_domain = %trust_domain, "Mesh authorization policy configured");
 
                 // Validate the policy by checking a sample workload identity.
-                let sample_id = mesh::spiffe::SpiffeId::workload(
-                    trust_domain,
-                    "default",
-                    "sample",
-                );
+                let sample_id = mesh::spiffe::SpiffeId::workload(trust_domain, "default", "sample");
                 let result = authz.check(&sample_id, 80);
                 debug!(
                     sample_source = %sample_id,
@@ -1274,10 +1267,9 @@ impl DataplaneControl for DataplaneService {
                 // We clone the active links for the selection check.
                 let active_owned: Vec<sdwan::link::WANLink> =
                     active.iter().map(|l| (*l).clone()).collect();
-                if let Some(selected) = sdwan::path_selection::PathSelector::select(
-                    &active_owned,
-                    &default_policy,
-                ) {
+                if let Some(selected) =
+                    sdwan::path_selection::PathSelector::select(&active_owned, &default_policy)
+                {
                     debug!(
                         selected_link = %selected.name,
                         strategy = ?default_policy.strategy,
@@ -1627,11 +1619,7 @@ impl DataplaneControl for DataplaneService {
         let wg_mgr = self.wireguard_manager.lock().unwrap();
         let wg_tunnels = wg_mgr.tunnel_count();
         let wg_active = wg_mgr.is_active();
-        debug!(
-            tunnels = wg_tunnels,
-            active = wg_active,
-            "WireGuard status"
-        );
+        debug!(tunnels = wg_tunnels, active = wg_active, "WireGuard status");
         drop(wg_mgr);
 
         let map_sizes = vec![

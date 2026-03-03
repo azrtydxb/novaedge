@@ -112,9 +112,17 @@ impl ProxyHandler {
         // For WebSocket, we need the original hyper request for upgrade.
         // Do early route/LB resolution so we can branch.
         if is_websocket {
-            let (route, backend_addr, upstream_uri) = match self.resolve_route_and_backend(
-                &method, &path, &host, &headers, query_string.as_deref(), client_addr,
-            ).await {
+            let (route, backend_addr, upstream_uri) = match self
+                .resolve_route_and_backend(
+                    &method,
+                    &path,
+                    &host,
+                    &headers,
+                    query_string.as_deref(),
+                    client_addr,
+                )
+                .await
+            {
                 Ok(resolved) => resolved,
                 Err(resp) => return Ok(resp),
             };
@@ -129,10 +137,7 @@ impl ProxyHandler {
         const MAX_BODY_SIZE: u64 = 10 * 1024 * 1024;
 
         // For methods that don't carry a body, skip collection entirely.
-        let skip_body = matches!(
-            method.as_str(),
-            "GET" | "HEAD" | "DELETE" | "OPTIONS"
-        );
+        let skip_body = matches!(method.as_str(), "GET" | "HEAD" | "DELETE" | "OPTIONS");
 
         let body_bytes = if skip_body {
             drop(req);
@@ -197,7 +202,10 @@ impl ProxyHandler {
     ) -> hyper::Response<Full<Bytes>> {
         let ejected = self.outlier_detector.ejected_count();
         if ejected > 0 {
-            debug!(ejected_backends = ejected, "Outlier detector: backends currently ejected");
+            debug!(
+                ejected_backends = ejected,
+                "Outlier detector: backends currently ejected"
+            );
         }
 
         // Match route (with query param support).
@@ -466,15 +474,11 @@ impl ProxyHandler {
             path.to_string()
         };
 
-        let query_suffix = query_string
-            .map(|q| format!("?{q}"))
-            .unwrap_or_default();
+        let query_suffix = query_string.map(|q| format!("?{q}")).unwrap_or_default();
         let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
 
         // Build upstream request.
-        let mut upstream_req = hyper::Request::builder()
-            .method(method)
-            .uri(&upstream_uri);
+        let mut upstream_req = hyper::Request::builder().method(method).uri(&upstream_uri);
 
         for (key, value) in headers {
             if key.eq_ignore_ascii_case("host") {
@@ -630,10 +634,7 @@ impl ProxyHandler {
                     && !self.error_pages.is_empty()
                 {
                     if let Some(error_page) = find_error_page(status.as_u16(), &self.error_pages) {
-                        debug!(
-                            status = status.as_u16(),
-                            "Serving custom error page"
-                        );
+                        debug!(status = status.as_u16(), "Serving custom error page");
                         resp = resp.header("Content-Type", error_page.content_type.as_str());
                         return resp
                             .body(Full::new(Bytes::from(error_page.body.clone())))
@@ -743,7 +744,10 @@ impl ProxyHandler {
             .endpoints
             .iter()
             .map(|e| lb::Backend {
-                addr: e.address.parse().unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+                addr: e
+                    .address
+                    .parse()
+                    .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
                 port: e.port as u16,
                 weight: e.weight as u16,
                 healthy: e.healthy,
@@ -783,9 +787,7 @@ impl ProxyHandler {
         } else {
             path.to_string()
         };
-        let query_suffix = query_string
-            .map(|q| format!("?{q}"))
-            .unwrap_or_default();
+        let query_suffix = query_string.map(|q| format!("?{q}")).unwrap_or_default();
         let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
 
         Ok((route, backend_addr, upstream_uri))
@@ -1022,7 +1024,10 @@ mod tests {
         }
     }
 
-    fn test_handler(router: Arc<std::sync::RwLock<Router>>, cfg: Arc<RuntimeConfig>) -> ProxyHandler {
+    fn test_handler(
+        router: Arc<std::sync::RwLock<Router>>,
+        cfg: Arc<RuntimeConfig>,
+    ) -> ProxyHandler {
         ProxyHandler::new(
             router,
             cfg,

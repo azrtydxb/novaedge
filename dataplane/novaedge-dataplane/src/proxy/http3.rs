@@ -98,10 +98,9 @@ impl Http3Server {
                     .map_err(|e| format!("add client CA cert: {e}"))?;
             }
 
-            let verifier =
-                rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
-                    .build()
-                    .map_err(|e| format!("build client verifier: {e}"))?;
+            let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(root_store))
+                .build()
+                .map_err(|e| format!("build client verifier: {e}"))?;
 
             rustls::ServerConfig::builder()
                 .with_client_cert_verifier(verifier)
