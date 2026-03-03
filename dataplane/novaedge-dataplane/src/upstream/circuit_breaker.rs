@@ -37,6 +37,9 @@ pub struct CircuitBreakerConfig {
     pub success_threshold: u32,
     /// How long to stay open before transitioning to half-open.
     pub open_duration: Duration,
+    /// Maximum number of requests allowed through in half-open state.
+    /// Once exhausted, further requests are rejected until the circuit closes.
+    pub half_open_max_requests: u32,
 }
 
 impl Default for CircuitBreakerConfig {
@@ -45,6 +48,7 @@ impl Default for CircuitBreakerConfig {
             failure_threshold: 5,
             success_threshold: 3,
             open_duration: Duration::from_secs(30),
+            half_open_max_requests: 1,
         }
     }
 }
@@ -57,17 +61,21 @@ pub struct CircuitBreaker {
     /// Timestamp (milliseconds since UNIX epoch) of the last failure that
     /// caused the circuit to open.
     last_failure_ms: AtomicU64,
+    /// Remaining probe permits in half-open state.
+    half_open_permits: AtomicU32,
     config: CircuitBreakerConfig,
 }
 
 impl CircuitBreaker {
     /// Create a new circuit breaker in the closed state.
     pub fn new(config: CircuitBreakerConfig) -> Self {
+        let half_open = config.half_open_max_requests.max(1);
         Self {
             state: AtomicU8::new(CircuitState::Closed as u8),
             failures: AtomicU32::new(0),
             successes: AtomicU32::new(0),
             last_failure_ms: AtomicU64::new(0),
+            half_open_permits: AtomicU32::new(half_open),
             config,
         }
     }
@@ -82,16 +90,29 @@ impl CircuitBreaker {
                 let now_ms = current_time_ms();
                 let last = self.last_failure_ms.load(Ordering::Relaxed);
                 if now_ms.saturating_sub(last) >= self.config.open_duration.as_millis() as u64 {
-                    // Transition to half-open.
+                    // Transition to half-open with limited probe permits.
+                    // The transition itself counts as the first probe, so set
+                    // remaining permits to (max - 1).
                     self.state
                         .store(CircuitState::HalfOpen as u8, Ordering::Release);
                     self.successes.store(0, Ordering::Relaxed);
+                    self.half_open_permits.store(
+                        self.config.half_open_max_requests.max(1).saturating_sub(1),
+                        Ordering::Relaxed,
+                    );
                     true
                 } else {
                     false
                 }
             }
-            CircuitState::HalfOpen => true,
+            CircuitState::HalfOpen => {
+                // Limit probes: decrement permits atomically.
+                self.half_open_permits
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |p| {
+                        if p > 0 { Some(p - 1) } else { None }
+                    })
+                    .is_ok()
+            }
         }
     }
 
@@ -161,6 +182,8 @@ impl CircuitBreaker {
         self.failures.store(0, Ordering::Relaxed);
         self.successes.store(0, Ordering::Relaxed);
         self.last_failure_ms.store(0, Ordering::Relaxed);
+        self.half_open_permits
+            .store(self.config.half_open_max_requests.max(1), Ordering::Relaxed);
     }
 }
 
@@ -181,6 +204,7 @@ mod tests {
             failure_threshold: 3,
             success_threshold: 2,
             open_duration: Duration::from_millis(100),
+            half_open_max_requests: 1,
         })
     }
 
@@ -261,6 +285,33 @@ mod tests {
         cb.reset();
         assert_eq!(cb.state(), CircuitState::Closed);
         assert!(cb.allow_request());
+    }
+
+    #[test]
+    fn half_open_probe_limiting() {
+        let cb = CircuitBreaker::new(CircuitBreakerConfig {
+            failure_threshold: 2,
+            success_threshold: 2,
+            open_duration: Duration::from_millis(50),
+            half_open_max_requests: 2,
+        });
+        // Trip the circuit.
+        cb.record_failure();
+        cb.record_failure();
+        assert_eq!(cb.state(), CircuitState::Open);
+
+        // Wait for open duration.
+        std::thread::sleep(Duration::from_millis(80));
+
+        // First probe should be allowed (transitions to half-open).
+        assert!(cb.allow_request());
+        assert_eq!(cb.state(), CircuitState::HalfOpen);
+
+        // Second probe should be allowed (2 permits configured).
+        assert!(cb.allow_request());
+
+        // Third probe should be rejected (permits exhausted).
+        assert!(!cb.allow_request());
     }
 
     #[test]

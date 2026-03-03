@@ -247,6 +247,8 @@ impl DataplaneService {
             5 => "ring-hash",
             6 => "maglev",
             7 => "random",
+            8 => "source-hash",
+            9 => "sticky",
             _ => "round-robin",
         }
     }
@@ -306,6 +308,20 @@ impl DataplaneService {
             .map(|b| (b.cluster_name.clone(), b.weight))
             .collect();
 
+        // Extract retry config.
+        let (retry_max, retry_per_try_timeout_ms, retry_on, retry_backoff_base_ms) = route
+            .retry
+            .as_ref()
+            .map(|r| {
+                (
+                    r.max_retries,
+                    r.per_try_timeout_ms,
+                    r.retry_on.clone(),
+                    r.backoff_base_ms,
+                )
+            })
+            .unwrap_or_default();
+
         RouteState {
             name: route.name.clone(),
             gateway_ref: route.gateway_ref.clone(),
@@ -323,36 +339,108 @@ impl DataplaneService {
             },
             add_headers: route.add_headers.clone(),
             middleware_refs: route.middleware_refs.clone(),
+            mirror_cluster: if route.mirror_cluster.is_empty() {
+                None
+            } else {
+                Some(route.mirror_cluster.clone())
+            },
+            mirror_percent: route.mirror_percent,
+            default_backend: if route.default_backend.is_empty() {
+                None
+            } else {
+                Some(route.default_backend.clone())
+            },
+            retry_max,
+            retry_per_try_timeout_ms,
+            retry_on,
+            retry_backoff_base_ms,
+            hedge_delay_ms: route.hedge_delay_ms,
+            hedge_max_requests: route.hedge_max_requests,
         }
     }
 
     /// Convert a proto ClusterConfig to our ClusterState.
     fn cluster_from_proto(cluster: &proto::ClusterConfig) -> ClusterState {
         // Extract session affinity config.
-        let (sa_type, sa_cookie) = cluster
+        let (sa_type, sa_cookie, sa_header) = cluster
             .session_affinity
             .as_ref()
-            .map(|sa| (sa.r#type.clone(), sa.cookie_name.clone()))
+            .map(|sa| (sa.r#type.clone(), sa.cookie_name.clone(), sa.header_name.clone()))
             .unwrap_or_default();
 
         // Extract outlier detection config.
-        let (od_5xx, od_dur, od_pct) = cluster
-            .outlier_detection
+        let (od_5xx, od_dur, od_pct, od_interval, od_sr_min_hosts, od_sr_min_requests, od_sr_stdev) =
+            cluster
+                .outlier_detection
+                .as_ref()
+                .map(|od| {
+                    (
+                        od.consecutive_5xx_threshold,
+                        od.base_ejection_duration_ms,
+                        od.max_ejection_percent,
+                        od.interval_ms,
+                        od.success_rate_min_hosts,
+                        od.success_rate_min_requests,
+                        od.success_rate_stdev_factor,
+                    )
+                })
+                .unwrap_or_default();
+
+        // Extract slow start config.
+        let (ss_window, ss_aggression) = cluster
+            .slow_start
             .as_ref()
-            .map(|od| {
+            .map(|ss| (ss.window_ms, ss.aggression))
+            .unwrap_or((0, 1.0));
+
+        // Extract circuit breaker config.
+        let (cb_failure, cb_success, cb_open_dur, cb_half_open_max) = cluster
+            .circuit_breaker
+            .as_ref()
+            .map(|cb| {
                 (
-                    od.consecutive_5xx_threshold,
-                    od.base_ejection_duration_ms,
-                    od.max_ejection_percent,
+                    cb.consecutive_errors,
+                    cb.success_threshold,
+                    cb.open_duration_ms,
+                    cb.half_open_max_requests,
                 )
             })
             .unwrap_or_default();
 
-        // Extract slow start config.
-        let ss_window = cluster
-            .slow_start
+        // Extract connection pool config.
+        let (pool_max_conn, pool_max_idle, pool_idle_timeout, pool_connect_timeout) = cluster
+            .connection_pool
             .as_ref()
-            .map(|ss| ss.window_ms)
+            .map(|cp| {
+                (
+                    cp.max_connections,
+                    cp.max_idle,
+                    cp.idle_timeout_ms,
+                    cp.connect_timeout_ms,
+                )
+            })
+            .unwrap_or_default();
+
+        // Extract backend TLS config.
+        // TLS is considered enabled when backend_tls is present.
+        let (tls_enabled, tls_skip_verify, tls_ca, tls_sni) = cluster
+            .backend_tls
+            .as_ref()
+            .map(|tls| {
+                (
+                    true,
+                    tls.insecure_skip_verify,
+                    tls.ca_pem.clone(),
+                    String::new(), // SNI not yet in proto; will use cluster name
+                )
+            })
+            .unwrap_or_default();
+
+        // Extract upstream proxy protocol config.
+        let (pp_enabled, pp_version) = cluster
+            .upstream_proxy_protocol
+            .as_ref()
+            .map(|pp| (pp.enabled, pp.version))
             .unwrap_or_default();
 
         ClusterState {
@@ -371,6 +459,8 @@ impl DataplaneService {
                         Some(e.zone.clone())
                     },
                     priority: e.priority,
+                    draining: false,
+                    drain_start: None,
                 })
                 .collect(),
             lb_algorithm: Self::lb_algo_str(cluster.lb_algorithm).to_string(),
@@ -381,10 +471,62 @@ impl DataplaneService {
                 .unwrap_or_default(),
             session_affinity_type: sa_type,
             session_affinity_cookie: sa_cookie,
+            session_affinity_header: sa_header,
             outlier_consecutive_5xx: od_5xx,
             outlier_ejection_duration_ms: od_dur,
             outlier_max_ejection_pct: od_pct,
+            outlier_interval_ms: od_interval,
+            outlier_sr_min_hosts: od_sr_min_hosts,
+            outlier_sr_min_requests: od_sr_min_requests,
+            outlier_sr_stdev_factor: od_sr_stdev,
             slow_start_window_ms: ss_window,
+            slow_start_aggression: ss_aggression,
+            protocol: cluster.protocol.clone(),
+            upstream_proxy_protocol_enabled: pp_enabled,
+            upstream_proxy_protocol_version: pp_version,
+            tls_enabled,
+            tls_insecure_skip_verify: tls_skip_verify,
+            tls_ca_pem: tls_ca,
+            tls_server_name: tls_sni,
+            cb_failure_threshold: cb_failure,
+            cb_success_threshold: cb_success,
+            cb_open_duration_ms: cb_open_dur,
+            cb_half_open_max_requests: cb_half_open_max,
+            pool_max_connections: pool_max_conn,
+            pool_max_idle: pool_max_idle,
+            pool_idle_timeout_ms: pool_idle_timeout,
+            pool_connect_timeout_ms: pool_connect_timeout,
+            panic_threshold_percent: cluster.panic_threshold_percent,
+            max_requests_per_connection: cluster.max_requests_per_connection,
+            request_queue_depth: cluster.request_queue_depth,
+            request_queue_timeout_ms: cluster.request_queue_timeout_ms,
+            subset_size: cluster.subset_size,
+            remote_endpoints: cluster
+                .remote_endpoint_groups
+                .iter()
+                .map(|g| crate::config::RemoteEndpointGroup {
+                    cluster_name: g.cluster_name.clone(),
+                    endpoints: g
+                        .endpoints
+                        .iter()
+                        .map(|e| crate::config::EndpointState {
+                            address: e.ip.clone(),
+                            port: e.port,
+                            weight: e.weight,
+                            healthy: e.healthy,
+                            zone: if e.zone.is_empty() {
+                                None
+                            } else {
+                                Some(e.zone.clone())
+                            },
+                            priority: e.priority,
+                            draining: false,
+                            drain_start: None,
+                        })
+                        .collect(),
+                    priority: g.priority,
+                })
+                .collect(),
         }
     }
 }
@@ -1830,6 +1972,11 @@ mod tests {
                 methods: vec![],
                 rewrite_path: String::new(),
                 add_headers: std::collections::HashMap::new(),
+                mirror_cluster: String::new(),
+                mirror_percent: 0,
+                default_backend: String::new(),
+                hedge_delay_ms: 0,
+                hedge_max_requests: 0,
             }],
             clusters: vec![proto::ClusterConfig {
                 name: "cluster-1".into(),
@@ -1850,6 +1997,15 @@ mod tests {
                 session_affinity: None,
                 outlier_detection: None,
                 slow_start: None,
+                protocol: String::new(),
+                upstream_proxy_protocol: None,
+                health_check_path: String::new(),
+                panic_threshold_percent: 0,
+                max_requests_per_connection: 0,
+                request_queue_depth: 0,
+                request_queue_timeout_ms: 0,
+                subset_size: 0,
+                remote_endpoint_groups: vec![],
             }],
             vips: vec![],
             l4_listeners: vec![],
@@ -1945,6 +2101,11 @@ mod tests {
                 methods: vec![],
                 rewrite_path: String::new(),
                 add_headers: std::collections::HashMap::new(),
+                mirror_cluster: String::new(),
+                mirror_percent: 0,
+                default_backend: String::new(),
+                hedge_delay_ms: 0,
+                hedge_max_requests: 0,
             }),
         });
         let resp = svc.upsert_route(req).await.unwrap();
@@ -1983,6 +2144,15 @@ mod tests {
                 session_affinity: None,
                 outlier_detection: None,
                 slow_start: None,
+                protocol: String::new(),
+                upstream_proxy_protocol: None,
+                health_check_path: String::new(),
+                panic_threshold_percent: 0,
+                max_requests_per_connection: 0,
+                request_queue_depth: 0,
+                request_queue_timeout_ms: 0,
+                subset_size: 0,
+                remote_endpoint_groups: vec![],
             }),
         });
         let resp = svc.upsert_cluster(req).await.unwrap();

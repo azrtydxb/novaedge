@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -14,9 +15,10 @@ use super::response::{apply_header_actions, find_error_page, ErrorPage, HeaderAc
 use super::router::Router;
 use crate::config::RuntimeConfig;
 use crate::lb;
-use crate::upstream::circuit_breaker::CircuitBreaker;
-use crate::upstream::outlier::OutlierDetector;
+use crate::upstream::circuit_breaker::{CircuitBreaker, CircuitBreakerConfig};
+use crate::upstream::outlier::{OutlierConfig, OutlierDetector};
 use crate::upstream::pool::ConnectionPool;
+use crate::upstream::retry_budget::RetryBudgetTracker;
 
 /// Proxy handler that routes incoming HTTP requests to upstream backends.
 pub struct ProxyHandler {
@@ -28,10 +30,18 @@ pub struct ProxyHandler {
     >,
     /// Per-cluster circuit breakers.
     circuit_breakers: Arc<tokio::sync::RwLock<HashMap<String, Arc<CircuitBreaker>>>>,
-    /// Outlier detector for passive failure tracking.
-    outlier_detector: Arc<OutlierDetector>,
+    /// Per-cluster outlier detectors for passive failure tracking.
+    outlier_detectors: Arc<tokio::sync::RwLock<HashMap<String, Arc<OutlierDetector>>>>,
     /// Connection pool for concurrency limiting.
     connection_pool: Arc<ConnectionPool>,
+    /// Slow start tracker for newly added/recovered endpoints.
+    slow_start_tracker: Arc<lb::slow_start::SlowStartTracker>,
+    /// Retry budget tracker to prevent retry storms.
+    retry_budget: Arc<RetryBudgetTracker>,
+    /// Global active request counter for load shedding.
+    active_requests: Arc<AtomicU32>,
+    /// Maximum concurrent active requests before shedding (0 = unlimited).
+    max_active_requests: u32,
     /// Custom error pages for specific HTTP status codes.
     error_pages: Vec<ErrorPage>,
     /// Response header actions applied to all upstream responses.
@@ -43,7 +53,6 @@ impl ProxyHandler {
     pub fn new(
         router: Arc<std::sync::RwLock<Router>>,
         config: Arc<RuntimeConfig>,
-        outlier_detector: Arc<OutlierDetector>,
         connection_pool: Arc<ConnectionPool>,
     ) -> Self {
         let client =
@@ -55,14 +64,20 @@ impl ProxyHandler {
             config,
             client,
             circuit_breakers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-            outlier_detector,
+            outlier_detectors: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             connection_pool,
+            slow_start_tracker: Arc::new(lb::slow_start::SlowStartTracker::new()),
+            retry_budget: Arc::new(RetryBudgetTracker::new()),
+            active_requests: Arc::new(AtomicU32::new(0)),
+            max_active_requests: 0,
             error_pages: Vec::new(),
             response_header_actions: Vec::new(),
         }
     }
 
-    /// Get or create a circuit breaker for the given cluster.
+    /// Get or create a circuit breaker for the given cluster, using per-cluster
+    /// config from the ClusterState (failure threshold, success threshold,
+    /// open duration).
     async fn get_circuit_breaker(&self, cluster_name: &str) -> Arc<CircuitBreaker> {
         // Fast path: check read lock.
         {
@@ -71,14 +86,90 @@ impl ProxyHandler {
                 return cb.clone();
             }
         }
-        // Slow path: acquire write lock and insert.
+        // Slow path: acquire write lock and insert with cluster-specific config.
+        let cb_config = self
+            .config
+            .get_cluster(cluster_name)
+            .map(|c| CircuitBreakerConfig {
+                failure_threshold: if c.cb_failure_threshold > 0 {
+                    c.cb_failure_threshold
+                } else {
+                    5
+                },
+                success_threshold: if c.cb_success_threshold > 0 {
+                    c.cb_success_threshold
+                } else {
+                    3
+                },
+                open_duration: if c.cb_open_duration_ms > 0 {
+                    std::time::Duration::from_millis(c.cb_open_duration_ms)
+                } else {
+                    std::time::Duration::from_secs(30)
+                },
+                half_open_max_requests: if c.cb_half_open_max_requests > 0 {
+                    c.cb_half_open_max_requests
+                } else {
+                    1
+                },
+            })
+            .unwrap_or_default();
+
         let mut cbs = self.circuit_breakers.write().await;
         cbs.entry(cluster_name.to_string())
-            .or_insert_with(|| {
-                Arc::new(CircuitBreaker::new(
-                    crate::upstream::circuit_breaker::CircuitBreakerConfig::default(),
-                ))
+            .or_insert_with(|| Arc::new(CircuitBreaker::new(cb_config)))
+            .clone()
+    }
+
+    /// Get or create a per-cluster outlier detector, using config from ClusterState.
+    async fn get_outlier_detector(&self, cluster_name: &str) -> Arc<OutlierDetector> {
+        // Fast path: check read lock.
+        {
+            let ods = self.outlier_detectors.read().await;
+            if let Some(od) = ods.get(cluster_name) {
+                return od.clone();
+            }
+        }
+        // Slow path: create with cluster-specific config.
+        let od_config = self
+            .config
+            .get_cluster(cluster_name)
+            .map(|c| OutlierConfig {
+                consecutive_errors: if c.outlier_consecutive_5xx > 0 {
+                    c.outlier_consecutive_5xx
+                } else {
+                    5
+                },
+                ejection_duration: if c.outlier_ejection_duration_ms > 0 {
+                    std::time::Duration::from_millis(c.outlier_ejection_duration_ms)
+                } else {
+                    std::time::Duration::from_secs(30)
+                },
+                max_ejection_percent: if c.outlier_max_ejection_pct > 0 {
+                    c.outlier_max_ejection_pct as f64
+                } else {
+                    50.0
+                },
+                sr_min_hosts: if c.outlier_sr_min_hosts > 0 {
+                    c.outlier_sr_min_hosts
+                } else {
+                    5
+                },
+                sr_min_requests: if c.outlier_sr_min_requests > 0 {
+                    c.outlier_sr_min_requests
+                } else {
+                    100
+                },
+                sr_stdev_factor: if c.outlier_sr_stdev_factor > 0.0 {
+                    c.outlier_sr_stdev_factor
+                } else {
+                    1.9
+                },
             })
+            .unwrap_or_default();
+
+        let mut ods = self.outlier_detectors.write().await;
+        ods.entry(cluster_name.to_string())
+            .or_insert_with(|| Arc::new(OutlierDetector::new(od_config)))
             .clone()
     }
 
@@ -201,13 +292,29 @@ impl ProxyHandler {
         body_bytes: Bytes,
         client_addr: SocketAddr,
     ) -> hyper::Response<Full<Bytes>> {
-        let ejected = self.outlier_detector.ejected_count();
-        if ejected > 0 {
-            debug!(
-                ejected_backends = ejected,
-                "Outlier detector: backends currently ejected"
-            );
+        // Load shedding: reject requests if active count exceeds limit.
+        if self.max_active_requests > 0 {
+            let current = self.active_requests.fetch_add(1, Ordering::Relaxed);
+            if current >= self.max_active_requests {
+                self.active_requests.fetch_sub(1, Ordering::Relaxed);
+                warn!(
+                    active = current,
+                    max = self.max_active_requests,
+                    "Load shedding: rejecting request"
+                );
+                return hyper::Response::builder()
+                    .status(503)
+                    .header("Retry-After", "1")
+                    .body(Full::new(Bytes::from("Service Overloaded")))
+                    .unwrap();
+            }
+        } else {
+            self.active_requests.fetch_add(1, Ordering::Relaxed);
         }
+
+        let _load_shed_guard = LoadShedGuard {
+            counter: &self.active_requests,
+        };
 
         // Match route (with query param support).
         let matched_route = {
@@ -329,6 +436,7 @@ impl ProxyHandler {
         let backends: Vec<lb::Backend> = cluster
             .endpoints
             .iter()
+            .filter(|e| !e.draining)
             .map(|e| lb::Backend {
                 addr: e
                     .address
@@ -342,21 +450,63 @@ impl ProxyHandler {
             })
             .collect();
 
-        // Extract sticky cookie if session affinity is configured.
-        let sticky_cookie = if cluster.session_affinity_type == "cookie"
-            && !cluster.session_affinity_cookie.is_empty()
-        {
-            extract_cookie(headers, &cluster.session_affinity_cookie)
-        } else {
-            None
+        // Session affinity: extract sticky key and optionally override LB algorithm.
+        let (sticky_cookie, effective_lb_algo) = match cluster.session_affinity_type.as_str() {
+            "cookie" if !cluster.session_affinity_cookie.is_empty() => {
+                let cookie = extract_cookie(headers, &cluster.session_affinity_cookie);
+                // Cookie affinity forces sticky LB algorithm.
+                (cookie, "sticky".to_string())
+            }
+            "header" if !cluster.session_affinity_header.is_empty() => {
+                // Use header value as sticky key via source-hash.
+                let header_val = headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(&cluster.session_affinity_header))
+                    .map(|(_, v)| v.clone());
+                (header_val, "source-hash".to_string())
+            }
+            "source_ip" => {
+                // Source IP affinity uses source-hash (already hashes by src_ip).
+                (None, "source-hash".to_string())
+            }
+            _ => (None, cluster.lb_algorithm.clone()),
         };
 
+        // Apply slow start weight adjustment to backends.
+        let backends: Vec<lb::Backend> = if cluster.slow_start_window_ms > 0 {
+            let window = std::time::Duration::from_millis(cluster.slow_start_window_ms);
+            let aggression = if cluster.slow_start_aggression > 0.0 {
+                cluster.slow_start_aggression
+            } else {
+                1.0
+            };
+            backends
+                .into_iter()
+                .map(|mut b| {
+                    let key = format!("{}:{}", b.addr, b.port);
+                    self.slow_start_tracker.register(&key);
+                    let multiplier =
+                        self.slow_start_tracker.weight_multiplier(&key, window, aggression);
+                    b.weight = ((b.weight as f64) * multiplier).max(1.0) as u16;
+                    b
+                })
+                .collect()
+        } else {
+            backends
+        };
+
+        // Set zone from config for zone-aware routing.
+        let local_zone = self.config.local_zone().await;
         let ctx = lb::RequestContext {
             src_ip: client_addr.ip(),
             src_port: client_addr.port(),
             dst_port: 0,
             sticky_cookie,
-            zone: None,
+            zone: if local_zone.is_empty() {
+                None
+            } else {
+                Some(local_zone)
+            },
         };
 
         let cb = self.get_circuit_breaker(&cluster.name).await;
@@ -372,17 +522,55 @@ impl ProxyHandler {
                 .unwrap();
         }
 
-        let healthy_backends: Vec<&lb::Backend> = backends
+        // Apply priority-based failover: only consider healthy backends in
+        // the lowest priority group.
+        let priority_filtered: Vec<lb::Backend> = {
+            let priority_indices = lb::filter_by_priority(&backends);
+            if priority_indices.is_empty() {
+                backends.clone()
+            } else {
+                priority_indices.iter().map(|&i| backends[i].clone()).collect()
+            }
+        };
+
+        // Per-cluster outlier detection.
+        let outlier_detector = self.get_outlier_detector(&cluster.name).await;
+        let healthy_backends: Vec<&lb::Backend> = priority_filtered
             .iter()
             .filter(|b| {
                 let addr = SocketAddr::new(b.addr, b.port);
-                !self.outlier_detector.is_ejected(&addr)
+                !outlier_detector.is_ejected(&addr)
             })
             .collect();
 
+        // Panic mode threshold: if healthy percentage drops below threshold,
+        // ignore health/outlier status and use all backends in the priority group.
+        let total_in_priority = priority_filtered.len();
+        let healthy_count = healthy_backends.len();
+        let panic_threshold = cluster.panic_threshold_percent as usize;
+        let in_panic_mode = panic_threshold > 0
+            && total_in_priority > 0
+            && (healthy_count * 100 / total_in_priority) < panic_threshold;
+
+        let effective_backends = if in_panic_mode {
+            warn!(
+                cluster = %cluster.name,
+                healthy = healthy_count,
+                total = total_in_priority,
+                threshold = panic_threshold,
+                "Panic mode: healthy% below threshold, using all backends"
+            );
+            priority_filtered.clone()
+        } else if healthy_backends.is_empty() {
+            // All ejected — fall back to full backend pool as last resort.
+            priority_filtered.clone()
+        } else {
+            healthy_backends.iter().map(|b| (*b).clone()).collect()
+        };
+
         let balancer = self
             .config
-            .get_or_create_lb(&cluster.name, &cluster.lb_algorithm)
+            .get_or_create_lb(&cluster.name, &effective_lb_algo)
             .await;
         debug!(
             cluster = %cluster.name,
@@ -390,284 +578,469 @@ impl ProxyHandler {
             "Using load balancer"
         );
 
-        let (backend_idx, use_all) = if healthy_backends.is_empty() {
-            match balancer.select(&ctx, &backends) {
-                Some(idx) => (idx, true),
-                None => {
-                    warn!(
-                        cluster = %cluster.name,
-                        "No healthy endpoints for cluster"
-                    );
-                    cb.record_failure();
-                    return hyper::Response::builder()
-                        .status(503)
-                        .header("X-Route", route.name.as_str())
-                        .body(Full::new(Bytes::from("No healthy upstream")))
-                        .unwrap();
+        // Retry configuration from RouteState.
+        let route_state = self.config.get_route(&route.name);
+        let retry_max = route_state.as_ref().map(|r| r.retry_max).unwrap_or(0) as usize;
+        let retry_on: Vec<String> = route_state
+            .as_ref()
+            .map(|r| r.retry_on.clone())
+            .unwrap_or_default();
+        let retry_backoff_base_ms = route_state
+            .as_ref()
+            .map(|r| {
+                if r.retry_backoff_base_ms > 0 {
+                    r.retry_backoff_base_ms
+                } else {
+                    25
                 }
-            }
-        } else {
-            let filtered: Vec<lb::Backend> =
-                healthy_backends.iter().map(|b| (*b).clone()).collect();
-            match balancer.select(&ctx, &filtered) {
-                Some(idx) => {
-                    let selected_backend = &filtered[idx];
-                    let original_idx = backends
-                        .iter()
-                        .position(|b| {
-                            b.addr == selected_backend.addr && b.port == selected_backend.port
-                        })
-                        .unwrap_or(idx);
-                    (original_idx, false)
-                }
-                None => {
-                    warn!(
-                        cluster = %cluster.name,
-                        "No healthy endpoints for cluster"
-                    );
-                    cb.record_failure();
-                    return hyper::Response::builder()
-                        .status(503)
-                        .header("X-Route", route.name.as_str())
-                        .body(Full::new(Bytes::from("No healthy upstream")))
-                        .unwrap();
-                }
-            }
-        };
-        if use_all {
-            warn!(
-                cluster = %cluster.name,
-                "Panic mode: all backends ejected, using unfiltered pool"
-            );
-        }
+            })
+            .unwrap_or(25);
 
-        let selected = &backends[backend_idx];
-        let backend_addr = SocketAddr::new(selected.addr, selected.port);
-
-        let active = self.connection_pool.active_count(&backend_addr);
-        if active > 0 {
-            debug!(
-                backend = %backend_addr,
-                active_connections = active,
-                "Connection pool status before acquire"
-            );
-        }
-
-        let pool_guard = match self.connection_pool.acquire(backend_addr).await {
-            Ok(guard) => Some(guard),
-            Err(e) => {
-                warn!(
-                    backend = %backend_addr,
-                    error = %e,
-                    "Connection pool limit reached"
-                );
-                return hyper::Response::builder()
-                    .status(503)
-                    .header("X-Route", route.name.as_str())
-                    .body(Full::new(Bytes::from("Connection pool exhausted")))
-                    .unwrap();
-            }
-        };
+        // Hedging configuration from RouteState.
+        let hedge_delay_ms = route_state.as_ref().map(|r| r.hedge_delay_ms).unwrap_or(0);
+        let _hedge_max_requests = route_state
+            .as_ref()
+            .map(|r| r.hedge_max_requests)
+            .unwrap_or(0);
 
         let target_path = if let Some(ref rewrite) = route.rewrite_path {
             rewrite.clone()
         } else {
             path.to_string()
         };
-
         let query_suffix = query_string.map(|q| format!("?{q}")).unwrap_or_default();
-        let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
 
-        // Build upstream request.
-        let mut upstream_req = hyper::Request::builder().method(method).uri(&upstream_uri);
+        // Attempt loop: initial attempt + up to retry_max retries.
+        let max_attempts = retry_max + 1;
+        let mut final_status = hyper::StatusCode::BAD_GATEWAY;
+        let mut final_resp_headers: Vec<(String, String)> = Vec::new();
+        let mut final_body = Bytes::from("Bad Gateway");
+        let mut final_backend_addr =
+            SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
+        let mut final_backend_idx: usize = 0;
+        let mut got_response = false;
 
-        for (key, value) in headers {
-            if key.eq_ignore_ascii_case("host") {
-                continue;
-            }
-            if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
-                if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
-                    upstream_req = upstream_req.header(name, val);
+        for attempt in 0..max_attempts {
+            if attempt == 0 {
+                // Record the initial request for retry budget tracking.
+                self.retry_budget.record_request(&cluster.name);
+            } else {
+                // Check retry budget before retrying.
+                if !self.retry_budget.allow_retry(&cluster.name) {
+                    debug!(
+                        cluster = %cluster.name,
+                        attempt,
+                        "Retry budget exhausted, using last response"
+                    );
+                    break;
                 }
-            }
-        }
+                self.retry_budget.record_retry(&cluster.name);
 
-        upstream_req = upstream_req.header("Host", backend_addr.to_string());
-
-        for (key, value) in &route.add_headers {
-            if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
-                if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
-                    upstream_req = upstream_req.header(name, val);
-                }
-            }
-        }
-
-        let upstream_req = match upstream_req.body(Full::new(body_bytes)) {
-            Ok(r) => r,
-            Err(e) => {
-                warn!("Failed to build upstream request: {e}");
-                return hyper::Response::builder()
-                    .status(500)
-                    .body(Full::new(Bytes::from("Internal error")))
-                    .unwrap();
-            }
-        };
-
-        if let Some(ref guard) = pool_guard {
-            let wait_time = guard.acquired_at.elapsed();
-            if wait_time > std::time::Duration::from_millis(100) {
+                let backoff_ms =
+                    retry_backoff_base_ms.saturating_mul(1u64 << (attempt - 1).min(8));
                 debug!(
-                    backend = %guard.addr,
-                    wait_ms = wait_time.as_millis(),
-                    "Slow pool acquisition"
+                    attempt,
+                    backoff_ms,
+                    cluster = %cluster.name,
+                    "Retrying upstream request"
                 );
+                tokio::time::sleep(std::time::Duration::from_millis(backoff_ms)).await;
             }
-        }
 
-        let upstream_start = std::time::Instant::now();
-        let result = match self.client.request(upstream_req).await {
-            Ok(upstream_resp) => {
-                let status = upstream_resp.status();
-                let upstream_latency = upstream_start.elapsed();
-
-                if status.is_server_error() {
-                    cb.record_failure();
-                    self.outlier_detector.record_failure(backend_addr);
-                    balancer.report(backend_idx, upstream_latency, false);
-                } else {
-                    cb.record_success();
-                    self.outlier_detector.record_success(backend_addr);
-                    balancer.report(backend_idx, upstream_latency, true);
+            // Select backend.
+            let backend_idx = match balancer.select(&ctx, &effective_backends) {
+                Some(idx) => {
+                    let selected = &effective_backends[idx];
+                    backends
+                        .iter()
+                        .position(|b| b.addr == selected.addr && b.port == selected.port)
+                        .unwrap_or(idx)
                 }
-
-                let resp_headers: Vec<(String, String)> = upstream_resp
-                    .headers()
-                    .iter()
-                    .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
-                    .collect();
-
-                let body = match upstream_resp.into_body().collect().await {
-                    Ok(collected) => collected.to_bytes(),
-                    Err(e) => {
-                        warn!(backend = %backend_addr, error = %e, "Failed to read upstream response body");
+                None => {
+                    if !got_response {
+                        warn!(
+                            cluster = %cluster.name,
+                            "No healthy endpoints for cluster"
+                        );
                         cb.record_failure();
-                        self.outlier_detector.record_failure(backend_addr);
-                        balancer.report(backend_idx, upstream_start.elapsed(), false);
-                        self.connection_pool.release(backend_addr).await;
                         return hyper::Response::builder()
-                            .status(502)
+                            .status(503)
                             .header("X-Route", route.name.as_str())
-                            .body(Full::new(Bytes::from("Bad Gateway")))
+                            .body(Full::new(Bytes::from("No healthy upstream")))
+                            .unwrap();
+                    }
+                    break;
+                }
+            };
+
+            let selected = &backends[backend_idx];
+            let backend_addr = SocketAddr::new(selected.addr, selected.port);
+
+            // Pool acquire.
+            let _pool_guard = match self.connection_pool.acquire(backend_addr).await {
+                Ok(guard) => guard,
+                Err(e) => {
+                    warn!(
+                        backend = %backend_addr,
+                        error = %e,
+                        attempt,
+                        "Connection pool limit reached"
+                    );
+                    self.connection_pool.record_connection_failure(backend_addr).await;
+                    if attempt < max_attempts - 1
+                        && is_retryable_condition("connect-failure", &retry_on)
+                    {
+                        continue;
+                    }
+                    if !got_response {
+                        return hyper::Response::builder()
+                            .status(503)
+                            .header("X-Route", route.name.as_str())
+                            .body(Full::new(Bytes::from("Connection pool exhausted")))
+                            .unwrap();
+                    }
+                    break;
+                }
+            };
+
+            let upstream_uri = format!("http://{backend_addr}{target_path}{query_suffix}");
+
+            // Build upstream request.
+            let mut upstream_req_builder =
+                hyper::Request::builder().method(method).uri(&upstream_uri);
+
+            for (key, value) in headers {
+                if key.eq_ignore_ascii_case("host") {
+                    continue;
+                }
+                if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                    if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
+                        upstream_req_builder = upstream_req_builder.header(name, val);
+                    }
+                }
+            }
+
+            upstream_req_builder =
+                upstream_req_builder.header("Host", backend_addr.to_string());
+
+            for (key, value) in &route.add_headers {
+                if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                    if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
+                        upstream_req_builder = upstream_req_builder.header(name, val);
+                    }
+                }
+            }
+
+            let upstream_req =
+                match upstream_req_builder.body(Full::new(body_bytes.clone())) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        warn!("Failed to build upstream request: {e}");
+                        return hyper::Response::builder()
+                            .status(500)
+                            .body(Full::new(Bytes::from("Internal error")))
                             .unwrap();
                     }
                 };
 
-                let mut resp = hyper::Response::builder()
-                    .status(status)
-                    .header("X-Route", route.name.as_str());
+            let upstream_start = std::time::Instant::now();
 
-                for (key, value) in &resp_headers {
-                    if key.eq_ignore_ascii_case("transfer-encoding")
-                        || key.eq_ignore_ascii_case("connection")
-                    {
+            // Hedging: on first attempt, if configured, race primary vs hedged request.
+            let upstream_result = if attempt == 0 && hedge_delay_ms > 0 && effective_backends.len() > 1 {
+                let hedge_delay = std::time::Duration::from_millis(hedge_delay_ms);
+                // Build hedge request to a different backend.
+                let hedge_idx = (backend_idx + 1) % backends.len();
+                let hedge_backend = &backends[hedge_idx];
+                let hedge_addr = SocketAddr::new(hedge_backend.addr, hedge_backend.port);
+                let hedge_uri = format!("http://{hedge_addr}{target_path}{query_suffix}");
+                let mut hedge_builder = hyper::Request::builder().method(method).uri(&hedge_uri);
+                for (key, value) in headers {
+                    if key.eq_ignore_ascii_case("host") {
                         continue;
                     }
                     if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
                         if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
-                            resp = resp.header(name, val);
+                            hedge_builder = hedge_builder.header(name, val);
                         }
                     }
                 }
+                hedge_builder = hedge_builder.header("Host", hedge_addr.to_string());
+                let hedge_req = hedge_builder.body(Full::new(body_bytes.clone())).ok();
 
-                for (key, value) in &route.add_headers {
-                    if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
-                        if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
-                            resp = resp.header(name, val);
+                let primary_fut = self.client.request(upstream_req);
+                let client = &self.client;
+
+                tokio::select! {
+                    result = primary_fut => result,
+                    result = async {
+                        tokio::time::sleep(hedge_delay).await;
+                        if let Some(req) = hedge_req {
+                            debug!(hedge_backend = %hedge_addr, "Sending hedged request");
+                            client.request(req).await
+                        } else {
+                            // Fallback: wait for primary forever (unreachable if hedge_req is Some).
+                            std::future::pending().await
                         }
-                    }
+                    } => result,
                 }
+            } else {
+                self.client.request(upstream_req).await
+            };
 
-                if !route.middleware_refs.is_empty() {
-                    let mut mw_resp = crate::middleware::Response {
-                        status: status.as_u16(),
-                        headers: resp_headers.clone(),
-                        body: body.to_vec(),
+            match upstream_result {
+                Ok(upstream_resp) => {
+                    let status = upstream_resp.status();
+                    let upstream_latency = upstream_start.elapsed();
+
+                    if status.is_server_error() {
+                        cb.record_failure();
+                        outlier_detector.record_failure(backend_addr);
+                        balancer.report(backend_idx, upstream_latency, false);
+                    } else {
+                        cb.record_success();
+                        outlier_detector.record_success(backend_addr);
+                        balancer.report(backend_idx, upstream_latency, true);
+                        self.connection_pool
+                            .record_connection_success(backend_addr)
+                            .await;
+                    }
+
+                    let resp_headers: Vec<(String, String)> = upstream_resp
+                        .headers()
+                        .iter()
+                        .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
+                        .collect();
+
+                    let body = match upstream_resp.into_body().collect().await {
+                        Ok(collected) => collected.to_bytes(),
+                        Err(e) => {
+                            warn!(backend = %backend_addr, error = %e, "Failed to read upstream response body");
+                            cb.record_failure();
+                            outlier_detector.record_failure(backend_addr);
+                            balancer.report(backend_idx, upstream_start.elapsed(), false);
+                            self.connection_pool.release(backend_addr).await;
+                            if attempt < max_attempts - 1
+                                && is_retryable_condition("reset", &retry_on)
+                            {
+                                continue;
+                            }
+                            if !got_response {
+                                return hyper::Response::builder()
+                                    .status(502)
+                                    .header("X-Route", route.name.as_str())
+                                    .body(Full::new(Bytes::from("Bad Gateway")))
+                                    .unwrap();
+                            }
+                            break;
+                        }
                     };
-                    crate::middleware::pipeline::run_response_pipeline(
-                        &self.config,
-                        &route.middleware_refs,
-                        &mw_request,
-                        &mut mw_resp,
+
+                    self.connection_pool.release(backend_addr).await;
+
+                    final_status = status;
+                    final_resp_headers = resp_headers;
+                    final_body = body;
+                    final_backend_addr = backend_addr;
+                    final_backend_idx = backend_idx;
+                    got_response = true;
+
+                    // Check if retryable.
+                    if status.is_server_error()
+                        && attempt < max_attempts - 1
+                        && is_retryable_status(status.as_u16(), &retry_on)
+                    {
+                        continue;
+                    }
+
+                    break;
+                }
+                Err(e) => {
+                    let upstream_latency = upstream_start.elapsed();
+                    cb.record_failure();
+                    outlier_detector.record_failure(backend_addr);
+                    balancer.report(backend_idx, upstream_latency, false);
+                    self.connection_pool.release(backend_addr).await;
+                    self.connection_pool
+                        .record_connection_failure(backend_addr)
+                        .await;
+
+                    warn!(
+                        backend = %backend_addr,
+                        error = %e,
+                        attempt,
+                        "Failed to forward request to upstream"
                     );
-                    for (k, v) in &mw_resp.headers {
-                        if resp_headers.iter().any(|(rk, rv)| rk == k && rv == v) {
-                            continue;
-                        }
-                        if let Ok(name) = hyper::header::HeaderName::from_bytes(k.as_bytes()) {
-                            if let Ok(val) = hyper::header::HeaderValue::from_str(v) {
-                                resp = resp.header(name, val);
-                            }
-                        }
+
+                    final_status = hyper::StatusCode::BAD_GATEWAY;
+                    final_resp_headers = Vec::new();
+                    final_body = Bytes::from("Bad Gateway");
+                    final_backend_addr = backend_addr;
+                    final_backend_idx = backend_idx;
+                    got_response = true;
+
+                    if attempt < max_attempts - 1
+                        && is_retryable_condition("connect-failure", &retry_on)
+                    {
+                        continue;
                     }
-                }
 
-                if !self.response_header_actions.is_empty() {
-                    let mut action_headers: Vec<(String, String)> = resp_headers.clone();
-                    apply_header_actions(&mut action_headers, &self.response_header_actions);
-                    for (k, v) in &action_headers {
-                        if resp_headers.iter().any(|(rk, rv)| rk == k && rv == v) {
-                            continue;
-                        }
-                        if let Ok(name) = hyper::header::HeaderName::from_bytes(k.as_bytes()) {
-                            if let Ok(val) = hyper::header::HeaderValue::from_str(v) {
-                                resp = resp.header(name, val);
-                            }
-                        }
-                    }
+                    break;
                 }
-
-                if client_addr.port() == 443 || client_addr.port() == 8443 {
-                    let alt_svc = super::http3::alt_svc_header(client_addr.port());
-                    resp = resp.header("Alt-Svc", alt_svc);
-                }
-
-                if (status.is_client_error() || status.is_server_error())
-                    && !self.error_pages.is_empty()
-                {
-                    if let Some(error_page) = find_error_page(status.as_u16(), &self.error_pages) {
-                        debug!(status = status.as_u16(), "Serving custom error page");
-                        resp = resp.header("Content-Type", error_page.content_type.as_str());
-                        return resp
-                            .body(Full::new(Bytes::from(error_page.body.clone())))
-                            .unwrap();
-                    }
-                }
-
-                resp.body(Full::new(body)).unwrap()
             }
-            Err(e) => {
-                let upstream_latency = upstream_start.elapsed();
-                cb.record_failure();
-                self.outlier_detector.record_failure(backend_addr);
-                balancer.report(backend_idx, upstream_latency, false);
+        }
 
-                warn!(
-                    backend = %backend_addr,
-                    error = %e,
-                    "Failed to forward request to upstream"
-                );
-                hyper::Response::builder()
-                    .status(502)
-                    .header("X-Route", route.name.as_str())
-                    .body(Full::new(Bytes::from("Bad Gateway")))
-                    .unwrap()
+        // Build the final response from the last attempt result.
+        let mut resp = hyper::Response::builder()
+            .status(final_status)
+            .header("X-Route", route.name.as_str());
+
+        for (key, value) in &final_resp_headers {
+            if key.eq_ignore_ascii_case("transfer-encoding")
+                || key.eq_ignore_ascii_case("connection")
+            {
+                continue;
             }
-        };
+            if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
+                    resp = resp.header(name, val);
+                }
+            }
+        }
 
-        // Release the connection pool slot.
-        self.connection_pool.release(backend_addr).await;
+        for (key, value) in &route.add_headers {
+            if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
+                    resp = resp.header(name, val);
+                }
+            }
+        }
 
-        result
+        if !route.middleware_refs.is_empty() {
+            let mut mw_resp = crate::middleware::Response {
+                status: final_status.as_u16(),
+                headers: final_resp_headers.clone(),
+                body: final_body.to_vec(),
+            };
+            crate::middleware::pipeline::run_response_pipeline(
+                &self.config,
+                &route.middleware_refs,
+                &mw_request,
+                &mut mw_resp,
+            );
+            for (k, v) in &mw_resp.headers {
+                if final_resp_headers.iter().any(|(rk, rv)| rk == k && rv == v) {
+                    continue;
+                }
+                if let Ok(name) = hyper::header::HeaderName::from_bytes(k.as_bytes()) {
+                    if let Ok(val) = hyper::header::HeaderValue::from_str(v) {
+                        resp = resp.header(name, val);
+                    }
+                }
+            }
+        }
+
+        if !self.response_header_actions.is_empty() {
+            let mut action_headers: Vec<(String, String)> = final_resp_headers.clone();
+            apply_header_actions(&mut action_headers, &self.response_header_actions);
+            for (k, v) in &action_headers {
+                if final_resp_headers.iter().any(|(rk, rv)| rk == k && rv == v) {
+                    continue;
+                }
+                if let Ok(name) = hyper::header::HeaderName::from_bytes(k.as_bytes()) {
+                    if let Ok(val) = hyper::header::HeaderValue::from_str(v) {
+                        resp = resp.header(name, val);
+                    }
+                }
+            }
+        }
+
+        if client_addr.port() == 443 || client_addr.port() == 8443 {
+            let alt_svc = super::http3::alt_svc_header(client_addr.port());
+            resp = resp.header("Alt-Svc", alt_svc);
+        }
+
+        // Set cookie for cookie-based session affinity if not already present.
+        if cluster.session_affinity_type == "cookie"
+            && !cluster.session_affinity_cookie.is_empty()
+            && extract_cookie(headers, &cluster.session_affinity_cookie).is_none()
+        {
+            let cookie_value = format!(
+                "{}={}; Path=/; HttpOnly",
+                cluster.session_affinity_cookie, final_backend_addr,
+            );
+            resp = resp.header("Set-Cookie", cookie_value);
+        }
+
+        if (final_status.is_client_error() || final_status.is_server_error())
+            && !self.error_pages.is_empty()
+        {
+            if let Some(error_page) = find_error_page(final_status.as_u16(), &self.error_pages) {
+                debug!(status = final_status.as_u16(), "Serving custom error page");
+                resp = resp.header("Content-Type", error_page.content_type.as_str());
+                return resp
+                    .body(Full::new(Bytes::from(error_page.body.clone())))
+                    .unwrap();
+            }
+        }
+
+        // Suppress unused variable warnings for fields used in response building.
+        let _ = final_backend_idx;
+
+        // Request mirroring: fire-and-forget copy of request to mirror cluster.
+        if let Some(ref mirror_cluster_name) = route_state.as_ref().and_then(|r| r.mirror_cluster.clone()) {
+            let mirror_percent = route_state.as_ref().map(|r| r.mirror_percent).unwrap_or(100);
+            let should_mirror = if mirror_percent >= 100 {
+                true
+            } else {
+                rand::random::<u32>() % 100 < mirror_percent
+            };
+
+            if should_mirror {
+                if let Some(mirror_cluster) = self.config.get_cluster(mirror_cluster_name) {
+                    let mirror_endpoints: Vec<_> = mirror_cluster
+                        .endpoints
+                        .iter()
+                        .filter(|e| e.healthy && !e.draining)
+                        .collect();
+
+                    if let Some(ep) = mirror_endpoints.first() {
+                        let mirror_addr = format!("{}:{}", ep.address, ep.port);
+                        let mirror_uri = format!("http://{mirror_addr}{target_path}{query_suffix}");
+                        let client = self.client.clone();
+                        let method_clone = method.to_string();
+                        let headers_clone: Vec<(String, String)> = headers.to_vec();
+                        let body_clone = body_bytes;
+                        let mirror_addr_clone = mirror_addr.clone();
+
+                        // Fire-and-forget: don't await, don't care about result.
+                        tokio::spawn(async move {
+                            let mut req_builder = hyper::Request::builder()
+                                .method(method_clone.as_str())
+                                .uri(&mirror_uri);
+
+                            for (key, value) in &headers_clone {
+                                if key.eq_ignore_ascii_case("host") {
+                                    continue;
+                                }
+                                if let Ok(name) = hyper::header::HeaderName::from_bytes(key.as_bytes()) {
+                                    if let Ok(val) = hyper::header::HeaderValue::from_str(value) {
+                                        req_builder = req_builder.header(name, val);
+                                    }
+                                }
+                            }
+
+                            req_builder = req_builder.header("Host", mirror_addr_clone);
+
+                            if let Ok(req) = req_builder.body(Full::new(body_clone)) {
+                                let _ = client.request(req).await;
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        resp.body(Full::new(final_body)).unwrap()
     }
 
     /// Resolve route and backend for WebSocket upgrade handling.
@@ -744,6 +1117,7 @@ impl ProxyHandler {
         let backends: Vec<lb::Backend> = cluster
             .endpoints
             .iter()
+            .filter(|e| !e.draining)
             .map(|e| lb::Backend {
                 addr: e
                     .address
@@ -757,19 +1131,77 @@ impl ProxyHandler {
             })
             .collect();
 
+        // Set zone from config for zone-aware routing.
+        let local_zone = self.config.local_zone().await;
         let ctx = lb::RequestContext {
             src_ip: client_addr.ip(),
             src_port: client_addr.port(),
             dst_port: 0,
             sticky_cookie: None,
-            zone: None,
+            zone: if local_zone.is_empty() {
+                None
+            } else {
+                Some(local_zone)
+            },
+        };
+
+        // Check circuit breaker before selecting backend.
+        let cb = self.get_circuit_breaker(&cluster.name).await;
+        if !cb.allow_request() {
+            return Err(hyper::Response::builder()
+                .status(503)
+                .header("X-Route", route.name.as_str())
+                .body(Full::new(Bytes::from("Circuit breaker open")))
+                .unwrap());
+        }
+
+        // Apply priority-based failover.
+        let priority_filtered: Vec<lb::Backend> = {
+            let priority_indices = lb::filter_by_priority(&backends);
+            if priority_indices.is_empty() {
+                backends.clone()
+            } else {
+                priority_indices.iter().map(|&i| backends[i].clone()).collect()
+            }
+        };
+
+        // Filter out outlier-ejected backends.
+        let outlier_detector = self.get_outlier_detector(&cluster.name).await;
+        let healthy_backends: Vec<lb::Backend> = priority_filtered
+            .iter()
+            .filter(|b| {
+                let addr = SocketAddr::new(b.addr, b.port);
+                !outlier_detector.is_ejected(&addr)
+            })
+            .cloned()
+            .collect();
+
+        // Panic mode threshold check.
+        let total_in_priority = priority_filtered.len();
+        let healthy_count = healthy_backends.len();
+        let panic_threshold = cluster.panic_threshold_percent as usize;
+        let in_panic_mode = panic_threshold > 0
+            && total_in_priority > 0
+            && (healthy_count * 100 / total_in_priority) < panic_threshold;
+
+        let effective_backends = if in_panic_mode {
+            warn!(
+                cluster = %cluster.name,
+                "Panic mode: healthy% below threshold, using all backends"
+            );
+            priority_filtered
+        } else if healthy_backends.is_empty() {
+            backends.clone()
+        } else {
+            healthy_backends
         };
 
         let balancer = self
             .config
             .get_or_create_lb(&cluster.name, &cluster.lb_algorithm)
             .await;
-        let backend_idx = match balancer.select(&ctx, &backends) {
+
+        let backend_idx = match balancer.select(&ctx, &effective_backends) {
             Some(idx) => idx,
             None => {
                 return Err(hyper::Response::builder()
@@ -780,7 +1212,7 @@ impl ProxyHandler {
             }
         };
 
-        let selected = &backends[backend_idx];
+        let selected = &effective_backends[backend_idx];
         let backend_addr = SocketAddr::new(selected.addr, selected.port);
 
         let target_path = if let Some(ref rewrite) = route.rewrite_path {
@@ -985,6 +1417,17 @@ impl ProxyHandler {
 }
 
 /// Extract a named cookie value from request headers.
+/// RAII guard that decrements the active request counter when dropped.
+struct LoadShedGuard<'a> {
+    counter: &'a AtomicU32,
+}
+
+impl<'a> Drop for LoadShedGuard<'a> {
+    fn drop(&mut self) {
+        self.counter.fetch_sub(1, Ordering::Relaxed);
+    }
+}
+
 fn extract_cookie(headers: &[(String, String)], cookie_name: &str) -> Option<String> {
     for (key, value) in headers {
         if key.eq_ignore_ascii_case("cookie") {
@@ -1001,12 +1444,44 @@ fn extract_cookie(headers: &[(String, String)], cookie_name: &str) -> Option<Str
     None
 }
 
+/// Check if an HTTP status code is retryable according to the retry_on conditions.
+fn is_retryable_status(status: u16, retry_on: &[String]) -> bool {
+    if retry_on.is_empty() {
+        // Default: retry on any 5xx.
+        return status >= 500;
+    }
+    for condition in retry_on {
+        match condition.as_str() {
+            "5xx" if status >= 500 && status < 600 => return true,
+            "gateway-error" if status == 502 || status == 503 || status == 504 => return true,
+            "retriable-4xx" if status == 409 => return true,
+            _ => {
+                // Check for exact status code match (e.g. "503").
+                if let Ok(code) = condition.parse::<u16>() {
+                    if status == code {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if a given error condition is in the retry_on list.
+fn is_retryable_condition(condition: &str, retry_on: &[String]) -> bool {
+    if retry_on.is_empty() {
+        // Default: retry on connect failures and resets.
+        return condition == "connect-failure" || condition == "reset";
+    }
+    retry_on.iter().any(|c| c == condition)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::config;
     use crate::proxy::router::{HostMatch, PathMatch, Route};
-    use crate::upstream::outlier::{OutlierConfig, OutlierDetector};
     use crate::upstream::pool::{ConnectionPool, PoolConfig};
 
     fn test_route(name: &str, backend: &str) -> Route {
@@ -1032,7 +1507,6 @@ mod tests {
         ProxyHandler::new(
             router,
             cfg,
-            Arc::new(OutlierDetector::new(OutlierConfig::default())),
             Arc::new(ConnectionPool::new(PoolConfig::default())),
         )
     }
@@ -1064,15 +1538,44 @@ mod tests {
                 healthy: true,
                 zone: None,
                 priority: 0,
+                draining: false,
+                drain_start: None,
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
             session_affinity_type: String::new(),
             session_affinity_cookie: String::new(),
+            session_affinity_header: String::new(),
             outlier_consecutive_5xx: 0,
             outlier_ejection_duration_ms: 0,
             outlier_max_ejection_pct: 0,
+            outlier_interval_ms: 0,
+            outlier_sr_min_hosts: 0,
+            outlier_sr_min_requests: 0,
+            outlier_sr_stdev_factor: 0.0,
             slow_start_window_ms: 0,
+            slow_start_aggression: 1.0,
+            protocol: String::new(),
+            upstream_proxy_protocol_enabled: false,
+            upstream_proxy_protocol_version: 0,
+            tls_enabled: false,
+            tls_insecure_skip_verify: false,
+            tls_ca_pem: Vec::new(),
+            tls_server_name: String::new(),
+            cb_failure_threshold: 0,
+            cb_success_threshold: 0,
+            cb_open_duration_ms: 0,
+            cb_half_open_max_requests: 0,
+            pool_max_connections: 0,
+            pool_max_idle: 0,
+            pool_idle_timeout_ms: 0,
+            pool_connect_timeout_ms: 0,
+            panic_threshold_percent: 0,
+            max_requests_per_connection: 0,
+            request_queue_depth: 0,
+            request_queue_timeout_ms: 0,
+            subset_size: 0,
+            remote_endpoints: Vec::new(),
         });
 
         let _handler = test_handler(router, cfg.clone());
@@ -1127,15 +1630,44 @@ mod tests {
                 healthy: true,
                 zone: None,
                 priority: 0,
+                draining: false,
+                drain_start: None,
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: String::new(),
             session_affinity_type: String::new(),
             session_affinity_cookie: String::new(),
+            session_affinity_header: String::new(),
             outlier_consecutive_5xx: 0,
             outlier_ejection_duration_ms: 0,
             outlier_max_ejection_pct: 0,
+            outlier_interval_ms: 0,
+            outlier_sr_min_hosts: 0,
+            outlier_sr_min_requests: 0,
+            outlier_sr_stdev_factor: 0.0,
             slow_start_window_ms: 0,
+            slow_start_aggression: 1.0,
+            protocol: String::new(),
+            upstream_proxy_protocol_enabled: false,
+            upstream_proxy_protocol_version: 0,
+            tls_enabled: false,
+            tls_insecure_skip_verify: false,
+            tls_ca_pem: Vec::new(),
+            tls_server_name: String::new(),
+            cb_failure_threshold: 0,
+            cb_success_threshold: 0,
+            cb_open_duration_ms: 0,
+            cb_half_open_max_requests: 0,
+            pool_max_connections: 0,
+            pool_max_idle: 0,
+            pool_idle_timeout_ms: 0,
+            pool_connect_timeout_ms: 0,
+            panic_threshold_percent: 0,
+            max_requests_per_connection: 0,
+            request_queue_depth: 0,
+            request_queue_timeout_ms: 0,
+            subset_size: 0,
+            remote_endpoints: Vec::new(),
         });
 
         let handler = Arc::new(test_handler(router, cfg));

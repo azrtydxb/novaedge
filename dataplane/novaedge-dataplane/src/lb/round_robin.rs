@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use super::{healthy_weighted, Backend, LoadBalancer, RequestContext};
+use super::{healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext};
 
 /// Weighted round-robin load balancer.
 ///
@@ -28,13 +28,20 @@ impl Default for RoundRobin {
 }
 
 impl LoadBalancer for RoundRobin {
-    fn select(&self, _ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
-        let healthy = healthy_weighted(backends);
+    fn select(&self, ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
+        let healthy = healthy_indices(backends);
         if healthy.is_empty() {
             return None;
         }
-        let idx = self.counter.fetch_add(1, Ordering::Relaxed) % healthy.len();
-        Some(healthy[idx])
+        // Prefer same-zone backends when zone is set.
+        let candidates = prefer_same_zone(ctx, backends, &healthy);
+        // Expand by weight for proportional selection.
+        let weighted = weighted_expand(&candidates, backends);
+        if weighted.is_empty() {
+            return None;
+        }
+        let idx = self.counter.fetch_add(1, Ordering::Relaxed) % weighted.len();
+        Some(weighted[idx])
     }
 
     fn report(&self, _backend_idx: usize, _latency: Duration, _success: bool) {}

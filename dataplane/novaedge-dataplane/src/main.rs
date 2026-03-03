@@ -120,9 +120,6 @@ async fn main() -> anyhow::Result<()> {
     let runtime_config = Arc::new(config::RuntimeConfig::new());
 
     // Create upstream resilience components.
-    let outlier_detector = Arc::new(upstream::outlier::OutlierDetector::new(
-        upstream::outlier::OutlierConfig::default(),
-    ));
     let connection_pool = Arc::new(upstream::pool::ConnectionPool::new(
         upstream::pool::PoolConfig::default(),
     ));
@@ -133,7 +130,6 @@ async fn main() -> anyhow::Result<()> {
     let proxy_handler = Arc::new(proxy::handler::ProxyHandler::new(
         router.clone(),
         runtime_config.clone(),
-        outlier_detector,
         connection_pool,
     ));
 
@@ -164,6 +160,7 @@ async fn main() -> anyhow::Result<()> {
     // Create the health checker with default TCP health check config.
     // It runs as a background task and periodically probes backend endpoints
     // discovered from the runtime config's cluster health check paths.
+    // Health check results are fed back into RuntimeConfig to update endpoint health.
     let health_checker = std::sync::Arc::new(health::checker::HealthChecker::new(
         health::types::HealthCheckConfig::default(),
     ));
@@ -171,25 +168,29 @@ async fn main() -> anyhow::Result<()> {
     let health_config = runtime_config.clone();
     let health_checker_clone = health_checker.clone();
     let health_handle = tokio::spawn(async move {
-        // Collect backend addresses from clusters that have health check paths.
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         let mut cancel = health_shutdown_rx;
         loop {
             tokio::select! {
                 _ = interval.tick() => {
                     let snapshot = health_config.snapshot();
-                    let mut backends = Vec::new();
-                    for cluster in snapshot.clusters.values() {
-                        if !cluster.health_check_path.is_empty() {
-                            for ep in &cluster.endpoints {
-                                if let Ok(addr) = ep.address.parse::<std::net::IpAddr>() {
-                                    backends.push(std::net::SocketAddr::new(addr, ep.port as u16));
-                                }
+                    for (cluster_name, cluster) in &snapshot.clusters {
+                        if cluster.health_check_path.is_empty() {
+                            continue;
+                        }
+                        for ep in &cluster.endpoints {
+                            if let Ok(addr) = ep.address.parse::<std::net::IpAddr>() {
+                                let sock = std::net::SocketAddr::new(addr, ep.port as u16);
+                                health_checker_clone.check(sock).await;
+                                let healthy = health_checker_clone.is_healthy(&sock).await;
+                                health_config.update_endpoint_health(
+                                    cluster_name,
+                                    &ep.address,
+                                    ep.port,
+                                    healthy,
+                                );
                             }
                         }
-                    }
-                    for addr in &backends {
-                        health_checker_clone.check(*addr).await;
                     }
                 }
                 _ = cancel.changed() => {
@@ -199,9 +200,6 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     });
-
-    // Log health checker availability (is_healthy can be used by handler for
-    // endpoint health filtering).
     let _health_checker_ref = health_checker;
 
     // Create flow event broadcast channel.

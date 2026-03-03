@@ -2,7 +2,7 @@
 
 use rand::Rng;
 
-use super::{healthy_weighted, Backend, LoadBalancer, RequestContext};
+use super::{healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext};
 
 /// Random load balancer — selects a healthy backend at random.
 ///
@@ -11,13 +11,20 @@ use super::{healthy_weighted, Backend, LoadBalancer, RequestContext};
 pub struct Random;
 
 impl LoadBalancer for Random {
-    fn select(&self, _ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
-        let healthy = healthy_weighted(backends);
+    fn select(&self, ctx: &RequestContext, backends: &[Backend]) -> Option<usize> {
+        let healthy = healthy_indices(backends);
         if healthy.is_empty() {
             return None;
         }
-        let idx = rand::thread_rng().gen_range(0..healthy.len());
-        Some(healthy[idx])
+        // Prefer same-zone backends when zone is set.
+        let candidates = prefer_same_zone(ctx, backends, &healthy);
+        // Expand by weight for proportional selection.
+        let weighted = weighted_expand(&candidates, backends);
+        if weighted.is_empty() {
+            return None;
+        }
+        let idx = rand::thread_rng().gen_range(0..weighted.len());
+        Some(weighted[idx])
     }
 
     fn name(&self) -> &'static str {

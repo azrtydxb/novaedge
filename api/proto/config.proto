@@ -338,6 +338,8 @@ message Cluster {
   UpstreamProxyProtocol upstream_proxy_protocol = 11; // PROXY protocol config for backend connections
   OutlierDetection outlier_detection = 12; // Outlier detection and auto-ejection configuration
   SlowStart slow_start = 13; // Slow start traffic ramp-up configuration
+  // Backend protocol: "HTTP", "HTTPS", "gRPC", "gRPCS", "HTTP2".
+  string protocol = 14;
 }
 
 // OutlierDetection configures per-endpoint outlier detection and auto-ejection
@@ -378,6 +380,8 @@ message SessionAffinityConfig {
   string cookie_path = 4;    // Cookie path (default: "/")
   bool cookie_secure = 5;    // Secure flag on cookie
   string cookie_same_site = 6; // SameSite attribute: "Strict", "Lax", "None"
+  // Header name for header-based affinity.
+  string header_name = 7;
 }
 
 enum LoadBalancingPolicy {
@@ -388,6 +392,8 @@ enum LoadBalancingPolicy {
   RING_HASH = 4;
   MAGLEV = 5;
   LEAST_CONN = 6;
+  SOURCE_HASH = 7;
+  STICKY = 8;
 }
 
 // CircuitBreaker defines circuit breaker settings

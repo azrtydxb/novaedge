@@ -1,6 +1,6 @@
 //! Source-IP hash load balancing.
 
-use super::{healthy_indices, Backend, LoadBalancer, RequestContext};
+use super::{healthy_indices, prefer_same_zone, weighted_expand, Backend, LoadBalancer, RequestContext};
 
 /// Source-hash load balancer — deterministically maps a client (src_ip, src_port)
 /// to a backend using FNV-1a hashing.
@@ -24,11 +24,18 @@ impl LoadBalancer for SourceHash {
         if healthy.is_empty() {
             return None;
         }
+        // Prefer same-zone backends when zone is set.
+        let candidates = prefer_same_zone(ctx, backends, &healthy);
+        // Expand by weight for proportional hashing.
+        let weighted = weighted_expand(&candidates, backends);
+        if weighted.is_empty() {
+            return None;
+        }
         // Hash (src_ip, src_port).
         let key = format!("{}:{}", ctx.src_ip, ctx.src_port);
         let h = Self::fnv1a(key.as_bytes());
-        let idx = (h as usize) % healthy.len();
-        Some(healthy[idx])
+        let idx = (h as usize) % weighted.len();
+        Some(weighted[idx])
     }
 
     fn name(&self) -> &'static str {

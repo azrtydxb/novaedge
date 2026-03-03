@@ -21,7 +21,7 @@ import (
 )
 
 // LoadBalancingPolicy defines the load balancing algorithm
-// +kubebuilder:validation:Enum=RoundRobin;P2C;EWMA;RingHash;Maglev;LeastConn
+// +kubebuilder:validation:Enum=RoundRobin;P2C;EWMA;RingHash;Maglev;LeastConn;SourceHash;Sticky
 type LoadBalancingPolicy string
 
 const (
@@ -37,6 +37,10 @@ const (
 	LBPolicyMaglev LoadBalancingPolicy = "Maglev"
 	// LBPolicyLeastConn uses Least Connections algorithm
 	LBPolicyLeastConn LoadBalancingPolicy = "LeastConn"
+	// LBPolicySourceHash uses source IP hash for consistent routing
+	LBPolicySourceHash LoadBalancingPolicy = "SourceHash"
+	// LBPolicySticky uses cookie-based sticky sessions
+	LBPolicySticky LoadBalancingPolicy = "Sticky"
 )
 
 // ServiceReference references a Kubernetes Service

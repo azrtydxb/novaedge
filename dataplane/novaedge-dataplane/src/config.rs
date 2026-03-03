@@ -49,6 +49,24 @@ pub struct RouteState {
     pub rewrite_path: Option<String>,
     pub add_headers: HashMap<String, String>,
     pub middleware_refs: Vec<String>,
+    /// Mirror cluster name for request mirroring (None = disabled).
+    pub mirror_cluster: Option<String>,
+    /// Percentage of requests to mirror (0-100).
+    pub mirror_percent: u32,
+    /// Default backend cluster when no backend_refs match.
+    pub default_backend: Option<String>,
+    /// Maximum number of retries (0 = no retries).
+    pub retry_max: u32,
+    /// Per-try timeout in ms (0 = no per-try timeout).
+    pub retry_per_try_timeout_ms: u64,
+    /// Retry conditions (e.g. "5xx", "reset", "connect-failure").
+    pub retry_on: Vec<String>,
+    /// Base backoff interval in ms for exponential retry backoff.
+    pub retry_backoff_base_ms: u64,
+    /// Delay in ms before sending a hedged request (0 = disabled).
+    pub hedge_delay_ms: u64,
+    /// Maximum number of hedged requests (0 = disabled).
+    pub hedge_max_requests: u32,
 }
 
 /// Policy state for rate-limiting, auth, CORS, etc.
@@ -71,18 +89,68 @@ pub struct ClusterState {
     pub session_affinity_type: String,
     /// Cookie name for cookie-based session affinity.
     pub session_affinity_cookie: String,
+    /// Header name for header-based session affinity.
+    pub session_affinity_header: String,
     /// Consecutive 5xx threshold for outlier detection (0 = use default).
-    #[allow(dead_code)]
     pub outlier_consecutive_5xx: u32,
     /// Base ejection duration in ms for outlier detection (0 = use default).
-    #[allow(dead_code)]
     pub outlier_ejection_duration_ms: u64,
     /// Maximum ejection percentage for outlier detection (0 = use default).
-    #[allow(dead_code)]
     pub outlier_max_ejection_pct: u32,
+    /// Outlier detection check interval in ms (0 = use default).
+    pub outlier_interval_ms: u64,
+    /// Minimum hosts for success-rate outlier ejection.
+    pub outlier_sr_min_hosts: u32,
+    /// Minimum requests per host for success-rate analysis.
+    pub outlier_sr_min_requests: u32,
+    /// Standard deviation factor for success-rate ejection.
+    pub outlier_sr_stdev_factor: f64,
     /// Slow start window in ms (0 = disabled).
-    #[allow(dead_code)]
     pub slow_start_window_ms: u64,
+    /// Slow start aggression factor (default 1.0).
+    pub slow_start_aggression: f64,
+    /// Backend protocol: "HTTP", "HTTPS", "gRPC", etc.
+    pub protocol: String,
+    /// Whether to send PROXY protocol to backends.
+    pub upstream_proxy_protocol_enabled: bool,
+    /// PROXY protocol version to send (1 or 2).
+    pub upstream_proxy_protocol_version: u32,
+    /// TLS enabled for backend connections.
+    pub tls_enabled: bool,
+    /// Skip TLS certificate verification.
+    pub tls_insecure_skip_verify: bool,
+    /// CA PEM for backend TLS verification.
+    pub tls_ca_pem: Vec<u8>,
+    /// Server name for TLS SNI.
+    pub tls_server_name: String,
+    /// Circuit breaker failure threshold (0 = use default).
+    pub cb_failure_threshold: u32,
+    /// Circuit breaker success threshold for half-open→closed (0 = use default).
+    pub cb_success_threshold: u32,
+    /// Circuit breaker open duration in ms (0 = use default).
+    pub cb_open_duration_ms: u64,
+    /// Maximum concurrent requests in half-open state (0 = use default).
+    pub cb_half_open_max_requests: u32,
+    /// Connection pool max connections per host (0 = use default).
+    pub pool_max_connections: u32,
+    /// Connection pool max idle connections per host (0 = use default).
+    pub pool_max_idle: u32,
+    /// Connection pool idle timeout in ms (0 = use default).
+    pub pool_idle_timeout_ms: u64,
+    /// Connection pool connect timeout in ms (0 = use default).
+    pub pool_connect_timeout_ms: u64,
+    /// Panic mode threshold: below this % healthy, use all backends (0 = disabled).
+    pub panic_threshold_percent: u32,
+    /// Max requests per connection before recycling (0 = unlimited).
+    pub max_requests_per_connection: u32,
+    /// Request queue max depth when pool is full (0 = no queuing, fail immediately).
+    pub request_queue_depth: u32,
+    /// Request queue wait timeout in ms (0 = use default 5000ms).
+    pub request_queue_timeout_ms: u64,
+    /// Deterministic subset size (0 = disabled, use all endpoints).
+    pub subset_size: u32,
+    /// Remote endpoints from federated clusters for cross-cluster aggregate LB.
+    pub remote_endpoints: Vec<RemoteEndpointGroup>,
 }
 
 /// A single backend endpoint.
@@ -95,6 +163,21 @@ pub struct EndpointState {
     /// Locality zone for zone-aware routing.
     pub zone: Option<String>,
     /// Priority group for priority-based failover.
+    pub priority: u32,
+    /// Whether this endpoint is draining (no new connections, in-flight may complete).
+    pub draining: bool,
+    /// When draining started (for deadline enforcement).
+    pub drain_start: Option<std::time::Instant>,
+}
+
+/// A group of remote endpoints from a federated cluster.
+#[derive(Debug, Clone)]
+pub struct RemoteEndpointGroup {
+    /// Name of the remote cluster.
+    pub cluster_name: String,
+    /// Remote endpoints (same structure as local endpoints).
+    pub endpoints: Vec<EndpointState>,
+    /// Priority for cross-cluster failover (0 = prefer local, higher = less preferred).
     pub priority: u32,
 }
 
@@ -125,6 +208,8 @@ pub struct RuntimeConfig {
     /// Cached load balancer instances keyed by cluster name.
     /// Cleared on config updates so that endpoint changes trigger LB rebuild.
     lb_cache: RwLock<HashMap<String, Arc<dyn LoadBalancer>>>,
+    /// Local zone for zone-aware routing (e.g. "us-east-1a").
+    local_zone: RwLock<String>,
 }
 
 impl RuntimeConfig {
@@ -141,7 +226,18 @@ impl RuntimeConfig {
             notify_rx,
             generation: AtomicU64::new(0),
             lb_cache: RwLock::new(HashMap::new()),
+            local_zone: RwLock::new(String::new()),
         }
+    }
+
+    /// Get the configured local zone.
+    pub async fn local_zone(&self) -> String {
+        self.local_zone.read().await.clone()
+    }
+
+    /// Set the local zone for zone-aware routing.
+    pub async fn set_local_zone(&self, zone: String) {
+        *self.local_zone.write().await = zone;
     }
 
     /// Insert or update a gateway.
@@ -195,6 +291,11 @@ impl RuntimeConfig {
     /// Get a cluster by name.
     pub fn get_cluster(&self, name: &str) -> Option<ClusterState> {
         self.clusters.get(name).map(|c| c.value().clone())
+    }
+
+    /// Get a route by name.
+    pub fn get_route(&self, name: &str) -> Option<RouteState> {
+        self.routes.get(name).map(|r| r.value().clone())
     }
 
     /// Insert or update a policy.
@@ -313,7 +414,44 @@ impl RuntimeConfig {
         for r in routes {
             self.routes.insert(r.name.clone(), r);
         }
-        for c in clusters {
+        for mut c in clusters {
+            // Graceful draining: if the cluster already exists, mark endpoints
+            // that disappeared from the new config as draining instead of removing them.
+            if let Some(existing) = self.clusters.get(&c.name) {
+                let new_eps: HashSet<(String, u32)> = c
+                    .endpoints
+                    .iter()
+                    .map(|e| (e.address.clone(), e.port))
+                    .collect();
+                let now = std::time::Instant::now();
+                for old_ep in &existing.endpoints {
+                    if !new_eps.contains(&(old_ep.address.clone(), old_ep.port)) && !old_ep.draining
+                    {
+                        // Mark as draining with a 30s deadline.
+                        let mut draining_ep = old_ep.clone();
+                        draining_ep.draining = true;
+                        draining_ep.drain_start = Some(now);
+                        draining_ep.healthy = false;
+                        c.endpoints.push(draining_ep);
+                    }
+                }
+                // Carry forward still-draining endpoints from the existing config.
+                for old_ep in &existing.endpoints {
+                    if old_ep.draining
+                        && old_ep
+                            .drain_start
+                            .map(|t| t.elapsed() < std::time::Duration::from_secs(30))
+                            .unwrap_or(false)
+                    {
+                        let already_present = c.endpoints.iter().any(|e| {
+                            e.address == old_ep.address && e.port == old_ep.port
+                        });
+                        if !already_present {
+                            c.endpoints.push(old_ep.clone());
+                        }
+                    }
+                }
+            }
             self.clusters.insert(c.name.clone(), c);
         }
         for p in policies {
@@ -342,6 +480,55 @@ impl RuntimeConfig {
         format!("{}:{}", ep.address, ep.port)
             .parse::<std::net::SocketAddr>()
             .ok()
+    }
+
+    /// Update the health status of a specific endpoint within a cluster.
+    ///
+    /// Called by the health check loop after probing backends. Uses
+    /// `try_write` to avoid blocking the hot path if a config update
+    /// is in progress.
+    pub fn update_endpoint_health(&self, cluster: &str, addr: &str, port: u32, healthy: bool) {
+        if let Some(mut entry) = self.clusters.get_mut(cluster) {
+            let cluster_state = entry.value_mut();
+            for ep in &mut cluster_state.endpoints {
+                if ep.address == addr && ep.port == port {
+                    if ep.healthy != healthy {
+                        tracing::debug!(
+                            cluster,
+                            endpoint = %format!("{}:{}", addr, port),
+                            healthy,
+                            "Endpoint health changed"
+                        );
+                        ep.healthy = healthy;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Remove draining endpoints that have exceeded the 30s drain deadline.
+    pub fn cleanup_draining_endpoints(&self) {
+        for mut entry in self.clusters.iter_mut() {
+            let cluster = entry.value_mut();
+            let before = cluster.endpoints.len();
+            cluster.endpoints.retain(|ep| {
+                if ep.draining {
+                    ep.drain_start
+                        .map(|t| t.elapsed() < std::time::Duration::from_secs(30))
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            });
+            if cluster.endpoints.len() < before {
+                tracing::debug!(
+                    cluster = %cluster.name,
+                    removed = before - cluster.endpoints.len(),
+                    "Cleaned up expired draining endpoints"
+                );
+            }
+        }
     }
 
     /// Get the current config generation number.
@@ -385,6 +572,15 @@ mod tests {
             rewrite_path: None,
             add_headers: HashMap::new(),
             middleware_refs: Vec::new(),
+            mirror_cluster: None,
+            mirror_percent: 0,
+            default_backend: None,
+            retry_max: 0,
+            retry_per_try_timeout_ms: 0,
+            retry_on: Vec::new(),
+            retry_backoff_base_ms: 0,
+            hedge_delay_ms: 0,
+            hedge_max_requests: 0,
         }
     }
 
@@ -398,15 +594,44 @@ mod tests {
                 healthy: true,
                 zone: None,
                 priority: 0,
+                draining: false,
+                drain_start: None,
             }],
             lb_algorithm: "round-robin".into(),
             health_check_path: "/healthz".into(),
             session_affinity_type: String::new(),
             session_affinity_cookie: String::new(),
+            session_affinity_header: String::new(),
             outlier_consecutive_5xx: 0,
             outlier_ejection_duration_ms: 0,
             outlier_max_ejection_pct: 0,
+            outlier_interval_ms: 0,
+            outlier_sr_min_hosts: 0,
+            outlier_sr_min_requests: 0,
+            outlier_sr_stdev_factor: 0.0,
             slow_start_window_ms: 0,
+            slow_start_aggression: 1.0,
+            protocol: String::new(),
+            upstream_proxy_protocol_enabled: false,
+            upstream_proxy_protocol_version: 0,
+            tls_enabled: false,
+            tls_insecure_skip_verify: false,
+            tls_ca_pem: Vec::new(),
+            tls_server_name: String::new(),
+            cb_failure_threshold: 0,
+            cb_success_threshold: 0,
+            cb_open_duration_ms: 0,
+            cb_half_open_max_requests: 0,
+            pool_max_connections: 0,
+            pool_max_idle: 0,
+            pool_idle_timeout_ms: 0,
+            pool_connect_timeout_ms: 0,
+            panic_threshold_percent: 0,
+            max_requests_per_connection: 0,
+            request_queue_depth: 0,
+            request_queue_timeout_ms: 0,
+            subset_size: 0,
+            remote_endpoints: Vec::new(),
         }
     }
 

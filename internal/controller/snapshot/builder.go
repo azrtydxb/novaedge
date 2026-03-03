@@ -800,6 +800,29 @@ func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]str
 			cluster.SessionAffinity = convertSessionAffinity(backend.Spec.SessionAffinity)
 		}
 
+		// Connection pool configuration (#832)
+		if backend.Spec.ConnectionPool != nil {
+			cluster.ConnectionPool = &pb.ConnectionPool{
+				MaxIdleConns:        getInt32(backend.Spec.ConnectionPool.MaxIdleConns),
+				MaxIdleConnsPerHost: getInt32(backend.Spec.ConnectionPool.MaxIdleConnsPerHost),
+				MaxConnsPerHost:     getInt32(backend.Spec.ConnectionPool.MaxConnsPerHost),
+				IdleConnTimeoutMs:   durationToMillis(backend.Spec.ConnectionPool.IdleConnTimeout),
+			}
+		}
+
+		// Upstream proxy protocol configuration (#841)
+		if backend.Spec.UpstreamProxyProtocol != nil {
+			cluster.UpstreamProxyProtocol = &pb.UpstreamProxyProtocol{
+				Enabled: backend.Spec.UpstreamProxyProtocol.Enabled,
+				Version: backend.Spec.UpstreamProxyProtocol.Version,
+			}
+		}
+
+		// Backend protocol (#843)
+		if backend.Spec.Protocol != "" {
+			cluster.Protocol = backend.Spec.Protocol
+		}
+
 		// ECMP consistency: validate and adjust LB policy for BGP/OSPF VIPs.
 		// Only applies to backends that are reachable through ECMP VIPs.
 		backendKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
