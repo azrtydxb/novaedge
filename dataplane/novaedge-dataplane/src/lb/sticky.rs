@@ -1,6 +1,7 @@
 //! Sticky-session (session affinity) load balancing.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::RwLock;
 
 use super::{healthy_indices, healthy_weighted, Backend, LoadBalancer, RequestContext};
@@ -10,9 +11,14 @@ use super::{healthy_indices, healthy_weighted, Backend, LoadBalancer, RequestCon
 /// When a `sticky_cookie` is present in the request context and the
 /// previously selected backend is still healthy, returns the same backend.
 /// Otherwise falls back to round-robin and caches the new selection.
+///
+/// The affinity map stores `(IpAddr, u16)` (address + port) instead of a
+/// backend index. This ensures that after a config rebuild that reorders
+/// the backend slice, the cookie still routes to the correct backend
+/// by address match rather than a stale index. (#869)
 pub struct StickySession {
-    /// Cookie value → backend index.
-    affinity: RwLock<HashMap<String, usize>>,
+    /// Cookie value → backend (addr, port).
+    affinity: RwLock<HashMap<String, (IpAddr, u16)>>,
     /// Round-robin counter for fallback selection.
     counter: std::sync::atomic::AtomicUsize,
 }
@@ -39,13 +45,17 @@ impl LoadBalancer for StickySession {
             return None;
         }
 
-        // Check sticky affinity.
+        // Check sticky affinity by (addr, port) lookup. (#869)
         if let Some(cookie) = &ctx.sticky_cookie {
             let map = self.affinity.read().unwrap();
-            if let Some(&idx) = map.get(cookie) {
-                if idx < backends.len() && backends[idx].healthy {
+            if let Some(&(addr, port)) = map.get(cookie) {
+                // Find the backend by address match (not index).
+                if let Some(&idx) = healthy.iter().find(|&&i| {
+                    backends[i].addr == addr && backends[i].port == port
+                }) {
                     return Some(idx);
                 }
+                // Backend gone or unhealthy — fall through to round-robin.
             }
         }
 
@@ -60,10 +70,11 @@ impl LoadBalancer for StickySession {
             % weighted.len();
         let selected = weighted[pos];
 
-        // Cache the selection if a cookie is present.
+        // Cache the selection by (addr, port) if a cookie is present.
         if let Some(cookie) = &ctx.sticky_cookie {
+            let b = &backends[selected];
             let mut map = self.affinity.write().unwrap();
-            map.insert(cookie.clone(), selected);
+            map.insert(cookie.clone(), (b.addr, b.port));
         }
 
         Some(selected)
@@ -163,5 +174,29 @@ mod tests {
         backends[1].healthy = false;
         let ctx = make_ctx();
         assert!(lb.select(&ctx, &backends).is_none());
+    }
+
+    #[test]
+    fn survives_backend_reorder() {
+        // Regression test for #869: after config rebuild reorders backends,
+        // sticky session should still route to the correct backend by address.
+        let lb = StickySession::new();
+
+        // Original order: [backend-0, backend-1, backend-2]
+        let backends_v1 = make_backends(3);
+        let ctx = ctx_with_cookie("session-reorder");
+
+        let first = lb.select(&ctx, &backends_v1).unwrap();
+        let first_addr = backends_v1[first].addr;
+        let first_port = backends_v1[first].port;
+
+        // Simulate config rebuild with reversed order.
+        let mut backends_v2 = backends_v1.clone();
+        backends_v2.reverse();
+
+        let second = lb.select(&ctx, &backends_v2).unwrap();
+        // Must point to the same (addr, port) even though indices changed.
+        assert_eq!(backends_v2[second].addr, first_addr);
+        assert_eq!(backends_v2[second].port, first_port);
     }
 }

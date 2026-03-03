@@ -408,6 +408,14 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	// Build SD-WAN WAN policies
 	wanPolicies := b.buildWANPolicies(bc)
 	snapshot.WanPolicies = wanPolicies
+
+	// Sort all repeated fields for deterministic proto marshaling.
+	// proto.MarshalOptions{Deterministic: true} only sorts map keys,
+	// NOT repeated fields (slices). Since Go map iteration populates
+	// them in random order, we must sort explicitly to ensure stable
+	// version hashes across builds. (#867)
+	sortSnapshot(snapshot)
+
 	// Generate version based on content hash
 	snapshot.Version = b.generateVersion(snapshot)
 
@@ -1449,6 +1457,34 @@ func (b *Builder) loadWASMBinary(source, defaultNamespace string, bc *buildConte
 	}
 
 	return nil, fmt.Errorf("%w: %s/%s (expected key: plugin.wasm)", errWASMBinaryNotFoundInConfigMap, namespace, name)
+}
+
+// sortSnapshot sorts all repeated (slice) fields in the snapshot to ensure
+// deterministic proto marshaling. proto.MarshalOptions{Deterministic: true}
+// only sorts map keys, not repeated fields. Since Go map iteration order is
+// random, slices populated from maps have non-deterministic order, causing
+// different content hashes for semantically identical snapshots. (#867)
+func sortSnapshot(s *pb.ConfigSnapshot) {
+	sort.Slice(s.Gateways, func(i, j int) bool { return s.Gateways[i].Name < s.Gateways[j].Name })
+	sort.Slice(s.Routes, func(i, j int) bool { return s.Routes[i].Name < s.Routes[j].Name })
+	sort.Slice(s.Clusters, func(i, j int) bool { return s.Clusters[i].Name < s.Clusters[j].Name })
+	sort.Slice(s.VipAssignments, func(i, j int) bool { return s.VipAssignments[i].Address < s.VipAssignments[j].Address })
+	sort.Slice(s.Policies, func(i, j int) bool { return s.Policies[i].Name < s.Policies[j].Name })
+	sort.Slice(s.AvailableControllers, func(i, j int) bool {
+		return s.AvailableControllers[i].Name < s.AvailableControllers[j].Name
+	})
+	sort.Slice(s.L4Listeners, func(i, j int) bool { return s.L4Listeners[i].Name < s.L4Listeners[j].Name })
+	// InternalServices already sorted in buildInternalServices (line ~1162).
+	sort.Slice(s.MeshAuthzPolicies, func(i, j int) bool { return s.MeshAuthzPolicies[i].Name < s.MeshAuthzPolicies[j].Name })
+	sort.Slice(s.WanLinks, func(i, j int) bool { return s.WanLinks[i].Name < s.WanLinks[j].Name })
+	sort.Slice(s.WanPolicies, func(i, j int) bool { return s.WanPolicies[i].Name < s.WanPolicies[j].Name })
+
+	// Sort nested repeated fields: endpoints within each EndpointList.
+	for _, epList := range s.Endpoints {
+		sort.Slice(epList.Endpoints, func(i, j int) bool {
+			return epList.Endpoints[i].Address < epList.Endpoints[j].Address
+		})
+	}
 }
 
 // generateVersion generates a version string by hashing the entire proto
