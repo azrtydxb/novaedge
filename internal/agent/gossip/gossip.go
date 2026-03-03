@@ -58,6 +58,12 @@ const (
 	// resync loops that cause config churn. (#866)
 	GenTimeThreshold int64 = 60
 
+	// ResyncCooldown is how long to wait after a force resync before
+	// allowing another one. This gives the agent time to reconnect and
+	// receive a new config snapshot before the gossip tears down the
+	// stream again. (#866)
+	ResyncCooldown = 30 * time.Second
+
 	// messagePrefix identifies config gossip messages.
 	messagePrefix = "config_version"
 )
@@ -76,6 +82,7 @@ type ConfigGossiper struct {
 	currentGenTime  atomic.Int64
 	peerVersions    sync.Map // map[string]peerState
 	forceResyncFunc func()
+	lastResyncTime  atomic.Int64 // Unix nano timestamp of last force resync
 	logger          *zap.Logger
 	ctx             context.Context
 	cancel          context.CancelFunc
@@ -241,6 +248,15 @@ func (g *ConfigGossiper) checkQuorum() {
 		return // no config applied yet, nothing to compare
 	}
 
+	// Cooldown: don't fire another resync if we recently triggered one.
+	// This gives the agent time to reconnect and receive a new snapshot. (#866)
+	if lastResync := g.lastResyncTime.Load(); lastResync > 0 {
+		elapsed := time.Since(time.Unix(0, lastResync))
+		if elapsed < ResyncCooldown {
+			return
+		}
+	}
+
 	total := 0
 	newerCount := 0
 	now := time.Now()
@@ -271,6 +287,7 @@ func (g *ConfigGossiper) checkQuorum() {
 			zap.Int("peers", total),
 			zap.Int("newerPeers", newerCount),
 		)
+		g.lastResyncTime.Store(time.Now().UnixNano())
 		g.forceResyncFunc()
 	}
 }
