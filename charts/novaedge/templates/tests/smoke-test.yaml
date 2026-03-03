@@ -1,0 +1,133 @@
+{{- if .Values.tests.smoke.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "novaedge.fullname" . }}-test
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "novaedge.fullname" . }}-test
+  labels:
+    {{- include "novaedge.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "novaedge.fullname" . }}-test
+  labels:
+    {{- include "novaedge.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "novaedge.fullname" . }}-test
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "novaedge.fullname" . }}-test
+    namespace: {{ include "novaedge.namespace" . }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "novaedge.fullname" . }}-smoke-test
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        {{- include "novaedge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+    spec:
+      serviceAccountName: {{ include "novaedge.fullname" . }}-test
+      restartPolicy: Never
+      containers:
+        - name: smoke-test
+          image: {{ .Values.tests.image | default "bitnami/kubectl:latest" }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              echo "=== NovaEdge Smoke Test ==="
+              NAMESPACE={{ include "novaedge.namespace" . }}
+              FAILURES=0
+
+              {{- if .Values.controller.enabled }}
+              echo "1. Checking Controller Deployment..."
+              kubectl rollout status deployment/{{ include "novaedge.fullname" . }}-controller -n $NAMESPACE --timeout=120s
+              echo "   Controller is ready"
+              {{- end }}
+
+              {{- if .Values.agent.enabled }}
+              echo "2. Checking Agent DaemonSet..."
+              DS_DESIRED=$(kubectl get daemonset {{ include "novaedge.fullname" . }}-agent -n $NAMESPACE -o jsonpath='{.status.desiredNumberScheduled}')
+              DS_READY=$(kubectl get daemonset {{ include "novaedge.fullname" . }}-agent -n $NAMESPACE -o jsonpath='{.status.numberReady}')
+              echo "   Agent DaemonSet: $DS_READY/$DS_DESIRED pods ready"
+              if [ "$DS_READY" -lt 1 ]; then
+                echo "FAIL: No agent pods are ready"
+                FAILURES=$((FAILURES + 1))
+              fi
+              {{- end }}
+
+              {{- if .Values.webui.enabled }}
+              echo "3. Checking WebUI Deployment..."
+              kubectl rollout status deployment/{{ include "novaedge.fullname" . }}-webui -n $NAMESPACE --timeout=120s
+              echo "   WebUI is ready"
+              {{- end }}
+
+              echo "4. Checking all pods are Running..."
+              NOT_RUNNING=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance={{ .Release.Name }} --field-selector=status.phase!=Running,status.phase!=Succeeded --no-headers 2>/dev/null | wc -l)
+              if [ "$NOT_RUNNING" -gt 0 ]; then
+                echo "WARN: $NOT_RUNNING pod(s) not in Running state"
+                kubectl get pods -n $NAMESPACE -l app.kubernetes.io/instance={{ .Release.Name }} --field-selector=status.phase!=Running,status.phase!=Succeeded
+              fi
+
+              echo "5. Checking CRDs are installed..."
+              EXPECTED_CRDS=("proxygateways.novaedge.io" "proxyroutes.novaedge.io" "proxybackends.novaedge.io")
+              for CRD in "${EXPECTED_CRDS[@]}"; do
+                if kubectl get crd $CRD &>/dev/null; then
+                  echo "   $CRD installed"
+                else
+                  echo "FAIL: CRD $CRD not found"
+                  FAILURES=$((FAILURES + 1))
+                fi
+              done
+
+              if [ "$FAILURES" -gt 0 ]; then
+                echo ""
+                echo "=== Smoke Test FAILED ($FAILURES failures) ==="
+                exit 1
+              fi
+
+              echo ""
+              echo "=== Smoke Test PASSED ==="
+{{- end }}

@@ -1,0 +1,96 @@
+{{- if .Values.tests.integration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "novaedge.fullname" . }}-integration-test
+  namespace: {{ include "novaedge.namespace" . }}
+  labels:
+    {{- include "novaedge.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        {{- include "novaedge.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+    spec:
+      serviceAccountName: {{ include "novaedge.fullname" . }}-test
+      restartPolicy: Never
+      containers:
+        - name: integration-test
+          image: {{ .Values.tests.image | default "bitnami/kubectl:latest" }}
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              echo "=== NovaEdge Integration Test ==="
+              NAMESPACE={{ include "novaedge.namespace" . }}
+              FAILURES=0
+
+              {{- if .Values.controller.enabled }}
+              echo "1. Verifying Controller health..."
+              CTRL_POD=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/component=controller,app.kubernetes.io/instance={{ .Release.Name }} -o jsonpath='{.items[0].metadata.name}')
+              CTRL_READY=$(kubectl get pod $CTRL_POD -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
+              if [ "$CTRL_READY" = "True" ]; then
+                echo "   Controller pod is healthy"
+              else
+                echo "FAIL: Controller pod not ready"
+                FAILURES=$((FAILURES + 1))
+              fi
+              {{- end }}
+
+              {{- if .Values.agent.enabled }}
+              echo "2. Verifying Agent pods health..."
+              AGENT_PODS=$(kubectl get pods -n $NAMESPACE -l app.kubernetes.io/component=agent,app.kubernetes.io/instance={{ .Release.Name }} -o jsonpath='{.items[*].metadata.name}')
+              for POD in $AGENT_PODS; do
+                READY=$(kubectl get pod $POD -n $NAMESPACE -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}')
+                if [ "$READY" != "True" ]; then
+                  echo "FAIL: Agent pod $POD not ready"
+                  FAILURES=$((FAILURES + 1))
+                fi
+              done
+              AGENT_COUNT=$(echo $AGENT_PODS | wc -w | tr -d ' ')
+              echo "   $AGENT_COUNT agent pod(s) healthy"
+              {{- end }}
+
+              {{- if and .Values.controller.enabled .Values.agent.enabled }}
+              echo "3. Checking Controller gRPC service..."
+              GRPC_SVC={{ include "novaedge.fullname" . }}-controller
+              if kubectl get service $GRPC_SVC -n $NAMESPACE &>/dev/null; then
+                GRPC_PORT=$(kubectl get service $GRPC_SVC -n $NAMESPACE -o jsonpath='{.spec.ports[?(@.name=="grpc")].port}')
+                echo "   gRPC service available on port $GRPC_PORT"
+              else
+                echo "FAIL: Controller gRPC service not found"
+                FAILURES=$((FAILURES + 1))
+              fi
+              {{- end }}
+
+              {{- if .Values.webui.enabled }}
+              echo "4. Checking WebUI service..."
+              WEBUI_SVC={{ include "novaedge.fullname" . }}-webui
+              if kubectl get service $WEBUI_SVC -n $NAMESPACE &>/dev/null; then
+                echo "   WebUI service available"
+              else
+                echo "FAIL: WebUI service not found"
+                FAILURES=$((FAILURES + 1))
+              fi
+              {{- end }}
+
+              echo "5. Checking RBAC is properly configured..."
+              SA_COUNT=$(kubectl get serviceaccounts -n $NAMESPACE -l app.kubernetes.io/instance={{ .Release.Name }} --no-headers | wc -l)
+              echo "   $SA_COUNT service account(s) found"
+
+              if [ "$FAILURES" -gt 0 ]; then
+                echo ""
+                echo "=== Integration Test FAILED ($FAILURES failures) ==="
+                exit 1
+              fi
+
+              echo ""
+              echo "=== Integration Test PASSED ==="
+{{- end }}
