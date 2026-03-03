@@ -38,14 +38,13 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+        run: go install gotest.tools/gotestsum@v1.12.1
       - name: Run integration tests
         run: |
           gotestsum \
             --junitfile ct-integration-results.xml \
             --format pkgname \
             -- -race -tags=integration -count=1 -timeout=10m ./test/integration/...
-        continue-on-error: true
       - name: Upload test report
         if: always()
         uses: dorny/test-reporter@v1
@@ -76,14 +75,13 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+        run: go install gotest.tools/gotestsum@v1.12.1
       - name: Run E2E tests
         run: |
           gotestsum \
             --junitfile ct-e2e-results.xml \
             --format pkgname \
             -- -tags=e2e -count=1 -timeout=30m ./test/e2e/...
-        continue-on-error: true
       - name: Upload test report
         if: always()
         uses: dorny/test-reporter@v1
@@ -114,14 +112,13 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+        run: go install gotest.tools/gotestsum@v1.12.1
       - name: Run functional tests
         run: |
           gotestsum \
             --junitfile ct-functional-results.xml \
             --format pkgname \
             -- -tags=functional -count=1 -timeout=15m ./test/functional/...
-        continue-on-error: true
       - name: Upload test report
         if: always()
         uses: dorny/test-reporter@v1
@@ -159,7 +156,6 @@ jobs:
             ./internal/agent/upstream/... \
             ./internal/agent/policy/... \
             2>&1 | tee benchmark-results.txt
-        continue-on-error: true
       - name: Generate summary
         if: always()
         run: |

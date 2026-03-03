@@ -123,7 +123,6 @@ jobs:
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v7
         with:
-          version: latest
           args: >-
             --timeout=10m
             ${{ github.event_name == 'pull_request' && '--new-from-rev=origin/main' || '' }}
@@ -311,7 +310,7 @@ jobs:
 
       - name: Check documentation freshness
         run: |
-          CODE_CHANGED=$(git diff --name-only origin/main...HEAD -- '*.go' 'cmd/' 'internal/' 'api/' 'dataplane/' 'web/src/' | wc -l)
+          CODE_CHANGED=$(git diff --name-only origin/main...HEAD -- '*.go' 'cmd/' 'internal/' 'api/' 'dataplane/' 'web/' | wc -l)
           DOCS_CHANGED=$(git diff --name-only origin/main...HEAD -- 'docs/' 'mkdocs.yml' | wc -l)
           if [ "$CODE_CHANGED" -gt 0 ] && [ "$DOCS_CHANGED" -eq 0 ]; then
             echo "::error::Code changed but no documentation updates. Update docs/ before merging."
@@ -356,7 +355,7 @@ jobs:
 
       - name: Run govulncheck
         run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck ./...
 
       - name: Check for secrets (gitleaks)
@@ -365,7 +364,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -386,15 +385,23 @@ jobs:
   phase2-gate:
     name: "Phase 2 Gate: Compliance"
     runs-on: arc-runner-novaedge
-    needs: [phase2-docs, phase2-docs-freshness, phase2-security]
+    needs: [phase1-gate, phase2-docs, phase2-docs-freshness, phase2-security]
     if: always()
     steps:
       - name: Check phase 2 results
         env:
+          PHASE1_GATE: ${{ needs.phase1-gate.result }}
           DOCS_RESULT: ${{ needs.phase2-docs.result }}
           FRESHNESS_RESULT: ${{ needs.phase2-docs-freshness.result }}
           SECURITY_RESULT: ${{ needs.phase2-security.result }}
         run: |
+          # Verify previous gate passed
+          PHASE1_GATE="${{ needs.phase1-gate.result }}"
+          if [[ "$PHASE1_GATE" != "success" ]]; then
+            echo "::error::Phase 1 gate did not pass (status: $PHASE1_GATE)"
+            exit 1
+          fi
+
           results=("$DOCS_RESULT" "$FRESHNESS_RESULT" "$SECURITY_RESULT")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
@@ -442,7 +449,7 @@ jobs:
           go generate ./internal/agent/afxdp/
 
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@latest
+        run: go install gotest.tools/gotestsum@v1.12.1
 
       - name: Run unit tests
         run: |
@@ -450,7 +457,7 @@ jobs:
           gotestsum \
             --junitfile go-test-results.xml \
             --format pkgname \
-            -- -race -coverprofile=coverage.out -covermode=atomic ./...
+            -- -race -timeout=10m -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Check for skipped eBPF tests
         if: always()
@@ -467,7 +474,7 @@ jobs:
           echo "Total coverage: ${COVERAGE}%"
           echo "## Test Coverage: ${COVERAGE}%" >> $GITHUB_STEP_SUMMARY
           THRESHOLD=${{ env.COVERAGE_THRESHOLD }}
-          if (( $(echo "$COVERAGE < $THRESHOLD" | bc -l) )); then
+          if awk "BEGIN {exit !($COVERAGE < $THRESHOLD)}"; then
             echo "::error::Coverage ${COVERAGE}% is below threshold ${THRESHOLD}%"
             exit 1
           fi
@@ -605,15 +612,23 @@ jobs:
   phase3-gate:
     name: "Phase 3 Gate: Unit Testing"
     runs-on: arc-runner-novaedge
-    needs: [phase3-test-go, phase3-test-rust, phase3-test-frontend]
+    needs: [phase2-gate, phase3-test-go, phase3-test-rust, phase3-test-frontend]
     if: always()
     steps:
       - name: Check phase 3 results
         env:
+          PHASE2_GATE: ${{ needs.phase2-gate.result }}
           GO_RESULT: ${{ needs.phase3-test-go.result }}
           RUST_RESULT: ${{ needs.phase3-test-rust.result }}
           FRONTEND_RESULT: ${{ needs.phase3-test-frontend.result }}
         run: |
+          # Verify previous gate passed
+          PHASE2_GATE="${{ needs.phase2-gate.result }}"
+          if [[ "$PHASE2_GATE" != "success" ]]; then
+            echo "::error::Phase 2 gate did not pass (status: $PHASE2_GATE)"
+            exit 1
+          fi
+
           results=("$GO_RESULT" "$RUST_RESULT" "$FRONTEND_RESULT")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
@@ -777,7 +792,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run Trivy container scan
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: ${{ matrix.image.name }}:${{ github.sha }}
           format: 'sarif'
@@ -798,16 +813,24 @@ jobs:
   phase4-gate:
     name: "Phase 4 Gate: Building"
     runs-on: arc-runner-novaedge
-    needs: [phase4-build-go, phase4-build-rust, phase4-build-frontend, phase4-docker-test]
+    needs: [phase3-gate, phase4-build-go, phase4-build-rust, phase4-build-frontend, phase4-docker-test]
     if: always()
     steps:
       - name: Check phase 4 results
         env:
+          PHASE3_GATE: ${{ needs.phase3-gate.result }}
           GO_BUILD_RESULT: ${{ needs.phase4-build-go.result }}
           RUST_BUILD_RESULT: ${{ needs.phase4-build-rust.result }}
           FRONTEND_BUILD_RESULT: ${{ needs.phase4-build-frontend.result }}
           DOCKER_TEST_RESULT: ${{ needs.phase4-docker-test.result }}
         run: |
+          # Verify previous gate passed
+          PHASE3_GATE="${{ needs.phase3-gate.result }}"
+          if [[ "$PHASE3_GATE" != "success" ]]; then
+            echo "::error::Phase 3 gate did not pass (status: $PHASE3_GATE)"
+            exit 1
+          fi
+
           results=("$GO_BUILD_RESULT" "$RUST_BUILD_RESULT" "$FRONTEND_BUILD_RESULT" "$DOCKER_TEST_RESULT")
           for r in "${results[@]}"; do
             if [[ "$r" != "success" && "$r" != "skipped" ]]; then
@@ -867,6 +890,12 @@ jobs:
             ghcr.io/piwi3910/${{ matrix.image.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Trigger CT pipeline
+        if: success()
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          event-type: deployment-complete
 
   # =============================================================================
   # Status Check
