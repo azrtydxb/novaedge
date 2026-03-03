@@ -72,12 +72,16 @@ pub struct ClusterState {
     /// Cookie name for cookie-based session affinity.
     pub session_affinity_cookie: String,
     /// Consecutive 5xx threshold for outlier detection (0 = use default).
+    #[allow(dead_code)]
     pub outlier_consecutive_5xx: u32,
     /// Base ejection duration in ms for outlier detection (0 = use default).
+    #[allow(dead_code)]
     pub outlier_ejection_duration_ms: u64,
     /// Maximum ejection percentage for outlier detection (0 = use default).
+    #[allow(dead_code)]
     pub outlier_max_ejection_pct: u32,
     /// Slow start window in ms (0 = disabled).
+    #[allow(dead_code)]
     pub slow_start_window_ms: u64,
 }
 

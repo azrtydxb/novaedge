@@ -190,6 +190,7 @@ impl ProxyHandler {
     /// Returns a response with `Full<Bytes>` body. WebSocket upgrades are
     /// NOT handled here — they require the original hyper request for the
     /// upgrade handshake.
+    #[allow(clippy::too_many_arguments)]
     pub async fn handle_request_inner(
         &self,
         method: &str,
