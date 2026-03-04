@@ -38,7 +38,7 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.1
+        run: GOTOOLCHAIN=auto go install gotest.tools/gotestsum@latest
       - name: Run integration tests
         run: |
           gotestsum \
@@ -75,7 +75,7 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.1
+        run: GOTOOLCHAIN=auto go install gotest.tools/gotestsum@latest
       - name: Run E2E tests
         run: |
           gotestsum \
@@ -112,7 +112,7 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
       - name: Install gotestsum
-        run: go install gotest.tools/gotestsum@v1.12.1
+        run: GOTOOLCHAIN=auto go install gotest.tools/gotestsum@latest
       - name: Run functional tests
         run: |
           gotestsum \
