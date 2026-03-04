@@ -75,8 +75,7 @@ metadata:
   name: my-vip
 spec:
   address: 192.168.1.100/32
-  mode: L2
-  interface: eth0
+  mode: L2ARP
 ```
 
 ### 3.2 Create a Gateway
@@ -159,8 +158,7 @@ metadata:
   name: my-vip
 spec:
   address: 192.168.1.100/32
-  mode: L2
-  interface: eth0
+  mode: L2ARP
 ---
 apiVersion: novaedge.io/v1alpha1
 kind: ProxyGateway

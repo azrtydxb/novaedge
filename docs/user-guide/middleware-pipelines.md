@@ -10,16 +10,11 @@ A middleware pipeline is an ordered list of middleware entries that execute in p
 - **Short-circuit** the chain (e.g., return 401 for auth failures)
 - **Communicate** with other middleware via pipeline state
 
-## Pipeline Phases
+## Pipeline Execution Model
 
-Middleware can execute at different phases:
+Middleware entries use `Type` (either `builtin` or `wasm`) and `Priority` (integer) to determine execution order. Lower priority numbers execute first.
 
-| Phase | Description |
-|-------|-------------|
-| `pre-route` | Before route matching |
-| `post-route` | After route matching, before backend |
-| `pre-backend` | Just before sending to backend |
-| `post-backend` | After backend response |
+For WASM plugins specifically, the `Phase` field (with values `request`, `response`, or `both`) controls when the plugin executes in the request lifecycle. Built-in middleware does not use phases.
 
 ## Configuration
 

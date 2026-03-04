@@ -1641,11 +1641,13 @@ spec:
     protocol: HTTPS
     port: 443
     tls:
-      mode: Terminate
-      certificateRefs:
-      - kind: Secret
+      secretRef:
         name: tls-secret
+        namespace: default
+      minVersion: "TLS1.2"
 ```
+
+Note: The `tls` field uses the NovaEdge `TLSConfig` struct with fields: `secretRef`, `certificateRef`, `acme`, `selfSigned`, `vaultCertRef`, `minVersion`, and `cipherSuites`. This differs from the Gateway API `mode`/`certificateRefs` pattern.
 
 **Status Conditions:**
 

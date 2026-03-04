@@ -21,11 +21,11 @@ novactl version
 
 ```
 --kubeconfig string   Path to kubeconfig file (default: $KUBECONFIG or ~/.kube/config)
---context string      Kubernetes context to use
 --namespace string    Kubernetes namespace (default: "default")
--o, --output string   Output format: table, json, yaml (default: "table")
 -h, --help           Help for any command
 ```
+
+Note: The `-o, --output` flag is available on per-command basis (e.g., `get`, `sdwan links`) rather than as a global flag.
 
 ## Commands
 
@@ -53,20 +53,21 @@ novactl get <resource-type> [name] [flags]
 ```
 
 **Resource Types:**
-- `clusters` or `cluster` or `cl` (NovaEdgeCluster)
 - `gateways` or `gateway` or `gw`
 - `routes` or `route` or `rt`
 - `backends` or `backend` or `be`
 - `vips` or `vip`
 - `policies` or `policy` or `pol`
+- `tcproutes` or `tcproute`
+- `tlsroutes` or `tlsroute`
+- `grpcroutes` or `grpcroute`
+- `ippools` or `ippool`
+- `wasmplugins` or `wasmplugin` or `wasm` (shown via policies with type WASMPlugin)
+- `certificates` or `certificate` or `cert`
 
 **Examples:**
 
 ```bash
-# List all NovaEdge clusters
-novactl get clusters
-novactl get clusters -A
-
 # List all gateways in current namespace
 novactl get gateways
 
@@ -87,7 +88,6 @@ novactl get gateways -o json
 novactl get gateways -o yaml
 
 # List all resource types
-novactl get clusters
 novactl get routes
 novactl get backends
 novactl get vips
@@ -95,12 +95,6 @@ novactl get policies
 ```
 
 **Table Output Format:**
-
-NovaEdgeClusters:
-```
-NAMESPACE        NAME       VERSION   PHASE     CONTROLLER   AGENTS   AGE
-nova-system  novaedge   v0.1.0    Running   1/1          3/3      5d
-```
 
 Gateways:
 ```
@@ -207,34 +201,6 @@ Status:
 Events:  <none>
 ```
 
-### novactl create
-
-Create resources from file or stdin.
-
-**Syntax:**
-```bash
-novactl create -f <file> [flags]
-```
-
-**Examples:**
-
-```bash
-# Create from file
-novactl create -f gateway.yaml
-
-# Create from multiple files
-novactl create -f gateway.yaml -f route.yaml
-
-# Create from directory
-novactl create -f ./manifests/
-
-# Create from stdin
-cat gateway.yaml | novactl create -f -
-
-# Create in specific namespace
-novactl create -f gateway.yaml -n production
-```
-
 ### novactl apply
 
 Apply configuration from file (create or update).
@@ -289,56 +255,6 @@ novactl delete gateway main-gateway -n production
 novactl delete gateway main-gateway --force --grace-period=0
 ```
 
-### novactl edit
-
-Edit a resource using default editor.
-
-**Syntax:**
-```bash
-novactl edit <resource-type> <name> [flags]
-```
-
-**Examples:**
-
-```bash
-# Edit gateway
-novactl edit gateway main-gateway
-
-# Edit in specific namespace
-novactl edit gateway main-gateway -n production
-
-# Use specific editor
-EDITOR=vim novactl edit gateway main-gateway
-```
-
-### novactl patch
-
-Update fields of a resource.
-
-**Syntax:**
-```bash
-novactl patch <resource-type> <name> -p <patch> [flags]
-```
-
-**Examples:**
-
-```bash
-# Patch with JSON
-novactl patch gateway main-gateway -p '{"spec":{"vipRef":"new-vip"}}'
-
-# Patch with YAML
-novactl patch gateway main-gateway --type=merge -p '
-spec:
-  vipRef: new-vip
-'
-
-# Strategic merge patch (default)
-novactl patch gateway main-gateway --type=strategic -p '{"spec":{"listeners":[{"name":"http","port":8080}]}}'
-
-# JSON patch
-novactl patch gateway main-gateway --type=json -p '[{"op":"replace","path":"/spec/vipRef","value":"new-vip"}]'
-```
-
 ### novactl logs
 
 View logs from NovaEdge components.
@@ -351,6 +267,7 @@ novactl logs <component> [flags]
 **Components:**
 - `controller`
 - `agent`
+- `access` (access logs)
 
 **Examples:**
 
@@ -375,113 +292,6 @@ novactl logs controller --since=1h
 
 # Show timestamps
 novactl logs controller --timestamps
-```
-
-### novactl status
-
-Show overall status of NovaEdge deployment.
-
-**Syntax:**
-```bash
-novactl status [flags]
-```
-
-**Example:**
-
-```bash
-novactl status
-```
-
-**Output:**
-
-```
-NovaEdge Status Report
-
-Operator:
-  Installed:   Yes
-  Version:     v0.1.0
-
-Cluster:
-  Name:        novaedge
-  Namespace:   nova-system
-  Phase:       Running
-  Version:     v0.1.0
-
-Controller:
-  Replicas:    1/1 Ready
-  Version:     v1.0.0
-  Status:      Running
-  Last Sync:   2024-11-15T10:30:00Z
-
-Agents:
-  Total Nodes: 3
-  Ready:       3
-  Version:     v1.0.0
-
-  Node            Status    VIPs    Active Connections
-  ----            ------    ----    ------------------
-  control-plane   Ready     1       145
-  worker-1        Ready     0       203
-  worker-2        Ready     0       198
-
-Web UI:
-  Enabled:     Yes
-  Replicas:    1/1 Ready
-  URL:         http://novaedge-webui.nova-system:9080
-
-Resources:
-  NovaEdgeClusters:  1
-  ProxyGateways:     5
-  ProxyRoutes:       12
-  ProxyBackends:     8
-  ProxyVIPs:         2
-  ProxyPolicies:     6
-
-Health:
-  Operator:    ✓ Healthy
-  Controller:  ✓ Healthy
-  Agents:      ✓ All Ready
-  VIPs:        ✓ All Active
-  Backends:    ⚠ 1 Degraded
-```
-
-### novactl validate
-
-Validate resource definitions without applying them.
-
-**Syntax:**
-```bash
-novactl validate -f <file> [flags]
-```
-
-**Examples:**
-
-```bash
-# Validate single file
-novactl validate -f gateway.yaml
-
-# Validate multiple files
-novactl validate -f gateway.yaml -f route.yaml
-
-# Validate directory
-novactl validate -f ./manifests/
-
-# Validate from stdin
-cat gateway.yaml | novactl validate -f -
-```
-
-**Output:**
-
-```
-✓ gateway.yaml: Valid ProxyGateway (main-gateway)
-✗ route.yaml: Invalid ProxyRoute (test-route)
-  - spec.rules[0].backendRef.name: Required field missing
-  - spec.hostnames: At least one hostname required
-
-Validation Summary:
-  Total: 2
-  Valid: 1
-  Invalid: 1
 ```
 
 ### novactl trace
@@ -615,53 +425,6 @@ Services (3):
   database-service
 ```
 
-### novactl config
-
-View and modify novactl configuration.
-
-**Syntax:**
-```bash
-novactl config <subcommand> [flags]
-```
-
-**Subcommands:**
-- `view` - Display current configuration
-- `set-context` - Set current context
-- `use-context` - Switch context
-
-**Examples:**
-
-```bash
-# View current configuration
-novactl config view
-
-# Set context
-novactl config use-context production
-
-# View contexts
-novactl config get-contexts
-```
-
-## Configuration File
-
-novactl uses `~/.novactl/config` for configuration:
-
-```yaml
-currentContext: default
-contexts:
-- name: default
-  cluster: default
-  namespace: default
-- name: production
-  cluster: production-cluster
-  namespace: prod
-clusters:
-- name: default
-  kubeconfig: ~/.kube/config
-- name: production-cluster
-  kubeconfig: ~/.kube/prod-config
-```
-
 ## Environment Variables
 
 - `KUBECONFIG` - Path to kubeconfig file
@@ -720,11 +483,8 @@ curl -H "Host: myapp.example.com" http://<vip-address>/
 ### Updating Configuration
 
 ```bash
-# Edit route
-novactl edit route myapp-route
-
-# Or patch specific field
-novactl patch route myapp-route -p '{"spec":{"hostnames":["new.example.com"]}}'
+# Update route via apply
+novactl apply -f myapp-route-updated.yaml
 
 # Verify changes
 novactl get route myapp-route -o yaml
@@ -733,9 +493,6 @@ novactl get route myapp-route -o yaml
 ### Troubleshooting
 
 ```bash
-# Check overall status
-novactl status
-
 # View controller logs
 novactl logs controller --tail=100
 
@@ -746,7 +503,11 @@ novactl logs agent --node=worker-1
 novactl describe backend myapp-backend
 
 # Check all resources
-novactl get clusters,gateways,routes,backends,vips,policies
+novactl get gateways
+novactl get routes
+novactl get backends
+novactl get vips
+novactl get policies
 ```
 
 ### Cleaning Up
@@ -774,8 +535,8 @@ novactl is designed to work alongside kubectl:
 | List gateways | `kubectl get proxygateways` | `novactl get gateways` |
 | Describe gateway | `kubectl describe proxygateway main-gateway` | `novactl describe gateway main-gateway` |
 | View logs | `kubectl logs -n nova-system -l app=controller` | `novactl logs controller` |
-| Overall status | Manual inspection | `novactl status` |
-| Validate | `kubectl apply --dry-run=client` | `novactl validate` |
+| Apply config | `kubectl apply -f gateway.yaml` | `novactl apply -f gateway.yaml` |
+| Delete resource | `kubectl delete proxygateway main-gateway` | `novactl delete gateway main-gateway` |
 
 You can use both tools interchangeably. `novactl` provides convenience shortcuts and NovaEdge-specific features, while `kubectl` offers full Kubernetes API access.
 
@@ -802,12 +563,7 @@ You can use both tools interchangeably. `novactl` provides convenience shortcuts
    novactl get routes -o yaml | grep -A1 hostnames
    ```
 
-4. **Validate before applying:**
-   ```bash
-   novactl validate -f config.yaml && novactl apply -f config.yaml
-   ```
-
-5. **Watch logs during deployment:**
+4. **Watch logs during deployment:**
    ```bash
    novactl logs controller -f &
    novactl apply -f new-gateway.yaml

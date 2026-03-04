@@ -170,25 +170,66 @@ classDiagram
 
 ```yaml
 # Controller command-line flags
---grpc-port=9090        # gRPC server port
+--grpc-port=9090        # gRPC server port (CRD default: 9090, Helm chart default: 8082)
 --metrics-port=8080     # Prometheus metrics port
 --health-port=8081      # Health probe port
 --log-level=info        # Log level
 --leader-election=true  # Enable leader election
 ```
 
-## Agent
+## Agent (Config Agent)
 
-The Agent is the data plane component that handles all traffic routing and VIP management on each node.
+The Go Agent is a **config-only agent** that manages VIPs, receives configuration from the controller, and pushes it to the Rust Dataplane. It does NOT handle user traffic.
 
 ### Internal Architecture
 
 ```mermaid
 flowchart TB
-    subgraph Agent["Agent"]
+    subgraph Agent["Go Agent (Config Agent)"]
         subgraph Config["Configuration"]
-            GC["gRPC Client"]
+            GC["gRPC Client<br/>(from controller)"]
             CM["Config Manager"]
+            TRANSLATOR["Config Translator"]
+        end
+
+        subgraph VIPMgmt["VIP Management"]
+            VIP["VIP Manager<br/>(L2/BGP/OSPF/BFD)"]
+        end
+
+        subgraph eBPFMgmt["eBPF Program Lifecycle"]
+            EBPF["eBPF Loader"]
+        end
+
+        subgraph DataplanePush["Dataplane Communication"]
+            GRPC_PUSH["gRPC Push to Rust Dataplane"]
+        end
+
+        subgraph Observability["Observability"]
+            MET["Metrics"]
+            HEALTH["Health Probes"]
+            ADMIN["Admin API"]
+        end
+    end
+
+    GC --> CM
+    CM --> TRANSLATOR
+    TRANSLATOR --> GRPC_PUSH
+    CM --> VIP
+    CM --> EBPF
+```
+
+## Rust Dataplane (Traffic Handler)
+
+The Rust Dataplane is the **actual data plane** that handles all L4/L7 traffic. It runs as a DaemonSet sidecar alongside the Go Agent.
+
+### Internal Architecture
+
+```mermaid
+flowchart TB
+    subgraph Dataplane["Rust Dataplane (Traffic Handler)"]
+        subgraph ConfigRecv["Configuration"]
+            GRPC_RECV["gRPC Server<br/>(from Go Agent)"]
+            CFG["Config Store"]
         end
 
         subgraph eBPFAccel["eBPF/XDP Acceleration"]
@@ -198,7 +239,6 @@ flowchart TB
         end
 
         subgraph Traffic["Traffic Handling"]
-            VIP["VIP Manager"]
             RT["Router"]
             POL["Policy Engine"]
             LB["Load Balancer"]
@@ -209,30 +249,22 @@ flowchart TB
             POOL["Connection Pool"]
             CB["Circuit Breaker"]
         end
-
-        subgraph Observability["Observability"]
-            MET["Metrics"]
-            TRC["Tracing"]
-            LOG["Logging"]
-        end
     end
 
-    GC --> CM
-    CM --> VIP & RT & POL & LB & HC & XDP & AFXDP & SKLOOKUP
+    GRPC_RECV --> CFG
+    CFG --> RT & POL & LB & HC & XDP & AFXDP & SKLOOKUP
 
     eBPFAccel --> Traffic
     Traffic --> Backend
-    Traffic --> Observability
-    Backend --> Observability
 
     style eBPFAccel fill:#fff4e6
 ```
 
 ### Subcomponents
 
-#### VIP Manager
+#### VIP Manager (Go Agent)
 
-Manages virtual IP addresses on the node:
+Manages virtual IP addresses on the node (part of the Go config agent):
 
 ```mermaid
 flowchart LR
@@ -255,9 +287,9 @@ flowchart LR
 | BGP | Announce VIP via GoBGP |
 | OSPF | Advertise via OSPF LSAs |
 
-#### Router
+#### Router (Rust Dataplane)
 
-Matches incoming requests to routes:
+Matches incoming requests to routes (part of the Rust dataplane):
 
 ```mermaid
 flowchart LR
@@ -274,9 +306,9 @@ Matching order:
 3. Method
 4. Headers
 
-#### Policy Engine
+#### Policy Engine (Rust Dataplane)
 
-Applies policies to requests:
+Applies policies to requests (part of the Rust dataplane):
 
 ```mermaid
 flowchart LR
@@ -294,9 +326,9 @@ flowchart LR
 | CORS | Handle preflight, set headers |
 | IP Filter | Allow/deny by CIDR |
 
-#### Load Balancer
+#### Load Balancer (Rust Dataplane)
 
-Selects backend endpoints:
+Selects backend endpoints (part of the Rust dataplane):
 
 ```mermaid
 flowchart TB
@@ -320,9 +352,9 @@ flowchart TB
 | Ring Hash | Session affinity |
 | Maglev | High-performance consistent hashing |
 
-#### Health Checker
+#### Health Checker (Rust Dataplane)
 
-Monitors backend health:
+Monitors backend health (part of the Rust dataplane):
 
 ```mermaid
 sequenceDiagram
@@ -348,9 +380,9 @@ Supports:
 - gRPC health protocol
 - Passive failure detection
 
-#### Connection Pool
+#### Connection Pool (Rust Dataplane)
 
-Manages backend connections:
+Manages backend connections (part of the Rust dataplane):
 
 ```mermaid
 flowchart TB
@@ -400,9 +432,9 @@ flowchart TB
 | STUN Discoverer | Discovers public endpoints for NAT traversal in tunnel establishment |
 | DSCP Marker | Applies DSCP markings for QoS enforcement on outbound traffic |
 
-#### eBPF/XDP Acceleration
+#### eBPF/XDP Acceleration (Rust Dataplane + Go Agent)
 
-The agent uses eBPF/XDP by default for data plane acceleration. All features are auto-detected at runtime and fall back to legacy paths if the kernel does not support them.
+The Rust dataplane uses eBPF/XDP by default for data plane acceleration, with the Go agent managing eBPF program lifecycle. All features are auto-detected at runtime and fall back to legacy paths if the kernel does not support them.
 
 ```mermaid
 flowchart LR

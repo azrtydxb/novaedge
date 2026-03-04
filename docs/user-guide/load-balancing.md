@@ -4,7 +4,7 @@ Configure how NovaEdge distributes traffic across backend endpoints.
 
 ## Algorithms
 
-NovaEdge supports 12 load balancing algorithms plus composable wrappers:
+NovaEdge supports 8 CRD-selectable load balancing policies (RoundRobin, P2C, EWMA, RingHash, Maglev, LeastConn, SourceHash, Sticky) plus composable wrappers in the Rust dataplane:
 
 ```mermaid
 flowchart TB
@@ -38,6 +38,7 @@ flowchart TB
 | LeastConn | Connection-aware distribution | No |
 | RingHash | Stateful applications | Yes |
 | Maglev | High-performance consistent hashing | Yes |
+| SourceHash | Source IP-based consistent routing | Yes |
 
 ### Composable Wrappers
 

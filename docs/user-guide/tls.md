@@ -49,10 +49,9 @@ spec:
       hostnames:
         - "*.example.com"
       tls:
-        mode: Terminate
-        certificateRefs:
-          - name: example-tls
-            namespace: default
+        secretRef:
+          name: example-tls
+          namespace: default
 ```
 
 ### Multiple Certificates (SNI)
@@ -68,12 +67,16 @@ spec:
     - name: https
       port: 443
       protocol: HTTPS
-      tls:
-        mode: Terminate
-        certificateRefs:
-          - name: api-tls        # For api.example.com
-          - name: web-tls        # For www.example.com
-          - name: admin-tls      # For admin.example.com
+  tlsCertificates:
+    api.example.com:
+      secretRef:
+        name: api-tls
+    www.example.com:
+      secretRef:
+        name: web-tls
+    admin.example.com:
+      secretRef:
+        name: admin-tls
 ```
 
 NovaEdge automatically selects the correct certificate based on SNI.
@@ -92,26 +95,28 @@ spec:
       port: 443
       protocol: HTTPS
       tls:
-        mode: Terminate
+        secretRef:
+          name: example-tls
         minVersion: "TLS1.2"  # Minimum TLS version
-        maxVersion: "TLS1.3"  # Maximum TLS version
         cipherSuites:
           - TLS_AES_128_GCM_SHA256
           - TLS_AES_256_GCM_SHA384
           - TLS_CHACHA20_POLY1305_SHA256
-        certificateRefs:
-          - name: example-tls
 ```
 
 ### TLS Options
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `mode` | Terminate | TLS mode (Terminate, Passthrough) |
+| `secretRef` | - | Reference to a Kubernetes TLS Secret |
+| `certificateRef` | - | Reference to a ProxyCertificate resource |
+| `acme` | - | Inline ACME certificate provisioning config |
+| `selfSigned` | - | Generate a self-signed certificate |
+| `vaultCertRef` | - | Reference to a Vault PKI certificate |
 | `minVersion` | TLS1.2 | Minimum TLS version |
-| `maxVersion` | TLS1.3 | Maximum TLS version |
 | `cipherSuites` | [] | Allowed cipher suites |
-| `certificateRefs` | [] | Certificate secrets |
+
+One of `secretRef`, `certificateRef`, `acme`, `selfSigned`, or `vaultCertRef` must be specified.
 
 ## TLS Passthrough
 
@@ -293,13 +298,12 @@ spec:
       port: 443
       protocol: HTTPS
       tls:
-        mode: Terminate
-        certificateRefs:
-          - name: server-tls
-        clientValidation:
-          mode: Require  # Require, Request, or Optional
-          caSecretRef:
-            name: client-ca
+        secretRef:
+          name: server-tls
+      clientAuth:
+        mode: require  # none, optional, or require
+        caCertRef:
+          name: client-ca
 ```
 
 ### Client Validation Modes
@@ -326,17 +330,14 @@ spec:
       port: 443
       protocol: HTTPS
       tls:
-        mode: Terminate
-        certificateRefs:
-          - name: server-tls
-        clientValidation:
-          mode: Require
-          caSecretRef:
-            name: client-ca
-          forwardClientCertificate:
-            enabled: true
-            header: X-Client-Certificate
-            sanitize: true
+        secretRef:
+          name: server-tls
+      clientAuth:
+        mode: require
+        caCertRef:
+          name: client-ca
+        requiredCNPatterns:
+          - "^.*$"
 ```
 
 ## Certificate Management
@@ -402,9 +403,8 @@ spec:
       port: 443
       protocol: HTTPS
       tls:
-        mode: Terminate
-        certificateRefs:
-          - name: example-tls
+        secretRef:
+          name: example-tls
 ---
 apiVersion: novaedge.io/v1alpha1
 kind: ProxyRoute
