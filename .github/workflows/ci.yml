@@ -838,6 +838,9 @@ jobs:
     runs-on: arc-runner-novaedge
     needs: phase4-gate
     if: ${{ !cancelled() && needs.phase4-gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
+    permissions:
+      contents: write
+      packages: write
     strategy:
       matrix:
         image:
