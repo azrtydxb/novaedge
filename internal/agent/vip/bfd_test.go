@@ -58,15 +58,15 @@ func testGetAllSessionStates(m *BFDManager) map[string]BFDSessionState {
 	return states
 }
 
-func testGetSessionStats(m *BFDManager, peerIP net.IP) (packetsRx, packetsTx, flaps uint64, ok bool) {
+func testGetSessionStats(m *BFDManager, peerIP net.IP) (packetsTx, flaps uint64, ok bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	if session, exists := m.sessions[peerIP.String()]; exists {
 		session.mu.RLock()
 		defer session.mu.RUnlock()
-		return session.packetsRx, session.packetsTx, session.sessionFlaps, true
+		return session.packetsTx, session.sessionFlaps, true
 	}
-	return 0, 0, 0, false
+	return 0, 0, false
 }
 
 func TestBFDSessionState_String(t *testing.T) {
@@ -261,13 +261,12 @@ func TestBFDManager_GetSessionStats(t *testing.T) {
 
 	_ = manager.AddSession(peerIP, config)
 
-	packetsRx, packetsTx, flaps, ok := testGetSessionStats(manager, peerIP)
+	packetsTx, flaps, ok := testGetSessionStats(manager, peerIP)
 	if !ok {
 		t.Fatal("Expected stats for active session")
 	}
 
 	// Verify stats values are initialized (uint64 values are always non-negative)
-	_ = packetsRx
 	_ = packetsTx
 	_ = flaps
 }
@@ -277,7 +276,7 @@ func TestBFDManager_GetSessionStatsNonExistent(t *testing.T) {
 	manager := NewBFDManager(logger, nil, nil)
 
 	peerIP := net.ParseIP("10.0.0.99")
-	_, _, _, ok := testGetSessionStats(manager, peerIP)
+	_, _, ok := testGetSessionStats(manager, peerIP)
 	if ok {
 		t.Error("Expected no stats for non-existent session")
 	}
@@ -688,7 +687,7 @@ func TestBFDManager_StateMachine(t *testing.T) {
 		// Flap down
 		manager.ProcessPacket(peerIP, BFDStateDown, 300)
 
-		_, _, flaps, ok := testGetSessionStats(manager, peerIP)
+		_, flaps, ok := testGetSessionStats(manager, peerIP)
 		if !ok {
 			t.Fatal("Session should exist")
 		}
@@ -1037,7 +1036,7 @@ func TestBFDManager_NilTransportSkipsSending(t *testing.T) {
 	manager.sendControlPackets()
 
 	// Verify metrics were still updated
-	_, tx, _, ok := testGetSessionStats(manager, peerIP)
+	tx, _, ok := testGetSessionStats(manager, peerIP)
 	if !ok {
 		t.Fatal("Session should exist")
 	}
@@ -1117,7 +1116,7 @@ func TestBFDManager_FullRecoveryCycle(t *testing.T) {
 	mu.Unlock()
 
 	// 4. Verify flap count
-	_, _, flaps, ok := testGetSessionStats(manager, peerIP)
+	_, flaps, ok := testGetSessionStats(manager, peerIP)
 	if !ok {
 		t.Fatal("Session should exist")
 	}

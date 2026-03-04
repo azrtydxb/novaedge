@@ -351,6 +351,41 @@ type Config struct {
 	SplitBrain *SplitBrainConfig
 }
 
+// scalarFieldsEqual compares the scalar fields of two Config values.
+func scalarFieldsEqual(c, other *Config) bool {
+	return c.Mode == other.Mode &&
+		c.FederationID == other.FederationID &&
+		c.SyncInterval == other.SyncInterval &&
+		c.SyncTimeout == other.SyncTimeout &&
+		c.BatchSize == other.BatchSize &&
+		c.CompressionEnabled == other.CompressionEnabled &&
+		c.ConflictResolutionStrategy == other.ConflictResolutionStrategy &&
+		c.VectorClocksEnabled == other.VectorClocksEnabled &&
+		c.TombstoneTTL == other.TombstoneTTL &&
+		c.HealthCheckInterval == other.HealthCheckInterval &&
+		c.HealthCheckTimeout == other.HealthCheckTimeout &&
+		c.FailureThreshold == other.FailureThreshold &&
+		c.SuccessThreshold == other.SuccessThreshold
+}
+
+// peersEqual compares two peer slices for equality, ignoring order.
+func peersEqual(a, b []*PeerInfo) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	peerMap := make(map[string]*PeerInfo, len(a))
+	for _, p := range a {
+		peerMap[p.Name] = p
+	}
+	for _, p := range b {
+		existing, ok := peerMap[p.Name]
+		if !ok || !peerInfoEqual(existing, p) {
+			return false
+		}
+	}
+	return true
+}
+
 // Equal returns true when two configs are functionally identical.
 // Peer ordering is ignored; peers are matched by name.
 func (c *Config) Equal(other *Config) bool {
@@ -361,57 +396,12 @@ func (c *Config) Equal(other *Config) bool {
 		return false
 	}
 
-	// Scalar / top-level fields
-	if c.Mode != other.Mode ||
-		c.FederationID != other.FederationID ||
-		c.SyncInterval != other.SyncInterval ||
-		c.SyncTimeout != other.SyncTimeout ||
-		c.BatchSize != other.BatchSize ||
-		c.CompressionEnabled != other.CompressionEnabled ||
-		c.ConflictResolutionStrategy != other.ConflictResolutionStrategy ||
-		c.VectorClocksEnabled != other.VectorClocksEnabled ||
-		c.TombstoneTTL != other.TombstoneTTL ||
-		c.HealthCheckInterval != other.HealthCheckInterval ||
-		c.HealthCheckTimeout != other.HealthCheckTimeout ||
-		c.FailureThreshold != other.FailureThreshold ||
-		c.SuccessThreshold != other.SuccessThreshold {
-		return false
-	}
-
-	// LocalMember
-	if !peerInfoEqual(c.LocalMember, other.LocalMember) {
-		return false
-	}
-
-	// Peers (order-independent)
-	if len(c.Peers) != len(other.Peers) {
-		return false
-	}
-	peerMap := make(map[string]*PeerInfo, len(c.Peers))
-	for _, p := range c.Peers {
-		peerMap[p.Name] = p
-	}
-	for _, p := range other.Peers {
-		existing, ok := peerMap[p.Name]
-		if !ok || !peerInfoEqual(existing, p) {
-			return false
-		}
-	}
-
-	// Slice fields
-	if !stringSliceEqual(c.ResourceTypes, other.ResourceTypes) {
-		return false
-	}
-	if !stringSliceEqual(c.ExcludeNamespaces, other.ExcludeNamespaces) {
-		return false
-	}
-
-	// SplitBrain (nil-safe)
-	if !splitBrainConfigEqual(c.SplitBrain, other.SplitBrain) {
-		return false
-	}
-
-	return true
+	return scalarFieldsEqual(c, other) &&
+		peerInfoEqual(c.LocalMember, other.LocalMember) &&
+		peersEqual(c.Peers, other.Peers) &&
+		stringSliceEqual(c.ResourceTypes, other.ResourceTypes) &&
+		stringSliceEqual(c.ExcludeNamespaces, other.ExcludeNamespaces) &&
+		splitBrainConfigEqual(c.SplitBrain, other.SplitBrain)
 }
 
 // peerInfoEqual compares two PeerInfo values for equality.

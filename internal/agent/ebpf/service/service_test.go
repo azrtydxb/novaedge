@@ -16,8 +16,6 @@ limitations under the License.
 
 package service
 
-const osLinux = osLinux
-
 import (
 	"runtime"
 	"testing"
@@ -25,6 +23,8 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/testutil"
 	"go.uber.org/zap/zaptest"
 )
+
+const osLinux = "linux"
 
 func TestNewKey(t *testing.T) {
 	tests := []struct {

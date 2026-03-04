@@ -152,7 +152,7 @@ func (r *ProxyBackendReconciler) validateTLSCACert(ctx context.Context, backend 
 func (r *ProxyBackendReconciler) validateAndUpdateStatus(ctx context.Context, backend *novaedgev1alpha1.ProxyBackend) error {
 	logger := log.FromContext(ctx)
 
-	var validationErrors []string
+	validationErrors := make([]string, 0, 4)
 	validationErrors = append(validationErrors, r.validateServiceRef(ctx, backend)...)
 	validationErrors = append(validationErrors, validateHealthCheck(backend.Spec.HealthCheck)...)
 	validationErrors = append(validationErrors, validateCircuitBreaker(backend.Spec.CircuitBreaker)...)

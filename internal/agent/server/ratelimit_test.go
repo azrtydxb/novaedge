@@ -302,8 +302,7 @@ func TestRateLimitMiddleware_IPExtraction(t *testing.T) {
 	defer ts.Close()
 
 	// Test with valid request
-	resp, err := http.Get(ts.URL)
-	require.NoError(t, err)
+	resp := httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	resp.Body.Close()
 
@@ -379,12 +378,11 @@ func TestRateLimitMiddleware_ResponseFormat(t *testing.T) {
 	defer ts.Close()
 
 	// Exhaust burst
-	resp, _ := http.Get(ts.URL)
+	resp := httpGet(t, ts.URL)
 	resp.Body.Close()
 
 	// Next request should be rate limited
-	resp, err := http.Get(ts.URL)
-	require.NoError(t, err)
+	resp = httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
 	resp.Body.Close()
 }

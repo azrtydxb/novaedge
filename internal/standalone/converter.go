@@ -349,65 +349,26 @@ func (c *Converter) convertRoutes(routes []RouteConfig) []*pb.Route {
 		}
 
 		// Filters
-		for _, f := range r.Filters {
-			filter := &pb.RouteFilter{
-				Type: c.parseFilterType(f.Type),
-			}
-
-			switch f.Type {
-			case "AddHeader":
-				for name, value := range f.Add {
-					filter.AddHeaders = append(filter.AddHeaders, &pb.HTTPHeader{
-						Name:  name,
-						Value: value,
-					})
-				}
-			case "RemoveHeader":
-				filter.RemoveHeaders = f.Remove
-			case "URLRewrite":
-				filter.RewritePath = f.RewritePath
-			case "RequestRedirect":
-				filter.RedirectUrl = f.RedirectURL
-			}
-
-			rule.Filters = append(rule.Filters, filter)
-		}
+		rule.Filters = c.convertRouteFilters(r.Filters)
 
 		// Convert mirror configuration if present
 		if r.Mirror != nil && r.Mirror.Backend != "" {
 			percentage := safeInt32(r.Mirror.Percentage)
 			if percentage == 0 {
-				percentage = 100 // Default: mirror all requests
+				percentage = 100
 			}
-			rule.MirrorBackend = &pb.BackendRef{
-				Name:      r.Mirror.Backend,
-				Namespace: "default",
-				Weight:    1,
-			}
+			rule.MirrorBackend = &pb.BackendRef{Name: r.Mirror.Backend, Namespace: "default", Weight: 1}
 			rule.MirrorPercent = percentage
 		}
 
-		// Convert retry configuration
 		if r.Retry != nil {
 			rule.Retry = c.convertRetryConfig(r.Retry)
 		}
 
 		route.Rules = append(route.Rules, rule)
 
-		// Convert middleware pipeline
 		if r.Pipeline != nil && len(r.Pipeline.Middleware) > 0 {
-			pipeline := &pb.MiddlewarePipeline{
-				Middleware: make([]*pb.MiddlewareRef, 0, len(r.Pipeline.Middleware)),
-			}
-			for _, mw := range r.Pipeline.Middleware {
-				pipeline.Middleware = append(pipeline.Middleware, &pb.MiddlewareRef{
-					Type:     mw.Type,
-					Name:     mw.Name,
-					Priority: safeInt32(mw.Priority),
-					Config:   mw.Config,
-				})
-			}
-			route.Pipeline = pipeline
+			route.Pipeline = c.convertMiddlewarePipeline(r.Pipeline)
 		}
 
 		// Convert expression
@@ -456,6 +417,51 @@ func (c *Converter) parseFilterType(filterType string) pb.RouteFilterType {
 	default:
 		return pb.RouteFilterType_ROUTE_FILTER_TYPE_UNSPECIFIED
 	}
+}
+
+// convertMiddlewarePipeline converts a standalone PipelineConfig to protobuf.
+func (c *Converter) convertMiddlewarePipeline(p *PipelineConfig) *pb.MiddlewarePipeline {
+	pipeline := &pb.MiddlewarePipeline{
+		Middleware: make([]*pb.MiddlewareRef, 0, len(p.Middleware)),
+	}
+	for _, mw := range p.Middleware {
+		pipeline.Middleware = append(pipeline.Middleware, &pb.MiddlewareRef{
+			Type:     mw.Type,
+			Name:     mw.Name,
+			Priority: safeInt32(mw.Priority),
+			Config:   mw.Config,
+		})
+	}
+	return pipeline
+}
+
+// convertRouteFilters converts standalone route filter configs to protobuf RouteFilters.
+func (c *Converter) convertRouteFilters(filters []RouteFilter) []*pb.RouteFilter {
+	result := make([]*pb.RouteFilter, 0, len(filters))
+	for _, f := range filters {
+		filter := &pb.RouteFilter{
+			Type: c.parseFilterType(f.Type),
+		}
+
+		switch f.Type {
+		case "AddHeader":
+			for name, value := range f.Add {
+				filter.AddHeaders = append(filter.AddHeaders, &pb.HTTPHeader{
+					Name:  name,
+					Value: value,
+				})
+			}
+		case "RemoveHeader":
+			filter.RemoveHeaders = f.Remove
+		case "URLRewrite":
+			filter.RewritePath = f.RewritePath
+		case "RequestRedirect":
+			filter.RedirectUrl = f.RedirectURL
+		}
+
+		result = append(result, filter)
+	}
+	return result
 }
 
 func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, map[string]*pb.EndpointList) {
@@ -663,125 +669,138 @@ func (c *Converter) parseVIPMode(mode string) pb.VIPMode {
 	}
 }
 
+// standalonePolicyConverter populates a pb.Policy from a PolicyConfig.
+type standalonePolicyConverter func(p *PolicyConfig, policy *pb.Policy)
+
+// standalonePolicyConverters maps standalone policy type names to their converters.
+var standalonePolicyConverters = map[string]standalonePolicyConverter{
+	"RateLimit": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.RateLimit != nil {
+			policy.RateLimit = &pb.RateLimitConfig{
+				RequestsPerSecond: safeInt32(p.RateLimit.RequestsPerSecond),
+				Burst:             safeInt32(p.RateLimit.BurstSize),
+				Key:               p.RateLimit.Key,
+			}
+		}
+	},
+	"CORS": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.CORS != nil {
+			policy.Cors = &pb.CORSConfig{
+				AllowOrigins:     p.CORS.AllowOrigins,
+				AllowMethods:     p.CORS.AllowMethods,
+				AllowHeaders:     p.CORS.AllowHeaders,
+				ExposeHeaders:    p.CORS.ExposeHeaders,
+				MaxAgeSeconds:    int64(p.CORS.MaxAge),
+				AllowCredentials: p.CORS.AllowCredentials,
+			}
+		}
+	},
+	"IPFilter": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.IPFilter != nil {
+			cidrs := p.IPFilter.AllowList
+			if len(cidrs) == 0 {
+				cidrs = p.IPFilter.DenyList
+			}
+			policy.IpList = &pb.IPListConfig{Cidrs: cidrs}
+		}
+	},
+	"JWT": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.JWT != nil {
+			policy.Jwt = &pb.JWTConfig{
+				Issuer:            p.JWT.Issuer,
+				Audience:          p.JWT.Audience,
+				JwksUri:           p.JWT.JWKSURI,
+				AllowedAlgorithms: p.JWT.AllowedAlgorithms,
+			}
+		}
+	},
+	"DistributedRateLimit": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.DistributedRateLimit != nil {
+			policy.Type = pb.PolicyType_DISTRIBUTED_RATE_LIMIT
+			policy.DistributedRateLimit = &pb.DistributedRateLimitConfig{
+				RequestsPerSecond: safeInt32(p.DistributedRateLimit.RequestsPerSecond),
+				Burst:             safeInt32(p.DistributedRateLimit.BurstSize),
+				Algorithm:         p.DistributedRateLimit.Algorithm,
+				Key:               p.DistributedRateLimit.Key,
+				Redis: &pb.RedisConfig{
+					Address:     p.DistributedRateLimit.Redis.Address,
+					Tls:         p.DistributedRateLimit.Redis.TLS,
+					Database:    safeInt32(p.DistributedRateLimit.Redis.Database),
+					ClusterMode: p.DistributedRateLimit.Redis.ClusterMode,
+				},
+			}
+		}
+	},
+	"WAF": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.WAF != nil {
+			policy.Type = pb.PolicyType_WAF
+			policy.Waf = &pb.WAFConfig{
+				Enabled:                p.WAF.Enabled,
+				Mode:                   p.WAF.Mode,
+				ParanoiaLevel:          safeInt32(p.WAF.ParanoiaLevel),
+				AnomalyThreshold:       safeInt32(p.WAF.AnomalyThreshold),
+				RuleExclusions:         p.WAF.RuleExclusions,
+				CustomRules:            p.WAF.CustomRules,
+				MaxBodySize:            p.WAF.MaxBodySize,
+				ResponseBodyInspection: p.WAF.ResponseBodyInspection,
+				MaxResponseBodySize:    p.WAF.MaxResponseBodySize,
+			}
+		}
+	},
+	"WASMPlugin": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.WASMPlugin != nil {
+			policy.WasmPlugin = &pb.WASMPluginConfig{
+				Source:   p.WASMPlugin.Source,
+				Config:   p.WASMPlugin.Config,
+				Phase:    p.WASMPlugin.Phase,
+				Priority: safeInt32(p.WASMPlugin.Priority),
+			}
+		}
+	},
+	"BasicAuth": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.BasicAuth != nil {
+			policy.BasicAuth = &pb.BasicAuthConfig{
+				Realm:     p.BasicAuth.Realm,
+				Htpasswd:  buildHtpasswdFromConfig(p.BasicAuth),
+				StripAuth: p.BasicAuth.StripAuth,
+			}
+		}
+	},
+	"ForwardAuth": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.ForwardAuth != nil {
+			config := &pb.ForwardAuthConfig{
+				Address:         p.ForwardAuth.Address,
+				AuthHeaders:     p.ForwardAuth.AuthHeaders,
+				ResponseHeaders: p.ForwardAuth.ResponseHeaders,
+			}
+			if d, err := time.ParseDuration(p.ForwardAuth.Timeout); err == nil {
+				config.TimeoutMs = d.Milliseconds()
+			}
+			if d, err := time.ParseDuration(p.ForwardAuth.CacheTTL); err == nil {
+				config.CacheTtlSeconds = int64(d.Seconds())
+			}
+			policy.ForwardAuth = config
+		}
+	},
+	"OIDC": func(p *PolicyConfig, policy *pb.Policy) {
+		if p.OIDC != nil {
+			policy.Oidc = convertOIDCPolicy(p.OIDC)
+		}
+	},
+}
+
 func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 	result := make([]*pb.Policy, 0, len(policies))
 
-	for _, p := range policies {
+	for i := range policies {
+		p := &policies[i]
 		policy := &pb.Policy{
 			Name:      p.Name,
 			Namespace: "default",
 		}
 
-		switch p.Type {
-		case "RateLimit":
-			if p.RateLimit != nil {
-				policy.RateLimit = &pb.RateLimitConfig{
-					RequestsPerSecond: safeInt32(p.RateLimit.RequestsPerSecond),
-					Burst:             safeInt32(p.RateLimit.BurstSize),
-					Key:               p.RateLimit.Key,
-				}
-			}
-		case "CORS":
-			if p.CORS != nil {
-				policy.Cors = &pb.CORSConfig{
-					AllowOrigins:     p.CORS.AllowOrigins,
-					AllowMethods:     p.CORS.AllowMethods,
-					AllowHeaders:     p.CORS.AllowHeaders,
-					ExposeHeaders:    p.CORS.ExposeHeaders,
-					MaxAgeSeconds:    int64(p.CORS.MaxAge),
-					AllowCredentials: p.CORS.AllowCredentials,
-				}
-			}
-		case "IPFilter":
-			if p.IPFilter != nil {
-				// Combine allow and deny lists into CIDRs
-				// For an IP allow list, use those CIDRs
-				cidrs := p.IPFilter.AllowList
-				if len(cidrs) == 0 {
-					cidrs = p.IPFilter.DenyList
-				}
-				policy.IpList = &pb.IPListConfig{
-					Cidrs: cidrs,
-				}
-			}
-		case "JWT":
-			if p.JWT != nil {
-				policy.Jwt = &pb.JWTConfig{
-					Issuer:            p.JWT.Issuer,
-					Audience:          p.JWT.Audience,
-					JwksUri:           p.JWT.JWKSURI,
-					AllowedAlgorithms: p.JWT.AllowedAlgorithms,
-				}
-			}
-		case "DistributedRateLimit":
-			if p.DistributedRateLimit != nil {
-				policy.Type = pb.PolicyType_DISTRIBUTED_RATE_LIMIT
-				policy.DistributedRateLimit = &pb.DistributedRateLimitConfig{
-					RequestsPerSecond: safeInt32(p.DistributedRateLimit.RequestsPerSecond),
-					Burst:             safeInt32(p.DistributedRateLimit.BurstSize),
-					Algorithm:         p.DistributedRateLimit.Algorithm,
-					Key:               p.DistributedRateLimit.Key,
-					Redis: &pb.RedisConfig{
-						Address:     p.DistributedRateLimit.Redis.Address,
-						Tls:         p.DistributedRateLimit.Redis.TLS,
-						Database:    safeInt32(p.DistributedRateLimit.Redis.Database),
-						ClusterMode: p.DistributedRateLimit.Redis.ClusterMode,
-					},
-				}
-			}
-		case "WAF":
-			if p.WAF != nil {
-				policy.Type = pb.PolicyType_WAF
-				policy.Waf = &pb.WAFConfig{
-					Enabled:                p.WAF.Enabled,
-					Mode:                   p.WAF.Mode,
-					ParanoiaLevel:          safeInt32(p.WAF.ParanoiaLevel),
-					AnomalyThreshold:       safeInt32(p.WAF.AnomalyThreshold),
-					RuleExclusions:         p.WAF.RuleExclusions,
-					CustomRules:            p.WAF.CustomRules,
-					MaxBodySize:            p.WAF.MaxBodySize,
-					ResponseBodyInspection: p.WAF.ResponseBodyInspection,
-					MaxResponseBodySize:    p.WAF.MaxResponseBodySize,
-				}
-			}
-		case "WASMPlugin":
-			if p.WASMPlugin != nil {
-				policy.WasmPlugin = &pb.WASMPluginConfig{
-					Source:   p.WASMPlugin.Source,
-					Config:   p.WASMPlugin.Config,
-					Phase:    p.WASMPlugin.Phase,
-					Priority: safeInt32(p.WASMPlugin.Priority),
-				}
-			}
-		case "BasicAuth":
-			if p.BasicAuth != nil {
-				htpasswd := buildHtpasswdFromConfig(p.BasicAuth)
-				policy.BasicAuth = &pb.BasicAuthConfig{
-					Realm:     p.BasicAuth.Realm,
-					Htpasswd:  htpasswd,
-					StripAuth: p.BasicAuth.StripAuth,
-				}
-			}
-		case "ForwardAuth":
-			if p.ForwardAuth != nil {
-				config := &pb.ForwardAuthConfig{
-					Address:         p.ForwardAuth.Address,
-					AuthHeaders:     p.ForwardAuth.AuthHeaders,
-					ResponseHeaders: p.ForwardAuth.ResponseHeaders,
-				}
-				if d, err := time.ParseDuration(p.ForwardAuth.Timeout); err == nil {
-					config.TimeoutMs = d.Milliseconds()
-				}
-				if d, err := time.ParseDuration(p.ForwardAuth.CacheTTL); err == nil {
-					config.CacheTtlSeconds = int64(d.Seconds())
-				}
-				policy.ForwardAuth = config
-			}
-		case "OIDC":
-			if p.OIDC != nil {
-				oidcConfig := convertOIDCPolicy(p.OIDC)
-				policy.Oidc = oidcConfig
-			}
+		if converter, ok := standalonePolicyConverters[p.Type]; ok {
+			converter(p, policy)
 		}
 
 		result = append(result, policy)

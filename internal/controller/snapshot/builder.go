@@ -359,11 +359,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	snapshot.VipAssignments = vips
 
 	// Build gateways
-	gateways, err := b.buildGateways(ctx, bc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build gateways: %w", err)
-	}
-	snapshot.Gateways = gateways
+	snapshot.Gateways = b.buildGateways(ctx, bc)
 
 	// Build routes
 	routes := b.buildRoutes(ctx, bc)
@@ -391,11 +387,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	snapshot.L4Listeners = l4Listeners
 
 	// Build internal service routing tables for east-west mesh traffic
-	internalServices, err := b.buildInternalServices(ctx, bc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build internal services: %w", err)
-	}
-	snapshot.InternalServices = internalServices
+	snapshot.InternalServices = b.buildInternalServices(ctx, bc)
 
 	// Build mesh authorization policies
 	meshAuthzPolicies := b.buildMeshAuthorizationPolicies(ctx, bc)
@@ -502,6 +494,8 @@ func buildVIPBaseAssignment(vip *novaedgev1alpha1.ProxyVIP) *pb.VIPAssignment {
 		if vip.Spec.IPv6Address != "" {
 			assignment.Address = vip.Spec.IPv6Address
 		}
+	case novaedgev1alpha1.AddressFamilyIPv4:
+		// IPv4 only; no additional handling needed.
 	}
 
 	if vip.Spec.PoolRef != nil {
@@ -568,7 +562,7 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *
 }
 
 // buildGateways builds gateway configurations
-func (b *Builder) buildGateways(ctx context.Context, bc *buildContext) ([]*pb.Gateway, error) {
+func (b *Builder) buildGateways(ctx context.Context, bc *buildContext) []*pb.Gateway {
 	gateways := make([]*pb.Gateway, 0, len(bc.gateways))
 	for _, gw := range bc.gateways {
 		gateway := &pb.Gateway{
@@ -650,7 +644,7 @@ func (b *Builder) buildGateways(ctx context.Context, bc *buildContext) ([]*pb.Ga
 		gateways = append(gateways, gateway)
 	}
 
-	return gateways, nil
+	return gateways
 }
 
 // buildRoutes builds route configurations
@@ -742,6 +736,55 @@ func (b *Builder) buildRoutes(_ context.Context, bc *buildContext) []*pb.Route {
 	return routes
 }
 
+// convertBackendTLS builds the BackendTLS proto from a backend's TLS spec,
+// loading the CA cert from the pre-fetched secret cache.
+func convertBackendTLS(ctx context.Context, backend novaedgev1alpha1.ProxyBackend, bc *buildContext) *pb.BackendTLS {
+	tls := &pb.BackendTLS{
+		Enabled:            backend.Spec.TLS.Enabled,
+		InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify,
+	}
+
+	if backend.Spec.TLS.CACertSecretRef == nil || *backend.Spec.TLS.CACertSecretRef == "" {
+		return tls
+	}
+
+	secretName := *backend.Spec.TLS.CACertSecretRef
+	secret, ok := bc.getSecret(backend.Namespace, secretName)
+	if !ok {
+		log.FromContext(ctx).Error(nil, "CA cert secret not found in cache",
+			"backend", backend.Name, "secret", secretName)
+		return tls
+	}
+
+	// Try common CA cert keys in priority order
+	for _, key := range []string{"ca.crt", "tls.crt", "ca-bundle.crt"} {
+		if caCert, found := secret.Data[key]; found {
+			tls.CaCert = caCert
+			break
+		}
+	}
+	return tls
+}
+
+// validateAndAdjustECMPPolicy checks if the cluster's LB policy is compatible
+// with ECMP VIPs, auto-promoting where safe. Returns false if the cluster
+// should be skipped (incompatible policy).
+func validateAndAdjustECMPPolicy(ctx context.Context, cluster *pb.Cluster, backendName, backendNamespace string) bool {
+	switch cluster.LbPolicy {
+	case pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED, pb.LoadBalancingPolicy_ROUND_ROBIN:
+		cluster.LbPolicy = pb.LoadBalancingPolicy_MAGLEV
+		log.FromContext(ctx).Info("Auto-promoted LB policy to Maglev for ECMP VIP consistency",
+			"backend", backendName, "namespace", backendNamespace)
+		return true
+	case pb.LoadBalancingPolicy_MAGLEV, pb.LoadBalancingPolicy_RING_HASH:
+		return true
+	default:
+		log.FromContext(ctx).Error(nil, "Skipping backend: non-hash LB policy is incompatible with BGP/OSPF ECMP VIPs. Use Maglev or RingHash.",
+			"backend", backendName, "namespace", backendNamespace, "policy", cluster.LbPolicy.String())
+		return false
+	}
+}
+
 // buildClusters builds backend cluster configurations and their endpoints.
 // ecmpBackends contains the set of backend keys ("namespace/name") that are
 // served through BGP/OSPF ECMP VIPs. Only those backends have their LB policy
@@ -776,30 +819,7 @@ func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]str
 		}
 
 		if backend.Spec.TLS != nil {
-			cluster.Tls = &pb.BackendTLS{
-				Enabled:            backend.Spec.TLS.Enabled,
-				InsecureSkipVerify: backend.Spec.TLS.InsecureSkipVerify,
-			}
-
-			// Load CA cert from pre-fetched secret cache
-			if backend.Spec.TLS.CACertSecretRef != nil && *backend.Spec.TLS.CACertSecretRef != "" {
-				secretName := *backend.Spec.TLS.CACertSecretRef
-				if secret, ok := bc.getSecret(backend.Namespace, secretName); ok {
-					// Try common CA cert keys
-					if caCert, ok := secret.Data["ca.crt"]; ok {
-						cluster.Tls.CaCert = caCert
-					} else if caCert, ok := secret.Data["tls.crt"]; ok {
-						cluster.Tls.CaCert = caCert
-					} else if caCert, ok := secret.Data["ca-bundle.crt"]; ok {
-						cluster.Tls.CaCert = caCert
-					}
-				} else {
-					log.FromContext(ctx).Error(nil, "CA cert secret not found in cache",
-						"backend", backend.Name,
-						"secret", secretName,
-					)
-				}
-			}
+			cluster.Tls = convertBackendTLS(ctx, backend, bc)
 		}
 
 		// Session affinity configuration
@@ -831,29 +851,9 @@ func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]str
 		}
 
 		// ECMP consistency: validate and adjust LB policy for BGP/OSPF VIPs.
-		// Only applies to backends that are reachable through ECMP VIPs.
 		backendKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
 		if _, isECMP := ecmpBackends[backendKey]; isECMP {
-			switch cluster.LbPolicy {
-			case pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
-				// Auto-promote unspecified to Maglev for ECMP consistency
-				cluster.LbPolicy = pb.LoadBalancingPolicy_MAGLEV
-				log.FromContext(ctx).Info("Auto-promoted LB policy to Maglev for ECMP VIP consistency",
-					"backend", backend.Name, "namespace", backend.Namespace)
-			case pb.LoadBalancingPolicy_ROUND_ROBIN:
-				// Auto-promote RoundRobin to Maglev for ECMP consistency.
-				// This handles cases where the ingress translator couldn't resolve the VIP mode
-				// (e.g. VIP not yet cached) and fell through to the default RoundRobin policy.
-				cluster.LbPolicy = pb.LoadBalancingPolicy_MAGLEV
-				log.FromContext(ctx).Info("Auto-promoted RoundRobin to Maglev for ECMP VIP consistency",
-					"backend", backend.Name, "namespace", backend.Namespace)
-			case pb.LoadBalancingPolicy_MAGLEV, pb.LoadBalancingPolicy_RING_HASH:
-				// Hash-based policies are compatible with ECMP
-			default:
-				// Non-hash policy with ECMP VIP: skip this cluster
-				log.FromContext(ctx).Error(nil, "Skipping backend: non-hash LB policy is incompatible with BGP/OSPF ECMP VIPs. Use Maglev or RingHash.",
-					"backend", backend.Name, "namespace", backend.Namespace,
-					"policy", cluster.LbPolicy.String())
+			if !validateAndAdjustECMPPolicy(ctx, cluster, backend.Name, backend.Namespace) {
 				continue
 			}
 		}
@@ -1106,7 +1106,7 @@ const meshMTLSAnnotation = "novaedge.io/mesh-mtls"
 
 // buildInternalServices discovers Kubernetes Services annotated for mesh
 // interception and builds routing entries with resolved endpoints.
-func (b *Builder) buildInternalServices(ctx context.Context, bc *buildContext) ([]*pb.InternalService, error) {
+func (b *Builder) buildInternalServices(ctx context.Context, bc *buildContext) []*pb.InternalService {
 	logger := log.FromContext(ctx)
 
 	services := make([]*pb.InternalService, 0, len(bc.services))
@@ -1174,7 +1174,7 @@ func (b *Builder) buildInternalServices(ctx context.Context, bc *buildContext) (
 		return services[i].Name < services[j].Name
 	})
 
-	return services, nil
+	return services
 }
 
 // resolveInternalServiceEndpoints resolves all endpoints for a Service
@@ -1223,6 +1223,32 @@ const (
 	topologyRegionLabel = "topology.kubernetes.io/region"
 )
 
+// matchEndpointSlicePort finds the matching port in the EndpointSlice ports.
+// Priority: 1) match by port name, 2) match by targetPort number,
+// 3) fall back to service port number for unnamed single-port services.
+// Returns 0 if no match is found.
+func matchEndpointSlicePort(esPorts []discoveryv1.EndpointPort, targetPortName string, targetPortNumber, servicePort int32) int32 {
+	for _, p := range esPorts {
+		if p.Port == nil {
+			continue
+		}
+		if targetPortName != "" && p.Name != nil && *p.Name == targetPortName {
+			return *p.Port
+		}
+		if targetPortNumber > 0 && *p.Port == targetPortNumber {
+			return *p.Port
+		}
+		if targetPortName == "" && targetPortNumber == 0 && *p.Port == servicePort {
+			return *p.Port
+		}
+	}
+	// Final fallback: if exactly one port exists, use it.
+	if len(esPorts) == 1 && esPorts[0].Port != nil {
+		return *esPorts[0].Port
+	}
+	return 0
+}
+
 // resolveServiceEndpoints resolves endpoints from a ServiceReference
 func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novaedgev1alpha1.ServiceReference, defaultNamespace string, bc *buildContext) (*pb.EndpointList, error) {
 	namespace := getNamespace(serviceRef.Namespace, defaultNamespace)
@@ -1237,15 +1263,11 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 	}
 
 	// Resolve the target port name and numeric targetPort from the Service spec.
-	// EndpointSlices contain targetPort values (not Service ports), so we need
-	// to find the port name or numeric targetPort that corresponds to serviceRef.Port.
 	var targetPortName string
 	var targetPortNumber int32
 	for _, sp := range svc.Spec.Ports {
 		if sp.Port == serviceRef.Port {
 			targetPortName = sp.Name
-			// TargetPort can be a string (port name) or int (port number).
-			// When it is numeric, use it for direct matching against EndpointSlice ports.
 			if tpVal := sp.TargetPort.IntValue(); tpVal > 0 && tpVal <= math.MaxInt32 {
 				targetPortNumber = int32(tpVal) //nolint:gosec // bounds-checked above
 			}
@@ -1269,46 +1291,12 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 				continue
 			}
 
-			// Find the matching port in the EndpointSlice.
-			// Priority: 1) match by port name, 2) match by targetPort number,
-			// 3) fall back to service port number for unnamed single-port services.
-			var port int32
-			for _, p := range es.Ports {
-				if p.Port == nil {
-					continue
-				}
-				// Named port match: links Service port name to EndpointSlice port name
-				if targetPortName != "" && p.Name != nil && *p.Name == targetPortName {
-					port = *p.Port
-					break
-				}
-				// Numeric targetPort match: the Service explicitly sets targetPort
-				if targetPortNumber > 0 && *p.Port == targetPortNumber {
-					port = *p.Port
-					break
-				}
-				// Fallback for unnamed ports: direct port number match
-				if targetPortName == "" && targetPortNumber == 0 && *p.Port == serviceRef.Port {
-					port = *p.Port
-					break
-				}
-			}
-			// Final fallback: if the EndpointSlice has exactly one port, use it.
-			// This handles the common case of a single-port Service where the port
-			// name is empty and targetPort differs from port.
-			if port == 0 && len(es.Ports) == 1 && es.Ports[0].Port != nil {
-				port = *es.Ports[0].Port
-			}
-
+			port := matchEndpointSlicePort(es.Ports, targetPortName, targetPortNumber, serviceRef.Port)
 			if port == 0 {
 				continue
 			}
 
 			ready := ep.Conditions.Ready == nil || *ep.Conditions.Ready
-
-			// Build topology labels for locality-aware routing.
-			// Use the pre-loaded node map from buildContext instead of
-			// per-endpoint API calls.
 			labels := b.resolveEndpointTopologyLabels(ctx, &ep, bc.nodes)
 
 			for _, addr := range ep.Addresses {

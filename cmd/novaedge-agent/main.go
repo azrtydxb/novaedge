@@ -679,6 +679,15 @@ func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentCompon
 	return nil
 }
 
+// closeIfNotNil calls Close() on c if it is not nil, logging any error.
+func closeIfNotNil(logger *zap.Logger, name string, c interface{ Close() error }) {
+	if c != nil {
+		if err := c.Close(); err != nil {
+			logger.Error("Error closing "+name, zap.Error(err))
+		}
+	}
+}
+
 // shutdownAgent performs graceful shutdown of all agent subsystems.
 func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -724,26 +733,10 @@ func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	}
 
 	// Cleanup eBPF subsystem resources (idempotent Close methods).
-	if comp.maglevMgr != nil {
-		if err := comp.maglevMgr.Close(); err != nil {
-			logger.Error("Error closing eBPF Maglev manager", zap.Error(err))
-		}
-	}
-	if comp.conntrackMgr != nil {
-		if err := comp.conntrackMgr.Close(); err != nil {
-			logger.Error("Error closing eBPF conntrack", zap.Error(err))
-		}
-	}
-	if comp.ebpfHealthMon != nil {
-		if err := comp.ebpfHealthMon.Close(); err != nil {
-			logger.Error("Error closing eBPF health monitor", zap.Error(err))
-		}
-	}
-	if comp.ebpfRL != nil {
-		if err := comp.ebpfRL.Close(); err != nil {
-			logger.Error("Error closing eBPF rate limiter", zap.Error(err))
-		}
-	}
+	closeIfNotNil(logger, "eBPF Maglev manager", comp.maglevMgr)
+	closeIfNotNil(logger, "eBPF conntrack", comp.conntrackMgr)
+	closeIfNotNil(logger, "eBPF health monitor", comp.ebpfHealthMon)
+	closeIfNotNil(logger, "eBPF rate limiter", comp.ebpfRL)
 
 	if err := comp.metricsServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during metrics server shutdown", zap.Error(err))

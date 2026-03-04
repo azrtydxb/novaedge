@@ -16,8 +16,6 @@ limitations under the License.
 
 package sockmap
 
-const osLinux = osLinux
-
 import (
 	"net"
 	"runtime"
@@ -26,6 +24,8 @@ import (
 	"github.com/piwi3910/novaedge/internal/agent/ebpf/testutil"
 	"go.uber.org/zap/zaptest"
 )
+
+const osLinux = "linux"
 
 func TestNewEndpointKey(t *testing.T) {
 	tests := []struct {

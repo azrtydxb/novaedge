@@ -259,7 +259,7 @@ func validateIPListPolicy(policy *novaedgev1alpha1.ProxyPolicy) []string {
 func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, policy *novaedgev1alpha1.ProxyPolicy) error {
 	logger := log.FromContext(ctx)
 
-	var validationErrors []string
+	validationErrors := make([]string, 0, 2)
 	validationErrors = append(validationErrors, r.validateTargetRef(ctx, policy)...)
 	validationErrors = append(validationErrors, validatePolicyConfig(policy)...)
 

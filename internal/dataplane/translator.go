@@ -185,92 +185,93 @@ func translateTLS(tls *configpb.TLSConfig) *pb.TLSConfig {
 // Route translation
 // ---------------------------------------------------------------------------
 
+// translateRouteRule translates a single config RouteRule into a dataplane RouteConfig.
+func translateRouteRule(rt *configpb.Route, ruleIdx int, rule *configpb.RouteRule, middlewareRefs []string) *pb.RouteConfig {
+	dpRoute := &pb.RouteConfig{
+		Name:           fmt.Sprintf("%s/rule-%d", rt.GetName(), ruleIdx),
+		Hostnames:      rt.GetHostnames(),
+		MiddlewareRefs: middlewareRefs,
+	}
+
+	// Path and header matches from the first match entry.
+	if len(rule.GetMatches()) > 0 {
+		m := rule.GetMatches()[0]
+		if m.GetPath() != nil {
+			dpRoute.PathMatch = &pb.PathMatch{
+				MatchType: translatePathMatchType(m.GetPath().GetType()),
+				Value:     m.GetPath().GetValue(),
+			}
+		}
+		for _, hdr := range m.GetHeaders() {
+			dpRoute.HeaderMatches = append(dpRoute.HeaderMatches, &pb.HeaderMatch{
+				Name:  hdr.GetName(),
+				Value: hdr.GetValue(),
+			})
+		}
+		if method := m.GetMethod(); method != "" {
+			dpRoute.Methods = append(dpRoute.Methods, method)
+		}
+	}
+
+	for _, br := range rule.GetBackendRefs() {
+		dpRoute.BackendRefs = append(dpRoute.BackendRefs, &pb.BackendRef{
+			ClusterName: br.GetName(),
+			Weight:      uint32(br.GetWeight()), //nolint:gosec // proto field
+		})
+	}
+
+	if rule.GetRetry() != nil {
+		dpRoute.Retry = &pb.RetryPolicy{
+			MaxRetries:      uint32(rule.GetRetry().GetMaxRetries()), //nolint:gosec // proto field
+			PerTryTimeoutMs: safeUint64(rule.GetRetry().GetPerTryTimeoutMs()),
+			RetryOn:         rule.GetRetry().GetRetryOn(),
+			BackoffBaseMs:   safeUint64(rule.GetRetry().GetBackoffBaseMs()),
+		}
+	}
+
+	if lim := rule.GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
+		dpRoute.TimeoutMs = safeUint64(lim.GetRequestTimeoutMs())
+	}
+
+	applyRouteFilters(dpRoute, rule.GetFilters())
+
+	if rule.GetMirrorBackend() != nil && rule.GetMirrorBackend().GetName() != "" {
+		dpRoute.MirrorCluster = rule.GetMirrorBackend().GetName()
+		if rule.GetMirrorPercent() > 0 {
+			dpRoute.MirrorPercent = uint32(rule.GetMirrorPercent()) //nolint:gosec // proto field
+		} else {
+			dpRoute.MirrorPercent = 100
+		}
+	}
+
+	return dpRoute
+}
+
+// applyRouteFilters applies rewrite_path and add_headers filters to a RouteConfig.
+func applyRouteFilters(dpRoute *pb.RouteConfig, filters []*configpb.RouteFilter) {
+	for _, f := range filters {
+		if f.GetType() == configpb.RouteFilterType_URL_REWRITE && f.GetRewritePath() != "" && dpRoute.RewritePath == "" {
+			dpRoute.RewritePath = f.GetRewritePath()
+		}
+		if f.GetType() == configpb.RouteFilterType_ADD_HEADER && len(f.GetAddHeaders()) > 0 && len(dpRoute.AddHeaders) == 0 {
+			dpRoute.AddHeaders = make(map[string]string)
+			for _, hdr := range f.GetAddHeaders() {
+				dpRoute.AddHeaders[hdr.GetName()] = hdr.GetValue()
+			}
+		}
+	}
+}
+
 func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 	var result []*pb.RouteConfig
 	for _, rt := range routes {
-		// Shared properties from the route-level middleware pipeline.
 		var middlewareRefs []string
 		for _, mw := range rt.GetPipeline().GetMiddleware() {
 			middlewareRefs = append(middlewareRefs, mw.GetName())
 		}
 
-		// Each rule becomes a separate RouteConfig so path/method/header
-		// constraints are independent (mixing DELETE-only rules with
-		// catch-all rules previously broke matching).
 		for ruleIdx, rule := range rt.GetRules() {
-			dpRoute := &pb.RouteConfig{
-				Name:           fmt.Sprintf("%s/rule-%d", rt.GetName(), ruleIdx),
-				Hostnames:      rt.GetHostnames(),
-				MiddlewareRefs: middlewareRefs,
-			}
-
-			// Path and header matches from the first match entry.
-			if len(rule.GetMatches()) > 0 {
-				m := rule.GetMatches()[0]
-				if m.GetPath() != nil {
-					dpRoute.PathMatch = &pb.PathMatch{
-						MatchType: translatePathMatchType(m.GetPath().GetType()),
-						Value:     m.GetPath().GetValue(),
-					}
-				}
-				for _, hdr := range m.GetHeaders() {
-					dpRoute.HeaderMatches = append(dpRoute.HeaderMatches, &pb.HeaderMatch{
-						Name:  hdr.GetName(),
-						Value: hdr.GetValue(),
-					})
-				}
-				if method := m.GetMethod(); method != "" {
-					dpRoute.Methods = append(dpRoute.Methods, method)
-				}
-			}
-
-			// Backend refs for this rule.
-			for _, br := range rule.GetBackendRefs() {
-				dpRoute.BackendRefs = append(dpRoute.BackendRefs, &pb.BackendRef{
-					ClusterName: br.GetName(),
-					Weight:      uint32(br.GetWeight()), //nolint:gosec // proto field
-				})
-			}
-
-			// Retry config.
-			if rule.GetRetry() != nil {
-				dpRoute.Retry = &pb.RetryPolicy{
-					MaxRetries:      uint32(rule.GetRetry().GetMaxRetries()), //nolint:gosec // proto field
-					PerTryTimeoutMs: safeUint64(rule.GetRetry().GetPerTryTimeoutMs()),
-					RetryOn:         rule.GetRetry().GetRetryOn(),
-					BackoffBaseMs:   safeUint64(rule.GetRetry().GetBackoffBaseMs()),
-				}
-			}
-
-			// Timeout.
-			if lim := rule.GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
-				dpRoute.TimeoutMs = safeUint64(lim.GetRequestTimeoutMs())
-			}
-
-			// Filters: rewrite_path and add_headers.
-			for _, f := range rule.GetFilters() {
-				if f.GetType() == configpb.RouteFilterType_URL_REWRITE && f.GetRewritePath() != "" && dpRoute.RewritePath == "" {
-					dpRoute.RewritePath = f.GetRewritePath()
-				}
-				if f.GetType() == configpb.RouteFilterType_ADD_HEADER && len(f.GetAddHeaders()) > 0 && len(dpRoute.AddHeaders) == 0 {
-					dpRoute.AddHeaders = make(map[string]string)
-					for _, hdr := range f.GetAddHeaders() {
-						dpRoute.AddHeaders[hdr.GetName()] = hdr.GetValue()
-					}
-				}
-			}
-
-			// Translate request mirroring (#846).
-			if rule.GetMirrorBackend() != nil && rule.GetMirrorBackend().GetName() != "" {
-				dpRoute.MirrorCluster = rule.GetMirrorBackend().GetName()
-				if rule.GetMirrorPercent() > 0 {
-					dpRoute.MirrorPercent = uint32(rule.GetMirrorPercent()) //nolint:gosec // proto field
-				} else {
-					dpRoute.MirrorPercent = 100
-				}
-			}
-
-			result = append(result, dpRoute)
+			result = append(result, translateRouteRule(rt, ruleIdx, rule, middlewareRefs))
 		}
 	}
 	return result

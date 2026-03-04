@@ -891,10 +891,7 @@ func TestBuildInternalServices(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest(nil, []corev1.Service{*meshSvc, *plainSvc, *headlessSvc})
-	services, err := builder.buildInternalServices(context.Background(), bc)
-	if err != nil {
-		t.Fatalf("buildInternalServices failed: %v", err)
-	}
+	services := builder.buildInternalServices(context.Background(), bc)
 
 	// Only the mesh-enabled non-headless service should be included
 	if len(services) != 1 {
@@ -1191,10 +1188,7 @@ func TestBuildInternalServicesEmpty(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest(nil, nil)
-	services, err := builder.buildInternalServices(context.Background(), bc)
-	if err != nil {
-		t.Fatalf("buildInternalServices failed: %v", err)
-	}
+	services := builder.buildInternalServices(context.Background(), bc)
 	if len(services) != 0 {
 		t.Errorf("Expected 0 internal services, got %d", len(services))
 	}

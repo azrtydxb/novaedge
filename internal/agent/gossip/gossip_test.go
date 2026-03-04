@@ -127,12 +127,10 @@ func TestConfigGossiper_handleMessage(t *testing.T) {
 					assert.Equal(t, tt.expectedGen, peer.genTime)
 					assert.WithinDuration(t, time.Now(), peer.lastSeen, time.Second)
 				}
-			} else {
+			} else if tt.name == "own message - should be ignored" {
 				// For own message, specifically check that test-node is not stored
-				if tt.name == "own message - should be ignored" {
-					_, ok := g.peerVersions.Load("test-node")
-					assert.False(t, ok, "own node should not be stored in peer versions")
-				}
+				_, ok := g.peerVersions.Load("test-node")
+				assert.False(t, ok, "own node should not be stored in peer versions")
 			}
 		})
 	}
