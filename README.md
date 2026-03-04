@@ -15,13 +15,13 @@
 
 ---
 
-NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD-WAN, written in Go. It combines L4/L7 load balancing, VIP management, service mesh, and SD-WAN into a single Kubernetes-native binary.
+NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD-WAN, written in Go and Rust. It combines L4/L7 load balancing, VIP management, service mesh, and SD-WAN into a Kubernetes-native platform with a Go control plane and Rust data plane.
 
 ## Features
 
 ### L7 Load Balancing & Reverse Proxy
 - **Protocol support**: HTTP/1.1, HTTP/2 (h2/h2c), HTTP/3 (QUIC), WebSockets, gRPC, Server-Sent Events
-- **12 load balancing algorithms**: RoundRobin, LeastConn, P2C, EWMA, RingHash, Maglev, Sticky (cookie-based), Locality-aware, Priority failover, Panic mode, Slow-start, Resource-adaptive
+- **8 CRD-selectable load balancing policies** (RoundRobin, LeastConn, P2C, EWMA, RingHash, Maglev, SourceHash, Sticky) plus composable wrappers in the Rust dataplane (Locality-aware, Priority failover, Panic mode, Slow-start, Resource-adaptive)
 - **Advanced routing**: hostname, path, header, method matching with boolean routing expressions
 - **Traffic management**: canary/weighted splitting, traffic mirroring, request retry with configurable policies
 - **Response processing**: HTTP caching, gzip/Brotli compression, buffering, custom error pages
@@ -114,12 +114,13 @@ NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD
 
 ## Architecture
 
-NovaEdge consists of four major components:
+NovaEdge consists of five major components:
 
 1. **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
 2. **Controller (Control-Plane)**: Runs as a Deployment, watches CRDs and Kubernetes resources, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
-3. **Node Agent (Data Plane)**: Runs as a DaemonSet with hostNetwork, handles L4/L7 load balancing, VIP management, and executes routing/filtering/policy logic
-4. **CRDs**: 12 Custom Resource Definitions:
+3. **Node Agent (Config Agent)**: Runs as a DaemonSet with hostNetwork, receives configuration from the controller, manages VIP binding (ARP/BGP/OSPF/BFD), iptables/nftables rules, eBPF program lifecycle, and pushes config to the Rust dataplane via gRPC. Does NOT handle user traffic.
+4. **Rust Dataplane (Traffic Handler)**: Runs as a DaemonSet sidecar alongside the Go agent, binds ports 80/443, handles ALL L4/L7 traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC), executes routing, middleware, policies, load balancing, and connection pooling. Optionally accelerated by eBPF XDP.
+5. **CRDs**: 12 Custom Resource Definitions:
    - Core: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
    - Certificate & IP: `ProxyCertificate`, `ProxyIPPool`
    - SD-WAN: `ProxyWANLink`, `ProxyWANPolicy`
@@ -131,7 +132,7 @@ See the [documentation site](docs/index.md) for detailed architecture and specif
 
 ### Prerequisites
 
-- Go 1.24+
+- Go 1.25+
 - Kubernetes cluster (1.29+)
 - kubectl configured
 - make
@@ -265,7 +266,7 @@ kubectl get proxyippools
 ## Testing & Quality
 
 ### Test Suite
-- **1500+ test functions** across unit, integration, and controller tests
+- **1345+ test functions** across unit, integration, and controller tests
 - **85%+ unit coverage** for critical components (router, health, VIP, load balancing, mesh, policies)
 
 ### Running Tests

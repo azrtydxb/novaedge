@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Critical Rules
 
-- **DATAPLANE ARCHITECTURE: ALL traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC) flows through the Rust dataplane + eBPF.** The Go agent is a CONFIG AGENT ONLY — it handles Kubernetes API interaction, config translation, VIP management, iptables/nftables, and eBPF program lifecycle. It does NOT serve user traffic. The Rust dataplane (`dataplane/`) is the sole traffic handler. Legacy Go traffic-handling code (`internal/agent/router/`, `lb/`, `upstream/`, `policy/`, `health/`, and traffic-serving files from `server/`) has been removed. Do NOT reintroduce Go-based traffic handling.
+- **DATAPLANE ARCHITECTURE: ALL traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC) flows through the Rust dataplane + eBPF.** The Go agent is a CONFIG AGENT ONLY — it handles Kubernetes API interaction, config translation, VIP management, iptables/nftables, and eBPF program lifecycle. It does NOT serve user traffic. The Rust dataplane (`dataplane/`) is the sole traffic handler. Legacy Go traffic-handling code (`internal/agent/router/`, `lb/`, `upstream/`, `policy/`, `health/`) has been removed. The Go `internal/agent/server/` directory still exists but only provides health probes, Prometheus metrics, admin API, and eBPF rate-limit management — it does NOT serve user traffic. Do NOT reintroduce Go-based traffic handling.
 - **NEVER create version tags (`git tag`) or push tags after merging PRs unless the user explicitly asks for a new release/version.** Tagging triggers the release workflow which builds and publishes Docker images and GitHub releases. Only tag when specifically instructed.
 - **ALWAYS file GitHub issues for pre-existing problems discovered during work.** When you encounter bugs, lint failures, broken tests, or other issues unrelated to the current task, create a `gh issue` for each one instead of ignoring them.
 - **ALWAYS use git worktrees for all code changes.** Never commit directly to `main`. The workflow is:
@@ -82,14 +82,14 @@ novaedge/
 │   ├── standalone/                   # Standalone mode config
 │   └── proto/                        # Protobuf definitions
 ├── api/                              # CRD API definitions
-│   └── v1alpha1/                     # API version (10 CRD types)
+│   └── v1alpha1/                     # API version (12 CRD types)
 ├── charts/                           # Helm charts
 │   ├── novaedge/                     # Main chart
 │   ├── novaedge-agent/               # Agent chart
 │   └── novaedge-operator/            # Operator chart
 ├── config/                           # Kubernetes manifests
-│   ├── crd/                          # CRD definitions (10 CRDs)
-│   ├── samples/                      # Example resources (51 samples)
+│   ├── crd/                          # CRD definitions (12 CRDs)
+│   ├── samples/                      # Example resources (58 samples)
 │   ├── rbac/                         # RBAC manifests
 │   ├── controller/                   # Controller deployment
 │   ├── agent/                        # Agent DaemonSet
@@ -102,17 +102,17 @@ novaedge/
 │           ├── lb/                   # Load balancing algorithms (12 types)
 │           ├── upstream/             # Connection pool, circuit breaker, outlier detection
 │           ├── health/               # Active health checking
-│           ├── listener/             # Dynamic listener management
+│           ├── listener.rs           # Dynamic listener management
 │           ├── l4/                   # L4 TCP/UDP proxying
 │           ├── vip/                  # VIP management (dataplane side)
 │           ├── mesh/                 # Service mesh support
 │           ├── sdwan/                # SD-WAN support
-│           ├── maps/                 # eBPF map management
-│           ├── loader/               # eBPF program loader
-│           ├── flows/                # Flow event streaming
-│           ├── config/               # Runtime config store
-│           ├── server/               # gRPC server (receives config from Go agent)
-│           └── proto/                # Protobuf definitions
+│           ├── maps.rs               # eBPF map management
+│           ├── loader.rs             # eBPF program loader
+│           ├── flows.rs              # Flow event streaming
+│           ├── config.rs             # Runtime config store
+│           ├── server.rs             # gRPC server (receives config from Go agent)
+│           └── proto.rs              # Protobuf definitions
 ├── docs/                             # Documentation site
 ├── test/                             # Integration tests
 └── Makefile                          # Build automation
@@ -135,7 +135,7 @@ make build-novactl
 # Build web UI frontend (requires Node.js)
 make build-webui
 
-# Build Docker images (all 6: controller, agent, novactl, standalone, operator, webui)
+# Build Docker images (all 7: controller, agent, novactl, standalone, operator, webui, dataplane)
 make docker-build
 
 # Generate CRDs
@@ -443,13 +443,10 @@ Key Go libraries used:
 - `go.uber.org/zap`: Structured logging
 - `github.com/prometheus/client_golang`: Metrics
 - `go.opentelemetry.io/otel`: Tracing
-- `github.com/quic-go/quic-go`: HTTP/3 QUIC support
 - `github.com/tetratelabs/wazero`: WASM plugin runtime
-- `github.com/corazawaf/coraza/v3`: WAF engine
 - `github.com/go-acme/lego/v4`: ACME protocol (Let's Encrypt)
-- `github.com/redis/go-redis/v9`: Distributed rate limiting
-- `github.com/coreos/go-oidc/v3`: OAuth2/OIDC authentication
 - `github.com/golang-jwt/jwt/v5`: JWT parsing and validation
 - `github.com/gorilla/websocket`: WebSocket support
-- `github.com/andybalholm/brotli`: Brotli compression
 - `github.com/spf13/cobra`: CLI framework
+
+Note: HTTP/3 (QUIC), WAF (Coraza), Redis-backed distributed rate limiting, OIDC, and Brotli compression are handled by the Rust dataplane, not the Go codebase.

@@ -2,10 +2,11 @@
 
 Complete reference for all configurable values in the NovaEdge Helm charts.
 
-NovaEdge provides two Helm charts:
+NovaEdge provides three Helm charts:
 
 1. **novaedge-operator** - Deploys the NovaEdge Operator which manages the lifecycle of NovaEdge components (recommended)
 2. **novaedge** - Directly deploys NovaEdge components without the operator
+3. **novaedge-agent** - Deploys agents in remote/edge clusters that connect back to a hub controller
 
 ---
 
@@ -361,6 +362,42 @@ tolerations:
 |-----------|-------------|---------|
 | `agent.podDisruptionBudget.enabled` | Enable PDB | `true` |
 | `agent.podDisruptionBudget.maxUnavailable` | Maximum unavailable pods | `1` |
+
+---
+
+## Dataplane
+
+The Rust dataplane handles all L4/L7 traffic and runs as a sidecar alongside the Go agent.
+
+### Basic Settings
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `dataplane.enabled` | Deploy the Rust dataplane sidecar | `true` |
+
+### Image
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `dataplane.image.repository` | Dataplane image repository | `ghcr.io/piwi3910/novaedge/novaedge-dataplane` |
+| `dataplane.image.tag` | Dataplane image tag | `latest` |
+| `dataplane.image.pullPolicy` | Image pull policy | `IfNotPresent` |
+
+### Resources
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `dataplane.resources.limits.cpu` | CPU limit | `1` |
+| `dataplane.resources.limits.memory` | Memory limit | `512Mi` |
+| `dataplane.resources.requests.cpu` | CPU request | `100m` |
+| `dataplane.resources.requests.memory` | Memory request | `128Mi` |
+
+### Communication
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `dataplane.socketPath` | Unix socket for agent-dataplane communication | `/run/novaedge/dataplane.sock` |
+| `dataplane.ebpfPath` | Path to eBPF programs | `/opt/novaedge/novaedge-ebpf` |
 
 ---
 

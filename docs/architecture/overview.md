@@ -57,7 +57,8 @@ flowchart TB
 |-----------|------|---------|
 | **Operator** | Deployment | Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD |
 | **Controller** | Deployment | Watches CRDs, builds config snapshots, distributes via gRPC |
-| **Agent** | DaemonSet | Handles L4/L7 routing, VIP management, policy enforcement, eBPF/XDP acceleration |
+| **Agent** | DaemonSet | Config agent: receives config from controller, manages VIPs, pushes config to Rust dataplane |
+| **Rust Dataplane** | DaemonSet sidecar | Traffic handler: binds ports 80/443, handles all L4/L7 traffic, routing, policies, load balancing |
 
 ## Request Flow
 
@@ -65,15 +66,15 @@ flowchart TB
 sequenceDiagram
     participant C as Client
     participant V as VIP
-    participant A as Agent
+    participant DP as Rust Dataplane
     participant R as Router
     participant P as Policies
     participant LB as Load Balancer
     participant B as Backend
 
     C->>V: HTTP Request
-    V->>A: Route to node
-    A->>R: Match route
+    V->>DP: Route to node (port 80/443)
+    DP->>R: Match route
     R->>P: Apply policies
     Note over P: Rate limit, JWT, CORS
     P->>LB: Select backend
@@ -81,9 +82,11 @@ sequenceDiagram
     LB->>B: Forward request
     B-->>LB: Response
     LB-->>P: Apply response policies
-    P-->>A: Return response
-    A-->>C: HTTP Response
+    P-->>DP: Return response
+    DP-->>C: HTTP Response
 ```
+
+Note: The Go Agent does not appear in the request flow. It runs alongside the Rust Dataplane as a config agent, managing VIPs and pushing configuration updates via gRPC.
 
 ## Configuration Distribution
 
@@ -172,15 +175,20 @@ flowchart TB
 
 ### Agent
 
-Each Agent runs as a DaemonSet pod with `hostNetwork: true`:
+Each node runs two DaemonSet pods: the Go Agent (config agent) and the Rust Dataplane (traffic handler), both with `hostNetwork: true`:
 
 ```mermaid
 flowchart TB
-    subgraph Agent["Agent Pod"]
-        GC["gRPC Client"]
+    subgraph GoAgent["Go Agent (Config Agent)"]
+        GC["gRPC Client<br/>(receives config from controller)"]
+        VIP["VIP Manager<br/>(L2/BGP/OSPF/BFD)"]
+        TRANSLATOR["Config Translator"]
+        GRPC_PUSH["gRPC Push to Dataplane"]
+    end
+
+    subgraph RustDP["Rust Dataplane (Traffic Handler)"]
         RT["Router"]
         LB["Load Balancer"]
-        VIP["VIP Manager"]
         HC["Health Checker"]
         POL["Policy Engine"]
         POOL["Connection Pool"]
@@ -192,15 +200,14 @@ flowchart TB
         end
     end
 
-    GC -->|"config"| RT
-    GC -->|"config"| LB
-    GC -->|"config"| VIP
-    GC -->|"config"| POL
+    GC --> TRANSLATOR
+    TRANSLATOR --> GRPC_PUSH
+    GRPC_PUSH -->|"config"| RT & LB & POL & HC
+    GC -->|"VIP config"| VIP
 
     Traffic((Traffic)) --> XDP
     XDP -->|"L4 match"| AFXDP
-    XDP -->|"no match"| VIP
-    VIP --> RT
+    XDP -->|"no match"| RT
     RT --> POL
     POL --> LB
     LB --> HC
@@ -208,18 +215,27 @@ flowchart TB
     POOL --> Backend((Backend))
 
     style eBPF fill:#fff4e6
+    style GoAgent fill:#e6f3ff
+    style RustDP fill:#90EE90
 ```
 
-**Responsibilities:**
+**Agent Responsibilities (Config Agent):**
 
-1. Receive config via gRPC streaming
-2. Bind/unbind VIPs on node interface
-3. Route incoming requests
-4. Apply policies (rate limit, JWT, CORS)
-5. Load balance across healthy backends
-6. Manage connection pools
-7. Perform health checks
-8. Accelerate L4 traffic via eBPF/XDP (auto-detected)
+1. Receive config from controller via gRPC streaming
+2. Bind/unbind VIPs on node interface (L2 ARP/BGP/OSPF/BFD)
+3. Translate config and push to Rust dataplane via gRPC
+4. Manage iptables/nftables rules
+5. Manage eBPF program lifecycle
+
+**Rust Dataplane Responsibilities (Traffic Handler):**
+
+1. Bind ports 80/443 and accept all inbound traffic
+2. Route incoming requests (hostname, path, header matching)
+3. Apply policies (rate limit, JWT, CORS, WAF)
+4. Load balance across healthy backends
+5. Manage connection pools and circuit breakers
+6. Perform active and passive health checks
+7. Accelerate L4 traffic via eBPF/XDP (auto-detected)
 
 ## VIP Modes
 
