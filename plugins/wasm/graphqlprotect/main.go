@@ -241,42 +241,50 @@ func countNestingDepth(query string) int {
 	return maxDepth
 }
 
+// skipWhitespace advances the index past any whitespace characters.
+func skipWhitespace(query string, i int) int {
+	for i < len(query) && (query[i] == ' ' || query[i] == '\t' || query[i] == '\n' || query[i] == '\r') {
+		i++
+	}
+	return i
+}
+
+// skipInlineWhitespace advances the index past spaces and tabs (not newlines).
+func skipInlineWhitespace(query string, i int) int {
+	for i < len(query) && (query[i] == ' ' || query[i] == '\t') {
+		i++
+	}
+	return i
+}
+
+// isAliasAt checks whether the position after an identifier (at idEnd) has a
+// colon followed by another identifier, which indicates a GraphQL alias pattern.
+func isAliasAt(query string, idEnd int) bool {
+	j := skipInlineWhitespace(query, idEnd)
+	if j >= len(query) || query[j] != ':' {
+		return false
+	}
+	k := skipInlineWhitespace(query, j+1)
+	return k < len(query) && isAlphaOrUnderscore(query[k])
+}
+
 // countAliases estimates the number of aliases in a GraphQL query by counting
 // occurrences of the pattern "identifier:" followed by a field name.
 func countAliases(query string) int {
 	count := 0
 	i := 0
 	for i < len(query) {
-		// Skip whitespace
-		for i < len(query) && (query[i] == ' ' || query[i] == '\t' || query[i] == '\n' || query[i] == '\r') {
-			i++
-		}
+		i = skipWhitespace(query, i)
 		if i >= len(query) {
 			break
 		}
-		// Check for identifier followed by colon (alias pattern)
 		if isAlphaOrUnderscore(query[i]) {
-			start := i
 			for i < len(query) && isAlphaNumOrUnderscore(query[i]) {
 				i++
 			}
-			// Skip whitespace between identifier and colon
-			j := i
-			for j < len(query) && (query[j] == ' ' || query[j] == '\t') {
-				j++
+			if isAliasAt(query, i) {
+				count++
 			}
-			if j < len(query) && query[j] == ':' {
-				// Check it is not a variable definition (argument pattern)
-				// Aliases have format: aliasName: fieldName
-				k := j + 1
-				for k < len(query) && (query[k] == ' ' || query[k] == '\t') {
-					k++
-				}
-				if k < len(query) && isAlphaOrUnderscore(query[k]) {
-					count++
-				}
-			}
-			_ = start
 		} else {
 			i++
 		}

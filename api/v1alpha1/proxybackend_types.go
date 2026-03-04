@@ -411,7 +411,6 @@ type ProxyBackendList struct {
 	Items           []ProxyBackend `json:"items"`
 }
 
-
 // SlowStartConfig configures gradual traffic ramp-up for new/recovering endpoints
 type SlowStartConfig struct {
 	// Window is the duration over which traffic ramps from 0% to 100%

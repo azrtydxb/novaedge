@@ -457,6 +457,10 @@ func (r *NovaEdgeFederationReconciler) syncStatus(ctx context.Context, fed *nova
 		return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 	case novaedgev1alpha1.FederationPhaseSyncing:
 		return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+	case novaedgev1alpha1.FederationPhaseInitializing,
+		novaedgev1alpha1.FederationPhaseDegraded,
+		novaedgev1alpha1.FederationPhasePartitioned:
+		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	default:
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
@@ -514,6 +518,10 @@ func (r *NovaEdgeFederationReconciler) buildConditions(phase novaedgev1alpha1.Fe
 		readyCondition.Status = metav1.ConditionFalse
 		readyCondition.Reason = "NetworkPartition"
 		readyCondition.Message = "Federation is experiencing network partition"
+	case novaedgev1alpha1.FederationPhaseInitializing:
+		readyCondition.Status = metav1.ConditionFalse
+		readyCondition.Reason = "Initializing"
+		readyCondition.Message = "Federation is initializing"
 	default:
 		readyCondition.Status = metav1.ConditionFalse
 		readyCondition.Reason = "Initializing"

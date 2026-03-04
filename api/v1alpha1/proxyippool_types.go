@@ -102,4 +102,3 @@ type ProxyIPPoolList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ProxyIPPool `json:"items"`
 }
-

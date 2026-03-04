@@ -147,22 +147,23 @@ func TestMetricsServer_HTTPEndpoints(t *testing.T) {
 
 	mux.Handle("/metrics", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("# HELP test_metric A test metric\n"))
+		_, _ = w.Write([]byte("# HELP test_metric A test metric\n"))
 	})))
 
 	mux.Handle("/health", rateLimitMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})))
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("NovaEdge Metrics Server\n"))
+		_, _ = w.Write([]byte("NovaEdge Metrics Server\n"))
 	})
 
 	httpServer := &http.Server{
-		Addr:    ":0", // Use any available port
-		Handler: mux,
+		Addr:              ":0", // Use any available port
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	// Start server

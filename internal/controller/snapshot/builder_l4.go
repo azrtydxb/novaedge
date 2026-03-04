@@ -48,7 +48,7 @@ func (b *Builder) buildL4Listeners(ctx context.Context, gateways []*pb.Gateway, 
 				if l4Listener != nil {
 					l4Listeners = append(l4Listeners, l4Listener)
 				}
-			default:
+			case pb.Protocol_PROTOCOL_UNSPECIFIED, pb.Protocol_HTTP, pb.Protocol_HTTPS, pb.Protocol_HTTP3:
 				// HTTP/HTTPS/HTTP3 listeners are handled by the HTTP server
 				continue
 			}

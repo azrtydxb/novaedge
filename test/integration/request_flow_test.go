@@ -118,7 +118,7 @@ func TestEndToEndHTTPRequest(t *testing.T) {
 			backendReq, err := http.NewRequestWithContext(context.Background(), tt.method, mustParseURL(t, backend.URL+tt.path), body)
 			require.NoError(t, err)
 
-			resp, err := client.Do(backendReq)
+			resp, err := client.Do(backendReq) //nolint:gosec // G704: test server URL validated via mustParseURL
 			require.NoError(t, err)
 			defer func() { _ = resp.Body.Close() }()
 
@@ -179,7 +179,7 @@ func TestConcurrentRequests(t *testing.T) {
 					continue
 				}
 
-				resp, err := client.Do(req)
+				resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 				if err != nil {
 					errors <- err
 					continue
@@ -225,11 +225,14 @@ func TestRequestTimeout(t *testing.T) {
 	require.NoError(t, err)
 
 	start := time.Now()
-	_, err = client.Do(req)
+	resp, doErr := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 	elapsed := time.Since(start)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
 
 	// Should timeout before 1 second
-	assert.Error(t, err)
+	assert.Error(t, doErr)
 	assert.Less(t, elapsed, time.Second)
 }
 
@@ -255,7 +258,7 @@ func TestLargeRequestBody(t *testing.T) {
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, mustParseURL(t, backend.URL), bytes.NewReader(largeBody))
 	require.NoError(t, err)
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 
@@ -297,7 +300,7 @@ func TestConnectionReuse(t *testing.T) {
 		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL), nil)
 		require.NoError(t, err)
 
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 		require.NoError(t, err)
 		_ = resp.Body.Close()
 	}
@@ -329,7 +332,7 @@ func TestVIPFailover(t *testing.T) {
 
 	// First request to primary
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, primary.URL), nil)
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, "primary", resp.Header.Get("X-Server"))
@@ -339,7 +342,7 @@ func TestVIPFailover(t *testing.T) {
 
 	// Request should now go to backup
 	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backup.URL), nil)
-	resp, err = client.Do(req)
+	resp, err = client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, "backup", resp.Header.Get("X-Server"))
@@ -443,7 +446,7 @@ func TestMTLSCommunication(t *testing.T) {
 	// Test 1: mTLS handshake succeeds
 	req1, err := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, server.URL), nil)
 	require.NoError(t, err)
-	resp, err := client.Do(req1)
+	resp, err := client.Do(req1) //nolint:gosec // G704: test server URL validated via mustParseURL
 	require.NoError(t, err, "mTLS request should succeed")
 	defer func() { _ = resp.Body.Close() }()
 
@@ -465,8 +468,11 @@ func TestMTLSCommunication(t *testing.T) {
 	}
 	req2, err2 := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, server.URL), nil)
 	require.NoError(t, err2)
-	_, err = noAuthClient.Do(req2)
-	assert.Error(t, err, "Request without client cert should fail")
+	noAuthResp, noAuthErr := noAuthClient.Do(req2) //nolint:gosec // G704: test server URL validated via mustParseURL
+	if noAuthResp != nil {
+		_ = noAuthResp.Body.Close()
+	}
+	assert.Error(t, noAuthErr, "Request without client cert should fail")
 
 	// Test 3: Connection with untrusted cert is rejected
 	untrustedKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -495,8 +501,11 @@ func TestMTLSCommunication(t *testing.T) {
 	}
 	req3, err3 := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, server.URL), nil)
 	require.NoError(t, err3)
-	_, err = untrustedClient.Do(req3)
-	assert.Error(t, err, "Request with untrusted cert should fail")
+	untrustedResp, untrustedErr := untrustedClient.Do(req3) //nolint:gosec // G704: test server URL validated via mustParseURL
+	if untrustedResp != nil {
+		_ = untrustedResp.Body.Close()
+	}
+	assert.Error(t, untrustedErr, "Request with untrusted cert should fail")
 
 	t.Log("mTLS communication test passed: handshake, no-cert rejection, untrusted-cert rejection all verified")
 }
@@ -526,7 +535,7 @@ func TestHealthCheckIntegration(t *testing.T) {
 
 	// Check health when healthy
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL), nil)
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -538,7 +547,7 @@ func TestHealthCheckIntegration(t *testing.T) {
 
 	// Check health when unhealthy
 	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL), nil)
-	resp, err = client.Do(req)
+	resp, err = client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 	require.NoError(t, err)
 	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
@@ -576,7 +585,7 @@ func TestLoadBalancingIntegration(t *testing.T) {
 		// Forward request
 		client := &http.Client{Timeout: 5 * time.Second}
 		req, _ := http.NewRequestWithContext(context.Background(), r.Method, mustParseURL(t, target.URL+r.URL.Path), r.Body)
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
 			return
@@ -591,7 +600,7 @@ func TestLoadBalancingIntegration(t *testing.T) {
 	numRequests := 30
 	for i := 0; i < numRequests; i++ {
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, lb.URL), nil)
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
 		require.NoError(t, err)
 		_ = resp.Body.Close()
 	}

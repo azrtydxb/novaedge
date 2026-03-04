@@ -596,10 +596,7 @@ func TestBuildClustersECMPAutoPromoteToMaglev(t *testing.T) {
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-	if err != nil {
-		t.Fatalf("buildClusters failed: %v", err)
-	}
+	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
 
 	if len(clusters) != 1 {
 		t.Fatalf("expected 1 cluster, got %d", len(clusters))
@@ -630,10 +627,7 @@ func TestBuildClustersECMPAutoPromotesRoundRobin(t *testing.T) {
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-	if err != nil {
-		t.Fatalf("buildClusters failed: %v", err)
-	}
+	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
 
 	if len(clusters) != 1 {
 		t.Fatalf("expected 1 cluster (auto-promoted), got %d", len(clusters))
@@ -663,10 +657,7 @@ func TestBuildClustersECMPRejectsNonHashLB(t *testing.T) {
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-	if err != nil {
-		t.Fatalf("buildClusters failed: %v", err)
-	}
+	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
 
 	if len(clusters) != 0 {
 		t.Errorf("expected 0 clusters (rejected), got %d", len(clusters))
@@ -693,10 +684,7 @@ func TestBuildClustersNonECMPAllowsAnyLB(t *testing.T) {
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), nil, bc)
-	if err != nil {
-		t.Fatalf("buildClusters failed: %v", err)
-	}
+	clusters, _ := builder.buildClusters(context.Background(), nil, bc)
 
 	if len(clusters) != 1 {
 		t.Errorf("expected 1 cluster, got %d", len(clusters))
@@ -723,10 +711,7 @@ func TestBuildClustersECMPAllowsHashLB(t *testing.T) {
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
 
-	clusters, _, err := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-	if err != nil {
-		t.Fatalf("buildClusters failed: %v", err)
-	}
+	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
 
 	if len(clusters) != 1 {
 		t.Fatalf("expected 1 cluster, got %d", len(clusters))
@@ -998,10 +983,7 @@ func TestBuildClustersFederationInactive(t *testing.T) {
 	})
 
 	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
-	_, endpoints, err := builder.buildClusters(context.Background(), nil, bc)
-	if err != nil {
-		t.Fatalf("buildClusters failed: %v", err)
-	}
+	_, endpoints := builder.buildClusters(context.Background(), nil, bc)
 
 	epList := endpoints["default/test-backend"]
 	if epList == nil {
@@ -1085,10 +1067,7 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 	})
 
 	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
-	_, endpoints, err := builder.buildClusters(context.Background(), nil, bc)
-	if err != nil {
-		t.Fatalf("buildClusters failed: %v", err)
-	}
+	_, endpoints := builder.buildClusters(context.Background(), nil, bc)
 
 	epList := endpoints["default/test-backend"]
 	if epList == nil {

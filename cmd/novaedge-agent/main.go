@@ -160,21 +160,21 @@ var (
 
 // agentComponents holds all subsystem managers created during agent initialization.
 type agentComponents struct {
-	watcher      *config.Watcher
-	gossiper     *gossip.ConfigGossiper
-	vipManager   *vip.DefaultManager
-	xdpManager   *xdplb.Manager
-	maglevMgr    *maglev.Manager
-	conntrackMgr *conntrack.Conntrack
-	afxdpWorker  *afxdp.Worker
-	sockMapMgr   *sockmap.Manager
-	ebpfSvcMap   *ebpfservice.Map
-	meshManager  *mesh.Manager
-	sdwanManager *sdwan.Manager
+	watcher       *config.Watcher
+	gossiper      *gossip.ConfigGossiper
+	vipManager    *vip.DefaultManager
+	xdpManager    *xdplb.Manager
+	maglevMgr     *maglev.Manager
+	conntrackMgr  *conntrack.Conntrack
+	afxdpWorker   *afxdp.Worker
+	sockMapMgr    *sockmap.Manager
+	ebpfSvcMap    *ebpfservice.Map
+	meshManager   *mesh.Manager
+	sdwanManager  *sdwan.Manager
 	ebpfHealthMon *ebpfhealth.Monitor
-	ebpfRL       *ebpfratelimit.RateLimiter
-	dpClient     *dpctl.Client
-	dpTranslator *dpctl.Translator
+	ebpfRL        *ebpfratelimit.RateLimiter
+	dpClient      *dpctl.Client
+	dpTranslator  *dpctl.Translator
 
 	metricsServer *server.MetricsServer
 	healthServer  *server.HealthServer

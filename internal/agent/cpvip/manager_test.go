@@ -1011,7 +1011,7 @@ func checkHealthAgainstURL(m *Manager, targetURL string) bool {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
-	resp, err := m.httpClient.Do(req)
+	resp, err := m.httpClient.Do(req) //nolint:gosec // G704: test server URL validated via url.ParseRequestURI above
 	if err != nil {
 		return false
 	}

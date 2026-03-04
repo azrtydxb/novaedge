@@ -303,82 +303,104 @@ var piiScanHeaders = []string{
 //export on_request_headers
 func onRequestHeaders() {}
 
+// piiMaskConfig holds the PII masking settings loaded from the plugin configuration.
+type piiMaskConfig struct {
+	maskEmail      bool
+	maskPhone      bool
+	maskSSN        bool
+	maskCreditCard bool
+	maskChar       byte
+}
+
+// loadPIIMaskConfig reads masking settings from the plugin configuration.
+func loadPIIMaskConfig() piiMaskConfig {
+	c := piiMaskConfig{
+		maskEmail:      configBool("mask_email", true),
+		maskPhone:      configBool("mask_phone", true),
+		maskSSN:        configBool("mask_ssn", true),
+		maskCreditCard: configBool("mask_creditcard", true),
+		maskChar:       '*',
+	}
+	if raw := getConfig("mask_char"); len(raw) > 0 {
+		c.maskChar = raw[0]
+	}
+	return c
+}
+
+// buildActiveRules builds a comma-separated list of active PII masking rules.
+func buildActiveRules(c piiMaskConfig) string {
+	var parts []string
+	if c.maskEmail {
+		parts = append(parts, "email")
+	}
+	if c.maskPhone {
+		parts = append(parts, "phone")
+	}
+	if c.maskSSN {
+		parts = append(parts, "ssn")
+	}
+	if c.maskCreditCard {
+		parts = append(parts, "creditcard")
+	}
+	result := ""
+	for i, p := range parts {
+		if i > 0 {
+			result += ","
+		}
+		result += p
+	}
+	return result
+}
+
+// maskHeaderValue applies PII masking rules to a single header value and returns
+// the (possibly masked) value and whether any masking was applied.
+func maskHeaderValue(original string, c piiMaskConfig) (string, bool) {
+	value := original
+	masked := false
+
+	if c.maskEmail && looksLikeEmail(value) {
+		value = maskEmail(value, c.maskChar)
+		masked = true
+	}
+
+	// Only apply phone masking if it was not already matched as email
+	if c.maskPhone && !looksLikeEmail(original) && looksLikePhone(value) {
+		value = maskPhone(value, c.maskChar)
+		masked = true
+	}
+
+	if c.maskSSN && looksLikeSSN(original) {
+		value = maskSSN(value, c.maskChar)
+		masked = true
+	}
+
+	if c.maskCreditCard && looksLikeCreditCard(original) {
+		value = maskCreditCard(value, c.maskChar)
+		masked = true
+	}
+
+	return value, masked
+}
+
 //export on_response_headers
 func onResponseHeaders() {
-	maskEmailEnabled := configBool("mask_email", true)
-	maskPhoneEnabled := configBool("mask_phone", true)
-	maskSSNEnabled := configBool("mask_ssn", true)
-	maskCCEnabled := configBool("mask_creditcard", true)
-
-	maskCharCfg := getConfig("mask_char")
-	maskChar := byte('*')
-	if len(maskCharCfg) > 0 {
-		maskChar = maskCharCfg[0]
-	}
+	cfg := loadPIIMaskConfig()
 
 	// Build active rules list for the X-PII-Policy header so host middleware
 	// can apply body-level masking that the WASM plugin cannot perform directly.
-	var activeRules string
-	if maskEmailEnabled {
-		activeRules = "email"
-	}
-	if maskPhoneEnabled {
-		if activeRules != "" {
-			activeRules += ","
-		}
-		activeRules += "phone"
-	}
-	if maskSSNEnabled {
-		if activeRules != "" {
-			activeRules += ","
-		}
-		activeRules += "ssn"
-	}
-	if maskCCEnabled {
-		if activeRules != "" {
-			activeRules += ","
-		}
-		activeRules += "creditcard"
-	}
-
-	if activeRules != "" {
+	if activeRules := buildActiveRules(cfg); activeRules != "" {
 		setRespHeader("X-PII-Policy", activeRules)
 	}
 
 	maskedCount := 0
-
 	for _, hdr := range piiScanHeaders {
 		value := getRespHeader(hdr)
 		if value == "" {
 			continue
 		}
 
-		original := value
-		masked := false
-
-		if maskEmailEnabled && looksLikeEmail(value) {
-			value = maskEmail(value, maskChar)
-			masked = true
-		}
-
-		// Only apply phone masking if it was not already matched as email
-		if maskPhoneEnabled && !looksLikeEmail(original) && looksLikePhone(value) {
-			value = maskPhone(value, maskChar)
-			masked = true
-		}
-
-		if maskSSNEnabled && looksLikeSSN(original) {
-			value = maskSSN(value, maskChar)
-			masked = true
-		}
-
-		if maskCCEnabled && looksLikeCreditCard(original) {
-			value = maskCreditCard(value, maskChar)
-			masked = true
-		}
-
-		if masked {
-			setRespHeader(hdr, value)
+		if newValue, masked := maskHeaderValue(value, cfg); masked {
+			setRespHeader(hdr, newValue)
 			maskedCount++
 		}
 	}

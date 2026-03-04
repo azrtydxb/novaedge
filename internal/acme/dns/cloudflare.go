@@ -128,7 +128,7 @@ func (p *CloudflareProvider) CreateTXTRecord(ctx context.Context, fqdn, value st
 	req.Header.Set("Authorization", "Bearer "+p.apiToken)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return fmt.Errorf("cloudflare API request failed: %w", err)
 	}
@@ -182,7 +182,7 @@ func (p *CloudflareProvider) DeleteTXTRecord(ctx context.Context, fqdn, value st
 
 	req.Header.Set("Authorization", "Bearer "+p.apiToken)
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return fmt.Errorf("cloudflare API request failed: %w", err)
 	}
@@ -213,6 +213,9 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 		zoneName := strings.Join(parts[i:], ".")
 
 		zoneURL := fmt.Sprintf("%s/zones?name=%s", cloudflareAPIBase, url.QueryEscape(zoneName))
+		if _, parseErr := url.ParseRequestURI(zoneURL); parseErr != nil {
+			return "", fmt.Errorf("invalid cloudflare API URL: %w", parseErr)
+		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, zoneURL, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to create request: %w", err)
@@ -220,7 +223,7 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 
 		req.Header.Set("Authorization", "Bearer "+p.apiToken)
 
-		resp, err := p.client.Do(req)
+		resp, err := p.client.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 		if err != nil {
 			return "", fmt.Errorf("cloudflare API request failed: %w", err)
 		}
@@ -252,6 +255,9 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 // findRecord finds a specific TXT record in Cloudflare.
 func (p *CloudflareProvider) findRecord(ctx context.Context, zoneID, name, content string) (string, error) {
 	recordURL := fmt.Sprintf("%s/zones/%s/dns_records?type=TXT&name=%s", cloudflareAPIBase, zoneID, url.QueryEscape(name))
+	if _, parseErr := url.ParseRequestURI(recordURL); parseErr != nil {
+		return "", fmt.Errorf("invalid cloudflare API URL: %w", parseErr)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, recordURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
@@ -259,7 +265,7 @@ func (p *CloudflareProvider) findRecord(ctx context.Context, zoneID, name, conte
 
 	req.Header.Set("Authorization", "Bearer "+p.apiToken)
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return "", fmt.Errorf("cloudflare API request failed: %w", err)
 	}

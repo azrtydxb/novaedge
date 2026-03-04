@@ -42,9 +42,9 @@ func TestNewCleanup(t *testing.T) {
 
 func TestCleanup_CleanupForGateway(t *testing.T) {
 	// Create certificates with gateway label
-	cert1 := createTestCertificate("cert1", "default", "my-gateway")
-	cert2 := createTestCertificate("cert2", "default", "my-gateway")
-	cert3 := createTestCertificate("cert3", "default", "other-gateway")
+	cert1 := createTestCertificate("cert1", "my-gateway")
+	cert2 := createTestCertificate("cert2", "my-gateway")
+	cert3 := createTestCertificate("cert3", "other-gateway")
 
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(scheme.Scheme, cert1, cert2, cert3)
 	cleanup := NewCleanup(dynamicClient)
@@ -88,7 +88,7 @@ func TestCleanup_CleanupForGateway_NoCertificates(t *testing.T) {
 
 func TestCleanup_CleanupOrphaned(t *testing.T) {
 	// Create certificates: some with owner refs, some without
-	certWithOwner := createTestCertificate("cert-with-owner", "default", "my-gateway")
+	certWithOwner := createTestCertificate("cert-with-owner", "my-gateway")
 	certWithOwner.SetOwnerReferences([]metav1.OwnerReference{
 		{
 			APIVersion: "novaedge.io/v1alpha1",
@@ -98,7 +98,7 @@ func TestCleanup_CleanupOrphaned(t *testing.T) {
 		},
 	})
 
-	certOrphaned := createTestCertificate("cert-orphaned", "default", "old-gateway")
+	certOrphaned := createTestCertificate("cert-orphaned", "old-gateway")
 	// No owner reference - orphaned
 
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(scheme.Scheme, certWithOwner, certOrphaned)
@@ -139,7 +139,7 @@ func TestCleanup_CleanupOrphaned_NoOrphans(t *testing.T) {
 }
 
 // Helper function to create test certificates
-func createTestCertificate(name, namespace, gatewayName string) *unstructured.Unstructured {
+func createTestCertificate(name, gatewayName string) *unstructured.Unstructured {
 	cert := &unstructured.Unstructured{}
 	cert.SetGroupVersionKind(schema.GroupVersionKind{
 		Group:   "cert-manager.io",
@@ -147,7 +147,7 @@ func createTestCertificate(name, namespace, gatewayName string) *unstructured.Un
 		Kind:    "Certificate",
 	})
 	cert.SetName(name)
-	cert.SetNamespace(namespace)
+	cert.SetNamespace("default")
 	cert.SetLabels(map[string]string{
 		"app.kubernetes.io/managed-by": "novaedge",
 		"novaedge.io/gateway":          gatewayName,

@@ -593,4 +593,3 @@ type ProxyGatewayList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ProxyGateway `json:"items"`
 }
-

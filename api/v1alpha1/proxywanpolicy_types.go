@@ -122,4 +122,3 @@ type ProxyWANPolicyList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ProxyWANPolicy `json:"items"`
 }
-

@@ -916,15 +916,16 @@ func (r *NovaEdgeClusterReconciler) reconcileWebUIDeployment(ctx context.Context
 	return r.createOrUpdate(ctx, deployment)
 }
 
-// updateStatus updates the NovaEdgeCluster status
-func (r *NovaEdgeClusterReconciler) updateStatus(ctx context.Context, cluster *novaedgev1alpha1.NovaEdgeCluster) error {
-	logger := log.FromContext(ctx)
+// isWebUIEnabled returns true if the WebUI component is enabled in the cluster spec.
+func isWebUIEnabled(cluster *novaedgev1alpha1.NovaEdgeCluster) bool {
+	return cluster.Spec.WebUI != nil && (cluster.Spec.WebUI.Enabled == nil || *cluster.Spec.WebUI.Enabled)
+}
 
-	// Fetch controller deployment status
+// fetchComponentStatuses fetches and sets the component statuses on the cluster object.
+func (r *NovaEdgeClusterReconciler) fetchComponentStatuses(ctx context.Context, cluster *novaedgev1alpha1.NovaEdgeCluster) {
 	controllerDeploy := &appsv1.Deployment{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-controller", cluster.Name),
-		Namespace: cluster.Namespace,
+		Name: fmt.Sprintf("%s-controller", cluster.Name), Namespace: cluster.Namespace,
 	}, controllerDeploy); err == nil {
 		cluster.Status.Controller = &novaedgev1alpha1.ComponentStatus{
 			Ready:           controllerDeploy.Status.ReadyReplicas == *controllerDeploy.Spec.Replicas,
@@ -935,11 +936,9 @@ func (r *NovaEdgeClusterReconciler) updateStatus(ctx context.Context, cluster *n
 		}
 	}
 
-	// Fetch agent DaemonSet status
 	agentDS := &appsv1.DaemonSet{}
 	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-agent", cluster.Name),
-		Namespace: cluster.Namespace,
+		Name: fmt.Sprintf("%s-agent", cluster.Name), Namespace: cluster.Namespace,
 	}, agentDS); err == nil {
 		cluster.Status.Agent = &novaedgev1alpha1.ComponentStatus{
 			Ready:           agentDS.Status.NumberReady == agentDS.Status.DesiredNumberScheduled,
@@ -950,12 +949,10 @@ func (r *NovaEdgeClusterReconciler) updateStatus(ctx context.Context, cluster *n
 		}
 	}
 
-	// Fetch web UI deployment status if enabled
-	if cluster.Spec.WebUI != nil && (cluster.Spec.WebUI.Enabled == nil || *cluster.Spec.WebUI.Enabled) {
+	if isWebUIEnabled(cluster) {
 		webUIDeploy := &appsv1.Deployment{}
 		if err := r.Get(ctx, types.NamespacedName{
-			Name:      fmt.Sprintf("%s-webui", cluster.Name),
-			Namespace: cluster.Namespace,
+			Name: fmt.Sprintf("%s-webui", cluster.Name), Namespace: cluster.Namespace,
 		}, webUIDeploy); err == nil {
 			cluster.Status.WebUI = &novaedgev1alpha1.ComponentStatus{
 				Ready:           webUIDeploy.Status.ReadyReplicas == *webUIDeploy.Spec.Replicas,
@@ -966,55 +963,44 @@ func (r *NovaEdgeClusterReconciler) updateStatus(ctx context.Context, cluster *n
 			}
 		}
 	}
+}
 
-	// Update conditions
+// setComponentCondition is a shorthand for setting a typed component condition.
+func setComponentCondition(conditions *[]metav1.Condition, condType string, ready bool, generation int64, readyReason, notReadyReason, readyMsg, notReadyMsg string) {
+	meta.SetStatusCondition(conditions, metav1.Condition{
+		Type:               condType,
+		Status:             conditionStatus(ready),
+		ObservedGeneration: generation,
+		Reason:             conditionReason(ready, readyReason, notReadyReason),
+		Message:            conditionMessage(ready, readyMsg, notReadyMsg),
+	})
+}
+
+// updateStatus updates the NovaEdgeCluster status
+func (r *NovaEdgeClusterReconciler) updateStatus(ctx context.Context, cluster *novaedgev1alpha1.NovaEdgeCluster) error {
+	logger := log.FromContext(ctx)
+
+	r.fetchComponentStatuses(ctx, cluster)
+
 	controllerReady := cluster.Status.Controller != nil && cluster.Status.Controller.Ready
 	agentReady := cluster.Status.Agent != nil && cluster.Status.Agent.Ready
-	webUIReady := true
-	if cluster.Spec.WebUI != nil && (cluster.Spec.WebUI.Enabled == nil || *cluster.Spec.WebUI.Enabled) {
-		webUIReady = cluster.Status.WebUI != nil && cluster.Status.WebUI.Ready
+	webUIReady := !isWebUIEnabled(cluster) || (cluster.Status.WebUI != nil && cluster.Status.WebUI.Ready)
+
+	gen := cluster.Generation
+	setComponentCondition(&cluster.Status.Conditions, ConditionTypeControllerOK, controllerReady, gen,
+		"ControllerReady", "ControllerNotReady", "Controller is ready", "Controller is not ready")
+	setComponentCondition(&cluster.Status.Conditions, ConditionTypeAgentOK, agentReady, gen,
+		"AgentReady", "AgentNotReady", "Agent DaemonSet is ready", "Agent DaemonSet is not ready")
+
+	if isWebUIEnabled(cluster) {
+		setComponentCondition(&cluster.Status.Conditions, ConditionTypeWebUIOK, webUIReady, gen,
+			"WebUIReady", "WebUINotReady", "Web UI is ready", "Web UI is not ready")
 	}
 
-	// Controller ready condition
-	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeControllerOK,
-		Status:             conditionStatus(controllerReady),
-		ObservedGeneration: cluster.Generation,
-		Reason:             conditionReason(controllerReady, "ControllerReady", "ControllerNotReady"),
-		Message:            conditionMessage(controllerReady, "Controller is ready", "Controller is not ready"),
-	})
-
-	// Agent ready condition
-	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeAgentOK,
-		Status:             conditionStatus(agentReady),
-		ObservedGeneration: cluster.Generation,
-		Reason:             conditionReason(agentReady, "AgentReady", "AgentNotReady"),
-		Message:            conditionMessage(agentReady, "Agent DaemonSet is ready", "Agent DaemonSet is not ready"),
-	})
-
-	// WebUI ready condition (if enabled)
-	if cluster.Spec.WebUI != nil && (cluster.Spec.WebUI.Enabled == nil || *cluster.Spec.WebUI.Enabled) {
-		meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-			Type:               ConditionTypeWebUIOK,
-			Status:             conditionStatus(webUIReady),
-			ObservedGeneration: cluster.Generation,
-			Reason:             conditionReason(webUIReady, "WebUIReady", "WebUINotReady"),
-			Message:            conditionMessage(webUIReady, "Web UI is ready", "Web UI is not ready"),
-		})
-	}
-
-	// Overall ready condition
 	allReady := controllerReady && agentReady && webUIReady
-	meta.SetStatusCondition(&cluster.Status.Conditions, metav1.Condition{
-		Type:               ConditionTypeReady,
-		Status:             conditionStatus(allReady),
-		ObservedGeneration: cluster.Generation,
-		Reason:             conditionReason(allReady, "AllComponentsReady", "SomeComponentsNotReady"),
-		Message:            conditionMessage(allReady, "All components are ready", "Some components are not ready"),
-	})
+	setComponentCondition(&cluster.Status.Conditions, ConditionTypeReady, allReady, gen,
+		"AllComponentsReady", "SomeComponentsNotReady", "All components are ready", "Some components are not ready")
 
-	// Update phase
 	switch {
 	case allReady:
 		cluster.Status.Phase = novaedgev1alpha1.ClusterPhaseRunning

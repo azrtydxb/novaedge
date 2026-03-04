@@ -339,9 +339,9 @@ func TestCertificateManager_DeleteCertificate(t *testing.T) {
 }
 
 func TestCertificateManager_ListCertificatesForGateway(t *testing.T) {
-	cert1 := createTestCertificate("cert1", "default", "my-gateway")
-	cert2 := createTestCertificate("cert2", "default", "my-gateway")
-	cert3 := createTestCertificate("cert3", "default", "other-gateway")
+	cert1 := createTestCertificate("cert1", "my-gateway")
+	cert2 := createTestCertificate("cert2", "my-gateway")
+	cert3 := createTestCertificate("cert3", "other-gateway")
 
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(scheme.Scheme, cert1, cert2, cert3)
 	manager := NewCertificateManager(dynamicClient)

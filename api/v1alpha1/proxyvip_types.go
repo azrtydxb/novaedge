@@ -302,4 +302,3 @@ type ProxyVIPList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ProxyVIP `json:"items"`
 }
-

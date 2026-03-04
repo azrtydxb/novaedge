@@ -74,24 +74,24 @@ func setupScheme() {
 
 // controllerFlags holds all parsed command-line flags for the controller.
 type controllerFlags struct {
-	metricsAddr          string
-	probeAddr            string
-	grpcAddr             string
-	grpcTLSCert          string
-	grpcTLSKey           string
-	grpcTLSCA            string
-	controllerClass      string
-	defaultVIPRef        string
-	enableServiceLB      bool
-	enableCertManager    string
-	enableVault          string
-	vaultAddr            string
-	vaultAuthMethod      string
-	vaultRole            string
-	meshTrustDomain      string
-	federationID         string
+	metricsAddr           string
+	probeAddr             string
+	grpcAddr              string
+	grpcTLSCert           string
+	grpcTLSKey            string
+	grpcTLSCA             string
+	controllerClass       string
+	defaultVIPRef         string
+	enableServiceLB       bool
+	enableCertManager     string
+	enableVault           string
+	vaultAddr             string
+	vaultAuthMethod       string
+	vaultRole             string
+	meshTrustDomain       string
+	federationID          string
 	federationLocalMember string
-	enableLeaderElection bool
+	enableLeaderElection  bool
 }
 
 func parseControllerFlags() controllerFlags {

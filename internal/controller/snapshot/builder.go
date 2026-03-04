@@ -352,11 +352,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	}
 
 	// Build VIP assignments
-	vips, err := b.buildVIPAssignments(ctx, nodeName, bc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build VIP assignments: %w", err)
-	}
-	snapshot.VipAssignments = vips
+	snapshot.VipAssignments = b.buildVIPAssignments(ctx, nodeName, bc)
 
 	// Build gateways
 	snapshot.Gateways = b.buildGateways(ctx, bc)
@@ -371,12 +367,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	ecmpBackends := b.resolveECMPBackends(bc)
 
 	// Build backends/clusters
-	clusters, endpoints, err := b.buildClusters(ctx, ecmpBackends, bc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to build clusters: %w", err)
-	}
-	snapshot.Clusters = clusters
-	snapshot.Endpoints = endpoints
+	snapshot.Clusters, snapshot.Endpoints = b.buildClusters(ctx, ecmpBackends, bc)
 
 	// Build policies
 	policies := b.buildPolicies(ctx, bc)
@@ -533,7 +524,7 @@ func applyVIPRoutingConfig(assignment *pb.VIPAssignment, vip *novaedgev1alpha1.P
 }
 
 // buildVIPAssignments builds VIP assignments for the node
-func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *buildContext) ([]*pb.VIPAssignment, error) {
+func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *buildContext) []*pb.VIPAssignment {
 	// Look up node's InternalIP for per-node RouterID override from pre-loaded map
 	nodeIP := ""
 	if node, ok := bc.getNode(nodeName); ok {
@@ -558,7 +549,7 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *
 		assignments = append(assignments, assignment)
 	}
 
-	return assignments, nil
+	return assignments
 }
 
 // buildGateways builds gateway configurations
@@ -778,6 +769,14 @@ func validateAndAdjustECMPPolicy(ctx context.Context, cluster *pb.Cluster, backe
 		return true
 	case pb.LoadBalancingPolicy_MAGLEV, pb.LoadBalancingPolicy_RING_HASH:
 		return true
+	case pb.LoadBalancingPolicy_P2C,
+		pb.LoadBalancingPolicy_EWMA,
+		pb.LoadBalancingPolicy_LEAST_CONN,
+		pb.LoadBalancingPolicy_SOURCE_HASH,
+		pb.LoadBalancingPolicy_STICKY:
+		log.FromContext(ctx).Error(nil, "Skipping backend: non-hash LB policy is incompatible with BGP/OSPF ECMP VIPs. Use Maglev or RingHash.",
+			"backend", backendName, "namespace", backendNamespace, "policy", cluster.LbPolicy.String())
+		return false
 	default:
 		log.FromContext(ctx).Error(nil, "Skipping backend: non-hash LB policy is incompatible with BGP/OSPF ECMP VIPs. Use Maglev or RingHash.",
 			"backend", backendName, "namespace", backendNamespace, "policy", cluster.LbPolicy.String())
@@ -790,7 +789,7 @@ func validateAndAdjustECMPPolicy(ctx context.Context, cluster *pb.Cluster, backe
 // served through BGP/OSPF ECMP VIPs. Only those backends have their LB policy
 // validated/promoted for ECMP consistency; backends served through L2ARP VIPs
 // are unrestricted.
-func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]struct{}, bc *buildContext) ([]*pb.Cluster, map[string]*pb.EndpointList, error) {
+func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]struct{}, bc *buildContext) ([]*pb.Cluster, map[string]*pb.EndpointList) {
 	clusters := make([]*pb.Cluster, 0, len(bc.backends))
 	endpoints := make(map[string]*pb.EndpointList)
 
@@ -890,7 +889,7 @@ func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]str
 		}
 	}
 
-	return clusters, endpoints, nil
+	return clusters, endpoints
 }
 
 // resolveECMPBackends determines which backends are served through BGP/OSPF

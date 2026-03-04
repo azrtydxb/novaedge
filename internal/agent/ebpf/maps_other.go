@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 )
 
@@ -38,7 +39,10 @@ func safeIntToUint32(v int) uint32 {
 	if v < 0 {
 		return 0
 	}
-	return uint32(v)
+	if v > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(v) //nolint:gosec // G115: bounds checked above
 }
 
 // LPMTrieKey4 is the key format for a BPF_MAP_TYPE_LPM_TRIE with IPv4 prefixes.

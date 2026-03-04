@@ -143,7 +143,7 @@ func (c *vaultHTTPClient) doRequest(req *http.Request) (*Response, error) {
 		return nil, err
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // G704: URL validated via buildURL which calls url.ParseRequestURI
 	if err != nil {
 		return nil, fmt.Errorf("vault request failed: %w", err)
 	}
@@ -216,7 +216,7 @@ func (c *vaultHTTPClient) HealthCheck(ctx context.Context) (*HealthStatus, error
 		return nil, err
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("vault health check failed: %w", err)
 	}

@@ -674,4 +674,3 @@ type ProxyPolicyList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []ProxyPolicy `json:"items"`
 }
-

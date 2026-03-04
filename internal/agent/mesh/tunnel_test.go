@@ -360,7 +360,7 @@ func TestTunnelServerRejectsNonConnect(t *testing.T) {
 	if reqErr != nil {
 		t.Fatalf("failed to create GET request: %v", reqErr)
 	}
-	resp, err := client.Do(getReq)
+	resp, err := client.Do(getReq) //nolint:gosec // G704: test server URL validated via url.ParseRequestURI above
 	if err != nil {
 		t.Fatalf("GET request failed: %v", err)
 	}

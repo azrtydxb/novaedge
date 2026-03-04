@@ -164,6 +164,8 @@ func translateGatewayProtocol(proto configpb.Protocol) pb.GatewayProtocol {
 		return pb.GatewayProtocol_GATEWAY_PROTOCOL_TCP
 	case configpb.Protocol_UDP:
 		return pb.GatewayProtocol_GATEWAY_PROTOCOL_UDP
+	case configpb.Protocol_TLS, configpb.Protocol_PROTOCOL_UNSPECIFIED:
+		return pb.GatewayProtocol_GATEWAY_PROTOCOL_UNSPECIFIED
 	default:
 		return pb.GatewayProtocol_GATEWAY_PROTOCOL_UNSPECIFIED
 	}
@@ -285,6 +287,8 @@ func translatePathMatchType(t configpb.PathMatchType) pb.PathMatchType {
 		return pb.PathMatchType_PATH_MATCH_PREFIX
 	case configpb.PathMatchType_REGULAR_EXPRESSION:
 		return pb.PathMatchType_PATH_MATCH_REGEX
+	case configpb.PathMatchType_PATH_MATCH_TYPE_UNSPECIFIED:
+		return pb.PathMatchType_PATH_MATCH_TYPE_UNSPECIFIED
 	default:
 		return pb.PathMatchType_PATH_MATCH_TYPE_UNSPECIFIED
 	}
@@ -433,6 +437,8 @@ func translateLBAlgorithm(policy configpb.LoadBalancingPolicy) pb.LBAlgorithm {
 		return pb.LBAlgorithm_LB_ALGORITHM_SOURCE_HASH
 	case configpb.LoadBalancingPolicy_STICKY:
 		return pb.LBAlgorithm_LB_ALGORITHM_STICKY
+	case configpb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED:
+		return pb.LBAlgorithm_LB_ALGORITHM_ROUND_ROBIN
 	default:
 		return pb.LBAlgorithm_LB_ALGORITHM_ROUND_ROBIN
 	}
@@ -496,6 +502,8 @@ func translateVIPMode(mode configpb.VIPMode) pb.VIPMode {
 		return pb.VIPMode_VIP_MODE_BGP
 	case configpb.VIPMode_OSPF:
 		return pb.VIPMode_VIP_MODE_OSPF
+	case configpb.VIPMode_VIP_MODE_UNSPECIFIED:
+		return pb.VIPMode_VIP_MODE_UNSPECIFIED
 	default:
 		return pb.VIPMode_VIP_MODE_UNSPECIFIED
 	}
@@ -543,6 +551,8 @@ func translateL4Protocol(proto configpb.Protocol) pb.L4Protocol {
 		return pb.L4Protocol_L4_PROTOCOL_UDP
 	case configpb.Protocol_TLS:
 		return pb.L4Protocol_L4_PROTOCOL_TLS_PASSTHROUGH
+	case configpb.Protocol_PROTOCOL_UNSPECIFIED, configpb.Protocol_HTTP, configpb.Protocol_HTTPS, configpb.Protocol_HTTP3:
+		return pb.L4Protocol_L4_PROTOCOL_UNSPECIFIED
 	default:
 		return pb.L4Protocol_L4_PROTOCOL_UNSPECIFIED
 	}
@@ -701,13 +711,25 @@ func translatePolicies(policies []*configpb.Policy) []*pb.PolicyConfig {
 		}
 
 		pType := pol.GetType()
-		switch {
-		case pType == configpb.PolicyType_IP_ALLOW_LIST || pType == configpb.PolicyType_IP_DENY_LIST:
+		switch pType {
+		case configpb.PolicyType_IP_ALLOW_LIST, configpb.PolicyType_IP_DENY_LIST:
 			translateIPListPolicy(pol, dpPol)
-		case pType == configpb.PolicyType_WASM_PLUGIN ||
-			pType == configpb.PolicyType_DISTRIBUTED_RATE_LIMIT ||
-			pType == configpb.PolicyType_MESH_AUTHORIZATION:
+		case configpb.PolicyType_WASM_PLUGIN,
+			configpb.PolicyType_DISTRIBUTED_RATE_LIMIT,
+			configpb.PolicyType_MESH_AUTHORIZATION,
+			configpb.PolicyType_POLICY_TYPE_UNSPECIFIED:
 			// These policy types have no dataplane equivalent yet; skip.
+		case configpb.PolicyType_RATE_LIMIT,
+			configpb.PolicyType_JWT,
+			configpb.PolicyType_CORS,
+			configpb.PolicyType_SECURITY_HEADERS,
+			configpb.PolicyType_WAF,
+			configpb.PolicyType_BASIC_AUTH,
+			configpb.PolicyType_FORWARD_AUTH,
+			configpb.PolicyType_OIDC:
+			if translator, ok := policyConfigTranslators[pType]; ok {
+				translator(pol, dpPol)
+			}
 		default:
 			if translator, ok := policyConfigTranslators[pType]; ok {
 				translator(pol, dpPol)
@@ -739,6 +761,11 @@ func translatePolicyType(t configpb.PolicyType) pb.PolicyType {
 		return pb.PolicyType_POLICY_TYPE_OAUTH2
 	case configpb.PolicyType_SECURITY_HEADERS:
 		return pb.PolicyType_POLICY_TYPE_SECURITY_HEADERS
+	case configpb.PolicyType_POLICY_TYPE_UNSPECIFIED,
+		configpb.PolicyType_DISTRIBUTED_RATE_LIMIT,
+		configpb.PolicyType_WASM_PLUGIN,
+		configpb.PolicyType_MESH_AUTHORIZATION:
+		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}

@@ -109,105 +109,112 @@ func (v *FederationValidator) ValidateDelete(_ context.Context, obj *novaedgev1a
 	return warns, nil
 }
 
-// validateFederation performs validation on the federation spec
-func (v *FederationValidator) validateFederation(fed *novaedgev1alpha1.NovaEdgeFederation) (warnings admission.Warnings, err error) {
-	var warns admission.Warnings
+// validateFederationPeers validates peers for duplicates, self-references, and TLS.
+func (v *FederationValidator) validateFederationPeers(fed *novaedgev1alpha1.NovaEdgeFederation) []string {
 	var errs []string
-
-	// Validate federation ID
-	if !federationIDRegex.MatchString(fed.Spec.FederationID) {
-		errs = append(errs, fmt.Sprintf(
-			"invalid federation ID %q: must be lowercase alphanumeric with hyphens",
-			fed.Spec.FederationID))
-	}
-
-	if len(fed.Spec.FederationID) > 63 {
-		errs = append(errs, fmt.Sprintf(
-			"federation ID %q is too long: max 63 characters",
-			fed.Spec.FederationID))
-	}
-
-	// Validate local member
-	if err := v.validateMember(fed.Spec.LocalMember.Name, fed.Spec.LocalMember.Endpoint); err != nil {
-		errs = append(errs, fmt.Sprintf("invalid local member: %v", err))
-	}
-
-	// Validate peers
 	memberNames := map[string]bool{fed.Spec.LocalMember.Name: true}
 	endpoints := map[string]bool{fed.Spec.LocalMember.Endpoint: true}
 
 	for i, peer := range fed.Spec.Members {
-		// Validate peer name and endpoint
 		if err := v.validateMember(peer.Name, peer.Endpoint); err != nil {
 			errs = append(errs, fmt.Sprintf("invalid peer %d (%s): %v", i, peer.Name, err))
 		}
-
-		// Check for duplicate names
 		if memberNames[peer.Name] {
 			errs = append(errs, fmt.Sprintf("duplicate member name: %q", peer.Name))
 		}
 		memberNames[peer.Name] = true
 
-		// Check for duplicate endpoints
 		if endpoints[peer.Endpoint] {
 			errs = append(errs, fmt.Sprintf("duplicate endpoint: %q", peer.Endpoint))
 		}
 		endpoints[peer.Endpoint] = true
 
-		// Check for self-referential peer
 		if peer.Name == fed.Spec.LocalMember.Name {
 			errs = append(errs, fmt.Sprintf("peer cannot have same name as local member: %q", peer.Name))
 		}
-
-		// Validate TLS configuration
 		if peer.TLS != nil {
 			if err := v.validateTLS(peer.TLS, peer.Name); err != nil {
 				errs = append(errs, fmt.Sprintf("invalid TLS config for peer %s: %v", peer.Name, err))
 			}
 		}
 	}
+	return errs
+}
 
-	// Validate sync config
-	if fed.Spec.Sync != nil {
-		if fed.Spec.Sync.BatchSize > 1000 {
-			warns = append(warns, fmt.Sprintf(
-				"batch size %d is very large, may cause memory issues", fed.Spec.Sync.BatchSize))
-		}
-
-		// Check for invalid resource types
-		validResourceTypes := map[string]bool{
-			"ProxyGateway": true,
-			"ProxyRoute":   true,
-			"ProxyBackend": true,
-			"ProxyPolicy":  true,
-			"ProxyVIP":     true,
-		}
-		for _, rt := range fed.Spec.Sync.ResourceTypes {
-			if !validResourceTypes[rt] {
-				errs = append(errs, fmt.Sprintf("invalid resource type: %q", rt))
-			}
+// validateSyncConfig validates sync configuration, returning errors and warnings.
+func validateSyncConfig(sync *novaedgev1alpha1.FederationSyncConfig) ([]string, admission.Warnings) {
+	if sync == nil {
+		return nil, nil
+	}
+	var errs []string
+	var warns admission.Warnings
+	if sync.BatchSize > 1000 {
+		warns = append(warns, fmt.Sprintf(
+			"batch size %d is very large, may cause memory issues", sync.BatchSize))
+	}
+	validResourceTypes := map[string]bool{
+		"ProxyGateway": true, "ProxyRoute": true, "ProxyBackend": true,
+		"ProxyPolicy": true, "ProxyVIP": true,
+	}
+	for _, rt := range sync.ResourceTypes {
+		if !validResourceTypes[rt] {
+			errs = append(errs, fmt.Sprintf("invalid resource type: %q", rt))
 		}
 	}
+	return errs, warns
+}
 
-	// Validate conflict resolution
-	if fed.Spec.ConflictResolution != nil {
-		switch fed.Spec.ConflictResolution.Strategy {
-		case novaedgev1alpha1.ConflictResolutionLastWriterWins,
-			novaedgev1alpha1.ConflictResolutionMerge,
-			novaedgev1alpha1.ConflictResolutionManual:
-			// Valid
-		default:
-			errs = append(errs, fmt.Sprintf(
-				"invalid conflict resolution strategy: %q", fed.Spec.ConflictResolution.Strategy))
-		}
+// validateConflictResolution validates conflict resolution config, returning errors and warnings.
+func validateConflictResolution(cr *novaedgev1alpha1.ConflictResolutionConfig) ([]string, admission.Warnings) {
+	if cr == nil {
+		return nil, nil
+	}
+	var errs []string
+	var warns admission.Warnings
+	switch cr.Strategy {
+	case novaedgev1alpha1.ConflictResolutionLastWriterWins,
+		novaedgev1alpha1.ConflictResolutionMerge,
+		novaedgev1alpha1.ConflictResolutionManual:
+	default:
+		errs = append(errs, fmt.Sprintf(
+			"invalid conflict resolution strategy: %q", cr.Strategy))
+	}
+	if cr.Strategy == novaedgev1alpha1.ConflictResolutionManual {
+		warns = append(warns, "Manual conflict resolution requires operator intervention for each conflict")
+	}
+	return errs, warns
+}
 
-		// Warn about manual conflict resolution
-		if fed.Spec.ConflictResolution.Strategy == novaedgev1alpha1.ConflictResolutionManual {
-			warns = append(warns, "Manual conflict resolution requires operator intervention for each conflict")
-		}
+// validateFederation performs validation on the federation spec
+func (v *FederationValidator) validateFederation(fed *novaedgev1alpha1.NovaEdgeFederation) (warnings admission.Warnings, err error) {
+	var warns admission.Warnings
+	var errs []string
+
+	if !federationIDRegex.MatchString(fed.Spec.FederationID) {
+		errs = append(errs, fmt.Sprintf(
+			"invalid federation ID %q: must be lowercase alphanumeric with hyphens",
+			fed.Spec.FederationID))
+	}
+	if len(fed.Spec.FederationID) > 63 {
+		errs = append(errs, fmt.Sprintf(
+			"federation ID %q is too long: max 63 characters",
+			fed.Spec.FederationID))
 	}
 
-	// Validate health check config
+	if err := v.validateMember(fed.Spec.LocalMember.Name, fed.Spec.LocalMember.Endpoint); err != nil {
+		errs = append(errs, fmt.Sprintf("invalid local member: %v", err))
+	}
+
+	errs = append(errs, v.validateFederationPeers(fed)...)
+
+	syncErrs, syncWarns := validateSyncConfig(fed.Spec.Sync)
+	errs = append(errs, syncErrs...)
+	warns = append(warns, syncWarns...)
+
+	crErrs, crWarns := validateConflictResolution(fed.Spec.ConflictResolution)
+	errs = append(errs, crErrs...)
+	warns = append(warns, crWarns...)
+
 	if fed.Spec.HealthCheck != nil {
 		if fed.Spec.HealthCheck.Interval != nil && fed.Spec.HealthCheck.Timeout != nil {
 			if fed.Spec.HealthCheck.Timeout.Duration >= fed.Spec.HealthCheck.Interval.Duration {
@@ -216,7 +223,6 @@ func (v *FederationValidator) validateFederation(fed *novaedgev1alpha1.NovaEdgeF
 		}
 	}
 
-	// Combine errors
 	if len(errs) > 0 {
 		return warns, fmt.Errorf("%w: %s", errValidationFailed, strings.Join(errs, "; "))
 	}

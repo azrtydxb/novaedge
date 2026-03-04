@@ -209,119 +209,116 @@ func extractCookieValue(cookieHeader, name string) string {
 	return ""
 }
 
+// abTestConfig holds the A/B testing configuration loaded from plugin settings.
+type abTestConfig struct {
+	experimentName string
+	variants       []string
+	cookieName     string
+	headerName     string
+	trafficSplit   int
+}
+
+// loadABTestConfig reads the A/B testing configuration from plugin settings.
+func loadABTestConfig() abTestConfig {
+	c := abTestConfig{
+		experimentName: getConfig("experiment_name"),
+		cookieName:     getConfig("cookie_name"),
+		headerName:     getConfig("header_name"),
+	}
+	if c.experimentName == "" {
+		c.experimentName = "default"
+	}
+	c.variants = splitComma(getConfig("variants"))
+	if len(c.variants) == 0 {
+		c.variants = []string{"control", "variant_a"}
+	}
+	if c.cookieName == "" {
+		c.cookieName = "ab_bucket"
+	}
+	if c.headerName == "" {
+		c.headerName = "X-AB-Variant"
+	}
+	c.trafficSplit = atoi(getConfig("traffic_split"), 50)
+	if c.trafficSplit < 0 {
+		c.trafficSplit = 0
+	}
+	if c.trafficSplit > 100 {
+		c.trafficSplit = 100
+	}
+	return c
+}
+
+// findValidVariant returns candidate if it matches one of the configured variants,
+// or an empty string otherwise.
+func findValidVariant(candidate string, variants []string) string {
+	for _, v := range variants {
+		if candidate == v {
+			return candidate
+		}
+	}
+	return ""
+}
+
+// computeVariant deterministically assigns a variant based on request fingerprint.
+func computeVariant(variants []string, trafficSplit int) string {
+	userAgent := getReqHeader("User-Agent")
+	forwardedFor := getReqHeader("X-Forwarded-For")
+	remoteIP := getReqHeader("X-Real-IP")
+
+	fingerprint := userAgent + "|" + forwardedFor + "|" + remoteIP
+	hash := fnv32a(fingerprint)
+	bucketPct := hash % 100
+
+	if len(variants) == 2 {
+		if bucketPct < uint32(trafficSplit) {
+			return variants[0]
+		}
+		return variants[1]
+	}
+
+	// For multi-variant: first variant gets trafficSplit%, rest share equally
+	if bucketPct < uint32(trafficSplit) {
+		return variants[0]
+	}
+	remaining := len(variants) - 1
+	if remaining <= 0 {
+		return variants[0]
+	}
+	remainingPct := bucketPct - uint32(trafficSplit)
+	segmentSize := uint32(100-trafficSplit) / uint32(remaining)
+	if segmentSize == 0 {
+		segmentSize = 1
+	}
+	idx := int(remainingPct / segmentSize)
+	if idx >= remaining {
+		idx = remaining - 1
+	}
+	return variants[1+idx]
+}
+
 //export on_request_headers
 func onRequestHeaders() {
-	experimentName := getConfig("experiment_name")
-	if experimentName == "" {
-		experimentName = "default"
-	}
-
-	variantsCfg := getConfig("variants")
-	variants := splitComma(variantsCfg)
-	if len(variants) == 0 {
-		variants = []string{"control", "variant_a"}
-	}
-
-	cookieName := getConfig("cookie_name")
-	if cookieName == "" {
-		cookieName = "ab_bucket"
-	}
-
-	headerName := getConfig("header_name")
-	if headerName == "" {
-		headerName = "X-AB-Variant"
-	}
-
-	trafficSplit := atoi(getConfig("traffic_split"), 50)
-	if trafficSplit < 0 {
-		trafficSplit = 0
-	}
-	if trafficSplit > 100 {
-		trafficSplit = 100
-	}
+	cfg := loadABTestConfig()
 
 	// Check if user already has an assignment via cookie
 	cookieHeader := getReqHeader("Cookie")
-	existingBucket := extractCookieValue(cookieHeader, cookieName)
+	assignedVariant := findValidVariant(extractCookieValue(cookieHeader, cfg.cookieName), cfg.variants)
 
 	// Also check if an upstream already set the variant header
-	existingHeader := getReqHeader(headerName)
-
-	var assignedVariant string
-
-	if existingBucket != "" {
-		// Validate that the existing bucket is one of the configured variants
-		valid := false
-		for _, v := range variants {
-			if existingBucket == v {
-				valid = true
-				break
-			}
-		}
-		if valid {
-			assignedVariant = existingBucket
-		}
-	}
-
-	if assignedVariant == "" && existingHeader != "" {
-		for _, v := range variants {
-			if existingHeader == v {
-				assignedVariant = existingHeader
-				break
-			}
-		}
+	if assignedVariant == "" {
+		assignedVariant = findValidVariant(getReqHeader(cfg.headerName), cfg.variants)
 	}
 
 	// If no existing assignment, compute deterministically from request headers
 	if assignedVariant == "" {
-		userAgent := getReqHeader("User-Agent")
-		forwardedFor := getReqHeader("X-Forwarded-For")
-		remoteIP := getReqHeader("X-Real-IP")
-
-		// Build a fingerprint from available request identity signals
-		fingerprint := userAgent + "|" + forwardedFor + "|" + remoteIP
-		hash := fnv32a(fingerprint)
-
-		// Use traffic_split for 2-variant case; for 3+ variants distribute evenly
-		// after the first variant gets its configured percentage.
-		bucketPct := hash % 100
-
-		if len(variants) == 2 {
-			if bucketPct < uint32(trafficSplit) {
-				assignedVariant = variants[0]
-			} else {
-				assignedVariant = variants[1]
-			}
-		} else {
-			// For multi-variant: first variant gets trafficSplit%, rest share equally
-			if bucketPct < uint32(trafficSplit) {
-				assignedVariant = variants[0]
-			} else {
-				remaining := len(variants) - 1
-				if remaining <= 0 {
-					assignedVariant = variants[0]
-				} else {
-					// Distribute remaining percentage equally among other variants
-					remainingPct := bucketPct - uint32(trafficSplit)
-					segmentSize := uint32(100-trafficSplit) / uint32(remaining)
-					if segmentSize == 0 {
-						segmentSize = 1
-					}
-					idx := int(remainingPct / segmentSize)
-					if idx >= remaining {
-						idx = remaining - 1
-					}
-					assignedVariant = variants[1+idx]
-				}
-			}
-		}
+		assignedVariant = computeVariant(cfg.variants, cfg.trafficSplit)
 	}
 
 	// Set headers for downstream routing decisions
-	setReqHeader(headerName, assignedVariant)
-	setReqHeader("X-AB-Experiment", experimentName)
+	setReqHeader(cfg.headerName, assignedVariant)
+	setReqHeader("X-AB-Experiment", cfg.experimentName)
 
-	logInfo("abtesting: experiment=" + experimentName + " variant=" + assignedVariant)
+	logInfo("abtesting: experiment=" + cfg.experimentName + " variant=" + assignedVariant)
 }
 
 //export on_response_headers

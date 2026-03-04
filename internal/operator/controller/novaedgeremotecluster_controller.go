@@ -361,6 +361,12 @@ func (r *NovaEdgeRemoteClusterReconciler) updateOverallStatus(ctx context.Contex
 	case novaedgev1alpha1.RemoteClusterPhaseDegraded:
 		r.setCondition(rc, ConditionTypeRemoteReady, metav1.ConditionFalse,
 			"Degraded", "Remote cluster is connected but some agents are unhealthy")
+	case novaedgev1alpha1.RemoteClusterPhasePending,
+		novaedgev1alpha1.RemoteClusterPhaseConnecting,
+		novaedgev1alpha1.RemoteClusterPhaseDisconnected,
+		novaedgev1alpha1.RemoteClusterPhaseFailed:
+		r.setCondition(rc, ConditionTypeRemoteReady, metav1.ConditionFalse,
+			string(rc.Status.Phase), fmt.Sprintf("Remote cluster is in %s phase", rc.Status.Phase))
 	default:
 		r.setCondition(rc, ConditionTypeRemoteReady, metav1.ConditionFalse,
 			string(rc.Status.Phase), fmt.Sprintf("Remote cluster is in %s phase", rc.Status.Phase))

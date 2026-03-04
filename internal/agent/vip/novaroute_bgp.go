@@ -306,6 +306,20 @@ func (h *NovaRouteBGPHandler) handleEvent(ev *nrv1.RouteEvent) {
 		h.logger.Info("BFD session up", zap.String("detail", ev.Detail))
 	case nrv1.EventType_EVENT_TYPE_FRR_DISCONNECTED:
 		h.logger.Error("NovaRoute lost FRR connection", zap.String("detail", ev.Detail))
+	case nrv1.EventType_EVENT_TYPE_UNSPECIFIED,
+		nrv1.EventType_EVENT_TYPE_PREFIX_ADVERTISED,
+		nrv1.EventType_EVENT_TYPE_PREFIX_WITHDRAWN,
+		nrv1.EventType_EVENT_TYPE_OSPF_NEIGHBOR_UP,
+		nrv1.EventType_EVENT_TYPE_OSPF_NEIGHBOR_DOWN,
+		nrv1.EventType_EVENT_TYPE_FRR_CONNECTED,
+		nrv1.EventType_EVENT_TYPE_OWNER_REGISTERED,
+		nrv1.EventType_EVENT_TYPE_OWNER_DEREGISTERED,
+		nrv1.EventType_EVENT_TYPE_POLICY_VIOLATION,
+		nrv1.EventType_EVENT_TYPE_BGP_CONFIG_CHANGED:
+		h.logger.Debug("NovaRoute event",
+			zap.String("type", ev.Type.String()),
+			zap.String("detail", ev.Detail),
+		)
 	default:
 		h.logger.Debug("NovaRoute event",
 			zap.String("type", ev.Type.String()),

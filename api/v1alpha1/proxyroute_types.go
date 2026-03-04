@@ -439,7 +439,6 @@ type ProxyRouteList struct {
 	Items           []ProxyRoute `json:"items"`
 }
 
-
 // RouteAccessLogConfig defines per-route access logging configuration
 type RouteAccessLogConfig struct {
 	// Enabled enables access logging for this route

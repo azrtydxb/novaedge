@@ -96,7 +96,7 @@ func (c *Client) QueryAt(ctx context.Context, query string, t time.Time) (*Query
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -145,7 +145,7 @@ func (c *Client) QueryRange(ctx context.Context, params RangeQueryParams) (*Quer
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute query: %w", err)
 	}
@@ -180,7 +180,7 @@ func (c *Client) GetLabels(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to get labels: %w", err)
 	}
@@ -210,7 +210,7 @@ func (c *Client) GetLabelValues(ctx context.Context, label string) ([]string, er
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to get label values: %w", err)
 	}
@@ -249,7 +249,7 @@ func (c *Client) GetSeries(ctx context.Context, matchers []string, start, end ti
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to get series: %w", err)
 	}

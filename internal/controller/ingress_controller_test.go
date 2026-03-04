@@ -705,7 +705,16 @@ func TestIngressAnnotations(t *testing.T) {
 		t.Fatalf("reconciliation failed: %v", err)
 	}
 
-	// Check ProxyGateway with SSL redirect and body size
+	verifyAnnotatedProxyGateway(ctx, t, env, ingress)
+	verifyAnnotatedProxyBackend(ctx, t, env)
+	verifyAnnotatedProxyRoute(ctx, t, env)
+}
+
+// verifyAnnotatedProxyGateway checks that the ProxyGateway created from an annotated
+// ingress has the correct SSL redirect, body size, and source range settings.
+func verifyAnnotatedProxyGateway(ctx context.Context, t *testing.T, env *testEnv, ingress *networkingv1.Ingress) {
+	t.Helper()
+
 	gatewayName := fmt.Sprintf("%s-gateway", ingress.Name)
 	proxyGateway := &novaedgev1alpha1.ProxyGateway{}
 	if err := env.client.Get(ctx, types.NamespacedName{
@@ -715,23 +724,28 @@ func TestIngressAnnotations(t *testing.T) {
 		t.Fatalf("expected ProxyGateway to be created: %v", err)
 	}
 
-	// Verify HTTP listener has SSL redirect enabled (TLS is configured)
 	httpListener := findListener(proxyGateway.Spec.Listeners, "http")
 	if httpListener == nil {
 		t.Error("expected HTTP listener to exist")
-	} else {
-		if !httpListener.SSLRedirect {
-			t.Error("expected SSL redirect to be enabled when TLS is configured")
-		}
-		if httpListener.MaxRequestBodySize != 10*1024*1024 {
-			t.Errorf("expected MaxRequestBodySize to be 10MB, got %d", httpListener.MaxRequestBodySize)
-		}
-		if len(httpListener.AllowedSourceRanges) != 2 {
-			t.Errorf("expected 2 allowed source ranges, got %d", len(httpListener.AllowedSourceRanges))
-		}
+		return
 	}
 
-	// Check ProxyBackend with annotations
+	if !httpListener.SSLRedirect {
+		t.Error("expected SSL redirect to be enabled when TLS is configured")
+	}
+	if httpListener.MaxRequestBodySize != 10*1024*1024 {
+		t.Errorf("expected MaxRequestBodySize to be 10MB, got %d", httpListener.MaxRequestBodySize)
+	}
+	if len(httpListener.AllowedSourceRanges) != 2 {
+		t.Errorf("expected 2 allowed source ranges, got %d", len(httpListener.AllowedSourceRanges))
+	}
+}
+
+// verifyAnnotatedProxyBackend checks that the ProxyBackend has LB policy, timeouts, and
+// TLS settings from the ingress annotations.
+func verifyAnnotatedProxyBackend(ctx context.Context, t *testing.T, env *testEnv) {
+	t.Helper()
+
 	proxyBackendList := &novaedgev1alpha1.ProxyBackendList{}
 	if err := env.client.List(ctx, proxyBackendList); err != nil {
 		t.Fatalf("failed to list ProxyBackends: %v", err)
@@ -743,25 +757,25 @@ func TestIngressAnnotations(t *testing.T) {
 
 	backend := &proxyBackendList.Items[0]
 
-	// Verify LB policy from session affinity annotation
 	if backend.Spec.LBPolicy != novaedgev1alpha1.LBPolicyRingHash {
 		t.Errorf("expected LB policy RingHash for session affinity, got %s", backend.Spec.LBPolicy)
 	}
-
-	// Verify timeouts
 	if backend.Spec.ConnectTimeout.Duration.String() != "5s" {
 		t.Errorf("expected connect timeout 5s, got %s", backend.Spec.ConnectTimeout.Duration.String())
 	}
 	if backend.Spec.IdleTimeout.Duration.String() != "30s" {
 		t.Errorf("expected idle timeout 30s, got %s", backend.Spec.IdleTimeout.Duration.String())
 	}
-
-	// Verify backend TLS enabled
 	if backend.Spec.TLS == nil || !backend.Spec.TLS.Enabled {
 		t.Error("expected backend TLS to be enabled for HTTPS backend protocol")
 	}
+}
 
-	// Check ProxyRoute with filters
+// verifyAnnotatedProxyRoute checks that the ProxyRoute has the expected route filters
+// (URL rewrite, add header, remove header) from the ingress annotations.
+func verifyAnnotatedProxyRoute(ctx context.Context, t *testing.T, env *testEnv) {
+	t.Helper()
+
 	proxyRouteList := &novaedgev1alpha1.ProxyRouteList{}
 	if err := env.client.List(ctx, proxyRouteList); err != nil {
 		t.Fatalf("failed to list ProxyRoutes: %v", err)
@@ -778,7 +792,6 @@ func TestIngressAnnotations(t *testing.T) {
 
 	rule := route.Spec.Rules[0]
 
-	// Verify filters exist
 	hasRewrite := false
 	hasAddHeader := false
 	hasRemoveHeader := false

@@ -103,7 +103,7 @@ func (c *Client) ListTraces(ctx context.Context, limit int, lookback time.Durati
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to query traces: %w", err)
 	}
@@ -140,7 +140,7 @@ func (c *Client) GetTrace(ctx context.Context, traceID string) (*Trace, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to get trace: %w", err)
 	}
@@ -227,7 +227,7 @@ func (c *Client) SearchTraces(ctx context.Context, params SearchParams) ([]Trace
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to search traces: %w", err)
 	}
@@ -264,7 +264,7 @@ func (c *Client) GetServices(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to get services: %w", err)
 	}
@@ -301,7 +301,7 @@ func (c *Client) GetOperations(ctx context.Context, serviceName string) ([]strin
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return nil, fmt.Errorf("failed to get operations: %w", err)
 	}

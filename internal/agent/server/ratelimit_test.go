@@ -33,7 +33,7 @@ func httpGet(t *testing.T, url string) *http.Response {
 	t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	require.NoError(t, err)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: test server URL
 	require.NoError(t, err)
 	return resp
 }
@@ -198,7 +198,7 @@ func TestRateLimitMiddleware_Allow(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	// Create test server with middleware
@@ -208,12 +208,12 @@ func TestRateLimitMiddleware_Allow(t *testing.T) {
 	// First request should be allowed
 	resp := httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Second request should be allowed (burst)
 	resp = httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestRateLimitMiddleware_RateLimited(t *testing.T) {
@@ -229,7 +229,7 @@ func TestRateLimitMiddleware_RateLimited(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	ts := httptest.NewServer(middleware(handler))
@@ -238,12 +238,12 @@ func TestRateLimitMiddleware_RateLimited(t *testing.T) {
 	// First request should be allowed
 	resp := httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Immediate second request should be rate limited
 	resp = httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Wait for rate limit to reset
 	time.Sleep(time.Second)
@@ -251,7 +251,7 @@ func TestRateLimitMiddleware_RateLimited(t *testing.T) {
 	// Should be allowed again
 	resp = httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 func TestRateLimitMiddleware_DifferentIPs(t *testing.T) {
@@ -267,7 +267,7 @@ func TestRateLimitMiddleware_DifferentIPs(t *testing.T) {
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, _ = w.Write([]byte("OK"))
 	})
 
 	ts := httptest.NewServer(middleware(handler))
@@ -279,7 +279,7 @@ func TestRateLimitMiddleware_DifferentIPs(t *testing.T) {
 	// Make multiple requests - they should all use same IP in test
 	for i := 0; i < 3; i++ {
 		resp := httpGet(t, ts.URL)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 }
 
@@ -304,7 +304,7 @@ func TestRateLimitMiddleware_IPExtraction(t *testing.T) {
 	// Test with valid request
 	resp := httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Verify limiter was created
 	limiter.mu.RLock()
@@ -314,10 +314,10 @@ func TestRateLimitMiddleware_IPExtraction(t *testing.T) {
 
 func TestRateLimiterConfig_Values(t *testing.T) {
 	tests := []struct {
-		name              string
-		config            RateLimiterConfig
-		expectedRate      float64
-		expectedBurst     int
+		name          string
+		config        RateLimiterConfig
+		expectedRate  float64
+		expectedBurst int
 	}{
 		{
 			name: "default config",
@@ -379,12 +379,12 @@ func TestRateLimitMiddleware_ResponseFormat(t *testing.T) {
 
 	// Exhaust burst
 	resp := httpGet(t, ts.URL)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	// Next request should be rate limited
 	resp = httpGet(t, ts.URL)
 	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 }
 
 // Benchmark tests
@@ -437,7 +437,8 @@ func BenchmarkRateLimitMiddleware(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		resp, _ := http.Get(ts.URL)
-		resp.Body.Close()
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL, nil)
+		resp, _ := http.DefaultClient.Do(req) //nolint:gosec // G704: test server URL
+		_ = resp.Body.Close()
 	}
 }

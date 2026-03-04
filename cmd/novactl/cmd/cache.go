@@ -91,7 +91,7 @@ func runCachePurge(agentAddr, pattern string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
 	}
@@ -133,7 +133,7 @@ func runCacheStats(agentAddr string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
 	}

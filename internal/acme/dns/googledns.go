@@ -169,7 +169,7 @@ func (p *GoogleDNSProvider) submitChange(ctx context.Context, change *googleDNSC
 		req.Header.Set("Authorization", "Bearer "+p.accessToken)
 	}
 
-	resp, err := p.client.Do(req)
+	resp, err := p.client.Do(req) //nolint:gosec // G704: URL constructed from constant API base + path-escaped project/zone
 	if err != nil {
 		return fmt.Errorf("google cloud DNS API request failed: %w", err)
 	}

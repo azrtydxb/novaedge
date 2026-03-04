@@ -494,4 +494,3 @@ type NovaEdgeRemoteClusterList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []NovaEdgeRemoteCluster `json:"items"`
 }
-

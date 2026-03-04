@@ -54,7 +54,19 @@ var (
 	dataplaneSocket string
 )
 
-func main() {
+// standaloneComponents holds the initialized components for the standalone agent.
+type standaloneComponents struct {
+	logger        *zap.Logger
+	vipManager    vip.Manager
+	dpClient      *dpctl.Client
+	dpTranslator  *dpctl.Translator
+	metricsServer *server.MetricsServer
+	healthServer  *server.HealthServer
+	configWatcher *standalone.ConfigWatcher
+}
+
+// parseFlags parses command-line flags and resolves the node name.
+func parseFlags() {
 	flag.StringVar(&configFile, "config", "/etc/novaedge/config.yaml", "Path to configuration file")
 	flag.StringVar(&nodeName, "node-name", "", "Node name (defaults to hostname)")
 	flag.IntVar(&metricsPort, "metrics-port", 9090, "Port for Prometheus metrics")
@@ -63,44 +75,18 @@ func main() {
 	flag.StringVar(&dataplaneSocket, "dataplane-socket", dpctl.DefaultDataplaneSocket,
 		"Unix domain socket path for the Rust dataplane daemon")
 	flag.Parse()
+}
 
-	// Setup logger
-	logger := setupLogger(logLevel)
-	defer func() { _ = logger.Sync() }()
-
-	logger.Info("Starting NovaEdge Standalone Load Balancer",
-		zap.String("version", version),
-		zap.String("commit", commit),
-		zap.String("date", date),
-		zap.String("config", configFile))
-
-	// Get node name
-	if nodeName == "" {
-		hostname, err := os.Hostname()
-		if err != nil {
-			logger.Fatal("Failed to get hostname", zap.Error(err))
-		}
-		nodeName = hostname
-	}
-
-	// Create context with cancellation
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Handle shutdown signals
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigCh
-		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
-		cancel()
-	}()
+// initComponents creates all standalone agent components.
+func initComponents(logger *zap.Logger) *standaloneComponents {
+	c := &standaloneComponents{logger: logger}
 
 	// Create VIP manager (optional - fails gracefully on non-Linux systems)
-	vipManager, err := vip.NewManager(logger)
+	vm, err := vip.NewManager(logger)
 	if err != nil {
 		logger.Warn("VIP manager not available (VIP features disabled)", zap.Error(err))
-		vipManager = nil
+	} else {
+		c.vipManager = vm
 	}
 
 	// Create dataplane client for Rust forwarding plane
@@ -110,34 +96,94 @@ func main() {
 			zap.String("socket", dataplaneSocket),
 			zap.Error(dpErr))
 	}
-	dpTranslator := dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
+	c.dpClient = dpClient
+	c.dpTranslator = dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
 	logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
 
-	// Create metrics server
-	metricsServer := server.NewMetricsServer(logger, metricsPort)
+	c.metricsServer = server.NewMetricsServer(logger, metricsPort)
+	c.healthServer = server.NewHealthServer(logger, healthProbePort)
 
-	// Create health probe server
-	healthServer := server.NewHealthServer(logger, healthProbePort)
+	cw, cwErr := standalone.NewConfigWatcher(configFile, nodeName, logger)
+	if cwErr != nil {
+		logger.Fatal("Failed to create config watcher", zap.Error(cwErr))
+	}
+	c.configWatcher = cw
 
-	// Start VIP manager if available
-	if vipManager != nil {
-		if err := vipManager.Start(ctx); err != nil {
-			logger.Error("Failed to start VIP manager", zap.Error(err))
-			vipManager = nil
+	return c
+}
+
+// shutdownComponents performs graceful shutdown of all components.
+func shutdownComponents(c *standaloneComponents) {
+	c.logger.Info("Shutting down...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if c.vipManager != nil {
+		c.logger.Info("Releasing VIPs...")
+		if err := c.vipManager.Release(); err != nil {
+			c.logger.Error("Error releasing VIPs", zap.Error(err))
 		}
 	}
 
-	// Create config watcher
-	configWatcher, err := standalone.NewConfigWatcher(configFile, nodeName, logger)
-	if err != nil {
-		logger.Fatal("Failed to create config watcher", zap.Error(err))
+	if c.dpClient != nil {
+		if err := c.dpClient.Close(); err != nil {
+			c.logger.Error("Error closing dataplane client", zap.Error(err))
+		}
+	}
+
+	if err := c.metricsServer.Shutdown(shutdownCtx); err != nil {
+		c.logger.Error("Error during metrics server shutdown", zap.Error(err))
+	}
+
+	c.logger.Info("NovaEdge standalone agent stopped")
+}
+
+func main() {
+	parseFlags()
+
+	logger := setupLogger(logLevel)
+	defer func() { _ = logger.Sync() }()
+
+	logger.Info("Starting NovaEdge Standalone Load Balancer",
+		zap.String("version", version),
+		zap.String("commit", commit),
+		zap.String("date", date),
+		zap.String("config", configFile))
+
+	if nodeName == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			logger.Fatal("Failed to get hostname", zap.Error(err))
+		}
+		nodeName = hostname
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		sig := <-sigCh
+		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
+		cancel()
+	}()
+
+	c := initComponents(logger)
+
+	// Start VIP manager if available
+	if c.vipManager != nil {
+		if err := c.vipManager.Start(ctx); err != nil {
+			logger.Error("Failed to start VIP manager", zap.Error(err))
+			c.vipManager = nil
+		}
 	}
 
 	// Start config watcher
 	configChan := make(chan error, 1)
 	go func() {
-		configChan <- configWatcher.Start(ctx, func(snapshot *agentconfig.Snapshot) error {
-			// Apply new configuration to VIP manager and Rust dataplane
+		configChan <- c.configWatcher.Start(ctx, func(snapshot *agentconfig.Snapshot) error {
 			logger.Info("Applying new configuration",
 				zap.String("version", snapshot.Version),
 				zap.Int("gateways", len(snapshot.Gateways)),
@@ -145,39 +191,33 @@ func main() {
 				zap.Int("vips", len(snapshot.VipAssignments)),
 			)
 
-			// Apply VIP assignments if VIP manager is available
-			if vipManager != nil {
-				if err := vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
+			if c.vipManager != nil {
+				if err := c.vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
 					logger.Error("Failed to apply VIP assignments", zap.Error(err))
 				}
 			}
 
-			// Sync all config to Rust dataplane (L7 forwarding, routing, policies).
-			if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
+			if syncErr := c.dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
 				logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
-				healthServer.SetReady(false)
+				c.healthServer.SetReady(false)
 				return syncErr
 			}
 
-			// Mark agent as ready after successful config application
-			healthServer.SetReady(true)
+			c.healthServer.SetReady(true)
 			return nil
 		})
 	}()
 
-	// Start metrics server
 	metricsChan := make(chan error, 1)
 	go func() {
-		metricsChan <- metricsServer.Start(ctx)
+		metricsChan <- c.metricsServer.Start(ctx)
 	}()
 
-	// Start health probe server
 	healthChan := make(chan error, 1)
 	go func() {
-		healthChan <- healthServer.Start(ctx)
+		healthChan <- c.healthServer.Start(ctx)
 	}()
 
-	// Wait for shutdown signal or error
 	select {
 	case err := <-configChan:
 		if err != nil && ctx.Err() == nil {
@@ -188,37 +228,9 @@ func main() {
 	case err := <-healthChan:
 		logger.Error("Health probe failed", zap.Error(err))
 	case <-ctx.Done():
-		// Graceful shutdown
 	}
 
-	// Graceful shutdown
-	logger.Info("Shutting down...")
-
-	// Give servers time to shutdown gracefully
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-
-	// Release VIPs first to allow failover
-	if vipManager != nil {
-		logger.Info("Releasing VIPs...")
-		if err := vipManager.Release(); err != nil {
-			logger.Error("Error releasing VIPs", zap.Error(err))
-		}
-	}
-
-	// Shutdown dataplane client
-	if dpClient != nil {
-		if err := dpClient.Close(); err != nil {
-			logger.Error("Error closing dataplane client", zap.Error(err))
-		}
-	}
-
-	// Shutdown metrics server
-	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-		logger.Error("Error during metrics server shutdown", zap.Error(err))
-	}
-
-	logger.Info("NovaEdge standalone agent stopped")
+	shutdownComponents(c)
 }
 
 func setupLogger(level string) *zap.Logger {

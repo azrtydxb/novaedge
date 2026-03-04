@@ -184,6 +184,8 @@ func convertPolicyType(policyType novaedgev1alpha1.PolicyType) pb.PolicyType {
 		return pb.PolicyType_FORWARD_AUTH
 	case novaedgev1alpha1.PolicyTypeOIDC:
 		return pb.PolicyType_OIDC
+	case novaedgev1alpha1.PolicyTypeMeshAuthorization:
+		return pb.PolicyType_MESH_AUTHORIZATION
 	default:
 		return pb.PolicyType_POLICY_TYPE_UNSPECIFIED
 	}
@@ -299,6 +301,9 @@ func convertFilterType(filterType novaedgev1alpha1.HTTPRouteFilterType) pb.Route
 		return pb.RouteFilterType_RESPONSE_REMOVE_HEADER
 	case novaedgev1alpha1.HTTPRouteFilterResponseSetHeader:
 		return pb.RouteFilterType_RESPONSE_SET_HEADER
+	case novaedgev1alpha1.HTTPRouteFilterRequestMirror:
+		// Request mirroring is handled separately via route-level MirrorBackend.
+		return pb.RouteFilterType_ROUTE_FILTER_TYPE_UNSPECIFIED
 	default:
 		return pb.RouteFilterType_ROUTE_FILTER_TYPE_UNSPECIFIED
 	}

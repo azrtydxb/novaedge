@@ -438,7 +438,7 @@ func (tp *TunnelPool) DialVia(ctx context.Context, nodeAddr, backendAddr, source
 
 	connectClient := &http.Client{Transport: transport}
 
-	resp, err := connectClient.Do(req)
+	resp, err := connectClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
 		_ = pw.Close()
 		return nil, fmt.Errorf("CONNECT to %s via %s failed: %w", backendAddr, nodeAddr, err)

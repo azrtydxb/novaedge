@@ -533,4 +533,3 @@ type NovaEdgeFederationList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []NovaEdgeFederation `json:"items"`
 }
-

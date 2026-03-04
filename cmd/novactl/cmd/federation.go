@@ -212,33 +212,49 @@ func showFederationDetails(ctx context.Context, k8sClient client.Client, name, n
 		fmt.Println()
 	}
 
-	// Sync configuration
-	if fed.Spec.Sync != nil {
-		fmt.Println("Sync Configuration:")
-		if fed.Spec.Sync.Interval != nil {
-			fmt.Printf("  Interval:    %s\n", fed.Spec.Sync.Interval.Duration)
-		}
-		if fed.Spec.Sync.Timeout != nil {
-			fmt.Printf("  Timeout:     %s\n", fed.Spec.Sync.Timeout.Duration)
-		}
-		fmt.Printf("  Batch Size:  %d\n", fed.Spec.Sync.BatchSize)
-		fmt.Println()
-	}
+	printFederationSyncConfig(fed)
+	printFederationConflictConfig(fed)
+	printFederationStatus(fed)
+	printFederationMemberStatus(fed)
+	printFederationConditions(fed)
 
-	// Conflict resolution
-	if fed.Spec.ConflictResolution != nil {
-		fmt.Println("Conflict Resolution:")
-		fmt.Printf("  Strategy:      %s\n", fed.Spec.ConflictResolution.Strategy)
-		if fed.Spec.ConflictResolution.VectorClocks != nil {
-			fmt.Printf("  Vector Clocks: %v\n", *fed.Spec.ConflictResolution.VectorClocks)
-		}
-		if fed.Spec.ConflictResolution.TombstoneTTL != nil {
-			fmt.Printf("  Tombstone TTL: %s\n", fed.Spec.ConflictResolution.TombstoneTTL.Duration)
-		}
-		fmt.Println()
-	}
+	return nil
+}
 
-	// Status
+// printFederationSyncConfig prints sync configuration details.
+func printFederationSyncConfig(fed *novaedgev1alpha1.NovaEdgeFederation) {
+	if fed.Spec.Sync == nil {
+		return
+	}
+	fmt.Println("Sync Configuration:")
+	if fed.Spec.Sync.Interval != nil {
+		fmt.Printf("  Interval:    %s\n", fed.Spec.Sync.Interval.Duration)
+	}
+	if fed.Spec.Sync.Timeout != nil {
+		fmt.Printf("  Timeout:     %s\n", fed.Spec.Sync.Timeout.Duration)
+	}
+	fmt.Printf("  Batch Size:  %d\n", fed.Spec.Sync.BatchSize)
+	fmt.Println()
+}
+
+// printFederationConflictConfig prints conflict resolution details.
+func printFederationConflictConfig(fed *novaedgev1alpha1.NovaEdgeFederation) {
+	if fed.Spec.ConflictResolution == nil {
+		return
+	}
+	fmt.Println("Conflict Resolution:")
+	fmt.Printf("  Strategy:      %s\n", fed.Spec.ConflictResolution.Strategy)
+	if fed.Spec.ConflictResolution.VectorClocks != nil {
+		fmt.Printf("  Vector Clocks: %v\n", *fed.Spec.ConflictResolution.VectorClocks)
+	}
+	if fed.Spec.ConflictResolution.TombstoneTTL != nil {
+		fmt.Printf("  Tombstone TTL: %s\n", fed.Spec.ConflictResolution.TombstoneTTL.Duration)
+	}
+	fmt.Println()
+}
+
+// printFederationStatus prints federation status summary.
+func printFederationStatus(fed *novaedgev1alpha1.NovaEdgeFederation) {
 	fmt.Println("Status:")
 	phase := string(fed.Status.Phase)
 	if phase == "" {
@@ -253,50 +269,48 @@ func showFederationDetails(ctx context.Context, k8sClient client.Client, name, n
 	}
 	fmt.Printf("  Conflicts Pending: %d\n", fed.Status.ConflictsPending)
 	fmt.Println()
+}
 
-	// Member status
-	if len(fed.Status.Members) > 0 {
-		fmt.Println("Member Status:")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "  NAME\tHEALTHY\tLAST SEEN\tSYNC LAG\tAGENTS\tERROR")
-		for _, member := range fed.Status.Members {
-			lastSeen := "Never"
-			if member.LastSeen != nil {
-				lastSeen = formatAge(member.LastSeen.Time)
-			}
-			syncLag := "-"
-			if member.SyncLag != nil {
-				syncLag = member.SyncLag.Duration.String()
-			}
-			errStr := member.Error
-			if len(errStr) > 40 {
-				errStr = errStr[:37] + "..."
-			}
-			_, _ = fmt.Fprintf(w, "  %s\t%v\t%s\t%s\t%d\t%s\n",
-				member.Name,
-				member.Healthy,
-				lastSeen,
-				syncLag,
-				member.AgentCount,
-				errStr,
-			)
-		}
-		_ = w.Flush()
-		fmt.Println()
+// printFederationMemberStatus prints federation member status table.
+func printFederationMemberStatus(fed *novaedgev1alpha1.NovaEdgeFederation) {
+	if len(fed.Status.Members) == 0 {
+		return
 	}
-
-	// Conditions
-	if len(fed.Status.Conditions) > 0 {
-		fmt.Println("Conditions:")
-		for _, cond := range fed.Status.Conditions {
-			fmt.Printf("  - Type:    %s\n", cond.Type)
-			fmt.Printf("    Status:  %s\n", cond.Status)
-			fmt.Printf("    Reason:  %s\n", cond.Reason)
-			fmt.Printf("    Message: %s\n", cond.Message)
+	fmt.Println("Member Status:")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(w, "  NAME\tHEALTHY\tLAST SEEN\tSYNC LAG\tAGENTS\tERROR")
+	for _, member := range fed.Status.Members {
+		lastSeen := "Never"
+		if member.LastSeen != nil {
+			lastSeen = formatAge(member.LastSeen.Time)
 		}
+		syncLag := "-"
+		if member.SyncLag != nil {
+			syncLag = member.SyncLag.Duration.String()
+		}
+		errStr := member.Error
+		if len(errStr) > 40 {
+			errStr = errStr[:37] + "..."
+		}
+		_, _ = fmt.Fprintf(w, "  %s\t%v\t%s\t%s\t%d\t%s\n",
+			member.Name, member.Healthy, lastSeen, syncLag, member.AgentCount, errStr)
 	}
+	_ = w.Flush()
+	fmt.Println()
+}
 
-	return nil
+// printFederationConditions prints federation conditions.
+func printFederationConditions(fed *novaedgev1alpha1.NovaEdgeFederation) {
+	if len(fed.Status.Conditions) == 0 {
+		return
+	}
+	fmt.Println("Conditions:")
+	for _, cond := range fed.Status.Conditions {
+		fmt.Printf("  - Type:    %s\n", cond.Type)
+		fmt.Printf("    Status:  %s\n", cond.Status)
+		fmt.Printf("    Reason:  %s\n", cond.Reason)
+		fmt.Printf("    Message: %s\n", cond.Message)
+	}
 }
 
 // showFederationPeers shows peer details
@@ -431,4 +445,3 @@ func formatAge(t time.Time) string {
 	}
 	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
-
