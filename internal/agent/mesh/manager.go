@@ -39,6 +39,14 @@ var (
 	errMeshManagerNotStarted = errors.New("mesh manager not started")
 )
 
+// safePortToUint16 converts an int32 port to uint16 with bounds checking.
+func safePortToUint16(port int32) uint16 {
+	if port < 0 || port > 65535 {
+		return 0
+	}
+	return uint16(port)
+}
+
 const (
 	// DefaultTPROXYPort is the default port for the transparent listener.
 	DefaultTPROXYPort int32 = 15001
@@ -153,7 +161,7 @@ type Manager struct {
 
 	// serviceMap is the eBPF service lookup map for accelerated service
 	// resolution. May be nil if eBPF service maps are not available.
-	serviceMap *service.ServiceMap
+	serviceMap *service.Map
 }
 
 // ManagerConfig holds configuration for creating a mesh Manager.
@@ -177,7 +185,7 @@ type ManagerConfig struct {
 	SockMapManager *sockmap.Manager
 	// ServiceMap, if non-nil, enables eBPF service lookup map acceleration.
 	// The caller is responsible for creating the map manager.
-	ServiceMap *service.ServiceMap
+	ServiceMap *service.Map
 }
 
 // NewManager creates a new mesh manager with mTLS tunnel support.
@@ -262,7 +270,7 @@ func (m *Manager) Start(ctx context.Context) error {
 				cancel()
 				return fmt.Errorf("getting listener file descriptor: %w", err)
 			}
-			fd := int(file.Fd())
+			fd := int(file.Fd()) //nolint:gosec // G115: file descriptor conversion is safe on supported 64-bit platforms
 			if err := registrar.SetListenerFD(fd); err != nil {
 				_ = file.Close()
 				_ = tcpListener.Close()
@@ -403,7 +411,7 @@ func (m *Manager) reconcileSockMapEndpoints(services []*pb.InternalService) {
 				continue
 			}
 			for _, port := range svc.Ports {
-				key, err := sockmap.NewEndpointKey(ep.Address, uint16(port.TargetPort))
+				key, err := sockmap.NewEndpointKey(ep.Address, safePortToUint16(port.TargetPort))
 				if err != nil {
 					m.logger.Debug("Skipping invalid endpoint for SOCKMAP",
 						zap.String("address", ep.Address),
@@ -425,7 +433,7 @@ func (m *Manager) reconcileSockMapEndpoints(services []*pb.InternalService) {
 // entries from the config snapshot. This provides the BPF data path with
 // O(1) service-to-backend resolution for L4 decisions.
 func (m *Manager) reconcileServiceMap(services []*pb.InternalService) {
-	desired := make(map[service.ServiceKey][]service.BackendInfo)
+	desired := make(map[service.Key][]service.BackendInfo)
 
 	for _, svc := range services {
 		if !svc.MeshEnabled {
@@ -433,7 +441,7 @@ func (m *Manager) reconcileServiceMap(services []*pb.InternalService) {
 		}
 		for _, port := range svc.Ports {
 			proto := protoStringToNumber(port.Protocol)
-			key, err := service.NewServiceKey(svc.ClusterIp, uint16(port.Port), proto)
+			key, err := service.NewKey(svc.ClusterIp, safePortToUint16(port.Port), proto)
 			if err != nil {
 				m.logger.Debug("Skipping invalid service for eBPF service map",
 					zap.String("cluster_ip", svc.ClusterIp),
@@ -450,7 +458,7 @@ func (m *Manager) reconcileServiceMap(services []*pb.InternalService) {
 				nodeLocal := m.isLocalEndpoint(ep)
 				info, err := service.NewBackendInfo(
 					ep.Address,
-					uint16(port.TargetPort),
+					safePortToUint16(port.TargetPort),
 					100, // default weight
 					true,
 					nodeLocal,

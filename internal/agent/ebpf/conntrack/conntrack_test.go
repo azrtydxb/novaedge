@@ -40,7 +40,7 @@ func TestNewConntrack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewConntrack() returned error: %v", err)
 	}
-	defer ct.Close()
+	defer func() { _ = ct.Close() }()
 }
 
 func TestCTKeyLayout(t *testing.T) {

@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package ratelimit provides eBPF-based per-IP rate limiting using token bucket maps.
 package ratelimit
 
 import (
@@ -49,8 +50,8 @@ func (rl *RateLimiter) CheckAllowed(_ net.IP) (bool, error) {
 }
 
 // GetStats returns empty stats on non-Linux platforms.
-func (rl *RateLimiter) GetStats() (RateLimitStats, error) {
-	return RateLimitStats{}, errEBPFRateLimitingIsOnlySupportedOnLinux
+func (rl *RateLimiter) GetStats() (Stats, error) {
+	return Stats{}, errEBPFRateLimitingIsOnlySupportedOnLinux
 }
 
 // IsActive returns false on non-Linux platforms.

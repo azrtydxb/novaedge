@@ -439,9 +439,6 @@ type ProxyRouteList struct {
 	Items           []ProxyRoute `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyRoute{}, &ProxyRouteList{})
-}
 
 // RouteAccessLogConfig defines per-route access logging configuration
 type RouteAccessLogConfig struct {

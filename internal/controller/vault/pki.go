@@ -39,7 +39,7 @@ type PKICertificate struct {
 	Certificate    string    `json:"certificate"`
 	IssuingCA      string    `json:"issuing_ca"`
 	CAChain        []string  `json:"ca_chain"`
-	PrivateKey     string    `json:"private_key"`
+	PrivateKey     string    `json:"private_key"` //nolint:gosec // G117: struct field name for Vault PKI response, not a hardcoded credential
 	PrivateKeyType string    `json:"private_key_type"`
 	SerialNumber   string    `json:"serial_number"`
 	Expiration     int64     `json:"expiration"`

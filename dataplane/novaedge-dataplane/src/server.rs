@@ -499,7 +499,7 @@ impl DataplaneService {
             cb_open_duration_ms: cb_open_dur,
             cb_half_open_max_requests: cb_half_open_max,
             pool_max_connections: pool_max_conn,
-            pool_max_idle: pool_max_idle,
+            pool_max_idle,
             pool_idle_timeout_ms: pool_idle_timeout,
             pool_connect_timeout_ms: pool_connect_timeout,
             panic_threshold_percent: cluster.panic_threshold_percent,

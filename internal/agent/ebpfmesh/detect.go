@@ -98,7 +98,7 @@ func TrySockMap(logger *zap.Logger) *sockmap.Manager {
 // TryServiceMap attempts to create an eBPF service lookup map for
 // accelerated service-to-backend resolution. It returns a ready-to-use
 // ServiceMap on success, or nil if eBPF hash maps are not available.
-func TryServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32) *service.ServiceMap {
+func TryServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32) *service.Map {
 	caps, err := novaebpf.Detect()
 	if err != nil {
 		logger.Debug("eBPF capability detection failed for service map", zap.Error(err))
@@ -109,7 +109,7 @@ func TryServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32
 	// basic BPF support via the XDP probe as a baseline.
 	_ = caps
 
-	sm, err := service.NewServiceMap(logger, maxServices, maxBackendsPerService)
+	sm, err := service.NewMap(logger, maxServices, maxBackendsPerService)
 	if err != nil {
 		logger.Info("eBPF service map creation failed, using Go-side fallback",
 			zap.Error(err))

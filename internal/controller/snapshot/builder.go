@@ -459,6 +459,85 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	return snapshot, nil
 }
 
+// isVIPActiveOnNode checks whether the given VIP should be active on nodeName.
+func isVIPActiveOnNode(vip *novaedgev1alpha1.ProxyVIP, nodeName string) bool {
+	switch vip.Spec.Mode {
+	case novaedgev1alpha1.VIPModeL2ARP:
+		return vip.Status.ActiveNode == nodeName
+	case novaedgev1alpha1.VIPModeBGP, novaedgev1alpha1.VIPModeOSPF:
+		for _, n := range vip.Status.AnnouncingNodes {
+			if n == nodeName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// buildVIPBaseAssignment creates the base VIPAssignment from a ProxyVIP spec/status.
+func buildVIPBaseAssignment(vip *novaedgev1alpha1.ProxyVIP) *pb.VIPAssignment {
+	address := vip.Spec.Address
+	if vip.Status.AllocatedAddress != "" {
+		address = vip.Status.AllocatedAddress
+	}
+
+	assignment := &pb.VIPAssignment{
+		VipName:       vip.Name,
+		Address:       address,
+		Mode:          convertVIPMode(vip.Spec.Mode),
+		Ports:         vip.Spec.Ports,
+		IsActive:      true,
+		AddressFamily: string(vip.Spec.AddressFamily),
+	}
+
+	// IPv6 address handling
+	switch vip.Spec.AddressFamily {
+	case novaedgev1alpha1.AddressFamilyDual:
+		if vip.Status.AllocatedIPv6Address != "" {
+			assignment.Ipv6Address = vip.Status.AllocatedIPv6Address
+		} else if vip.Spec.IPv6Address != "" {
+			assignment.Ipv6Address = vip.Spec.IPv6Address
+		}
+	case novaedgev1alpha1.AddressFamilyIPv6:
+		if vip.Spec.IPv6Address != "" {
+			assignment.Address = vip.Spec.IPv6Address
+		}
+	}
+
+	if vip.Spec.PoolRef != nil {
+		assignment.PoolRef = vip.Spec.PoolRef.Name
+	}
+
+	return assignment
+}
+
+// applyVIPRoutingConfig sets BGP, OSPF, and BFD configuration on the assignment
+// using the VIP spec and the node's internal IP for per-node uniqueness.
+func applyVIPRoutingConfig(assignment *pb.VIPAssignment, vip *novaedgev1alpha1.ProxyVIP, nodeIP string) {
+	if vip.Spec.Mode == novaedgev1alpha1.VIPModeBGP && vip.Spec.BGPConfig != nil {
+		assignment.BgpConfig = convertBGPConfig(vip.Spec.BGPConfig)
+		if nodeIP != "" && assignment.BgpConfig != nil {
+			assignment.BgpConfig.RouterId = nodeIP
+		}
+		if vip.Spec.BGPConfig.LocalASBase != nil && nodeIP != "" && assignment.BgpConfig != nil {
+			if lastOctet := extractLastOctet(nodeIP); lastOctet > 0 && lastOctet <= 255 {
+				assignment.BgpConfig.LocalAs = *vip.Spec.BGPConfig.LocalASBase + uint32(lastOctet)
+			}
+		}
+	}
+
+	if vip.Spec.Mode == novaedgev1alpha1.VIPModeOSPF && vip.Spec.OSPFConfig != nil {
+		assignment.OspfConfig = convertOSPFConfig(vip.Spec.OSPFConfig)
+		if nodeIP != "" && assignment.OspfConfig != nil {
+			assignment.OspfConfig.RouterId = nodeIP
+		}
+	}
+
+	if vip.Spec.BFD != nil && vip.Spec.BFD.Enabled {
+		assignment.BfdConfig = convertBFDConfig(vip.Spec.BFD)
+	}
+}
+
 // buildVIPAssignments builds VIP assignments for the node
 func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *buildContext) ([]*pb.VIPAssignment, error) {
 	// Look up node's InternalIP for per-node RouterID override from pre-loaded map
@@ -476,93 +555,13 @@ func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *
 
 	var assignments []*pb.VIPAssignment
 	for _, vip := range bc.vips {
-		// Check if this node should handle this VIP
-		isActive := false
-
-		switch vip.Spec.Mode {
-		case novaedgev1alpha1.VIPModeL2ARP:
-			// For L2ARP mode: only active if this node is the elected active node
-			isActive = vip.Status.ActiveNode == nodeName
-
-		case novaedgev1alpha1.VIPModeBGP, novaedgev1alpha1.VIPModeOSPF:
-			// For BGP/OSPF mode: active if this node is in the announcing nodes list
-			for _, announcingNode := range vip.Status.AnnouncingNodes {
-				if announcingNode == nodeName {
-					isActive = true
-					break
-				}
-			}
+		if !isVIPActiveOnNode(&vip, nodeName) {
+			continue
 		}
 
-		// Only include assignment if this node should handle the VIP
-		// (either as active node or as announcing node)
-		if isActive {
-			// Use allocated address if available, otherwise use spec address
-			address := vip.Spec.Address
-			if vip.Status.AllocatedAddress != "" {
-				address = vip.Status.AllocatedAddress
-			}
-
-			assignment := &pb.VIPAssignment{
-				VipName:       vip.Name,
-				Address:       address,
-				Mode:          convertVIPMode(vip.Spec.Mode),
-				Ports:         vip.Spec.Ports,
-				IsActive:      true,
-				AddressFamily: string(vip.Spec.AddressFamily),
-			}
-
-			// Add IPv6 address for dual-stack
-			switch vip.Spec.AddressFamily {
-			case novaedgev1alpha1.AddressFamilyDual:
-				if vip.Status.AllocatedIPv6Address != "" {
-					assignment.Ipv6Address = vip.Status.AllocatedIPv6Address
-				} else if vip.Spec.IPv6Address != "" {
-					assignment.Ipv6Address = vip.Spec.IPv6Address
-				}
-			case novaedgev1alpha1.AddressFamilyIPv6:
-				// For IPv6 only, use IPv6 address as primary
-				if vip.Spec.IPv6Address != "" {
-					assignment.Address = vip.Spec.IPv6Address
-				}
-			}
-
-			// Add pool reference
-			if vip.Spec.PoolRef != nil {
-				assignment.PoolRef = vip.Spec.PoolRef.Name
-			}
-
-			// Add BGP config for BGP mode VIPs
-			if vip.Spec.Mode == novaedgev1alpha1.VIPModeBGP && vip.Spec.BGPConfig != nil {
-				assignment.BgpConfig = convertBGPConfig(vip.Spec.BGPConfig)
-				// Override RouterID with node's InternalIP for per-node uniqueness
-				if nodeIP != "" && assignment.BgpConfig != nil {
-					assignment.BgpConfig.RouterId = nodeIP
-				}
-				// eBGP: override LocalAS with per-node unique AS (base + last octet of node IP)
-				if vip.Spec.BGPConfig.LocalASBase != nil && nodeIP != "" && assignment.BgpConfig != nil {
-					if lastOctet := extractLastOctet(nodeIP); lastOctet > 0 {
-						assignment.BgpConfig.LocalAs = *vip.Spec.BGPConfig.LocalASBase + uint32(lastOctet)
-					}
-				}
-			}
-
-			// Add OSPF config for OSPF mode VIPs
-			if vip.Spec.Mode == novaedgev1alpha1.VIPModeOSPF && vip.Spec.OSPFConfig != nil {
-				assignment.OspfConfig = convertOSPFConfig(vip.Spec.OSPFConfig)
-				// Override RouterID with node's InternalIP for per-node uniqueness
-				if nodeIP != "" && assignment.OspfConfig != nil {
-					assignment.OspfConfig.RouterId = nodeIP
-				}
-			}
-
-			// Add BFD config if enabled
-			if vip.Spec.BFD != nil && vip.Spec.BFD.Enabled {
-				assignment.BfdConfig = convertBFDConfig(vip.Spec.BFD)
-			}
-
-			assignments = append(assignments, assignment)
-		}
+		assignment := buildVIPBaseAssignment(&vip)
+		applyVIPRoutingConfig(assignment, &vip, nodeIP)
+		assignments = append(assignments, assignment)
 	}
 
 	return assignments, nil
@@ -1127,7 +1126,7 @@ func (b *Builder) buildInternalServices(ctx context.Context, bc *buildContext) (
 		}
 
 		// Build ServicePort list
-		var ports []*pb.ServicePort
+		ports := make([]*pb.ServicePort, 0, len(svc.Spec.Ports))
 		for _, sp := range svc.Spec.Ports {
 			ports = append(ports, &pb.ServicePort{
 				Name:       sp.Name,

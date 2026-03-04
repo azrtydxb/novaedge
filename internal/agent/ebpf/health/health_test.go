@@ -24,9 +24,9 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-func TestNewHealthMonitor(t *testing.T) {
+func TestNewMonitor(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	hm, err := NewHealthMonitor(logger, 1024)
+	hm, err := NewMonitor(logger, 1024)
 
 	if runtime.GOOS != "linux" {
 		if err == nil {
@@ -37,18 +37,18 @@ func TestNewHealthMonitor(t *testing.T) {
 
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewHealthMonitor() returned error: %v", err)
+		t.Fatalf("NewMonitor() returned error: %v", err)
 	}
-	defer hm.Close()
+	defer func() { _ = hm.Close() }()
 
 	if !hm.IsActive() {
 		t.Error("expected IsActive() == true after creation")
 	}
 }
 
-func TestHealthMonitorPoll(t *testing.T) {
+func TestMonitorPoll(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	hm, err := NewHealthMonitor(logger, 1024)
+	hm, err := NewMonitor(logger, 1024)
 
 	if runtime.GOOS != "linux" {
 		if err == nil {
@@ -59,9 +59,9 @@ func TestHealthMonitorPoll(t *testing.T) {
 
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewHealthMonitor() returned error: %v", err)
+		t.Fatalf("NewMonitor() returned error: %v", err)
 	}
-	defer hm.Close()
+	defer func() { _ = hm.Close() }()
 
 	data, err := hm.Poll()
 	if err != nil {
@@ -75,9 +75,9 @@ func TestHealthMonitorPoll(t *testing.T) {
 	}
 }
 
-func TestHealthMonitorCloseIdempotent(t *testing.T) {
+func TestMonitorCloseIdempotent(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	hm, err := NewHealthMonitor(logger, 1024)
+	hm, err := NewMonitor(logger, 1024)
 
 	if runtime.GOOS != "linux" {
 		if err == nil {
@@ -88,7 +88,7 @@ func TestHealthMonitorCloseIdempotent(t *testing.T) {
 
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewHealthMonitor() returned error: %v", err)
+		t.Fatalf("NewMonitor() returned error: %v", err)
 	}
 
 	if err := hm.Close(); err != nil {

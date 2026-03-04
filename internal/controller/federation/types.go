@@ -71,7 +71,7 @@ type PeerInfo struct {
 	// TLS certificate data (loaded from secrets)
 	CACert     []byte
 	ClientCert []byte
-	ClientKey  []byte
+	ClientKey  []byte //nolint:gosec // G117: struct field name for TLS credential holder, not a hardcoded credential
 }
 
 // PeerState represents the current state of a federation peer

@@ -94,7 +94,7 @@ func (h *NovaRouteBGPHandler) Start(ctx context.Context) error {
 
 	// Register as owner so NovaRoute knows our intents.
 	if err := h.register(ctx); err != nil {
-		h.conn.Close()
+		_ = h.conn.Close()
 		h.conn = nil
 		h.client = nil
 		return err
@@ -159,7 +159,7 @@ func (h *NovaRouteBGPHandler) Stop(ctx context.Context) error {
 	}
 
 	if h.conn != nil {
-		h.conn.Close()
+		_ = h.conn.Close()
 	}
 
 	h.logger.Info("NovaRoute BGP handler stopped")
@@ -247,7 +247,7 @@ func (h *NovaRouteBGPHandler) reconnect(ctx context.Context) bool {
 
 	// Close old connection.
 	if h.conn != nil {
-		h.conn.Close()
+		_ = h.conn.Close()
 		h.conn = nil
 		h.client = nil
 	}
@@ -261,7 +261,7 @@ func (h *NovaRouteBGPHandler) reconnect(ctx context.Context) bool {
 	// Re-register as owner.
 	if err := h.register(ctx); err != nil {
 		h.logger.Warn("NovaRoute reconnect: register failed", zap.Error(err))
-		h.conn.Close()
+		_ = h.conn.Close()
 		h.conn = nil
 		h.client = nil
 		return false

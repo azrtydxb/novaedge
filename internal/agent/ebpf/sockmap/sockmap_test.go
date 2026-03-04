@@ -16,6 +16,8 @@ limitations under the License.
 
 package sockmap
 
+const osLinux = osLinux
+
 import (
 	"net"
 	"runtime"
@@ -65,7 +67,7 @@ func TestNewSockMapManager(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	mgr, err := NewSockMapManager(logger)
 
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		// On non-Linux, expect an error.
 		if err == nil {
 			t.Fatal("expected error on non-Linux platform")
@@ -79,7 +81,7 @@ func TestNewSockMapManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
-	defer mgr.Close()
+	defer func() { _ = mgr.Close() }()
 
 	if mgr == nil {
 		t.Fatal("expected non-nil manager")
@@ -87,7 +89,7 @@ func TestNewSockMapManager(t *testing.T) {
 }
 
 func TestManagerCloseIdempotent(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("SOCKMAP is Linux-only")
 	}
 
@@ -110,7 +112,7 @@ func TestManagerCloseIdempotent(t *testing.T) {
 }
 
 func TestManagerAddRemoveEndpoint(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("SOCKMAP is Linux-only")
 	}
 
@@ -120,7 +122,7 @@ func TestManagerAddRemoveEndpoint(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
-	defer mgr.Close()
+	defer func() { _ = mgr.Close() }()
 
 	ip := net.ParseIP("10.244.0.5")
 	if ip == nil {
@@ -145,7 +147,7 @@ func TestManagerAddRemoveEndpoint(t *testing.T) {
 }
 
 func TestManagerSyncEndpoints(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("SOCKMAP is Linux-only")
 	}
 
@@ -155,7 +157,7 @@ func TestManagerSyncEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
-	defer mgr.Close()
+	defer func() { _ = mgr.Close() }()
 
 	// Build desired state.
 	desired := map[EndpointKey]EndpointValue{
@@ -177,7 +179,7 @@ func TestManagerSyncEndpoints(t *testing.T) {
 }
 
 func TestManagerGetStats(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("SOCKMAP is Linux-only")
 	}
 
@@ -187,7 +189,7 @@ func TestManagerGetStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
-	defer mgr.Close()
+	defer func() { _ = mgr.Close() }()
 
 	redirected, fallback, err := mgr.GetStats()
 	if err != nil {
@@ -204,7 +206,7 @@ func TestManagerGetStats(t *testing.T) {
 }
 
 func TestManagerOperationsAfterClose(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("SOCKMAP is Linux-only")
 	}
 
@@ -215,7 +217,7 @@ func TestManagerOperationsAfterClose(t *testing.T) {
 		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
 
-	mgr.Close()
+	_ = mgr.Close()
 
 	ip := net.ParseIP("10.244.0.5")
 	if err := mgr.AddSameNodeEndpoint(ip, 8080); err == nil {
@@ -230,7 +232,7 @@ func TestManagerOperationsAfterClose(t *testing.T) {
 }
 
 func TestManagerAddInvalidIP(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("SOCKMAP is Linux-only")
 	}
 
@@ -240,7 +242,7 @@ func TestManagerAddInvalidIP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSockMapManager() returned error: %v", err)
 	}
-	defer mgr.Close()
+	defer func() { _ = mgr.Close() }()
 
 	// IPv6 address should fail.
 	ip6 := net.ParseIP("::1")

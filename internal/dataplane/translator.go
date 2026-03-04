@@ -4,6 +4,7 @@ package dataplane
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"sync"
@@ -14,6 +15,24 @@ import (
 	pb "github.com/piwi3910/novaedge/api/proto/dataplane"
 	configpb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+var errDataplaneSyncRejected = errors.New("dataplane sync rejected")
+
+// safeUint64 converts an int64 to uint64, clamping negative values to 0.
+func safeUint64(v int64) uint64 {
+	if v < 0 {
+		return 0
+	}
+	return uint64(v)
+}
+
+// safeInt32ToUint32 converts an int32 to uint32, clamping negative values to 0.
+func safeInt32ToUint32(v int32) uint32 {
+	if v < 0 {
+		return 0
+	}
+	return uint32(v)
+}
 
 // Translator converts Go agent ConfigSnapshot into dataplane gRPC calls.
 // It wraps a Client and provides a high-level Sync operation that pushes
@@ -59,7 +78,7 @@ func (t *Translator) Sync(ctx context.Context, snapshot *configpb.ConfigSnapshot
 	}
 
 	if resp.GetStatus() == pb.OperationStatus_ERROR {
-		return fmt.Errorf("dataplane sync rejected: %s", resp.GetMessage())
+		return fmt.Errorf("%w: %s", errDataplaneSyncRejected, resp.GetMessage())
 	}
 
 	t.logger.Info("Dataplane config synced",
@@ -217,15 +236,15 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 			if rule.GetRetry() != nil {
 				dpRoute.Retry = &pb.RetryPolicy{
 					MaxRetries:      uint32(rule.GetRetry().GetMaxRetries()), //nolint:gosec // proto field
-					PerTryTimeoutMs: uint64(rule.GetRetry().GetPerTryTimeoutMs()),
+					PerTryTimeoutMs: safeUint64(rule.GetRetry().GetPerTryTimeoutMs()),
 					RetryOn:         rule.GetRetry().GetRetryOn(),
-					BackoffBaseMs:   uint64(rule.GetRetry().GetBackoffBaseMs()),
+					BackoffBaseMs:   safeUint64(rule.GetRetry().GetBackoffBaseMs()),
 				}
 			}
 
 			// Timeout.
 			if lim := rule.GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
-				dpRoute.TimeoutMs = uint64(lim.GetRequestTimeoutMs())
+				dpRoute.TimeoutMs = safeUint64(lim.GetRequestTimeoutMs())
 			}
 
 			// Filters: rewrite_path and add_headers.
@@ -278,12 +297,12 @@ func translateClusters(
 	clusters []*configpb.Cluster,
 	endpoints map[string]*configpb.EndpointList,
 ) []*pb.ClusterConfig {
-	var result []*pb.ClusterConfig
+	result := make([]*pb.ClusterConfig, 0, len(clusters))
 	for _, cl := range clusters {
 		dpCluster := &pb.ClusterConfig{
 			Name:             cl.GetName(),
 			LbAlgorithm:      translateLBAlgorithm(cl.GetLbPolicy()),
-			ConnectTimeoutMs: uint64(cl.GetConnectTimeoutMs()),
+			ConnectTimeoutMs: safeUint64(cl.GetConnectTimeoutMs()),
 		}
 
 		// Map endpoints for this cluster.
@@ -307,8 +326,8 @@ func translateClusters(
 		// Translate health check.
 		if hc := cl.GetHealthCheck(); hc != nil {
 			dpCluster.HealthCheck = &pb.HealthCheckConfig{
-				IntervalMs:         uint64(hc.GetIntervalMs()),
-				TimeoutMs:          uint64(hc.GetTimeoutMs()),
+				IntervalMs:         safeUint64(hc.GetIntervalMs()),
+				TimeoutMs:          safeUint64(hc.GetTimeoutMs()),
 				HealthyThreshold:   uint32(hc.GetHealthyThreshold()),   //nolint:gosec // proto field
 				UnhealthyThreshold: uint32(hc.GetUnhealthyThreshold()), //nolint:gosec // proto field
 				HttpPath:           hc.GetHttpPath(),
@@ -330,8 +349,8 @@ func translateClusters(
 			dpCluster.ConnectionPool = &pb.ConnectionPoolConfig{
 				MaxConnections:   uint32(pool.GetMaxConnsPerHost()),     //nolint:gosec // proto field
 				MaxIdle:          uint32(pool.GetMaxIdleConnsPerHost()), //nolint:gosec // proto field
-				IdleTimeoutMs:    uint64(pool.GetIdleConnTimeoutMs()),
-				ConnectTimeoutMs: uint64(cl.GetConnectTimeoutMs()),
+				IdleTimeoutMs:    safeUint64(pool.GetIdleConnTimeoutMs()),
+				ConnectTimeoutMs: safeUint64(cl.GetConnectTimeoutMs()),
 			}
 		}
 
@@ -359,9 +378,9 @@ func translateClusters(
 		// Translate outlier detection.
 		if od := cl.GetOutlierDetection(); od != nil {
 			dpCluster.OutlierDetection = &pb.OutlierDetectionConfig{
-				IntervalMs:               uint64(od.GetIntervalMs()),
+				IntervalMs:               safeUint64(od.GetIntervalMs()),
 				Consecutive_5XxThreshold: uint32(od.GetConsecutive_5XxThreshold()), //nolint:gosec // proto field
-				BaseEjectionDurationMs:   uint64(od.GetBaseEjectionDurationMs()),
+				BaseEjectionDurationMs:   safeUint64(od.GetBaseEjectionDurationMs()),
 				MaxEjectionPercent:       uint32(od.GetMaxEjectionPercent()),     //nolint:gosec // proto field
 				SuccessRateMinHosts:      uint32(od.GetSuccessRateMinHosts()),    //nolint:gosec // proto field
 				SuccessRateMinRequests:   uint32(od.GetSuccessRateMinRequests()), //nolint:gosec // proto field
@@ -372,7 +391,7 @@ func translateClusters(
 		// Translate slow start.
 		if ss := cl.GetSlowStart(); ss != nil {
 			dpCluster.SlowStart = &pb.SlowStartConfig{
-				WindowMs:   uint64(ss.GetWindowMs()),
+				WindowMs:   safeUint64(ss.GetWindowMs()),
 				Aggression: ss.GetAggression(),
 			}
 		}
@@ -381,7 +400,7 @@ func translateClusters(
 		if upp := cl.GetUpstreamProxyProtocol(); upp != nil && upp.GetEnabled() {
 			dpCluster.UpstreamProxyProtocol = &pb.UpstreamProxyProtocolConfig{
 				Enabled: upp.GetEnabled(),
-				Version: uint32(upp.GetVersion()),
+				Version: safeInt32ToUint32(upp.GetVersion()),
 			}
 		}
 
@@ -423,7 +442,7 @@ func translateLBAlgorithm(policy configpb.LoadBalancingPolicy) pb.LBAlgorithm {
 // ---------------------------------------------------------------------------
 
 func translateVIPs(vips []*configpb.VIPAssignment) []*pb.VIPConfig {
-	var result []*pb.VIPConfig
+	result := make([]*pb.VIPConfig, 0, len(vips))
 	for _, v := range vips {
 		dpVIP := &pb.VIPConfig{
 			Name:    v.GetVipName(),
@@ -459,7 +478,7 @@ func translateVIPs(vips []*configpb.VIPAssignment) []*pb.VIPConfig {
 			dpVIP.BfdMultiplier = uint32(bfd.GetDetectMultiplier()) //nolint:gosec // proto field
 			// BFD intervals in config are strings like "300ms"; parse to milliseconds.
 			if d, err := time.ParseDuration(bfd.GetDesiredMinTxInterval()); err == nil && d > 0 {
-				dpVIP.BfdIntervalMs = uint64(d.Milliseconds())
+				dpVIP.BfdIntervalMs = safeUint64(d.Milliseconds())
 			}
 		}
 
@@ -486,7 +505,7 @@ func translateVIPMode(mode configpb.VIPMode) pb.VIPMode {
 // ---------------------------------------------------------------------------
 
 func translateL4Listeners(listeners []*configpb.L4Listener) []*pb.L4ListenerConfig {
-	var result []*pb.L4ListenerConfig
+	result := make([]*pb.L4ListenerConfig, 0, len(listeners))
 	for _, l4 := range listeners {
 		dpL4 := &pb.L4ListenerConfig{
 			Name:        l4.GetName(),
@@ -503,11 +522,11 @@ func translateL4Listeners(listeners []*configpb.L4Listener) []*pb.L4ListenerConf
 		}
 
 		if l4.GetTcpConfig() != nil {
-			dpL4.IdleTimeoutMs = uint64(l4.GetTcpConfig().GetIdleTimeoutMs())
-			dpL4.ConnectTimeoutMs = uint64(l4.GetTcpConfig().GetConnectTimeoutMs())
+			dpL4.IdleTimeoutMs = safeUint64(l4.GetTcpConfig().GetIdleTimeoutMs())
+			dpL4.ConnectTimeoutMs = safeUint64(l4.GetTcpConfig().GetConnectTimeoutMs())
 		}
 		if l4.GetUdpConfig() != nil {
-			dpL4.IdleTimeoutMs = uint64(l4.GetUdpConfig().GetSessionTimeoutMs())
+			dpL4.IdleTimeoutMs = safeUint64(l4.GetUdpConfig().GetSessionTimeoutMs())
 		}
 
 		result = append(result, dpL4)
@@ -532,143 +551,166 @@ func translateL4Protocol(proto configpb.Protocol) pb.L4Protocol {
 // Policy translation
 // ---------------------------------------------------------------------------
 
+// policyConfigTranslator translates the config-specific portion of a policy
+// and sets the Config oneof field on the provided dpPol.
+type policyConfigTranslator func(pol *configpb.Policy, dpPol *pb.PolicyConfig)
+
+// policyConfigTranslators maps config policy types to their dataplane translators.
+var policyConfigTranslators = map[configpb.PolicyType]policyConfigTranslator{
+	configpb.PolicyType_RATE_LIMIT: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if rl := pol.GetRateLimit(); rl != nil {
+			dpPol.Config = &pb.PolicyConfig_RateLimit{
+				RateLimit: &pb.RateLimitPolicyConfig{
+					RequestsPerSecond: uint32(rl.GetRequestsPerSecond()), //nolint:gosec // proto field
+					Burst:             uint32(rl.GetBurst()),             //nolint:gosec // proto field
+					Key:               rl.GetKey(),
+				},
+			}
+		}
+	},
+	configpb.PolicyType_JWT: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if jwt := pol.GetJwt(); jwt != nil {
+			dpPol.Config = &pb.PolicyConfig_Jwt{
+				Jwt: &pb.JWTPolicyConfig{
+					Issuer:            jwt.GetIssuer(),
+					Audiences:         jwt.GetAudience(),
+					JwksUri:           jwt.GetJwksUri(),
+					HeaderName:        jwt.GetHeaderName(),
+					HeaderPrefix:      jwt.GetHeaderPrefix(),
+					AllowedAlgorithms: jwt.GetAllowedAlgorithms(),
+				},
+			}
+		}
+	},
+	configpb.PolicyType_BASIC_AUTH: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if ba := pol.GetBasicAuth(); ba != nil {
+			dpPol.Config = &pb.PolicyConfig_BasicAuth{
+				BasicAuth: &pb.BasicAuthPolicyConfig{
+					Realm:              ba.GetRealm(),
+					Htpasswd:           ba.GetHtpasswd(),
+					StripAuthorization: ba.GetStripAuth(),
+				},
+			}
+		}
+	},
+	configpb.PolicyType_FORWARD_AUTH: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if fa := pol.GetForwardAuth(); fa != nil {
+			faCfg := &pb.ForwardAuthPolicyConfig{
+				Address:             fa.GetAddress(),
+				AuthRequestHeaders:  fa.GetAuthHeaders(),
+				AuthResponseHeaders: fa.GetResponseHeaders(),
+			}
+			if fa.GetTimeoutMs() > 0 {
+				faCfg.TimeoutMs = safeUint64(fa.GetTimeoutMs())
+			}
+			dpPol.Config = &pb.PolicyConfig_ForwardAuth{ForwardAuth: faCfg}
+		}
+	},
+	configpb.PolicyType_WAF: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if waf := pol.GetWaf(); waf != nil {
+			dpPol.Config = &pb.PolicyConfig_Waf{
+				Waf: &pb.WAFPolicyConfig{
+					Enabled:          waf.GetEnabled(),
+					Mode:             waf.GetMode(),
+					ParanoiaLevel:    uint32(waf.GetParanoiaLevel()),    //nolint:gosec // proto field
+					AnomalyThreshold: uint32(waf.GetAnomalyThreshold()), //nolint:gosec // proto field
+					RuleExclusions:   waf.GetRuleExclusions(),
+					MaxBodySize:      safeUint64(waf.GetMaxBodySize()),
+				},
+			}
+		}
+	},
+	configpb.PolicyType_CORS: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if cors := pol.GetCors(); cors != nil {
+			dpPol.Config = &pb.PolicyConfig_Cors{
+				Cors: &pb.CORSPolicyConfig{
+					AllowOrigins:     cors.GetAllowOrigins(),
+					AllowMethods:     cors.GetAllowMethods(),
+					AllowHeaders:     cors.GetAllowHeaders(),
+					ExposeHeaders:    cors.GetExposeHeaders(),
+					AllowCredentials: cors.GetAllowCredentials(),
+					MaxAgeSeconds:    safeUint64(cors.GetMaxAgeSeconds()),
+				},
+			}
+		}
+	},
+	configpb.PolicyType_OIDC: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if oidc := pol.GetOidc(); oidc != nil {
+			dpPol.Config = &pb.PolicyConfig_Oauth2{
+				Oauth2: &pb.OAuth2PolicyConfig{
+					IssuerUrl:     oidc.GetIssuerUrl(),
+					ClientId:      oidc.GetClientId(),
+					ClientSecret:  oidc.GetClientSecret(),
+					RedirectUrl:   oidc.GetRedirectUrl(),
+					Scopes:        oidc.GetScopes(),
+					SessionSecret: oidc.GetSessionSecret(),
+				},
+			}
+		}
+	},
+	configpb.PolicyType_SECURITY_HEADERS: func(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+		if sh := pol.GetSecurityHeaders(); sh != nil {
+			stsValue := ""
+			if hsts := sh.GetHsts(); hsts != nil && hsts.GetEnabled() {
+				stsValue = fmt.Sprintf("max-age=%d", hsts.GetMaxAgeSeconds())
+				if hsts.GetIncludeSubdomains() {
+					stsValue += "; includeSubDomains"
+				}
+				if hsts.GetPreload() {
+					stsValue += "; preload"
+				}
+			}
+			dpPol.Config = &pb.PolicyConfig_SecurityHeaders{
+				SecurityHeaders: &pb.SecurityHeadersPolicyConfig{
+					ContentSecurityPolicy:   sh.GetContentSecurityPolicy(),
+					XFrameOptions:           sh.GetXFrameOptions(),
+					XContentTypeOptions:     sh.GetXContentTypeOptions(),
+					StrictTransportSecurity: stsValue,
+					ReferrerPolicy:          sh.GetReferrerPolicy(),
+					PermissionsPolicy:       sh.GetPermissionsPolicy(),
+				},
+			}
+		}
+	},
+}
+
+// translateIPListPolicy translates IP allow/deny list policies onto dpPol.
+func translateIPListPolicy(pol *configpb.Policy, dpPol *pb.PolicyConfig) {
+	if ipList := pol.GetIpList(); ipList != nil {
+		action := "allow"
+		if pol.GetType() == configpb.PolicyType_IP_DENY_LIST {
+			action = "deny"
+		}
+		dpPol.Config = &pb.PolicyConfig_IpFilter{
+			IpFilter: &pb.IPFilterPolicyConfig{
+				Action:       action,
+				Cidrs:        ipList.GetCidrs(),
+				SourceHeader: ipList.GetSourceHeader(),
+			},
+		}
+	}
+}
+
 func translatePolicies(policies []*configpb.Policy) []*pb.PolicyConfig {
-	var result []*pb.PolicyConfig
+	result := make([]*pb.PolicyConfig, 0, len(policies))
 	for _, pol := range policies {
 		dpPol := &pb.PolicyConfig{
 			Name:       pol.GetName(),
 			PolicyType: translatePolicyType(pol.GetType()),
 		}
 
-		// Translate policy-specific configuration.
-		switch pol.GetType() {
-		case configpb.PolicyType_RATE_LIMIT:
-			if rl := pol.GetRateLimit(); rl != nil {
-				dpPol.Config = &pb.PolicyConfig_RateLimit{
-					RateLimit: &pb.RateLimitPolicyConfig{
-						RequestsPerSecond: uint32(rl.GetRequestsPerSecond()), //nolint:gosec // proto field
-						Burst:             uint32(rl.GetBurst()),             //nolint:gosec // proto field
-						Key:               rl.GetKey(),
-					},
-				}
-			}
-		case configpb.PolicyType_JWT:
-			if jwt := pol.GetJwt(); jwt != nil {
-				dpPol.Config = &pb.PolicyConfig_Jwt{
-					Jwt: &pb.JWTPolicyConfig{
-						Issuer:            jwt.GetIssuer(),
-						Audiences:         jwt.GetAudience(),
-						JwksUri:           jwt.GetJwksUri(),
-						HeaderName:        jwt.GetHeaderName(),
-						HeaderPrefix:      jwt.GetHeaderPrefix(),
-						AllowedAlgorithms: jwt.GetAllowedAlgorithms(),
-					},
-				}
-			}
-		case configpb.PolicyType_BASIC_AUTH:
-			if ba := pol.GetBasicAuth(); ba != nil {
-				dpPol.Config = &pb.PolicyConfig_BasicAuth{
-					BasicAuth: &pb.BasicAuthPolicyConfig{
-						Realm:              ba.GetRealm(),
-						Htpasswd:           ba.GetHtpasswd(),
-						StripAuthorization: ba.GetStripAuth(),
-					},
-				}
-			}
-		case configpb.PolicyType_FORWARD_AUTH:
-			if fa := pol.GetForwardAuth(); fa != nil {
-				faCfg := &pb.ForwardAuthPolicyConfig{
-					Address:             fa.GetAddress(),
-					AuthRequestHeaders:  fa.GetAuthHeaders(),
-					AuthResponseHeaders: fa.GetResponseHeaders(),
-				}
-				if fa.GetTimeoutMs() > 0 {
-					faCfg.TimeoutMs = uint64(fa.GetTimeoutMs())
-				}
-				dpPol.Config = &pb.PolicyConfig_ForwardAuth{
-					ForwardAuth: faCfg,
-				}
-			}
-		case configpb.PolicyType_WAF:
-			if waf := pol.GetWaf(); waf != nil {
-				dpPol.Config = &pb.PolicyConfig_Waf{
-					Waf: &pb.WAFPolicyConfig{
-						Enabled:          waf.GetEnabled(),
-						Mode:             waf.GetMode(),
-						ParanoiaLevel:    uint32(waf.GetParanoiaLevel()),    //nolint:gosec // proto field
-						AnomalyThreshold: uint32(waf.GetAnomalyThreshold()), //nolint:gosec // proto field
-						RuleExclusions:   waf.GetRuleExclusions(),
-						MaxBodySize:      uint64(waf.GetMaxBodySize()),
-					},
-				}
-			}
-		case configpb.PolicyType_CORS:
-			if cors := pol.GetCors(); cors != nil {
-				dpPol.Config = &pb.PolicyConfig_Cors{
-					Cors: &pb.CORSPolicyConfig{
-						AllowOrigins:     cors.GetAllowOrigins(),
-						AllowMethods:     cors.GetAllowMethods(),
-						AllowHeaders:     cors.GetAllowHeaders(),
-						ExposeHeaders:    cors.GetExposeHeaders(),
-						AllowCredentials: cors.GetAllowCredentials(),
-						MaxAgeSeconds:    uint64(cors.GetMaxAgeSeconds()),
-					},
-				}
-			}
-		case configpb.PolicyType_IP_ALLOW_LIST, configpb.PolicyType_IP_DENY_LIST:
-			if ipList := pol.GetIpList(); ipList != nil {
-				action := "allow"
-				if pol.GetType() == configpb.PolicyType_IP_DENY_LIST {
-					action = "deny"
-				}
-				dpPol.Config = &pb.PolicyConfig_IpFilter{
-					IpFilter: &pb.IPFilterPolicyConfig{
-						Action:       action,
-						Cidrs:        ipList.GetCidrs(),
-						SourceHeader: ipList.GetSourceHeader(),
-					},
-				}
-			}
-		case configpb.PolicyType_OIDC:
-			if oidc := pol.GetOidc(); oidc != nil {
-				dpPol.Config = &pb.PolicyConfig_Oauth2{
-					Oauth2: &pb.OAuth2PolicyConfig{
-						IssuerUrl:     oidc.GetIssuerUrl(),
-						ClientId:      oidc.GetClientId(),
-						ClientSecret:  oidc.GetClientSecret(),
-						RedirectUrl:   oidc.GetRedirectUrl(),
-						Scopes:        oidc.GetScopes(),
-						SessionSecret: oidc.GetSessionSecret(),
-					},
-				}
-			}
-		case configpb.PolicyType_SECURITY_HEADERS:
-			if sh := pol.GetSecurityHeaders(); sh != nil {
-				stsValue := ""
-				if hsts := sh.GetHsts(); hsts != nil && hsts.GetEnabled() {
-					stsValue = fmt.Sprintf("max-age=%d", hsts.GetMaxAgeSeconds())
-					if hsts.GetIncludeSubdomains() {
-						stsValue += "; includeSubDomains"
-					}
-					if hsts.GetPreload() {
-						stsValue += "; preload"
-					}
-				}
-				dpPol.Config = &pb.PolicyConfig_SecurityHeaders{
-					SecurityHeaders: &pb.SecurityHeadersPolicyConfig{
-						ContentSecurityPolicy:   sh.GetContentSecurityPolicy(),
-						XFrameOptions:           sh.GetXFrameOptions(),
-						XContentTypeOptions:     sh.GetXContentTypeOptions(),
-						StrictTransportSecurity: stsValue,
-						ReferrerPolicy:          sh.GetReferrerPolicy(),
-						PermissionsPolicy:       sh.GetPermissionsPolicy(),
-					},
-				}
-			}
-		case configpb.PolicyType_WASM_PLUGIN,
-			configpb.PolicyType_DISTRIBUTED_RATE_LIMIT,
-			configpb.PolicyType_MESH_AUTHORIZATION:
+		pType := pol.GetType()
+		switch {
+		case pType == configpb.PolicyType_IP_ALLOW_LIST || pType == configpb.PolicyType_IP_DENY_LIST:
+			translateIPListPolicy(pol, dpPol)
+		case pType == configpb.PolicyType_WASM_PLUGIN ||
+			pType == configpb.PolicyType_DISTRIBUTED_RATE_LIMIT ||
+			pType == configpb.PolicyType_MESH_AUTHORIZATION:
 			// These policy types have no dataplane equivalent yet; skip.
+		default:
+			if translator, ok := policyConfigTranslators[pType]; ok {
+				translator(pol, dpPol)
+			}
 		}
 
 		result = append(result, dpPol)
@@ -706,7 +748,7 @@ func translatePolicyType(t configpb.PolicyType) pb.PolicyType {
 // ---------------------------------------------------------------------------
 
 func translateWANLinks(wanLinks []*configpb.WANLink) []*pb.WANLinkConfig {
-	var result []*pb.WANLinkConfig
+	result := make([]*pb.WANLinkConfig, 0, len(wanLinks))
 	for _, wl := range wanLinks {
 		dpWL := &pb.WANLinkConfig{
 			Name:      wl.GetName(),
@@ -718,8 +760,8 @@ func translateWANLinks(wanLinks []*configpb.WANLink) []*pb.WANLinkConfig {
 
 		if sla := wl.GetSla(); sla != nil {
 			dpWL.SlaTarget = &pb.SLATarget{
-				MaxLatencyMs:     uint64(sla.GetMaxLatencyMs()),
-				MaxJitterMs:      uint64(sla.GetMaxJitterMs()),
+				MaxLatencyMs:     safeUint64(sla.GetMaxLatencyMs()),
+				MaxJitterMs:      safeUint64(sla.GetMaxJitterMs()),
 				MaxPacketLossPct: sla.GetMaxPacketLoss(),
 			}
 		}

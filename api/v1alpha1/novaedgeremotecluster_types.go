@@ -495,6 +495,3 @@ type NovaEdgeRemoteClusterList struct {
 	Items           []NovaEdgeRemoteCluster `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&NovaEdgeRemoteCluster{}, &NovaEdgeRemoteClusterList{})
-}

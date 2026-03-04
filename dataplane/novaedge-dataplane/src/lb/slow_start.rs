@@ -34,6 +34,7 @@ impl SlowStartTracker {
     }
 
     /// Remove endpoints that are no longer in the active set.
+    #[allow(dead_code)]
     pub fn retain_keys(&self, active_keys: &[String]) {
         let mut map = self.first_seen.write().unwrap();
         map.retain(|k, _| active_keys.contains(k));
@@ -60,7 +61,7 @@ impl SlowStartTracker {
                     1.0
                 } else {
                     let ratio = elapsed.as_secs_f64() / window.as_secs_f64();
-                    ratio.powf(aggression).min(1.0).max(0.01) // Never go below 1%
+                    ratio.powf(aggression).clamp(0.01, 1.0) // Never go below 1%
                 }
             }
             None => 1.0, // Unknown endpoint gets full weight

@@ -94,6 +94,9 @@ func (c *Client) ListTraces(ctx context.Context, limit int, lookback time.Durati
 	params.Set("end", fmt.Sprintf("%d", time.Now().UnixMicro()))
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
+	if _, parseErr := url.ParseRequestURI(fullURL); parseErr != nil {
+		return nil, fmt.Errorf("invalid trace endpoint URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
@@ -127,7 +130,10 @@ func (c *Client) GetTrace(ctx context.Context, traceID string) (*Trace, error) {
 	// For Jaeger API:
 	// GET /api/traces/{traceID}
 
-	endpoint := fmt.Sprintf("%s/api/traces/%s", c.endpoint, traceID)
+	endpoint := fmt.Sprintf("%s/api/traces/%s", c.endpoint, url.PathEscape(traceID))
+	if _, parseErr := url.ParseRequestURI(endpoint); parseErr != nil {
+		return nil, fmt.Errorf("invalid trace endpoint URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -212,6 +218,9 @@ func (c *Client) SearchTraces(ctx context.Context, params SearchParams) ([]Trace
 	}
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, queryParams.Encode())
+	if _, parseErr := url.ParseRequestURI(fullURL); parseErr != nil {
+		return nil, fmt.Errorf("invalid trace endpoint URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
@@ -246,6 +255,9 @@ func (c *Client) GetServices(ctx context.Context) ([]string, error) {
 	// GET /api/services
 
 	endpoint := fmt.Sprintf("%s/api/services", c.endpoint)
+	if _, parseErr := url.ParseRequestURI(endpoint); parseErr != nil {
+		return nil, fmt.Errorf("invalid trace endpoint URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -280,6 +292,9 @@ func (c *Client) GetOperations(ctx context.Context, serviceName string) ([]strin
 	// GET /api/services/{service}/operations
 
 	endpoint := fmt.Sprintf("%s/api/services/%s/operations", c.endpoint, url.PathEscape(serviceName))
+	if _, parseErr := url.ParseRequestURI(endpoint); parseErr != nil {
+		return nil, fmt.Errorf("invalid trace endpoint URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {

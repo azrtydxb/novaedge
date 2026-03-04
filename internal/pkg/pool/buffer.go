@@ -36,7 +36,10 @@ var BufferPool = sync.Pool{
 // The buffer is reset before being returned.
 // Call PutBuffer after use to return it to the pool.
 func GetBuffer() *bytes.Buffer {
-	buf := BufferPool.Get().(*bytes.Buffer)
+	buf, ok := BufferPool.Get().(*bytes.Buffer)
+	if !ok {
+		return new(bytes.Buffer)
+	}
 	buf.Reset()
 	return buf
 }
@@ -64,7 +67,10 @@ var StringBuilderPool = sync.Pool{
 // The builder is reset before being returned.
 // Call PutStringBuilder after use to return it to the pool.
 func GetStringBuilder() *strings.Builder {
-	sb := StringBuilderPool.Get().(*strings.Builder)
+	sb, ok := StringBuilderPool.Get().(*strings.Builder)
+	if !ok {
+		return new(strings.Builder)
+	}
 	sb.Reset()
 	return sb
 }
@@ -102,7 +108,11 @@ func NewByteSlicePool(size int) *ByteSlicePool {
 // Get retrieves a byte slice from the pool.
 // The slice is guaranteed to be of the configured size.
 func (p *ByteSlicePool) Get() []byte {
-	buf := p.pool.Get().(*[]byte)
+	buf, ok := p.pool.Get().(*[]byte)
+	if !ok {
+		b := make([]byte, p.size)
+		return b
+	}
 	return *buf
 }
 

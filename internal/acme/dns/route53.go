@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -131,10 +132,10 @@ func (p *Route53Provider) changeRecord(ctx context.Context, action, fqdn, value 
   </ChangeBatch>
 </ChangeResourceRecordSetsRequest>`, action, recordName, value)
 
-	url := fmt.Sprintf("%s/2013-04-01/hostedzone/%s/rrset",
-		route53APIBase, p.hostedZoneID)
+	apiURL := fmt.Sprintf("%s/2013-04-01/hostedzone/%s/rrset",
+		route53APIBase, url.PathEscape(p.hostedZoneID))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url,
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL,
 		bytes.NewBufferString(payload))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)

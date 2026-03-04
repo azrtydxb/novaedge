@@ -799,6 +799,14 @@ func TestIngressAnnotations(t *testing.T) {
 			if len(filter.Remove) != 2 {
 				t.Errorf("expected 2 headers to remove, got %d", len(filter.Remove))
 			}
+		case novaedgev1alpha1.HTTPRouteFilterRequestRedirect,
+			novaedgev1alpha1.HTTPRouteFilterRequestMirror,
+			novaedgev1alpha1.HTTPRouteFilterResponseAddHeader,
+			novaedgev1alpha1.HTTPRouteFilterResponseRemoveHeader,
+			novaedgev1alpha1.HTTPRouteFilterResponseSetHeader:
+			// Not expected in this test
+		default:
+			// Unknown filter type
 		}
 	}
 

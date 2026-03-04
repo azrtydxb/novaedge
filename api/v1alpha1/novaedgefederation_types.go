@@ -534,6 +534,3 @@ type NovaEdgeFederationList struct {
 	Items           []NovaEdgeFederation `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&NovaEdgeFederation{}, &NovaEdgeFederationList{})
-}

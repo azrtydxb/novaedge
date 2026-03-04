@@ -109,7 +109,7 @@ func TestTLSConfig(t *testing.T) {
 }
 
 func TestVaultCertReference(t *testing.T) {
-	ref := VaultCertReference{
+	ref := VaultCertReference{ //nolint:gosec // G101: test fixture data, not real credentials
 		Path:            "pki/issue/example-com",
 		Role:            "example-com-role",
 		TTL:             "24h",

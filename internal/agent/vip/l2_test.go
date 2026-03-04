@@ -18,6 +18,7 @@ package vip
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -210,15 +211,16 @@ func TestL2Handler_ConcurrentStateAccess(t *testing.T) {
 			wg.Add(1)
 			go func(id int) {
 				defer wg.Done()
+				idStr := fmt.Sprintf("%d", id)
 				assignment := &pb.VIPAssignment{
-					VipName: "vip-" + string(rune('0'+id)),
-					Address: "192.168.1." + string(rune('0'+id)) + "/24",
+					VipName: "vip-" + idStr,
+					Address: "192.168.1." + idStr + "/24",
 				}
 
 				handler.mu.Lock()
 				handler.activeVIPs[assignment.VipName] = &State{
 					Assignment: assignment,
-					IP:         net.ParseIP("192.168.1." + string(rune('0'+id))),
+					IP:         net.ParseIP("192.168.1." + idStr),
 					AddedAt:    time.Now(),
 				}
 				handler.mu.Unlock()

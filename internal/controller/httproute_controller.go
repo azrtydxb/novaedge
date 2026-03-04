@@ -46,6 +46,100 @@ type HTTPRouteReconciler struct {
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch
 
+// newAcceptedCondition creates a RouteConditionAccepted condition for an HTTPRoute.
+func newAcceptedCondition(status metav1.ConditionStatus, reason, message string, generation int64) metav1.Condition {
+	return metav1.Condition{
+		Type:               string(gatewayv1.RouteConditionAccepted),
+		Status:             status,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: generation,
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+// buildParentStatuses builds per-parentRef status entries and reports whether
+// at least one NovaEdge Gateway was found.
+func (r *HTTPRouteReconciler) buildParentStatuses(ctx context.Context, httpRoute *gatewayv1.HTTPRoute) ([]gatewayv1.RouteParentStatus, bool) {
+	parentStatuses := make([]gatewayv1.RouteParentStatus, 0, len(httpRoute.Spec.ParentRefs))
+	hasNovaEdgeGateway := false
+
+	for _, parentRef := range httpRoute.Spec.ParentRefs {
+		parentStatus := gatewayv1.RouteParentStatus{
+			ParentRef:      parentRef,
+			ControllerName: gatewayv1.GatewayController(NovaEdgeControllerName),
+			Conditions:     make([]metav1.Condition, 0, 2),
+		}
+
+		kind := kindGateway
+		if parentRef.Kind != nil {
+			kind = string(*parentRef.Kind)
+		}
+
+		if kind != kindGateway {
+			parentStatus.Conditions = append(parentStatus.Conditions,
+				newAcceptedCondition(metav1.ConditionFalse,
+					string(gatewayv1.RouteReasonNotAllowedByListeners),
+					fmt.Sprintf("Unsupported parent kind: %s", kind),
+					httpRoute.Generation))
+			parentStatuses = append(parentStatuses, parentStatus)
+			continue
+		}
+
+		gatewayNamespace := httpRoute.Namespace
+		if parentRef.Namespace != nil {
+			gatewayNamespace = string(*parentRef.Namespace)
+		}
+
+		gateway := &gatewayv1.Gateway{}
+		err := r.Get(ctx, types.NamespacedName{Name: string(parentRef.Name), Namespace: gatewayNamespace}, gateway)
+		if err != nil {
+			reason, msg := "GatewayError", fmt.Sprintf("Failed to get Gateway: %v", err)
+			if apierrors.IsNotFound(err) {
+				reason = "GatewayNotFound"
+				msg = fmt.Sprintf("Gateway %s/%s not found", gatewayNamespace, parentRef.Name)
+			}
+			parentStatus.Conditions = append(parentStatus.Conditions,
+				newAcceptedCondition(metav1.ConditionFalse, reason, msg, httpRoute.Generation))
+			parentStatuses = append(parentStatuses, parentStatus)
+			continue
+		}
+
+		if string(gateway.Spec.GatewayClassName) != NovaEdgeGatewayClassName {
+			continue
+		}
+		hasNovaEdgeGateway = true
+
+		if parentRef.SectionName != nil {
+			matched := false
+			for _, listener := range gateway.Spec.Listeners {
+				if string(listener.Name) == string(*parentRef.SectionName) {
+					matched = true
+					break
+				}
+			}
+			if !matched {
+				parentStatus.Conditions = append(parentStatus.Conditions,
+					newAcceptedCondition(metav1.ConditionFalse,
+						string(gatewayv1.RouteReasonNoMatchingParent),
+						fmt.Sprintf("No listener matches SectionName %s", *parentRef.SectionName),
+						httpRoute.Generation))
+				parentStatuses = append(parentStatuses, parentStatus)
+				continue
+			}
+		}
+
+		parentStatus.Conditions = append(parentStatus.Conditions,
+			newAcceptedCondition(metav1.ConditionTrue,
+				string(gatewayv1.RouteReasonAccepted),
+				"HTTPRoute has been accepted",
+				httpRoute.Generation))
+		parentStatuses = append(parentStatuses, parentStatus)
+	}
+
+	return parentStatuses, hasNovaEdgeGateway
+}
+
 // Reconcile is part of the main kubernetes reconciliation loop for HTTPRoute resources
 func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -70,116 +164,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Build parent statuses for each parent ref
-	parentStatuses := make([]gatewayv1.RouteParentStatus, 0, len(httpRoute.Spec.ParentRefs))
-	hasNovaEdgeGateway := false
-
-	for _, parentRef := range httpRoute.Spec.ParentRefs {
-		parentStatus := gatewayv1.RouteParentStatus{
-			ParentRef:      parentRef,
-			ControllerName: gatewayv1.GatewayController(NovaEdgeControllerName),
-			Conditions:     make([]metav1.Condition, 0, 2),
-		}
-
-		// Per Gateway API spec, Kind defaults to "Gateway" when nil
-		kind := kindGateway
-		if parentRef.Kind != nil {
-			kind = string(*parentRef.Kind)
-		}
-
-		if kind != kindGateway {
-			parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
-				Type:               string(gatewayv1.RouteConditionAccepted),
-				Status:             metav1.ConditionFalse,
-				Reason:             string(gatewayv1.RouteReasonNotAllowedByListeners),
-				Message:            fmt.Sprintf("Unsupported parent kind: %s", kind),
-				ObservedGeneration: httpRoute.Generation,
-				LastTransitionTime: metav1.Now(),
-			})
-			parentStatuses = append(parentStatuses, parentStatus)
-			continue
-		}
-
-		// Get the Gateway to check its class
-		gatewayNamespace := httpRoute.Namespace
-		if parentRef.Namespace != nil {
-			gatewayNamespace = string(*parentRef.Namespace)
-		}
-
-		gateway := &gatewayv1.Gateway{}
-		err := r.Get(ctx, types.NamespacedName{
-			Name:      string(parentRef.Name),
-			Namespace: gatewayNamespace,
-		}, gateway)
-
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
-					Type:               string(gatewayv1.RouteConditionAccepted),
-					Status:             metav1.ConditionFalse,
-					Reason:             "GatewayNotFound",
-					Message:            fmt.Sprintf("Gateway %s/%s not found", gatewayNamespace, parentRef.Name),
-					ObservedGeneration: httpRoute.Generation,
-					LastTransitionTime: metav1.Now(),
-				})
-			} else {
-				parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
-					Type:               string(gatewayv1.RouteConditionAccepted),
-					Status:             metav1.ConditionFalse,
-					Reason:             "GatewayError",
-					Message:            fmt.Sprintf("Failed to get Gateway: %v", err),
-					ObservedGeneration: httpRoute.Generation,
-					LastTransitionTime: metav1.Now(),
-				})
-			}
-			parentStatuses = append(parentStatuses, parentStatus)
-			continue
-		}
-
-		// Check if this is a NovaEdge gateway
-		if string(gateway.Spec.GatewayClassName) != NovaEdgeGatewayClassName {
-			// Not our gateway - skip it entirely (don't set status for other controllers)
-			continue
-		}
-
-		hasNovaEdgeGateway = true
-
-		// Validate listener attachment if SectionName is specified
-		listenerMatch := true
-		if parentRef.SectionName != nil {
-			listenerMatch = false
-			for _, listener := range gateway.Spec.Listeners {
-				if string(listener.Name) == string(*parentRef.SectionName) {
-					listenerMatch = true
-					break
-				}
-			}
-		}
-
-		if !listenerMatch {
-			parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
-				Type:               string(gatewayv1.RouteConditionAccepted),
-				Status:             metav1.ConditionFalse,
-				Reason:             string(gatewayv1.RouteReasonNoMatchingParent),
-				Message:            fmt.Sprintf("No listener matches SectionName %s", *parentRef.SectionName),
-				ObservedGeneration: httpRoute.Generation,
-				LastTransitionTime: metav1.Now(),
-			})
-			parentStatuses = append(parentStatuses, parentStatus)
-			continue
-		}
-
-		// Route is accepted by this parent
-		parentStatus.Conditions = append(parentStatus.Conditions, metav1.Condition{
-			Type:               string(gatewayv1.RouteConditionAccepted),
-			Status:             metav1.ConditionTrue,
-			Reason:             string(gatewayv1.RouteReasonAccepted),
-			Message:            "HTTPRoute has been accepted",
-			ObservedGeneration: httpRoute.Generation,
-			LastTransitionTime: metav1.Now(),
-		})
-
-		parentStatuses = append(parentStatuses, parentStatus)
-	}
+	parentStatuses, hasNovaEdgeGateway := r.buildParentStatuses(ctx, httpRoute)
 
 	if !hasNovaEdgeGateway {
 		logger.Info("HTTPRoute does not reference a NovaEdge Gateway, ignoring")

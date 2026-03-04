@@ -27,6 +27,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"net"
 	"net/http"
@@ -39,6 +40,17 @@ import (
 
 	pb "github.com/piwi3910/novaedge/internal/proto/gen"
 )
+
+// safeIntToInt32 converts int to int32 with bounds checking.
+func safeIntToInt32(v int) int32 {
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if v < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(v)
+}
 
 // tunnelTestPKI holds a self-signed CA and can issue client/server certificates.
 type tunnelTestPKI struct {
@@ -202,7 +214,7 @@ func startTunnelServer(t *testing.T, serverTLS *tls.Config, authorizer *Authoriz
 		t.Fatalf("port %d out of range", port)
 	}
 
-	ts := NewTunnelServer(logger, int32(port), serverTLS, authorizer, nil)
+	ts := NewTunnelServer(logger, safeIntToInt32(port), serverTLS, authorizer, nil)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -340,7 +352,11 @@ func TestTunnelServerRejectsNonConnect(t *testing.T) {
 		},
 	}
 
-	getReq, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, "https://"+tunnelAddr+"/", nil)
+	getURL := "https://" + tunnelAddr + "/"
+	if _, parseErr := url.ParseRequestURI(getURL); parseErr != nil {
+		t.Fatalf("invalid URL: %v", parseErr)
+	}
+	getReq, reqErr := http.NewRequestWithContext(context.Background(), http.MethodGet, getURL, nil)
 	if reqErr != nil {
 		t.Fatalf("failed to create GET request: %v", reqErr)
 	}
@@ -708,7 +724,7 @@ func startTunnelServerWithProvider(t *testing.T, serverTLS *tls.Config, authoriz
 		t.Fatalf("port %d out of range", port)
 	}
 
-	ts := NewTunnelServer(logger, int32(port), serverTLS, authorizer, tlsProvider)
+	ts := NewTunnelServer(logger, safeIntToInt32(port), serverTLS, authorizer, tlsProvider)
 
 	ctx, cancel := context.WithCancel(context.Background())
 

@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package service provides eBPF-based service map management for L4 load balancing.
 package service
 
 import (
@@ -27,19 +28,19 @@ var (
 	errNotAnIPv4Address = errors.New("not an IPv4 address")
 )
 
-// ServiceKey is the key for the BPF service lookup map. It identifies a
+// Key is the key for the BPF service lookup map. It identifies a
 // Kubernetes Service by its ClusterIP, port, and protocol. The struct
 // layout is carefully padded to match the C struct used in the BPF program.
-type ServiceKey struct {
+type Key struct {
 	IP    [4]byte
 	Port  uint16
 	Proto uint8
 	Pad   uint8
 }
 
-// ServiceValue is the value stored in the BPF service map. It contains
+// Value is the value stored in the BPF service map. It contains
 // metadata about the service's backends and mesh configuration.
-type ServiceValue struct {
+type Value struct {
 	// BackendCount is the number of backends in the associated backend array.
 	BackendCount uint32
 	// Flags contains bitfield flags for service properties.
@@ -67,18 +68,18 @@ const (
 	FlagMTLSRequired uint32 = 1 << 1
 )
 
-// NewServiceKey creates a ServiceKey from an IP string, port, and protocol.
+// NewKey creates a Key from an IP string, port, and protocol.
 // The protocol value uses standard IANA numbers (6=TCP, 17=UDP).
-func NewServiceKey(ip string, port uint16, proto uint8) (ServiceKey, error) {
+func NewKey(ip string, port uint16, proto uint8) (Key, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return ServiceKey{}, fmt.Errorf("%w: %s", errInvalidIPAddress, ip)
+		return Key{}, fmt.Errorf("%w: %s", errInvalidIPAddress, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return ServiceKey{}, fmt.Errorf("%w: %s", errNotAnIPv4Address, ip)
+		return Key{}, fmt.Errorf("%w: %s", errNotAnIPv4Address, ip)
 	}
-	key := ServiceKey{
+	key := Key{
 		Port:  port,
 		Proto: proto,
 	}

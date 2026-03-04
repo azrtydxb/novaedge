@@ -80,7 +80,7 @@ func TestSafeU32(t *testing.T) {
 
 func TestWithRequestContext(t *testing.T) {
 	ctx := context.Background()
-	req, _ := http.NewRequest("GET", "/test", nil)
+	req, _ := http.NewRequestWithContext(ctx, "GET", "/test", nil)
 	rc := &RequestContext{
 		Request: req,
 	}
@@ -112,7 +112,7 @@ func TestGetRequestContext_WrongType(t *testing.T) {
 }
 
 func TestRequestContext_Fields(t *testing.T) {
-	req, _ := http.NewRequest("POST", "/api/v1/test", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "/api/v1/test", nil)
 	req.Header.Set("Content-Type", "application/json")
 
 	rc := &RequestContext{

@@ -14,6 +14,7 @@ use std::hash::{Hash, Hasher};
 /// The top `subset_size` endpoints by score are returned.
 ///
 /// If `subset_size` is 0 or >= the number of candidates, returns all indices.
+#[allow(dead_code)]
 pub fn deterministic_subset(
     identity: &str,
     candidates: &[usize],

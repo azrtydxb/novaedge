@@ -71,6 +71,7 @@ struct PooledConn {
 /// call [`ConnectionPool::release`] when the connection is returned to
 /// the pool (or dropped).
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct PoolGuard {
     /// The target address this guard was acquired for.
     pub addr: SocketAddr,
@@ -264,6 +265,7 @@ impl ConnectionPool {
     }
 
     /// Get the number of active connections for the given address.
+    #[allow(dead_code)]
     pub fn active_count(&self, addr: &SocketAddr) -> u32 {
         // Use try_lock to avoid blocking; return 0 if lock is contended.
         match self.pools.try_lock() {

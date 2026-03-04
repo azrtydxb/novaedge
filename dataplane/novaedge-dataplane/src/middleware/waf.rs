@@ -230,7 +230,7 @@ impl WafEngine {
         // Check URI rules (with URL decoding).
         if let Some((ref set, ref indices)) = self.compiled.uri_set {
             let decoded = url_decode(&req.path);
-            for idx in set.matches(&decoded) {
+            if let Some(idx) = set.matches(&decoded).into_iter().next() {
                 let rule = &self.config.rules[indices[idx]];
                 return self.make_decision(rule);
             }
@@ -240,7 +240,7 @@ impl WafEngine {
         if let Some((ref set, ref indices)) = self.compiled.query_set {
             if let Some(qs) = req.path.split_once('?').map(|(_, q)| q) {
                 let decoded = url_decode(qs);
-                for idx in set.matches(&decoded) {
+                if let Some(idx) = set.matches(&decoded).into_iter().next() {
                     let rule = &self.config.rules[indices[idx]];
                     return self.make_decision(rule);
                 }
@@ -250,7 +250,7 @@ impl WafEngine {
         // Check header rules.
         if let Some((ref set, ref indices)) = self.compiled.headers_set {
             for (_, value) in &req.headers {
-                for idx in set.matches(value) {
+                if let Some(idx) = set.matches(value).into_iter().next() {
                     let rule = &self.config.rules[indices[idx]];
                     return self.make_decision(rule);
                 }
@@ -264,7 +264,7 @@ impl WafEngine {
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case("user-agent"))
             {
-                for idx in set.matches(ua) {
+                if let Some(idx) = set.matches(ua).into_iter().next() {
                     let rule = &self.config.rules[indices[idx]];
                     return self.make_decision(rule);
                 }
@@ -275,7 +275,7 @@ impl WafEngine {
         if let Some((ref set, ref indices)) = self.compiled.body_set {
             if let Some(body) = &req.body {
                 let body_str = String::from_utf8_lossy(body);
-                for idx in set.matches(&body_str) {
+                if let Some(idx) = set.matches(&body_str).into_iter().next() {
                     let rule = &self.config.rules[indices[idx]];
                     return self.make_decision(rule);
                 }

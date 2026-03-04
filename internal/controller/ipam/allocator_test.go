@@ -17,6 +17,7 @@ limitations under the License.
 package ipam
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -488,7 +489,7 @@ func TestAllocator_ConcurrentAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		go func(id int) {
 			for j := 0; j < 10; j++ {
-				vipName := string(rune(id*100 + j))
+				vipName := fmt.Sprintf("vip-%d-%d", id, j)
 				_, _ = a.Allocate("test-pool", vipName)
 			}
 			done <- true

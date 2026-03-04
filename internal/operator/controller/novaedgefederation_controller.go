@@ -250,7 +250,7 @@ func (r *NovaEdgeFederationReconciler) stopManager(key string) {
 type PeerTLSCredentials struct {
 	CACert     []byte
 	ClientCert []byte
-	ClientKey  []byte
+	ClientKey  []byte //nolint:gosec // G117: struct field name for TLS credential holder, not a hardcoded credential
 }
 
 // loadTLSCredentials loads TLS credentials from Kubernetes secrets

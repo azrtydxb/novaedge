@@ -201,209 +201,121 @@ func SnapshotNeedsSync(snapshot *pb.ConfigSnapshot, peerVectorClock map[string]i
 	return cmp >= 0
 }
 
+// namespacedResource is a common interface for resources with Namespace and Name fields.
+type namespacedResource interface {
+	proto.Message
+	GetNamespace() string
+	GetName() string
+}
+
+// resourceKey returns the "namespace/name" key for a resource.
+func resourceKey(r namespacedResource) string {
+	return r.GetNamespace() + "/" + r.GetName()
+}
+
+// detectDeletions appends DELETED changes for baseline resources not present in currentKeys.
+func detectDeletions[T namespacedResource](baseline []T, currentKeys map[string]bool, resourceType string, changes *[]*pb.ResourceChange) {
+	for _, r := range baseline {
+		if !currentKeys[resourceKey(r)] {
+			*changes = append(*changes, &pb.ResourceChange{
+				ChangeType:   pb.ChangeType_DELETED,
+				ResourceType: resourceType,
+				Namespace:    r.GetNamespace(),
+				Name:         r.GetName(),
+			})
+		}
+	}
+}
+
+// buildBaselineHashes builds a map of "ResourceType/ns/name" -> content hash from baseline resources.
+func buildBaselineHashes[T namespacedResource](resources []T, resourceType string, hashes map[string]string) {
+	for _, r := range resources {
+		data, _ := proto.Marshal(r)
+		hashes[resourceType+"/"+resourceKey(r)] = hashBytes(data)
+	}
+}
+
+// detectCreatesUpdates appends CREATED or UPDATED changes for current resources by comparing content hashes.
+func detectCreatesUpdates[T namespacedResource](currentMap map[string]T, resourceType string, baselineHashes map[string]string, vectorClock map[string]int64, changes *[]*pb.ResourceChange) {
+	for _, r := range currentMap {
+		data, _ := proto.Marshal(r)
+		hash := hashBytes(data)
+		lookupKey := resourceType + "/" + resourceKey(r)
+		changeType := pb.ChangeType_CREATED
+		if oldHash, existed := baselineHashes[lookupKey]; existed {
+			if oldHash == hash {
+				continue
+			}
+			changeType = pb.ChangeType_UPDATED
+		}
+		*changes = append(*changes, &pb.ResourceChange{
+			ChangeType:   changeType,
+			ResourceType: resourceType,
+			Namespace:    r.GetNamespace(),
+			Name:         r.GetName(),
+			ResourceData: data,
+			ResourceHash: hash,
+			VectorClock:  vectorClock,
+		})
+	}
+}
+
+// buildResourceMap builds a map of "ns/name" -> resource from a slice.
+func buildResourceMap[T namespacedResource](resources []T) map[string]T {
+	m := make(map[string]T, len(resources))
+	for _, r := range resources {
+		m[resourceKey(r)] = r
+	}
+	return m
+}
+
+// keysFromMap returns the set of keys from a map as a bool map.
+func keysFromMap[T any](m map[string]T) map[string]bool {
+	keys := make(map[string]bool, len(m))
+	for k := range m {
+		keys[k] = true
+	}
+	return keys
+}
+
 // ExtractResourceChanges extracts changed resources from a snapshot compared to a baseline
 func ExtractResourceChanges(current, baseline *pb.ConfigSnapshot) []*pb.ResourceChange {
 	changes := make([]*pb.ResourceChange, 0, len(current.Gateways)+len(current.Routes)+len(current.Clusters)+len(current.Policies))
 
 	// Build maps of current resources
-	currentGateways := make(map[string]*pb.Gateway)
-	for _, gw := range current.Gateways {
-		key := gw.Namespace + "/" + gw.Name
-		currentGateways[key] = gw
-	}
+	currentGateways := buildResourceMap(current.Gateways)
+	currentRoutes := buildResourceMap(current.Routes)
+	currentClusters := buildResourceMap(current.Clusters)
+	currentPolicies := buildResourceMap(current.Policies)
 
-	currentRoutes := make(map[string]*pb.Route)
-	for _, r := range current.Routes {
-		key := r.Namespace + "/" + r.Name
-		currentRoutes[key] = r
-	}
-
-	currentClusters := make(map[string]*pb.Cluster)
-	for _, c := range current.Clusters {
-		key := c.Namespace + "/" + c.Name
-		currentClusters[key] = c
-	}
-
-	currentPolicies := make(map[string]*pb.Policy)
-	for _, p := range current.Policies {
-		key := p.Namespace + "/" + p.Name
-		currentPolicies[key] = p
-	}
-
-	// Compare with baseline if provided
+	// Detect deletions against baseline
 	if baseline != nil {
-		// Check for deleted gateways
-		for _, gw := range baseline.Gateways {
-			key := gw.Namespace + "/" + gw.Name
-			if _, exists := currentGateways[key]; !exists {
-				changes = append(changes, &pb.ResourceChange{
-					ChangeType:   pb.ChangeType_DELETED,
-					ResourceType: "ProxyGateway",
-					Namespace:    gw.Namespace,
-					Name:         gw.Name,
-				})
-			}
-		}
-
-		// Check for deleted routes
-		for _, r := range baseline.Routes {
-			key := r.Namespace + "/" + r.Name
-			if _, exists := currentRoutes[key]; !exists {
-				changes = append(changes, &pb.ResourceChange{
-					ChangeType:   pb.ChangeType_DELETED,
-					ResourceType: "ProxyRoute",
-					Namespace:    r.Namespace,
-					Name:         r.Name,
-				})
-			}
-		}
-
-		// Check for deleted clusters
-		for _, c := range baseline.Clusters {
-			key := c.Namespace + "/" + c.Name
-			if _, exists := currentClusters[key]; !exists {
-				changes = append(changes, &pb.ResourceChange{
-					ChangeType:   pb.ChangeType_DELETED,
-					ResourceType: "ProxyBackend",
-					Namespace:    c.Namespace,
-					Name:         c.Name,
-				})
-			}
-		}
-
-		// Check for deleted policies
-		for _, p := range baseline.Policies {
-			key := p.Namespace + "/" + p.Name
-			if _, exists := currentPolicies[key]; !exists {
-				changes = append(changes, &pb.ResourceChange{
-					ChangeType:   pb.ChangeType_DELETED,
-					ResourceType: "ProxyPolicy",
-					Namespace:    p.Namespace,
-					Name:         p.Name,
-				})
-			}
-		}
+		detectDeletions(baseline.Gateways, keysFromMap(currentGateways), "ProxyGateway", &changes)
+		detectDeletions(baseline.Routes, keysFromMap(currentRoutes), "ProxyRoute", &changes)
+		detectDeletions(baseline.Clusters, keysFromMap(currentClusters), "ProxyBackend", &changes)
+		detectDeletions(baseline.Policies, keysFromMap(currentPolicies), "ProxyPolicy", &changes)
 	}
 
-	// Extract vector clock (may be nil if metadata not set)
+	// Extract vector clock
 	var vectorClock map[string]int64
 	if current.FederationMetadata != nil {
 		vectorClock = current.FederationMetadata.VectorClock
 	}
 
-	// Build baseline content hashes for comparison
-	baselineHashes := make(map[string]string) // key -> content hash
+	// Build baseline content hashes
+	baselineHashes := make(map[string]string)
 	if baseline != nil {
-		for _, gw := range baseline.Gateways {
-			key := gw.Namespace + "/" + gw.Name
-			data, _ := proto.Marshal(gw)
-			baselineHashes["ProxyGateway/"+key] = hashBytes(data)
-		}
-		for _, r := range baseline.Routes {
-			key := r.Namespace + "/" + r.Name
-			data, _ := proto.Marshal(r)
-			baselineHashes["ProxyRoute/"+key] = hashBytes(data)
-		}
-		for _, c := range baseline.Clusters {
-			key := c.Namespace + "/" + c.Name
-			data, _ := proto.Marshal(c)
-			baselineHashes["ProxyBackend/"+key] = hashBytes(data)
-		}
-		for _, p := range baseline.Policies {
-			key := p.Namespace + "/" + p.Name
-			data, _ := proto.Marshal(p)
-			baselineHashes["ProxyPolicy/"+key] = hashBytes(data)
-		}
+		buildBaselineHashes(baseline.Gateways, "ProxyGateway", baselineHashes)
+		buildBaselineHashes(baseline.Routes, "ProxyRoute", baselineHashes)
+		buildBaselineHashes(baseline.Clusters, "ProxyBackend", baselineHashes)
+		buildBaselineHashes(baseline.Policies, "ProxyPolicy", baselineHashes)
 	}
 
-	// Detect created/updated resources by comparing content hashes
-	for _, gw := range currentGateways {
-		data, _ := proto.Marshal(gw)
-		hash := hashBytes(data)
-		lookupKey := "ProxyGateway/" + gw.Namespace + "/" + gw.Name
-		changeType := pb.ChangeType_CREATED
-		if oldHash, existed := baselineHashes[lookupKey]; existed {
-			if oldHash == hash {
-				continue // unchanged, skip
-			}
-			changeType = pb.ChangeType_UPDATED
-		}
-		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   changeType,
-			ResourceType: "ProxyGateway",
-			Namespace:    gw.Namespace,
-			Name:         gw.Name,
-			ResourceData: data,
-			ResourceHash: hash,
-			VectorClock:  vectorClock,
-		})
-	}
-
-	for _, r := range currentRoutes {
-		data, _ := proto.Marshal(r)
-		hash := hashBytes(data)
-		lookupKey := "ProxyRoute/" + r.Namespace + "/" + r.Name
-		changeType := pb.ChangeType_CREATED
-		if oldHash, existed := baselineHashes[lookupKey]; existed {
-			if oldHash == hash {
-				continue // unchanged, skip
-			}
-			changeType = pb.ChangeType_UPDATED
-		}
-		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   changeType,
-			ResourceType: "ProxyRoute",
-			Namespace:    r.Namespace,
-			Name:         r.Name,
-			ResourceData: data,
-			ResourceHash: hash,
-			VectorClock:  vectorClock,
-		})
-	}
-
-	for _, c := range currentClusters {
-		data, _ := proto.Marshal(c)
-		hash := hashBytes(data)
-		lookupKey := "ProxyBackend/" + c.Namespace + "/" + c.Name
-		changeType := pb.ChangeType_CREATED
-		if oldHash, existed := baselineHashes[lookupKey]; existed {
-			if oldHash == hash {
-				continue // unchanged, skip
-			}
-			changeType = pb.ChangeType_UPDATED
-		}
-		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   changeType,
-			ResourceType: "ProxyBackend",
-			Namespace:    c.Namespace,
-			Name:         c.Name,
-			ResourceData: data,
-			ResourceHash: hash,
-			VectorClock:  vectorClock,
-		})
-	}
-
-	for _, p := range currentPolicies {
-		data, _ := proto.Marshal(p)
-		hash := hashBytes(data)
-		lookupKey := "ProxyPolicy/" + p.Namespace + "/" + p.Name
-		changeType := pb.ChangeType_CREATED
-		if oldHash, existed := baselineHashes[lookupKey]; existed {
-			if oldHash == hash {
-				continue // unchanged, skip
-			}
-			changeType = pb.ChangeType_UPDATED
-		}
-		changes = append(changes, &pb.ResourceChange{
-			ChangeType:   changeType,
-			ResourceType: "ProxyPolicy",
-			Namespace:    p.Namespace,
-			Name:         p.Name,
-			ResourceData: data,
-			ResourceHash: hash,
-			VectorClock:  vectorClock,
-		})
-	}
+	// Detect creates/updates
+	detectCreatesUpdates(currentGateways, "ProxyGateway", baselineHashes, vectorClock, &changes)
+	detectCreatesUpdates(currentRoutes, "ProxyRoute", baselineHashes, vectorClock, &changes)
+	detectCreatesUpdates(currentClusters, "ProxyBackend", baselineHashes, vectorClock, &changes)
+	detectCreatesUpdates(currentPolicies, "ProxyPolicy", baselineHashes, vectorClock, &changes)
 
 	return changes
 }

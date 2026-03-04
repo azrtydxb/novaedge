@@ -375,6 +375,9 @@ func (s *Server) handleResourceChange(_ context.Context, peerName string, change
 
 	// Apply the change
 	switch change.ChangeType {
+	case pb.ChangeType_CHANGE_TYPE_UNSPECIFIED:
+		// Ignore unspecified change types
+		return nil
 	case pb.ChangeType_CREATED, pb.ChangeType_UPDATED:
 		resource := &TrackedResource{
 			Key:             key,

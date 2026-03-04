@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package sockmap provides eBPF SOCKMAP-based socket redirection for same-node traffic.
 package sockmap
 
 import (

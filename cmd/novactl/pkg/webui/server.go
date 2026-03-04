@@ -1305,6 +1305,19 @@ type DashboardMetrics struct {
 	Timestamp int64           `json:"timestamp"`
 }
 
+// queryScalarMetric executes a Prometheus query and returns the first scalar result.
+func (s *Server) queryScalarMetric(ctx context.Context, query string) *float64 {
+	result, err := s.prometheusClient.Query(ctx, query)
+	if err != nil || len(result.Data.Result) == 0 {
+		return nil
+	}
+	value, err := prometheus.ValueAsFloat(result.Data.Result[0])
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
 // handleMetricsDashboard handles GET /api/v1/metrics/dashboard
 func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -1322,80 +1335,38 @@ func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) 
 		Timestamp: time.Now().Unix(),
 	}
 
-	// Query request rate (use novaedge_http_requests_total metric)
-	if result, err := s.prometheusClient.Query(ctx, `sum(rate(novaedge_http_requests_total[5m]))`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.RequestRate = &value
-		}
-	}
-
-	// Query active connections (use novaedge_backend_active_connections or novaedge_http_requests_in_flight)
-	if result, err := s.prometheusClient.Query(ctx, `sum(novaedge_backend_active_connections) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.ActiveConnections = &value
-		}
-	}
-
-	// Query error rate (use novaedge_http_requests_total with 5xx status)
-	if result, err := s.prometheusClient.Query(ctx, `sum(rate(novaedge_http_requests_total{status=~"5.."}[5m])) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.ErrorRate = &value
-		}
-	}
-
-	// Query average latency (use novaedge_http_request_duration_seconds histogram)
-	if result, err := s.prometheusClient.Query(ctx, `histogram_quantile(0.5, sum(rate(novaedge_http_request_duration_seconds_bucket[5m])) by (le)) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.AvgLatency = &value
-		}
-	}
-
-	// Query VIP failovers (no change, metric name is correct)
-	if result, err := s.prometheusClient.Query(ctx, `sum(increase(novaedge_vip_failovers_total[24h])) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.VIPFailovers = &value
-		}
-	}
-
-	// Query healthy agents (use actual Prometheus job name)
-	if result, err := s.prometheusClient.Query(ctx, `count(up{job="novaedge-agent-metrics"} == 1) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.HealthyAgents = &value
-		}
-	}
-
-	// Query total agents (use actual Prometheus job name)
-	if result, err := s.prometheusClient.Query(ctx, `count(up{job="novaedge-agent-metrics"}) or vector(0)`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.TotalAgents = &value
-		}
-	}
-
-	// Query total CPU usage (rate of process_cpu_seconds_total * 100 for percentage)
-	if result, err := s.prometheusClient.Query(ctx, `sum(rate(process_cpu_seconds_total{job=~"novaedge-agent-metrics|novaedge-controller"}[1m])) * 100`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.TotalCPUUsage = &value
-		}
-	}
-
-	// Query total memory usage (resident memory)
-	if result, err := s.prometheusClient.Query(ctx, `sum(process_resident_memory_bytes{job=~"novaedge-agent-metrics|novaedge-controller"})`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.TotalMemoryUsage = &value
-		}
-	}
-
-	// Query total goroutines
-	if result, err := s.prometheusClient.Query(ctx, `sum(go_goroutines{job=~"novaedge-agent-metrics|novaedge-controller"})`); err == nil && len(result.Data.Result) > 0 {
-		if value, err := prometheus.ValueAsFloat(result.Data.Result[0]); err == nil {
-			metrics.TotalGoroutines = &value
-		}
-	}
+	metrics.RequestRate = s.queryScalarMetric(ctx, `sum(rate(novaedge_http_requests_total[5m]))`)
+	metrics.ActiveConnections = s.queryScalarMetric(ctx, `sum(novaedge_backend_active_connections) or vector(0)`)
+	metrics.ErrorRate = s.queryScalarMetric(ctx, `sum(rate(novaedge_http_requests_total{status=~"5.."}[5m])) or vector(0)`)
+	metrics.AvgLatency = s.queryScalarMetric(ctx, `histogram_quantile(0.5, sum(rate(novaedge_http_request_duration_seconds_bucket[5m])) by (le)) or vector(0)`)
+	metrics.VIPFailovers = s.queryScalarMetric(ctx, `sum(increase(novaedge_vip_failovers_total[24h])) or vector(0)`)
+	metrics.HealthyAgents = s.queryScalarMetric(ctx, `count(up{job="novaedge-agent-metrics"} == 1) or vector(0)`)
+	metrics.TotalAgents = s.queryScalarMetric(ctx, `count(up{job="novaedge-agent-metrics"}) or vector(0)`)
+	metrics.TotalCPUUsage = s.queryScalarMetric(ctx, `sum(rate(process_cpu_seconds_total{job=~"novaedge-agent-metrics|novaedge-controller"}[1m])) * 100`)
+	metrics.TotalMemoryUsage = s.queryScalarMetric(ctx, `sum(process_resident_memory_bytes{job=~"novaedge-agent-metrics|novaedge-controller"})`)
+	metrics.TotalGoroutines = s.queryScalarMetric(ctx, `sum(go_goroutines{job=~"novaedge-agent-metrics|novaedge-controller"})`)
 
 	// Query per-worker metrics
 	metrics.Workers = s.queryWorkerMetrics(ctx)
 
 	writeJSON(w, http.StatusOK, metrics)
+}
+
+// populateWorkerMetric queries a Prometheus metric and populates the given field for each worker.
+func (s *Server) populateWorkerMetric(ctx context.Context, workerMap map[string]*WorkerMetrics, query string, setter func(*WorkerMetrics, float64)) {
+	result, err := s.prometheusClient.Query(ctx, query)
+	if err != nil {
+		return
+	}
+	for _, r := range result.Data.Result {
+		if instance, ok := r.Metric["instance"]; ok {
+			if w, exists := workerMap[instance]; exists {
+				if val, valErr := prometheus.ValueAsFloat(r); valErr == nil {
+					setter(w, val)
+				}
+			}
+		}
+	}
 }
 
 // queryWorkerMetrics queries per-worker metrics from Prometheus
@@ -1420,70 +1391,17 @@ func (s *Server) queryWorkerMetrics(ctx context.Context) []WorkerMetrics {
 		}
 	}
 
-	// Query CPU usage per instance
-	if result, err := s.prometheusClient.Query(ctx, `rate(process_cpu_seconds_total{job=~"novaedge-agent-metrics|novaedge-controller"}[1m]) * 100`); err == nil {
-		for _, r := range result.Data.Result {
-			if instance, ok := r.Metric["instance"]; ok {
-				if w, exists := workerMap[instance]; exists {
-					if val, err := prometheus.ValueAsFloat(r); err == nil {
-						w.CPUUsage = val
-					}
-				}
-			}
-		}
-	}
-
-	// Query memory usage per instance
-	if result, err := s.prometheusClient.Query(ctx, `process_resident_memory_bytes{job=~"novaedge-agent-metrics|novaedge-controller"}`); err == nil {
-		for _, r := range result.Data.Result {
-			if instance, ok := r.Metric["instance"]; ok {
-				if w, exists := workerMap[instance]; exists {
-					if val, err := prometheus.ValueAsFloat(r); err == nil {
-						w.MemoryUsage = val
-					}
-				}
-			}
-		}
-	}
-
-	// Query goroutines per instance
-	if result, err := s.prometheusClient.Query(ctx, `go_goroutines{job=~"novaedge-agent-metrics|novaedge-controller"}`); err == nil {
-		for _, r := range result.Data.Result {
-			if instance, ok := r.Metric["instance"]; ok {
-				if w, exists := workerMap[instance]; exists {
-					if val, err := prometheus.ValueAsFloat(r); err == nil {
-						w.Goroutines = val
-					}
-				}
-			}
-		}
-	}
-
-	// Query uptime per instance (current time - start time)
-	if result, err := s.prometheusClient.Query(ctx, `time() - process_start_time_seconds{job=~"novaedge-agent-metrics|novaedge-controller"}`); err == nil {
-		for _, r := range result.Data.Result {
-			if instance, ok := r.Metric["instance"]; ok {
-				if w, exists := workerMap[instance]; exists {
-					if val, err := prometheus.ValueAsFloat(r); err == nil {
-						w.Uptime = val
-					}
-				}
-			}
-		}
-	}
-
-	// Query requests rate per instance
-	if result, err := s.prometheusClient.Query(ctx, `sum by (instance) (rate(novaedge_http_requests_total{job=~"novaedge-agent-metrics|novaedge-controller"}[5m]))`); err == nil {
-		for _, r := range result.Data.Result {
-			if instance, ok := r.Metric["instance"]; ok {
-				if w, exists := workerMap[instance]; exists {
-					if val, err := prometheus.ValueAsFloat(r); err == nil {
-						w.RequestsRate = val
-					}
-				}
-			}
-		}
-	}
+	const jobFilter = `{job=~"novaedge-agent-metrics|novaedge-controller"}`
+	s.populateWorkerMetric(ctx, workerMap, `rate(process_cpu_seconds_total`+jobFilter+`[1m]) * 100`,
+		func(w *WorkerMetrics, v float64) { w.CPUUsage = v })
+	s.populateWorkerMetric(ctx, workerMap, `process_resident_memory_bytes`+jobFilter,
+		func(w *WorkerMetrics, v float64) { w.MemoryUsage = v })
+	s.populateWorkerMetric(ctx, workerMap, `go_goroutines`+jobFilter,
+		func(w *WorkerMetrics, v float64) { w.Goroutines = v })
+	s.populateWorkerMetric(ctx, workerMap, `time() - process_start_time_seconds`+jobFilter,
+		func(w *WorkerMetrics, v float64) { w.Uptime = v })
+	s.populateWorkerMetric(ctx, workerMap, `sum by (instance) (rate(novaedge_http_requests_total`+jobFilter+`[5m]))`,
+		func(w *WorkerMetrics, v float64) { w.RequestsRate = v })
 
 	// Convert map to slice
 	for _, w := range workerMap {
@@ -1565,7 +1483,7 @@ func (s *Server) handleMetricsQuery(w http.ResponseWriter, r *http.Request) {
 // loginRequest represents the JSON body for login.
 type loginRequest struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password"` //nolint:gosec // G117: struct field name for login request, not a hardcoded credential
 }
 
 // handleAuthLogin handles POST /api/v1/auth/login

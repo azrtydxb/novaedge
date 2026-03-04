@@ -168,7 +168,7 @@ func (m *Manager) UpdateTable(backends []Backend) error {
 	// Populate the standby table.
 	for i, backendID := range table {
 		key := uint32(i)
-		val := MaglevEntry{BackendID: backendID}
+		val := Entry{BackendID: backendID}
 		if err := standbyMap.Update(key, val, ebpf.UpdateAny); err != nil {
 			novaebpf.RecordMapOp("maglev_inner", "update", "error")
 			return fmt.Errorf("writing Maglev entry %d: %w", i, err)

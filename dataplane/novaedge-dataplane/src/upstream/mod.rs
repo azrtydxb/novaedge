@@ -3,6 +3,7 @@
 //! Provides connection pooling, circuit breaking, and outlier detection
 //! for backend connections.
 
+#[allow(dead_code)]
 pub mod adaptive;
 pub mod circuit_breaker;
 pub mod outlier;

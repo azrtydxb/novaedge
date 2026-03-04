@@ -33,6 +33,14 @@ var (
 	errNotIPv4          = errors.New("not IPv4")
 )
 
+// safeIntToUint32 converts int to uint32 with bounds checking.
+func safeIntToUint32(v int) uint32 {
+	if v < 0 {
+		return 0
+	}
+	return uint32(v)
+}
+
 // LPMTrieKey4 is the key format for a BPF_MAP_TYPE_LPM_TRIE with IPv4 prefixes.
 type LPMTrieKey4 struct {
 	Prefixlen uint32
@@ -57,7 +65,7 @@ func ParseCIDRToLPMKey4(cidr string) (LPMTrieKey4, error) {
 	}
 	ones, _ := ipNet.Mask.Size()
 	key := LPMTrieKey4{
-		Prefixlen: uint32(ones),
+		Prefixlen: safeIntToUint32(ones),
 	}
 	copy(key.Addr[:], ip4)
 	return key, nil
@@ -75,7 +83,7 @@ func ParseCIDRToLPMKey6(cidr string) (LPMTrieKey6, error) {
 	}
 	ones, _ := ipNet.Mask.Size()
 	key := LPMTrieKey6{
-		Prefixlen: uint32(ones),
+		Prefixlen: safeIntToUint32(ones),
 	}
 	copy(key.Addr[:], ip6)
 	return key, nil

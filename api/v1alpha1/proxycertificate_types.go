@@ -330,6 +330,3 @@ type ProxyCertificateList struct {
 	Items           []ProxyCertificate `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyCertificate{}, &ProxyCertificateList{})
-}

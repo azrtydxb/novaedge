@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -115,8 +116,11 @@ func (p *CloudflareProvider) CreateTXTRecord(ctx context.Context, fqdn, value st
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/zones/%s/dns_records", cloudflareAPIBase, zoneID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
+	apiURL := fmt.Sprintf("%s/zones/%s/dns_records", cloudflareAPIBase, zoneID)
+	if _, parseErr := url.ParseRequestURI(apiURL); parseErr != nil {
+		return fmt.Errorf("invalid cloudflare API URL: %w", parseErr)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -167,8 +171,11 @@ func (p *CloudflareProvider) DeleteTXTRecord(ctx context.Context, fqdn, value st
 	}
 
 	// Delete the record
-	url := fmt.Sprintf("%s/zones/%s/dns_records/%s", cloudflareAPIBase, zoneID, recordID)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	deleteURL := fmt.Sprintf("%s/zones/%s/dns_records/%s", cloudflareAPIBase, zoneID, recordID)
+	if _, parseErr := url.ParseRequestURI(deleteURL); parseErr != nil {
+		return fmt.Errorf("invalid cloudflare API URL: %w", parseErr)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, deleteURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -205,8 +212,8 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 	for i := range len(parts) - 1 {
 		zoneName := strings.Join(parts[i:], ".")
 
-		url := fmt.Sprintf("%s/zones?name=%s", cloudflareAPIBase, zoneName)
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		zoneURL := fmt.Sprintf("%s/zones?name=%s", cloudflareAPIBase, url.QueryEscape(zoneName))
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, zoneURL, nil)
 		if err != nil {
 			return "", fmt.Errorf("failed to create request: %w", err)
 		}
@@ -244,8 +251,8 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 
 // findRecord finds a specific TXT record in Cloudflare.
 func (p *CloudflareProvider) findRecord(ctx context.Context, zoneID, name, content string) (string, error) {
-	url := fmt.Sprintf("%s/zones/%s/dns_records?type=TXT&name=%s", cloudflareAPIBase, zoneID, name)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	recordURL := fmt.Sprintf("%s/zones/%s/dns_records?type=TXT&name=%s", cloudflareAPIBase, zoneID, url.QueryEscape(name))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, recordURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
 	}

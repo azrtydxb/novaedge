@@ -123,6 +123,3 @@ type ProxyWANPolicyList struct {
 	Items           []ProxyWANPolicy `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyWANPolicy{}, &ProxyWANPolicyList{})
-}

@@ -4,6 +4,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
@@ -58,10 +59,11 @@ debugging routing, viewing metrics, and inspecting agents.`,
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute() error {
+	setupOnce()
 	return rootCmd.Execute()
 }
 
-func init() {
+var setupOnce = sync.OnceFunc(func() {
 	// Global flags
 	home := os.Getenv("HOME")
 	if home == "" {
@@ -106,4 +108,4 @@ func init() {
 			fmt.Printf("novactl %s (commit: %s, built: %s)\n", cliVersion, cliCommit, cliDate)
 		},
 	})
-}
+})

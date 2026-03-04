@@ -28,6 +28,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sync"
@@ -389,9 +390,13 @@ func (m *Manager) healthCheckTick(ctx context.Context) {
 // falls back to treating both 200 and 401 as healthy (any HTTP response means
 // the API server is accepting connections).
 func (m *Manager) checkAPIServerHealth(ctx context.Context) bool {
-	url := fmt.Sprintf("https://localhost:%d%s", m.config.APIPort, livezPath)
+	healthURL := fmt.Sprintf("https://localhost:%d%s", m.config.APIPort, livezPath)
+	if _, parseErr := url.ParseRequestURI(healthURL); parseErr != nil {
+		m.logger.Error("Invalid health check URL", zap.Error(parseErr))
+		return false
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 	if err != nil {
 		m.logger.Error("Failed to create health check request", zap.Error(err))
 		return false

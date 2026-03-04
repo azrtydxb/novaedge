@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -995,8 +996,11 @@ func TestGetSAToken_MissingFile(t *testing.T) {
 // This allows testing the health check logic against a httptest.Server.
 // It mirrors the logic in checkAPIServerHealth: attach token if available,
 // accept 200 always, accept 401 only when no token is present.
-func checkHealthAgainstURL(m *Manager, url string) bool {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+func checkHealthAgainstURL(m *Manager, targetURL string) bool {
+	if _, parseErr := url.ParseRequestURI(targetURL); parseErr != nil {
+		return false
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, targetURL, nil)
 	if err != nil {
 		return false
 	}

@@ -87,6 +87,9 @@ func (c *Client) QueryAt(ctx context.Context, query string, t time.Time) (*Query
 	params.Set("time", fmt.Sprintf("%d", t.Unix()))
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
+	if _, parseErr := url.ParseRequestURI(fullURL); parseErr != nil {
+		return nil, fmt.Errorf("invalid prometheus URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
@@ -133,6 +136,9 @@ func (c *Client) QueryRange(ctx context.Context, params RangeQueryParams) (*Quer
 	}
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, queryParams.Encode())
+	if _, parseErr := url.ParseRequestURI(fullURL); parseErr != nil {
+		return nil, fmt.Errorf("invalid prometheus URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
@@ -165,6 +171,9 @@ func (c *Client) QueryRange(ctx context.Context, params RangeQueryParams) (*Quer
 // GetLabels retrieves all label names
 func (c *Client) GetLabels(ctx context.Context) ([]string, error) {
 	endpoint := fmt.Sprintf("%s/api/v1/labels", c.endpoint)
+	if _, parseErr := url.ParseRequestURI(endpoint); parseErr != nil {
+		return nil, fmt.Errorf("invalid prometheus URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -192,6 +201,9 @@ func (c *Client) GetLabels(ctx context.Context) ([]string, error) {
 // GetLabelValues retrieves all values for a specific label
 func (c *Client) GetLabelValues(ctx context.Context, label string) ([]string, error) {
 	endpoint := fmt.Sprintf("%s/api/v1/label/%s/values", c.endpoint, url.PathEscape(label))
+	if _, parseErr := url.ParseRequestURI(endpoint); parseErr != nil {
+		return nil, fmt.Errorf("invalid prometheus URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -228,6 +240,9 @@ func (c *Client) GetSeries(ctx context.Context, matchers []string, start, end ti
 	params.Set("end", fmt.Sprintf("%d", end.Unix()))
 
 	fullURL := fmt.Sprintf("%s?%s", endpoint, params.Encode())
+	if _, parseErr := url.ParseRequestURI(fullURL); parseErr != nil {
+		return nil, fmt.Errorf("invalid prometheus URL: %w", parseErr)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {

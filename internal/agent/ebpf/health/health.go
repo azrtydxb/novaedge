@@ -31,11 +31,11 @@ import (
 
 const subsystem = "health"
 
-// HealthMonitor manages an eBPF per-CPU hash map that tracks passive
+// Monitor manages an eBPF per-CPU hash map that tracks passive
 // health signals for backend endpoints. The BPF program (attached to
 // network hooks) records connection outcomes per backend; this Go-side
 // monitor periodically reads and aggregates the counters.
-type HealthMonitor struct {
+type Monitor struct {
 	logger     *zap.Logger
 	mu         sync.RWMutex
 	healthMap  *ebpf.Map // PERCPU_HASH: BackendKey -> []BackendHealth
@@ -45,9 +45,9 @@ type HealthMonitor struct {
 	pollerWg     sync.WaitGroup
 }
 
-// NewHealthMonitor creates a new eBPF health signal monitor with the
+// NewMonitor creates a new eBPF health signal monitor with the
 // given maximum number of tracked backends.
-func NewHealthMonitor(logger *zap.Logger, maxBackends uint32) (*HealthMonitor, error) {
+func NewMonitor(logger *zap.Logger, maxBackends uint32) (*Monitor, error) {
 	if maxBackends == 0 {
 		maxBackends = 4096
 	}
@@ -67,7 +67,7 @@ func NewHealthMonitor(logger *zap.Logger, maxBackends uint32) (*HealthMonitor, e
 	logger.Info("eBPF health monitor map created",
 		zap.Uint32("max_backends", maxBackends))
 
-	return &HealthMonitor{
+	return &Monitor{
 		logger:     logger.With(zap.String("component", "ebpf-health")),
 		healthMap:  healthMap,
 		aggregator: NewAggregator(),
@@ -77,7 +77,7 @@ func NewHealthMonitor(logger *zap.Logger, maxBackends uint32) (*HealthMonitor, e
 // Poll reads all entries from the per-CPU health map, aggregates
 // counters across CPUs, and returns the node-wide health state with
 // deltas from the previous poll.
-func (hm *HealthMonitor) Poll() (map[BackendKey]AggregatedHealth, error) {
+func (hm *Monitor) Poll() (map[BackendKey]AggregatedHealth, error) {
 	hm.mu.RLock()
 	defer hm.mu.RUnlock()
 
@@ -106,7 +106,7 @@ func (hm *HealthMonitor) Poll() (map[BackendKey]AggregatedHealth, error) {
 // the BPF health map and invokes the callback with aggregated health
 // data. The poller runs until Close() is called or the context is
 // cancelled.
-func (hm *HealthMonitor) StartPoller(ctx context.Context, interval time.Duration, callback func(map[BackendKey]AggregatedHealth)) {
+func (hm *Monitor) StartPoller(ctx context.Context, interval time.Duration, callback func(map[BackendKey]AggregatedHealth)) {
 	ctx, cancel := context.WithCancel(ctx)
 	hm.cancelPoller = cancel
 
@@ -141,14 +141,14 @@ func (hm *HealthMonitor) StartPoller(ctx context.Context, interval time.Duration
 
 // IsActive returns true if the health monitor has been successfully
 // initialized and its map is available.
-func (hm *HealthMonitor) IsActive() bool {
+func (hm *Monitor) IsActive() bool {
 	hm.mu.RLock()
 	defer hm.mu.RUnlock()
 	return hm.healthMap != nil
 }
 
 // Close stops the poller and releases BPF map resources.
-func (hm *HealthMonitor) Close() error {
+func (hm *Monitor) Close() error {
 	if hm.cancelPoller != nil {
 		hm.cancelPoller()
 		hm.pollerWg.Wait()

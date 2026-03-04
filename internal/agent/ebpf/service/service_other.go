@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package service provides eBPF-based service map management for L4 load balancing.
 package service
 
 import (
@@ -28,31 +29,31 @@ var (
 	errEBPFServiceMapsAreOnlySupportedOnLinux = errors.New("eBPF service maps are only supported on Linux")
 )
 
-// ServiceMap is a stub on non-Linux platforms where eBPF is not available.
-type ServiceMap struct{}
+// Map is a stub on non-Linux platforms where eBPF is not available.
+type Map struct{}
 
-// NewServiceMap returns an error on non-Linux platforms since eBPF service
+// NewMap returns an error on non-Linux platforms since eBPF service
 // maps require Linux kernel support.
-func NewServiceMap(_ *zap.Logger, _, _ uint32) (*ServiceMap, error) {
+func NewMap(_ *zap.Logger, _, _ uint32) (*Map, error) {
 	return nil, errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // UpsertService returns an error on non-Linux platforms.
-func (sm *ServiceMap) UpsertService(_ ServiceKey, _ []BackendInfo) error {
+func (sm *Map) UpsertService(_ Key, _ []BackendInfo) error {
 	return errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // DeleteService returns an error on non-Linux platforms.
-func (sm *ServiceMap) DeleteService(_ ServiceKey) error {
+func (sm *Map) DeleteService(_ Key) error {
 	return errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // Reconcile returns an error on non-Linux platforms.
-func (sm *ServiceMap) Reconcile(_ map[ServiceKey][]BackendInfo) error {
+func (sm *Map) Reconcile(_ map[Key][]BackendInfo) error {
 	return errEBPFServiceMapsAreOnlySupportedOnLinux
 }
 
 // Close is a no-op on non-Linux platforms.
-func (sm *ServiceMap) Close() error {
+func (sm *Map) Close() error {
 	return nil
 }

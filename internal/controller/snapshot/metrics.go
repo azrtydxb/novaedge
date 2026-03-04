@@ -95,8 +95,11 @@ var (
 	)
 )
 
-func init() {
-	// Register metrics with controller-runtime's registry
+// registerMetrics registers all snapshot metrics with the controller-runtime registry.
+// Invoked via package-level variable initialization to avoid init().
+var _ = registerMetrics()
+
+func registerMetrics() bool {
 	metrics.Registry.MustRegister(
 		SnapshotBuildDuration,
 		SnapshotSize,
@@ -107,6 +110,7 @@ func init() {
 		AgentStatus,
 		CachedSnapshots,
 	)
+	return true
 }
 
 // RecordSnapshotBuild records metrics for a snapshot build

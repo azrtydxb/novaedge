@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 /// Outlier detection configuration.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct OutlierConfig {
     /// Number of consecutive errors before ejecting a backend.
     pub consecutive_errors: u32,
@@ -122,6 +123,7 @@ impl OutlierDetector {
     /// deviations below the mean. Only applies when the cluster has at least
     /// `sr_min_hosts` hosts and each host has at least `sr_min_requests`.
     /// Resets request/error counters after the sweep.
+    #[allow(dead_code)]
     pub fn sweep_success_rate(&self) {
         let mut stats = self.stats.write().unwrap();
         let now = Instant::now();
@@ -184,6 +186,7 @@ impl OutlierDetector {
     }
 
     /// Get the number of currently ejected backends.
+    #[allow(dead_code)]
     pub fn ejected_count(&self) -> usize {
         let stats = self.stats.read().unwrap();
         let now = Instant::now();

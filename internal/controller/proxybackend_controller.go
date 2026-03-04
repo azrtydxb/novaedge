@@ -58,90 +58,105 @@ func (r *ProxyBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	)
 }
 
+// validateServiceRef validates the backend's service reference exists and the port is valid.
+func (r *ProxyBackendReconciler) validateServiceRef(ctx context.Context, backend *novaedgev1alpha1.ProxyBackend) []string {
+	if backend.Spec.ServiceRef == nil {
+		return nil
+	}
+
+	serviceNamespace := backend.Namespace
+	if backend.Spec.ServiceRef.Namespace != nil {
+		serviceNamespace = *backend.Spec.ServiceRef.Namespace
+	}
+
+	service := &corev1.Service{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      backend.Spec.ServiceRef.Name,
+		Namespace: serviceNamespace,
+	}, service); err != nil {
+		if apierrors.IsNotFound(err) {
+			return []string{fmt.Sprintf("Service %s not found", backend.Spec.ServiceRef.Name)}
+		}
+		log.FromContext(ctx).Error(err, "Failed to get service", "service", backend.Spec.ServiceRef.Name)
+		return nil
+	}
+
+	for _, port := range service.Spec.Ports {
+		if port.Port == backend.Spec.ServiceRef.Port {
+			return nil
+		}
+	}
+	return []string{fmt.Sprintf("Port %d not found in service %s", backend.Spec.ServiceRef.Port, backend.Spec.ServiceRef.Name)}
+}
+
+// validateHealthCheck validates the backend's health check configuration.
+func validateHealthCheck(hc *novaedgev1alpha1.HealthCheck) []string {
+	if hc == nil {
+		return nil
+	}
+	var errs []string
+	if hc.HealthyThreshold != nil && *hc.HealthyThreshold < 1 {
+		errs = append(errs, "HealthyThreshold must be >= 1")
+	}
+	if hc.UnhealthyThreshold != nil && *hc.UnhealthyThreshold < 1 {
+		errs = append(errs, "UnhealthyThreshold must be >= 1")
+	}
+	return errs
+}
+
+// validateCircuitBreaker validates the backend's circuit breaker configuration.
+func validateCircuitBreaker(cb *novaedgev1alpha1.CircuitBreaker) []string {
+	if cb == nil {
+		return nil
+	}
+	var errs []string
+	if cb.MaxConnections != nil && *cb.MaxConnections < 1 {
+		errs = append(errs, "CircuitBreaker MaxConnections must be >= 1")
+	}
+	if cb.MaxPendingRequests != nil && *cb.MaxPendingRequests < 1 {
+		errs = append(errs, "CircuitBreaker MaxPendingRequests must be >= 1")
+	}
+	if cb.MaxRequests != nil && *cb.MaxRequests < 1 {
+		errs = append(errs, "CircuitBreaker MaxRequests must be >= 1")
+	}
+	if cb.MaxRetries != nil && *cb.MaxRetries < 0 {
+		errs = append(errs, "CircuitBreaker MaxRetries must be >= 0")
+	}
+	return errs
+}
+
+// validateTLSCACert validates the backend's TLS CA cert secret reference.
+func (r *ProxyBackendReconciler) validateTLSCACert(ctx context.Context, backend *novaedgev1alpha1.ProxyBackend) []string {
+	if backend.Spec.TLS == nil || !backend.Spec.TLS.Enabled || backend.Spec.TLS.CACertSecretRef == nil {
+		return nil
+	}
+
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      *backend.Spec.TLS.CACertSecretRef,
+		Namespace: backend.Namespace,
+	}, secret); err != nil {
+		if apierrors.IsNotFound(err) {
+			return []string{fmt.Sprintf("TLS CA cert secret %s not found", *backend.Spec.TLS.CACertSecretRef)}
+		}
+		return nil
+	}
+
+	if _, ok := secret.Data["ca.crt"]; !ok {
+		return []string{fmt.Sprintf("TLS CA cert secret %s missing ca.crt", *backend.Spec.TLS.CACertSecretRef)}
+	}
+	return nil
+}
+
 // validateAndUpdateStatus validates the backend and updates its status
 func (r *ProxyBackendReconciler) validateAndUpdateStatus(ctx context.Context, backend *novaedgev1alpha1.ProxyBackend) error {
 	logger := log.FromContext(ctx)
+
 	var validationErrors []string
-
-	// Validate serviceRef exists
-	if backend.Spec.ServiceRef != nil {
-		serviceNamespace := backend.Namespace
-		if backend.Spec.ServiceRef.Namespace != nil {
-			serviceNamespace = *backend.Spec.ServiceRef.Namespace
-		}
-
-		service := &corev1.Service{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      backend.Spec.ServiceRef.Name,
-			Namespace: serviceNamespace,
-		}, service); err != nil {
-			if apierrors.IsNotFound(err) {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("Service %s not found", backend.Spec.ServiceRef.Name))
-			} else {
-				logger.Error(err, "Failed to get service", "service", backend.Spec.ServiceRef.Name)
-			}
-		} else {
-			// Validate that the port exists in the service
-			portFound := false
-			for _, port := range service.Spec.Ports {
-				if port.Port == backend.Spec.ServiceRef.Port {
-					portFound = true
-					break
-				}
-			}
-			if !portFound {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("Port %d not found in service %s", backend.Spec.ServiceRef.Port, backend.Spec.ServiceRef.Name))
-			}
-		}
-	}
-
-	// Validate health check configuration if present
-	if backend.Spec.HealthCheck != nil {
-		if backend.Spec.HealthCheck.HealthyThreshold != nil && *backend.Spec.HealthCheck.HealthyThreshold < 1 {
-			validationErrors = append(validationErrors, "HealthyThreshold must be >= 1")
-		}
-		if backend.Spec.HealthCheck.UnhealthyThreshold != nil && *backend.Spec.HealthCheck.UnhealthyThreshold < 1 {
-			validationErrors = append(validationErrors, "UnhealthyThreshold must be >= 1")
-		}
-	}
-
-	// Validate circuit breaker configuration if present
-	if backend.Spec.CircuitBreaker != nil {
-		if backend.Spec.CircuitBreaker.MaxConnections != nil && *backend.Spec.CircuitBreaker.MaxConnections < 1 {
-			validationErrors = append(validationErrors, "CircuitBreaker MaxConnections must be >= 1")
-		}
-		if backend.Spec.CircuitBreaker.MaxPendingRequests != nil && *backend.Spec.CircuitBreaker.MaxPendingRequests < 1 {
-			validationErrors = append(validationErrors, "CircuitBreaker MaxPendingRequests must be >= 1")
-		}
-		if backend.Spec.CircuitBreaker.MaxRequests != nil && *backend.Spec.CircuitBreaker.MaxRequests < 1 {
-			validationErrors = append(validationErrors, "CircuitBreaker MaxRequests must be >= 1")
-		}
-		if backend.Spec.CircuitBreaker.MaxRetries != nil && *backend.Spec.CircuitBreaker.MaxRetries < 0 {
-			validationErrors = append(validationErrors, "CircuitBreaker MaxRetries must be >= 0")
-		}
-	}
-
-	// Validate TLS CA cert secret if specified
-	if backend.Spec.TLS != nil && backend.Spec.TLS.Enabled && backend.Spec.TLS.CACertSecretRef != nil {
-		secret := &corev1.Secret{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      *backend.Spec.TLS.CACertSecretRef,
-			Namespace: backend.Namespace,
-		}, secret); err != nil {
-			if apierrors.IsNotFound(err) {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("TLS CA cert secret %s not found", *backend.Spec.TLS.CACertSecretRef))
-			}
-		} else {
-			// Validate secret contains required keys
-			if _, ok := secret.Data["ca.crt"]; !ok {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("TLS CA cert secret %s missing ca.crt", *backend.Spec.TLS.CACertSecretRef))
-			}
-		}
-	}
+	validationErrors = append(validationErrors, r.validateServiceRef(ctx, backend)...)
+	validationErrors = append(validationErrors, validateHealthCheck(backend.Spec.HealthCheck)...)
+	validationErrors = append(validationErrors, validateCircuitBreaker(backend.Spec.CircuitBreaker)...)
+	validationErrors = append(validationErrors, r.validateTLSCACert(ctx, backend)...)
 
 	// Update status conditions
 	condition := metav1.Condition{

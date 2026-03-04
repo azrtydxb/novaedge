@@ -126,6 +126,7 @@ pub fn prefer_same_zone(
 /// For example, if 80% of the local zone's backends are healthy but only 50%
 /// of the remote zone's backends are healthy, the local zone gets proportionally
 /// more traffic (80/(80+50) ≈ 62%).
+#[allow(dead_code)]
 pub fn locality_weighted(
     ctx: &RequestContext,
     backends: &[Backend],

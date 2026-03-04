@@ -411,9 +411,6 @@ type ProxyBackendList struct {
 	Items           []ProxyBackend `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyBackend{}, &ProxyBackendList{})
-}
 
 // SlowStartConfig configures gradual traffic ramp-up for new/recovering endpoints
 type SlowStartConfig struct {

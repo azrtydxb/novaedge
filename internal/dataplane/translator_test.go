@@ -1230,7 +1230,7 @@ func TestTranslateSnapshot_Policies_BasicAuth_FullFields(t *testing.T) {
 			{
 				Name: "full-basic-auth",
 				Type: configpb.PolicyType_BASIC_AUTH,
-				BasicAuth: &configpb.BasicAuthConfig{
+				BasicAuth: &configpb.BasicAuthConfig{ //nolint:gosec // G101: test fixture data, not real credentials
 					Realm:     "Admin",
 					Htpasswd:  "admin:$apr1$hash",
 					StripAuth: true,

@@ -675,6 +675,3 @@ type ProxyPolicyList struct {
 	Items           []ProxyPolicy `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyPolicy{}, &ProxyPolicyList{})
-}

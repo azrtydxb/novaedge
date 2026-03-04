@@ -113,7 +113,7 @@ func (p *HTTP01Provider) Handler() http.Handler {
 		)
 
 		w.Header().Set("Content-Type", "text/plain")
-		_, _ = fmt.Fprint(w, keyAuth)
+		_, _ = fmt.Fprint(w, keyAuth) //nolint:gosec // G705: Content-Type is text/plain for ACME HTTP-01 challenge, not rendered as HTML
 	})
 }
 

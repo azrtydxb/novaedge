@@ -84,145 +84,184 @@ func (r *ProxyPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{}, nil
 }
 
-// validateAndUpdateStatus validates the policy and updates its status
-func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, policy *novaedgev1alpha1.ProxyPolicy) error {
+// validateTargetRef validates the policy's target reference exists.
+func (r *ProxyPolicyReconciler) validateTargetRef(ctx context.Context, policy *novaedgev1alpha1.ProxyPolicy) []string {
 	logger := log.FromContext(ctx)
-	var validationErrors []string
+	var errs []string
 
-	// Validate targetRef exists
 	targetNamespace := policy.Namespace
 	if policy.Spec.TargetRef.Namespace != nil {
 		targetNamespace = *policy.Spec.TargetRef.Namespace
 	}
 
+	nn := types.NamespacedName{Name: policy.Spec.TargetRef.Name, Namespace: targetNamespace}
+	var obj client.Object
+
 	switch policy.Spec.TargetRef.Kind {
 	case "ProxyGateway":
-		gateway := &novaedgev1alpha1.ProxyGateway{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      policy.Spec.TargetRef.Name,
-			Namespace: targetNamespace,
-		}, gateway); err != nil {
-			if apierrors.IsNotFound(err) {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("Target ProxyGateway %s not found", policy.Spec.TargetRef.Name))
-			} else {
-				logger.Error(err, "Failed to get target gateway", "gateway", policy.Spec.TargetRef.Name)
-			}
-		}
+		obj = &novaedgev1alpha1.ProxyGateway{}
 	case "ProxyRoute":
-		route := &novaedgev1alpha1.ProxyRoute{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      policy.Spec.TargetRef.Name,
-			Namespace: targetNamespace,
-		}, route); err != nil {
-			if apierrors.IsNotFound(err) {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("Target ProxyRoute %s not found", policy.Spec.TargetRef.Name))
-			} else {
-				logger.Error(err, "Failed to get target route", "route", policy.Spec.TargetRef.Name)
-			}
-		}
+		obj = &novaedgev1alpha1.ProxyRoute{}
 	case "ProxyBackend":
-		backend := &novaedgev1alpha1.ProxyBackend{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      policy.Spec.TargetRef.Name,
-			Namespace: targetNamespace,
-		}, backend); err != nil {
-			if apierrors.IsNotFound(err) {
-				validationErrors = append(validationErrors,
-					fmt.Sprintf("Target ProxyBackend %s not found", policy.Spec.TargetRef.Name))
-			} else {
-				logger.Error(err, "Failed to get target backend", "backend", policy.Spec.TargetRef.Name)
-			}
-		}
+		obj = &novaedgev1alpha1.ProxyBackend{}
 	default:
-		validationErrors = append(validationErrors,
-			fmt.Sprintf("Invalid target kind %s", policy.Spec.TargetRef.Kind))
+		return append(errs, fmt.Sprintf("Invalid target kind %s", policy.Spec.TargetRef.Kind))
 	}
 
-	// Validate policy configuration based on type
-	switch policy.Spec.Type {
-	case novaedgev1alpha1.PolicyTypeRateLimit:
-		if policy.Spec.RateLimit == nil {
-			validationErrors = append(validationErrors, "RateLimit configuration is required for RateLimit policy type")
-		} else if policy.Spec.RateLimit.RequestsPerSecond <= 0 {
-			validationErrors = append(validationErrors, "RateLimit RequestsPerSecond must be > 0")
+	if err := r.Get(ctx, nn, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			errs = append(errs, fmt.Sprintf("Target %s %s not found", policy.Spec.TargetRef.Kind, policy.Spec.TargetRef.Name))
+		} else {
+			logger.Error(err, "Failed to get target", "kind", policy.Spec.TargetRef.Kind, "name", policy.Spec.TargetRef.Name)
 		}
-	case novaedgev1alpha1.PolicyTypeJWT:
-		if policy.Spec.JWT == nil {
-			validationErrors = append(validationErrors, "JWT configuration is required for JWT policy type")
-		} else if policy.Spec.JWT.Issuer == "" && policy.Spec.JWT.JWKSUri == "" {
-			validationErrors = append(validationErrors, "JWT policy must have either issuer or jwksUri set")
+	}
+	return errs
+}
+
+// policyValidator is a function that validates a specific policy type's configuration.
+type policyValidator func(spec *novaedgev1alpha1.ProxyPolicySpec) string
+
+// policyValidators maps policy types to their validation functions.
+// Each validator returns an error message if validation fails, or "" if valid.
+var policyValidators = map[novaedgev1alpha1.PolicyType]policyValidator{
+	novaedgev1alpha1.PolicyTypeRateLimit: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.RateLimit == nil {
+			return "RateLimit configuration is required for RateLimit policy type"
 		}
-	case novaedgev1alpha1.PolicyTypeIPAllowList, novaedgev1alpha1.PolicyTypeIPDenyList:
-		switch {
-		case policy.Spec.IPList == nil:
-			validationErrors = append(validationErrors, "IPList configuration is required for IP allow/deny list policy type")
-		case len(policy.Spec.IPList.CIDRs) == 0:
-			validationErrors = append(validationErrors, "IPList CIDRs must not be empty")
-		default:
-			// Validate CIDRs are valid
-			for _, cidr := range policy.Spec.IPList.CIDRs {
-				if _, _, err := net.ParseCIDR(cidr); err != nil {
-					validationErrors = append(validationErrors,
-						fmt.Sprintf("Invalid CIDR %s: %v", cidr, err))
-				}
+		if spec.RateLimit.RequestsPerSecond <= 0 {
+			return "RateLimit RequestsPerSecond must be > 0"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeJWT: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.JWT == nil {
+			return "JWT configuration is required for JWT policy type"
+		}
+		if spec.JWT.Issuer == "" && spec.JWT.JWKSUri == "" {
+			return "JWT policy must have either issuer or jwksUri set"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeCORS: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.CORS == nil {
+			return "CORS configuration is required for CORS policy type"
+		}
+		if len(spec.CORS.AllowOrigins) == 0 {
+			return "CORS AllowOrigins must not be empty"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeWAF: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.WAF == nil {
+			return "WAF configuration is required for WAF policy type"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeBasicAuth: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.BasicAuth == nil {
+			return "BasicAuth configuration is required for BasicAuth policy type"
+		}
+		if spec.BasicAuth.SecretRef.Name == "" {
+			return "BasicAuth SecretRef name must not be empty"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeSecurityHeaders: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.SecurityHeaders == nil {
+			return "SecurityHeaders configuration is required for SecurityHeaders policy type"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeForwardAuth: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.ForwardAuth == nil {
+			return "ForwardAuth configuration is required for ForwardAuth policy type"
+		}
+		if spec.ForwardAuth.Address == "" {
+			return "ForwardAuth Address must not be empty"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeOIDC: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.OIDC == nil {
+			return "OIDC configuration is required for OIDC policy type"
+		}
+		if spec.OIDC.ClientID == "" {
+			return "OIDC ClientID must not be empty"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeWASMPlugin: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.WASMPlugin == nil {
+			return "WASMPlugin configuration is required for WASMPlugin policy type"
+		}
+		if spec.WASMPlugin.Source == "" {
+			return "WASMPlugin Source must not be empty"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeDistributedRateLimit: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.DistributedRateLimit == nil {
+			return "DistributedRateLimit configuration is required for DistributedRateLimit policy type"
+		}
+		if spec.DistributedRateLimit.RequestsPerSecond <= 0 {
+			return "DistributedRateLimit RequestsPerSecond must be > 0"
+		}
+		return ""
+	},
+	novaedgev1alpha1.PolicyTypeMeshAuthorization: func(spec *novaedgev1alpha1.ProxyPolicySpec) string {
+		if spec.MeshAuthorization == nil {
+			return "MeshAuthorization configuration is required for MeshAuthorization policy type"
+		}
+		if len(spec.MeshAuthorization.Rules) == 0 {
+			return "MeshAuthorization Rules must not be empty"
+		}
+		return ""
+	},
+}
+
+// validatePolicyConfig validates the policy-specific configuration based on type.
+func validatePolicyConfig(policy *novaedgev1alpha1.ProxyPolicy) []string {
+	// IP list policies share a separate multi-error validator.
+	if policy.Spec.Type == novaedgev1alpha1.PolicyTypeIPAllowList || policy.Spec.Type == novaedgev1alpha1.PolicyTypeIPDenyList {
+		return validateIPListPolicy(policy)
+	}
+
+	validator, ok := policyValidators[policy.Spec.Type]
+	if !ok {
+		return []string{fmt.Sprintf("Invalid policy type %s", policy.Spec.Type)}
+	}
+
+	if msg := validator(&policy.Spec); msg != "" {
+		return []string{msg}
+	}
+	return nil
+}
+
+// validateIPListPolicy validates IPList-type policy configuration.
+func validateIPListPolicy(policy *novaedgev1alpha1.ProxyPolicy) []string {
+	var errs []string
+	switch {
+	case policy.Spec.IPList == nil:
+		errs = append(errs, "IPList configuration is required for IP allow/deny list policy type")
+	case len(policy.Spec.IPList.CIDRs) == 0:
+		errs = append(errs, "IPList CIDRs must not be empty")
+	default:
+		for _, cidr := range policy.Spec.IPList.CIDRs {
+			if _, _, err := net.ParseCIDR(cidr); err != nil {
+				errs = append(errs, fmt.Sprintf("Invalid CIDR %s: %v", cidr, err))
 			}
 		}
-	case novaedgev1alpha1.PolicyTypeCORS:
-		if policy.Spec.CORS == nil {
-			validationErrors = append(validationErrors, "CORS configuration is required for CORS policy type")
-		} else if len(policy.Spec.CORS.AllowOrigins) == 0 {
-			validationErrors = append(validationErrors, "CORS AllowOrigins must not be empty")
-		}
-	case novaedgev1alpha1.PolicyTypeWAF:
-		if policy.Spec.WAF == nil {
-			validationErrors = append(validationErrors, "WAF configuration is required for WAF policy type")
-		}
-	case novaedgev1alpha1.PolicyTypeBasicAuth:
-		if policy.Spec.BasicAuth == nil {
-			validationErrors = append(validationErrors, "BasicAuth configuration is required for BasicAuth policy type")
-		} else if policy.Spec.BasicAuth.SecretRef.Name == "" {
-			validationErrors = append(validationErrors, "BasicAuth SecretRef name must not be empty")
-		}
-	case novaedgev1alpha1.PolicyTypeSecurityHeaders:
-		if policy.Spec.SecurityHeaders == nil {
-			validationErrors = append(validationErrors, "SecurityHeaders configuration is required for SecurityHeaders policy type")
-		}
-	case novaedgev1alpha1.PolicyTypeForwardAuth:
-		if policy.Spec.ForwardAuth == nil {
-			validationErrors = append(validationErrors, "ForwardAuth configuration is required for ForwardAuth policy type")
-		} else if policy.Spec.ForwardAuth.Address == "" {
-			validationErrors = append(validationErrors, "ForwardAuth Address must not be empty")
-		}
-	case novaedgev1alpha1.PolicyTypeOIDC:
-		if policy.Spec.OIDC == nil {
-			validationErrors = append(validationErrors, "OIDC configuration is required for OIDC policy type")
-		} else if policy.Spec.OIDC.ClientID == "" {
-			validationErrors = append(validationErrors, "OIDC ClientID must not be empty")
-		}
-	case novaedgev1alpha1.PolicyTypeWASMPlugin:
-		if policy.Spec.WASMPlugin == nil {
-			validationErrors = append(validationErrors, "WASMPlugin configuration is required for WASMPlugin policy type")
-		} else if policy.Spec.WASMPlugin.Source == "" {
-			validationErrors = append(validationErrors, "WASMPlugin Source must not be empty")
-		}
-	case novaedgev1alpha1.PolicyTypeDistributedRateLimit:
-		if policy.Spec.DistributedRateLimit == nil {
-			validationErrors = append(validationErrors, "DistributedRateLimit configuration is required for DistributedRateLimit policy type")
-		} else if policy.Spec.DistributedRateLimit.RequestsPerSecond <= 0 {
-			validationErrors = append(validationErrors, "DistributedRateLimit RequestsPerSecond must be > 0")
-		}
-	case novaedgev1alpha1.PolicyTypeMeshAuthorization:
-		if policy.Spec.MeshAuthorization == nil {
-			validationErrors = append(validationErrors, "MeshAuthorization configuration is required for MeshAuthorization policy type")
-		} else if len(policy.Spec.MeshAuthorization.Rules) == 0 {
-			validationErrors = append(validationErrors, "MeshAuthorization Rules must not be empty")
-		}
-	default:
-		validationErrors = append(validationErrors,
-			fmt.Sprintf("Invalid policy type %s", policy.Spec.Type))
 	}
+	return errs
+}
+
+// validateAndUpdateStatus validates the policy and updates its status
+func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, policy *novaedgev1alpha1.ProxyPolicy) error {
+	logger := log.FromContext(ctx)
+
+	var validationErrors []string
+	validationErrors = append(validationErrors, r.validateTargetRef(ctx, policy)...)
+	validationErrors = append(validationErrors, validatePolicyConfig(policy)...)
 
 	// Update status conditions
 	condition := metav1.Condition{

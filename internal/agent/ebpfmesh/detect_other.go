@@ -36,6 +36,6 @@ func TrySockMap(_ *zap.Logger) *sockmap.Manager {
 }
 
 // TryServiceMap returns nil on non-Linux platforms since eBPF service maps are not supported.
-func TryServiceMap(_ *zap.Logger, _, _ uint32) *service.ServiceMap {
+func TryServiceMap(_ *zap.Logger, _, _ uint32) *service.Map {
 	return nil
 }

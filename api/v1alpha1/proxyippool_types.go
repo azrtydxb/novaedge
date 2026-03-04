@@ -103,6 +103,3 @@ type ProxyIPPoolList struct {
 	Items           []ProxyIPPool `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyIPPool{}, &ProxyIPPoolList{})
-}

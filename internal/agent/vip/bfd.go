@@ -417,6 +417,8 @@ func (s *BFDSession) processStateMachine(remoteState BFDSessionState) {
 			s.logger.Info("BFD session established",
 				zap.String("peer", s.peerAddress.String()),
 			)
+		case BFDStateAdminDown, BFDStateUp:
+			// No transition from Down on these remote states
 		}
 
 	case BFDStateInit:
@@ -426,6 +428,8 @@ func (s *BFDSession) processStateMachine(remoteState BFDSessionState) {
 			s.logger.Info("BFD session established",
 				zap.String("peer", s.peerAddress.String()),
 			)
+		case BFDStateAdminDown, BFDStateDown:
+			// No transition from Init on these remote states
 		}
 
 	case BFDStateUp:

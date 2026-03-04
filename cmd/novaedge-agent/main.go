@@ -158,7 +158,99 @@ var (
 	dataplaneSocket string
 )
 
+// agentComponents holds all subsystem managers created during agent initialization.
+type agentComponents struct {
+	watcher      *config.Watcher
+	gossiper     *gossip.ConfigGossiper
+	vipManager   *vip.DefaultManager
+	xdpManager   *xdplb.Manager
+	maglevMgr    *maglev.Manager
+	conntrackMgr *conntrack.Conntrack
+	afxdpWorker  *afxdp.Worker
+	sockMapMgr   *sockmap.Manager
+	ebpfSvcMap   *ebpfservice.Map
+	meshManager  *mesh.Manager
+	sdwanManager *sdwan.Manager
+	ebpfHealthMon *ebpfhealth.Monitor
+	ebpfRL       *ebpfratelimit.RateLimiter
+	dpClient     *dpctl.Client
+	dpTranslator *dpctl.Translator
+
+	metricsServer *server.MetricsServer
+	healthServer  *server.HealthServer
+	adminServer   *server.AdminServer
+}
+
 func main() {
+	parseFlags()
+
+	// Validate required flags
+	if nodeName == "" {
+		fmt.Fprintf(os.Stderr, "Error: --node-name is required\n")
+		os.Exit(1)
+	}
+
+	// Initialize logger
+	logger, atomicLevel := initLogger(logLevel)
+	defer func() { _ = logger.Sync() }()
+
+	// Expose dynamic log level endpoint on the health probe port.
+	http.Handle("/debug/loglevel", atomicLevel)
+
+	logger.Info("Starting NovaEdge agent",
+		zap.String("node", nodeName),
+		zap.String("version", version),
+		zap.String("commit", commit),
+		zap.String("date", date),
+		zap.String("controller", controllerAddr),
+	)
+
+	logger.Info("Rust dataplane configured",
+		zap.String("dataplane_socket", dataplaneSocket),
+	)
+
+	// Control-plane VIP mode: run a simplified agent that only manages
+	// a VIP for kube-apiserver HA, without connecting to the controller.
+	if controlPlaneVIP {
+		runControlPlaneVIPMode(logger)
+		return
+	}
+
+	// Create context with cancellation
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Initialize OpenTelemetry tracing
+	tracerProvider, err := observability.NewTracerProvider(ctx, observability.TracingConfig{
+		Enabled:        tracingEnabled,
+		Endpoint:       tracingEndpoint,
+		SampleRate:     tracingSampleRate,
+		ServiceName:    "novaedge-agent",
+		ServiceVersion: version,
+	}, logger)
+	if err != nil {
+		logger.Fatal("Failed to initialize tracing", zap.Error(err))
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
+			logger.Error("Failed to shutdown tracer provider", zap.Error(err))
+		}
+	}()
+
+	// Initialize all agent components
+	comp := initAgentComponents(ctx, logger, atomicLevel)
+
+	// Start all managers and servers
+	startAgentManagers(ctx, logger, comp)
+
+	// Run config watcher and wait for shutdown
+	runAgentLoop(ctx, cancel, logger, comp)
+}
+
+// parseFlags registers and parses all CLI flags.
+func parseFlags() {
 	flag.StringVar(&nodeName, "node-name", "", "Name of this node (required)")
 	flag.StringVar(&controllerAddr, "controller-address", "localhost:9090", "Address of the controller gRPC server")
 	flag.StringVar(&logLevel, "log-level", "info", "Log level (debug, info, warn, error)")
@@ -229,75 +321,20 @@ func main() {
 		"Unix domain socket path for the Rust dataplane daemon")
 
 	flag.Parse()
+}
 
-	// Validate required flags
-	if nodeName == "" {
-		fmt.Fprintf(os.Stderr, "Error: --node-name is required\n")
-		os.Exit(1)
-	}
-
-	// Initialize logger
-	logger, atomicLevel := initLogger(logLevel)
-	defer func() { _ = logger.Sync() }()
-
-	// Expose dynamic log level endpoint on the health probe port.
-	// PUT /debug/loglevel with body like "debug" or "info" to change at runtime.
-	http.Handle("/debug/loglevel", atomicLevel)
-
-	logger.Info("Starting NovaEdge agent",
-		zap.String("node", nodeName),
-		zap.String("version", version),
-		zap.String("commit", commit),
-		zap.String("date", date),
-		zap.String("controller", controllerAddr),
-	)
-
-	logger.Info("Rust dataplane configured",
-		zap.String("dataplane_socket", dataplaneSocket),
-	)
-
-	// Control-plane VIP mode: run a simplified agent that only manages
-	// a VIP for kube-apiserver HA, without connecting to the controller.
-	if controlPlaneVIP {
-		runControlPlaneVIPMode(logger)
-		return
-	}
-
-	// Create context with cancellation
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Initialize OpenTelemetry tracing
-	tracerProvider, err := observability.NewTracerProvider(ctx, observability.TracingConfig{
-		Enabled:        tracingEnabled,
-		Endpoint:       tracingEndpoint,
-		SampleRate:     tracingSampleRate,
-		ServiceName:    "novaedge-agent",
-		ServiceVersion: version,
-	}, logger)
-	if err != nil {
-		logger.Fatal("Failed to initialize tracing", zap.Error(err))
-	}
-	defer func() {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
-			logger.Error("Failed to shutdown tracer provider", zap.Error(err))
-		}
-	}()
-
-	// Create config watcher with optional mTLS and cluster identification
+// initConfigWatcher creates the config watcher with optional mTLS and cluster identification.
+func initConfigWatcher(ctx context.Context, logger *zap.Logger) *config.Watcher {
 	var watcher *config.Watcher
+	var err error
 	isRemoteAgent := clusterName != ""
 
 	switch {
 	case isRemoteAgent:
-		// Remote agents require mTLS
 		if grpcTLSCert == "" || grpcTLSKey == "" || grpcTLSCA == "" {
 			logger.Fatal("Remote agents require mTLS configuration",
 				zap.String("cluster", clusterName))
 		}
-		// Create remote watcher with mTLS and cluster identification
 		watcher, err = config.NewRemoteWatcher(ctx, nodeName, version, controllerAddr,
 			&config.TLSConfig{
 				CertFile: grpcTLSCert,
@@ -319,7 +356,6 @@ func main() {
 			zap.String("cert", grpcTLSCert),
 			zap.String("ca", grpcTLSCA))
 	case grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "":
-		// Local agent with mTLS enabled
 		watcher, err = config.NewWatcherWithTLS(ctx, nodeName, version, controllerAddr,
 			&config.TLSConfig{
 				CertFile: grpcTLSCert,
@@ -333,22 +369,17 @@ func main() {
 			zap.String("cert", grpcTLSCert),
 			zap.String("ca", grpcTLSCA))
 	default:
-		// Local agent without TLS (insecure, development only)
 		watcher, err = config.NewWatcher(ctx, nodeName, version, controllerAddr, logger)
 		if err != nil {
 			logger.Fatal("Failed to create config watcher", zap.Error(err))
 		}
 		logger.Warn("WARNING: Config watcher running without TLS (insecure)")
 	}
+	return watcher
+}
 
-	// Create config version gossiper for agent-to-agent consensus.
-	// Non-fatal: gossip is defense-in-depth, not critical path.
-	gossiper := gossip.NewConfigGossiper(nodeName, watcher.ForceResync, logger)
-	if err := gossiper.Start(ctx); err != nil {
-		logger.Warn("Failed to start config gossiper", zap.Error(err))
-	}
-
-	// Create VIP manager with selected BGP backend
+// initVIPManager creates the VIP manager with the selected BGP backend.
+func initVIPManager(logger *zap.Logger) *vip.DefaultManager {
 	var vipOpts []vip.ManagerOption
 	switch bgpBackend {
 	case "novaroute":
@@ -367,107 +398,91 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to create VIP manager", zap.Error(err))
 	}
+	return vipManager
+}
 
-	// Create XDP LB manager — auto-attempted when xdpInterface is set
-	var xdpManager *xdplb.Manager
+// initXDPAndEBPF creates XDP LB, Maglev, conntrack, and AF_XDP subsystems.
+func initXDPAndEBPF(ctx context.Context, logger *zap.Logger) (xdpMgr *xdplb.Manager, magMgr *maglev.Manager, ctMgr *conntrack.Conntrack, afxdpW *afxdp.Worker) {
 	if !forceLegacyLB && xdpInterface != "" {
 		ebpfLoader := novaebpf.NewProgramLoader(logger, "")
-		xdpManager = xdplb.NewManager(logger, ebpfLoader, xdpInterface)
-		if err := xdpManager.Start(); err != nil {
-			logger.Warn("XDP L4 LB not available, using userspace proxy",
-				zap.Error(err))
-			xdpManager = nil
+		xdpMgr = xdplb.NewManager(logger, ebpfLoader, xdpInterface)
+		if err := xdpMgr.Start(); err != nil {
+			logger.Warn("XDP L4 LB not available, using userspace proxy", zap.Error(err))
+			xdpMgr = nil
 		} else {
-			logger.Info("XDP L4 load balancing active",
-				zap.String("interface", xdpInterface))
+			logger.Info("XDP L4 load balancing active", zap.String("interface", xdpInterface))
 		}
 	} else if forceLegacyLB {
 		logger.Info("XDP L4 LB disabled by --force-legacy-lb, using userspace proxy")
 	}
 
-	// Create eBPF Maglev manager for consistent hashing (attaches to XDP LB)
-	var maglevMgr *maglev.Manager
-	var conntrackMgr *conntrack.Conntrack
-	if xdpManager != nil && xdpManager.IsRunning() {
-		maglevMgr = maglev.NewManager(logger, 0) // 0 = DefaultTableSize
-		if initErr := maglevMgr.Init(); initErr != nil {
+	if xdpMgr != nil && xdpMgr.IsRunning() {
+		magMgr = maglev.NewManager(logger, 0)
+		if initErr := magMgr.Init(); initErr != nil {
 			logger.Warn("eBPF Maglev not available, using hash-mod backend selection", zap.Error(initErr))
-			maglevMgr = nil
+			magMgr = nil
 		} else {
-			xdpManager.SetMaglev(maglevMgr)
+			xdpMgr.SetMaglev(magMgr)
 			logger.Info("eBPF Maglev consistent hashing enabled for XDP LB")
 		}
 
 		var ctErr error
-		conntrackMgr, ctErr = conntrack.NewConntrack(logger, 0, 0) // 0 = defaults
+		ctMgr, ctErr = conntrack.NewConntrack(logger, 0, 0)
 		if ctErr != nil {
 			logger.Warn("eBPF conntrack not available", zap.Error(ctErr))
-			conntrackMgr = nil
+			ctMgr = nil
 		} else {
-			xdpManager.SetConntrack(conntrackMgr)
-			conntrackMgr.StartGC()
+			xdpMgr.SetConntrack(ctMgr)
+			ctMgr.StartGC()
 			logger.Info("eBPF conntrack enabled for XDP LB")
 		}
 	}
 
-	// Create AF_XDP worker — auto-attempted when xdpInterface is set
-	var afxdpWorker *afxdp.Worker
 	if !forceLegacyLB && xdpInterface != "" {
 		afxdpLoader := novaebpf.NewProgramLoader(logger, "")
-		afxdpWorker = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
+		afxdpW = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
 			InterfaceName: xdpInterface,
 			QueueID:       0,
 		}, nil)
 		go func() {
-			if startErr := afxdpWorker.Start(ctx); startErr != nil {
-				logger.Warn("AF_XDP not available, using kernel stack",
-					zap.Error(startErr))
+			if startErr := afxdpW.Start(ctx); startErr != nil {
+				logger.Warn("AF_XDP not available, using kernel stack", zap.Error(startErr))
 			}
 		}()
-		logger.Info("AF_XDP zero-copy fast path enabled",
-			zap.String("interface", xdpInterface))
+		logger.Info("AF_XDP zero-copy fast path enabled", zap.String("interface", xdpInterface))
+	}
+	return
+}
+
+// initMeshSubsystem creates mesh manager and related eBPF accelerators.
+func initMeshSubsystem(logger *zap.Logger) (*mesh.Manager, *sockmap.Manager, *ebpfservice.Map) {
+	if !meshEnabled {
+		return nil, nil, nil
 	}
 
-	// Create eBPF SOCKMAP + ServiceMap for mesh acceleration (if mesh enabled).
-	// TrySockMap/TryServiceMap auto-detect kernel capabilities and return nil
-	// when eBPF prerequisites are missing — no fatal errors.
-	var sockMapMgr *sockmap.Manager
-	var ebpfSvcMap *ebpfservice.ServiceMap
-	if meshEnabled {
-		sockMapMgr = ebpfmesh.TrySockMap(logger)
-		ebpfSvcMap = ebpfmesh.TryServiceMap(logger, 0, 0) // 0 = defaults
-	}
+	sockMapMgr := ebpfmesh.TrySockMap(logger)
+	ebpfSvcMap := ebpfmesh.TryServiceMap(logger, 0, 0)
 
-	// Create mesh manager (if enabled)
-	var meshManager *mesh.Manager
-	if meshEnabled {
-		// eBPF sk_lookup is auto-attempted; falls back to nftables/iptables
-		// if the kernel doesn't support it or --force-legacy-mesh is set.
-		var meshBackend mesh.RuleBackend
-		if !forceLegacyMesh {
-			meshBackend = ebpfmesh.TryBackend(logger)
-		} else {
-			logger.Info("eBPF mesh redirect disabled by --force-legacy-mesh, using nftables/iptables")
-		}
-		meshManager = mesh.NewManager(logger, mesh.ManagerConfig{
-			TPROXYPort:          int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
-			TunnelPort:          int32(meshTunnelPort), //nolint:gosec // port range validated by flag
-			TrustDomain:         meshTrustDomain,
-			RuleBackendOverride: meshBackend,
-			SockMapManager:      sockMapMgr,
-			ServiceMap:          ebpfSvcMap,
-		})
+	var meshBackend mesh.RuleBackend
+	if !forceLegacyMesh {
+		meshBackend = ebpfmesh.TryBackend(logger)
+	} else {
+		logger.Info("eBPF mesh redirect disabled by --force-legacy-mesh, using nftables/iptables")
 	}
+	meshManager := mesh.NewManager(logger, mesh.ManagerConfig{
+		TPROXYPort:          int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
+		TunnelPort:          int32(meshTunnelPort), //nolint:gosec // port range validated by flag
+		TrustDomain:         meshTrustDomain,
+		RuleBackendOverride: meshBackend,
+		SockMapManager:      sockMapMgr,
+		ServiceMap:          ebpfSvcMap,
+	})
+	return meshManager, sockMapMgr, ebpfSvcMap
+}
 
-	// Create SD-WAN manager (if enabled)
-	var sdwanManager *sdwan.Manager
-	if sdwanEnabled {
-		sdwanManager = sdwan.NewManager(logger)
-	}
-
-	// Create eBPF health monitor for passive health signals from kernel
-	var ebpfHealthMon *ebpfhealth.HealthMonitor
-	ebpfHealthMon, err = ebpfhealth.NewHealthMonitor(logger, 0) // 0 = default (4096)
+// initEBPFMonitoring creates eBPF health monitor and rate limiter.
+func initEBPFMonitoring(logger *zap.Logger) (*ebpfhealth.Monitor, *ebpfratelimit.RateLimiter) {
+	ebpfHealthMon, err := ebpfhealth.NewMonitor(logger, 0)
 	if err != nil {
 		logger.Warn("eBPF health monitor not available, using active probes only", zap.Error(err))
 		ebpfHealthMon = nil
@@ -475,65 +490,81 @@ func main() {
 		logger.Info("eBPF passive health monitor enabled")
 	}
 
-	// Create eBPF rate limiter for per-IP fast-path rate limiting
-	var ebpfRL *ebpfratelimit.RateLimiter
-	ebpfRL, err = ebpfratelimit.NewRateLimiter(logger, 0) // 0 = default (100k entries)
+	ebpfRL, err := ebpfratelimit.NewRateLimiter(logger, 0)
 	if err != nil {
 		logger.Warn("eBPF rate limiter not available, using Go-side token buckets", zap.Error(err))
 		ebpfRL = nil
 	} else {
 		logger.Info("eBPF per-IP rate limiter enabled")
 	}
+	return ebpfHealthMon, ebpfRL
+}
 
-	// Create dataplane client and translator for Rust forwarding plane
+// initAgentComponents initializes all agent subsystem managers.
+func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel zap.AtomicLevel) *agentComponents {
+	comp := &agentComponents{}
+
+	comp.watcher = initConfigWatcher(ctx, logger)
+
+	comp.gossiper = gossip.NewConfigGossiper(nodeName, comp.watcher.ForceResync, logger)
+	if err := comp.gossiper.Start(ctx); err != nil {
+		logger.Warn("Failed to start config gossiper", zap.Error(err))
+	}
+
+	comp.vipManager = initVIPManager(logger)
+	comp.xdpManager, comp.maglevMgr, comp.conntrackMgr, comp.afxdpWorker = initXDPAndEBPF(ctx, logger)
+	comp.meshManager, comp.sockMapMgr, comp.ebpfSvcMap = initMeshSubsystem(logger)
+
+	if sdwanEnabled {
+		comp.sdwanManager = sdwan.NewManager(logger)
+	}
+
+	comp.ebpfHealthMon, comp.ebpfRL = initEBPFMonitoring(logger)
+
 	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
 	if dpErr != nil {
 		logger.Fatal("Failed to connect to Rust dataplane",
 			zap.String("socket", dataplaneSocket),
 			zap.Error(dpErr))
 	}
-	dpTranslator := dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
+	comp.dpClient = dpClient
+	comp.dpTranslator = dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
 	logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
 
-	// Create metrics server
-	metricsServer := server.NewMetricsServer(logger, metricsPort)
+	comp.metricsServer = server.NewMetricsServer(logger, metricsPort)
+	comp.healthServer = server.NewHealthServer(logger, healthProbePort)
+	comp.adminServer = server.NewAdminServer("", logger)
+	comp.adminServer.SetAtomicLevel(atomicLevel)
 
-	// Create health probe server
-	healthServer := server.NewHealthServer(logger, healthProbePort)
+	return comp
+}
 
-	// Create admin/debug server (pprof, stats, config introspection)
-	adminServer := server.NewAdminServer("", logger)
-	adminServer.SetAtomicLevel(atomicLevel)
-
-	// Start VIP manager
-	if err := vipManager.Start(ctx); err != nil {
+// startAgentManagers starts VIP, mesh, and SD-WAN managers.
+func startAgentManagers(ctx context.Context, logger *zap.Logger, comp *agentComponents) {
+	if err := comp.vipManager.Start(ctx); err != nil {
 		logger.Fatal("Failed to start VIP manager", zap.Error(err))
 	}
 
-	// Start mesh manager (if enabled)
-	if meshManager != nil {
-		if err := meshManager.Start(ctx); err != nil {
+	if comp.meshManager != nil {
+		if err := comp.meshManager.Start(ctx); err != nil {
 			logger.Fatal("Failed to start mesh manager", zap.Error(err))
 		}
-
-		// Start mesh certificate requester in background.
-		// Creates a separate gRPC connection to the controller for cert requests.
 		meshConn, meshConnErr := createGRPCConnection(controllerAddr, grpcTLSCert, grpcTLSKey, grpcTLSCA)
 		if meshConnErr != nil {
 			logger.Fatal("Failed to create gRPC connection for mesh cert requester", zap.Error(meshConnErr))
 		}
-		meshManager.StartCertRequester(ctx, nodeName, meshConn)
+		comp.meshManager.StartCertRequester(ctx, nodeName, meshConn)
 	}
 
-	// Start SD-WAN manager (if enabled)
-	if sdwanManager != nil {
-		if err := sdwanManager.Start(ctx); err != nil {
+	if comp.sdwanManager != nil {
+		if err := comp.sdwanManager.Start(ctx); err != nil {
 			logger.Fatal("Failed to start SD-WAN manager", zap.Error(err))
 		}
 	}
+}
 
-	// Start config watcher
-	// Create snapshot holder and introspection server
+// runAgentLoop starts the config watcher and servers, then waits for shutdown.
+func runAgentLoop(ctx context.Context, cancel context.CancelFunc, logger *zap.Logger, comp *agentComponents) {
 	snapshotHolder := introspection.NewSnapshotHolder()
 	introServer := introspection.NewServer(snapshotHolder, logger)
 	go func() {
@@ -544,107 +575,19 @@ func main() {
 
 	configChan := make(chan error, 1)
 	go func() {
-		configChan <- watcher.Start(func(snapshot *config.Snapshot) error {
-			// Apply new configuration to HTTP server and VIP manager
-			logger.Info("Applying new configuration",
-				zap.String("version", snapshot.Version),
-				zap.Int("gateways", len(snapshot.Gateways)),
-				zap.Int("routes", len(snapshot.Routes)),
-				zap.Int("vips", len(snapshot.VipAssignments)),
-			)
-
-			// Store snapshot for introspection
-			snapshotHolder.Store(snapshot.ConfigSnapshot)
-
-			// Sync all config to Rust dataplane (L7 forwarding, routing, policies).
-			if syncErr := dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
-				logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
-				healthServer.SetReady(false)
-				adminServer.SetReady(false)
-				return syncErr
-			}
-
-			// --- Wire Go-side managers for host-level operations ---
-
-			// VIP manager: bind/unbind VIPs to interfaces, send GARPs, manage BGP/OSPF.
-			if err := vipManager.ApplyVIPs(ctx, snapshot.GetVipAssignments()); err != nil {
-				logger.Error("Failed to apply VIPs", zap.Error(err))
-			}
-
-			// Mesh manager: reconcile TPROXY/nftables rules, update service table.
-			if meshManager != nil {
-				if err := meshManager.ApplyConfig(
-					snapshot.GetInternalServices(),
-					snapshot.GetMeshAuthzPolicies(),
-				); err != nil {
-					logger.Error("Failed to apply mesh config", zap.Error(err))
-				}
-			}
-
-			// SD-WAN manager: reconcile WAN links and path-selection policies.
-			if sdwanManager != nil {
-				links := convertWANLinks(snapshot.GetWanLinks())
-				policies := convertWANPolicies(snapshot.GetWanPolicies())
-				if err := sdwanManager.ApplyConfig(links, policies); err != nil {
-					logger.Error("Failed to apply SD-WAN config", zap.Error(err))
-				}
-			}
-
-			// XDP LB: populate eBPF VIP/backend maps for kernel-level L4 load balancing.
-			if xdpManager != nil && xdpManager.IsRunning() {
-				routes := buildL4Routes(snapshot.GetVipAssignments(), snapshot.GetL4Listeners(), snapshot.GetEndpoints())
-				if err := xdpManager.SyncBackends(routes); err != nil {
-					logger.Error("Failed to sync XDP LB backends", zap.Error(err))
-				}
-			}
-
-			// AF_XDP: update VIP filter so the zero-copy fast path knows which packets to intercept.
-			if afxdpWorker != nil && afxdpWorker.IsRunning() {
-				vipKeys := buildAFXDPVIPKeys(snapshot.GetVipAssignments())
-				if err := afxdpWorker.SyncVIPs(vipKeys); err != nil {
-					logger.Error("Failed to sync AF_XDP VIPs", zap.Error(err))
-				}
-			}
-
-			// eBPF rate limiter: configure from the first rate-limit policy found.
-			if ebpfRL != nil && ebpfRL.IsActive() {
-				configureEBPFRateLimiter(ebpfRL, snapshot.GetPolicies(), logger)
-			}
-
-			// eBPF health monitor: start the poller once on first config (idempotent).
-			startEBPFHealthPoller(ebpfHealthMon, logger)
-
-			healthServer.SetReady(true)
-			adminServer.SetSnapshot(snapshot)
-			adminServer.SetReady(true)
-
-			// Update gossiper with the generation time so peers can
-			// detect when this agent is behind. We use generation time
-			// (not version hash) because per-node snapshots have different
-			// VIP assignments, causing different hashes. (#866)
-			gossiper.UpdateGenTime(snapshot.GenerationTime)
-
-			return nil
+		configChan <- comp.watcher.Start(func(snapshot *config.Snapshot) error {
+			return applyAgentConfig(ctx, logger, comp, snapshotHolder, snapshot)
 		})
 	}()
 
-	// Start metrics server
 	metricsChan := make(chan error, 1)
-	go func() {
-		metricsChan <- metricsServer.Start(ctx)
-	}()
+	go func() { metricsChan <- comp.metricsServer.Start(ctx) }()
 
-	// Start health probe server
 	healthChan := make(chan error, 1)
-	go func() {
-		healthChan <- healthServer.Start(ctx)
-	}()
+	go func() { healthChan <- comp.healthServer.Start(ctx) }()
 
-	// Start admin/debug server (pprof, stats, config introspection on 127.0.0.1:9901)
 	adminChan := make(chan error, 1)
-	go func() {
-		adminChan <- adminServer.Start(ctx)
-	}()
+	go func() { adminChan <- comp.adminServer.Start(ctx) }()
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)
@@ -663,22 +606,89 @@ func main() {
 		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
 	}
 
-	// Graceful shutdown
 	logger.Info("Shutting down...")
 	cancel()
 
-	// Give servers time to shutdown gracefully
+	shutdownAgent(logger, comp)
+}
+
+// applyAgentConfig applies a new configuration snapshot to all agent subsystems.
+func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentComponents, snapshotHolder *introspection.SnapshotHolder, snapshot *config.Snapshot) error {
+	logger.Info("Applying new configuration",
+		zap.String("version", snapshot.Version),
+		zap.Int("gateways", len(snapshot.Gateways)),
+		zap.Int("routes", len(snapshot.Routes)),
+		zap.Int("vips", len(snapshot.VipAssignments)),
+	)
+
+	snapshotHolder.Store(snapshot.ConfigSnapshot)
+
+	if syncErr := comp.dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
+		logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))
+		comp.healthServer.SetReady(false)
+		comp.adminServer.SetReady(false)
+		return syncErr
+	}
+
+	if err := comp.vipManager.ApplyVIPs(ctx, snapshot.GetVipAssignments()); err != nil {
+		logger.Error("Failed to apply VIPs", zap.Error(err))
+	}
+
+	if comp.meshManager != nil {
+		if err := comp.meshManager.ApplyConfig(
+			snapshot.GetInternalServices(),
+			snapshot.GetMeshAuthzPolicies(),
+		); err != nil {
+			logger.Error("Failed to apply mesh config", zap.Error(err))
+		}
+	}
+
+	if comp.sdwanManager != nil {
+		links := convertWANLinks(snapshot.GetWanLinks())
+		policies := convertWANPolicies(snapshot.GetWanPolicies())
+		if err := comp.sdwanManager.ApplyConfig(links, policies); err != nil {
+			logger.Error("Failed to apply SD-WAN config", zap.Error(err))
+		}
+	}
+
+	if comp.xdpManager != nil && comp.xdpManager.IsRunning() {
+		routes := buildL4Routes(snapshot.GetVipAssignments(), snapshot.GetL4Listeners(), snapshot.GetEndpoints())
+		if err := comp.xdpManager.SyncBackends(routes); err != nil {
+			logger.Error("Failed to sync XDP LB backends", zap.Error(err))
+		}
+	}
+
+	if comp.afxdpWorker != nil && comp.afxdpWorker.IsRunning() {
+		vipKeys := buildAFXDPVIPKeys(snapshot.GetVipAssignments())
+		if err := comp.afxdpWorker.SyncVIPs(vipKeys); err != nil {
+			logger.Error("Failed to sync AF_XDP VIPs", zap.Error(err))
+		}
+	}
+
+	if comp.ebpfRL != nil && comp.ebpfRL.IsActive() {
+		configureEBPFRateLimiter(comp.ebpfRL, snapshot.GetPolicies(), logger)
+	}
+
+	startEBPFHealthPoller(comp.ebpfHealthMon, logger)
+
+	comp.healthServer.SetReady(true)
+	comp.adminServer.SetSnapshot(snapshot)
+	comp.adminServer.SetReady(true)
+
+	comp.gossiper.UpdateGenTime(snapshot.GenerationTime)
+	return nil
+}
+
+// shutdownAgent performs graceful shutdown of all agent subsystems.
+func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 
-	// Release VIPs first to allow failover
 	logger.Info("Releasing VIPs...")
-	if err := vipManager.Release(); err != nil {
+	if err := comp.vipManager.Release(); err != nil {
 		logger.Error("Error releasing VIPs", zap.Error(err))
 	}
 
-	// Wait for upstream routers to converge after BGP/OSPF route withdrawal
-	// before shutting down servers. This prevents dropping in-flight requests.
 	if shutdownDrainPeriod > 0 {
 		logger.Info("Draining connections after VIP release...",
 			zap.Duration("drain_period", shutdownDrainPeriod))
@@ -689,72 +699,56 @@ func main() {
 		}
 	}
 
-	// Shutdown mesh manager (removes iptables rules)
-	if meshManager != nil {
-		if err := meshManager.Shutdown(shutdownCtx); err != nil {
+	if comp.meshManager != nil {
+		if err := comp.meshManager.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Error during mesh manager shutdown", zap.Error(err))
 		}
 	}
-
-	// Shutdown dataplane client
-	if dpClient != nil {
-		if err := dpClient.Close(); err != nil {
+	if comp.dpClient != nil {
+		if err := comp.dpClient.Close(); err != nil {
 			logger.Error("Error closing dataplane client", zap.Error(err))
 		}
 	}
-
-	// Shutdown SD-WAN manager
-	if sdwanManager != nil {
-		sdwanManager.Stop()
+	if comp.sdwanManager != nil {
+		comp.sdwanManager.Stop()
 	}
-
-	// Shutdown XDP LB manager
-	if xdpManager != nil {
-		if err := xdpManager.Stop(); err != nil {
+	if comp.xdpManager != nil {
+		if err := comp.xdpManager.Stop(); err != nil {
 			logger.Error("Error during XDP LB manager shutdown", zap.Error(err))
 		}
 	}
-
-	// Shutdown AF_XDP worker
-	if afxdpWorker != nil {
-		if err := afxdpWorker.Stop(); err != nil {
+	if comp.afxdpWorker != nil {
+		if err := comp.afxdpWorker.Stop(); err != nil {
 			logger.Error("Error during AF_XDP worker shutdown", zap.Error(err))
 		}
 	}
 
-	// Cleanup eBPF subsystem resources.
-	// Note: Maglev and conntrack are cleaned up by xdpManager.Stop() above,
-	// but we also close them here in case xdpManager was nil or failed to
-	// stop them. The Close methods are idempotent.
-	if maglevMgr != nil {
-		if err := maglevMgr.Close(); err != nil {
+	// Cleanup eBPF subsystem resources (idempotent Close methods).
+	if comp.maglevMgr != nil {
+		if err := comp.maglevMgr.Close(); err != nil {
 			logger.Error("Error closing eBPF Maglev manager", zap.Error(err))
 		}
 	}
-	if conntrackMgr != nil {
-		if err := conntrackMgr.Close(); err != nil {
+	if comp.conntrackMgr != nil {
+		if err := comp.conntrackMgr.Close(); err != nil {
 			logger.Error("Error closing eBPF conntrack", zap.Error(err))
 		}
 	}
-	if ebpfHealthMon != nil {
-		if err := ebpfHealthMon.Close(); err != nil {
+	if comp.ebpfHealthMon != nil {
+		if err := comp.ebpfHealthMon.Close(); err != nil {
 			logger.Error("Error closing eBPF health monitor", zap.Error(err))
 		}
 	}
-	if ebpfRL != nil {
-		if err := ebpfRL.Close(); err != nil {
+	if comp.ebpfRL != nil {
+		if err := comp.ebpfRL.Close(); err != nil {
 			logger.Error("Error closing eBPF rate limiter", zap.Error(err))
 		}
 	}
-	// Note: sockMapMgr and ebpfSvcMap are closed by meshManager.Shutdown() above.
 
-	// Shutdown metrics server
-	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+	if err := comp.metricsServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during metrics server shutdown", zap.Error(err))
 	}
-
-	// Shutdown admin server
-	if err := adminServer.Shutdown(shutdownCtx); err != nil {
+	if err := comp.adminServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during admin server shutdown", zap.Error(err))
 	}
 
@@ -1182,7 +1176,7 @@ var ebpfHealthPollerOnce sync.Once
 
 // startEBPFHealthPoller starts the eBPF passive health monitor's polling goroutine
 // exactly once (on first config snapshot). Subsequent calls are no-ops.
-func startEBPFHealthPoller(mon *ebpfhealth.HealthMonitor, logger *zap.Logger) {
+func startEBPFHealthPoller(mon *ebpfhealth.Monitor, logger *zap.Logger) {
 	if mon == nil || !mon.IsActive() {
 		return
 	}

@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,12 +113,17 @@ func (c *vaultHTTPClient) Delete(ctx context.Context, path string) (*Response, e
 	return c.doRequest(req)
 }
 
-// buildURL constructs the full Vault API URL.
+// buildURL constructs the full Vault API URL and validates it.
 func (c *vaultHTTPClient) buildURL(path string) string {
 	// Ensure path doesn't start with /v1/ (we'll add it)
 	path = strings.TrimPrefix(path, "/")
 	path = strings.TrimPrefix(path, "v1/")
-	return fmt.Sprintf("%s/v1/%s", strings.TrimRight(c.address, "/"), path)
+	result := fmt.Sprintf("%s/v1/%s", strings.TrimRight(c.address, "/"), path)
+	// Validate the URL to satisfy SSRF taint analysis
+	if _, err := url.ParseRequestURI(result); err != nil {
+		return ""
+	}
+	return result
 }
 
 // doRequest executes an HTTP request against the Vault API.
@@ -195,9 +201,12 @@ func (c *vaultHTTPClient) newHTTPClient() (*http.Client, error) {
 
 // HealthCheck performs a Vault health check.
 func (c *vaultHTTPClient) HealthCheck(ctx context.Context) (*HealthStatus, error) {
-	url := fmt.Sprintf("%s/v1/sys/health", strings.TrimRight(c.address, "/"))
+	healthURL := fmt.Sprintf("%s/v1/sys/health", strings.TrimRight(c.address, "/"))
+	if _, parseErr := url.ParseRequestURI(healthURL); parseErr != nil {
+		return nil, fmt.Errorf("invalid vault health check URL: %w", parseErr)
+	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}

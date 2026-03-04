@@ -352,7 +352,7 @@ func (s *Server) handleConfigExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/x-yaml")
 	w.Header().Set("Content-Disposition", "attachment; filename=novaedge-config.yaml")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(data)
+	_, _ = w.Write(data) //nolint:gosec // G705: Content-Type is application/x-yaml, not rendered as HTML
 }
 
 // handleConfigImport handles POST /api/v1/config/import

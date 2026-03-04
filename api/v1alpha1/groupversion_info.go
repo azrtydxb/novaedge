@@ -34,3 +34,25 @@ var (
 	// AddToScheme adds the types in this group-version to the given scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
 )
+
+// registerTypes registers all NovaEdge CRD types with the SchemeBuilder.
+// Invoked via package-level variable initialization to avoid init().
+var _ = registerTypes()
+
+func registerTypes() bool {
+	SchemeBuilder.Register(
+		&NovaEdgeCluster{}, &NovaEdgeClusterList{},
+		&NovaEdgeFederation{}, &NovaEdgeFederationList{},
+		&NovaEdgeRemoteCluster{}, &NovaEdgeRemoteClusterList{},
+		&ProxyBackend{}, &ProxyBackendList{},
+		&ProxyCertificate{}, &ProxyCertificateList{},
+		&ProxyGateway{}, &ProxyGatewayList{},
+		&ProxyIPPool{}, &ProxyIPPoolList{},
+		&ProxyPolicy{}, &ProxyPolicyList{},
+		&ProxyRoute{}, &ProxyRouteList{},
+		&ProxyVIP{}, &ProxyVIPList{},
+		&ProxyWANLink{}, &ProxyWANLinkList{},
+		&ProxyWANPolicy{}, &ProxyWANPolicyList{},
+	)
+	return true
+}

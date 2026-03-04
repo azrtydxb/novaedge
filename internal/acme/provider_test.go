@@ -17,6 +17,7 @@ limitations under the License.
 package acme
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -279,7 +280,7 @@ func TestDNS01Provider_ConcurrentAccess(_ *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		go func(idx int) {
-			domain := "example" + string(rune('0'+idx)) + ".com"
+			domain := "example" + fmt.Sprintf("%d", idx) + ".com"
 			challenge := &DNSChallenge{
 				Domain:  domain,
 				Token:   "token",
@@ -298,7 +299,7 @@ func TestDNS01Provider_ConcurrentAccess(_ *testing.T) {
 	// Test concurrent GetInfo operations
 	for i := 0; i < 10; i++ {
 		go func(idx int) {
-			domain := "example" + string(rune('0'+idx)) + ".com"
+			domain := "example" + fmt.Sprintf("%d", idx) + ".com"
 			_, _ = provider.GetInfo(domain)
 			done <- true
 		}(i)

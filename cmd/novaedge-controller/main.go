@@ -24,7 +24,7 @@ import (
 	"flag"
 	"net"
 	"net/http"
-	_ "net/http/pprof" // registers pprof handlers on http.DefaultServeMux
+	_ "net/http/pprof" //nolint:gosec // G108: pprof is served on localhost:6060 only, not publicly exposed
 	"os"
 
 	uberzap "go.uber.org/zap"
@@ -66,70 +66,289 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-func init() {
+func setupScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(novaedgev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(gatewayv1.Install(scheme))
 }
 
-func main() {
-	var metricsAddr string
-	var enableLeaderElection bool
-	var probeAddr string
-	var grpcAddr string
-	var grpcTLSCert string
-	var grpcTLSKey string
-	var grpcTLSCA string
-	var controllerClass string
+// controllerFlags holds all parsed command-line flags for the controller.
+type controllerFlags struct {
+	metricsAddr          string
+	probeAddr            string
+	grpcAddr             string
+	grpcTLSCert          string
+	grpcTLSKey           string
+	grpcTLSCA            string
+	controllerClass      string
+	defaultVIPRef        string
+	enableServiceLB      bool
+	enableCertManager    string
+	enableVault          string
+	vaultAddr            string
+	vaultAuthMethod      string
+	vaultRole            string
+	meshTrustDomain      string
+	federationID         string
+	federationLocalMember string
+	enableLeaderElection bool
+}
 
-	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
-	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&grpcAddr, "grpc-bind-address", ":9090", "The address the gRPC config server binds to.")
-	flag.StringVar(&grpcTLSCert, "grpc-tls-cert", "", "Path to gRPC server TLS certificate file (enables mTLS if provided)")
-	flag.StringVar(&grpcTLSKey, "grpc-tls-key", "", "Path to gRPC server TLS key file")
-	flag.StringVar(&grpcTLSCA, "grpc-tls-ca", "", "Path to gRPC CA certificate file for client verification")
-	flag.StringVar(&controllerClass, "controller-class", "novaedge.io/proxy",
+func parseControllerFlags() controllerFlags {
+	var f controllerFlags
+	flag.StringVar(&f.metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flag.StringVar(&f.probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flag.StringVar(&f.grpcAddr, "grpc-bind-address", ":9090", "The address the gRPC config server binds to.")
+	flag.StringVar(&f.grpcTLSCert, "grpc-tls-cert", "", "Path to gRPC server TLS certificate file (enables mTLS if provided)")
+	flag.StringVar(&f.grpcTLSKey, "grpc-tls-key", "", "Path to gRPC server TLS key file")
+	flag.StringVar(&f.grpcTLSCA, "grpc-tls-ca", "", "Path to gRPC CA certificate file for client verification")
+	flag.StringVar(&f.controllerClass, "controller-class", "novaedge.io/proxy",
 		"The loadBalancerClass this controller handles. Only gateways matching this class will be reconciled.")
-
-	var defaultVIPRef string
-	var enableServiceLB bool
-	var meshTrustDomain string
-
-	var enableCertManager string
-	var enableVault string
-	var vaultAddr string
-	var vaultAuthMethod string
-	var vaultRole string
-	flag.StringVar(&defaultVIPRef, "default-vip-ref", "default-vip",
+	flag.StringVar(&f.defaultVIPRef, "default-vip-ref", "default-vip",
 		"Default VIP reference name for Ingress resources that don't specify the novaedge.io/vip-ref annotation.")
-	flag.BoolVar(&enableServiceLB, "enable-service-lb", false,
+	flag.BoolVar(&f.enableServiceLB, "enable-service-lb", false,
 		"Enable ServiceLB controller that watches type:LoadBalancer Services and creates ProxyVIP resources with IPAM allocation.")
-	flag.StringVar(&enableCertManager, "enable-cert-manager", "auto", "Enable cert-manager integration (auto|true|false)")
-	flag.StringVar(&enableVault, "enable-vault", "false", "Enable HashiCorp Vault integration (auto|true|false)")
-	flag.StringVar(&vaultAddr, "vault-addr", "", "HashiCorp Vault server address")
-	flag.StringVar(&vaultAuthMethod, "vault-auth-method", "kubernetes", "Vault auth method (kubernetes|approle|token)")
-	flag.StringVar(&vaultRole, "vault-role", "novaedge", "Vault auth role name")
-	flag.StringVar(&meshTrustDomain, "mesh-trust-domain", "cluster.local", "SPIFFE trust domain for mesh mTLS identity")
-
-	var federationID string
-	var federationLocalMember string
-	flag.StringVar(&federationID, "federation-id", "", "Federation identifier. When set, enables federation state on config snapshots.")
-	flag.StringVar(&federationLocalMember, "federation-local-member", "", "Name of this controller in the federation.")
-
-	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
+	flag.StringVar(&f.enableCertManager, "enable-cert-manager", "auto", "Enable cert-manager integration (auto|true|false)")
+	flag.StringVar(&f.enableVault, "enable-vault", "false", "Enable HashiCorp Vault integration (auto|true|false)")
+	flag.StringVar(&f.vaultAddr, "vault-addr", "", "HashiCorp Vault server address")
+	flag.StringVar(&f.vaultAuthMethod, "vault-auth-method", "kubernetes", "Vault auth method (kubernetes|approle|token)")
+	flag.StringVar(&f.vaultRole, "vault-role", "novaedge", "Vault auth role name")
+	flag.StringVar(&f.meshTrustDomain, "mesh-trust-domain", "cluster.local", "SPIFFE trust domain for mesh mTLS identity")
+	flag.StringVar(&f.federationID, "federation-id", "", "Federation identifier. When set, enables federation state on config snapshots.")
+	flag.StringVar(&f.federationLocalMember, "federation-local-member", "", "Name of this controller in the federation.")
+	flag.BoolVar(&f.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	return f
+}
 
-	opts := zap.Options{
-		Development: true,
+// registerReconciler is a helper that registers a single controller with the manager.
+func registerReconciler(mgr ctrl.Manager, name string, setupFn func(ctrl.Manager) error) {
+	if err := setupFn(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", name)
+		os.Exit(1)
 	}
+}
+
+// registerReconcilers registers all CRD and Gateway API reconcilers with the manager.
+func registerReconcilers(mgr ctrl.Manager, f controllerFlags, allocator *ipam.Allocator) *controller.ProxyGatewayReconciler {
+	registerReconciler(mgr, "ProxyVIP", func(m ctrl.Manager) error {
+		return (&controller.ProxyVIPReconciler{
+			Client: m.GetClient(), Scheme: m.GetScheme(), Allocator: allocator,
+		}).SetupWithManager(m)
+	})
+
+	proxyGatewayReconciler := &controller.ProxyGatewayReconciler{
+		Client: mgr.GetClient(), Scheme: mgr.GetScheme(), ControllerClass: f.controllerClass,
+	}
+	registerReconciler(mgr, "ProxyGateway", proxyGatewayReconciler.SetupWithManager)
+
+	registerReconciler(mgr, "ProxyRoute", func(m ctrl.Manager) error {
+		return (&controller.ProxyRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "ProxyBackend", func(m ctrl.Manager) error {
+		return (&controller.ProxyBackendReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "ProxyPolicy", func(m ctrl.Manager) error {
+		return (&controller.ProxyPolicyReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "Ingress", func(m ctrl.Manager) error {
+		return (&controller.IngressReconciler{
+			Client: m.GetClient(), Scheme: m.GetScheme(), DefaultVIPRef: f.defaultVIPRef,
+		}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "Gateway", func(m ctrl.Manager) error {
+		return (&controller.GatewayReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "GRPCRoute", func(m ctrl.Manager) error {
+		return (&controller.GRPCRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "HTTPRoute", func(m ctrl.Manager) error {
+		return (&controller.HTTPRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "GatewayClass", func(m ctrl.Manager) error {
+		return (&controller.GatewayClassReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "ProxyIPPool", func(m ctrl.Manager) error {
+		return (&controller.ProxyIPPoolReconciler{
+			Client: m.GetClient(), Scheme: m.GetScheme(), Allocator: allocator,
+		}).SetupWithManager(m)
+	})
+
+	if f.enableServiceLB {
+		registerReconciler(mgr, "ServiceLB", func(m ctrl.Manager) error {
+			return (&controller.ServiceReconciler{
+				Client:          m.GetClient(),
+				Scheme:          m.GetScheme(),
+				Allocator:       allocator,
+				Recorder:        m.GetEventRecorderFor("service-lb-controller"), //nolint:staticcheck
+				EnableServiceLB: true,
+			}).SetupWithManager(m)
+		})
+		setupLog.Info("ServiceLB controller enabled")
+	}
+
+	registerReconciler(mgr, "EndpointSlice", func(m ctrl.Manager) error {
+		return (&controller.EndpointSliceReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "ProxyWANLink", func(m ctrl.Manager) error {
+		return (&controller.ProxyWANLinkReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+	registerReconciler(mgr, "ProxyWANPolicy", func(m ctrl.Manager) error {
+		return (&controller.ProxyWANPolicyReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+	})
+
+	return proxyGatewayReconciler
+}
+
+// initCertManagerIntegration initializes cert-manager if enabled.
+func initCertManagerIntegration(mgr ctrl.Manager, enableCertManager string, reconciler *controller.ProxyGatewayReconciler) {
+	certMgrMode := certmanager.EnableMode(enableCertManager)
+	detector, detectErr := certmanager.NewDetector(mgr.GetConfig())
+	if detectErr != nil {
+		setupLog.Error(detectErr, "unable to create cert-manager detector")
+		return
+	}
+	certMgrEnabled, shouldEnableErr := detector.ShouldEnable(context.Background(), certMgrMode)
+	switch {
+	case shouldEnableErr != nil:
+		setupLog.Error(shouldEnableErr, "cert-manager detection failed")
+	case certMgrEnabled:
+		dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
+		if dynErr != nil {
+			setupLog.Error(dynErr, "failed to create dynamic client for cert-manager")
+		} else {
+			reconciler.CertManager = certmanager.NewCertificateManager(dynClient)
+			setupLog.Info("cert-manager integration enabled and wired into ProxyGateway reconciler")
+		}
+	default:
+		setupLog.Info("cert-manager integration disabled")
+	}
+}
+
+// initVaultIntegration initializes HashiCorp Vault if enabled.
+func initVaultIntegration(f controllerFlags, reconciler *controller.ProxyGatewayReconciler) {
+	vaultMode := vaultpkg.EnableMode(f.enableVault)
+	if vaultMode == vaultpkg.EnableModeFalse {
+		return
+	}
+	vaultConfig := &vaultpkg.Config{
+		Address:    f.vaultAddr,
+		AuthMethod: vaultpkg.AuthMethod(f.vaultAuthMethod),
+	}
+	if f.vaultAuthMethod == "kubernetes" {
+		vaultConfig.KubernetesAuth = &vaultpkg.KubernetesAuthConfig{
+			Role: f.vaultRole,
+		}
+	}
+	zapLogger, _ := uberzap.NewProduction()
+	vaultEnabled, vaultErr := vaultpkg.ShouldEnable(context.Background(), vaultConfig, vaultMode, zapLogger)
+	switch {
+	case vaultErr != nil:
+		setupLog.Error(vaultErr, "Vault initialization failed")
+		if vaultMode == vaultpkg.EnableModeTrue {
+			os.Exit(1)
+		}
+	case vaultEnabled:
+		vaultClient, clientErr := vaultpkg.NewClient(vaultConfig, zapLogger)
+		if clientErr != nil {
+			setupLog.Error(clientErr, "failed to create Vault client for PKI")
+		} else {
+			reconciler.VaultPKI = vaultpkg.NewPKIManager(vaultClient, zapLogger)
+			setupLog.Info("Vault integration enabled and wired into ProxyGateway reconciler", "address", f.vaultAddr)
+		}
+	default:
+		setupLog.Info("Vault integration disabled")
+	}
+}
+
+// initConfigServer creates the config server, wires mesh CA and federation, and starts the gRPC server.
+func initConfigServer(mgr ctrl.Manager, f controllerFlags) *grpc.Server {
+	// Initialize mesh CA for issuing workload certificates.
+	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "failed to create direct client for mesh CA")
+		os.Exit(1)
+	}
+	meshCALogger, _ := uberzap.NewProduction()
+	meshCA := meshca.NewMeshCA(meshCALogger, f.meshTrustDomain)
+	if err := meshCA.Initialize(context.Background(), directClient); err != nil {
+		setupLog.Error(err, "failed to initialize mesh CA")
+		os.Exit(1)
+	}
+	setupLog.Info("Mesh CA initialized", "trustDomain", f.meshTrustDomain)
+
+	configServer := snapshot.NewServer(mgr.GetClient())
+	configServer.SetMeshCA(meshCA)
+
+	// Wire federation state provider when configured.
+	if f.federationID != "" && f.federationLocalMember != "" {
+		fedConfig := &federation.Config{
+			FederationID: f.federationID,
+			LocalMember:  &federation.PeerInfo{Name: f.federationLocalMember},
+		}
+		fedLogger, _ := uberzap.NewProduction()
+		fedManager := federation.NewManager(fedConfig, fedLogger)
+		configServer.SetFederationProvider(fedManager)
+		setupLog.Info("Federation state provider wired into snapshot builder",
+			"federationID", f.federationID, "localMember", f.federationLocalMember)
+	}
+
+	// Create gRPC server with message size limits and interceptors
+	grpcLogger, _ := uberzap.NewProduction()
+	serverOpts := grpclimits.ServerOptions(grpcLogger)
+
+	var grpcServer *grpc.Server
+	if f.grpcTLSCert != "" && f.grpcTLSKey != "" && f.grpcTLSCA != "" {
+		creds, tlsErr := tlsutil.LoadServerTLSCredentials(f.grpcTLSCert, f.grpcTLSKey, f.grpcTLSCA)
+		if tlsErr != nil {
+			setupLog.Error(tlsErr, "failed to load gRPC TLS credentials")
+			os.Exit(1)
+		}
+		grpcServer = grpc.NewServer(append(serverOpts, grpc.Creds(creds))...)
+		setupLog.Info("gRPC server configured with mTLS",
+			"cert", f.grpcTLSCert, "ca", f.grpcTLSCA,
+			"max_recv_msg_size", grpclimits.DefaultMaxRecvMsgSize,
+			"max_send_msg_size", grpclimits.DefaultMaxSendMsgSize)
+	} else {
+		grpcServer = grpc.NewServer(serverOpts...)
+		setupLog.Info("WARNING: gRPC server running without TLS (insecure)")
+	}
+
+	configServer.RegisterServer(grpcServer)
+
+	// Start gRPC server in a goroutine
+	go func() {
+		var lc net.ListenConfig
+		lis, lisErr := lc.Listen(context.Background(), "tcp", f.grpcAddr)
+		if lisErr != nil {
+			setupLog.Error(lisErr, "failed to listen for gRPC")
+			os.Exit(1)
+		}
+		setupLog.Info("starting gRPC config server", "address", f.grpcAddr)
+		if serveErr := grpcServer.Serve(lis); serveErr != nil {
+			setupLog.Error(serveErr, "failed to serve gRPC")
+			os.Exit(1)
+		}
+	}()
+
+	// Pass config server to reconcilers so they can trigger updates
+	controller.SetConfigServer(configServer)
+
+	return grpcServer
+}
+
+func main() {
+	setupScheme()
+	f := parseControllerFlags()
+
+	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
 	// Expose dynamic log level endpoint on default mux.
-	// PUT /debug/loglevel with body like "debug" or "info" to change at runtime.
 	controllerAtomicLevel := uberzap.NewAtomicLevelAt(uberzap.InfoLevel)
 	http.Handle("/debug/loglevel", controllerAtomicLevel)
 
@@ -147,10 +366,10 @@ func main() {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Metrics: metricsserver.Options{
-			BindAddress: metricsAddr,
+			BindAddress: f.metricsAddr,
 		},
-		HealthProbeBindAddress: probeAddr,
-		LeaderElection:         enableLeaderElection,
+		HealthProbeBindAddress: f.probeAddr,
+		LeaderElection:         f.enableLeaderElection,
 		LeaderElectionID:       "novaedge-controller-leader-election",
 	})
 	if err != nil {
@@ -158,146 +377,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create shared IPAM allocator for IP pool management
 	ipamLogger, _ := uberzap.NewProduction()
 	allocator := ipam.NewAllocator(ipamLogger)
 
-	if err = (&controller.ProxyVIPReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Allocator: allocator,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyVIP")
-		os.Exit(1)
-	}
+	proxyGatewayReconciler := registerReconcilers(mgr, f, allocator)
 
-	// Build ProxyGateway reconciler with optional cert-manager and Vault integrations.
-	// These will be populated below if the respective integrations are enabled.
-	proxyGatewayReconciler := &controller.ProxyGatewayReconciler{
-		Client:          mgr.GetClient(),
-		Scheme:          mgr.GetScheme(),
-		ControllerClass: controllerClass,
-	}
-	if err = proxyGatewayReconciler.SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyGateway")
-		os.Exit(1)
-	}
-
-	if err = (&controller.ProxyRouteReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyRoute")
-		os.Exit(1)
-	}
-
-	if err = (&controller.ProxyBackendReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyBackend")
-		os.Exit(1)
-	}
-
-	if err = (&controller.ProxyPolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyPolicy")
-		os.Exit(1)
-	}
-
-	if err = (&controller.IngressReconciler{
-		Client:        mgr.GetClient(),
-		Scheme:        mgr.GetScheme(),
-		DefaultVIPRef: defaultVIPRef,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Ingress")
-		os.Exit(1)
-	}
-
-	if err = (&controller.GatewayReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Gateway")
-		os.Exit(1)
-	}
-
-	if err = (&controller.GRPCRouteReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GRPCRoute")
-		os.Exit(1)
-	}
-
-	if err = (&controller.HTTPRouteReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "HTTPRoute")
-		os.Exit(1)
-	}
-
-	if err = (&controller.GatewayClassReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "GatewayClass")
-		os.Exit(1)
-	}
-
-	// Register ProxyIPPool reconciler with the shared IPAM allocator
-	if err = (&controller.ProxyIPPoolReconciler{
-		Client:    mgr.GetClient(),
-		Scheme:    mgr.GetScheme(),
-		Allocator: allocator,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyIPPool")
-		os.Exit(1)
-	}
-
-	// Conditionally register ServiceLB controller
-	if enableServiceLB {
-		if err = (&controller.ServiceReconciler{
-			Client:          mgr.GetClient(),
-			Scheme:          mgr.GetScheme(),
-			Allocator:       allocator,
-			Recorder:        mgr.GetEventRecorderFor("service-lb-controller"), //nolint:staticcheck
-			EnableServiceLB: true,
-		}).SetupWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create controller", "controller", "ServiceLB")
-			os.Exit(1)
-		}
-		setupLog.Info("ServiceLB controller enabled")
-	}
-
-	// Register EndpointSlice reconciler to trigger config updates on endpoint changes
-	if err = (&controller.EndpointSliceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "EndpointSlice")
-		os.Exit(1)
-	}
-
-	// Register SD-WAN reconcilers
-	if err = (&controller.ProxyWANLinkReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyWANLink")
-		os.Exit(1)
-	}
-
-	if err = (&controller.ProxyWANPolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ProxyWANPolicy")
-		os.Exit(1)
-	}
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)
@@ -307,142 +391,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize cert-manager integration
-	certMgrMode := certmanager.EnableMode(enableCertManager)
-	detector, detectErr := certmanager.NewDetector(mgr.GetConfig())
-	if detectErr != nil {
-		setupLog.Error(detectErr, "unable to create cert-manager detector")
-	} else {
-		certMgrEnabled, shouldEnableErr := detector.ShouldEnable(context.Background(), certMgrMode)
-		switch {
-		case shouldEnableErr != nil:
-			setupLog.Error(shouldEnableErr, "cert-manager detection failed")
-		case certMgrEnabled:
-			dynClient, dynErr := dynamic.NewForConfig(mgr.GetConfig())
-			if dynErr != nil {
-				setupLog.Error(dynErr, "failed to create dynamic client for cert-manager")
-			} else {
-				proxyGatewayReconciler.CertManager = certmanager.NewCertificateManager(dynClient)
-				setupLog.Info("cert-manager integration enabled and wired into ProxyGateway reconciler")
-			}
-		default:
-			setupLog.Info("cert-manager integration disabled")
-		}
-	}
-
-	// Initialize Vault integration
-	vaultMode := vaultpkg.EnableMode(enableVault)
-	if vaultMode != vaultpkg.EnableModeFalse {
-		vaultConfig := &vaultpkg.Config{
-			Address:    vaultAddr,
-			AuthMethod: vaultpkg.AuthMethod(vaultAuthMethod),
-		}
-		if vaultAuthMethod == "kubernetes" {
-			vaultConfig.KubernetesAuth = &vaultpkg.KubernetesAuthConfig{
-				Role: vaultRole,
-			}
-		}
-		zapLogger, _ := uberzap.NewProduction()
-		vaultEnabled, vaultErr := vaultpkg.ShouldEnable(context.Background(), vaultConfig, vaultMode, zapLogger)
-		switch {
-		case vaultErr != nil:
-			setupLog.Error(vaultErr, "Vault initialization failed")
-			if vaultMode == vaultpkg.EnableModeTrue {
-				os.Exit(1)
-			}
-		case vaultEnabled:
-			vaultClient, clientErr := vaultpkg.NewClient(vaultConfig, zapLogger)
-			if clientErr != nil {
-				setupLog.Error(clientErr, "failed to create Vault client for PKI")
-			} else {
-				proxyGatewayReconciler.VaultPKI = vaultpkg.NewPKIManager(vaultClient, zapLogger)
-				setupLog.Info("Vault integration enabled and wired into ProxyGateway reconciler", "address", vaultAddr)
-			}
-		default:
-			setupLog.Info("Vault integration disabled")
-		}
-	}
-
-	// Initialize mesh CA for issuing workload certificates.
-	// Use a direct (non-cached) client since the manager cache hasn't started yet.
-	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
-	if err != nil {
-		setupLog.Error(err, "failed to create direct client for mesh CA")
-		os.Exit(1)
-	}
-	meshCALogger, _ := uberzap.NewProduction()
-	meshCA := meshca.NewMeshCA(meshCALogger, meshTrustDomain)
-	if err := meshCA.Initialize(context.Background(), directClient); err != nil {
-		setupLog.Error(err, "failed to initialize mesh CA")
-		os.Exit(1)
-	}
-	setupLog.Info("Mesh CA initialized", "trustDomain", meshTrustDomain)
-
-	// Create and start gRPC server for config distribution
-	configServer := snapshot.NewServer(mgr.GetClient())
-	configServer.SetMeshCA(meshCA)
-
-	// Wire federation state provider into the snapshot builder when federation
-	// is configured. This allows built snapshots to include federation metadata
-	// and remote endpoints from federated clusters.
-	if federationID != "" && federationLocalMember != "" {
-		fedConfig := &federation.Config{
-			FederationID: federationID,
-			LocalMember: &federation.PeerInfo{
-				Name: federationLocalMember,
-			},
-		}
-		fedLogger, _ := uberzap.NewProduction()
-		fedManager := federation.NewManager(fedConfig, fedLogger)
-		configServer.SetFederationProvider(fedManager)
-		setupLog.Info("Federation state provider wired into snapshot builder",
-			"federationID", federationID,
-			"localMember", federationLocalMember)
-	}
-
-	// Create gRPC server with message size limits and interceptors
-	grpcLogger, _ := uberzap.NewProduction()
-	serverOpts := grpclimits.ServerOptions(grpcLogger)
-
-	var grpcServer *grpc.Server
-	if grpcTLSCert != "" && grpcTLSKey != "" && grpcTLSCA != "" {
-		// Load TLS credentials for mTLS
-		creds, err := tlsutil.LoadServerTLSCredentials(grpcTLSCert, grpcTLSKey, grpcTLSCA)
-		if err != nil {
-			setupLog.Error(err, "failed to load gRPC TLS credentials")
-			os.Exit(1)
-		}
-		grpcServer = grpc.NewServer(append(serverOpts, grpc.Creds(creds))...)
-		setupLog.Info("gRPC server configured with mTLS",
-			"cert", grpcTLSCert,
-			"ca", grpcTLSCA,
-			"max_recv_msg_size", grpclimits.DefaultMaxRecvMsgSize,
-			"max_send_msg_size", grpclimits.DefaultMaxSendMsgSize)
-	} else {
-		// Create insecure gRPC server (for development only)
-		grpcServer = grpc.NewServer(serverOpts...)
-		setupLog.Info("WARNING: gRPC server running without TLS (insecure)")
-	}
-
-	configServer.RegisterServer(grpcServer)
-
-	// Start gRPC server in a goroutine
-	go func() {
-		var lc net.ListenConfig
-		lis, err := lc.Listen(context.Background(), "tcp", grpcAddr)
-		if err != nil {
-			setupLog.Error(err, "failed to listen for gRPC")
-			os.Exit(1)
-		}
-		setupLog.Info("starting gRPC config server", "address", grpcAddr)
-		if err := grpcServer.Serve(lis); err != nil {
-			setupLog.Error(err, "failed to serve gRPC")
-			os.Exit(1)
-		}
-	}()
-
-	// Pass config server to reconcilers so they can trigger updates
-	controller.SetConfigServer(configServer)
+	initCertManagerIntegration(mgr, f.enableCertManager, proxyGatewayReconciler)
+	initVaultIntegration(f, proxyGatewayReconciler)
+	grpcServer := initConfigServer(mgr, f)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {

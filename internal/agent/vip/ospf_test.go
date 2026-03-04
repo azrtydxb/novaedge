@@ -18,6 +18,7 @@ package vip
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -773,8 +774,8 @@ func TestOSPFHandler_AuthenticationTypes(t *testing.T) {
 			t.Cleanup(func() { handler.Shutdown() })
 
 			assignment := &pb.VIPAssignment{
-				VipName: "test-auth-" + string(rune('a'+i)),
-				Address: "10.200.0." + string(rune('1'+i)) + "/32",
+				VipName: fmt.Sprintf("test-auth-%d", i),
+				Address: fmt.Sprintf("10.200.0.%d/32", i+1),
 				Mode:    pb.VIPMode_OSPF,
 				OspfConfig: &pb.OSPFConfig{
 					RouterId: "10.0.0.1",

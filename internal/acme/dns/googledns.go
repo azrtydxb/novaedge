@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -153,10 +154,10 @@ func (p *GoogleDNSProvider) submitChange(ctx context.Context, change *googleDNSC
 		return fmt.Errorf("failed to marshal change: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/projects/%s/managedZones/%s/changes",
-		googleDNSAPIBase, p.project, p.managedZone)
+	apiURL := fmt.Sprintf("%s/projects/%s/managedZones/%s/changes",
+		googleDNSAPIBase, url.PathEscape(p.project), url.PathEscape(p.managedZone))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

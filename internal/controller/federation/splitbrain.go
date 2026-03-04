@@ -449,6 +449,8 @@ func (d *SplitBrainDetector) checkForPartition() {
 				zap.Strings("unreachable", unreachable),
 				zap.Strings("reachable", reachable),
 			)
+		case PartitionStateConfirmed, PartitionStateHealing:
+			// Already confirmed or healing; no state change needed from suspected partial view.
 		case PartitionStateSuspected:
 			// Check if suspected long enough to confirm
 			if d.partitionInfo != nil && time.Since(d.partitionInfo.DetectedAt) > d.config.PartitionTimeout {

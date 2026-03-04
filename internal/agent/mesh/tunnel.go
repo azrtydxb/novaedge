@@ -25,6 +25,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -407,6 +408,11 @@ func (tp *TunnelPool) DialVia(ctx context.Context, nodeAddr, backendAddr, source
 	// Build the CONNECT request. For HTTP/2, the CONNECT method uses
 	// the :authority pseudo-header as the target, which maps to req.Host.
 	reqURL := fmt.Sprintf("https://%s", backendAddr)
+	if _, parseErr := url.ParseRequestURI(reqURL); parseErr != nil {
+		_ = pw.Close()
+		_ = pr.Close()
+		return nil, fmt.Errorf("invalid backend address %q: %w", backendAddr, parseErr)
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodConnect, reqURL, pr)
 	if err != nil {
 		_ = pw.Close()
@@ -622,14 +628,14 @@ func (sc *streamConn) setTimerLocked(timer **time.Timer, t time.Time) {
 	d := time.Until(t)
 	if d <= 0 {
 		// Deadline already passed — close I/O immediately.
-		sc.closeLocked()
+		_ = sc.closeLocked()
 		return
 	}
 
 	*timer = time.AfterFunc(d, func() {
 		sc.mu.Lock()
 		defer sc.mu.Unlock()
-		sc.closeLocked()
+		_ = sc.closeLocked()
 	})
 }
 

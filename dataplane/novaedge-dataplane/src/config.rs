@@ -35,6 +35,7 @@ pub struct TlsState {
 
 /// Route state mapping requests to backends.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RouteState {
     pub name: String,
     pub gateway_ref: String,
@@ -80,6 +81,7 @@ pub struct PolicyState {
 
 /// Backend cluster state with endpoints.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ClusterState {
     pub name: String,
     pub endpoints: Vec<EndpointState>,
@@ -172,6 +174,7 @@ pub struct EndpointState {
 
 /// A group of remote endpoints from a federated cluster.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct RemoteEndpointGroup {
     /// Name of the remote cluster.
     pub cluster_name: String,
@@ -236,6 +239,7 @@ impl RuntimeConfig {
     }
 
     /// Set the local zone for zone-aware routing.
+    #[allow(dead_code)]
     pub async fn set_local_zone(&self, zone: String) {
         *self.local_zone.write().await = zone;
     }
@@ -509,6 +513,7 @@ impl RuntimeConfig {
     }
 
     /// Remove draining endpoints that have exceeded the 30s drain deadline.
+    #[allow(dead_code)]
     pub fn cleanup_draining_endpoints(&self) {
         for mut entry in self.clusters.iter_mut() {
             let cluster = entry.value_mut();

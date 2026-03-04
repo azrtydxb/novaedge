@@ -70,7 +70,7 @@ func TestPKIManager_ShouldRenew(t *testing.T) {
 }
 
 func TestPKICertificate_CertToPEM(t *testing.T) {
-	cert := &PKICertificate{
+	cert := &PKICertificate{ //nolint:gosec // G101: test fixture data, not real credentials
 		Certificate: "-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----",
 		IssuingCA:   "-----BEGIN CERTIFICATE-----\ntest-ca\n-----END CERTIFICATE-----",
 		PrivateKey:  "-----BEGIN RSA PRIVATE KEY-----\ntest-key\n-----END RSA PRIVATE KEY-----",
@@ -92,7 +92,7 @@ func TestPKICertificate_CertToPEM(t *testing.T) {
 }
 
 func TestPKICertificate_CertToPEM_NoCA(t *testing.T) {
-	cert := &PKICertificate{
+	cert := &PKICertificate{ //nolint:gosec // G101: test fixture data, not real credentials
 		Certificate: "-----BEGIN CERTIFICATE-----\ntest-cert\n-----END CERTIFICATE-----",
 		PrivateKey:  "-----BEGIN RSA PRIVATE KEY-----\ntest-key\n-----END RSA PRIVATE KEY-----",
 	}

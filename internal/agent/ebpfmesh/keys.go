@@ -24,8 +24,9 @@ import (
 )
 
 var (
-	errInvalidIP = errors.New("invalid IP")
-	errNotIPv4   = errors.New("not IPv4")
+	errInvalidIP      = errors.New("invalid IP")
+	errNotIPv4        = errors.New("not IPv4")
+	errPortOutOfRange = errors.New("port out of valid range")
 )
 
 // meshSvcKey matches the C struct mesh_svc_key layout.
@@ -33,11 +34,6 @@ type meshSvcKey struct {
 	Addr [4]byte
 	Port uint16
 	Pad  uint16
-}
-
-// meshSvcValue matches the C struct mesh_svc_value layout.
-type meshSvcValue struct {
-	RedirectPort uint32
 }
 
 // makeServiceKey constructs a BPF map key from an IP string and port.
@@ -49,6 +45,9 @@ func makeServiceKey(ip string, port int32) (meshSvcKey, error) {
 	ip4 := parsed.To4()
 	if ip4 == nil {
 		return meshSvcKey{}, fmt.Errorf("%w: %s", errNotIPv4, ip)
+	}
+	if port < 0 || port > 65535 {
+		return meshSvcKey{}, fmt.Errorf("%w: %d", errPortOutOfRange, port)
 	}
 	key := meshSvcKey{
 		Port: htons(uint16(port)),

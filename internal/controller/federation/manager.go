@@ -89,7 +89,7 @@ func NewManagerFromCRD(federation *novaedgev1alpha1.NovaEdgeFederation, logger *
 type TLSCredentials struct {
 	CACert     []byte
 	ClientCert []byte
-	ClientKey  []byte
+	ClientKey []byte //nolint:gosec // G117: struct field name for TLS credential holder, not a hardcoded credential
 }
 
 // NewManagerFromCRDWithCreds creates a federation manager from a NovaEdgeFederation CRD with TLS credentials

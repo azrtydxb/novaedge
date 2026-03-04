@@ -16,6 +16,8 @@ limitations under the License.
 
 package ratelimit
 
+const osLinux = osLinux
+
 import (
 	"net"
 	"runtime"
@@ -29,7 +31,7 @@ func TestNewRateLimiter(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	rl, err := NewRateLimiter(logger, 1000)
 
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		// On non-Linux, creation should fail.
 		if err == nil {
 			t.Fatal("expected error on non-Linux platform")
@@ -41,7 +43,7 @@ func TestNewRateLimiter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
-	defer rl.Close()
+	defer func() { _ = rl.Close() }()
 
 	if !rl.IsActive() {
 		t.Error("expected IsActive() == true after creation")
@@ -52,7 +54,7 @@ func TestRateLimiterConfigure(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	rl, err := NewRateLimiter(logger, 1000)
 
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		if err == nil {
 			t.Fatal("expected error on non-Linux platform")
 		}
@@ -63,7 +65,7 @@ func TestRateLimiterConfigure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
-	defer rl.Close()
+	defer func() { _ = rl.Close() }()
 
 	if err := rl.Configure(100, 200); err != nil {
 		t.Errorf("Configure() returned error: %v", err)
@@ -74,7 +76,7 @@ func TestRateLimiterGetStats(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	rl, err := NewRateLimiter(logger, 1000)
 
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		if err == nil {
 			t.Fatal("expected error on non-Linux platform")
 		}
@@ -85,7 +87,7 @@ func TestRateLimiterGetStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
-	defer rl.Close()
+	defer func() { _ = rl.Close() }()
 
 	stats, err := rl.GetStats()
 	if err != nil {
@@ -103,7 +105,7 @@ func TestRateLimiterCheckAllowed(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	rl, err := NewRateLimiter(logger, 1000)
 
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		if err == nil {
 			t.Fatal("expected error on non-Linux platform")
 		}
@@ -114,7 +116,7 @@ func TestRateLimiterCheckAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRateLimiter() returned error: %v", err)
 	}
-	defer rl.Close()
+	defer func() { _ = rl.Close() }()
 
 	// Unknown IP should be allowed (not in map yet).
 	allowed, err := rl.CheckAllowed(net.ParseIP("10.0.0.1"))
@@ -130,7 +132,7 @@ func TestRateLimiterCloseIdempotent(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	rl, err := NewRateLimiter(logger, 1000)
 
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		if err == nil {
 			t.Fatal("expected error on non-Linux platform")
 		}
@@ -155,8 +157,8 @@ func TestRateLimiterCloseIdempotent(t *testing.T) {
 	}
 }
 
-func TestRateLimitKeyIPv4(t *testing.T) {
-	key := RateLimitKey{}
+func TestKeyIPv4(t *testing.T) {
+	key := Key{}
 	ip := net.ParseIP("192.168.1.1").To16()
 	copy(key.IP[:], ip)
 
@@ -173,8 +175,8 @@ func TestRateLimitKeyIPv4(t *testing.T) {
 	}
 }
 
-func TestRateLimitKeyIPv6(t *testing.T) {
-	key := RateLimitKey{}
+func TestKeyIPv6(t *testing.T) {
+	key := Key{}
 	ip := net.ParseIP("2001:db8::1").To16()
 	copy(key.IP[:], ip)
 
@@ -183,8 +185,8 @@ func TestRateLimitKeyIPv6(t *testing.T) {
 	}
 }
 
-func TestRateLimitConfig(t *testing.T) {
-	config := RateLimitConfig{
+func TestConfig(t *testing.T) {
+	config := Config{
 		Rate:     100,
 		Burst:    200,
 		WindowNS: 1_000_000_000,
@@ -200,8 +202,8 @@ func TestRateLimitConfig(t *testing.T) {
 	}
 }
 
-func TestRateLimitStats(t *testing.T) {
-	stats := RateLimitStats{
+func TestStats(t *testing.T) {
+	stats := Stats{
 		Allowed: 1000,
 		Denied:  50,
 	}

@@ -51,12 +51,13 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
-func init() {
+func setupScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(novaedgev1alpha1.AddToScheme(scheme))
 }
 
 func main() {
+	setupScheme()
 	// Core flags
 	var metricsAddr string
 	var probeAddr string

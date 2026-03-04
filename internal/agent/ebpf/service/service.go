@@ -29,7 +29,7 @@ import (
 
 const subsystem = "service"
 
-// ServiceMap manages the eBPF service lookup maps used to accelerate
+// Map manages the eBPF service lookup maps used to accelerate
 // service-to-backend resolution in the mesh data path. It maintains two
 // levels of BPF maps:
 //
@@ -43,10 +43,10 @@ const subsystem = "service"
 // avoiding the Go-side ServiceTable.Lookup() hot path for L4 decisions.
 // For L7 traffic that requires Go processing, the BPF lookup provides
 // service metadata that is attached to the connection context.
-type ServiceMap struct {
+type Map struct {
 	mu                    sync.Mutex
 	logger                *zap.Logger
-	serviceMap            *ebpf.Map // BPF_MAP_TYPE_HASH: ServiceKey -> ServiceValue
+	serviceMap            *ebpf.Map // BPF_MAP_TYPE_HASH: Key -> Value
 	backendArray          *ebpf.Map // BPF_MAP_TYPE_ARRAY: uint32 -> BackendInfo
 	maxServices           uint32
 	maxBackendsPerService uint32
@@ -55,11 +55,11 @@ type ServiceMap struct {
 	// slots, so the offset for a new service is nextBackendSlot.
 	nextBackendSlot uint32
 	// serviceSlots maps service keys to their starting offset in the backend array.
-	serviceSlots map[ServiceKey]uint32
+	serviceSlots map[Key]uint32
 	closed       bool
 }
 
-// NewServiceMap creates a new eBPF service lookup map manager. The
+// NewMap creates a new eBPF service lookup map manager. The
 // maxServices parameter sets the maximum number of services that can be
 // tracked, and maxBackendsPerService sets the maximum number of backends
 // per service.
@@ -70,7 +70,7 @@ type ServiceMap struct {
 // CPU copies, which is unnecessary overhead for a read-heavy workload.
 // The backend array uses BPF_MAP_TYPE_ARRAY for O(1) indexed lookups
 // by the BPF program.
-func NewServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32) (*ServiceMap, error) {
+func NewMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32) (*Map, error) {
 	namedLogger := logger.With(zap.String("component", "ebpf-service-map"))
 
 	if maxServices == 0 {
@@ -84,8 +84,8 @@ func NewServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32
 	svcSpec := &ebpf.MapSpec{
 		Name:       "novaedge_svc_map",
 		Type:       ebpf.Hash,
-		KeySize:    uint32(8), // sizeof(ServiceKey): 4+2+1+1 = 8
-		ValueSize:  uint32(8), // sizeof(ServiceValue): 4+4 = 8
+		KeySize:    uint32(8), // sizeof(Key): 4+2+1+1 = 8
+		ValueSize:  uint32(8), // sizeof(Value): 4+4 = 8
 		MaxEntries: maxServices,
 	}
 	svcMap, err := ebpf.NewMap(svcSpec)
@@ -116,13 +116,13 @@ func NewServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32
 		zap.Uint32("max_backends_per_service", maxBackendsPerService),
 		zap.Uint32("total_backend_slots", totalBackendSlots))
 
-	return &ServiceMap{
+	return &Map{
 		logger:                namedLogger,
 		serviceMap:            svcMap,
 		backendArray:          backendArr,
 		maxServices:           maxServices,
 		maxBackendsPerService: maxBackendsPerService,
-		serviceSlots:          make(map[ServiceKey]uint32),
+		serviceSlots:          make(map[Key]uint32),
 	}, nil
 }
 
@@ -133,9 +133,9 @@ func NewServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32
 //
 // The backends are written to a contiguous region of the backend array
 // at the service's assigned offset. If a service is new, the next
-// available region is allocated. The ServiceValue in the service map
+// available region is allocated. The Value in the service map
 // is updated to reflect the new backend count and flags.
-func (sm *ServiceMap) UpsertService(key ServiceKey, backends []BackendInfo) error {
+func (sm *Map) UpsertService(key Key, backends []BackendInfo) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -183,7 +183,7 @@ func (sm *ServiceMap) UpsertService(key ServiceKey, backends []BackendInfo) erro
 	}
 
 	// Update the service map entry.
-	svcVal := ServiceValue{
+	svcVal := Value{
 		BackendCount: uint32(len(backends)),
 		Flags:        flags,
 	}
@@ -207,7 +207,7 @@ func (sm *ServiceMap) UpsertService(key ServiceKey, backends []BackendInfo) erro
 // The backend array slots are zeroed out but not reclaimed (the slot
 // region remains allocated). For long-running agents, periodic
 // compaction via a full reconciliation pass is recommended.
-func (sm *ServiceMap) DeleteService(key ServiceKey) error {
+func (sm *Map) DeleteService(key Key) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -249,7 +249,7 @@ func (sm *ServiceMap) DeleteService(key ServiceKey) error {
 // services are added; existing services are updated. This is the preferred
 // method for config snapshot application as it handles additions, updates,
 // and deletions atomically.
-func (sm *ServiceMap) Reconcile(desired map[ServiceKey][]BackendInfo) error {
+func (sm *Map) Reconcile(desired map[Key][]BackendInfo) error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 
@@ -258,9 +258,9 @@ func (sm *ServiceMap) Reconcile(desired map[ServiceKey][]BackendInfo) error {
 	}
 
 	// Collect existing keys.
-	existingKeys := make(map[ServiceKey]struct{})
-	var cursor ServiceKey
-	var val ServiceValue
+	existingKeys := make(map[Key]struct{})
+	var cursor Key
+	var val Value
 	iter := sm.serviceMap.Iterate()
 	for iter.Next(&cursor, &val) {
 		keyCopy := cursor
@@ -331,7 +331,7 @@ func (sm *ServiceMap) Reconcile(desired map[ServiceKey][]BackendInfo) error {
 			}
 		}
 
-		svcVal := ServiceValue{
+		svcVal := Value{
 			BackendCount: uint32(len(backends)),
 			Flags:        flags,
 		}
@@ -351,20 +351,20 @@ func (sm *ServiceMap) Reconcile(desired map[ServiceKey][]BackendInfo) error {
 	return nil
 }
 
-// ServiceMapFD returns the file descriptor of the underlying BPF service
+// MapFD returns the file descriptor of the underlying BPF service
 // map for use by BPF program attachment.
-func (sm *ServiceMap) ServiceMapFD() *ebpf.Map {
+func (sm *Map) MapFD() *ebpf.Map {
 	return sm.serviceMap
 }
 
 // BackendArrayFD returns the file descriptor of the underlying BPF backend
 // array for use by BPF program attachment.
-func (sm *ServiceMap) BackendArrayFD() *ebpf.Map {
+func (sm *Map) BackendArrayFD() *ebpf.Map {
 	return sm.backendArray
 }
 
 // Close releases all BPF map resources.
-func (sm *ServiceMap) Close() error {
+func (sm *Map) Close() error {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
 

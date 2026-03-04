@@ -798,7 +798,7 @@ func TestBFDManager_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(id int) {
 			defer wg.Done()
-			peerIP := net.ParseIP(net.IPv4(10, 0, 0, byte(id)).String())
+			peerIP := net.ParseIP(net.IPv4(10, 0, 0, byte(id%256)).String()) //nolint:gosec // G115: id is bounded by loop (0-19)
 			_ = manager.AddSession(peerIP, config)
 			_ = testGetSessionState(manager, peerIP)
 			_ = testGetSessionCount(manager)

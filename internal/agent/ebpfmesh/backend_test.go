@@ -53,7 +53,7 @@ func TestBackendSetupWithoutBPFObjects(t *testing.T) {
 	if err == nil {
 		// If Setup somehow succeeds (e.g. on a Linux box with BPF objects
 		// already generated), clean up.
-		b.Cleanup()
+		_ = b.Cleanup()
 		return
 	}
 	// Expected: error about BPF objects not generated or Linux-only.

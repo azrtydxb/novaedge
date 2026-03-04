@@ -176,7 +176,7 @@ type OSPFConfig struct {
 
 	// AuthKey is the authentication key
 	// +optional
-	AuthKey string `json:"authKey,omitempty"`
+	AuthKey string `json:"authKey,omitempty"` //nolint:gosec // G117: struct field name describes config key, not a hardcoded credential
 
 	// GracefulRestart enables OSPF graceful restart
 	// +optional
@@ -303,6 +303,3 @@ type ProxyVIPList struct {
 	Items           []ProxyVIP `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyVIP{}, &ProxyVIPList{})
-}

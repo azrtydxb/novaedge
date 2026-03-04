@@ -356,6 +356,13 @@ func (r *GatewayReconciler) supportedKindsForProtocol(protocol gatewayv1.Protoco
 				Kind:  "TCPRoute",
 			},
 		}
+	case gatewayv1.UDPProtocolType:
+		return []gatewayv1.RouteGroupKind{
+			{
+				Group: &group,
+				Kind:  "UDPRoute",
+			},
+		}
 	default:
 		return []gatewayv1.RouteGroupKind{
 			{
@@ -372,6 +379,8 @@ func isProtocolSupported(protocol gatewayv1.ProtocolType) bool {
 	case gatewayv1.HTTPProtocolType, gatewayv1.HTTPSProtocolType,
 		gatewayv1.TLSProtocolType, gatewayv1.TCPProtocolType:
 		return true
+	case gatewayv1.UDPProtocolType:
+		return false
 	default:
 		return false
 	}

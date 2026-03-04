@@ -161,6 +161,3 @@ type ProxyWANLinkList struct {
 	Items           []ProxyWANLink `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyWANLink{}, &ProxyWANLinkList{})
-}

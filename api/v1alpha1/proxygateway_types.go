@@ -594,6 +594,3 @@ type ProxyGatewayList struct {
 	Items           []ProxyGateway `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&ProxyGateway{}, &ProxyGatewayList{})
-}

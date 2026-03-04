@@ -81,67 +81,9 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 
 	logger.Info("Reconciling ProxyVIP", "name", vip.Name, "mode", vip.Spec.Mode, "address", vip.Spec.Address)
 
-	// Handle IPAM allocation if poolRef is set and no address allocated yet
-	if vip.Spec.PoolRef != nil && vip.Status.AllocatedAddress == "" && r.Allocator != nil {
-		// First, ensure the pool is loaded
-		pool := &novaedgev1alpha1.ProxyIPPool{}
-		if err := r.Get(ctx, client.ObjectKey{Name: vip.Spec.PoolRef.Name}, pool); err != nil {
-			if !errors.IsNotFound(err) {
-				logger.Error(err, "Failed to get ProxyIPPool", "pool", vip.Spec.PoolRef.Name)
-				return ctrl.Result{}, err
-			}
-			logger.Info("Referenced ProxyIPPool not found", "pool", vip.Spec.PoolRef.Name)
-		} else {
-			// Register pool with allocator (idempotent - updates if exists)
-			cidrs := append([]string{}, pool.Spec.CIDRs...)
-			addresses := append([]string{}, pool.Spec.Addresses...)
-			if err := r.Allocator.AddPool(pool.Name, cidrs, addresses); err != nil {
-				logger.Error(err, "Failed to register IP pool", "pool", pool.Name)
-				return ctrl.Result{}, err
-			}
-
-			// Allocate address from pool
-			allocated, err := r.Allocator.Allocate(pool.Name, vip.Name)
-			if err != nil {
-				logger.Error(err, "Failed to allocate IP from pool", "pool", pool.Name)
-				return ctrl.Result{}, err
-			}
-
-			// Update VIP status with allocated address
-			vip.Status.AllocatedAddress = allocated
-			if err := r.Status().Update(ctx, vip); err != nil {
-				logger.Error(err, "Failed to update VIP status with allocated address")
-				// Release the allocation since we couldn't persist it
-				r.Allocator.Release(pool.Name, vip.Name)
-				return ctrl.Result{}, err
-			}
-
-			logger.Info("Allocated IP from pool",
-				"pool", pool.Name,
-				"address", allocated,
-				"vip", vip.Name,
-			)
-		}
-	}
-
-	// Handle IPAM release if VIP had allocation but poolRef was removed
-	if vip.Spec.PoolRef == nil && vip.Status.AllocatedAddress != "" && r.Allocator != nil {
-		// Clear the allocated address
-		vip.Status.AllocatedAddress = ""
-		vip.Status.AllocatedIPv6Address = ""
-		if err := r.Status().Update(ctx, vip); err != nil {
-			logger.Error(err, "Failed to clear allocated address from VIP status")
-			return ctrl.Result{}, err
-		}
-		logger.Info("Cleared allocated address (poolRef removed)", "vip", vip.Name)
-	}
-
-	// Use allocated address if spec.address is empty
-	if vip.Spec.Address == "" && vip.Status.AllocatedAddress != "" {
-		logger.Info("Using allocated address from pool",
-			"vip", vip.Name,
-			"address", vip.Status.AllocatedAddress,
-		)
+	// Handle IPAM allocation and release
+	if err := r.reconcileIPAM(ctx, vip); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Get candidate nodes based on NodeSelector and cluster-wide exclusions
@@ -194,6 +136,63 @@ func (r *ProxyVIPReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 	TriggerConfigUpdate()
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileIPAM handles IPAM allocation and release for a ProxyVIP.
+func (r *ProxyVIPReconciler) reconcileIPAM(ctx context.Context, vip *novaedgev1alpha1.ProxyVIP) error {
+	logger := log.FromContext(ctx)
+
+	// Handle IPAM allocation if poolRef is set and no address allocated yet
+	if vip.Spec.PoolRef != nil && vip.Status.AllocatedAddress == "" && r.Allocator != nil {
+		pool := &novaedgev1alpha1.ProxyIPPool{}
+		if err := r.Get(ctx, client.ObjectKey{Name: vip.Spec.PoolRef.Name}, pool); err != nil {
+			if !errors.IsNotFound(err) {
+				logger.Error(err, "Failed to get ProxyIPPool", "pool", vip.Spec.PoolRef.Name)
+				return err
+			}
+			logger.Info("Referenced ProxyIPPool not found", "pool", vip.Spec.PoolRef.Name)
+		} else {
+			cidrs := append([]string{}, pool.Spec.CIDRs...)
+			addresses := append([]string{}, pool.Spec.Addresses...)
+			if err := r.Allocator.AddPool(pool.Name, cidrs, addresses); err != nil {
+				logger.Error(err, "Failed to register IP pool", "pool", pool.Name)
+				return err
+			}
+
+			allocated, err := r.Allocator.Allocate(pool.Name, vip.Name)
+			if err != nil {
+				logger.Error(err, "Failed to allocate IP from pool", "pool", pool.Name)
+				return err
+			}
+
+			vip.Status.AllocatedAddress = allocated
+			if err := r.Status().Update(ctx, vip); err != nil {
+				logger.Error(err, "Failed to update VIP status with allocated address")
+				r.Allocator.Release(pool.Name, vip.Name)
+				return err
+			}
+
+			logger.Info("Allocated IP from pool", "pool", pool.Name, "address", allocated, "vip", vip.Name)
+		}
+	}
+
+	// Handle IPAM release if VIP had allocation but poolRef was removed
+	if vip.Spec.PoolRef == nil && vip.Status.AllocatedAddress != "" && r.Allocator != nil {
+		vip.Status.AllocatedAddress = ""
+		vip.Status.AllocatedIPv6Address = ""
+		if err := r.Status().Update(ctx, vip); err != nil {
+			logger.Error(err, "Failed to clear allocated address from VIP status")
+			return err
+		}
+		logger.Info("Cleared allocated address (poolRef removed)", "vip", vip.Name)
+	}
+
+	// Log use of allocated address
+	if vip.Spec.Address == "" && vip.Status.AllocatedAddress != "" {
+		logger.Info("Using allocated address from pool", "vip", vip.Name, "address", vip.Status.AllocatedAddress)
+	}
+
+	return nil
 }
 
 // getCandidateNodes returns nodes that match the VIP's NodeSelector and are ready,
@@ -351,6 +350,13 @@ func (r *ProxyVIPReconciler) validateLBPoliciesForECMP(ctx context.Context, vip 
 		switch backend.Spec.LBPolicy {
 		case novaedgev1alpha1.LBPolicyMaglev, novaedgev1alpha1.LBPolicyRingHash, "":
 			// Valid for ECMP (empty will be auto-promoted to Maglev at snapshot time)
+		case novaedgev1alpha1.LBPolicyRoundRobin,
+			novaedgev1alpha1.LBPolicyP2C,
+			novaedgev1alpha1.LBPolicyEWMA,
+			novaedgev1alpha1.LBPolicyLeastConn,
+			novaedgev1alpha1.LBPolicySourceHash,
+			novaedgev1alpha1.LBPolicySticky:
+			invalidBackends = append(invalidBackends, backend.Namespace+"/"+backend.Name)
 		default:
 			invalidBackends = append(invalidBackends, backend.Namespace+"/"+backend.Name)
 		}

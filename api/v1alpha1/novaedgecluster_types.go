@@ -814,6 +814,3 @@ type NovaEdgeClusterList struct {
 	Items           []NovaEdgeCluster `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&NovaEdgeCluster{}, &NovaEdgeClusterList{})
-}

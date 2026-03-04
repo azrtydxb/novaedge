@@ -35,9 +35,9 @@ type BackendValue struct {
 	Pad  uint16
 }
 
-// MaglevEntry is a single slot in the Maglev lookup table.
+// Entry is a single slot in the Maglev lookup table.
 // It matches the C struct maglev_entry layout.
-type MaglevEntry struct {
+type Entry struct {
 	BackendID uint32
 }
 

@@ -16,6 +16,8 @@ limitations under the License.
 
 package service
 
+const osLinux = osLinux
+
 import (
 	"runtime"
 	"testing"
@@ -24,7 +26,7 @@ import (
 	"go.uber.org/zap/zaptest"
 )
 
-func TestNewServiceKey(t *testing.T) {
+func TestNewKey(t *testing.T) {
 	tests := []struct {
 		name    string
 		ip      string
@@ -41,7 +43,7 @@ func TestNewServiceKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			key, err := NewServiceKey(tt.ip, tt.port, tt.proto)
+			key, err := NewKey(tt.ip, tt.port, tt.proto)
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")
@@ -135,11 +137,11 @@ func TestProtoConstants(t *testing.T) {
 	}
 }
 
-func TestNewServiceMap(t *testing.T) {
+func TestNewMap(t *testing.T) {
 	logger := zaptest.NewLogger(t)
-	sm, err := NewServiceMap(logger, 100, 32)
+	sm, err := NewMap(logger, 100, 32)
 
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		if err == nil {
 			t.Fatal("expected error on non-Linux platform")
 		}
@@ -148,21 +150,21 @@ func TestNewServiceMap(t *testing.T) {
 
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewServiceMap() returned error: %v", err)
+		t.Fatalf("NewMap() returned error: %v", err)
 	}
-	defer sm.Close()
+	defer func() { _ = sm.Close() }()
 }
 
 func TestServiceMapCloseIdempotent(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("eBPF service maps are Linux-only")
 	}
 
 	logger := zaptest.NewLogger(t)
-	sm, err := NewServiceMap(logger, 100, 32)
+	sm, err := NewMap(logger, 100, 32)
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewServiceMap() returned error: %v", err)
+		t.Fatalf("NewMap() returned error: %v", err)
 	}
 
 	if err := sm.Close(); err != nil {
@@ -174,19 +176,19 @@ func TestServiceMapCloseIdempotent(t *testing.T) {
 }
 
 func TestServiceMapUpsertAndDelete(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("eBPF service maps are Linux-only")
 	}
 
 	logger := zaptest.NewLogger(t)
-	sm, err := NewServiceMap(logger, 100, 32)
+	sm, err := NewMap(logger, 100, 32)
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewServiceMap() returned error: %v", err)
+		t.Fatalf("NewMap() returned error: %v", err)
 	}
-	defer sm.Close()
+	defer func() { _ = sm.Close() }()
 
-	key := ServiceKey{
+	key := Key{
 		IP:    [4]byte{10, 96, 0, 1},
 		Port:  80,
 		Proto: ProtoTCP,
@@ -214,19 +216,19 @@ func TestServiceMapUpsertAndDelete(t *testing.T) {
 }
 
 func TestServiceMapReconcile(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("eBPF service maps are Linux-only")
 	}
 
 	logger := zaptest.NewLogger(t)
-	sm, err := NewServiceMap(logger, 100, 32)
+	sm, err := NewMap(logger, 100, 32)
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewServiceMap() returned error: %v", err)
+		t.Fatalf("NewMap() returned error: %v", err)
 	}
-	defer sm.Close()
+	defer func() { _ = sm.Close() }()
 
-	desired := map[ServiceKey][]BackendInfo{
+	desired := map[Key][]BackendInfo{
 		{IP: [4]byte{10, 96, 0, 1}, Port: 80, Proto: ProtoTCP}: {
 			{IP: [4]byte{10, 244, 0, 5}, Port: 8080, Weight: 100, Healthy: 1},
 		},
@@ -241,7 +243,7 @@ func TestServiceMapReconcile(t *testing.T) {
 	}
 
 	// Reconcile with smaller set should remove stale entries.
-	smaller := map[ServiceKey][]BackendInfo{
+	smaller := map[Key][]BackendInfo{
 		{IP: [4]byte{10, 96, 0, 1}, Port: 80, Proto: ProtoTCP}: {
 			{IP: [4]byte{10, 244, 0, 5}, Port: 8080, Weight: 100, Healthy: 1},
 		},
@@ -252,20 +254,20 @@ func TestServiceMapReconcile(t *testing.T) {
 }
 
 func TestServiceMapOperationsAfterClose(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("eBPF service maps are Linux-only")
 	}
 
 	logger := zaptest.NewLogger(t)
-	sm, err := NewServiceMap(logger, 100, 32)
+	sm, err := NewMap(logger, 100, 32)
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewServiceMap() returned error: %v", err)
+		t.Fatalf("NewMap() returned error: %v", err)
 	}
 
-	sm.Close()
+	_ = sm.Close()
 
-	key := ServiceKey{IP: [4]byte{10, 96, 0, 1}, Port: 80, Proto: ProtoTCP}
+	key := Key{IP: [4]byte{10, 96, 0, 1}, Port: 80, Proto: ProtoTCP}
 	if err := sm.UpsertService(key, nil); err == nil {
 		t.Error("expected error after Close()")
 	}
@@ -278,16 +280,16 @@ func TestServiceMapOperationsAfterClose(t *testing.T) {
 }
 
 func TestServiceMapDefaultParams(t *testing.T) {
-	if runtime.GOOS != "linux" {
+	if runtime.GOOS != osLinux {
 		t.Skip("eBPF service maps are Linux-only")
 	}
 
 	logger := zaptest.NewLogger(t)
 	// Pass 0 for both params to test defaults.
-	sm, err := NewServiceMap(logger, 0, 0)
+	sm, err := NewMap(logger, 0, 0)
 	testutil.SkipIfBPFUnavailable(t, err)
 	if err != nil {
-		t.Fatalf("NewServiceMap() returned error: %v", err)
+		t.Fatalf("NewMap() returned error: %v", err)
 	}
-	defer sm.Close()
+	defer func() { _ = sm.Close() }()
 }

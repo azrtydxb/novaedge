@@ -69,6 +69,8 @@ func (p *Printer) PrintResource(item unstructured.Unstructured) error {
 		return p.printJSON([]unstructured.Unstructured{item})
 	case OutputYAML:
 		return p.printYAML([]unstructured.Unstructured{item})
+	case OutputTable, OutputWide:
+		return p.printYAML([]unstructured.Unstructured{item})
 	default:
 		return p.printYAML([]unstructured.Unstructured{item})
 	}

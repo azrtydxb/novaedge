@@ -81,7 +81,12 @@ func runCachePurge(agentAddr, pattern string) error {
 	q.Set("pattern", pattern)
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, u.String(), nil)
+	targetURL := u.String()
+	if _, err := url.ParseRequestURI(targetURL); err != nil {
+		return fmt.Errorf("invalid agent address: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodDelete, targetURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -118,7 +123,12 @@ func runCacheStats(agentAddr string) error {
 		Path:   "/_novaedge/cache",
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, u.String(), nil)
+	targetURL := u.String()
+	if _, err := url.ParseRequestURI(targetURL); err != nil {
+		return fmt.Errorf("invalid agent address: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, targetURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}

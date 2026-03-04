@@ -48,8 +48,8 @@ type RateLimiter struct {
 	maxEntries uint32
 
 	// BPF map handles.
-	tokenMap  *ebpf.Map // LRU_PERCPU_HASH: RateLimitKey -> []RateLimitValue
-	configMap *ebpf.Map // ARRAY(1): RateLimitConfig
+	tokenMap  *ebpf.Map // LRU_PERCPU_HASH: Key -> []Value
+	configMap *ebpf.Map // ARRAY(1): Config
 	statsMap  *ebpf.Map // PERCPU_ARRAY(2): uint64 (allowed/denied)
 }
 
@@ -66,8 +66,8 @@ func NewRateLimiter(logger *zap.Logger, maxEntries uint32) (*RateLimiter, error)
 	tokenMap, err := ebpf.NewMap(&ebpf.MapSpec{
 		Name:       "rl_tokens",
 		Type:       ebpf.LRUCPUHash,
-		KeySize:    16, // RateLimitKey (16-byte IP)
-		ValueSize:  16, // RateLimitValue per CPU (tokens + last_refill_ns)
+		KeySize:    16, // Key (16-byte IP)
+		ValueSize:  16, // Value per CPU (tokens + last_refill_ns)
 		MaxEntries: maxEntries,
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ func NewRateLimiter(logger *zap.Logger, maxEntries uint32) (*RateLimiter, error)
 		Name:       "rl_config",
 		Type:       ebpf.Array,
 		KeySize:    4,  // uint32
-		ValueSize:  24, // RateLimitConfig (rate + burst + window_ns)
+		ValueSize:  24, // Config (rate + burst + window_ns)
 		MaxEntries: 1,
 	})
 	if err != nil {
@@ -126,7 +126,7 @@ func (rl *RateLimiter) Configure(rate, burst uint64) error {
 		return fmt.Errorf("rate limiter not initialized")
 	}
 
-	config := RateLimitConfig{
+	config := Config{
 		Rate:     rate,
 		Burst:    burst,
 		WindowNS: 1_000_000_000, // 1 second in nanoseconds
@@ -162,7 +162,7 @@ func (rl *RateLimiter) CheckAllowed(ip net.IP) (bool, error) {
 
 	key := ipToKey(ip)
 
-	var values []RateLimitValue
+	var values []Value
 	if err := rl.tokenMap.Lookup(key, &values); err != nil {
 		// Key not found means the IP hasn't been seen yet, so allow.
 		return true, nil //nolint:nilerr // missing key is expected for new IPs
@@ -180,11 +180,11 @@ func (rl *RateLimiter) CheckAllowed(ip net.IP) (bool, error) {
 
 // GetStats reads the per-CPU stats counters and returns aggregated
 // allowed and denied counts.
-func (rl *RateLimiter) GetStats() (RateLimitStats, error) {
+func (rl *RateLimiter) GetStats() (Stats, error) {
 	rl.mu.RLock()
 	defer rl.mu.RUnlock()
 
-	var stats RateLimitStats
+	var stats Stats
 	if rl.statsMap == nil {
 		return stats, fmt.Errorf("rate limiter not initialized")
 	}
@@ -238,11 +238,11 @@ func (rl *RateLimiter) Close() error {
 	return nil
 }
 
-// ipToKey converts a net.IP to a RateLimitKey. IPv4 addresses are stored
+// ipToKey converts a net.IP to a Key. IPv4 addresses are stored
 // in their IPv4-mapped IPv6 form (::ffff:x.x.x.x) to use a single
 // 16-byte key format.
-func ipToKey(ip net.IP) RateLimitKey {
-	var key RateLimitKey
+func ipToKey(ip net.IP) Key {
+	var key Key
 	ip16 := ip.To16()
 	if ip16 != nil {
 		copy(key.IP[:], ip16)

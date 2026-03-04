@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 
@@ -79,7 +80,7 @@ func TestInMemoryTunnelManager_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			manager.RegisterTunnel("cluster-" + string(rune(idx)))
+			manager.RegisterTunnel(fmt.Sprintf("cluster-%d", idx))
 		}(i)
 	}
 

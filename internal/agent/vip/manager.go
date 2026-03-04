@@ -300,6 +300,8 @@ func (m *DefaultManager) applyVIP(ctx context.Context, assignment *pb.VIPAssignm
 		applyErr = m.bgpBackend.AddVIP(ctx, assignment)
 	case pb.VIPMode_OSPF:
 		applyErr = m.ospfHandler.AddVIP(ctx, assignment)
+	case pb.VIPMode_VIP_MODE_UNSPECIFIED:
+		applyErr = fmt.Errorf("%w: %v", errUnsupportedVIPMode, assignment.Mode)
 	default:
 		applyErr = fmt.Errorf("%w: %v", errUnsupportedVIPMode, assignment.Mode)
 	}
@@ -321,6 +323,8 @@ func (m *DefaultManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssig
 		err = m.bgpBackend.RemoveVIP(ctx, assignment)
 	case pb.VIPMode_OSPF:
 		err = m.ospfHandler.RemoveVIP(ctx, assignment)
+	case pb.VIPMode_VIP_MODE_UNSPECIFIED:
+		err = fmt.Errorf("%w: %v", errUnsupportedVIPMode, assignment.Mode)
 	default:
 		err = fmt.Errorf("%w: %v", errUnsupportedVIPMode, assignment.Mode)
 	}
@@ -342,6 +346,10 @@ func (m *DefaultManager) releaseVIP(ctx context.Context, assignment *pb.VIPAssig
 			ipv6Err = m.bgpBackend.RemoveVIP(ctx, ipv6Assignment)
 		case pb.VIPMode_OSPF:
 			ipv6Err = m.ospfHandler.RemoveVIP(ctx, ipv6Assignment)
+		case pb.VIPMode_VIP_MODE_UNSPECIFIED:
+			// Unspecified mode should not reach here; skip IPv6 release.
+		default:
+			// Unknown mode; skip IPv6 release.
 		}
 		if ipv6Err != nil {
 			m.logger.Error("Failed to release IPv6 VIP",

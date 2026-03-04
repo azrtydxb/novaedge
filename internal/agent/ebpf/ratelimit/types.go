@@ -14,34 +14,35 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package ratelimit provides eBPF-based per-IP rate limiting using token bucket maps.
 package ratelimit
 
-// RateLimitKey is the BPF map key for per-IP rate limiting.
+// Key is the BPF map key for per-IP rate limiting.
 // It uses a 16-byte address field to support both IPv4 (mapped to
 // ::ffff:x.x.x.x) and IPv6 addresses.
-type RateLimitKey struct {
+type Key struct {
 	IP [16]byte // IPv4-mapped or native IPv6
 }
 
-// RateLimitValue is the per-CPU BPF map value that tracks token bucket
+// Value is the per-CPU BPF map value that tracks token bucket
 // state for a single source IP on a single CPU core.
-type RateLimitValue struct {
+type Value struct {
 	Tokens       uint64 // current token count
 	LastRefillNS uint64 // last refill timestamp in nanoseconds (ktime)
 }
 
-// RateLimitConfig is the BPF configuration map value (single entry at
+// Config is the BPF configuration map value (single entry at
 // index 0). It controls the token bucket parameters used by the BPF
 // program.
-type RateLimitConfig struct {
+type Config struct {
 	Rate     uint64 // tokens per second
 	Burst    uint64 // maximum bucket size (token capacity)
 	WindowNS uint64 // refill window in nanoseconds
 }
 
-// RateLimitStats holds aggregated allow/deny counters read from the
+// Stats holds aggregated allow/deny counters read from the
 // BPF stats map.
-type RateLimitStats struct {
+type Stats struct {
 	Allowed uint64
 	Denied  uint64
 }

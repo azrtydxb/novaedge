@@ -83,7 +83,7 @@ func (t *bfdTransport) Start(ctx context.Context) error {
 	}
 	var setsockoptErr error
 	if controlErr := rawConn.Control(func(fd uintptr) {
-		setsockoptErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, 255)
+		setsockoptErr = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_IP, syscall.IP_TTL, 255) //nolint:gosec // G115: fd conversion is safe on supported 64-bit platforms
 	}); controlErr != nil {
 		_ = conn.Close()
 		return fmt.Errorf("failed to set BFD socket options: %w", controlErr)

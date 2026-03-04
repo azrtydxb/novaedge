@@ -1467,7 +1467,7 @@ fn is_retryable_status(status: u16, retry_on: &[String]) -> bool {
     }
     for condition in retry_on {
         match condition.as_str() {
-            "5xx" if status >= 500 && status < 600 => return true,
+            "5xx" if (500..600).contains(&status) => return true,
             "gateway-error" if status == 502 || status == 503 || status == 504 => return true,
             "retriable-4xx" if status == 409 => return true,
             _ => {

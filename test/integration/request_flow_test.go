@@ -43,6 +43,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// mustParseURL validates and returns the URL, failing the test if invalid.
+func mustParseURL(t *testing.T, rawURL string) string {
+	t.Helper()
+	if _, err := url.ParseRequestURI(rawURL); err != nil {
+		t.Fatalf("invalid URL %q: %v", rawURL, err)
+	}
+	return rawURL
+}
+
 // TestEndToEndHTTPRequest tests the complete request flow through the router.
 // This test verifies:
 // 1. Request routing based on path
@@ -60,7 +69,7 @@ func TestEndToEndHTTPRequest(t *testing.T) {
 
 		// Copy request body to response
 		body, _ := io.ReadAll(r.Body)
-		w.Write(body)
+		_, _ = w.Write(body)
 	}))
 	defer backend.Close()
 
@@ -106,12 +115,12 @@ func TestEndToEndHTTPRequest(t *testing.T) {
 
 			// Forward to backend
 			client := &http.Client{Timeout: 5 * time.Second}
-			backendReq, err := http.NewRequestWithContext(context.Background(), tt.method, backend.URL+tt.path, body)
+			backendReq, err := http.NewRequestWithContext(context.Background(), tt.method, mustParseURL(t, backend.URL+tt.path), body)
 			require.NoError(t, err)
 
 			resp, err := client.Do(backendReq)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 
 			// Verify response
 			assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -121,7 +130,7 @@ func TestEndToEndHTTPRequest(t *testing.T) {
 			// Copy response to recorder
 			respBody, _ := io.ReadAll(resp.Body)
 			rec.WriteHeader(resp.StatusCode)
-			rec.Write(respBody)
+			_, _ = rec.Write(respBody)
 
 			assert.Equal(t, tt.expectedStatus, rec.Code)
 		})
@@ -135,8 +144,9 @@ func TestConcurrentRequests(t *testing.T) {
 	// Start a test backend
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(10 * time.Millisecond) // Simulate some processing
+		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "OK: %s", r.URL.Path)
+		_, _ = fmt.Fprintf(w, "OK: %s", r.URL.Path) //nolint:gosec // G705: test httptest handler, Content-Type is text/plain
 	}))
 	defer backend.Close()
 
@@ -163,7 +173,7 @@ func TestConcurrentRequests(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < requestsPerGoroutine; j++ {
 				path := fmt.Sprintf("/concurrent/%d/%d", goroutineID, j)
-				req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, backend.URL+path, nil)
+				req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL+path), nil)
 				if err != nil {
 					errors <- err
 					continue
@@ -174,7 +184,7 @@ func TestConcurrentRequests(t *testing.T) {
 					errors <- err
 					continue
 				}
-				resp.Body.Close()
+				_ = resp.Body.Close()
 
 				if resp.StatusCode != http.StatusOK {
 					errors <- fmt.Errorf("unexpected status: %d", resp.StatusCode)
@@ -211,7 +221,7 @@ func TestRequestTimeout(t *testing.T) {
 		Timeout: 100 * time.Millisecond,
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, backend.URL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL), nil)
 	require.NoError(t, err)
 
 	start := time.Now()
@@ -237,17 +247,17 @@ func TestLargeRequestBody(t *testing.T) {
 	// Start backend that echoes body
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		received, _ := io.Copy(io.Discard, r.Body)
-		fmt.Fprintf(w, "Received: %d bytes", received)
+		_, _ = fmt.Fprintf(w, "Received: %d bytes", received)
 	}))
 	defer backend.Close()
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, backend.URL, bytes.NewReader(largeBody))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, mustParseURL(t, backend.URL), bytes.NewReader(largeBody))
 	require.NoError(t, err)
 
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -284,12 +294,12 @@ func TestConnectionReuse(t *testing.T) {
 	// Make multiple requests
 	numRequests := 10
 	for i := 0; i < numRequests; i++ {
-		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, backend.URL, nil)
+		req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL), nil)
 		require.NoError(t, err)
 
 		resp, err := client.Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Due to connection reuse, connection count should be less than numRequests
@@ -318,20 +328,20 @@ func TestVIPFailover(t *testing.T) {
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	// First request to primary
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, primary.URL, nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, primary.URL), nil)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	assert.Equal(t, "primary", resp.Header.Get("X-Server"))
 
 	// Simulate primary failure by closing it
 	primary.Close()
 
 	// Request should now go to backup
-	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, backup.URL, nil)
+	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backup.URL), nil)
 	resp, err = client.Do(req)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	assert.Equal(t, "backup", resp.Header.Get("X-Server"))
 }
 
@@ -412,7 +422,8 @@ func TestMTLSCommunication(t *testing.T) {
 		if len(r.TLS.PeerCertificates[0].URIs) > 0 {
 			w.Header().Set("X-Client-SPIFFE", r.TLS.PeerCertificates[0].URIs[0].String())
 		}
-		fmt.Fprintf(w, "Hello %s", cn)
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = fmt.Fprintf(w, "Hello %s", cn) //nolint:gosec // G705: test httptest handler, Content-Type is text/plain
 	}))
 	server.TLS = serverTLS
 	server.StartTLS()
@@ -430,11 +441,11 @@ func TestMTLSCommunication(t *testing.T) {
 	}
 
 	// Test 1: mTLS handshake succeeds
-	req1, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	req1, err := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, server.URL), nil)
 	require.NoError(t, err)
 	resp, err := client.Do(req1)
 	require.NoError(t, err, "mTLS request should succeed")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "client", resp.Header.Get("X-Client-CN"))
@@ -452,7 +463,7 @@ func TestMTLSCommunication(t *testing.T) {
 		Timeout:   5 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: noClientCertTLS},
 	}
-	req2, err2 := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	req2, err2 := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, server.URL), nil)
 	require.NoError(t, err2)
 	_, err = noAuthClient.Do(req2)
 	assert.Error(t, err, "Request without client cert should fail")
@@ -482,7 +493,7 @@ func TestMTLSCommunication(t *testing.T) {
 		Timeout:   5 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: untrustedClientTLS},
 	}
-	req3, err3 := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	req3, err3 := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, server.URL), nil)
 	require.NoError(t, err3)
 	_, err = untrustedClient.Do(req3)
 	assert.Error(t, err, "Request with untrusted cert should fail")
@@ -514,10 +525,10 @@ func TestHealthCheckIntegration(t *testing.T) {
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	// Check health when healthy
-	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, backend.URL, nil)
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL), nil)
 	resp, err := client.Do(req)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Mark as unhealthy
@@ -526,10 +537,10 @@ func TestHealthCheckIntegration(t *testing.T) {
 	mu.Unlock()
 
 	// Check health when unhealthy
-	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, backend.URL, nil)
+	req, _ = http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, backend.URL), nil)
 	resp, err = client.Do(req)
 	require.NoError(t, err)
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 }
 
@@ -564,13 +575,13 @@ func TestLoadBalancingIntegration(t *testing.T) {
 
 		// Forward request
 		client := &http.Client{Timeout: 5 * time.Second}
-		req, _ := http.NewRequestWithContext(context.Background(), r.Method, target.URL+r.URL.Path, r.Body)
+		req, _ := http.NewRequestWithContext(context.Background(), r.Method, mustParseURL(t, target.URL+r.URL.Path), r.Body)
 		resp, err := client.Do(req)
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		w.WriteHeader(resp.StatusCode)
 	}))
 	defer lb.Close()
@@ -579,10 +590,10 @@ func TestLoadBalancingIntegration(t *testing.T) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	numRequests := 30
 	for i := 0; i < numRequests; i++ {
-		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, lb.URL, nil)
+		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, mustParseURL(t, lb.URL), nil)
 		resp, err := client.Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	// Verify distribution
@@ -598,22 +609,27 @@ func TestLoadBalancingIntegration(t *testing.T) {
 func TestPortAllocation(t *testing.T) {
 	t.Parallel()
 
+	ctx := t.Context()
+	lc := net.ListenConfig{}
+
 	// Allocate a free port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 
-	port := listener.Addr().(*net.TCPAddr).Port
+	tcpAddr, ok := listener.Addr().(*net.TCPAddr)
+	require.True(t, ok, "expected *net.TCPAddr")
+	port := tcpAddr.Port
 	t.Logf("Allocated port: %d", port)
 
 	// Verify port is in use
-	_, err = net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	_, err = lc.Listen(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	assert.Error(t, err, "Port should be in use")
 
 	// Release port
-	listener.Close()
+	_ = listener.Close()
 
 	// Verify port is available
-	listener2, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	listener2, err := lc.Listen(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
 	require.NoError(t, err)
-	listener2.Close()
+	_ = listener2.Close()
 }

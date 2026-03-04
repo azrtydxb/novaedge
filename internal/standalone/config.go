@@ -536,7 +536,7 @@ type OSPFConfig struct {
 	HelloInterval   int    `yaml:"helloInterval,omitempty"`
 	DeadInterval    int    `yaml:"deadInterval,omitempty"`
 	AuthType        string `yaml:"authType,omitempty"`
-	AuthKey         string `yaml:"authKey,omitempty"`
+	AuthKey         string `yaml:"authKey,omitempty"` //nolint:gosec // G117: struct field name describes config key, not a hardcoded credential
 	GracefulRestart bool   `yaml:"gracefulRestart,omitempty"`
 }
 
@@ -597,7 +597,7 @@ type DistributedRateLimitPolicy struct {
 // RedisConnectionConfig defines Redis connection settings
 type RedisConnectionConfig struct {
 	Address     string `yaml:"address"`
-	Password    string `yaml:"password,omitempty"`
+	Password    string `yaml:"password,omitempty"` //nolint:gosec // G117: struct field name for Redis config, not a hardcoded credential
 	TLS         bool   `yaml:"tls,omitempty"`
 	Database    int    `yaml:"database,omitempty"`
 	ClusterMode bool   `yaml:"clusterMode,omitempty"`
@@ -746,7 +746,7 @@ type OIDCPolicy struct {
 	ClientID string `yaml:"clientID"`
 
 	// ClientSecret for OAuth2
-	ClientSecret string `yaml:"clientSecret"`
+	ClientSecret string `yaml:"clientSecret"` //nolint:gosec // G117: struct field name for OAuth2 config, not a hardcoded credential
 
 	// RedirectURL for OAuth2 callback
 	RedirectURL string `yaml:"redirectURL"`
@@ -755,7 +755,7 @@ type OIDCPolicy struct {
 	Scopes []string `yaml:"scopes,omitempty"`
 
 	// SessionSecret for encrypting session cookies (base64, 32 bytes)
-	SessionSecret string `yaml:"sessionSecret"`
+	SessionSecret string `yaml:"sessionSecret"` //nolint:gosec // G117: struct field name for session config, not a hardcoded credential
 
 	// ForwardHeaders to set from user info claims
 	ForwardHeaders []string `yaml:"forwardHeaders,omitempty"`
@@ -978,57 +978,58 @@ func LoadConfig(path string) (*Config, error) {
 	return &config, nil
 }
 
-// Validate validates the configuration
-func (c *Config) Validate() error {
-	if c.Version == "" {
-		return errVersionIsRequired
-	}
-
-	if len(c.Listeners) == 0 {
-		return errAtLeastOneListenerIsRequired
-	}
-
-	// Build certificate name map for validation
+// validateCertificates validates certificate configurations and returns a map of valid cert names.
+func (c *Config) validateCertificates() (map[string]bool, error) {
 	certNames := make(map[string]bool)
 	for i, cert := range c.Certificates {
 		if cert.Name == "" {
-			return fmt.Errorf("%w: %d]: name is required", errCertificate, i)
+			return nil, fmt.Errorf("%w: %d]: name is required", errCertificate, i)
 		}
 		if certNames[cert.Name] {
-			return fmt.Errorf("%w: %d]: duplicate name %s", errCertificate, i, cert.Name)
+			return nil, fmt.Errorf("%w: %d]: duplicate name %s", errCertificate, i, cert.Name)
 		}
 		certNames[cert.Name] = true
 
 		if len(cert.Domains) == 0 {
-			return fmt.Errorf("%w: %d]: at least one domain is required", errCertificate, i)
+			return nil, fmt.Errorf("%w: %d]: at least one domain is required", errCertificate, i)
 		}
-		if cert.Issuer.Type == "" {
-			return fmt.Errorf("%w: %d]: issuer type is required", errCertificate, i)
-		}
-
-		switch cert.Issuer.Type {
-		case "acme":
-			if cert.Issuer.ACME == nil {
-				return fmt.Errorf("%w: %d]: ACME configuration required for type acme", errCertificate, i)
-			}
-			if cert.Issuer.ACME.Email == "" {
-				return fmt.Errorf("%w: %d]: ACME email is required", errCertificate, i)
-			}
-		case "manual":
-			if cert.Issuer.Manual == nil {
-				return fmt.Errorf("%w: %d]: manual configuration required for type manual", errCertificate, i)
-			}
-			if cert.Issuer.Manual.CertFile == "" || cert.Issuer.Manual.KeyFile == "" {
-				return fmt.Errorf("%w: %d]: certFile and keyFile are required for manual issuer", errCertificate, i)
-			}
-		case "self-signed":
-			// Self-signed config is optional
-		default:
-			return fmt.Errorf("%w: %d]: invalid issuer type %s", errCertificate, i, cert.Issuer.Type)
+		if err := validateCertIssuer(cert.Issuer, i); err != nil {
+			return nil, err
 		}
 	}
+	return certNames, nil
+}
 
-	// Validate listeners
+// validateCertIssuer validates a certificate issuer configuration.
+func validateCertIssuer(issuer CertificateIssuerConfig, idx int) error {
+	if issuer.Type == "" {
+		return fmt.Errorf("%w: %d]: issuer type is required", errCertificate, idx)
+	}
+	switch issuer.Type {
+	case "acme":
+		if issuer.ACME == nil {
+			return fmt.Errorf("%w: %d]: ACME configuration required for type acme", errCertificate, idx)
+		}
+		if issuer.ACME.Email == "" {
+			return fmt.Errorf("%w: %d]: ACME email is required", errCertificate, idx)
+		}
+	case "manual":
+		if issuer.Manual == nil {
+			return fmt.Errorf("%w: %d]: manual configuration required for type manual", errCertificate, idx)
+		}
+		if issuer.Manual.CertFile == "" || issuer.Manual.KeyFile == "" {
+			return fmt.Errorf("%w: %d]: certFile and keyFile are required for manual issuer", errCertificate, idx)
+		}
+	case "self-signed":
+		// Self-signed config is optional
+	default:
+		return fmt.Errorf("%w: %d]: invalid issuer type %s", errCertificate, idx, issuer.Type)
+	}
+	return nil
+}
+
+// validateListeners validates listener configurations against the known certificate names.
+func (c *Config) validateListeners(certNames map[string]bool) error {
 	for i, l := range c.Listeners {
 		if l.Name == "" {
 			return fmt.Errorf("%w: %d]: name is required", errListener, i)
@@ -1043,7 +1044,6 @@ func (c *Config) Validate() error {
 			if l.TLS == nil {
 				return fmt.Errorf("%w: %d]: TLS configuration required for %s", errListener, i, l.Protocol)
 			}
-			// Validate TLS config - either cert/key files or certificate reference
 			if l.TLS.Certificate != "" {
 				if !certNames[l.TLS.Certificate] {
 					return fmt.Errorf("%w: %d]: unknown certificate %s", errListener, i, l.TLS.Certificate)
@@ -1053,24 +1053,30 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
+	return nil
+}
 
-	// Validate backends
+// validateBackends validates backend configurations and returns a map of valid backend names.
+func (c *Config) validateBackends() (map[string]bool, error) {
 	backendNames := make(map[string]bool)
 	for i, b := range c.Backends {
 		if b.Name == "" {
-			return fmt.Errorf("%w: %d]: name is required", errBackend, i)
+			return nil, fmt.Errorf("%w: %d]: name is required", errBackend, i)
 		}
 		if backendNames[b.Name] {
-			return fmt.Errorf("%w: %d]: duplicate name %s", errBackend, i, b.Name)
+			return nil, fmt.Errorf("%w: %d]: duplicate name %s", errBackend, i, b.Name)
 		}
 		backendNames[b.Name] = true
 
 		if len(b.Endpoints) == 0 {
-			return fmt.Errorf("%w: %d]: at least one endpoint is required", errBackend, i)
+			return nil, fmt.Errorf("%w: %d]: at least one endpoint is required", errBackend, i)
 		}
 	}
+	return backendNames, nil
+}
 
-	// Validate routes
+// validateRoutes validates route configurations against the known backend names.
+func (c *Config) validateRoutes(backendNames map[string]bool) error {
 	for i, r := range c.Routes {
 		if r.Name == "" {
 			return fmt.Errorf("%w: %d]: name is required", errRoute, i)
@@ -1084,8 +1090,30 @@ func (c *Config) Validate() error {
 			}
 		}
 	}
-
 	return nil
+}
+
+// Validate validates the configuration
+func (c *Config) Validate() error {
+	if c.Version == "" {
+		return errVersionIsRequired
+	}
+	if len(c.Listeners) == 0 {
+		return errAtLeastOneListenerIsRequired
+	}
+
+	certNames, err := c.validateCertificates()
+	if err != nil {
+		return err
+	}
+	if err := c.validateListeners(certNames); err != nil {
+		return err
+	}
+	backendNames, err := c.validateBackends()
+	if err != nil {
+		return err
+	}
+	return c.validateRoutes(backendNames)
 }
 
 // GetTimeout parses and returns the timeout duration

@@ -432,6 +432,3 @@ func formatAge(t time.Time) string {
 	return fmt.Sprintf("%ds", int(d.Seconds()))
 }
 
-func init() {
-	// Add the federation command to root (will be added in root.go)
-}

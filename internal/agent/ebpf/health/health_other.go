@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package health provides eBPF-based backend health monitoring via BPF map counters.
 package health
 
 import (
@@ -30,26 +31,26 @@ var (
 	errEBPFHealthMonitoringIsOnlySupportedOnLinux = errors.New("eBPF health monitoring is only supported on Linux")
 )
 
-// HealthMonitor is a stub on non-Linux platforms.
-type HealthMonitor struct{}
+// Monitor is a stub on non-Linux platforms.
+type Monitor struct{}
 
-// NewHealthMonitor returns an error on non-Linux platforms since eBPF
+// NewMonitor returns an error on non-Linux platforms since eBPF
 // health monitoring requires Linux kernel support.
-func NewHealthMonitor(_ *zap.Logger, _ uint32) (*HealthMonitor, error) {
+func NewMonitor(_ *zap.Logger, _ uint32) (*Monitor, error) {
 	return nil, errEBPFHealthMonitoringIsOnlySupportedOnLinux
 }
 
 // Poll returns an error on non-Linux platforms.
-func (hm *HealthMonitor) Poll() (map[BackendKey]AggregatedHealth, error) {
+func (hm *Monitor) Poll() (map[BackendKey]AggregatedHealth, error) {
 	return nil, errEBPFHealthMonitoringIsOnlySupportedOnLinux
 }
 
 // StartPoller is a no-op on non-Linux platforms.
-func (hm *HealthMonitor) StartPoller(_ context.Context, _ time.Duration, _ func(map[BackendKey]AggregatedHealth)) {
+func (hm *Monitor) StartPoller(_ context.Context, _ time.Duration, _ func(map[BackendKey]AggregatedHealth)) {
 }
 
 // IsActive returns false on non-Linux platforms.
-func (hm *HealthMonitor) IsActive() bool { return false }
+func (hm *Monitor) IsActive() bool { return false }
 
 // Close is a no-op on non-Linux platforms.
-func (hm *HealthMonitor) Close() error { return nil }
+func (hm *Monitor) Close() error { return nil }

@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
+// Package agent provides the NovaEdge node agent implementation for config management and VIP control.
 package agent
 
 import (

@@ -108,10 +108,10 @@ func TestBackendKeyValue(t *testing.T) {
 	}
 }
 
-func TestMaglevEntry(t *testing.T) {
-	entry := MaglevEntry{BackendID: 5}
+func TestEntry(t *testing.T) {
+	entry := Entry{BackendID: 5}
 	if entry.BackendID != 5 {
-		t.Error("unexpected MaglevEntry BackendID")
+		t.Error("unexpected Entry BackendID")
 	}
 }
 
