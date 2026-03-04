@@ -277,6 +277,7 @@ jobs:
     name: "Phase 2: Documentation Build"
     runs-on: arc-runner-novaedge
     needs: phase1-gate
+    if: ${{ !cancelled() && needs.phase1-gate.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -301,7 +302,7 @@ jobs:
     name: "Phase 2: Documentation Freshness"
     runs-on: arc-runner-novaedge
     needs: phase1-gate
-    if: github.event_name == 'pull_request'
+    if: ${{ !cancelled() && needs.phase1-gate.result == 'success' && github.event_name == 'pull_request' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -325,6 +326,7 @@ jobs:
     name: "Phase 2: Security Scan"
     runs-on: arc-runner-novaedge
     needs: phase1-gate
+    if: ${{ !cancelled() && needs.phase1-gate.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -413,6 +415,7 @@ jobs:
     name: "Phase 3: Go Unit Tests"
     runs-on: arc-runner-novaedge
     needs: phase2-gate
+    if: ${{ !cancelled() && needs.phase2-gate.result == 'success' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -507,7 +510,7 @@ jobs:
     name: "Phase 3: Rust Unit Tests"
     runs-on: arc-runner-novaedge
     needs: [phase1-changes, phase2-gate]
-    if: needs.phase1-changes.outputs.rust == 'true'
+    if: ${{ !cancelled() && needs.phase2-gate.result == 'success' && needs.phase1-changes.outputs.rust == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -557,7 +560,7 @@ jobs:
     name: "Phase 3: Frontend Tests"
     runs-on: arc-runner-novaedge
     needs: [phase1-changes, phase2-gate]
-    if: needs.phase1-changes.outputs.frontend == 'true'
+    if: ${{ !cancelled() && needs.phase2-gate.result == 'success' && needs.phase1-changes.outputs.frontend == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -640,6 +643,7 @@ jobs:
     name: "Phase 4: Build ${{ matrix.binary.name }}"
     runs-on: arc-runner-novaedge
     needs: phase3-gate
+    if: ${{ !cancelled() && needs.phase3-gate.result == 'success' }}
     strategy:
       matrix:
         binary:
@@ -698,7 +702,7 @@ jobs:
     name: "Phase 4: Build Rust Dataplane"
     runs-on: arc-runner-novaedge
     needs: [phase1-changes, phase3-gate]
-    if: needs.phase1-changes.outputs.rust == 'true'
+    if: ${{ !cancelled() && needs.phase3-gate.result == 'success' && needs.phase1-changes.outputs.rust == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -723,7 +727,7 @@ jobs:
     name: "Phase 4: Build Frontend"
     runs-on: arc-runner-novaedge
     needs: [phase1-changes, phase3-gate]
-    if: needs.phase1-changes.outputs.frontend == 'true'
+    if: ${{ !cancelled() && needs.phase3-gate.result == 'success' && needs.phase1-changes.outputs.frontend == 'true' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -833,7 +837,7 @@ jobs:
     name: "Phase 5: Push ${{ matrix.image.name }}"
     runs-on: arc-runner-novaedge
     needs: phase4-gate
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: ${{ !cancelled() && needs.phase4-gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
     strategy:
       matrix:
         image:
