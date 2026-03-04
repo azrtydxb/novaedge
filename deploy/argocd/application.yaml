@@ -7,20 +7,16 @@ metadata:
     argocd-image-updater.argoproj.io/image-list: >-
       controller=ghcr.io/piwi3910/novaedge-controller,
       agent=ghcr.io/piwi3910/novaedge-agent,
-      operator=ghcr.io/piwi3910/novaedge-operator,
       dataplane=ghcr.io/piwi3910/novaedge-dataplane,
       webui=ghcr.io/piwi3910/novaedge-webui
     argocd-image-updater.argoproj.io/controller.update-strategy: latest
     argocd-image-updater.argoproj.io/agent.update-strategy: latest
-    argocd-image-updater.argoproj.io/operator.update-strategy: latest
     argocd-image-updater.argoproj.io/dataplane.update-strategy: latest
     argocd-image-updater.argoproj.io/webui.update-strategy: latest
     argocd-image-updater.argoproj.io/controller.helm.image-name: controller.image.repository
     argocd-image-updater.argoproj.io/controller.helm.image-tag: controller.image.tag
     argocd-image-updater.argoproj.io/agent.helm.image-name: agent.image.repository
     argocd-image-updater.argoproj.io/agent.helm.image-tag: agent.image.tag
-    argocd-image-updater.argoproj.io/operator.helm.image-name: operator.image.repository
-    argocd-image-updater.argoproj.io/operator.helm.image-tag: operator.image.tag
     argocd-image-updater.argoproj.io/dataplane.helm.image-name: dataplane.image.repository
     argocd-image-updater.argoproj.io/dataplane.helm.image-tag: dataplane.image.tag
     argocd-image-updater.argoproj.io/webui.helm.image-name: webui.image.repository
@@ -44,10 +40,6 @@ spec:
           image:
             repository: ghcr.io/piwi3910/novaedge-agent
             tag: latest
-        operator:
-          image:
-            repository: ghcr.io/piwi3910/novaedge-operator
-            tag: latest
         dataplane:
           image:
             repository: ghcr.io/piwi3910/novaedge-dataplane
@@ -58,7 +50,7 @@ spec:
             tag: latest
   destination:
     server: https://kubernetes.default.svc
-    namespace: nova-system
+    namespace: novaedge-system
   syncPolicy:
     automated:
       prune: true
