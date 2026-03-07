@@ -19,6 +19,7 @@ limitations under the License.
 package ebpfmesh
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -30,7 +31,19 @@ import (
 	"go.uber.org/zap"
 )
 
+var (
+	errProgNotFoundMesh = errors.New("mesh_redirect_prog not found in BPF collection")
+	errSvcMapNotFound   = errors.New("mesh_services map not found in BPF collection")
+	errSockMapNotFound  = errors.New("tproxy_socket SOCKMAP not found in BPF collection")
+	errBackendNotSetUp  = errors.New("eBPF mesh backend not set up")
+)
+
 const subsystem = "mesh"
+
+// meshSvcValue matches the C struct mesh_svc_value layout.
+type meshSvcValue struct {
+	RedirectPort uint32
+}
 
 // Backend implements mesh.RuleBackend using BPF_PROG_TYPE_SK_LOOKUP to
 // redirect mesh-intercepted connections to the TPROXY listener. This
@@ -88,21 +101,21 @@ func (b *Backend) Setup() error {
 	if prog == nil {
 		coll.Close()
 		novaebpf.RecordError(subsystem, "load")
-		return fmt.Errorf("mesh_redirect_prog not found in BPF collection")
+		return errProgNotFoundMesh
 	}
 
 	svcMap := coll.Maps["mesh_services"]
 	if svcMap == nil {
 		coll.Close()
 		novaebpf.RecordError(subsystem, "load")
-		return fmt.Errorf("mesh_services map not found in BPF collection")
+		return errSvcMapNotFound
 	}
 
 	sockMap := coll.Maps["tproxy_socket"]
 	if sockMap == nil {
 		coll.Close()
 		novaebpf.RecordError(subsystem, "load")
-		return fmt.Errorf("tproxy_socket SOCKMAP not found in BPF collection")
+		return errSockMapNotFound
 	}
 
 	// Attach the sk_lookup program to the current network namespace.
@@ -113,10 +126,10 @@ func (b *Backend) Setup() error {
 		novaebpf.RecordError(subsystem, "attach")
 		return fmt.Errorf("opening current network namespace: %w", err)
 	}
-	nsFD := int(nsFile.Fd())
+	nsFD := int(nsFile.Fd()) //nolint:gosec // G115: Fd() returns uintptr, safe conversion
 
 	netlinkLink, err := link.AttachNetNs(nsFD, prog)
-	nsFile.Close()
+	_ = nsFile.Close()
 	if err != nil {
 		coll.Close()
 		novaebpf.RecordError(subsystem, "attach")
@@ -141,11 +154,11 @@ func (b *Backend) Setup() error {
 // mesh-intercepted connections.
 func (b *Backend) SetListenerFD(fd int) error {
 	if b.socketMap == nil {
-		return fmt.Errorf("eBPF mesh backend not set up")
+		return errBackendNotSetUp
 	}
 
 	key := uint32(0)
-	val := uint64(fd)
+	val := uint64(fd) //nolint:gosec // G115: fd is a valid file descriptor
 	if err := b.socketMap.Update(key, val, ebpf.UpdateAny); err != nil {
 		novaebpf.RecordMapOp("tproxy_socket", "update", "error")
 		return fmt.Errorf("registering listener socket in SOCKMAP: %w", err)
@@ -162,7 +175,7 @@ func (b *Backend) SetListenerFD(fd int) error {
 // all entries.
 func (b *Backend) ApplyRules(targets []mesh.InterceptTarget, tproxyPort int32) error {
 	if b.servicesMap == nil {
-		return fmt.Errorf("eBPF mesh backend not set up")
+		return errBackendNotSetUp
 	}
 
 	// Build desired map state.
@@ -177,7 +190,7 @@ func (b *Backend) ApplyRules(targets []mesh.InterceptTarget, tproxyPort int32) e
 			continue
 		}
 		desired[key] = meshSvcValue{
-			RedirectPort: uint32(tproxyPort),
+			RedirectPort: uint32(tproxyPort), //nolint:gosec // G115: tproxyPort validated by caller
 		}
 	}
 
@@ -228,16 +241,16 @@ func (b *Backend) Cleanup() error {
 		b.netlinkLink = nil
 	}
 	if b.prog != nil {
-		b.prog.Close()
+		_ = b.prog.Close()
 		b.prog = nil
 		novaebpf.RecordProgramUnloaded(subsystem)
 	}
 	if b.servicesMap != nil {
-		b.servicesMap.Close()
+		_ = b.servicesMap.Close()
 		b.servicesMap = nil
 	}
 	if b.socketMap != nil {
-		b.socketMap.Close()
+		_ = b.socketMap.Close()
 		b.socketMap = nil
 	}
 	b.logger.Info("eBPF mesh backend cleaned up")

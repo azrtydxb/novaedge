@@ -20,6 +20,7 @@ package health
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -28,6 +29,8 @@ import (
 	"github.com/cilium/ebpf"
 	"go.uber.org/zap"
 )
+
+var errMonitorNotInitialized = errors.New("health monitor not initialized")
 
 const subsystem = "health"
 
@@ -82,7 +85,7 @@ func (hm *Monitor) Poll() (map[BackendKey]AggregatedHealth, error) {
 	defer hm.mu.RUnlock()
 
 	if hm.healthMap == nil {
-		return nil, fmt.Errorf("health monitor not initialized")
+		return nil, errMonitorNotInitialized
 	}
 
 	// Read all entries from the per-CPU hash map.
@@ -158,7 +161,7 @@ func (hm *Monitor) Close() error {
 	defer hm.mu.Unlock()
 
 	if hm.healthMap != nil {
-		hm.healthMap.Close()
+		_ = hm.healthMap.Close()
 		hm.healthMap = nil
 	}
 

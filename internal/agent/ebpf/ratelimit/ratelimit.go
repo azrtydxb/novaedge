@@ -19,6 +19,7 @@ limitations under the License.
 package ratelimit
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -27,6 +28,10 @@ import (
 	"github.com/cilium/ebpf"
 	"go.uber.org/zap"
 )
+
+// errNotInitialized is returned when a rate limiter operation is attempted
+// before the limiter has been properly initialized.
+var errNotInitialized = errors.New("rate limiter not initialized")
 
 const subsystem = "ratelimit"
 
@@ -84,7 +89,7 @@ func NewRateLimiter(logger *zap.Logger, maxEntries uint32) (*RateLimiter, error)
 		MaxEntries: 1,
 	})
 	if err != nil {
-		tokenMap.Close()
+		_ = tokenMap.Close()
 		novaebpf.RecordError(subsystem, "map_create")
 		return nil, fmt.Errorf("creating rate limit config map: %w", err)
 	}
@@ -98,8 +103,8 @@ func NewRateLimiter(logger *zap.Logger, maxEntries uint32) (*RateLimiter, error)
 		MaxEntries: 2,
 	})
 	if err != nil {
-		tokenMap.Close()
-		configMap.Close()
+		_ = tokenMap.Close()
+		_ = configMap.Close()
 		novaebpf.RecordError(subsystem, "map_create")
 		return nil, fmt.Errorf("creating rate limit stats map: %w", err)
 	}
@@ -123,7 +128,7 @@ func (rl *RateLimiter) Configure(rate, burst uint64) error {
 	defer rl.mu.Unlock()
 
 	if rl.configMap == nil {
-		return fmt.Errorf("rate limiter not initialized")
+		return errNotInitialized
 	}
 
 	config := Config{
@@ -157,7 +162,7 @@ func (rl *RateLimiter) CheckAllowed(ip net.IP) (bool, error) {
 	defer rl.mu.RUnlock()
 
 	if rl.tokenMap == nil {
-		return true, fmt.Errorf("rate limiter not initialized")
+		return true, errNotInitialized
 	}
 
 	key := ipToKey(ip)
@@ -186,7 +191,7 @@ func (rl *RateLimiter) GetStats() (Stats, error) {
 
 	var stats Stats
 	if rl.statsMap == nil {
-		return stats, fmt.Errorf("rate limiter not initialized")
+		return stats, errNotInitialized
 	}
 
 	// Read allowed counter (per-CPU array, sum across CPUs).
@@ -222,15 +227,15 @@ func (rl *RateLimiter) Close() error {
 	defer rl.mu.Unlock()
 
 	if rl.tokenMap != nil {
-		rl.tokenMap.Close()
+		_ = rl.tokenMap.Close()
 		rl.tokenMap = nil
 	}
 	if rl.configMap != nil {
-		rl.configMap.Close()
+		_ = rl.configMap.Close()
 		rl.configMap = nil
 	}
 	if rl.statsMap != nil {
-		rl.statsMap.Close()
+		_ = rl.statsMap.Close()
 		rl.statsMap = nil
 	}
 

@@ -19,6 +19,7 @@ limitations under the License.
 package afxdp
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -82,7 +83,7 @@ func newXSKSocket(cfg xskConfig) (*xskSocket, error) {
 	}
 
 	if err := s.setupUMEM(); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, err
 	}
 
@@ -114,16 +115,16 @@ func (s *xskSocket) setupUMEM() error {
 	s.umemArea = area
 
 	reg := unix.XDPUmemReg{
-		Addr: uint64(uintptr(unsafe.Pointer(&area[0]))),
-		Len:  uint64(umemSize),
-		Size: uint32(s.frameSize),
+		Addr: uint64(uintptr(unsafe.Pointer(&area[0]))), //nolint:gosec // G103: required for XDP UMEM registration
+		Len:  uint64(umemSize),                          //nolint:gosec // G115: umemSize is frameSize*numFrames, both bounded config values
+		Size: uint32(s.frameSize),                       //nolint:gosec // G115: frameSize is a bounded config value (typically 2048/4096)
 	}
 	_, _, errno := unix.Syscall6(
 		unix.SYS_SETSOCKOPT,
-		uintptr(s.fd),
+		uintptr(s.fd), //nolint:gosec // G115: fd is a valid file descriptor from unix.Socket
 		unix.SOL_XDP,
 		unix.XDP_UMEM_REG,
-		uintptr(unsafe.Pointer(&reg)),
+		uintptr(unsafe.Pointer(&reg)), //nolint:gosec // G103: required for XDP UMEM setsockopt
 		unsafe.Sizeof(reg),
 		0,
 	)
@@ -132,10 +133,10 @@ func (s *xskSocket) setupUMEM() error {
 	}
 
 	// Set ring sizes (half for fill/completion, half for rx/tx).
-	ringSize := uint32(s.numFrames)
+	ringSize := uint32(s.numFrames) //nolint:gosec // G115: numFrames is a bounded config value (typically 4096)
 	for _, opt := range []int{unix.XDP_UMEM_FILL_RING, unix.XDP_UMEM_COMPLETION_RING,
 		unix.XDP_RX_RING, unix.XDP_TX_RING} {
-		if err := unix.SetsockoptInt(s.fd, unix.SOL_XDP, opt, int(ringSize)); err != nil {
+		if err := unix.SetsockoptInt(s.fd, unix.SOL_XDP, opt, int(ringSize)); err != nil { //nolint:gosec // G115: ringSize fits in int
 			return fmt.Errorf("setsockopt ring size (opt=%d): %w", opt, err)
 		}
 	}
@@ -151,11 +152,11 @@ func (s *xskSocket) setupRings() error {
 		return err
 	}
 
-	ringSize := uint32(s.numFrames)
-	descSize := uint32(unsafe.Sizeof(unix.XDPDesc{}))
+	ringSize := uint32(s.numFrames)                   //nolint:gosec // G115: numFrames is a bounded config value (typically 4096)
+	descSize := uint32(unsafe.Sizeof(unix.XDPDesc{})) //nolint:gosec // G115: sizeof XDPDesc is a small constant
 
 	// Fill ring
-	fillSize := int(offsets.Fr.Desc + uint64(ringSize)*uint64(descSize))
+	fillSize := int(offsets.Fr.Desc + uint64(ringSize)*uint64(descSize)) //nolint:gosec // G115: ring mmap size fits in int
 	s.fillMap, err = unix.Mmap(s.fd, unix.XDP_UMEM_PGOFF_FILL_RING, fillSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
@@ -164,7 +165,7 @@ func (s *xskSocket) setupRings() error {
 	s.fillRing = makeRing(s.fillMap, offsets.Fr, ringSize)
 
 	// Completion ring
-	compSize := int(offsets.Cr.Desc + uint64(ringSize)*uint64(descSize))
+	compSize := int(offsets.Cr.Desc + uint64(ringSize)*uint64(descSize)) //nolint:gosec // G115: ring mmap size fits in int
 	s.completionMap, err = unix.Mmap(s.fd, unix.XDP_UMEM_PGOFF_COMPLETION_RING, compSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
@@ -173,7 +174,7 @@ func (s *xskSocket) setupRings() error {
 	s.completionRing = makeRing(s.completionMap, offsets.Cr, ringSize)
 
 	// RX ring
-	rxSize := int(offsets.Rx.Desc + uint64(ringSize)*uint64(descSize))
+	rxSize := int(offsets.Rx.Desc + uint64(ringSize)*uint64(descSize)) //nolint:gosec // G115: ring mmap size fits in int
 	s.rxMap, err = unix.Mmap(s.fd, unix.XDP_PGOFF_RX_RING, rxSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
@@ -182,7 +183,7 @@ func (s *xskSocket) setupRings() error {
 	s.rxRing = makeRing(s.rxMap, offsets.Rx, ringSize)
 
 	// TX ring
-	txSize := int(offsets.Tx.Desc + uint64(ringSize)*uint64(descSize))
+	txSize := int(offsets.Tx.Desc + uint64(ringSize)*uint64(descSize)) //nolint:gosec // G115: ring mmap size fits in int
 	s.txMap, err = unix.Mmap(s.fd, unix.XDP_PGOFF_TX_RING, txSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
@@ -197,37 +198,38 @@ func (s *xskSocket) setupRings() error {
 func (s *xskSocket) bind() error {
 	sa := unix.SockaddrXDP{
 		Flags:   0,
-		Ifindex: uint32(s.ifindex),
-		QueueID: uint32(s.queueID),
+		Ifindex: uint32(s.ifindex), //nolint:gosec // G115: ifindex is a valid network interface index
+		QueueID: uint32(s.queueID), //nolint:gosec // G115: queueID is a bounded NIC queue index
 	}
 	return unix.Bind(s.fd, &sa)
 }
 
 // registerInMap registers this socket's FD in the BPF xsk_map.
 func (s *xskSocket) registerInMap(xskMap *ebpf.Map) error {
-	key := uint32(s.queueID)
-	val := uint32(s.fd)
+	key := uint32(s.queueID) //nolint:gosec // G115: queueID is a bounded NIC queue index
+	val := uint32(s.fd)      //nolint:gosec // G115: fd is a valid file descriptor from unix.Socket
 	return xskMap.Update(key, val, ebpf.UpdateAny)
 }
 
 // populateFillRing fills the fill ring with all available frame addresses.
 func (s *xskSocket) populateFillRing() {
 	prod := *s.fillRing.producer
-	for i := uint32(0); i < uint32(s.numFrames); i++ {
+	nframes := uint32(s.numFrames) //nolint:gosec // G115: numFrames is a bounded config value
+	for i := uint32(0); i < nframes; i++ {
 		idx := (prod + i) & s.fillRing.mask
-		s.fillRing.descs[idx].Addr = uint64(i) * uint64(s.frameSize)
+		s.fillRing.descs[idx].Addr = uint64(i) * uint64(s.frameSize) //nolint:gosec // G115: frameSize is a bounded config value
 	}
-	*s.fillRing.producer = prod + uint32(s.numFrames)
+	*s.fillRing.producer = prod + nframes
 }
 
 // poll waits for activity on the socket. Returns the number of events or 0 on timeout.
 func (s *xskSocket) poll(timeoutMs int) (int, error) {
 	fds := []unix.PollFd{{
-		Fd:     int32(s.fd),
+		Fd:     int32(s.fd), //nolint:gosec // G115: fd is a valid file descriptor
 		Events: unix.POLLIN,
 	}}
 	n, err := unix.Poll(fds, timeoutMs)
-	if err != nil && err != unix.EINTR {
+	if err != nil && !errors.Is(err, unix.EINTR) {
 		return 0, fmt.Errorf("poll AF_XDP socket: %w", err)
 	}
 	return n, nil
@@ -259,7 +261,7 @@ func (s *xskSocket) transmit(desc unix.XDPDesc) bool {
 	cons := *s.txRing.consumer
 
 	// Check if TX ring is full
-	if prod-cons >= uint32(s.numFrames) {
+	if prod-cons >= uint32(s.numFrames) { //nolint:gosec // G115: numFrames is a bounded config value
 		return false
 	}
 
@@ -273,8 +275,8 @@ func (s *xskSocket) transmit(desc unix.XDPDesc) bool {
 func (s *xskSocket) kick() error {
 	_, _, errno := unix.Syscall6(
 		unix.SYS_SENDTO,
-		uintptr(s.fd),
-		0, 0, // no data, just a kick
+		uintptr(s.fd), //nolint:gosec // G115: fd is a valid file descriptor
+		0, 0,          // no data, just a kick
 		unix.MSG_DONTWAIT,
 		0, 0,
 	)
@@ -310,10 +312,10 @@ func (s *xskSocket) reclaimCompleted() {
 func (s *xskSocket) returnToFillRing(descs []unix.XDPDesc) {
 	prod := *s.fillRing.producer
 	for i, desc := range descs {
-		idx := (prod + uint32(i)) & s.fillRing.mask
+		idx := (prod + uint32(i)) & s.fillRing.mask //nolint:gosec // G115: i is bounded by descs length which fits in uint32
 		s.fillRing.descs[idx].Addr = desc.Addr
 	}
-	*s.fillRing.producer = prod + uint32(len(descs))
+	*s.fillRing.producer = prod + uint32(len(descs)) //nolint:gosec // G115: len(descs) is bounded by ring size
 }
 
 // frameData returns the UMEM slice for a descriptor.
@@ -324,27 +326,27 @@ func (s *xskSocket) frameData(desc unix.XDPDesc) []byte {
 // close releases all resources.
 func (s *xskSocket) close() {
 	if s.fd >= 0 {
-		unix.Close(s.fd)
+		_ = unix.Close(s.fd)
 		s.fd = -1
 	}
 	if s.umemArea != nil {
-		unix.Munmap(s.umemArea)
+		_ = unix.Munmap(s.umemArea)
 		s.umemArea = nil
 	}
 	if s.fillMap != nil {
-		unix.Munmap(s.fillMap)
+		_ = unix.Munmap(s.fillMap)
 		s.fillMap = nil
 	}
 	if s.completionMap != nil {
-		unix.Munmap(s.completionMap)
+		_ = unix.Munmap(s.completionMap)
 		s.completionMap = nil
 	}
 	if s.rxMap != nil {
-		unix.Munmap(s.rxMap)
+		_ = unix.Munmap(s.rxMap)
 		s.rxMap = nil
 	}
 	if s.txMap != nil {
-		unix.Munmap(s.txMap)
+		_ = unix.Munmap(s.txMap)
 		s.txMap = nil
 	}
 }
@@ -352,14 +354,14 @@ func (s *xskSocket) close() {
 // getMmapOffsets retrieves the ring buffer mmap offsets from the kernel.
 func (s *xskSocket) getMmapOffsets() (*unix.XDPMmapOffsets, error) {
 	var offsets unix.XDPMmapOffsets
-	optlen := uint32(unsafe.Sizeof(offsets))
+	optlen := uint32(unsafe.Sizeof(offsets)) //nolint:gosec // G115: sizeof is a small constant
 	_, _, errno := unix.Syscall6(
 		unix.SYS_GETSOCKOPT,
-		uintptr(s.fd),
+		uintptr(s.fd), //nolint:gosec // G115: fd is a valid file descriptor
 		unix.SOL_XDP,
 		unix.XDP_MMAP_OFFSETS,
-		uintptr(unsafe.Pointer(&offsets)),
-		uintptr(unsafe.Pointer(&optlen)),
+		uintptr(unsafe.Pointer(&offsets)), //nolint:gosec // G103: required for getsockopt XDP_MMAP_OFFSETS
+		uintptr(unsafe.Pointer(&optlen)),  //nolint:gosec // G103: required for getsockopt XDP_MMAP_OFFSETS
 		0,
 	)
 	if errno != 0 {
@@ -371,9 +373,9 @@ func (s *xskSocket) getMmapOffsets() (*unix.XDPMmapOffsets, error) {
 // makeRing initializes a ring from an mmap'd region and offsets.
 func makeRing(area []byte, off unix.XDPRingOffset, size uint32) ring {
 	return ring{
-		producer: (*uint32)(unsafe.Pointer(&area[off.Producer])),
-		consumer: (*uint32)(unsafe.Pointer(&area[off.Consumer])),
-		descs:    unsafe.Slice((*unix.XDPDesc)(unsafe.Pointer(&area[off.Desc])), size),
+		producer: (*uint32)(unsafe.Pointer(&area[off.Producer])),                       //nolint:gosec // G103: required for XDP mmap ring setup
+		consumer: (*uint32)(unsafe.Pointer(&area[off.Consumer])),                       //nolint:gosec // G103: required for XDP mmap ring setup
+		descs:    unsafe.Slice((*unix.XDPDesc)(unsafe.Pointer(&area[off.Desc])), size), //nolint:gosec // G103: required for XDP mmap ring setup
 		mask:     size - 1,
 	}
 }

@@ -19,6 +19,7 @@ limitations under the License.
 package sockmap
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -29,6 +30,11 @@ import (
 )
 
 const subsystem = "sockmap"
+
+var (
+	errManagerClosed = errors.New("sockmap manager is closed")
+	errNotIPv4       = errors.New("not an IPv4 address")
+)
 
 // Manager manages the eBPF SOCKHASH and endpoint maps used for same-node
 // mesh traffic bypass. When both source and destination pods are on the
@@ -90,7 +96,7 @@ func NewSockMapManager(logger *zap.Logger) (*Manager, error) {
 	}
 	endpointMap, err := ebpf.NewMap(endpointSpec)
 	if err != nil {
-		sockHash.Close()
+		_ = sockHash.Close()
 		novaebpf.RecordError(subsystem, "map_create")
 		return nil, fmt.Errorf("creating endpoint map: %w", err)
 	}
@@ -105,8 +111,8 @@ func NewSockMapManager(logger *zap.Logger) (*Manager, error) {
 	}
 	statsMap, err := ebpf.NewMap(statsSpec)
 	if err != nil {
-		sockHash.Close()
-		endpointMap.Close()
+		_ = sockHash.Close()
+		_ = endpointMap.Close()
 		novaebpf.RecordError(subsystem, "map_create")
 		return nil, fmt.Errorf("creating stats map: %w", err)
 	}
@@ -133,12 +139,12 @@ func (m *Manager) AddSameNodeEndpoint(ip net.IP, port uint16) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return fmt.Errorf("sockmap manager is closed")
+		return errManagerClosed
 	}
 
 	ip4 := ip.To4()
 	if ip4 == nil {
-		return fmt.Errorf("not an IPv4 address: %s", ip)
+		return fmt.Errorf("%w: %s", errNotIPv4, ip)
 	}
 
 	key := EndpointKey{
@@ -168,12 +174,12 @@ func (m *Manager) RemoveSameNodeEndpoint(ip net.IP, port uint16) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return fmt.Errorf("sockmap manager is closed")
+		return errManagerClosed
 	}
 
 	ip4 := ip.To4()
 	if ip4 == nil {
-		return fmt.Errorf("not an IPv4 address: %s", ip)
+		return fmt.Errorf("%w: %s", errNotIPv4, ip)
 	}
 
 	key := EndpointKey{
@@ -201,7 +207,7 @@ func (m *Manager) SyncEndpoints(endpoints map[EndpointKey]EndpointValue) error {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return fmt.Errorf("sockmap manager is closed")
+		return errManagerClosed
 	}
 
 	// Collect existing keys for deletion pass.
@@ -256,7 +262,7 @@ func (m *Manager) GetStats() (redirected, fallback uint64, err error) {
 	defer m.mu.Unlock()
 
 	if m.closed {
-		return 0, 0, fmt.Errorf("sockmap manager is closed")
+		return 0, 0, errManagerClosed
 	}
 
 	var val uint64

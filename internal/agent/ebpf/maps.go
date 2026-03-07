@@ -20,10 +20,18 @@ package ebpf
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 
 	"github.com/cilium/ebpf"
+)
+
+// Sentinel errors for IP/CIDR validation.
+var (
+	errNotIPv4   = errors.New("not an IPv4 address")
+	errNotIPv6   = errors.New("cannot convert to IPv6")
+	errInvalidIP = errors.New("invalid IP address")
 )
 
 // LPMTrieKey4 is the key format for a BPF_MAP_TYPE_LPM_TRIE with IPv4
@@ -49,11 +57,11 @@ func ParseCIDRToLPMKey4(cidr string) (LPMTrieKey4, error) {
 	}
 	ip4 := ipNet.IP.To4()
 	if ip4 == nil {
-		return LPMTrieKey4{}, fmt.Errorf("CIDR %q is not IPv4", cidr)
+		return LPMTrieKey4{}, fmt.Errorf("%w: CIDR %q", errNotIPv4, cidr)
 	}
 	ones, _ := ipNet.Mask.Size()
 	key := LPMTrieKey4{
-		Prefixlen: uint32(ones),
+		Prefixlen: uint32(ones), //nolint:gosec // G115: prefix length bounded by net.IPMask (0-32)
 	}
 	copy(key.Addr[:], ip4)
 	return key, nil
@@ -68,11 +76,11 @@ func ParseCIDRToLPMKey6(cidr string) (LPMTrieKey6, error) {
 	}
 	ip6 := ipNet.IP.To16()
 	if ip6 == nil {
-		return LPMTrieKey6{}, fmt.Errorf("CIDR %q cannot be converted to IPv6", cidr)
+		return LPMTrieKey6{}, fmt.Errorf("%w: CIDR %q", errNotIPv6, cidr)
 	}
 	ones, _ := ipNet.Mask.Size()
 	key := LPMTrieKey6{
-		Prefixlen: uint32(ones),
+		Prefixlen: uint32(ones), //nolint:gosec // G115: prefix length bounded by net.IPMask (0-128)
 	}
 	copy(key.Addr[:], ip6)
 	return key, nil
@@ -159,11 +167,11 @@ type IPPortKey struct {
 func NewIPPortKey(ip string, port uint16) (IPPortKey, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return IPPortKey{}, fmt.Errorf("invalid IP address: %s", ip)
+		return IPPortKey{}, fmt.Errorf("%w: %s", errInvalidIP, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return IPPortKey{}, fmt.Errorf("not an IPv4 address: %s", ip)
+		return IPPortKey{}, fmt.Errorf("%w: %s", errNotIPv4, ip)
 	}
 	key := IPPortKey{
 		Port: port,
@@ -184,11 +192,11 @@ type IPPortProtoKey struct {
 func NewIPPortProtoKey(ip string, port uint16, proto uint8) (IPPortProtoKey, error) {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return IPPortProtoKey{}, fmt.Errorf("invalid IP address: %s", ip)
+		return IPPortProtoKey{}, fmt.Errorf("%w: %s", errInvalidIP, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return IPPortProtoKey{}, fmt.Errorf("not an IPv4 address: %s", ip)
+		return IPPortProtoKey{}, fmt.Errorf("%w: %s", errNotIPv4, ip)
 	}
 	key := IPPortProtoKey{
 		Port:  port,
@@ -204,11 +212,11 @@ func IPv4ToBytes(ip string) ([4]byte, error) {
 	var addr [4]byte
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
-		return addr, fmt.Errorf("invalid IP: %s", ip)
+		return addr, fmt.Errorf("%w: %s", errInvalidIP, ip)
 	}
 	ip4 := parsed.To4()
 	if ip4 == nil {
-		return addr, fmt.Errorf("not IPv4: %s", ip)
+		return addr, fmt.Errorf("%w: %s", errNotIPv4, ip)
 	}
 	copy(addr[:], ip4)
 	return addr, nil
