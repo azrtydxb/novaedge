@@ -65,54 +65,6 @@ data:
       metrics: {{ .Values.ports.metrics }}
       health: {{ .Values.ports.health }}
 
-    # VIP Configuration
-    vip:
-      enabled: {{ .Values.vip.enabled }}
-      mode: {{ .Values.vip.mode }}
-      {{- if .Values.vip.interface }}
-      interface: {{ .Values.vip.interface | quote }}
-      {{- end }}
-      periodicInterval: {{ .Values.vip.periodicInterval }}
-      {{- if eq .Values.vip.mode "L2" }}
-      garp:
-        rateLimit: {{ .Values.vip.garp.rateLimit }}
-        retries: {{ .Values.vip.garp.retries }}
-      {{- end }}
-      {{- if and (eq .Values.vip.mode "BGP") .Values.vip.bgp.asn }}
-      bgp:
-        asn: {{ .Values.vip.bgp.asn }}
-        {{- if .Values.vip.bgp.routerID }}
-        routerID: {{ .Values.vip.bgp.routerID | quote }}
-        {{- end }}
-        gracefulRestart: {{ .Values.vip.bgp.gracefulRestart }}
-        multipathMaxPaths: {{ .Values.vip.bgp.multipathMaxPaths }}
-        {{- if .Values.vip.bgp.peers }}
-        peers:
-          {{- toYaml .Values.vip.bgp.peers | nindent 10 }}
-        {{- end }}
-      {{- end }}
-      {{- if eq .Values.vip.mode "OSPF" }}
-      ospf:
-        areaID: {{ .Values.vip.ospf.areaID | quote }}
-        helloInterval: {{ .Values.vip.ospf.helloInterval }}
-        deadInterval: {{ .Values.vip.ospf.deadInterval }}
-        cost: {{ .Values.vip.ospf.cost }}
-        {{- if .Values.vip.ospf.authSecretName }}
-        authSecretName: {{ .Values.vip.ospf.authSecretName | quote }}
-        {{- end }}
-      {{- end }}
-      {{- if .Values.vip.bfd.enabled }}
-      bfd:
-        enabled: true
-        desiredMinTx: {{ .Values.vip.bfd.desiredMinTx }}
-        requiredMinRx: {{ .Values.vip.bfd.requiredMinRx }}
-        detectMultiplier: {{ .Values.vip.bfd.detectMultiplier }}
-      {{- end }}
-      {{- if .Values.vip.ipv6.enabled }}
-      ipv6:
-        enabled: true
-      {{- end }}
-
     # Server/Listener Configuration
     server:
       tls:
@@ -472,19 +424,6 @@ data:
         enabled: true
         serverAddress: {{ .Values.mesh.spire.serverAddress | quote }}
       {{- end }}
-    {{- end }}
-
-    # Control-Plane VIP
-    {{- if .Values.controlPlaneVIP.enabled }}
-    controlPlaneVIP:
-      enabled: true
-      address: {{ .Values.controlPlaneVIP.address | quote }}
-      mode: {{ .Values.controlPlaneVIP.mode }}
-      {{- if .Values.controlPlaneVIP.interface }}
-      interface: {{ .Values.controlPlaneVIP.interface | quote }}
-      {{- end }}
-      healthCheckPath: {{ .Values.controlPlaneVIP.healthCheckPath }}
-      healthCheckInterval: {{ .Values.controlPlaneVIP.healthCheckInterval }}
     {{- end }}
 
     # WASM Plugins

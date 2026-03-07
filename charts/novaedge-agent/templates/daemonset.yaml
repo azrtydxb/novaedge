@@ -79,13 +79,6 @@ spec:
             - --tls-insecure-skip-verify=true
             {{- end }}
             {{- end }}
-            {{- if .Values.vip.enabled }}
-            - --vip-enabled=true
-            - --vip-mode={{ .Values.vip.mode }}
-            {{- if .Values.vip.interface }}
-            - --vip-interface={{ .Values.vip.interface }}
-            {{- end }}
-            {{- end }}
             - --http-port={{ .Values.ports.http }}
             - --https-port={{ .Values.ports.https }}
             - --metrics-port={{ .Values.ports.metrics }}

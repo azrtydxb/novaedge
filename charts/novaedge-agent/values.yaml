@@ -88,7 +88,7 @@ podLabels: {}
 # -- Pod security context
 podSecurityContext: {}
 
-# -- Container security context (agents require specific capabilities for VIP management)
+# -- Container security context
 securityContext:
   capabilities:
     add:
@@ -128,7 +128,7 @@ tolerations:
 # -- Affinity rules
 affinity: {}
 
-# -- Host networking (required for VIP and traffic handling)
+# -- Host networking (required for traffic handling)
 hostNetwork: true
 # -- DNS policy (should be ClusterFirstWithHostNet when using hostNetwork)
 dnsPolicy: ClusterFirstWithHostNet
@@ -139,69 +139,6 @@ ports:
   https: 443
   metrics: 9090
   health: 8080
-
-# =============================================================================
-# VIP Configuration
-# =============================================================================
-vip:
-  # -- Enable VIP management
-  enabled: true
-  # -- VIP mode: L2, BGP, or OSPF
-  mode: L2
-  # -- Network interface for VIP binding (L2 mode)
-  interface: ""
-  # -- GARP (Gratuitous ARP) settings for L2 mode
-  garp:
-    # -- Rate limit GARP packets per second
-    rateLimit: 10
-    # -- Number of GARP retries on failover
-    retries: 3
-  # -- BGP configuration (when mode=BGP)
-  bgp:
-    # -- Local ASN
-    asn: 0
-    # -- Router ID
-    routerID: ""
-    # -- BGP peers
-    peers: []
-    # Example:
-    # - address: 192.168.1.1
-    #   asn: 65001
-    #   port: 179
-    #   password: ""
-    #   holdTime: 90s
-    #   keepalive: 30s
-    # -- Enable BGP graceful restart
-    gracefulRestart: true
-    # -- BGP multipath (ECMP) max paths
-    multipathMaxPaths: 4
-  # -- OSPF configuration (when mode=OSPF)
-  ospf:
-    # -- OSPF area ID
-    areaID: "0.0.0.0"
-    # -- Hello interval (seconds)
-    helloInterval: 10
-    # -- Dead interval (seconds)
-    deadInterval: 40
-    # -- Interface cost
-    cost: 10
-    # -- Authentication password secret
-    authSecretName: ""
-  # -- BFD (Bidirectional Forwarding Detection)
-  bfd:
-    # -- Enable BFD for sub-second failure detection
-    enabled: false
-    # -- Desired minimum TX interval (milliseconds)
-    desiredMinTx: 300
-    # -- Required minimum RX interval (milliseconds)
-    requiredMinRx: 300
-    # -- Detection multiplier
-    detectMultiplier: 3
-  # -- IPv6 dual-stack support
-  ipv6:
-    enabled: false
-  # -- Periodic VIP announcement interval (seconds)
-  periodicInterval: 60
 
 # =============================================================================
 # Server / Listener TLS Configuration
@@ -702,23 +639,6 @@ mesh:
     enabled: false
     # -- SPIRE server address
     serverAddress: ""
-
-# =============================================================================
-# Control-Plane VIP Configuration
-# =============================================================================
-controlPlaneVIP:
-  # -- Enable control-plane VIP (for kube-apiserver HA)
-  enabled: false
-  # -- VIP address for control plane
-  address: ""
-  # -- VIP mode: L2, BGP, or BFD
-  mode: L2
-  # -- Network interface
-  interface: ""
-  # -- Health check endpoint for controller
-  healthCheckPath: /livez
-  # -- Health check interval
-  healthCheckInterval: 5s
 
 # =============================================================================
 # WASM Plugin Configuration
