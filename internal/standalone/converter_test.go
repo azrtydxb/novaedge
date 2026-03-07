@@ -19,7 +19,7 @@ package standalone
 import (
 	"testing"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 func TestConverterToSnapshot(t *testing.T) {

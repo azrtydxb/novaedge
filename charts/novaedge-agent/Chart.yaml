@@ -11,11 +11,11 @@ keywords:
   - agent
   - edge
   - multi-cluster
-home: https://github.com/piwi3910/novaedge
+home: https://github.com/azrtydxb/novaedge
 sources:
-  - https://github.com/piwi3910/novaedge
+  - https://github.com/azrtydxb/novaedge
 maintainers:
   - name: NovaEdge Authors
-    url: https://github.com/piwi3910/novaedge
+    url: https://github.com/azrtydxb/novaedge
 annotations:
   category: Networking

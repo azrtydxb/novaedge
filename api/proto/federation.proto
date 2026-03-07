@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package novaedge.proto;
 
-option go_package = "github.com/piwi3910/novaedge/internal/proto/gen;proto";
+option go_package = "github.com/azrtydxb/novaedge/internal/proto/gen;proto";
 
 import "config.proto";
 

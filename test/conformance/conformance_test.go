@@ -45,9 +45,9 @@ func TestConformance(t *testing.T) {
 		Implementation: confapis.Implementation{
 			Organization: "novaedge",
 			Project:      "novaedge",
-			URL:          "https://github.com/piwi3910/novaedge",
+			URL:          "https://github.com/azrtydxb/novaedge",
 			Version:      "v0.1.0",
-			Contact:      []string{"@piwi3910"},
+			Contact:      []string{"@azrtydxb"},
 		},
 		ConformanceProfiles: sets.New(
 			suite.GatewayHTTPConformanceProfileName,

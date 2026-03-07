@@ -39,7 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
 var (
@@ -1059,7 +1059,7 @@ func (r *NovaEdgeClusterReconciler) getImage(cluster *novaedgev1alpha1.NovaEdgeC
 	}
 
 	// Fall back to CRD spec
-	repo := "ghcr.io/piwi3910/novaedge"
+	repo := "ghcr.io/azrtydxb/novaedge"
 	if cluster.Spec.ImageRepository != "" {
 		repo = cluster.Spec.ImageRepository
 	}

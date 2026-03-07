@@ -30,9 +30,9 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/piwi3910/novaedge/internal/agent/ebpf/service"
-	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/agent/ebpf/service"
+	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

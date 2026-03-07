@@ -322,10 +322,10 @@ The health checker tracks endpoint state:
 ### Required Go Packages
 
 ```
-github.com/piwi3910/novaedge/internal/agent/router
-github.com/piwi3910/novaedge/internal/agent/config
-github.com/piwi3910/novaedge/internal/agent/health
-github.com/piwi3910/novaedge/internal/proto/gen
+github.com/azrtydxb/novaedge/internal/agent/router
+github.com/azrtydxb/novaedge/internal/agent/config
+github.com/azrtydxb/novaedge/internal/agent/health
+github.com/azrtydxb/novaedge/internal/proto/gen
 go.uber.org/zap
 ```
 

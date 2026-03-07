@@ -31,9 +31,9 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	nrv1 "github.com/piwi3910/novaedge/api/novaroute/v1"
-	"github.com/piwi3910/novaedge/internal/agent/metrics"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	nrv1 "github.com/azrtydxb/novaedge/api/novaroute/v1"
+	"github.com/azrtydxb/novaedge/internal/agent/metrics"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

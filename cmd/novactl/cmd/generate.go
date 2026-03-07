@@ -210,12 +210,12 @@ redirected to a file (e.g., /etc/kubernetes/manifests/novaedge-cpvip.yaml).`,
 		Example: `  # Generate a static pod manifest (L2 mode)
   novactl generate static-pod \
     --vip-address 10.0.0.100/32 \
-    --image ghcr.io/piwi3910/novaedge-agent:latest
+    --image ghcr.io/azrtydxb/novaedge-agent:latest
 
   # Generate with BGP+BFD mode
   novactl generate static-pod \
     --vip-address 10.0.0.100/32 \
-    --image ghcr.io/piwi3910/novaedge-agent:latest \
+    --image ghcr.io/azrtydxb/novaedge-agent:latest \
     --vip-mode bgp \
     --bgp-local-as 65000 \
     --bgp-peer 10.0.0.2:65000:179,10.0.0.3:65000:179 \
@@ -227,7 +227,7 @@ redirected to a file (e.g., /etc/kubernetes/manifests/novaedge-cpvip.yaml).`,
 	}
 
 	cmd.Flags().StringVar(&vipAddress, "vip-address", "", "VIP address in CIDR notation (e.g., 10.0.0.100/32)")
-	cmd.Flags().StringVar(&image, "image", "", "Container image (e.g., ghcr.io/piwi3910/novaedge-agent:latest)")
+	cmd.Flags().StringVar(&image, "image", "", "Container image (e.g., ghcr.io/azrtydxb/novaedge-agent:latest)")
 	cmd.Flags().StringVar(&iface, "interface", "", "Network interface (omit for auto-detect)")
 	cmd.Flags().IntVar(&apiPort, "api-port", 6443, "kube-apiserver port")
 	cmd.Flags().StringVar(&healthInterval, "health-interval", "1s", "Health check interval")

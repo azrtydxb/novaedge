@@ -53,11 +53,11 @@ labels:
 # Image configuration
 images:
 - name: novaedge-controller
-  newName: ghcr.io/piwi3910/novaedge-controller
+  newName: ghcr.io/azrtydxb/novaedge-controller
   newTag: latest
 - name: novaedge-agent
-  newName: ghcr.io/piwi3910/novaedge-agent
+  newName: ghcr.io/azrtydxb/novaedge-agent
   newTag: latest
 - name: novaedge-novactl
-  newName: ghcr.io/piwi3910/novaedge-novactl
+  newName: ghcr.io/azrtydxb/novaedge-novactl
   newTag: latest

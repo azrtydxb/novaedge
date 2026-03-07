@@ -419,7 +419,7 @@ kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent > agent.log
 
 - [Architecture](../architecture/overview.md)
 - [CRD Reference](../reference/crd-reference.md)
-- [GitHub Issues](https://github.com/piwi3910/novaedge/issues)
+- [GitHub Issues](https://github.com/azrtydxb/novaedge/issues)
 
 ### Community Support
 

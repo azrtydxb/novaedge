@@ -16,7 +16,7 @@ Thank you for your interest in contributing to NovaEdge! This guide covers how t
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install dependencies
@@ -47,7 +47,7 @@ Before starting work, create a GitHub issue describing:
 # Fork the repository on GitHub, then:
 git clone https://github.com/YOUR-USERNAME/novaedge.git
 cd novaedge
-git remote add upstream https://github.com/piwi3910/novaedge.git
+git remote add upstream https://github.com/azrtydxb/novaedge.git
 
 # Create a feature branch
 git checkout -b feature/my-feature

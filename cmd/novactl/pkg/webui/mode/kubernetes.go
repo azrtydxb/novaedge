@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/models"
 	"gopkg.in/yaml.v3"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

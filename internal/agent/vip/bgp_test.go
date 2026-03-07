@@ -25,7 +25,7 @@ import (
 
 	"go.uber.org/zap/zaptest"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // skipIfBGPUnavailable skips the test if the error indicates the BGP server

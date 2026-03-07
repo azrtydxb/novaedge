@@ -22,7 +22,7 @@ import (
 	"math"
 	"net"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )

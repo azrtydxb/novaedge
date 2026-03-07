@@ -19,7 +19,7 @@ package config
 import (
 	"testing"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 func TestSnapshot_GetListenerExtensions_NilExtensions(t *testing.T) {

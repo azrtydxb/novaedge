@@ -27,8 +27,8 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/piwi3910/novaedge/internal/agent/metrics"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/agent/metrics"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

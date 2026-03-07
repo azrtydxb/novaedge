@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap/zaptest"
 	"google.golang.org/grpc"
 
-	pb "github.com/piwi3910/novaedge/api/proto/dataplane"
+	pb "github.com/azrtydxb/novaedge/api/proto/dataplane"
 )
 
 // fakeDataplaneServer implements the DataplaneControlServer interface with

@@ -60,7 +60,7 @@ tunnel:
 
 # -- Agent image configuration
 image:
-  repository: ghcr.io/piwi3910/novaedge/novaedge-agent
+  repository: ghcr.io/azrtydxb/novaedge/novaedge-agent
   pullPolicy: IfNotPresent
   # -- Overrides the image tag (default: chart appVersion)
   tag: ""
@@ -854,7 +854,7 @@ dataplane:
   # -- Enable Rust dataplane sidecar (handles all L4/L7 traffic)
   enabled: true
   image:
-    repository: ghcr.io/piwi3910/novaedge/novaedge-dataplane
+    repository: ghcr.io/azrtydxb/novaedge/novaedge-dataplane
     tag: latest
     pullPolicy: IfNotPresent
   resources:

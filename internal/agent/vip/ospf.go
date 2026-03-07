@@ -28,8 +28,8 @@ import (
 	"github.com/vishvananda/netlink"
 	"go.uber.org/zap"
 
-	"github.com/piwi3910/novaedge/internal/agent/metrics"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/agent/metrics"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

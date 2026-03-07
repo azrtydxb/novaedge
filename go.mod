@@ -1,4 +1,4 @@
-module github.com/piwi3910/novaedge
+module github.com/azrtydxb/novaedge
 
 go 1.25.7
 

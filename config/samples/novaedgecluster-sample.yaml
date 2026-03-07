@@ -56,7 +56,7 @@ metadata:
   namespace: nova-system
 spec:
   version: "v0.1.0"
-  imageRepository: "ghcr.io/piwi3910/novaedge"
+  imageRepository: "ghcr.io/azrtydxb/novaedge"
   imagePullPolicy: IfNotPresent
 
   controller:

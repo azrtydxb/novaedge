@@ -9,7 +9,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/trace"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/trace"
 	"github.com/spf13/cobra"
 )
 

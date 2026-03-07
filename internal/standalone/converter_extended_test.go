@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 func TestConverter_parseHeaderMatchType(t *testing.T) {

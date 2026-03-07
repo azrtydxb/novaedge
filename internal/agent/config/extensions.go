@@ -19,7 +19,7 @@ limitations under the License.
 package config
 
 import (
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // SnapshotExtensions carries mTLS, PROXY protocol, and OCSP configuration

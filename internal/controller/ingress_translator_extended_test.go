@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
 func TestGetVIPRef(t *testing.T) {

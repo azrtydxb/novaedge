@@ -6,8 +6,8 @@ import (
 	"net"
 	"strings"
 
-	pkgerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pkgerrors "github.com/azrtydxb/novaedge/internal/pkg/errors"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // Validator provides configuration validation

@@ -11,13 +11,13 @@ keywords:
 - kubernetes
 - gateway
 - vip
-home: https://github.com/piwi3910/novaedge
+home: https://github.com/azrtydxb/novaedge
 sources:
-- https://github.com/piwi3910/novaedge
+- https://github.com/azrtydxb/novaedge
 maintainers:
-- name: piwi3910
+- name: azrtydxb
   email: pascal@novaedge.io
-icon: https://raw.githubusercontent.com/piwi3910/novaedge/main/docs/logo.png
+icon: https://raw.githubusercontent.com/azrtydxb/novaedge/main/docs/logo.png
 annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/category: networking

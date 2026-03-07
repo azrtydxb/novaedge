@@ -11,12 +11,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/prometheus"
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/trace"
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/auth"
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/mode"
-	"github.com/piwi3910/novaedge/internal/acme"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/client"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/prometheus"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/trace"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/auth"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/mode"
+	"github.com/azrtydxb/novaedge/internal/acme"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -24,7 +24,7 @@ import (
 	"k8s.io/client-go/rest"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
 const (

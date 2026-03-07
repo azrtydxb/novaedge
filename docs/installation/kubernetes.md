@@ -34,7 +34,7 @@ The Operator provides automated lifecycle management.
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install operator with Helm
@@ -96,7 +96,7 @@ Deploy components directly without the Operator.
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install with Helm
@@ -135,7 +135,7 @@ For full control over the deployment.
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install CRDs

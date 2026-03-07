@@ -1,8 +1,8 @@
 site_name: NovaEdge
 site_description: Distributed Kubernetes-native load balancer, reverse proxy, and VIP controller
-site_url: https://piwi3910.github.io/novaedge
-repo_url: https://github.com/piwi3910/novaedge
-repo_name: piwi3910/novaedge
+site_url: https://azrtydxb.github.io/novaedge
+repo_url: https://github.com/azrtydxb/novaedge
+repo_name: azrtydxb/novaedge
 
 theme:
   name: material
@@ -143,4 +143,4 @@ extra_css:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/piwi3910/novaedge
+      link: https://github.com/azrtydxb/novaedge

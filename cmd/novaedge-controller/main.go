@@ -42,16 +42,16 @@ import (
 
 	"k8s.io/client-go/dynamic"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
-	"github.com/piwi3910/novaedge/internal/controller"
-	"github.com/piwi3910/novaedge/internal/controller/certmanager"
-	"github.com/piwi3910/novaedge/internal/controller/federation"
-	"github.com/piwi3910/novaedge/internal/controller/ipam"
-	"github.com/piwi3910/novaedge/internal/controller/meshca"
-	"github.com/piwi3910/novaedge/internal/controller/snapshot"
-	vaultpkg "github.com/piwi3910/novaedge/internal/controller/vault"
-	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
-	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller"
+	"github.com/azrtydxb/novaedge/internal/controller/certmanager"
+	"github.com/azrtydxb/novaedge/internal/controller/federation"
+	"github.com/azrtydxb/novaedge/internal/controller/ipam"
+	"github.com/azrtydxb/novaedge/internal/controller/meshca"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
+	vaultpkg "github.com/azrtydxb/novaedge/internal/controller/vault"
+	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
+	"github.com/azrtydxb/novaedge/internal/pkg/tlsutil"
 )
 
 // Build-time variables set via ldflags.

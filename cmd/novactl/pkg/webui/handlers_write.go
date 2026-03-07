@@ -24,7 +24,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/models"
 )
 
 // namespacedResource bundles the backend operations for a namespaced resource

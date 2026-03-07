@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/client"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/yaml"

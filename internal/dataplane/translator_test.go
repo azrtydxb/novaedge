@@ -7,8 +7,8 @@ import (
 
 	"go.uber.org/zap/zaptest"
 
-	pb "github.com/piwi3910/novaedge/api/proto/dataplane"
-	configpb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/api/proto/dataplane"
+	configpb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // ---------------------------------------------------------------------------

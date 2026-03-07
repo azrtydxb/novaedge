@@ -24,7 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
 // newTestBuildContext creates a buildContext from a list of secrets for test use.

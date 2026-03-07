@@ -12,7 +12,7 @@ Get NovaEdge running in your Kubernetes cluster in under 5 minutes.
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install the operator

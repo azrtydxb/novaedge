@@ -26,7 +26,7 @@ The operator chart (`charts/novaedge-operator`) deploys the NovaEdge Operator, w
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `image.repository` | Operator image repository | `ghcr.io/piwi3910/novaedge/novaedge-operator` |
+| `image.repository` | Operator image repository | `ghcr.io/azrtydxb/novaedge/novaedge-operator` |
 | `image.tag` | Image tag (defaults to chart appVersion) | `""` |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `imagePullSecrets` | List of image pull secrets | `[]` |
@@ -132,7 +132,7 @@ The operator chart (`charts/novaedge-operator`) deploys the NovaEdge Operator, w
 replicaCount: 1
 
 image:
-  repository: ghcr.io/piwi3910/novaedge/novaedge-operator
+  repository: ghcr.io/azrtydxb/novaedge/novaedge-operator
   tag: v0.1.0
 
 resources:
@@ -198,7 +198,7 @@ The controller watches Kubernetes resources and pushes configuration to agents.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `controller.image.repository` | Controller image repository | `ghcr.io/piwi3910/novaedge-controller` |
+| `controller.image.repository` | Controller image repository | `ghcr.io/azrtydxb/novaedge-controller` |
 | `controller.image.tag` | Controller image tag | Chart appVersion |
 | `controller.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 
@@ -287,7 +287,7 @@ The agent runs as a DaemonSet on each node, handling L7 load balancing and VIP m
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `agent.image.repository` | Agent image repository | `ghcr.io/piwi3910/novaedge-agent` |
+| `agent.image.repository` | Agent image repository | `ghcr.io/azrtydxb/novaedge-agent` |
 | `agent.image.tag` | Agent image tag | Chart appVersion |
 | `agent.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 
@@ -379,7 +379,7 @@ The Rust dataplane handles all L4/L7 traffic and runs as a sidecar alongside the
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `dataplane.image.repository` | Dataplane image repository | `ghcr.io/piwi3910/novaedge/novaedge-dataplane` |
+| `dataplane.image.repository` | Dataplane image repository | `ghcr.io/azrtydxb/novaedge/novaedge-dataplane` |
 | `dataplane.image.tag` | Dataplane image tag | `latest` |
 | `dataplane.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 
@@ -416,10 +416,10 @@ The web UI provides a dashboard for configuration management and monitoring.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `webui.image.repository` | Web UI backend image repository | `ghcr.io/piwi3910/novaedge-novactl` |
+| `webui.image.repository` | Web UI backend image repository | `ghcr.io/azrtydxb/novaedge-novactl` |
 | `webui.image.tag` | Web UI backend image tag | Chart appVersion |
 | `webui.image.pullPolicy` | Image pull policy | `IfNotPresent` |
-| `webui.frontend.image.repository` | Web UI frontend image repository | `ghcr.io/piwi3910/novaedge-webui` |
+| `webui.frontend.image.repository` | Web UI frontend image repository | `ghcr.io/azrtydxb/novaedge-webui` |
 | `webui.frontend.image.tag` | Web UI frontend image tag | Chart appVersion |
 | `webui.frontend.image.pullPolicy` | Frontend image pull policy | `IfNotPresent` |
 

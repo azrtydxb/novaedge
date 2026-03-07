@@ -38,7 +38,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/net/http2"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // safeIntToInt32 converts int to int32 with bounds checking.

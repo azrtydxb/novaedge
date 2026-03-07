@@ -21,7 +21,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/models"
 	"k8s.io/client-go/rest"
 )
 

@@ -20,5 +20,5 @@ resources:
 
 images:
 - name: novaedge-novactl
-  newName: ghcr.io/piwi3910/novaedge-novactl
+  newName: ghcr.io/azrtydxb/novaedge-novactl
   newTag: latest

@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
 var (

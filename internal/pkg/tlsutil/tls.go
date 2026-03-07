@@ -50,7 +50,7 @@ import (
 
 	"google.golang.org/grpc/credentials"
 
-	pkgerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
+	pkgerrors "github.com/azrtydxb/novaedge/internal/pkg/errors"
 )
 
 var (

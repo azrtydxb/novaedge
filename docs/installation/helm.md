@@ -29,7 +29,7 @@ helm install novaedge-operator ./charts/novaedge-operator \
 replicaCount: 1
 
 image:
-  repository: ghcr.io/piwi3910/novaedge-operator
+  repository: ghcr.io/azrtydxb/novaedge-operator
   tag: "v0.1.0"
   pullPolicy: IfNotPresent
 
@@ -93,7 +93,7 @@ helm install novaedge ./charts/novaedge \
 controller:
   replicas: 1
   image:
-    repository: ghcr.io/piwi3910/novaedge-controller
+    repository: ghcr.io/azrtydxb/novaedge-controller
     tag: "v0.1.0"
   resources:
     requests:
@@ -103,7 +103,7 @@ controller:
 
 agent:
   image:
-    repository: ghcr.io/piwi3910/novaedge-agent
+    repository: ghcr.io/azrtydxb/novaedge-agent
     tag: "v0.1.0"
   hostNetwork: true
   resources:
@@ -207,7 +207,7 @@ controller:
     secretName: agent-tls-secret
 
 image:
-  repository: ghcr.io/piwi3910/novaedge-agent
+  repository: ghcr.io/azrtydxb/novaedge-agent
   tag: "v0.1.0"
 
 hostNetwork: true
@@ -231,7 +231,7 @@ clusterName: "spoke-cluster-1"
 | Value | Default | Description |
 |-------|---------|-------------|
 | `controller.replicas` | 1 | Number of controller replicas |
-| `controller.image.repository` | ghcr.io/piwi3910/novaedge-controller | Image repository |
+| `controller.image.repository` | ghcr.io/azrtydxb/novaedge-controller | Image repository |
 | `controller.image.tag` | v0.1.0 | Image tag |
 | `controller.leaderElection` | true | Enable leader election |
 | `controller.grpcPort` | 9090 | gRPC server port |
@@ -245,7 +245,7 @@ clusterName: "spoke-cluster-1"
 
 | Value | Default | Description |
 |-------|---------|-------------|
-| `agent.image.repository` | ghcr.io/piwi3910/novaedge-agent | Image repository |
+| `agent.image.repository` | ghcr.io/azrtydxb/novaedge-agent | Image repository |
 | `agent.image.tag` | v0.1.0 | Image tag |
 | `agent.hostNetwork` | true | Use host networking |
 | `agent.httpPort` | 80 | HTTP traffic port |

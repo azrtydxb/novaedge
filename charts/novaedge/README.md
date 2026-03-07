@@ -13,7 +13,7 @@ A Helm chart for deploying NovaEdge - a Kubernetes-native distributed load balan
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install with default values
@@ -64,7 +64,7 @@ kubectl delete crds proxybackends.novaedge.io proxygateways.novaedge.io \
 |-----------|-------------|---------|
 | `controller.enabled` | Deploy the controller | `true` |
 | `controller.replicaCount` | Number of controller replicas | `3` |
-| `controller.image.repository` | Controller image repository | `ghcr.io/piwi3910/novaedge-controller` |
+| `controller.image.repository` | Controller image repository | `ghcr.io/azrtydxb/novaedge-controller` |
 | `controller.image.tag` | Controller image tag | Chart appVersion |
 | `controller.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `controller.leaderElection.enabled` | Enable leader election for HA | `true` |
@@ -81,7 +81,7 @@ kubectl delete crds proxybackends.novaedge.io proxygateways.novaedge.io \
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `agent.enabled` | Deploy the agent DaemonSet | `true` |
-| `agent.image.repository` | Agent image repository | `ghcr.io/piwi3910/novaedge-agent` |
+| `agent.image.repository` | Agent image repository | `ghcr.io/azrtydxb/novaedge-agent` |
 | `agent.image.tag` | Agent image tag | Chart appVersion |
 | `agent.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `agent.ports.http` | HTTP proxy port | `80` |
@@ -100,7 +100,7 @@ kubectl delete crds proxybackends.novaedge.io proxygateways.novaedge.io \
 |-----------|-------------|---------|
 | `webui.enabled` | Deploy the web UI | `true` |
 | `webui.replicaCount` | Number of web UI replicas | `1` |
-| `webui.image.repository` | Web UI image repository | `ghcr.io/piwi3910/novaedge-novactl` |
+| `webui.image.repository` | Web UI image repository | `ghcr.io/azrtydxb/novaedge-novactl` |
 | `webui.image.tag` | Web UI image tag | Chart appVersion |
 | `webui.service.type` | Service type | `ClusterIP` |
 | `webui.service.port` | Service port | `80` |
@@ -272,6 +272,6 @@ Apache 2.0
 
 ## Links
 
-- [Documentation](https://piwi3910.github.io/novaedge/)
-- [GitHub Repository](https://github.com/piwi3910/novaedge)
-- [Issue Tracker](https://github.com/piwi3910/novaedge/issues)
+- [Documentation](https://azrtydxb.github.io/novaedge/)
+- [GitHub Repository](https://github.com/azrtydxb/novaedge)
+- [Issue Tracker](https://github.com/azrtydxb/novaedge/issues)

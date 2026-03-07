@@ -32,8 +32,8 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	"github.com/piwi3910/novaedge/internal/agent/metrics"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/agent/metrics"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

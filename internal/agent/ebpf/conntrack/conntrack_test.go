@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/piwi3910/novaedge/internal/agent/ebpf/testutil"
+	"github.com/azrtydxb/novaedge/internal/agent/ebpf/testutil"
 	"go.uber.org/zap/zaptest"
 )
 

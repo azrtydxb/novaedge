@@ -19,10 +19,10 @@ limitations under the License.
 package ebpfmesh
 
 import (
-	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
-	"github.com/piwi3910/novaedge/internal/agent/ebpf/service"
-	"github.com/piwi3910/novaedge/internal/agent/ebpf/sockmap"
-	"github.com/piwi3910/novaedge/internal/agent/mesh"
+	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
+	"github.com/azrtydxb/novaedge/internal/agent/ebpf/service"
+	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
+	"github.com/azrtydxb/novaedge/internal/agent/mesh"
 	"go.uber.org/zap"
 )
 

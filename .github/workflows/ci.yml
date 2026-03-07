@@ -866,8 +866,8 @@ jobs:
           file: ${{ matrix.image.dockerfile }}
           push: true
           tags: |
-            ghcr.io/piwi3910/${{ matrix.image.registry_path }}:sha-${{ github.sha }}
-            ghcr.io/piwi3910/${{ matrix.image.registry_path }}:latest
+            ghcr.io/azrtydxb/${{ matrix.image.registry_path }}:sha-${{ github.sha }}
+            ghcr.io/azrtydxb/${{ matrix.image.registry_path }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

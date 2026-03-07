@@ -36,8 +36,8 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/piwi3910/novaedge/internal/agent/vip"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/agent/vip"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

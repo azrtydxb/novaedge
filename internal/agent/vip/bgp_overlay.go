@@ -24,7 +24,7 @@ import (
 
 	"go.uber.org/zap"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

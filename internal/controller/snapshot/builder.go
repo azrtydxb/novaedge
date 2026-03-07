@@ -38,9 +38,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
-	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

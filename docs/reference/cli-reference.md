@@ -883,7 +883,7 @@ novactl generate <subcommand> [flags]
 novactl generate static-pod > novaedge-agent.yaml
 
 # Generate with custom image
-novactl generate static-pod --image ghcr.io/piwi3910/novaedge-agent:v1.2.3
+novactl generate static-pod --image ghcr.io/azrtydxb/novaedge-agent:v1.2.3
 
 # Generate systemd unit file
 novactl generate systemd-unit > /etc/systemd/system/novaedge.service

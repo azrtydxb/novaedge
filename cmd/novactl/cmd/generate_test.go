@@ -62,7 +62,7 @@ func TestGenerateStaticPodRequiredFlags(t *testing.T) {
 	output, err := executeGenerateCommand(t, []string{
 		"static-pod",
 		"--vip-address", "10.0.0.100/32",
-		"--image", "ghcr.io/piwi3910/novaedge-agent:latest",
+		"--image", "ghcr.io/azrtydxb/novaedge-agent:latest",
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -78,7 +78,7 @@ func TestGenerateStaticPodRequiredFlags(t *testing.T) {
 		"app.kubernetes.io/component: control-plane-vip",
 		"hostNetwork: true",
 		"priorityClassName: system-node-critical",
-		"image: ghcr.io/piwi3910/novaedge-agent:latest",
+		"image: ghcr.io/azrtydxb/novaedge-agent:latest",
 		"--control-plane-vip",
 		"--cp-vip-address=10.0.0.100/32",
 		"--cp-api-port=6443",
@@ -150,7 +150,7 @@ func TestGenerateStaticPodAllFlags(t *testing.T) {
 func TestGenerateStaticPodMissingVIPAddress(t *testing.T) {
 	_, err := executeGenerateCommand(t, []string{
 		"static-pod",
-		"--image", "ghcr.io/piwi3910/novaedge-agent:latest",
+		"--image", "ghcr.io/azrtydxb/novaedge-agent:latest",
 	})
 	if err == nil {
 		t.Fatal("expected error for missing --vip-address flag, got nil")
@@ -269,7 +269,7 @@ func TestGenerateStaticPodBGPMode(t *testing.T) {
 	output, err := executeGenerateCommand(t, []string{
 		"static-pod",
 		"--vip-address", "192.168.100.10/32",
-		"--image", "ghcr.io/piwi3910/novaedge-agent:latest",
+		"--image", "ghcr.io/azrtydxb/novaedge-agent:latest",
 		"--node-name", "master-11",
 		"--vip-mode", "bgp",
 		"--bgp-local-as", "65000",
@@ -307,7 +307,7 @@ func TestGenerateStaticPodL2ModeNoBGPFlags(t *testing.T) {
 	output, err := executeGenerateCommand(t, []string{
 		"static-pod",
 		"--vip-address", "10.0.0.100/32",
-		"--image", "ghcr.io/piwi3910/novaedge-agent:latest",
+		"--image", "ghcr.io/azrtydxb/novaedge-agent:latest",
 		"--node-name", "master-1",
 	})
 	if err != nil {

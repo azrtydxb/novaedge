@@ -31,11 +31,11 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
-	"github.com/piwi3910/novaedge/internal/agent/server"
-	"github.com/piwi3910/novaedge/internal/agent/vip"
-	dpctl "github.com/piwi3910/novaedge/internal/dataplane"
-	"github.com/piwi3910/novaedge/internal/standalone"
+	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
+	"github.com/azrtydxb/novaedge/internal/agent/server"
+	"github.com/azrtydxb/novaedge/internal/agent/vip"
+	dpctl "github.com/azrtydxb/novaedge/internal/dataplane"
+	"github.com/azrtydxb/novaedge/internal/standalone"
 )
 
 // Build-time variables set via ldflags.

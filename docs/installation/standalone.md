@@ -36,7 +36,7 @@ flowchart TB
 
 ```bash
 # Clone repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Start NovaEdge

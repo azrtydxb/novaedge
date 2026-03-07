@@ -73,13 +73,13 @@ patches:
 
 # Image configuration for dev (use dev tag to avoid latest auto-pull behavior)
 images:
-- name: ghcr.io/piwi3910/novaedge-controller
+- name: ghcr.io/azrtydxb/novaedge-controller
   newName: novaedge-controller
   newTag: dev
-- name: ghcr.io/piwi3910/novaedge-agent
+- name: ghcr.io/azrtydxb/novaedge-agent
   newName: novaedge-agent
   newTag: dev
-- name: ghcr.io/piwi3910/novaedge-novactl
+- name: ghcr.io/azrtydxb/novaedge-novactl
   newName: novaedge-novactl
   newTag: dev
 
