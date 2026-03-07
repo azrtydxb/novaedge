@@ -169,15 +169,11 @@ const (
 // ServicePortResolver resolves service port names to port numbers
 type ServicePortResolver func(ctx context.Context, namespace, serviceName, portName string) (int32, error)
 
-// VIPModeResolver resolves a VIP reference name to its mode (e.g. "BGP", "OSPF", "L2ARP")
-type VIPModeResolver func(ctx context.Context, vipRef string) string
-
 // IngressTranslator translates Kubernetes Ingress resources to NovaEdge CRDs
 type IngressTranslator struct {
 	namespace           string
 	servicePortResolver ServicePortResolver
 	defaultVIPRef       string
-	vipModeResolver     VIPModeResolver
 }
 
 // NewIngressTranslator creates a new IngressTranslator
@@ -198,7 +194,7 @@ func NewIngressTranslatorWithResolver(namespace string, resolver ServicePortReso
 }
 
 // NewIngressTranslatorWithOptions creates a new IngressTranslator with a service port resolver and configurable default VIP ref
-func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver, defaultVIPRef string, vipModeResolver VIPModeResolver) *IngressTranslator {
+func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver, defaultVIPRef string) *IngressTranslator {
 	vipRef := defaultVIPRef
 	if vipRef == "" {
 		vipRef = DefaultVIPRef
@@ -207,7 +203,6 @@ func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResol
 		namespace:           namespace,
 		servicePortResolver: resolver,
 		defaultVIPRef:       vipRef,
-		vipModeResolver:     vipModeResolver,
 	}
 }
 
@@ -685,7 +680,7 @@ func (t *IngressTranslator) getIngressClassName(ingress *networkingv1.Ingress) s
 	return ""
 }
 
-func (t *IngressTranslator) getLBPolicy(ctx context.Context, ingress *networkingv1.Ingress) novaedgev1alpha1.LoadBalancingPolicy {
+func (t *IngressTranslator) getLBPolicy(_ context.Context, ingress *networkingv1.Ingress) novaedgev1alpha1.LoadBalancingPolicy {
 	// Explicit annotation always wins
 	if lbPolicy, exists := ingress.Annotations[AnnotationLoadBalancing]; exists {
 		switch strings.ToLower(lbPolicy) {
@@ -698,14 +693,6 @@ func (t *IngressTranslator) getLBPolicy(ctx context.Context, ingress *networking
 		case "ringhash":
 			return novaedgev1alpha1.LBPolicyRingHash
 		case "maglev":
-			return novaedgev1alpha1.LBPolicyMaglev
-		}
-	}
-	// Auto-detect from VIP mode: BGP/OSPF require hash-based LB for ECMP
-	if t.vipModeResolver != nil {
-		vipRef := t.getVIPRef(ingress)
-		mode := t.vipModeResolver(ctx, vipRef)
-		if mode == string(novaedgev1alpha1.VIPModeBGP) || mode == string(novaedgev1alpha1.VIPModeOSPF) {
 			return novaedgev1alpha1.LBPolicyMaglev
 		}
 	}

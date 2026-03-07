@@ -721,5 +721,4 @@ Key metrics for load balancing:
 ## Next Steps
 
 - [Health Checks](health-checks.md) - Configure health checking
-- [VIP Management](vip-management.md) - Configure VIP modes
 - [Policies](policies.md) - Add rate limiting

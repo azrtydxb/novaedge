@@ -46,7 +46,6 @@ import (
 	"github.com/azrtydxb/novaedge/internal/controller"
 	"github.com/azrtydxb/novaedge/internal/controller/certmanager"
 	"github.com/azrtydxb/novaedge/internal/controller/federation"
-	"github.com/azrtydxb/novaedge/internal/controller/ipam"
 	"github.com/azrtydxb/novaedge/internal/controller/meshca"
 	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 	vaultpkg "github.com/azrtydxb/novaedge/internal/controller/vault"
@@ -84,7 +83,6 @@ type controllerFlags struct {
 	grpcTLSCA             string
 	controllerClass       string
 	defaultVIPRef         string
-	enableServiceLB       bool
 	enableCertManager     string
 	enableVault           string
 	vaultAddr             string
@@ -94,7 +92,6 @@ type controllerFlags struct {
 	federationID          string
 	federationLocalMember string
 	enableLeaderElection  bool
-	ipamSocket            string
 }
 
 func parseControllerFlags() controllerFlags {
@@ -109,8 +106,6 @@ func parseControllerFlags() controllerFlags {
 		"The loadBalancerClass this controller handles. Only gateways matching this class will be reconciled.")
 	flag.StringVar(&f.defaultVIPRef, "default-vip-ref", "default-vip",
 		"Default VIP reference name for Ingress resources that don't specify the novaedge.io/vip-ref annotation.")
-	flag.BoolVar(&f.enableServiceLB, "enable-service-lb", false,
-		"Enable ServiceLB controller that watches type:LoadBalancer Services and creates ProxyVIP resources with IPAM allocation.")
 	flag.StringVar(&f.enableCertManager, "enable-cert-manager", "auto", "Enable cert-manager integration (auto|true|false)")
 	flag.StringVar(&f.enableVault, "enable-vault", "false", "Enable HashiCorp Vault integration (auto|true|false)")
 	flag.StringVar(&f.vaultAddr, "vault-addr", "", "HashiCorp Vault server address")
@@ -122,8 +117,6 @@ func parseControllerFlags() controllerFlags {
 	flag.BoolVar(&f.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&f.ipamSocket, "ipam-socket", "/run/novanet/ipam.sock",
-		"Path to NovaNet IPAM gRPC Unix socket. Falls back to local allocator if unavailable.")
 	return f
 }
 
@@ -136,13 +129,7 @@ func registerReconciler(mgr ctrl.Manager, name string, setupFn func(ctrl.Manager
 }
 
 // registerReconcilers registers all CRD and Gateway API reconcilers with the manager.
-func registerReconcilers(mgr ctrl.Manager, f controllerFlags, allocator ipam.Client) *controller.ProxyGatewayReconciler {
-	registerReconciler(mgr, "ProxyVIP", func(m ctrl.Manager) error {
-		return (&controller.ProxyVIPReconciler{
-			Client: m.GetClient(), Scheme: m.GetScheme(), Allocator: allocator,
-		}).SetupWithManager(m)
-	})
-
+func registerReconcilers(mgr ctrl.Manager, f controllerFlags) *controller.ProxyGatewayReconciler {
 	proxyGatewayReconciler := &controller.ProxyGatewayReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(), ControllerClass: f.controllerClass,
 	}
@@ -174,25 +161,6 @@ func registerReconcilers(mgr ctrl.Manager, f controllerFlags, allocator ipam.Cli
 	registerReconciler(mgr, "GatewayClass", func(m ctrl.Manager) error {
 		return (&controller.GatewayClassReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
 	})
-	registerReconciler(mgr, "ProxyIPPool", func(m ctrl.Manager) error {
-		return (&controller.ProxyIPPoolReconciler{
-			Client: m.GetClient(), Scheme: m.GetScheme(), Allocator: allocator,
-		}).SetupWithManager(m)
-	})
-
-	if f.enableServiceLB {
-		registerReconciler(mgr, "ServiceLB", func(m ctrl.Manager) error {
-			return (&controller.ServiceReconciler{
-				Client:          m.GetClient(),
-				Scheme:          m.GetScheme(),
-				Allocator:       allocator,
-				Recorder:        m.GetEventRecorderFor("service-lb-controller"), //nolint:staticcheck
-				EnableServiceLB: true,
-			}).SetupWithManager(m)
-		})
-		setupLog.Info("ServiceLB controller enabled")
-	}
-
 	registerReconciler(mgr, "EndpointSlice", func(m ctrl.Manager) error {
 		return (&controller.EndpointSliceReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
 	})
@@ -382,21 +350,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	ipamLogger, _ := uberzap.NewProduction()
-	var allocator ipam.Client
-
-	// Try to connect to NovaNet IPAM gRPC service; fall back to local allocator.
-	grpcAllocator, grpcErr := ipam.NewGRPCAllocator(f.ipamSocket, ipamLogger)
-	if grpcErr != nil {
-		setupLog.Info("NovaNet IPAM socket unavailable, using local allocator",
-			"socket", f.ipamSocket, "error", grpcErr.Error())
-		allocator = ipam.NewAllocator(ipamLogger)
-	} else {
-		setupLog.Info("Connected to NovaNet IPAM service", "socket", f.ipamSocket)
-		allocator = grpcAllocator
-	}
-
-	proxyGatewayReconciler := registerReconcilers(mgr, f, allocator)
+	proxyGatewayReconciler := registerReconcilers(mgr, f)
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
@@ -419,11 +373,4 @@ func main() {
 
 	// Graceful shutdown of gRPC server
 	grpcServer.GracefulStop()
-
-	// Close IPAM gRPC connection if applicable.
-	if grpcAllocator != nil {
-		if closeErr := grpcAllocator.Close(); closeErr != nil {
-			setupLog.Error(closeErr, "Failed to close IPAM gRPC connection")
-		}
-	}
 }

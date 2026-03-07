@@ -37,82 +37,6 @@ var (
 	errInvalidByteSize = errors.New("invalid byte size")
 )
 
-// convertVIPMode converts NovaEdge VIPMode to protobuf VIPMode
-func convertVIPMode(mode novaedgev1alpha1.VIPMode) pb.VIPMode {
-	switch mode {
-	case novaedgev1alpha1.VIPModeL2ARP:
-		return pb.VIPMode_L2_ARP
-	case novaedgev1alpha1.VIPModeBGP:
-		return pb.VIPMode_BGP
-	case novaedgev1alpha1.VIPModeOSPF:
-		return pb.VIPMode_OSPF
-	default:
-		return pb.VIPMode_VIP_MODE_UNSPECIFIED
-	}
-}
-
-// convertBGPConfig converts NovaEdge BGPConfig to protobuf BGPConfig
-func convertBGPConfig(config *novaedgev1alpha1.BGPConfig) *pb.BGPConfig {
-	if config == nil {
-		return nil
-	}
-
-	pbConfig := &pb.BGPConfig{
-		LocalAs:     config.LocalAS,
-		RouterId:    config.RouterID,
-		Peers:       make([]*pb.BGPPeer, 0, len(config.Peers)),
-		Communities: config.Communities,
-	}
-
-	if config.LocalPreference != nil {
-		pbConfig.LocalPreference = *config.LocalPreference
-	}
-
-	for _, peer := range config.Peers {
-		pbPeer := &pb.BGPPeer{
-			Address: peer.Address,
-			As:      peer.AS,
-			Port:    uint32(peer.Port),
-		}
-		pbConfig.Peers = append(pbConfig.Peers, pbPeer)
-	}
-
-	return pbConfig
-}
-
-// convertOSPFConfig converts NovaEdge OSPFConfig to protobuf OSPFConfig
-func convertOSPFConfig(config *novaedgev1alpha1.OSPFConfig) *pb.OSPFConfig {
-	if config == nil {
-		return nil
-	}
-
-	return &pb.OSPFConfig{
-		RouterId:        config.RouterID,
-		AreaId:          config.AreaID,
-		HelloInterval:   config.HelloInterval,
-		DeadInterval:    config.DeadInterval,
-		AuthType:        config.AuthType,
-		AuthKey:         config.AuthKey,
-		Cost:            config.Cost,
-		GracefulRestart: config.GracefulRestart,
-	}
-}
-
-// convertBFDConfig converts NovaEdge BFDConfig to protobuf BFDConfig
-func convertBFDConfig(config *novaedgev1alpha1.BFDConfig) *pb.BFDConfig {
-	if config == nil {
-		return nil
-	}
-
-	return &pb.BFDConfig{
-		Enabled:               config.Enabled,
-		DetectMultiplier:      config.DetectMultiplier,
-		DesiredMinTxInterval:  config.DesiredMinTxInterval,
-		RequiredMinRxInterval: config.RequiredMinRxInterval,
-		EchoMode:              config.EchoMode,
-	}
-}
-
 // convertProtocol converts NovaEdge ProtocolType to protobuf Protocol
 func convertProtocol(protocol novaedgev1alpha1.ProtocolType) pb.Protocol {
 	switch protocol {
@@ -796,18 +720,6 @@ func convertSlowStart(ss *novaedgev1alpha1.SlowStartConfig) *pb.SlowStart {
 		WindowMs:   durationToMillis(ss.Window),
 		Aggression: aggression,
 	}
-}
-
-// extractLastOctet returns the last octet of an IPv4 address string.
-// Returns 0 if the address is not a valid IPv4 address.
-func extractLastOctet(ip string) int {
-	parts := strings.Split(ip, ".")
-	if len(parts) == 4 {
-		if v, err := strconv.Atoi(parts[3]); err == nil {
-			return v
-		}
-	}
-	return 0
 }
 
 // convertFaultInjectionConfig converts CRD FaultInjectionConfig to protobuf FaultInjectionConfig

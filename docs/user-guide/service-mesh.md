@@ -467,4 +467,3 @@ All protocols are currently proxied as L4 TCP. HTTP-aware routing (L7 mesh) is p
 
 - [TLS](tls.md) -- TLS certificate management for ingress traffic
 - [Policies](policies.md) -- Rate limiting, authentication, and WAF policies for north-south traffic
-- [VIP Management](vip-management.md) -- Virtual IP management for external access

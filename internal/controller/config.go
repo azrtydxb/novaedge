@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -149,4 +150,20 @@ func handleResourceDeletion(ctx context.Context, cli client.Client, source clien
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// setCondition updates or adds a condition in a conditions slice.
+func setCondition(conditions *[]metav1.Condition, newCondition metav1.Condition) {
+	if conditions == nil {
+		return
+	}
+
+	for i, condition := range *conditions {
+		if condition.Type == newCondition.Type {
+			(*conditions)[i] = newCondition
+			return
+		}
+	}
+
+	*conditions = append(*conditions, newCondition)
 }

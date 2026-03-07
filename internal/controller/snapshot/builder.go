@@ -85,7 +85,6 @@ type buildContext struct {
 	routes      []novaedgev1alpha1.ProxyRoute
 	backends    []novaedgev1alpha1.ProxyBackend
 	policies    []novaedgev1alpha1.ProxyPolicy
-	vips        []novaedgev1alpha1.ProxyVIP
 	services    []corev1.Service
 	wanLinks    []novaedgev1alpha1.ProxyWANLink
 	wanPolicies []novaedgev1alpha1.ProxyWANPolicy
@@ -132,12 +131,6 @@ func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 		return nil, fmt.Errorf("failed to list policies: %w", err)
 	}
 	bc.policies = policyList.Items
-
-	vipList := &novaedgev1alpha1.ProxyVIPList{}
-	if err := b.client.List(ctx, vipList); err != nil {
-		return nil, fmt.Errorf("failed to list VIPs: %w", err)
-	}
-	bc.vips = vipList.Items
 
 	serviceList := &corev1.ServiceList{}
 	if err := b.client.List(ctx, serviceList); err != nil {
@@ -199,12 +192,6 @@ func (bc *buildContext) getSecret(namespace, name string) (*corev1.Secret, bool)
 func (bc *buildContext) getConfigMap(namespace, name string) (*corev1.ConfigMap, bool) {
 	cm, ok := bc.configMaps[namespace+"/"+name]
 	return cm, ok
-}
-
-// getNode returns a pre-fetched Node from the build context.
-func (bc *buildContext) getNode(name string) (*corev1.Node, bool) {
-	n, ok := bc.nodes[name]
-	return n, ok
 }
 
 // SetFederationProvider sets the federation state provider used to populate
@@ -351,9 +338,6 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		return nil, fmt.Errorf("failed to prefetch resources: %w", err)
 	}
 
-	// Build VIP assignments
-	snapshot.VipAssignments = b.buildVIPAssignments(ctx, nodeName, bc)
-
 	// Build gateways
 	snapshot.Gateways = b.buildGateways(ctx, bc)
 
@@ -361,13 +345,8 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	routes := b.buildRoutes(ctx, bc)
 	snapshot.Routes = routes
 
-	// Determine which backends are served exclusively through ECMP (BGP/OSPF)
-	// VIPs, so only those backends get the hash-based LB policy filter.
-	// Backends served through L2ARP VIPs can use any LB policy.
-	ecmpBackends := b.resolveECMPBackends(bc)
-
 	// Build backends/clusters
-	snapshot.Clusters, snapshot.Endpoints = b.buildClusters(ctx, ecmpBackends, bc)
+	snapshot.Clusters, snapshot.Endpoints = b.buildClusters(ctx, nil, bc)
 
 	// Build policies
 	policies := b.buildPolicies(ctx, bc)
@@ -414,7 +393,6 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"gateways":            len(snapshot.Gateways),
 		"routes":              len(snapshot.Routes),
 		"clusters":            len(snapshot.Clusters),
-		"vips":                len(snapshot.VipAssignments),
 		"policies":            len(snapshot.Policies),
 		"l4_listeners":        len(snapshot.L4Listeners),
 		"internal_services":   len(snapshot.InternalServices),
@@ -429,7 +407,6 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"gateways", len(snapshot.Gateways),
 		"routes", len(snapshot.Routes),
 		"clusters", len(snapshot.Clusters),
-		"vips", len(snapshot.VipAssignments),
 		"policies", len(snapshot.Policies),
 		"l4_listeners", len(snapshot.L4Listeners),
 		"internal_services", len(snapshot.InternalServices),
@@ -440,116 +417,6 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"size_bytes", sizeBytes)
 
 	return snapshot, nil
-}
-
-// isVIPActiveOnNode checks whether the given VIP should be active on nodeName.
-func isVIPActiveOnNode(vip *novaedgev1alpha1.ProxyVIP, nodeName string) bool {
-	switch vip.Spec.Mode {
-	case novaedgev1alpha1.VIPModeL2ARP:
-		return vip.Status.ActiveNode == nodeName
-	case novaedgev1alpha1.VIPModeBGP, novaedgev1alpha1.VIPModeOSPF:
-		for _, n := range vip.Status.AnnouncingNodes {
-			if n == nodeName {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// buildVIPBaseAssignment creates the base VIPAssignment from a ProxyVIP spec/status.
-func buildVIPBaseAssignment(vip *novaedgev1alpha1.ProxyVIP) *pb.VIPAssignment {
-	address := vip.Spec.Address
-	if vip.Status.AllocatedAddress != "" {
-		address = vip.Status.AllocatedAddress
-	}
-
-	assignment := &pb.VIPAssignment{
-		VipName:       vip.Name,
-		Address:       address,
-		Mode:          convertVIPMode(vip.Spec.Mode),
-		Ports:         vip.Spec.Ports,
-		IsActive:      true,
-		AddressFamily: string(vip.Spec.AddressFamily),
-	}
-
-	// IPv6 address handling
-	switch vip.Spec.AddressFamily {
-	case novaedgev1alpha1.AddressFamilyDual:
-		if vip.Status.AllocatedIPv6Address != "" {
-			assignment.Ipv6Address = vip.Status.AllocatedIPv6Address
-		} else if vip.Spec.IPv6Address != "" {
-			assignment.Ipv6Address = vip.Spec.IPv6Address
-		}
-	case novaedgev1alpha1.AddressFamilyIPv6:
-		if vip.Spec.IPv6Address != "" {
-			assignment.Address = vip.Spec.IPv6Address
-		}
-	case novaedgev1alpha1.AddressFamilyIPv4:
-		// IPv4 only; no additional handling needed.
-	}
-
-	if vip.Spec.PoolRef != nil {
-		assignment.PoolRef = vip.Spec.PoolRef.Name
-	}
-
-	return assignment
-}
-
-// applyVIPRoutingConfig sets BGP, OSPF, and BFD configuration on the assignment
-// using the VIP spec and the node's internal IP for per-node uniqueness.
-func applyVIPRoutingConfig(assignment *pb.VIPAssignment, vip *novaedgev1alpha1.ProxyVIP, nodeIP string) {
-	if vip.Spec.Mode == novaedgev1alpha1.VIPModeBGP && vip.Spec.BGPConfig != nil {
-		assignment.BgpConfig = convertBGPConfig(vip.Spec.BGPConfig)
-		if nodeIP != "" && assignment.BgpConfig != nil {
-			assignment.BgpConfig.RouterId = nodeIP
-		}
-		if vip.Spec.BGPConfig.LocalASBase != nil && nodeIP != "" && assignment.BgpConfig != nil {
-			if lastOctet := extractLastOctet(nodeIP); lastOctet > 0 && lastOctet <= 255 {
-				assignment.BgpConfig.LocalAs = *vip.Spec.BGPConfig.LocalASBase + uint32(lastOctet)
-			}
-		}
-	}
-
-	if vip.Spec.Mode == novaedgev1alpha1.VIPModeOSPF && vip.Spec.OSPFConfig != nil {
-		assignment.OspfConfig = convertOSPFConfig(vip.Spec.OSPFConfig)
-		if nodeIP != "" && assignment.OspfConfig != nil {
-			assignment.OspfConfig.RouterId = nodeIP
-		}
-	}
-
-	if vip.Spec.BFD != nil && vip.Spec.BFD.Enabled {
-		assignment.BfdConfig = convertBFDConfig(vip.Spec.BFD)
-	}
-}
-
-// buildVIPAssignments builds VIP assignments for the node
-func (b *Builder) buildVIPAssignments(ctx context.Context, nodeName string, bc *buildContext) []*pb.VIPAssignment {
-	// Look up node's InternalIP for per-node RouterID override from pre-loaded map
-	nodeIP := ""
-	if node, ok := bc.getNode(nodeName); ok {
-		for _, addr := range node.Status.Addresses {
-			if addr.Type == corev1.NodeInternalIP {
-				nodeIP = addr.Address
-				break
-			}
-		}
-	} else {
-		log.FromContext(ctx).Error(nil, "Node not found in pre-loaded cache for RouterID lookup", "node", nodeName)
-	}
-
-	var assignments []*pb.VIPAssignment
-	for _, vip := range bc.vips {
-		if !isVIPActiveOnNode(&vip, nodeName) {
-			continue
-		}
-
-		assignment := buildVIPBaseAssignment(&vip)
-		applyVIPRoutingConfig(assignment, &vip, nodeIP)
-		assignments = append(assignments, assignment)
-	}
-
-	return assignments
 }
 
 // buildGateways builds gateway configurations
@@ -757,39 +624,8 @@ func convertBackendTLS(ctx context.Context, backend novaedgev1alpha1.ProxyBacken
 	return tls
 }
 
-// validateAndAdjustECMPPolicy checks if the cluster's LB policy is compatible
-// with ECMP VIPs, auto-promoting where safe. Returns false if the cluster
-// should be skipped (incompatible policy).
-func validateAndAdjustECMPPolicy(ctx context.Context, cluster *pb.Cluster, backendName, backendNamespace string) bool {
-	switch cluster.LbPolicy {
-	case pb.LoadBalancingPolicy_LB_POLICY_UNSPECIFIED, pb.LoadBalancingPolicy_ROUND_ROBIN:
-		cluster.LbPolicy = pb.LoadBalancingPolicy_MAGLEV
-		log.FromContext(ctx).Info("Auto-promoted LB policy to Maglev for ECMP VIP consistency",
-			"backend", backendName, "namespace", backendNamespace)
-		return true
-	case pb.LoadBalancingPolicy_MAGLEV, pb.LoadBalancingPolicy_RING_HASH:
-		return true
-	case pb.LoadBalancingPolicy_P2C,
-		pb.LoadBalancingPolicy_EWMA,
-		pb.LoadBalancingPolicy_LEAST_CONN,
-		pb.LoadBalancingPolicy_SOURCE_HASH,
-		pb.LoadBalancingPolicy_STICKY:
-		log.FromContext(ctx).Error(nil, "Skipping backend: non-hash LB policy is incompatible with BGP/OSPF ECMP VIPs. Use Maglev or RingHash.",
-			"backend", backendName, "namespace", backendNamespace, "policy", cluster.LbPolicy.String())
-		return false
-	default:
-		log.FromContext(ctx).Error(nil, "Skipping backend: non-hash LB policy is incompatible with BGP/OSPF ECMP VIPs. Use Maglev or RingHash.",
-			"backend", backendName, "namespace", backendNamespace, "policy", cluster.LbPolicy.String())
-		return false
-	}
-}
-
 // buildClusters builds backend cluster configurations and their endpoints.
-// ecmpBackends contains the set of backend keys ("namespace/name") that are
-// served through BGP/OSPF ECMP VIPs. Only those backends have their LB policy
-// validated/promoted for ECMP consistency; backends served through L2ARP VIPs
-// are unrestricted.
-func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]struct{}, bc *buildContext) ([]*pb.Cluster, map[string]*pb.EndpointList) {
+func (b *Builder) buildClusters(ctx context.Context, _ map[string]struct{}, bc *buildContext) ([]*pb.Cluster, map[string]*pb.EndpointList) {
 	clusters := make([]*pb.Cluster, 0, len(bc.backends))
 	endpoints := make(map[string]*pb.EndpointList)
 
@@ -849,14 +685,6 @@ func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]str
 			cluster.Protocol = backend.Spec.Protocol
 		}
 
-		// ECMP consistency: validate and adjust LB policy for BGP/OSPF VIPs.
-		backendKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
-		if _, isECMP := ecmpBackends[backendKey]; isECMP {
-			if !validateAndAdjustECMPPolicy(ctx, cluster, backend.Name, backend.Namespace) {
-				continue
-			}
-		}
-
 		clusters = append(clusters, cluster)
 
 		// Resolve endpoints for this backend
@@ -890,64 +718,6 @@ func (b *Builder) buildClusters(ctx context.Context, ecmpBackends map[string]str
 	}
 
 	return clusters, endpoints
-}
-
-// resolveECMPBackends determines which backends are served through BGP/OSPF
-// ECMP VIPs by tracing VIP → Gateway → listener hostnames → Route → BackendRefs.
-// Returns a set of backend keys ("namespace/name") that require hash-based LB.
-func (b *Builder) resolveECMPBackends(bc *buildContext) map[string]struct{} {
-	// Step 1: Build VIP name → mode lookup
-	vipModes := make(map[string]string, len(bc.vips))
-	for i := range bc.vips {
-		vipModes[bc.vips[i].Name] = string(bc.vips[i].Spec.Mode)
-	}
-
-	// Step 2: Collect hostnames served through ECMP gateways
-	ecmpHostnames := make(map[string]struct{})
-	for i := range bc.gateways {
-		gw := &bc.gateways[i]
-		mode := vipModes[gw.Spec.VIPRef]
-		if mode != string(novaedgev1alpha1.VIPModeBGP) && mode != string(novaedgev1alpha1.VIPModeOSPF) {
-			continue
-		}
-		// This gateway is backed by an ECMP VIP — collect its listener hostnames
-		for _, listener := range gw.Spec.Listeners {
-			for _, h := range listener.Hostnames {
-				ecmpHostnames[h] = struct{}{}
-			}
-		}
-	}
-
-	if len(ecmpHostnames) == 0 {
-		return nil
-	}
-
-	// Step 3: Find backends referenced by routes that match ECMP hostnames
-	ecmpBackends := make(map[string]struct{})
-	for i := range bc.routes {
-		route := &bc.routes[i]
-		routeIsECMP := false
-		for _, h := range route.Spec.Hostnames {
-			if _, ok := ecmpHostnames[h]; ok {
-				routeIsECMP = true
-				break
-			}
-		}
-		if !routeIsECMP {
-			continue
-		}
-		for _, rule := range route.Spec.Rules {
-			for _, ref := range rule.BackendRefs {
-				ns := route.Namespace
-				if ref.Namespace != nil && *ref.Namespace != "" {
-					ns = *ref.Namespace
-				}
-				ecmpBackends[ns+"/"+ref.Name] = struct{}{}
-			}
-		}
-	}
-
-	return ecmpBackends
 }
 
 // buildPolicies builds policy configurations

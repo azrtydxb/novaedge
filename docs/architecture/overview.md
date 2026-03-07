@@ -335,4 +335,3 @@ flowchart TB
 
 - [Component Details](components.md) - Deep dive into each component
 - [Installation](../installation/kubernetes.md) - Deploy NovaEdge
-- [VIP Management](../user-guide/vip-management.md) - Configure VIP modes

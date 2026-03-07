@@ -33,7 +33,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 	tests := []struct {
 		name          string
 		gateway       *novaedgev1alpha1.ProxyGateway
-		vip           *novaedgev1alpha1.ProxyVIP
 		secrets       []*corev1.Secret
 		expectError   bool
 		expectReady   bool
@@ -55,16 +54,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 							Protocol: novaedgev1alpha1.ProtocolTypeHTTP,
 						},
 					},
-				},
-			},
-			vip: &novaedgev1alpha1.ProxyVIP{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vip",
-					Namespace: "default",
-				},
-				Spec: novaedgev1alpha1.ProxyVIPSpec{
-					Address: "10.0.0.1/32",
-					Mode:    novaedgev1alpha1.VIPModeL2ARP,
 				},
 			},
 			expectError: false,
@@ -92,16 +81,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 							},
 						},
 					},
-				},
-			},
-			vip: &novaedgev1alpha1.ProxyVIP{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vip",
-					Namespace: "default",
-				},
-				Spec: novaedgev1alpha1.ProxyVIPSpec{
-					Address: "10.0.0.1/32",
-					Mode:    novaedgev1alpha1.VIPModeL2ARP,
 				},
 			},
 			secrets: []*corev1.Secret{
@@ -143,41 +122,9 @@ func TestProxyGatewayReconcile(t *testing.T) {
 					},
 				},
 			},
-			vip: &novaedgev1alpha1.ProxyVIP{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vip",
-					Namespace: "default",
-				},
-				Spec: novaedgev1alpha1.ProxyVIPSpec{
-					Address: "10.0.0.1/32",
-					Mode:    novaedgev1alpha1.VIPModeL2ARP,
-				},
-			},
 			expectError:   true,
 			expectReady:   false,
 			validationErr: "TLS secret",
-		},
-		{
-			name: "gateway with missing VIP reference",
-			gateway: &novaedgev1alpha1.ProxyGateway{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "no-vip-gateway",
-					Namespace: "default",
-				},
-				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "nonexistent-vip",
-					Listeners: []novaedgev1alpha1.Listener{
-						{
-							Name:     "http",
-							Port:     80,
-							Protocol: novaedgev1alpha1.ProtocolTypeHTTP,
-						},
-					},
-				},
-			},
-			expectError:   true,
-			expectReady:   false,
-			validationErr: "VIP",
 		},
 		{
 			name: "gateway with HTTPS listener missing TLS config",
@@ -195,16 +142,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 							Protocol: novaedgev1alpha1.ProtocolTypeHTTPS,
 						},
 					},
-				},
-			},
-			vip: &novaedgev1alpha1.ProxyVIP{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vip",
-					Namespace: "default",
-				},
-				Spec: novaedgev1alpha1.ProxyVIPSpec{
-					Address: "10.0.0.1/32",
-					Mode:    novaedgev1alpha1.VIPModeL2ARP,
 				},
 			},
 			expectError:   true,
@@ -235,16 +172,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 					},
 				},
 			},
-			vip: &novaedgev1alpha1.ProxyVIP{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-vip",
-					Namespace: "default",
-				},
-				Spec: novaedgev1alpha1.ProxyVIPSpec{
-					Address: "10.0.0.1/32",
-					Mode:    novaedgev1alpha1.VIPModeL2ARP,
-				},
-			},
 			secrets: []*corev1.Secret{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -268,13 +195,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 			defer cancel()
 
 			env := setupTestEnv(t)
-
-			// Create VIP if provided
-			if test.vip != nil {
-				if err := env.client.Create(ctx, test.vip); err != nil {
-					t.Fatalf("failed to create VIP: %v", err)
-				}
-			}
 
 			// Create secrets if provided
 			for _, secret := range test.secrets {
@@ -334,17 +254,6 @@ func TestProxyGatewayMultipleListeners(t *testing.T) {
 
 	env := setupTestEnv(t)
 
-	vip := &novaedgev1alpha1.ProxyVIP{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "multi-vip",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyVIPSpec{
-			Address: "10.0.0.1/32",
-			Mode:    novaedgev1alpha1.VIPModeL2ARP,
-		},
-	}
-
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "multi-listener-gateway",
@@ -384,10 +293,6 @@ func TestProxyGatewayMultipleListeners(t *testing.T) {
 		},
 	}
 
-	if err := env.client.Create(ctx, vip); err != nil {
-		t.Fatalf("failed to create VIP: %v", err)
-	}
-
 	if err := env.client.Create(ctx, secret); err != nil {
 		t.Fatalf("failed to create secret: %v", err)
 	}
@@ -421,17 +326,6 @@ func TestProxyGatewayStatusUpdate(t *testing.T) {
 
 	env := setupTestEnv(t)
 
-	vip := &novaedgev1alpha1.ProxyVIP{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "status-vip",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyVIPSpec{
-			Address: "10.0.0.1/32",
-			Mode:    novaedgev1alpha1.VIPModeL2ARP,
-		},
-	}
-
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "status-gateway",
@@ -447,10 +341,6 @@ func TestProxyGatewayStatusUpdate(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	if err := env.client.Create(ctx, vip); err != nil {
-		t.Fatalf("failed to create VIP: %v", err)
 	}
 
 	if err := env.client.Create(ctx, gateway); err != nil {
@@ -493,17 +383,6 @@ func TestProxyGatewayIngressClassName(t *testing.T) {
 
 	env := setupTestEnv(t)
 
-	vip := &novaedgev1alpha1.ProxyVIP{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "ingress-vip",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyVIPSpec{
-			Address: "10.0.0.1/32",
-			Mode:    novaedgev1alpha1.VIPModeL2ARP,
-		},
-	}
-
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "ingress-gateway",
@@ -520,10 +399,6 @@ func TestProxyGatewayIngressClassName(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	if err := env.client.Create(ctx, vip); err != nil {
-		t.Fatalf("failed to create VIP: %v", err)
 	}
 
 	if err := env.client.Create(ctx, gateway); err != nil {
@@ -555,17 +430,6 @@ func TestProxyGatewayDeletion(t *testing.T) {
 
 	env := setupTestEnv(t)
 
-	vip := &novaedgev1alpha1.ProxyVIP{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "delete-vip",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyVIPSpec{
-			Address: "10.0.0.1/32",
-			Mode:    novaedgev1alpha1.VIPModeL2ARP,
-		},
-	}
-
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "delete-gateway",
@@ -581,10 +445,6 @@ func TestProxyGatewayDeletion(t *testing.T) {
 				},
 			},
 		},
-	}
-
-	if err := env.client.Create(ctx, vip); err != nil {
-		t.Fatalf("failed to create VIP: %v", err)
 	}
 
 	if err := env.client.Create(ctx, gateway); err != nil {

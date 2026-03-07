@@ -171,10 +171,7 @@ Hands-on guides for common deployment scenarios, each with architecture diagrams
 - [Error Pages](user-guide/error-pages.md) - Custom error page handling
 - [SSE](user-guide/sse.md) - Server-Sent Events support
 
-#### VIP & Networking
-- [VIP Management](user-guide/vip-management.md) - L2, BGP, OSPF modes with BFD and IPv6
-- [Control-Plane VIP](user-guide/control-plane-vip.md) - HA VIP for Kubernetes API server
-- [IP Pools](user-guide/ip-pools.md) - ProxyIPPool management and IPAM
+#### Networking
 - [PROXY Protocol](user-guide/proxy-protocol.md) - PROXY protocol v1/v2 support
 
 #### Service Mesh

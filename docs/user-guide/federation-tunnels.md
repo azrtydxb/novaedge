@@ -256,4 +256,3 @@ spec:
 
 - [Federation](federation.md) -- federation setup and modes
 - [Cross-Cluster Routing](cross-cluster-routing.md) -- endpoint merging and locality-aware routing
-- [VIP Management](vip-management.md) -- VIP configuration for remote clusters

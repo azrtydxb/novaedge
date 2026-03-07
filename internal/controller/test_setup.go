@@ -45,7 +45,6 @@ type testEnv struct {
 	proxyBackendReconciler *ProxyBackendReconciler
 	proxyGatewayReconciler *ProxyGatewayReconciler
 	proxyRouteReconciler   *ProxyRouteReconciler
-	proxyVIPReconciler     *ProxyVIPReconciler
 	proxyPolicyReconciler  *ProxyPolicyReconciler
 }
 
@@ -79,7 +78,6 @@ func setupTestEnv(t *testing.T) *testEnv {
 			&novaedgev1alpha1.ProxyGateway{},
 			&novaedgev1alpha1.ProxyBackend{},
 			&novaedgev1alpha1.ProxyRoute{},
-			&novaedgev1alpha1.ProxyVIP{},
 			&novaedgev1alpha1.ProxyPolicy{},
 			&corev1.Service{},
 			&gatewayv1.Gateway{},
@@ -130,11 +128,6 @@ func setupTestEnv(t *testing.T) *testEnv {
 		Scheme: scheme,
 	}
 
-	env.proxyVIPReconciler = &ProxyVIPReconciler{
-		Client: k8sClient,
-		Scheme: scheme,
-	}
-
 	env.proxyPolicyReconciler = &ProxyPolicyReconciler{
 		Client: k8sClient,
 		Scheme: scheme,
@@ -178,14 +171,6 @@ func (e *testEnv) reconcileProxyBackend(ctx context.Context, name, namespace str
 // reconcileProxyGateway manually triggers reconciliation for a ProxyGateway
 func (e *testEnv) reconcileProxyGateway(ctx context.Context, name, namespace string) error {
 	_, err := e.proxyGatewayReconciler.Reconcile(ctx, ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
-	})
-	return err
-}
-
-// reconcileProxyVIP manually triggers reconciliation for a ProxyVIP
-func (e *testEnv) reconcileProxyVIP(ctx context.Context, name, namespace string) error {
-	_, err := e.proxyVIPReconciler.Reconcile(ctx, ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: name, Namespace: namespace},
 	})
 	return err

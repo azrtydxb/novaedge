@@ -121,9 +121,6 @@ spec:
 | `tls.enabled` | Enable mTLS | `true` |
 | `tls.caSecretName` | CA certificate secret name | `novaedge-ca` |
 | `tls.clientCertSecretName` | Client cert secret name | `novaedge-agent-cert` |
-| `vip.enabled` | Enable VIP management | `true` |
-| `vip.mode` | VIP mode (L2/BGP/OSPF) | `L2` |
-
 ### Full Values Reference
 
 See [values.yaml](values.yaml) for all available configuration options.
@@ -178,32 +175,6 @@ tls:
   caSecretName: novaedge-ca
   clientCertSecretName: novaedge-agent-cert
 
-vip:
-  enabled: true
-  mode: L2
-  interface: eth0
-```
-
-### Edge Cluster with BGP
-
-```yaml
-cluster:
-  name: edge-dc-1
-  region: datacenter-1
-
-connection:
-  controllerEndpoint: 10.0.1.100:9090
-
-vip:
-  enabled: true
-  mode: BGP
-  bgp:
-    asn: 65001
-    routerID: 10.0.2.1
-    peers:
-      - address: 10.0.1.1
-        asn: 65000
-        port: 179
 ```
 
 ### High-Resource Edge
