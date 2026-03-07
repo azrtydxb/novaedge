@@ -1772,21 +1772,6 @@ impl DataplaneControl for DataplaneService {
 
         let map_sizes = vec![
             proto::MapInfo {
-                name: "vips".into(),
-                entries: map_status.vip_count as u64,
-                max_entries: 65536,
-            },
-            proto::MapInfo {
-                name: "backends".into(),
-                entries: map_status.backend_count as u64,
-                max_entries: 262144,
-            },
-            proto::MapInfo {
-                name: "conntrack".into(),
-                entries: map_status.conntrack_count as u64,
-                max_entries: 1048576,
-            },
-            proto::MapInfo {
                 name: "rate_limits".into(),
                 entries: map_status.rate_limit_count as u64,
                 max_entries: 65536,
@@ -1866,9 +1851,6 @@ impl DataplaneControl for DataplaneService {
                 interval.tick().await;
                 let status = map_manager.get_status();
                 let mut gauges = std::collections::HashMap::new();
-                gauges.insert("vip_count".into(), status.vip_count as f64);
-                gauges.insert("backend_count".into(), status.backend_count as f64);
-                gauges.insert("conntrack_count".into(), status.conntrack_count as f64);
                 gauges.insert("rate_limit_count".into(), status.rate_limit_count as f64);
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -2044,8 +2026,8 @@ mod tests {
             .unwrap();
         let status = resp.into_inner();
         assert_eq!(status.mode, "mock");
-        // 4 eBPF maps + 3 config maps + 2 VIP maps + 2 WAN link maps + 1 WireGuard map = 12
-        assert_eq!(status.map_sizes.len(), 12);
+        // 1 eBPF map + 3 config maps + 2 VIP maps + 2 WAN link maps + 1 WireGuard map = 9
+        assert_eq!(status.map_sizes.len(), 9);
     }
 
     #[tokio::test]

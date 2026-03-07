@@ -177,6 +177,8 @@ spec:
                 - RingHash
                 - Maglev
                 - LeastConn
+                - SourceHash
+                - Sticky
                 type: string
               outlierDetection:
                 description: OutlierDetection configures per-endpoint outlier detection

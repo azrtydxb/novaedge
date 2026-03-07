@@ -43,19 +43,21 @@ For L4 TCP forwarding, NovaEdge uses the Linux `splice()` system call to move da
 
 ## eBPF/XDP Data Plane Acceleration
 
-NovaEdge uses eBPF/XDP by default for data plane acceleration. All three features are auto-detected at runtime and require no configuration beyond setting `--xdp-interface` for XDP/AF_XDP. If the kernel does not support a feature, the agent transparently falls back to the legacy path.
+NovaEdge uses eBPF/XDP by default for data plane acceleration. All features are auto-detected at runtime and require no configuration beyond setting `--xdp-interface` for AF_XDP. If the kernel does not support a feature, the agent transparently falls back to the legacy path. Kubernetes Service L4 load balancing is handled by [NovaNet](https://github.com/azrtydxb/novanet).
 
 | Feature | Program Type | Minimum Kernel | Fallback |
 |---------|-------------|---------------|----------|
-| **XDP L4 Load Balancing** | `BPF_PROG_TYPE_XDP` | 5.8+ | Userspace TCP/UDP proxy |
 | **AF_XDP Zero-Copy** | XDP + `AF_XDP` socket | 5.10+ | Kernel network stack |
 | **eBPF Mesh Redirect** | `BPF_PROG_TYPE_SK_LOOKUP` | 5.9+ | nftables/iptables TPROXY |
+| **SOCKMAP Same-Node Bypass** | `BPF_PROG_TYPE_SOCK_OPS` | 5.4+ | Kernel network stack |
+| **Conntrack** | `BPF_MAP_TYPE_LRU_HASH` | 5.4+ | Kernel conntrack |
 
 **Performance impact:**
 
-- **XDP L4 LB**: Packets are rewritten at the NIC driver level before `sk_buff` allocation, eliminating kernel stack traversal entirely for matched traffic.
 - **AF_XDP**: Zero-copy packet I/O via shared-memory ring buffers between NIC and userspace, removing all memory copies from the data path.
 - **eBPF Mesh Redirect**: Socket lookup redirection via `bpf_sk_assign()` replaces the full nftables/iptables rule chain traversal.
+- **SOCKMAP**: Bypasses the kernel network stack for same-node pod-to-pod traffic by short-circuiting socket pairs.
+- **Conntrack**: eBPF-based connection tracking for efficient flow state management.
 
 **Verifying acceleration is active:**
 
@@ -70,7 +72,7 @@ bpftool prog list
 bpftool net show
 ```
 
-To force the legacy path (for debugging or compatibility), use `--force-legacy-lb` (L4/AF_XDP) or `--force-legacy-mesh` (mesh interception). See [eBPF/XDP Acceleration](../user-guide/ebpf-acceleration.md) for full details.
+To force the legacy path (for debugging or compatibility), use `--force-legacy-mesh` (mesh interception). See [eBPF/XDP Acceleration](../user-guide/ebpf-acceleration.md) for full details.
 
 ## Kernel Parameter Tuning
 

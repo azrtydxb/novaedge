@@ -148,7 +148,7 @@ func SyncHashMap[K comparable, V any](m *ebpf.Map, desired map[K]V) error {
 }
 
 // IPPortKey is a generic BPF map key combining an IPv4 address and port.
-// It matches the C struct layout used by mesh redirect and XDP LB programs.
+// It matches the C struct layout used by mesh redirect programs.
 type IPPortKey struct {
 	Addr [4]byte
 	Port uint16

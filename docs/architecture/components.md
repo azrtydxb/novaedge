@@ -233,9 +233,9 @@ flowchart TB
         end
 
         subgraph eBPFAccel["eBPF/XDP Acceleration"]
-            XDP["XDP L4 LB"]
             AFXDP["AF_XDP Zero-Copy"]
             SKLOOKUP["SK_LOOKUP Mesh Redirect"]
+            SOCKMAP["SOCKMAP Same-Node Bypass"]
         end
 
         subgraph Traffic["Traffic Handling"]
@@ -252,7 +252,7 @@ flowchart TB
     end
 
     GRPC_RECV --> CFG
-    CFG --> RT & POL & LB & HC & XDP & AFXDP & SKLOOKUP
+    CFG --> RT & POL & LB & HC & AFXDP & SKLOOKUP & SOCKMAP
 
     eBPFAccel --> Traffic
     Traffic --> Backend
@@ -434,29 +434,30 @@ flowchart TB
 
 #### eBPF/XDP Acceleration (Rust Dataplane + Go Agent)
 
-The Rust dataplane uses eBPF/XDP by default for data plane acceleration, with the Go agent managing eBPF program lifecycle. All features are auto-detected at runtime and fall back to legacy paths if the kernel does not support them.
+The Rust dataplane uses eBPF/XDP by default for data plane acceleration, with the Go agent managing eBPF program lifecycle. All features are auto-detected at runtime and fall back to legacy paths if the kernel does not support them. Kubernetes Service L4 load balancing is handled by [NovaNet](https://github.com/azrtydxb/novanet).
 
 ```mermaid
 flowchart LR
     subgraph eBPFSubsystem["eBPF/XDP Subsystem"]
         CAP["Capability Detector"]
-        XDP["XDP L4 LB<br/>(BPF_PROG_TYPE_XDP)"]
         AFXDP["AF_XDP Worker<br/>(zero-copy ring buffers)"]
         SKLOOKUP["SK_LOOKUP Mesh Redirect<br/>(BPF_PROG_TYPE_SK_LOOKUP)"]
-        MAPS["BPF Maps<br/>(VIP backends, conn track)"]
+        SOCKMAP["SOCKMAP Same-Node Bypass<br/>(BPF_PROG_TYPE_SOCK_OPS)"]
+        MAPS["BPF Maps<br/>(conn track)"]
     end
 
-    CAP -->|"probe"| XDP & AFXDP & SKLOOKUP
-    XDP --> MAPS
+    CAP -->|"probe"| AFXDP & SKLOOKUP & SOCKMAP
     AFXDP --> MAPS
     SKLOOKUP --> MAPS
+    SOCKMAP --> MAPS
 ```
 
 | Component | Program Type | Fallback |
 |-----------|-------------|----------|
-| XDP L4 LB | `BPF_PROG_TYPE_XDP` | Userspace TCP/UDP proxy |
 | AF_XDP Zero-Copy | XDP + `AF_XDP` socket | Kernel network stack |
 | SK_LOOKUP Mesh Redirect | `BPF_PROG_TYPE_SK_LOOKUP` | nftables/iptables TPROXY |
+| SOCKMAP Same-Node Bypass | `BPF_PROG_TYPE_SOCK_OPS` | Kernel network stack |
+| Conntrack | `BPF_MAP_TYPE_LRU_HASH` | Kernel conntrack |
 
 ### Configuration
 
@@ -469,8 +470,7 @@ flowchart LR
 --metrics-port=9090                # Prometheus metrics port
 --health-port=8080                 # Health probe port
 --log-level=info                   # Log level
---xdp-interface=eth0               # NIC for XDP/AF_XDP attachment (enables eBPF acceleration)
---force-legacy-lb=false            # Force legacy userspace L4 proxy (skip XDP/AF_XDP)
+--xdp-interface=eth0               # NIC for AF_XDP attachment (enables zero-copy acceleration)
 --force-legacy-mesh=false          # Force legacy nftables/iptables mesh (skip eBPF sk_lookup)
 ```
 

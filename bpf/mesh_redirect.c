@@ -28,6 +28,22 @@
 #define IPPROTO_TCP 6
 #endif
 
+// struct bpf_sk_lookup is only forward-declared in some versions of
+// bpf_helper_defs.h (shipped with libbpf-dev).  Provide the full
+// definition so the program compiles with those toolchains.
+// In C a full definition after a forward declaration is valid.
+struct bpf_sk_lookup {
+    __u32 family;
+    __u32 protocol;
+    __u32 remote_ip4;
+    __u32 remote_ip6[4];
+    __u32 remote_port;
+    __u32 local_ip4;
+    __u32 local_ip6[4];
+    __u32 local_port;
+    __u32 ingress_ifindex;
+};
+
 // mesh_services maps {dst_ip, dst_port} -> {redirect_port}.
 // When a connection matches, we redirect it to the local TPROXY listener.
 struct mesh_svc_key {

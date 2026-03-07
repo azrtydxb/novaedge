@@ -31,11 +31,13 @@ NovaEdge is a unified replacement for Envoy + MetalLB + NGINX Ingress + Cisco SD
 ### L4 Proxying & eBPF/XDP Acceleration
 - **TCP and UDP proxying** with connection tracking
 - **TLS passthrough** (SNI-based routing without termination)
+- **L4 load balancing** handled by [NovaNet](https://github.com/azrtydxb/novanet)
 - **eBPF/XDP acceleration** (enabled by default, auto-detected):
-  - **XDP L4 load balancing** — packet rewriting at the NIC driver level, before `sk_buff` allocation
   - **AF_XDP zero-copy** — shared-memory ring buffers for kernel-bypass packet I/O
   - **eBPF mesh redirect** — `SK_LOOKUP` socket redirection replaces nftables/iptables TPROXY rules
-  - Automatic fallback to legacy userspace proxy if kernel does not support eBPF
+  - **SOCKMAP same-node bypass** — kernel stack bypass for pod-to-pod traffic on the same node
+  - **eBPF conntrack** — efficient connection tracking via BPF maps
+  - Automatic fallback to legacy paths if kernel does not support eBPF
 
 ### VIP Management
 - **L2 ARP mode**: active-passive VIP ownership with GARP

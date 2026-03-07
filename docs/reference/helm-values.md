@@ -1033,8 +1033,7 @@ eBPF/XDP features are enabled by default and auto-detected at runtime. If the ke
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `ebpf.bpffsMount` | Mount `/sys/fs/bpf` for BPF map pinning | `true` |
-| `ebpf.xdpInterface` | NIC for XDP/AF_XDP attachment (enables L4 LB and zero-copy acceleration when set) | `""` |
-| `ebpf.forceLegacyLb` | Force legacy userspace L4 proxy instead of XDP/AF_XDP | `false` |
+| `ebpf.xdpInterface` | NIC for AF_XDP attachment (enables zero-copy acceleration when set) | `""` |
 | `ebpf.forceLegacyMesh` | Force legacy nftables/iptables mesh interception instead of eBPF `SK_LOOKUP` | `false` |
 
 Example:
@@ -1042,8 +1041,7 @@ Example:
 ```yaml
 ebpf:
   bpffsMount: true
-  xdpInterface: eth0    # Set to your NIC to enable XDP/AF_XDP
-  forceLegacyLb: false
+  xdpInterface: eth0    # Set to your NIC to enable AF_XDP zero-copy
   forceLegacyMesh: false
 ```
 

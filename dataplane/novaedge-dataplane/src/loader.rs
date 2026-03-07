@@ -23,9 +23,9 @@ pub struct LoadResult {
 
 /// Load eBPF programs from the compiled object file and return a `LoadResult`.
 ///
-/// Extracts all map handles (VIPs, backends, conntrack, rate limits, VIP
-/// addresses), attaches the XDP and TC programs, and returns a
-/// `MapManager` wrapping the real maps plus the flow-event ring buffer.
+/// Extracts all map handles (rate limits, VIP addresses), attaches the
+/// XDP and TC programs, and returns a `MapManager` wrapping the real
+/// maps plus the flow-event ring buffer.
 #[cfg(target_os = "linux")]
 pub fn load_ebpf(path: &str) -> anyhow::Result<LoadResult> {
     use aya::Ebpf;
@@ -39,18 +39,6 @@ pub fn load_ebpf(path: &str) -> anyhow::Result<LoadResult> {
     let mut bpf = Ebpf::load_file(path)?;
 
     // ── Extract map handles ───────────────────────────────────────────
-    let vips = aya::maps::HashMap::try_from(
-        bpf.take_map("VIPS")
-            .ok_or_else(|| anyhow::anyhow!("map VIPS not found"))?,
-    )?;
-    let backends = aya::maps::HashMap::try_from(
-        bpf.take_map("BACKENDS")
-            .ok_or_else(|| anyhow::anyhow!("map BACKENDS not found"))?,
-    )?;
-    let conntrack = aya::maps::HashMap::try_from(
-        bpf.take_map("CONNTRACK")
-            .ok_or_else(|| anyhow::anyhow!("map CONNTRACK not found"))?,
-    )?;
     let rate_limits = aya::maps::HashMap::try_from(
         bpf.take_map("RATE_LIMIT_STATE")
             .ok_or_else(|| anyhow::anyhow!("map RATE_LIMIT_STATE not found"))?,
@@ -71,9 +59,6 @@ pub fn load_ebpf(path: &str) -> anyhow::Result<LoadResult> {
     info!("eBPF maps extracted successfully");
 
     let maps = RealMaps {
-        vips: UnsafeCell::new(vips),
-        backends: UnsafeCell::new(backends),
-        conntrack: UnsafeCell::new(conntrack),
         rate_limits: UnsafeCell::new(rate_limits),
         rate_limit_cfg: UnsafeCell::new(rate_limit_cfg),
         vip_addrs: UnsafeCell::new(vip_addrs),
@@ -116,6 +101,7 @@ pub fn attach_xdp(bpf: &mut aya::Ebpf, program_name: &str, interface: &str) -> a
 /// (named differently per program). This function writes the interface MAC
 /// to the map at key 0 so the XDP program can use it as the source MAC.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub fn populate_local_mac(
     bpf: &mut aya::Ebpf,
     map_name: &str,

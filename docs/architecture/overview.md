@@ -194,9 +194,9 @@ flowchart TB
         POOL["Connection Pool"]
 
         subgraph eBPF["eBPF/XDP Acceleration"]
-            XDP["XDP L4 LB"]
             AFXDP["AF_XDP Zero-Copy"]
             SKLOOKUP["SK_LOOKUP Mesh Redirect"]
+            SOCKMAP["SOCKMAP Same-Node Bypass"]
         end
     end
 
@@ -205,9 +205,8 @@ flowchart TB
     GRPC_PUSH -->|"config"| RT & LB & POL & HC
     GC -->|"VIP config"| VIP
 
-    Traffic((Traffic)) --> XDP
-    XDP -->|"L4 match"| AFXDP
-    XDP -->|"no match"| RT
+    Traffic((Traffic)) --> AFXDP
+    AFXDP --> RT
     RT --> POL
     POL --> LB
     LB --> HC
@@ -235,7 +234,7 @@ flowchart TB
 4. Load balance across healthy backends
 5. Manage connection pools and circuit breakers
 6. Perform active and passive health checks
-7. Accelerate L4 traffic via eBPF/XDP (auto-detected)
+7. Accelerate traffic via eBPF/XDP (AF_XDP zero-copy, SOCKMAP bypass, sk_lookup mesh redirect)
 
 ## VIP Modes
 

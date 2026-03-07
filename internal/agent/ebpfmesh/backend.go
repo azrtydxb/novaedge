@@ -23,10 +23,10 @@ import (
 	"os"
 	"time"
 
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
 	"github.com/azrtydxb/novaedge/internal/agent/mesh"
+	"github.com/cilium/ebpf"
+	"github.com/cilium/ebpf/link"
 	"go.uber.org/zap"
 )
 

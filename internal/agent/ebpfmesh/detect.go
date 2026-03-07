@@ -20,7 +20,6 @@ package ebpfmesh
 
 import (
 	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
-	"github.com/azrtydxb/novaedge/internal/agent/ebpf/service"
 	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
 	"github.com/azrtydxb/novaedge/internal/agent/mesh"
 	"go.uber.org/zap"
@@ -93,31 +92,4 @@ func TrySockMap(logger *zap.Logger) *sockmap.Manager {
 
 	logger.Info("eBPF SOCKMAP manager created for same-node traffic acceleration")
 	return mgr
-}
-
-// TryServiceMap attempts to create an eBPF service lookup map for
-// accelerated service-to-backend resolution. It returns a ready-to-use
-// ServiceMap on success, or nil if eBPF hash maps are not available.
-func TryServiceMap(logger *zap.Logger, maxServices, maxBackendsPerService uint32) *service.Map {
-	caps, err := novaebpf.Detect()
-	if err != nil {
-		logger.Debug("eBPF capability detection failed for service map", zap.Error(err))
-		return nil
-	}
-	// Service maps use standard BPF_MAP_TYPE_HASH and BPF_MAP_TYPE_ARRAY,
-	// which are available on all eBPF-capable kernels. We just check for
-	// basic BPF support via the XDP probe as a baseline.
-	_ = caps
-
-	sm, err := service.NewMap(logger, maxServices, maxBackendsPerService)
-	if err != nil {
-		logger.Info("eBPF service map creation failed, using Go-side fallback",
-			zap.Error(err))
-		return nil
-	}
-
-	logger.Info("eBPF service lookup map created",
-		zap.Uint32("max_services", maxServices),
-		zap.Uint32("max_backends_per_service", maxBackendsPerService))
-	return sm
 }
