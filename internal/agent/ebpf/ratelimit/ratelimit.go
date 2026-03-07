@@ -23,8 +23,8 @@ import (
 	"net"
 	"sync"
 
-	"github.com/cilium/ebpf"
 	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
+	"github.com/cilium/ebpf"
 	"go.uber.org/zap"
 )
 

@@ -24,8 +24,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cilium/ebpf"
 	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
+	"github.com/cilium/ebpf"
 	"go.uber.org/zap"
 )
 
