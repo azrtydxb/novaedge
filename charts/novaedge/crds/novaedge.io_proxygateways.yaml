@@ -235,54 +235,6 @@ spec:
                 required:
                 - address
                 type: object
-              grpcRoute:
-                description: |-
-                  GRPCRoute defines gRPC-specific routing configuration at the gateway level.
-                  RESERVED FOR FUTURE USE: this field is not currently consumed by the controller.
-                  gRPC routing is handled via ProxyRoute resources with gRPC match rules.
-                properties:
-                  enabled:
-                    default: false
-                    description: Enabled enables gRPC request routing through the
-                      Gateway API GRPCRoute resources
-                    type: boolean
-                type: object
-              http3:
-                description: |-
-                  HTTP3 defines HTTP/3 (QUIC) protocol configuration at the gateway level.
-                  RESERVED FOR FUTURE USE: this field is not currently consumed by the controller.
-                  To enable HTTP/3, configure QUIC settings on individual listeners instead.
-                properties:
-                  altSvcMaxAge:
-                    default: 2592000
-                    description: |-
-                      AltSvcMaxAge is the max-age for the Alt-Svc header in seconds
-                      Clients cache the HTTP/3 availability for this duration
-                    format: int64
-                    type: integer
-                  enabled:
-                    default: false
-                    description: Enabled enables HTTP/3 support on this gateway
-                    type: boolean
-                  maxIdleTimeout:
-                    default: 30s
-                    description: MaxIdleTimeout is the maximum idle timeout for QUIC
-                      connections
-                    type: string
-                  port:
-                    description: Port is the UDP port for QUIC connections (defaults
-                      to same as HTTPS port)
-                    format: int32
-                    maximum: 65535
-                    minimum: 1
-                    type: integer
-                  zeroRTT:
-                    default: false
-                    description: |-
-                      ZeroRTT enables 0-RTT connection resumption for faster handshakes
-                      Note: 0-RTT data may be replayed by attackers; only enable for idempotent endpoints
-                    type: boolean
-                type: object
               ingressClassName:
                 description: IngressClassName is the ingress class name for Ingress
                   resource compatibility
@@ -714,31 +666,6 @@ spec:
                     enum:
                     - 301
                     - 302
-                    format: int32
-                    type: integer
-                type: object
-              sse:
-                description: |-
-                  SSE defines Server-Sent Events configuration at the gateway level.
-                  RESERVED FOR FUTURE USE: this field is not currently consumed by the controller.
-                  SSE behaviour is configured through ProxyRoute middleware today.
-                properties:
-                  heartbeatInterval:
-                    default: 30s
-                    description: |-
-                      HeartbeatInterval is the interval at which keepalive comments are sent
-                      to prevent intermediate proxies from closing the connection
-                    type: string
-                  idleTimeout:
-                    default: 5m
-                    description: |-
-                      IdleTimeout is the maximum time an SSE connection can be idle before being closed
-                      SSE connections typically need longer timeouts than regular HTTP requests
-                    type: string
-                  maxConnections:
-                    description: |-
-                      MaxConnections is the maximum number of concurrent SSE connections per listener
-                      0 means unlimited
                     format: int32
                     type: integer
                 type: object

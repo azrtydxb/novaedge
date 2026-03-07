@@ -31,7 +31,7 @@ COPY bpf/ bpf/
 # Generate BPF Go bindings from C sources (produces *_bpfel.go and *.o files).
 # Required — the generated loadMeshRedirect/loadAfxdpRedirect
 # functions are called at runtime and have no placeholder fallback.
-RUN go generate ./internal/agent/ebpfmesh/... ./internal/agent/afxdp/... ./internal/agent/ebpf/conntrack/...
+RUN go generate ./internal/agent/ebpfmesh/... ./internal/agent/afxdp/...
 
 # Build args for version injection
 ARG VERSION=dev

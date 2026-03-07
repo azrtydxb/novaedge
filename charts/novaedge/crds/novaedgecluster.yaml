@@ -1,0 +1,615 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: novaedgeclusters.novaedge.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.16.1
+spec:
+  group: novaedge.io
+  names:
+    kind: NovaEdgeCluster
+    listKind: NovaEdgeClusterList
+    plural: novaedgeclusters
+    singular: novaedgecluster
+    shortNames:
+      - nec
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Version
+          type: string
+          jsonPath: .spec.version
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Controller
+          type: string
+          jsonPath: .status.controller.readyReplicas
+        - name: Agents
+          type: string
+          jsonPath: .status.agent.readyReplicas
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: NovaEdgeCluster is the Schema for the novaedgeclusters API
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              description: NovaEdgeClusterSpec defines the desired state of NovaEdgeCluster
+              required:
+                - version
+                - controller
+                - agent
+              properties:
+                version:
+                  type: string
+                  description: Version is the version of NovaEdge components to deploy
+                  pattern: ^v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$
+                imageRepository:
+                  type: string
+                  description: ImageRepository is the container image repository for NovaEdge images
+                  default: ghcr.io/azrtydxb/novaedge
+                imagePullPolicy:
+                  type: string
+                  description: ImagePullPolicy is the pull policy for NovaEdge images
+                  default: IfNotPresent
+                  enum:
+                    - Always
+                    - IfNotPresent
+                    - Never
+                imagePullSecrets:
+                  type: array
+                  description: ImagePullSecrets is a list of secrets for pulling images
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                controller:
+                  type: object
+                  description: Controller defines the configuration for the NovaEdge controller
+                  properties:
+                    replicas:
+                      type: integer
+                      description: Replicas is the number of controller replicas
+                      default: 1
+                      minimum: 1
+                      maximum: 5
+                    resources:
+                      type: object
+                      description: Resources defines the resource requirements
+                      x-kubernetes-preserve-unknown-fields: true
+                    nodeSelector:
+                      type: object
+                      description: NodeSelector defines the node selector
+                      additionalProperties:
+                        type: string
+                    tolerations:
+                      type: array
+                      description: Tolerations defines the tolerations
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    affinity:
+                      type: object
+                      description: Affinity defines the affinity rules
+                      x-kubernetes-preserve-unknown-fields: true
+                    leaderElection:
+                      type: boolean
+                      description: LeaderElection enables leader election
+                      default: true
+                    grpcPort:
+                      type: integer
+                      description: GRPCPort is the port for gRPC config distribution
+                      default: 9090
+                      minimum: 1
+                      maximum: 65535
+                    metricsPort:
+                      type: integer
+                      description: MetricsPort is the port for Prometheus metrics
+                      default: 8080
+                      minimum: 1
+                      maximum: 65535
+                    healthPort:
+                      type: integer
+                      description: HealthPort is the port for health probes
+                      default: 8081
+                      minimum: 1
+                      maximum: 65535
+                    serviceAccount:
+                      type: object
+                      description: ServiceAccount configuration
+                      properties:
+                        create:
+                          type: boolean
+                          default: true
+                        name:
+                          type: string
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                    podSecurityContext:
+                      type: object
+                      description: PodSecurityContext for controller pods
+                      x-kubernetes-preserve-unknown-fields: true
+                    securityContext:
+                      type: object
+                      description: SecurityContext for the controller container
+                      x-kubernetes-preserve-unknown-fields: true
+                    extraArgs:
+                      type: array
+                      description: ExtraArgs defines additional command-line arguments
+                      items:
+                        type: string
+                    extraEnv:
+                      type: array
+                      description: ExtraEnv defines additional environment variables
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                agent:
+                  type: object
+                  description: Agent defines the configuration for the NovaEdge agent DaemonSet
+                  properties:
+                    resources:
+                      type: object
+                      description: Resources defines the resource requirements
+                      x-kubernetes-preserve-unknown-fields: true
+                    nodeSelector:
+                      type: object
+                      description: NodeSelector defines the node selector
+                      additionalProperties:
+                        type: string
+                    tolerations:
+                      type: array
+                      description: Tolerations defines the tolerations
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    hostNetwork:
+                      type: boolean
+                      description: HostNetwork enables host networking
+                      default: true
+                    dnsPolicy:
+                      type: string
+                      description: DNSPolicy defines the DNS policy
+                      default: ClusterFirstWithHostNet
+                    httpPort:
+                      type: integer
+                      description: HTTPPort is the port for HTTP traffic
+                      default: 80
+                      minimum: 1
+                      maximum: 65535
+                    httpsPort:
+                      type: integer
+                      description: HTTPSPort is the port for HTTPS traffic
+                      default: 443
+                      minimum: 1
+                      maximum: 65535
+                    metricsPort:
+                      type: integer
+                      description: MetricsPort is the port for Prometheus metrics
+                      default: 9090
+                      minimum: 1
+                      maximum: 65535
+                    healthPort:
+                      type: integer
+                      description: HealthPort is the port for health probes
+                      default: 8080
+                      minimum: 1
+                      maximum: 65535
+                    vip:
+                      type: object
+                      description: VIP defines VIP management configuration
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                        mode:
+                          type: string
+                          description: VIP mode (L2, BGP, or OSPF)
+                          default: L2
+                          enum:
+                            - L2
+                            - BGP
+                            - OSPF
+                        interface:
+                          type: string
+                          description: Network interface for VIP binding
+                        bgp:
+                          type: object
+                          description: BGP configuration
+                          properties:
+                            asn:
+                              type: integer
+                              minimum: 1
+                              maximum: 4294967295
+                            routerID:
+                              type: string
+                            peers:
+                              type: array
+                              items:
+                                type: object
+                                required:
+                                  - address
+                                  - asn
+                                properties:
+                                  address:
+                                    type: string
+                                  asn:
+                                    type: integer
+                                    minimum: 1
+                                    maximum: 4294967295
+                                  port:
+                                    type: integer
+                                    default: 179
+                                  passwordSecretRef:
+                                    type: object
+                                    properties:
+                                      name:
+                                        type: string
+                                      key:
+                                        type: string
+                    serviceAccount:
+                      type: object
+                      description: ServiceAccount configuration
+                      properties:
+                        create:
+                          type: boolean
+                          default: true
+                        name:
+                          type: string
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                    podSecurityContext:
+                      type: object
+                      description: PodSecurityContext for agent pods
+                      x-kubernetes-preserve-unknown-fields: true
+                    securityContext:
+                      type: object
+                      description: SecurityContext for the agent container
+                      x-kubernetes-preserve-unknown-fields: true
+                    extraArgs:
+                      type: array
+                      description: ExtraArgs defines additional command-line arguments
+                      items:
+                        type: string
+                    extraEnv:
+                      type: array
+                      description: ExtraEnv defines additional environment variables
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    extraVolumes:
+                      type: array
+                      description: ExtraVolumes defines additional volumes
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    extraVolumeMounts:
+                      type: array
+                      description: ExtraVolumeMounts defines additional volume mounts
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    updateStrategy:
+                      type: object
+                      description: UpdateStrategy for the DaemonSet
+                      properties:
+                        type:
+                          type: string
+                          default: RollingUpdate
+                          enum:
+                            - RollingUpdate
+                            - OnDelete
+                        maxUnavailable:
+                          type: integer
+                webUI:
+                  type: object
+                  description: WebUI defines the configuration for the NovaEdge web UI
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    replicas:
+                      type: integer
+                      default: 1
+                      minimum: 1
+                      maximum: 10
+                    resources:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    nodeSelector:
+                      type: object
+                      additionalProperties:
+                        type: string
+                    tolerations:
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    port:
+                      type: integer
+                      default: 9080
+                      minimum: 1
+                      maximum: 65535
+                    readOnly:
+                      type: boolean
+                      default: false
+                    service:
+                      type: object
+                      properties:
+                        type:
+                          type: string
+                          default: ClusterIP
+                          enum:
+                            - ClusterIP
+                            - NodePort
+                            - LoadBalancer
+                        nodePort:
+                          type: integer
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                    ingress:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: false
+                        className:
+                          type: string
+                        host:
+                          type: string
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        tls:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                              default: false
+                            secretName:
+                              type: string
+                    tls:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: false
+                        auto:
+                          type: boolean
+                          default: false
+                        certSecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                        keySecretRef:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            key:
+                              type: string
+                    prometheusEndpoint:
+                      type: string
+                    serviceAccount:
+                      type: object
+                      properties:
+                        create:
+                          type: boolean
+                          default: true
+                        name:
+                          type: string
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                    extraArgs:
+                      type: array
+                      items:
+                        type: string
+                    extraEnv:
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                tls:
+                  type: object
+                  description: TLS configuration for internal communication
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    certManager:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: false
+                        issuerRef:
+                          type: object
+                          required:
+                            - name
+                          properties:
+                            name:
+                              type: string
+                            kind:
+                              type: string
+                              default: ClusterIssuer
+                              enum:
+                                - Issuer
+                                - ClusterIssuer
+                            group:
+                              type: string
+                              default: cert-manager.io
+                    caSecretRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        key:
+                          type: string
+                observability:
+                  type: object
+                  description: Observability configuration
+                  properties:
+                    metrics:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: true
+                        serviceMonitor:
+                          type: object
+                          properties:
+                            enabled:
+                              type: boolean
+                              default: false
+                            interval:
+                              type: string
+                              default: 30s
+                            labels:
+                              type: object
+                              additionalProperties:
+                                type: string
+                    tracing:
+                      type: object
+                      properties:
+                        enabled:
+                          type: boolean
+                          default: false
+                        endpoint:
+                          type: string
+                        samplingRate:
+                          type: integer
+                          default: 10
+                          minimum: 0
+                          maximum: 100
+                    logging:
+                      type: object
+                      properties:
+                        level:
+                          type: string
+                          default: info
+                          enum:
+                            - debug
+                            - info
+                            - warn
+                            - error
+                        format:
+                          type: string
+                          default: json
+                          enum:
+                            - json
+                            - text
+            status:
+              type: object
+              description: NovaEdgeClusterStatus defines the observed state of NovaEdgeCluster
+              properties:
+                phase:
+                  type: string
+                  description: Phase is the current phase of the cluster
+                  enum:
+                    - Pending
+                    - Initializing
+                    - Running
+                    - Upgrading
+                    - Degraded
+                    - Failed
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                controller:
+                  type: object
+                  properties:
+                    ready:
+                      type: boolean
+                    replicas:
+                      type: integer
+                    readyReplicas:
+                      type: integer
+                    updatedReplicas:
+                      type: integer
+                    version:
+                      type: string
+                    message:
+                      type: string
+                agent:
+                  type: object
+                  properties:
+                    ready:
+                      type: boolean
+                    replicas:
+                      type: integer
+                    readyReplicas:
+                      type: integer
+                    updatedReplicas:
+                      type: integer
+                    version:
+                      type: string
+                    message:
+                      type: string
+                webUI:
+                  type: object
+                  properties:
+                    ready:
+                      type: boolean
+                    replicas:
+                      type: integer
+                    readyReplicas:
+                      type: integer
+                    updatedReplicas:
+                      type: integer
+                    version:
+                      type: string
+                    message:
+                      type: string
+                version:
+                  type: string
+                lastUpgradeTime:
+                  type: string
+                  format: date-time

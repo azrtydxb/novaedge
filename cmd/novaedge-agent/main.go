@@ -43,7 +43,6 @@ import (
 	"github.com/azrtydxb/novaedge/internal/agent/config"
 	"github.com/azrtydxb/novaedge/internal/agent/cpvip"
 	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
-	"github.com/azrtydxb/novaedge/internal/agent/ebpf/conntrack"
 	ebpfhealth "github.com/azrtydxb/novaedge/internal/agent/ebpf/health"
 	ebpfratelimit "github.com/azrtydxb/novaedge/internal/agent/ebpf/ratelimit"
 	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
@@ -158,7 +157,6 @@ type agentComponents struct {
 	watcher       *config.Watcher
 	gossiper      *gossip.ConfigGossiper
 	vipManager    *vip.DefaultManager
-	conntrackMgr  *conntrack.Conntrack
 	afxdpWorker   *afxdp.Worker
 	sockMapMgr    *sockmap.Manager
 	meshManager   *mesh.Manager
@@ -392,19 +390,9 @@ func initVIPManager(logger *zap.Logger) *vip.DefaultManager {
 	return vipManager
 }
 
-// initEBPFSubsystems creates conntrack and AF_XDP subsystems.
-func initEBPFSubsystems(ctx context.Context, logger *zap.Logger) (ctMgr *conntrack.Conntrack, afxdpW *afxdp.Worker) {
+// initEBPFSubsystems creates AF_XDP subsystems.
+func initEBPFSubsystems(ctx context.Context, logger *zap.Logger) (afxdpW *afxdp.Worker) {
 	if xdpInterface != "" {
-		var ctErr error
-		ctMgr, ctErr = conntrack.NewConntrack(logger, 0, 0)
-		if ctErr != nil {
-			logger.Warn("eBPF conntrack not available", zap.Error(ctErr))
-			ctMgr = nil
-		} else {
-			ctMgr.StartGC()
-			logger.Info("eBPF conntrack enabled")
-		}
-
 		afxdpLoader := novaebpf.NewProgramLoader(logger, "")
 		afxdpW = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
 			InterfaceName: xdpInterface,
@@ -476,7 +464,7 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 	}
 
 	comp.vipManager = initVIPManager(logger)
-	comp.conntrackMgr, comp.afxdpWorker = initEBPFSubsystems(ctx, logger)
+	comp.afxdpWorker = initEBPFSubsystems(ctx, logger)
 	comp.meshManager, comp.sockMapMgr = initMeshSubsystem(logger)
 
 	if sdwanEnabled {
@@ -685,7 +673,6 @@ func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	}
 
 	// Cleanup eBPF subsystem resources (idempotent Close methods).
-	closeIfNotNil(logger, "eBPF conntrack", comp.conntrackMgr)
 	closeIfNotNil(logger, "eBPF health monitor", comp.ebpfHealthMon)
 	closeIfNotNil(logger, "eBPF rate limiter", comp.ebpfRL)
 
