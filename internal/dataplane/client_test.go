@@ -487,8 +487,8 @@ func TestClient_AttachDetachProgram(t *testing.T) {
 	defer cancel()
 
 	aResp, err := client.AttachProgram(ctx, &pb.AttachProgramRequest{
-		Name:       "xdp-lb",
-		ObjectPath: "/sys/fs/bpf/xdp_lb",
+		Name:       "tc-ingress",
+		ObjectPath: "/sys/fs/bpf/tc_ingress",
 		AttachType: pb.EBPFAttachType_EBPF_ATTACH_XDP,
 		Interface:  "eth0",
 	})
@@ -502,7 +502,7 @@ func TestClient_AttachDetachProgram(t *testing.T) {
 		t.Error("AttachProgram: expected non-zero program_id")
 	}
 
-	dResp, err := client.DetachProgram(ctx, &pb.DetachProgramRequest{Name: "xdp-lb"})
+	dResp, err := client.DetachProgram(ctx, &pb.DetachProgramRequest{Name: "tc-ingress"})
 	if err != nil {
 		t.Fatalf("DetachProgram() error: %v", err)
 	}

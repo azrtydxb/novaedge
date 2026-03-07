@@ -83,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
                         if let Some(ref mut bpf) = result.bpf {
                             if let Err(e) = loader::attach_xdp(bpf, "novaedge_xdp", &args.interface)
                             {
-                                warn!("Failed to attach XDP L4 LB program: {e:#}");
+                                warn!("Failed to attach XDP program: {e:#}");
                             }
                             if let Err(e) = loader::attach_xdp(bpf, "novaedge_arp", &args.interface)
                             {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2024 NovaEdge Authors.
 //
-// conntrack.c -- eBPF LRU connection tracking for XDP load balancing.
+// conntrack.c -- eBPF LRU connection tracking for XDP programs.
 //
 // This program defines an LRU hash map for tracking established connections
 // and pinning them to specific backends across Maglev table rebuilds.
@@ -154,10 +154,8 @@ ct_update_bytes(struct ct_entry *entry, __u64 rx, __u64 tx) {
     ct_bump_stat(CT_STAT_UPDATES);
 }
 
-// Stub XDP program demonstrating conntrack-aware load balancing.
-// In production, the conntrack lookup is integrated into the main
-// xdp_lb_prog or maglev_xdp_prog. This program serves as a
-// standalone reference implementation.
+// Stub XDP program demonstrating conntrack-aware packet processing.
+// This program serves as a standalone reference implementation.
 SEC("xdp")
 int ct_xdp_prog(struct xdp_md *ctx) {
     void *data = (void *)(long)ctx->data;

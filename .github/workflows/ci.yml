@@ -98,8 +98,6 @@ jobs:
       - name: Generate eBPF code (bpf2go)
         run: |
           go generate ./internal/agent/ebpf/conntrack/
-          go generate ./internal/agent/ebpf/maglev/
-          go generate ./internal/agent/xdplb/
           go generate ./internal/agent/ebpfmesh/
           go generate ./internal/agent/afxdp/
 
@@ -350,8 +348,6 @@ jobs:
       - name: Generate eBPF code (bpf2go)
         run: |
           go generate ./internal/agent/ebpf/conntrack/
-          go generate ./internal/agent/ebpf/maglev/
-          go generate ./internal/agent/xdplb/
           go generate ./internal/agent/ebpfmesh/
           go generate ./internal/agent/afxdp/
 
@@ -430,8 +426,6 @@ jobs:
       - name: Generate eBPF code (bpf2go)
         run: |
           go generate ./internal/agent/ebpf/conntrack/
-          go generate ./internal/agent/ebpf/maglev/
-          go generate ./internal/agent/xdplb/
           go generate ./internal/agent/ebpfmesh/
           go generate ./internal/agent/afxdp/
 
@@ -671,8 +665,6 @@ jobs:
       - name: Generate eBPF code (bpf2go)
         run: |
           go generate ./internal/agent/ebpf/conntrack/
-          go generate ./internal/agent/ebpf/maglev/
-          go generate ./internal/agent/xdplb/
           go generate ./internal/agent/ebpfmesh/
           go generate ./internal/agent/afxdp/
 

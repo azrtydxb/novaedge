@@ -19,7 +19,6 @@ limitations under the License.
 package ebpfmesh
 
 import (
-	"github.com/azrtydxb/novaedge/internal/agent/ebpf/service"
 	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
 	"github.com/azrtydxb/novaedge/internal/agent/mesh"
 	"go.uber.org/zap"
@@ -32,10 +31,5 @@ func TryBackend(_ *zap.Logger) mesh.RuleBackend {
 
 // TrySockMap returns nil on non-Linux platforms since eBPF SOCKMAP is not supported.
 func TrySockMap(_ *zap.Logger) *sockmap.Manager {
-	return nil
-}
-
-// TryServiceMap returns nil on non-Linux platforms since eBPF service maps are not supported.
-func TryServiceMap(_ *zap.Logger, _, _ uint32) *service.Map {
 	return nil
 }

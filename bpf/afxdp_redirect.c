@@ -22,7 +22,7 @@
 #define IPPROTO_UDP 17
 #endif
 
-// VIP key for flow matching — same as xdp_lb.c for consistency.
+// VIP key for flow matching.
 struct vip_key {
     __u32 addr;     // IPv4 address in network byte order
     __u16 port;     // port in network byte order

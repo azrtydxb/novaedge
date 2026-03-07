@@ -28,7 +28,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,9 +45,7 @@ import (
 	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
 	"github.com/azrtydxb/novaedge/internal/agent/ebpf/conntrack"
 	ebpfhealth "github.com/azrtydxb/novaedge/internal/agent/ebpf/health"
-	"github.com/azrtydxb/novaedge/internal/agent/ebpf/maglev"
 	ebpfratelimit "github.com/azrtydxb/novaedge/internal/agent/ebpf/ratelimit"
-	ebpfservice "github.com/azrtydxb/novaedge/internal/agent/ebpf/service"
 	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
 	"github.com/azrtydxb/novaedge/internal/agent/ebpfmesh"
 	"github.com/azrtydxb/novaedge/internal/agent/gossip"
@@ -57,7 +54,6 @@ import (
 	"github.com/azrtydxb/novaedge/internal/agent/sdwan"
 	"github.com/azrtydxb/novaedge/internal/agent/server"
 	"github.com/azrtydxb/novaedge/internal/agent/vip"
-	"github.com/azrtydxb/novaedge/internal/agent/xdplb"
 	dpctl "github.com/azrtydxb/novaedge/internal/dataplane"
 	"github.com/azrtydxb/novaedge/internal/observability"
 	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
@@ -135,7 +131,6 @@ var (
 	xdpInterface string
 
 	// Force legacy paths (disable eBPF auto-detection)
-	forceLegacyLB   bool
 	forceLegacyMesh bool
 
 	// BGP backend selection
@@ -163,12 +158,9 @@ type agentComponents struct {
 	watcher       *config.Watcher
 	gossiper      *gossip.ConfigGossiper
 	vipManager    *vip.DefaultManager
-	xdpManager    *xdplb.Manager
-	maglevMgr     *maglev.Manager
 	conntrackMgr  *conntrack.Conntrack
 	afxdpWorker   *afxdp.Worker
 	sockMapMgr    *sockmap.Manager
-	ebpfSvcMap    *ebpfservice.Map
 	meshManager   *mesh.Manager
 	sdwanManager  *sdwan.Manager
 	ebpfHealthMon *ebpfhealth.Monitor
@@ -297,7 +289,6 @@ func parseFlags() {
 	flag.StringVar(&xdpInterface, "xdp-interface", "", "Network interface for XDP/AF_XDP program attachment (enables eBPF acceleration when set)")
 
 	// Force-legacy flags — explicitly disable eBPF auto-detection
-	flag.BoolVar(&forceLegacyLB, "force-legacy-lb", false, "Force legacy userspace L4 proxy instead of XDP/AF_XDP acceleration")
 	flag.BoolVar(&forceLegacyMesh, "force-legacy-mesh", false, "Force legacy nftables/iptables mesh interception instead of eBPF sk_lookup")
 
 	// BGP backend flags
@@ -401,44 +392,19 @@ func initVIPManager(logger *zap.Logger) *vip.DefaultManager {
 	return vipManager
 }
 
-// initXDPAndEBPF creates XDP LB, Maglev, conntrack, and AF_XDP subsystems.
-func initXDPAndEBPF(ctx context.Context, logger *zap.Logger) (xdpMgr *xdplb.Manager, magMgr *maglev.Manager, ctMgr *conntrack.Conntrack, afxdpW *afxdp.Worker) {
-	if !forceLegacyLB && xdpInterface != "" {
-		ebpfLoader := novaebpf.NewProgramLoader(logger, "")
-		xdpMgr = xdplb.NewManager(logger, ebpfLoader, xdpInterface)
-		if err := xdpMgr.Start(); err != nil {
-			logger.Warn("XDP L4 LB not available, using userspace proxy", zap.Error(err))
-			xdpMgr = nil
-		} else {
-			logger.Info("XDP L4 load balancing active", zap.String("interface", xdpInterface))
-		}
-	} else if forceLegacyLB {
-		logger.Info("XDP L4 LB disabled by --force-legacy-lb, using userspace proxy")
-	}
-
-	if xdpMgr != nil && xdpMgr.IsRunning() {
-		magMgr = maglev.NewManager(logger, 0)
-		if initErr := magMgr.Init(); initErr != nil {
-			logger.Warn("eBPF Maglev not available, using hash-mod backend selection", zap.Error(initErr))
-			magMgr = nil
-		} else {
-			xdpMgr.SetMaglev(magMgr)
-			logger.Info("eBPF Maglev consistent hashing enabled for XDP LB")
-		}
-
+// initEBPFSubsystems creates conntrack and AF_XDP subsystems.
+func initEBPFSubsystems(ctx context.Context, logger *zap.Logger) (ctMgr *conntrack.Conntrack, afxdpW *afxdp.Worker) {
+	if xdpInterface != "" {
 		var ctErr error
 		ctMgr, ctErr = conntrack.NewConntrack(logger, 0, 0)
 		if ctErr != nil {
 			logger.Warn("eBPF conntrack not available", zap.Error(ctErr))
 			ctMgr = nil
 		} else {
-			xdpMgr.SetConntrack(ctMgr)
 			ctMgr.StartGC()
-			logger.Info("eBPF conntrack enabled for XDP LB")
+			logger.Info("eBPF conntrack enabled")
 		}
-	}
 
-	if !forceLegacyLB && xdpInterface != "" {
 		afxdpLoader := novaebpf.NewProgramLoader(logger, "")
 		afxdpW = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
 			InterfaceName: xdpInterface,
@@ -455,13 +421,12 @@ func initXDPAndEBPF(ctx context.Context, logger *zap.Logger) (xdpMgr *xdplb.Mana
 }
 
 // initMeshSubsystem creates mesh manager and related eBPF accelerators.
-func initMeshSubsystem(logger *zap.Logger) (*mesh.Manager, *sockmap.Manager, *ebpfservice.Map) {
+func initMeshSubsystem(logger *zap.Logger) (*mesh.Manager, *sockmap.Manager) {
 	if !meshEnabled {
-		return nil, nil, nil
+		return nil, nil
 	}
 
 	sockMapMgr := ebpfmesh.TrySockMap(logger)
-	ebpfSvcMap := ebpfmesh.TryServiceMap(logger, 0, 0)
 
 	var meshBackend mesh.RuleBackend
 	if !forceLegacyMesh {
@@ -475,9 +440,8 @@ func initMeshSubsystem(logger *zap.Logger) (*mesh.Manager, *sockmap.Manager, *eb
 		TrustDomain:         meshTrustDomain,
 		RuleBackendOverride: meshBackend,
 		SockMapManager:      sockMapMgr,
-		ServiceMap:          ebpfSvcMap,
 	})
-	return meshManager, sockMapMgr, ebpfSvcMap
+	return meshManager, sockMapMgr
 }
 
 // initEBPFMonitoring creates eBPF health monitor and rate limiter.
@@ -512,8 +476,8 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 	}
 
 	comp.vipManager = initVIPManager(logger)
-	comp.xdpManager, comp.maglevMgr, comp.conntrackMgr, comp.afxdpWorker = initXDPAndEBPF(ctx, logger)
-	comp.meshManager, comp.sockMapMgr, comp.ebpfSvcMap = initMeshSubsystem(logger)
+	comp.conntrackMgr, comp.afxdpWorker = initEBPFSubsystems(ctx, logger)
+	comp.meshManager, comp.sockMapMgr = initMeshSubsystem(logger)
 
 	if sdwanEnabled {
 		comp.sdwanManager = sdwan.NewManager(logger)
@@ -651,13 +615,6 @@ func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentCompon
 		}
 	}
 
-	if comp.xdpManager != nil && comp.xdpManager.IsRunning() {
-		routes := buildL4Routes(snapshot.GetVipAssignments(), snapshot.GetL4Listeners(), snapshot.GetEndpoints())
-		if err := comp.xdpManager.SyncBackends(routes); err != nil {
-			logger.Error("Failed to sync XDP LB backends", zap.Error(err))
-		}
-	}
-
 	if comp.afxdpWorker != nil && comp.afxdpWorker.IsRunning() {
 		vipKeys := buildAFXDPVIPKeys(snapshot.GetVipAssignments())
 		if err := comp.afxdpWorker.SyncVIPs(vipKeys); err != nil {
@@ -721,11 +678,6 @@ func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	if comp.sdwanManager != nil {
 		comp.sdwanManager.Stop()
 	}
-	if comp.xdpManager != nil {
-		if err := comp.xdpManager.Stop(); err != nil {
-			logger.Error("Error during XDP LB manager shutdown", zap.Error(err))
-		}
-	}
 	if comp.afxdpWorker != nil {
 		if err := comp.afxdpWorker.Stop(); err != nil {
 			logger.Error("Error during AF_XDP worker shutdown", zap.Error(err))
@@ -733,7 +685,6 @@ func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	}
 
 	// Cleanup eBPF subsystem resources (idempotent Close methods).
-	closeIfNotNil(logger, "eBPF Maglev manager", comp.maglevMgr)
 	closeIfNotNil(logger, "eBPF conntrack", comp.conntrackMgr)
 	closeIfNotNil(logger, "eBPF health monitor", comp.ebpfHealthMon)
 	closeIfNotNil(logger, "eBPF rate limiter", comp.ebpfRL)
@@ -1003,94 +954,6 @@ func convertWANPolicies(wanPolicies []*pb.WANPolicy) []sdwan.PolicyConfig {
 		policies = append(policies, pc)
 	}
 	return policies
-}
-
-// buildL4Routes constructs xdplb.L4Route entries from VIP assignments, L4 listeners,
-// and cluster endpoints. This enables the XDP eBPF program to perform kernel-level
-// L4 load balancing by populating the vip_backends and backend_list eBPF maps.
-func buildL4Routes(
-	vips []*pb.VIPAssignment,
-	l4Listeners []*pb.L4Listener,
-	endpoints map[string]*pb.EndpointList,
-) []xdplb.L4Route {
-	// Build a VIP address set for quick lookup (active VIPs only).
-	vipAddrs := make(map[string]bool, len(vips))
-	for _, v := range vips {
-		if !v.GetIsActive() {
-			continue // only programme XDP for VIPs active on this node
-		}
-		// Strip CIDR suffix if present (e.g., "10.0.0.1/32" -> "10.0.0.1").
-		addr := v.GetAddress()
-		if idx := strings.IndexByte(addr, '/'); idx >= 0 {
-			addr = addr[:idx]
-		}
-		vipAddrs[addr] = true
-	}
-
-	var routes []xdplb.L4Route
-	for _, l4 := range l4Listeners {
-		backendName := l4.GetBackendName()
-		if backendName == "" {
-			continue
-		}
-		epList, ok := endpoints[backendName]
-		if !ok || epList == nil {
-			continue
-		}
-
-		var protocol uint8 = 6 // TCP default
-		switch l4.GetProtocol() {
-		case pb.Protocol_UDP:
-			protocol = 17
-		case pb.Protocol_TCP, pb.Protocol_TLS:
-			protocol = 6
-		case pb.Protocol_PROTOCOL_UNSPECIFIED, pb.Protocol_HTTP, pb.Protocol_HTTPS, pb.Protocol_HTTP3:
-			// L7 protocols handled by the Rust dataplane, not XDP L4 LB.
-			// Fall through with TCP default.
-		}
-
-		var backends []xdplb.Backend
-		for _, ep := range epList.GetEndpoints() {
-			if !ep.GetReady() {
-				continue
-			}
-			addr := ep.GetAddress()
-			ip := net.ParseIP(addr)
-			if ip == nil || ip.To4() == nil {
-				continue // XDP L4 routes only support IPv4 literal addresses
-			}
-			backends = append(backends, xdplb.Backend{
-				Addr: addr,
-				Port: uint16(ep.GetPort()), //nolint:gosec // port range
-			})
-			// Note: Backend.MAC is left as zero value. The XDP program will
-			// need ARP resolution or a neighbor-cache lookup to fill this.
-		}
-
-		if len(backends) == 0 {
-			continue
-		}
-
-		// Create a route for each VIP address that matches.
-		// L4 listeners don't specify a VIP directly, so we create a route
-		// for every active VIP on the matching port.
-		// Sort VIP addresses for deterministic eBPF map ordering.
-		sortedVIPs := make([]string, 0, len(vipAddrs))
-		for addr := range vipAddrs {
-			sortedVIPs = append(sortedVIPs, addr)
-		}
-		sort.Strings(sortedVIPs)
-		for _, vipAddr := range sortedVIPs {
-			routes = append(routes, xdplb.L4Route{
-				VIP:      vipAddr,
-				Port:     uint16(l4.GetPort()), //nolint:gosec // port range
-				Protocol: protocol,
-				Backends: backends,
-			})
-		}
-	}
-
-	return routes
 }
 
 // buildAFXDPVIPKeys converts VIP assignments into afxdp.VIPKey entries

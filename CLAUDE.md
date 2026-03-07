@@ -35,7 +35,7 @@ The system consists of five major components:
 1. **Operator**: Manages NovaEdge lifecycle via `NovaEdgeCluster` CRD
 2. **Kubernetes Controller (Control-Plane)**: Runs as a Deployment, watches CRDs/Ingress/Gateway API, builds routing configuration, and pushes ConfigSnapshots to node agents via gRPC
 3. **Node Agent (Config Agent)**: Runs as a DaemonSet sidecar with hostNetwork. This is a **config-only agent** — it receives ConfigSnapshots from the controller, translates them to dataplane config, pushes to the Rust dataplane via gRPC, manages VIP binding (ARP/BGP/OSPF/BFD), iptables/nftables rules, and eBPF program lifecycle. **It does NOT handle user traffic.**
-4. **Rust Dataplane (Traffic Handler)**: Runs as a DaemonSet sidecar alongside the Go agent. This is the **actual data plane** — it binds ports 80/443, handles ALL L4/L7 traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC), executes routing, middleware, policies, load balancing, and connection pooling. Optionally accelerated by eBPF XDP for L4 fast path.
+4. **Rust Dataplane (Traffic Handler)**: Runs as a DaemonSet sidecar alongside the Go agent. This is the **actual data plane** — it binds ports 80/443, handles ALL L4/L7 traffic (HTTP/HTTPS/HTTP3/TCP/UDP/WebSocket/gRPC), executes routing, middleware, policies, load balancing, and connection pooling. Optionally accelerated by eBPF (AF_XDP zero-copy, SOCKMAP same-node bypass). L4 load balancing (kube-proxy replacement) is handled by NovaNet.
 5. **CRDs** (12 types):
    - Core: `ProxyGateway`, `ProxyRoute`, `ProxyBackend`, `ProxyPolicy`, `ProxyVIP`
    - Certificate & IP: `ProxyCertificate`, `ProxyIPPool`
