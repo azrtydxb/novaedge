@@ -70,7 +70,7 @@ const (
 type ServiceReconciler struct {
 	client.Client
 	Scheme          *runtime.Scheme
-	Allocator       *ipam.Allocator
+	Allocator       ipam.Client
 	Recorder        record.EventRecorder
 	EnableServiceLB bool
 }
@@ -96,7 +96,7 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		if apierrors.IsNotFound(err) {
 			// Service deleted — IPAM release is handled below when ProxyVIP is not found
 			logger.Info("Service resource not found, cleaning up IPAM allocation if any")
-			r.releaseIPAMForService(req.Name, req.Namespace)
+			r.releaseIPAMForService(ctx, req.Name, req.Namespace)
 			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to get Service")
@@ -139,7 +139,8 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	vipName := vipNamePrefix + svc.Name
 
 	// Allocate IP from IPAM pool
-	address, err := r.Allocator.Allocate(poolName, vipName)
+	ipamResource := "service/" + svc.Namespace + "/" + svc.Name
+	address, err := r.Allocator.Allocate(ctx, poolName, ipamResource)
 	if err != nil {
 		r.recordEvent(svc, corev1.EventTypeWarning, "IPAllocationFailed",
 			fmt.Sprintf("Failed to allocate IP from pool %q: %v", poolName, err))
@@ -154,7 +155,9 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			fmt.Sprintf("Failed to parse annotations: %v", err))
 		logger.Error(err, "Failed to build VIP spec from annotations")
 		// Release the allocated IP since we can't create the VIP
-		r.Allocator.Release(poolName, vipName)
+		if releaseErr := r.Allocator.Release(ctx, poolName, ipamResource); releaseErr != nil {
+			logger.Error(releaseErr, "Failed to release IP after annotation parse failure")
+		}
 		return ctrl.Result{}, nil // Do not requeue for invalid annotations
 	}
 
@@ -184,7 +187,9 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 					fmt.Sprintf("Failed to create ProxyVIP: %v", createErr))
 				logger.Error(createErr, "Failed to create ProxyVIP", "vipName", vipName)
 				// Release the allocated IP since VIP creation failed
-				r.Allocator.Release(poolName, vipName)
+				if releaseErr := r.Allocator.Release(ctx, poolName, ipamResource); releaseErr != nil {
+					logger.Error(releaseErr, "Failed to release IP after VIP creation failure")
+				}
 				return ctrl.Result{}, createErr
 			}
 
@@ -222,16 +227,15 @@ func (r *ServiceReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 }
 
 // releaseIPAMForService releases the IPAM allocation for a deleted Service.
-func (r *ServiceReconciler) releaseIPAMForService(serviceName, namespace string) {
+func (r *ServiceReconciler) releaseIPAMForService(ctx context.Context, serviceName, namespace string) {
 	if r.Allocator == nil {
 		return
 	}
-	vipName := vipNamePrefix + serviceName
+	ipamResource := "service/" + namespace + "/" + serviceName
 	// Try to release from all known pools since we don't track which pool was used
-	for _, poolName := range r.Allocator.GetPoolNames() {
-		r.Allocator.Release(poolName, vipName)
+	for _, poolName := range r.Allocator.GetPoolNames(ctx) {
+		_ = r.Allocator.Release(ctx, poolName, ipamResource)
 	}
-	_ = namespace // namespace used for logging context if needed
 }
 
 // parseVIPMode validates and converts a string annotation value to a VIPMode.

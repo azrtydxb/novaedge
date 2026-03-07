@@ -48,7 +48,7 @@ import (
 type ProxyVIPReconciler struct {
 	client.Client
 	Scheme    *runtime.Scheme
-	Allocator *ipam.Allocator
+	Allocator ipam.Client
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxyvips,verbs=get;list;watch;create;update;patch;delete
@@ -144,36 +144,25 @@ func (r *ProxyVIPReconciler) reconcileIPAM(ctx context.Context, vip *novaedgev1a
 
 	// Handle IPAM allocation if poolRef is set and no address allocated yet
 	if vip.Spec.PoolRef != nil && vip.Status.AllocatedAddress == "" && r.Allocator != nil {
-		pool := &novaedgev1alpha1.ProxyIPPool{}
-		if err := r.Get(ctx, client.ObjectKey{Name: vip.Spec.PoolRef.Name}, pool); err != nil {
-			if !errors.IsNotFound(err) {
-				logger.Error(err, "Failed to get ProxyIPPool", "pool", vip.Spec.PoolRef.Name)
-				return err
-			}
-			logger.Info("Referenced ProxyIPPool not found", "pool", vip.Spec.PoolRef.Name)
-		} else {
-			cidrs := append([]string{}, pool.Spec.CIDRs...)
-			addresses := append([]string{}, pool.Spec.Addresses...)
-			if err := r.Allocator.AddPool(pool.Name, cidrs, addresses); err != nil {
-				logger.Error(err, "Failed to register IP pool", "pool", pool.Name)
-				return err
-			}
+		poolName := vip.Spec.PoolRef.Name
+		resource := "proxyvip/" + vip.Name
 
-			allocated, err := r.Allocator.Allocate(pool.Name, vip.Name)
-			if err != nil {
-				logger.Error(err, "Failed to allocate IP from pool", "pool", pool.Name)
-				return err
-			}
-
-			vip.Status.AllocatedAddress = allocated
-			if err := r.Status().Update(ctx, vip); err != nil {
-				logger.Error(err, "Failed to update VIP status with allocated address")
-				r.Allocator.Release(pool.Name, vip.Name)
-				return err
-			}
-
-			logger.Info("Allocated IP from pool", "pool", pool.Name, "address", allocated, "vip", vip.Name)
+		allocated, err := r.Allocator.Allocate(ctx, poolName, resource)
+		if err != nil {
+			logger.Error(err, "Failed to allocate IP from pool", "pool", poolName)
+			return err
 		}
+
+		vip.Status.AllocatedAddress = allocated
+		if err := r.Status().Update(ctx, vip); err != nil {
+			logger.Error(err, "Failed to update VIP status with allocated address")
+			if releaseErr := r.Allocator.Release(ctx, poolName, resource); releaseErr != nil {
+				logger.Error(releaseErr, "Failed to release IP after status update failure")
+			}
+			return err
+		}
+
+		logger.Info("Allocated IP from pool", "pool", poolName, "address", allocated, "vip", vip.Name)
 	}
 
 	// Handle IPAM release if VIP had allocation but poolRef was removed

@@ -17,6 +17,7 @@ limitations under the License.
 package ipam
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -203,6 +204,7 @@ func TestPool_IsAllocated(t *testing.T) {
 func TestAllocator_MultiplePool(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 	allocator := NewAllocator(logger)
+	ctx := context.Background()
 
 	err := allocator.AddPool("pool-a", []string{"10.200.0.0/30"}, nil)
 	if err != nil {
@@ -215,7 +217,7 @@ func TestAllocator_MultiplePool(t *testing.T) {
 	}
 
 	t.Run("allocate from pool-a", func(t *testing.T) {
-		addr, err := allocator.Allocate("pool-a", "vip-1")
+		addr, err := allocator.Allocate(ctx, "pool-a", "vip-1")
 		if err != nil {
 			t.Fatalf("Failed to allocate: %v", err)
 		}
@@ -225,7 +227,7 @@ func TestAllocator_MultiplePool(t *testing.T) {
 	})
 
 	t.Run("allocate from pool-b", func(t *testing.T) {
-		addr, err := allocator.Allocate("pool-b", "vip-2")
+		addr, err := allocator.Allocate(ctx, "pool-b", "vip-2")
 		if err != nil {
 			t.Fatalf("Failed to allocate: %v", err)
 		}
@@ -235,14 +237,14 @@ func TestAllocator_MultiplePool(t *testing.T) {
 	})
 
 	t.Run("allocate from non-existent pool", func(t *testing.T) {
-		_, err := allocator.Allocate("pool-c", "vip-3")
+		_, err := allocator.Allocate(ctx, "pool-c", "vip-3")
 		if err == nil {
 			t.Error("Expected error for non-existent pool")
 		}
 	})
 
 	t.Run("conflict detection", func(t *testing.T) {
-		poolName, conflict := allocator.IsAddressConflict("10.200.0.1")
+		poolName, conflict := allocator.IsAddressConflict(ctx, "10.200.0.1")
 		if !conflict {
 			t.Error("Expected conflict for allocated address")
 		}
@@ -252,7 +254,7 @@ func TestAllocator_MultiplePool(t *testing.T) {
 	})
 
 	t.Run("pool stats", func(t *testing.T) {
-		allocated, available, err := allocator.GetPoolStats("pool-a")
+		allocated, available, err := allocator.GetPoolStats(ctx, "pool-a")
 		if err != nil {
 			t.Fatalf("Failed to get stats: %v", err)
 		}
@@ -266,7 +268,7 @@ func TestAllocator_MultiplePool(t *testing.T) {
 
 	t.Run("remove pool", func(t *testing.T) {
 		allocator.RemovePool("pool-a")
-		names := allocator.GetPoolNames()
+		names := allocator.GetPoolNames(ctx)
 		if len(names) != 1 {
 			t.Errorf("Expected 1 pool remaining, got %d", len(names))
 		}

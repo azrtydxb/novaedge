@@ -17,6 +17,7 @@ limitations under the License.
 package ipam
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -101,6 +102,7 @@ func TestAllocator_AddPool(t *testing.T) {
 func TestAllocator_AddPool_Migration(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Create initial pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -109,7 +111,7 @@ func TestAllocator_AddPool_Migration(t *testing.T) {
 	}
 
 	// Allocate an IP
-	addr, err := a.Allocate("test-pool", "test-vip")
+	addr, err := a.Allocate(ctx, "test-pool", "test-vip")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
@@ -124,7 +126,7 @@ func TestAllocator_AddPool_Migration(t *testing.T) {
 	}
 
 	// Verify allocation was migrated
-	allocations, _ := a.GetPoolAllocations("test-pool")
+	allocations, _ := a.GetPoolAllocations(ctx, "test-pool")
 	if allocations[ipStr] != "test-vip" {
 		t.Errorf("allocation not migrated, got allocations: %v", allocations)
 	}
@@ -151,6 +153,7 @@ func TestAllocator_RemovePool(t *testing.T) {
 func TestAllocator_RemovePool_WithAllocations(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -159,7 +162,7 @@ func TestAllocator_RemovePool_WithAllocations(t *testing.T) {
 	}
 
 	// Allocate an IP
-	_, err = a.Allocate("test-pool", "test-vip")
+	_, err = a.Allocate(ctx, "test-pool", "test-vip")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
@@ -183,6 +186,7 @@ func TestAllocator_RemovePool_NonExistent(_ *testing.T) {
 func TestAllocator_Allocate(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -191,7 +195,7 @@ func TestAllocator_Allocate(t *testing.T) {
 	}
 
 	// Allocate an IP
-	addr, err := a.Allocate("test-pool", "test-vip")
+	addr, err := a.Allocate(ctx, "test-pool", "test-vip")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
@@ -204,8 +208,9 @@ func TestAllocator_Allocate(t *testing.T) {
 func TestAllocator_Allocate_PoolNotFound(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
-	_, err := a.Allocate("non-existent", "test-vip")
+	_, err := a.Allocate(ctx, "non-existent", "test-vip")
 	if err == nil {
 		t.Error("Allocate() should return error for non-existent pool")
 	}
@@ -214,6 +219,7 @@ func TestAllocator_Allocate_PoolNotFound(t *testing.T) {
 func TestAllocator_Release(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -222,7 +228,7 @@ func TestAllocator_Release(t *testing.T) {
 	}
 
 	// Allocate an IP
-	addr, err := a.Allocate("test-pool", "test-vip")
+	addr, err := a.Allocate(ctx, "test-pool", "test-vip")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
@@ -237,7 +243,9 @@ func TestAllocator_Release(t *testing.T) {
 	}
 
 	// Release by VIP name
-	a.Release("test-pool", "test-vip")
+	if err := a.Release(ctx, "test-pool", "test-vip"); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
 
 	// Verify it was released
 	if pool.IsAllocated(ipStr) {
@@ -245,17 +253,22 @@ func TestAllocator_Release(t *testing.T) {
 	}
 }
 
-func TestAllocator_Release_PoolNotFound(_ *testing.T) {
+func TestAllocator_Release_PoolNotFound(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
-	// Should not panic
-	a.Release("non-existent", "test-vip")
+	// Should not return error for non-existent pool
+	err := a.Release(ctx, "non-existent", "test-vip")
+	if err != nil {
+		t.Errorf("Release() should not return error for non-existent pool, got %v", err)
+	}
 }
 
 func TestAllocator_GetPoolAllocations(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -264,12 +277,12 @@ func TestAllocator_GetPoolAllocations(t *testing.T) {
 	}
 
 	// Allocate some IPs
-	addr1, err := a.Allocate("test-pool", "vip-1")
+	addr1, err := a.Allocate(ctx, "test-pool", "vip-1")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
 
-	addr2, err := a.Allocate("test-pool", "vip-2")
+	addr2, err := a.Allocate(ctx, "test-pool", "vip-2")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
@@ -279,7 +292,7 @@ func TestAllocator_GetPoolAllocations(t *testing.T) {
 	ip2 := strings.TrimSuffix(addr2, "/32")
 
 	// Get allocations
-	allocations, err := a.GetPoolAllocations("test-pool")
+	allocations, err := a.GetPoolAllocations(ctx, "test-pool")
 	if err != nil {
 		t.Fatalf("GetPoolAllocations() error = %v", err)
 	}
@@ -305,8 +318,9 @@ func TestAllocator_GetPoolAllocations(t *testing.T) {
 func TestAllocator_GetPoolAllocations_PoolNotFound(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
-	allocations, err := a.GetPoolAllocations("non-existent")
+	allocations, err := a.GetPoolAllocations(ctx, "non-existent")
 	if err == nil {
 		t.Error("GetPoolAllocations() should return error for non-existent pool")
 	}
@@ -318,6 +332,7 @@ func TestAllocator_GetPoolAllocations_PoolNotFound(t *testing.T) {
 func TestAllocator_GetPoolStats(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -326,13 +341,13 @@ func TestAllocator_GetPoolStats(t *testing.T) {
 	}
 
 	// Allocate an IP
-	_, err = a.Allocate("test-pool", "vip-1")
+	_, err = a.Allocate(ctx, "test-pool", "vip-1")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
 
 	// Get stats
-	allocated, available, err := a.GetPoolStats("test-pool")
+	allocated, available, err := a.GetPoolStats(ctx, "test-pool")
 	if err != nil {
 		t.Fatalf("GetPoolStats() error = %v", err)
 	}
@@ -349,8 +364,9 @@ func TestAllocator_GetPoolStats(t *testing.T) {
 func TestAllocator_GetPoolStats_PoolNotFound(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
-	_, _, err := a.GetPoolStats("non-existent")
+	_, _, err := a.GetPoolStats(ctx, "non-existent")
 	if err == nil {
 		t.Error("GetPoolStats() should return error for non-existent pool")
 	}
@@ -359,6 +375,7 @@ func TestAllocator_GetPoolStats_PoolNotFound(t *testing.T) {
 func TestAllocator_IsAddressConflict(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -367,7 +384,7 @@ func TestAllocator_IsAddressConflict(t *testing.T) {
 	}
 
 	// Allocate an IP
-	addr, err := a.Allocate("test-pool", "test-vip")
+	addr, err := a.Allocate(ctx, "test-pool", "test-vip")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
@@ -376,7 +393,7 @@ func TestAllocator_IsAddressConflict(t *testing.T) {
 	ipStr := strings.TrimSuffix(addr, "/32")
 
 	// Check conflict
-	poolName, isConflict := a.IsAddressConflict(ipStr)
+	poolName, isConflict := a.IsAddressConflict(ctx, ipStr)
 	if !isConflict {
 		t.Error("IsAddressConflict() should return true for allocated address")
 	}
@@ -385,7 +402,7 @@ func TestAllocator_IsAddressConflict(t *testing.T) {
 	}
 
 	// Check non-conflict
-	_, isConflict = a.IsAddressConflict("192.168.1.250")
+	_, isConflict = a.IsAddressConflict(ctx, "192.168.1.250")
 	if isConflict {
 		t.Error("IsAddressConflict() should return false for unallocated address")
 	}
@@ -394,9 +411,10 @@ func TestAllocator_IsAddressConflict(t *testing.T) {
 func TestAllocator_GetPoolNames(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Initially empty
-	names := a.GetPoolNames()
+	names := a.GetPoolNames(ctx)
 	if len(names) != 0 {
 		t.Errorf("expected 0 pool names, got %d", len(names))
 	}
@@ -405,7 +423,7 @@ func TestAllocator_GetPoolNames(t *testing.T) {
 	_ = a.AddPool("pool-1", []string{"192.168.1.0/29"}, nil)
 	_ = a.AddPool("pool-2", []string{"10.0.0.0/29"}, nil)
 
-	names = a.GetPoolNames()
+	names = a.GetPoolNames(ctx)
 	if len(names) != 2 {
 		t.Errorf("expected 2 pool names, got %d", len(names))
 	}
@@ -424,6 +442,7 @@ func TestAllocator_GetPoolNames(t *testing.T) {
 func TestAllocator_MultiplePools(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add multiple pools
 	err := a.AddPool("pool-1", []string{"192.168.1.0/29"}, nil)
@@ -437,12 +456,12 @@ func TestAllocator_MultiplePools(t *testing.T) {
 	}
 
 	// Allocate from different pools
-	addr1, err := a.Allocate("pool-1", "vip-1")
+	addr1, err := a.Allocate(ctx, "pool-1", "vip-1")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
 
-	addr2, err := a.Allocate("pool-2", "vip-2")
+	addr2, err := a.Allocate(ctx, "pool-2", "vip-2")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
@@ -452,8 +471,8 @@ func TestAllocator_MultiplePools(t *testing.T) {
 	ip2 := strings.TrimSuffix(addr2, "/32")
 
 	// Verify allocations are independent
-	alloc1, _ := a.GetPoolAllocations("pool-1")
-	alloc2, _ := a.GetPoolAllocations("pool-2")
+	alloc1, _ := a.GetPoolAllocations(ctx, "pool-1")
+	alloc2, _ := a.GetPoolAllocations(ctx, "pool-2")
 
 	if len(alloc1) != 1 {
 		t.Errorf("pool-1 should have 1 allocation, got %d", len(alloc1))
@@ -476,6 +495,7 @@ func TestAllocator_MultiplePools(t *testing.T) {
 func TestAllocator_ConcurrentAccess(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool with enough addresses
 	err := a.AddPool("test-pool", []string{"192.168.0.0/16"}, nil)
@@ -490,7 +510,7 @@ func TestAllocator_ConcurrentAccess(t *testing.T) {
 		go func(id int) {
 			for j := 0; j < 10; j++ {
 				vipName := fmt.Sprintf("vip-%d-%d", id, j)
-				_, _ = a.Allocate("test-pool", vipName)
+				_, _ = a.Allocate(ctx, "test-pool", vipName)
 			}
 			done <- true
 		}(i)
@@ -499,10 +519,10 @@ func TestAllocator_ConcurrentAccess(t *testing.T) {
 	// Concurrent releases
 	go func() {
 		for i := 0; i < 10; i++ {
-			allocs, _ := a.GetPoolAllocations("test-pool")
+			allocs, _ := a.GetPoolAllocations(ctx, "test-pool")
 			for ip, vipName := range allocs {
 				// Release by VIP name, not IP
-				a.Release("test-pool", vipName)
+				_ = a.Release(ctx, "test-pool", vipName)
 				_ = ip // Just to avoid unused variable warning
 				break  // Release one and continue
 			}
@@ -519,6 +539,7 @@ func TestAllocator_ConcurrentAccess(t *testing.T) {
 func TestAllocator_ExhaustPool(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a very small pool (only 6 usable addresses in /29)
 	err := a.AddPool("small-pool", []string{"192.168.1.0/29"}, nil)
@@ -529,7 +550,7 @@ func TestAllocator_ExhaustPool(t *testing.T) {
 	// Allocate until exhausted
 	allocated := []string{}
 	for i := 0; i < 10; i++ {
-		addr, err := a.Allocate("small-pool", string(rune('A'+i)))
+		addr, err := a.Allocate(ctx, "small-pool", string(rune('A'+i)))
 		if err != nil {
 			break
 		}
@@ -542,7 +563,7 @@ func TestAllocator_ExhaustPool(t *testing.T) {
 	}
 
 	// Pool should be exhausted (next allocation should fail)
-	_, err = a.Allocate("small-pool", "should-fail")
+	_, err = a.Allocate(ctx, "small-pool", "should-fail")
 	if err == nil {
 		t.Error("expected error when pool is exhausted")
 	}
@@ -551,6 +572,7 @@ func TestAllocator_ExhaustPool(t *testing.T) {
 func TestAllocator_ReleaseByVIPName(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -559,28 +581,30 @@ func TestAllocator_ReleaseByVIPName(t *testing.T) {
 	}
 
 	// Allocate an IP for a specific VIP
-	addr, err := a.Allocate("test-pool", "my-app-vip")
+	addr, err := a.Allocate(ctx, "test-pool", "my-app-vip")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
 
 	// Verify allocation exists
-	allocations, _ := a.GetPoolAllocations("test-pool")
+	allocations, _ := a.GetPoolAllocations(ctx, "test-pool")
 	if len(allocations) != 1 {
 		t.Errorf("expected 1 allocation, got %d", len(allocations))
 	}
 
 	// Release by VIP name (not IP address)
-	a.Release("test-pool", "my-app-vip")
+	if err := a.Release(ctx, "test-pool", "my-app-vip"); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
 
 	// Verify allocation was removed
-	allocations, _ = a.GetPoolAllocations("test-pool")
+	allocations, _ = a.GetPoolAllocations(ctx, "test-pool")
 	if len(allocations) != 0 {
 		t.Errorf("expected 0 allocations after release, got %d", len(allocations))
 	}
 
 	// The IP should now be available for reallocation
-	addr2, err := a.Allocate("test-pool", "another-vip")
+	addr2, err := a.Allocate(ctx, "test-pool", "another-vip")
 	if err != nil {
 		t.Fatalf("Allocate() after release error = %v", err)
 	}
@@ -594,6 +618,7 @@ func TestAllocator_ReleaseByVIPName(t *testing.T) {
 func TestAllocator_AllocateIdempotent(t *testing.T) {
 	logger := zap.NewNop()
 	a := NewAllocator(logger)
+	ctx := context.Background()
 
 	// Add a pool
 	err := a.AddPool("test-pool", []string{"192.168.1.0/29"}, nil)
@@ -602,12 +627,12 @@ func TestAllocator_AllocateIdempotent(t *testing.T) {
 	}
 
 	// Allocate for same VIP twice
-	addr1, err := a.Allocate("test-pool", "same-vip")
+	addr1, err := a.Allocate(ctx, "test-pool", "same-vip")
 	if err != nil {
 		t.Fatalf("Allocate() error = %v", err)
 	}
 
-	addr2, err := a.Allocate("test-pool", "same-vip")
+	addr2, err := a.Allocate(ctx, "test-pool", "same-vip")
 	if err != nil {
 		t.Fatalf("Second Allocate() error = %v", err)
 	}
@@ -618,8 +643,15 @@ func TestAllocator_AllocateIdempotent(t *testing.T) {
 	}
 
 	// Should only have one allocation
-	allocations, _ := a.GetPoolAllocations("test-pool")
+	allocations, _ := a.GetPoolAllocations(ctx, "test-pool")
 	if len(allocations) != 1 {
 		t.Errorf("expected 1 allocation, got %d", len(allocations))
 	}
+}
+
+// TestAllocator_ImplementsClient verifies interface compliance at test time.
+func TestAllocator_ImplementsClient(_ *testing.T) {
+	// Compile-time interface check (also enforced by var _ Client = (*Allocator)(nil) in allocator.go).
+	logger := zap.NewNop()
+	var _ Client = NewAllocator(logger)
 }
