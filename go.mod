@@ -1,6 +1,6 @@
 module github.com/azrtydxb/novaedge
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/azrtydxb/novanet v1.8.2-0.20260307101249-8e96b33353d9
