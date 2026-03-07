@@ -27,93 +27,6 @@ import (
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
-func TestGetVIPRef(t *testing.T) {
-	tests := []struct {
-		name      string
-		ingress   *networkingv1.Ingress
-		expectVIP string
-	}{
-		{
-			name: "with vip-ref annotation",
-			ingress: &networkingv1.Ingress{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "test-ingress",
-					Namespace:   "default",
-					Annotations: map[string]string{AnnotationVIPRef: "custom-vip"},
-				},
-			},
-			expectVIP: "custom-vip",
-		},
-		{
-			name: "without vip-ref annotation - uses default",
-			ingress: &networkingv1.Ingress{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-ingress",
-					Namespace: "default",
-				},
-			},
-			expectVIP: DefaultVIPRef,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			translator := NewIngressTranslator("default")
-			result := translator.getVIPRef(tt.ingress)
-			if result != tt.expectVIP {
-				t.Errorf("getVIPRef() = %v, want %v", result, tt.expectVIP)
-			}
-		})
-	}
-}
-
-func TestGetVIPRefConfigurable(t *testing.T) {
-	tests := []struct {
-		name          string
-		defaultVIPRef string
-		annotation    string
-		expectVIP     string
-	}{
-		{
-			name:          "custom default VIP used when no annotation",
-			defaultVIPRef: "production-vip",
-			annotation:    "",
-			expectVIP:     "production-vip",
-		},
-		{
-			name:          "annotation overrides custom default",
-			defaultVIPRef: "production-vip",
-			annotation:    "specific-vip",
-			expectVIP:     "specific-vip",
-		},
-		{
-			name:          "empty defaultVIPRef falls back to constant",
-			defaultVIPRef: "",
-			annotation:    "",
-			expectVIP:     DefaultVIPRef,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			translator := NewIngressTranslatorWithOptions("default", nil, tt.defaultVIPRef)
-			ingress := &networkingv1.Ingress{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "test-ingress",
-					Namespace: "default",
-				},
-			}
-			if tt.annotation != "" {
-				ingress.Annotations = map[string]string{AnnotationVIPRef: tt.annotation}
-			}
-			result := translator.getVIPRef(ingress)
-			if result != tt.expectVIP {
-				t.Errorf("getVIPRef() = %v, want %v", result, tt.expectVIP)
-			}
-		})
-	}
-}
-
 func TestGetIngressClassName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1284,7 +1197,7 @@ func TestGetLBPolicyAnnotation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			translator := NewIngressTranslatorWithOptions("default", nil, "default-vip")
+			translator := NewIngressTranslatorWithOptions("default", nil)
 			annotations := map[string]string{}
 			if tt.annotation != "" {
 				annotations[AnnotationLoadBalancing] = tt.annotation

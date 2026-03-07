@@ -6,7 +6,6 @@ metadata:
   name: http3-gateway
   namespace: default
 spec:
-  vipRef: default-vip
   listeners:
   # HTTP/3 listener on port 443
   - name: http3

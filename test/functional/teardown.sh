@@ -17,9 +17,6 @@ kubectl delete proxybackend api-backend api-backend-v2 -n default 2>/dev/null ||
 echo "Deleting gateway..."
 kubectl delete proxygateway test-gateway -n default 2>/dev/null || true
 
-echo "Deleting VIP..."
-kubectl delete proxyvip test-vip 2>/dev/null || true
-
 echo "Deleting TLS secret..."
 kubectl delete secret test-tls-cert -n default 2>/dev/null || true
 

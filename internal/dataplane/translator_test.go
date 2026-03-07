@@ -366,90 +366,6 @@ func TestTranslateSnapshot_LBAlgorithms(t *testing.T) {
 	}
 }
 
-func TestTranslateSnapshot_VIPs(t *testing.T) {
-	snap := &configpb.ConfigSnapshot{
-		VipAssignments: []*configpb.VIPAssignment{
-			{
-				VipName: "ingress-vip",
-				Address: "192.168.1.100/32",
-				Mode:    configpb.VIPMode_L2_ARP,
-			},
-			{
-				VipName: "bgp-vip",
-				Address: "10.0.100.1/32",
-				Mode:    configpb.VIPMode_BGP,
-				BgpConfig: &configpb.BGPConfig{
-					LocalAs:         65000,
-					RouterId:        "10.0.0.1",
-					Communities:     []string{"65000:100"},
-					LocalPreference: 200,
-					Peers: []*configpb.BGPPeer{
-						{Address: "10.0.0.254"},
-						{Address: "10.0.0.253"},
-					},
-				},
-			},
-		},
-	}
-
-	req := TranslateSnapshot(snap)
-
-	if len(req.GetVips()) != 2 {
-		t.Fatalf("expected 2 VIPs, got %d", len(req.GetVips()))
-	}
-
-	l2Vip := req.GetVips()[0]
-	if l2Vip.GetName() != "ingress-vip" {
-		t.Errorf("VIP name = %q, want %q", l2Vip.GetName(), "ingress-vip")
-	}
-	if l2Vip.GetMode() != pb.VIPMode_VIP_MODE_L2 {
-		t.Errorf("VIP mode = %v, want L2", l2Vip.GetMode())
-	}
-	if l2Vip.GetBgpConfig() != nil {
-		t.Error("L2 VIP should not have BGP config")
-	}
-
-	bgpVip := req.GetVips()[1]
-	if bgpVip.GetName() != "bgp-vip" {
-		t.Errorf("VIP name = %q, want %q", bgpVip.GetName(), "bgp-vip")
-	}
-	if bgpVip.GetMode() != pb.VIPMode_VIP_MODE_BGP {
-		t.Errorf("VIP mode = %v, want BGP", bgpVip.GetMode())
-	}
-	if bgpVip.GetBgpConfig() == nil {
-		t.Fatal("expected BGP config")
-	}
-	if bgpVip.GetBgpConfig().GetLocalAsn() != 65000 {
-		t.Errorf("BGP local ASN = %d, want %d", bgpVip.GetBgpConfig().GetLocalAsn(), 65000)
-	}
-	if len(bgpVip.GetBgpConfig().GetPeerAddresses()) != 2 {
-		t.Fatalf("expected 2 peer addresses, got %d", len(bgpVip.GetBgpConfig().GetPeerAddresses()))
-	}
-	if bgpVip.GetBgpConfig().GetPeerAddresses()[0] != "10.0.0.254" {
-		t.Errorf("peer 0 = %q, want %q", bgpVip.GetBgpConfig().GetPeerAddresses()[0], "10.0.0.254")
-	}
-}
-
-func TestTranslateSnapshot_VIPModes(t *testing.T) {
-	tests := []struct {
-		input    configpb.VIPMode
-		expected pb.VIPMode
-	}{
-		{configpb.VIPMode_L2_ARP, pb.VIPMode_VIP_MODE_L2},
-		{configpb.VIPMode_BGP, pb.VIPMode_VIP_MODE_BGP},
-		{configpb.VIPMode_OSPF, pb.VIPMode_VIP_MODE_OSPF},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.input.String(), func(t *testing.T) {
-			got := translateVIPMode(tc.input)
-			if got != tc.expected {
-				t.Errorf("translateVIPMode(%v) = %v, want %v", tc.input, got, tc.expected)
-			}
-		})
-	}
-}
-
 func TestTranslateSnapshot_L4Listeners(t *testing.T) {
 	snap := &configpb.ConfigSnapshot{
 		L4Listeners: []*configpb.L4Listener{
@@ -1029,9 +945,6 @@ func TestTranslateSnapshot_FullRoundTrip(t *testing.T) {
 				},
 			},
 		},
-		VipAssignments: []*configpb.VIPAssignment{
-			{VipName: "vip-1", Address: "192.168.1.1/32", Mode: configpb.VIPMode_L2_ARP},
-		},
 		L4Listeners: []*configpb.L4Listener{
 			{Name: "db", Port: 5432, Protocol: configpb.Protocol_TCP, BackendName: "postgres"},
 		},
@@ -1065,9 +978,6 @@ func TestTranslateSnapshot_FullRoundTrip(t *testing.T) {
 	}
 	if len(req.GetClusters()) != 1 {
 		t.Errorf("clusters = %d, want %d", len(req.GetClusters()), 1)
-	}
-	if len(req.GetVips()) != 1 {
-		t.Errorf("vips = %d, want %d", len(req.GetVips()), 1)
 	}
 	if len(req.GetL4Listeners()) != 1 {
 		t.Errorf("l4_listeners = %d, want %d", len(req.GetL4Listeners()), 1)
@@ -1152,75 +1062,6 @@ func TestTranslateSnapshot_Clusters_BackendTLS(t *testing.T) {
 	}
 	if string(cl.GetBackendTls().GetCaPem()) != "ca-pem" {
 		t.Errorf("ca_pem = %q, want %q", string(cl.GetBackendTls().GetCaPem()), "ca-pem")
-	}
-}
-
-func TestTranslateSnapshot_VIPs_OSPFAndBFD(t *testing.T) {
-	snap := &configpb.ConfigSnapshot{
-		VipAssignments: []*configpb.VIPAssignment{
-			{
-				VipName: "ospf-vip",
-				Address: "10.0.0.1/32",
-				Mode:    configpb.VIPMode_OSPF,
-				OspfConfig: &configpb.OSPFConfig{
-					AreaId: 100,
-				},
-				BfdConfig: &configpb.BFDConfig{
-					Enabled:              true,
-					DetectMultiplier:     3,
-					DesiredMinTxInterval: "300ms",
-				},
-			},
-		},
-	}
-
-	req := TranslateSnapshot(snap)
-	vip := req.GetVips()[0]
-
-	if vip.GetOspfAreaId() != 100 {
-		t.Errorf("ospf_area_id = %d, want %d", vip.GetOspfAreaId(), 100)
-	}
-	if !vip.GetBfdEnabled() {
-		t.Error("expected bfd_enabled = true")
-	}
-	if vip.GetBfdMultiplier() != 3 {
-		t.Errorf("bfd_multiplier = %d, want %d", vip.GetBfdMultiplier(), 3)
-	}
-	if vip.GetBfdIntervalMs() != 300 {
-		t.Errorf("bfd_interval_ms = %d, want %d", vip.GetBfdIntervalMs(), 300)
-	}
-}
-
-func TestTranslateSnapshot_VIPs_BGPPeerDetails(t *testing.T) {
-	snap := &configpb.ConfigSnapshot{
-		VipAssignments: []*configpb.VIPAssignment{
-			{
-				VipName: "bgp-detailed",
-				Address: "10.0.0.2/32",
-				Mode:    configpb.VIPMode_BGP,
-				BgpConfig: &configpb.BGPConfig{
-					LocalAs:  65001,
-					RouterId: "10.0.0.1",
-					Peers: []*configpb.BGPPeer{
-						{Address: "10.0.0.254", As: 65002, Port: 179},
-						{Address: "10.0.0.253", As: 65003, Port: 1179},
-					},
-				},
-			},
-		},
-	}
-
-	req := TranslateSnapshot(snap)
-	bgp := req.GetVips()[0].GetBgpConfig()
-
-	if len(bgp.GetPeerAsNumbers()) != 2 {
-		t.Fatalf("expected 2 peer AS numbers, got %d", len(bgp.GetPeerAsNumbers()))
-	}
-	if bgp.GetPeerAsNumbers()[0] != 65002 || bgp.GetPeerAsNumbers()[1] != 65003 {
-		t.Errorf("peer AS numbers = %v, want [65002, 65003]", bgp.GetPeerAsNumbers())
-	}
-	if bgp.GetPeerPorts()[0] != 179 || bgp.GetPeerPorts()[1] != 1179 {
-		t.Errorf("peer ports = %v, want [179, 1179]", bgp.GetPeerPorts())
 	}
 }
 

@@ -122,10 +122,8 @@ rules:
   - novaedgeremoteclusters
   - proxybackends
   - proxygateways
-  - proxyippools
   - proxypolicies
   - proxyroutes
-  - proxyvips
   - proxywanlinks
   - proxywanpolicies
   verbs:
@@ -144,10 +142,8 @@ rules:
   - novaedgeremoteclusters/finalizers
   - proxybackends/finalizers
   - proxygateways/finalizers
-  - proxyippools/finalizers
   - proxypolicies/finalizers
   - proxyroutes/finalizers
-  - proxyvips/finalizers
   - proxywanlinks/finalizers
   - proxywanpolicies/finalizers
   verbs:
@@ -160,10 +156,8 @@ rules:
   - novaedgeremoteclusters/status
   - proxybackends/status
   - proxygateways/status
-  - proxyippools/status
   - proxypolicies/status
   - proxyroutes/status
-  - proxyvips/status
   - proxywanlinks/status
   - proxywanpolicies/status
   verbs:

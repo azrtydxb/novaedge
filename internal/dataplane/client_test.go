@@ -53,14 +53,6 @@ func (f *fakeDataplaneServer) DeleteCluster(_ context.Context, _ *pb.DeleteClust
 	return &pb.DeleteClusterResponse{Status: pb.OperationStatus_OK}, nil
 }
 
-func (f *fakeDataplaneServer) UpsertVIP(_ context.Context, _ *pb.UpsertVIPRequest) (*pb.UpsertVIPResponse, error) {
-	return &pb.UpsertVIPResponse{Status: pb.OperationStatus_OK}, nil
-}
-
-func (f *fakeDataplaneServer) DeleteVIP(_ context.Context, _ *pb.DeleteVIPRequest) (*pb.DeleteVIPResponse, error) {
-	return &pb.DeleteVIPResponse{Status: pb.OperationStatus_OK}, nil
-}
-
 func (f *fakeDataplaneServer) UpsertL4Listener(_ context.Context, _ *pb.UpsertL4ListenerRequest) (*pb.UpsertL4ListenerResponse, error) {
 	return &pb.UpsertL4ListenerResponse{Status: pb.OperationStatus_OK}, nil
 }
@@ -304,39 +296,6 @@ func TestClient_UpsertDeleteCluster(t *testing.T) {
 	}
 	if dResp.GetStatus() != pb.OperationStatus_OK {
 		t.Errorf("DeleteCluster: expected OK, got %v", dResp.GetStatus())
-	}
-}
-
-func TestClient_UpsertDeleteVIP(t *testing.T) {
-	sockPath, cleanup := startFakeDataplaneServer(t)
-	defer cleanup()
-
-	logger := zaptest.NewLogger(t)
-	client, err := NewClient(sockPath, logger)
-	if err != nil {
-		t.Fatalf("NewClient() error: %v", err)
-	}
-	defer func() { _ = client.Close() }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	uResp, err := client.UpsertVIP(ctx, &pb.UpsertVIPRequest{
-		Vip: &pb.VIPConfig{Name: "vip-1", Address: "10.0.0.1/32"},
-	})
-	if err != nil {
-		t.Fatalf("UpsertVIP() error: %v", err)
-	}
-	if uResp.GetStatus() != pb.OperationStatus_OK {
-		t.Errorf("UpsertVIP: expected OK, got %v", uResp.GetStatus())
-	}
-
-	dResp, err := client.DeleteVIP(ctx, &pb.DeleteVIPRequest{Name: "vip-1"})
-	if err != nil {
-		t.Fatalf("DeleteVIP() error: %v", err)
-	}
-	if dResp.GetStatus() != pb.OperationStatus_OK {
-		t.Errorf("DeleteVIP: expected OK, got %v", dResp.GetStatus())
 	}
 }
 

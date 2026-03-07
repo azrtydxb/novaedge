@@ -52,7 +52,7 @@ const (
 )
 
 // TranslateGatewayToProxyGateway translates a Gateway API Gateway to a NovaEdge ProxyGateway
-func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) (*novaedgev1alpha1.ProxyGateway, error) {
+func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, _ string) (*novaedgev1alpha1.ProxyGateway, error) {
 	// Only translate gateways with our GatewayClass
 	if string(gateway.Spec.GatewayClassName) != NovaEdgeGatewayClassName {
 		return nil, fmt.Errorf("%w: %s is not supported, expected %s", errGatewayClass, gateway.Spec.GatewayClassName, NovaEdgeGatewayClassName)
@@ -88,7 +88,6 @@ func TranslateGatewayToProxyGateway(gateway *gatewayv1.Gateway, vipName string) 
 			},
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:    vipName,
 			Listeners: listeners,
 		},
 	}

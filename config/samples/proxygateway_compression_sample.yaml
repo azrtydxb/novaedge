@@ -4,7 +4,6 @@ metadata:
   name: compressed-gateway
   namespace: default
 spec:
-  vipRef: main-vip
   listeners:
     - name: http
       port: 80

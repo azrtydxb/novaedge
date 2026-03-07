@@ -26,8 +26,6 @@ const (
 	DataplaneControl_DeleteRoute_FullMethodName        = "/novaedge.dataplane.v1.DataplaneControl/DeleteRoute"
 	DataplaneControl_UpsertCluster_FullMethodName      = "/novaedge.dataplane.v1.DataplaneControl/UpsertCluster"
 	DataplaneControl_DeleteCluster_FullMethodName      = "/novaedge.dataplane.v1.DataplaneControl/DeleteCluster"
-	DataplaneControl_UpsertVIP_FullMethodName          = "/novaedge.dataplane.v1.DataplaneControl/UpsertVIP"
-	DataplaneControl_DeleteVIP_FullMethodName          = "/novaedge.dataplane.v1.DataplaneControl/DeleteVIP"
 	DataplaneControl_UpsertL4Listener_FullMethodName   = "/novaedge.dataplane.v1.DataplaneControl/UpsertL4Listener"
 	DataplaneControl_DeleteL4Listener_FullMethodName   = "/novaedge.dataplane.v1.DataplaneControl/DeleteL4Listener"
 	DataplaneControl_UpsertPolicy_FullMethodName       = "/novaedge.dataplane.v1.DataplaneControl/UpsertPolicy"
@@ -72,11 +70,6 @@ type DataplaneControlClient interface {
 	UpsertCluster(ctx context.Context, in *UpsertClusterRequest, opts ...grpc.CallOption) (*UpsertClusterResponse, error)
 	// DeleteCluster removes a backend cluster by name.
 	DeleteCluster(ctx context.Context, in *DeleteClusterRequest, opts ...grpc.CallOption) (*DeleteClusterResponse, error)
-	// ── VIP management ───────────────────────────────────────────────────
-	// UpsertVIP creates or updates a Virtual IP address.
-	UpsertVIP(ctx context.Context, in *UpsertVIPRequest, opts ...grpc.CallOption) (*UpsertVIPResponse, error)
-	// DeleteVIP removes a VIP by name.
-	DeleteVIP(ctx context.Context, in *DeleteVIPRequest, opts ...grpc.CallOption) (*DeleteVIPResponse, error)
 	// ── L4 Listener management ──────────────────────────────────────────
 	// UpsertL4Listener creates or updates a TCP/UDP/TLS passthrough listener.
 	UpsertL4Listener(ctx context.Context, in *UpsertL4ListenerRequest, opts ...grpc.CallOption) (*UpsertL4ListenerResponse, error)
@@ -186,26 +179,6 @@ func (c *dataplaneControlClient) DeleteCluster(ctx context.Context, in *DeleteCl
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(DeleteClusterResponse)
 	err := c.cc.Invoke(ctx, DataplaneControl_DeleteCluster_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dataplaneControlClient) UpsertVIP(ctx context.Context, in *UpsertVIPRequest, opts ...grpc.CallOption) (*UpsertVIPResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(UpsertVIPResponse)
-	err := c.cc.Invoke(ctx, DataplaneControl_UpsertVIP_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dataplaneControlClient) DeleteVIP(ctx context.Context, in *DeleteVIPRequest, opts ...grpc.CallOption) (*DeleteVIPResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DeleteVIPResponse)
-	err := c.cc.Invoke(ctx, DataplaneControl_DeleteVIP_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -389,11 +362,6 @@ type DataplaneControlServer interface {
 	UpsertCluster(context.Context, *UpsertClusterRequest) (*UpsertClusterResponse, error)
 	// DeleteCluster removes a backend cluster by name.
 	DeleteCluster(context.Context, *DeleteClusterRequest) (*DeleteClusterResponse, error)
-	// ── VIP management ───────────────────────────────────────────────────
-	// UpsertVIP creates or updates a Virtual IP address.
-	UpsertVIP(context.Context, *UpsertVIPRequest) (*UpsertVIPResponse, error)
-	// DeleteVIP removes a VIP by name.
-	DeleteVIP(context.Context, *DeleteVIPRequest) (*DeleteVIPResponse, error)
 	// ── L4 Listener management ──────────────────────────────────────────
 	// UpsertL4Listener creates or updates a TCP/UDP/TLS passthrough listener.
 	UpsertL4Listener(context.Context, *UpsertL4ListenerRequest) (*UpsertL4ListenerResponse, error)
@@ -459,12 +427,6 @@ func (UnimplementedDataplaneControlServer) UpsertCluster(context.Context, *Upser
 }
 func (UnimplementedDataplaneControlServer) DeleteCluster(context.Context, *DeleteClusterRequest) (*DeleteClusterResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteCluster not implemented")
-}
-func (UnimplementedDataplaneControlServer) UpsertVIP(context.Context, *UpsertVIPRequest) (*UpsertVIPResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method UpsertVIP not implemented")
-}
-func (UnimplementedDataplaneControlServer) DeleteVIP(context.Context, *DeleteVIPRequest) (*DeleteVIPResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DeleteVIP not implemented")
 }
 func (UnimplementedDataplaneControlServer) UpsertL4Listener(context.Context, *UpsertL4ListenerRequest) (*UpsertL4ListenerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpsertL4Listener not implemented")
@@ -648,42 +610,6 @@ func _DataplaneControl_DeleteCluster_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(DataplaneControlServer).DeleteCluster(ctx, req.(*DeleteClusterRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DataplaneControl_UpsertVIP_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpsertVIPRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DataplaneControlServer).UpsertVIP(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DataplaneControl_UpsertVIP_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DataplaneControlServer).UpsertVIP(ctx, req.(*UpsertVIPRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DataplaneControl_DeleteVIP_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DeleteVIPRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DataplaneControlServer).DeleteVIP(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DataplaneControl_DeleteVIP_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DataplaneControlServer).DeleteVIP(ctx, req.(*DeleteVIPRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -942,14 +868,6 @@ var DataplaneControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteCluster",
 			Handler:    _DataplaneControl_DeleteCluster_Handler,
-		},
-		{
-			MethodName: "UpsertVIP",
-			Handler:    _DataplaneControl_UpsertVIP_Handler,
-		},
-		{
-			MethodName: "DeleteVIP",
-			Handler:    _DataplaneControl_DeleteVIP_Handler,
 		},
 		{
 			MethodName: "UpsertL4Listener",

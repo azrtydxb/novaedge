@@ -42,8 +42,8 @@ helm uninstall novaedge --namespace nova-system
 
 # CRDs are preserved by default, to remove them:
 kubectl delete crds proxybackends.novaedge.io proxygateways.novaedge.io \
-  proxypolicies.novaedge.io proxyroutes.novaedge.io proxyvips.novaedge.io \
-  proxycertificates.novaedge.io proxyippools.novaedge.io \
+  proxypolicies.novaedge.io proxyroutes.novaedge.io \
+  proxycertificates.novaedge.io \
   proxywanlinks.novaedge.io proxywanpolicies.novaedge.io \
   novaedgeclusters.novaedge.io novaedgefederations.novaedge.io \
   novaedgeremoteclusters.novaedge.io
@@ -230,7 +230,6 @@ The chart deploys the following components:
    - Real-time monitoring
 
 4. **CRDs**
-   - ProxyVIP
    - ProxyGateway
    - ProxyRoute
    - ProxyBackend

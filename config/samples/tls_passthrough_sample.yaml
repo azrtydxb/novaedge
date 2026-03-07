@@ -7,7 +7,6 @@ metadata:
   name: tls-passthrough-gateway
   namespace: default
 spec:
-  vipRef: frontend-vip
   listeners:
     - name: tls-passthrough
       port: 443

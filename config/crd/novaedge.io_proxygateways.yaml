@@ -15,9 +15,6 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.vipRef
-      name: VIP Ref
-      type: string
     - jsonPath: .spec.ingressClassName
       name: Ingress Class
       type: string
@@ -699,12 +696,8 @@ spec:
                     minimum: 0
                     type: integer
                 type: object
-              vipRef:
-                description: VIPRef references the ProxyVIP to use for this gateway
-                type: string
             required:
             - listeners
-            - vipRef
             type: object
           status:
             description: ProxyGatewayStatus defines the observed state of ProxyGateway

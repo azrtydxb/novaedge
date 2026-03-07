@@ -75,10 +75,7 @@ controller:
   # Ingress class name to watch
   ingressClass: novaedge
 
-  # Default VIP reference for LoadBalancer services
-  defaultVIPRef: ""
-
-  # Enable ServiceLB controller (kube-vip replacement)
+  # Enable ServiceLB controller
   serviceLB:
     enabled: true
 

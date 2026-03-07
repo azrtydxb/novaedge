@@ -7,7 +7,6 @@ metadata:
   name: tcp-gateway
   namespace: default
 spec:
-  vipRef: database-vip
   listeners:
     - name: mysql
       port: 3306

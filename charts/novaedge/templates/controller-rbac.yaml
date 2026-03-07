@@ -120,10 +120,8 @@ rules:
   - proxybackends
   - proxycertificates
   - proxygateways
-  - proxyippools
   - proxypolicies
   - proxyroutes
-  - proxyvips
   - proxywanlinks
   - proxywanpolicies
   verbs:
@@ -143,10 +141,8 @@ rules:
   - proxybackends/finalizers
   - proxycertificates/finalizers
   - proxygateways/finalizers
-  - proxyippools/finalizers
   - proxypolicies/finalizers
   - proxyroutes/finalizers
-  - proxyvips/finalizers
   - proxywanlinks/finalizers
   - proxywanpolicies/finalizers
   verbs:
@@ -160,10 +156,8 @@ rules:
   - proxybackends/status
   - proxycertificates/status
   - proxygateways/status
-  - proxyippools/status
   - proxypolicies/status
   - proxyroutes/status
-  - proxyvips/status
   - proxywanlinks/status
   - proxywanpolicies/status
   verbs:

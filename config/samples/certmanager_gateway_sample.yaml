@@ -15,7 +15,6 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  vipRef: "external-vip"
   listeners:
     - name: http
       port: 80

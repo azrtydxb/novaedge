@@ -68,7 +68,6 @@ func (s *Server) GetAgentConfig(_ context.Context, _ *pb.GetConfigRequest) (*pb.
 		RouteCount:    safeInt32(len(snap.Routes)),
 		ClusterCount:  safeInt32(len(snap.Clusters)),
 		EndpointCount: safeInt32(endpointCount),
-		VipCount:      safeInt32(len(snap.VipAssignments)),
 		PolicyCount:   safeInt32(len(snap.Policies)),
 	}, nil
 }
@@ -98,25 +97,6 @@ func (s *Server) GetBackendHealth(_ context.Context, _ *pb.GetBackendHealthReque
 		backends = append(backends, bh)
 	}
 	return &pb.GetBackendHealthResponse{Backends: backends}, nil
-}
-
-// GetVIPs returns VIP assignment information from the current snapshot.
-func (s *Server) GetVIPs(_ context.Context, _ *pb.GetVIPsRequest) (*pb.GetVIPsResponse, error) {
-	snap := s.provider.GetCurrentSnapshot()
-	if snap == nil {
-		return &pb.GetVIPsResponse{}, nil
-	}
-	vips := make([]*pb.VIPInfoResponse, 0, len(snap.VipAssignments))
-	for _, v := range snap.VipAssignments {
-		vips = append(vips, &pb.VIPInfoResponse{
-			Name:     v.VipName,
-			Address:  v.Address,
-			Mode:     v.Mode.String(),
-			IsActive: v.IsActive,
-			Ports:    v.Ports,
-		})
-	}
-	return &pb.GetVIPsResponse{Vips: vips}, nil
 }
 
 // Start starts the gRPC introspection server and blocks until the context is cancelled.

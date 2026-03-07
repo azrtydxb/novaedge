@@ -267,7 +267,6 @@ func (a *AdminServer) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		"num_clusters":     0,
 		"num_policies":     0,
 		"num_gateways":     0,
-		"num_vips":         0,
 		"num_l4_listeners": 0,
 	}
 
@@ -277,7 +276,6 @@ func (a *AdminServer) handleConfig(w http.ResponseWriter, _ *http.Request) {
 		resp["num_clusters"] = len(snap.GetClusters())
 		resp["num_policies"] = len(snap.GetPolicies())
 		resp["num_gateways"] = len(snap.GetGateways())
-		resp["num_vips"] = len(snap.GetVipAssignments())
 		resp["num_l4_listeners"] = len(snap.GetL4Listeners())
 	}
 

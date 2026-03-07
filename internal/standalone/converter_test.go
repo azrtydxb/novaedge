@@ -186,29 +186,6 @@ func TestParsePathMatchType(t *testing.T) {
 	}
 }
 
-func TestParseVIPMode(t *testing.T) {
-	converter := NewConverter()
-
-	tests := []struct {
-		input    string
-		expected pb.VIPMode
-	}{
-		{"L2", pb.VIPMode_L2_ARP},
-		{"BGP", pb.VIPMode_BGP},
-		{"OSPF", pb.VIPMode_OSPF},
-		{"unknown", pb.VIPMode_L2_ARP},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			result := converter.parseVIPMode(tt.input)
-			if result != tt.expected {
-				t.Errorf("parseVIPMode(%s) = %v, want %v", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
 func TestParseAddressPort(t *testing.T) {
 	tests := []struct {
 		input        string

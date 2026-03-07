@@ -88,17 +88,14 @@ type AgentConfig struct {
 	RouteCount     int
 	ClusterCount   int
 	EndpointCount  int
-	VIPCount       int
 	PolicyCount    int
 	Gateways       []GatewayInfo
-	VIPs           []VIPInfo
 }
 
 // GatewayInfo contains gateway information
 type GatewayInfo struct {
 	Name      string
 	Namespace string
-	VIPRef    string
 	Listeners []ListenerInfo
 }
 
@@ -108,15 +105,6 @@ type ListenerInfo struct {
 	Port      int32
 	Protocol  string
 	Hostnames []string
-}
-
-// VIPInfo contains VIP information
-type VIPInfo struct {
-	Name     string
-	Address  string
-	Mode     string
-	IsActive bool
-	Ports    []int32
 }
 
 // BackendHealth represents backend health information
@@ -146,7 +134,6 @@ func (c *AgentClient) GetConfig(ctx context.Context) (*AgentConfig, error) {
 		RouteCount:    int(resp.RouteCount),
 		ClusterCount:  int(resp.ClusterCount),
 		EndpointCount: int(resp.EndpointCount),
-		VIPCount:      int(resp.VipCount),
 		PolicyCount:   int(resp.PolicyCount),
 	}, nil
 }
@@ -174,25 +161,6 @@ func (c *AgentClient) GetBackendHealth(ctx context.Context) ([]BackendHealth, er
 		backends = append(backends, bh)
 	}
 	return backends, nil
-}
-
-// GetVIPs retrieves VIP information from the agent.
-func (c *AgentClient) GetVIPs(ctx context.Context) ([]VIPInfo, error) {
-	resp, err := c.client.GetVIPs(ctx, &pb.GetVIPsRequest{})
-	if err != nil {
-		return nil, fmt.Errorf("get VIPs: %w", err)
-	}
-	vips := make([]VIPInfo, 0, len(resp.Vips))
-	for _, v := range resp.Vips {
-		vips = append(vips, VIPInfo{
-			Name:     v.Name,
-			Address:  v.Address,
-			Mode:     v.Mode,
-			IsActive: v.IsActive,
-			Ports:    v.Ports,
-		})
-	}
-	return vips, nil
 }
 
 // FindAgentPod finds the NovaEdge agent pod running on a specific node

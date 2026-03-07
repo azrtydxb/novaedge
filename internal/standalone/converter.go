@@ -95,13 +95,6 @@ func (c *Converter) ToSnapshot(cfg *Config, _ string) (*pb.ConfigSnapshot, error
 	snapshot.Clusters = clusters
 	snapshot.Endpoints = endpoints
 
-	// Convert VIPs
-	vips, err := c.convertVIPs(cfg.VIPs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert VIPs: %w", err)
-	}
-	snapshot.VipAssignments = vips
-
 	// Apply error pages configuration to gateways
 	if cfg.ErrorPages != nil && cfg.ErrorPages.Enabled && len(gateways) > 0 {
 		gateways[0].ErrorPages = c.convertErrorPages(cfg.ErrorPages)
@@ -585,87 +578,6 @@ func (c *Converter) parseLBPolicy(policy string) pb.LoadBalancingPolicy {
 	default:
 		zap.L().Warn("Unknown LB policy, defaulting to RoundRobin", zap.String("policy", policy))
 		return pb.LoadBalancingPolicy_ROUND_ROBIN
-	}
-}
-
-func (c *Converter) convertVIPs(vips []VIPConfig) ([]*pb.VIPAssignment, error) {
-	result := make([]*pb.VIPAssignment, 0, len(vips))
-
-	for _, v := range vips {
-		addressFamily := v.AddressFamily
-		if addressFamily == "" {
-			addressFamily = "ipv4"
-		}
-
-		assignment := &pb.VIPAssignment{
-			VipName:       v.Name,
-			Address:       v.Address,
-			Mode:          c.parseVIPMode(v.Mode),
-			IsActive:      true,
-			AddressFamily: addressFamily,
-			Ipv6Address:   v.IPv6Address,
-			PoolRef:       v.PoolRef,
-		}
-
-		// BGP config
-		if v.BGP != nil {
-			assignment.BgpConfig = &pb.BGPConfig{
-				LocalAs:  v.BGP.LocalAS,
-				RouterId: v.BGP.RouterID,
-				Peers: []*pb.BGPPeer{
-					{
-						Address: v.BGP.PeerIP,
-						As:      v.BGP.PeerAS,
-					},
-				},
-			}
-		}
-
-		// OSPF config
-		if v.OSPF != nil {
-			var areaID uint32
-			if _, err := fmt.Sscanf(v.OSPF.Area, "%d", &areaID); err != nil {
-				return nil, fmt.Errorf("failed to parse OSPF area %q: %w", v.OSPF.Area, err)
-			}
-			assignment.OspfConfig = &pb.OSPFConfig{
-				RouterId:        v.OSPF.RouterID,
-				AreaId:          areaID,
-				Cost:            safeUint32(v.OSPF.Cost),
-				HelloInterval:   safeUint32(v.OSPF.HelloInterval),
-				DeadInterval:    safeUint32(v.OSPF.DeadInterval),
-				AuthType:        v.OSPF.AuthType,
-				AuthKey:         v.OSPF.AuthKey,
-				GracefulRestart: v.OSPF.GracefulRestart,
-			}
-		}
-
-		// BFD config
-		if v.BFD != nil && v.BFD.Enabled {
-			assignment.BfdConfig = &pb.BFDConfig{
-				Enabled:               true,
-				DetectMultiplier:      safeInt32(v.BFD.DetectMultiplier),
-				DesiredMinTxInterval:  v.BFD.DesiredMinTxInterval,
-				RequiredMinRxInterval: v.BFD.RequiredMinRxInterval,
-				EchoMode:              v.BFD.EchoMode,
-			}
-		}
-
-		result = append(result, assignment)
-	}
-
-	return result, nil
-}
-
-func (c *Converter) parseVIPMode(mode string) pb.VIPMode {
-	switch mode {
-	case "L2":
-		return pb.VIPMode_L2_ARP
-	case "BGP":
-		return pb.VIPMode_BGP
-	case "OSPF":
-		return pb.VIPMode_OSPF
-	default:
-		return pb.VIPMode_L2_ARP
 	}
 }
 

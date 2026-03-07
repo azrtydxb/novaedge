@@ -150,8 +150,8 @@ message Heartbeat {
   // Number of connected agents
   int32 agent_count = 4;
 
-  // Is this member the leader for L2 VIP coordination
-  bool vip_leader = 5;
+  // Field 5 reserved (was vip_leader, removed in VIP cleanup)
+  reserved 5;
 }
 
 // ConflictNotification is sent when a conflict is detected

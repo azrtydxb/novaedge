@@ -442,10 +442,6 @@ type RedirectSchemeConfig struct {
 
 // ProxyGatewaySpec defines the desired state of ProxyGateway
 type ProxyGatewaySpec struct {
-	// VIPRef references the ProxyVIP to use for this gateway
-	// +kubebuilder:validation:Required
-	VIPRef string `json:"vipRef"`
-
 	// IngressClassName is the ingress class name for Ingress resource compatibility
 	// +optional
 	IngressClassName string `json:"ingressClassName,omitempty"`
@@ -572,7 +568,6 @@ type ListenerStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="VIP Ref",type=string,JSONPath=`.spec.vipRef`
 // +kubebuilder:printcolumn:name="Ingress Class",type=string,JSONPath=`.spec.ingressClassName`
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 

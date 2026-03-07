@@ -13,7 +13,6 @@ resources:
 - ../crd/novaedge.io_proxygateways.yaml
 - ../crd/novaedge.io_proxypolicies.yaml
 - ../crd/novaedge.io_proxyroutes.yaml
-- ../crd/novaedge.io_proxyvips.yaml
 
 # Controller RBAC
 - ../rbac/service_account.yaml

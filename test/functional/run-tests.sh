@@ -75,16 +75,13 @@ result_not_contains() {
 if [ -n "${AGENT_NODE:-}" ]; then
     ACTIVE_NODE="$AGENT_NODE"
     echo "NOTE: Using override AGENT_NODE=$ACTIVE_NODE"
+    AGENT_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent \
+      --field-selector "spec.nodeName=$ACTIVE_NODE" -o jsonpath='{.items[0].metadata.name}')
 else
-    ACTIVE_NODE=$(kubectl get proxyvip test-vip -o jsonpath='{.status.activeNode}' 2>/dev/null || echo "")
-    if [ -z "$ACTIVE_NODE" ]; then
-        echo "ERROR: No active VIP node. Run setup.sh first."
-        exit 1
-    fi
+    AGENT_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent \
+      -o jsonpath='{.items[0].metadata.name}')
+    ACTIVE_NODE=$(kubectl get pod "$AGENT_POD" -n nova-system -o jsonpath='{.spec.nodeName}')
 fi
-
-AGENT_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent \
-  --field-selector "spec.nodeName=$ACTIVE_NODE" -o jsonpath='{.items[0].metadata.name}')
 CTRL_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-controller \
   -o jsonpath='{.items[0].metadata.name}')
 
@@ -98,18 +95,7 @@ echo "============================================"
 echo ""
 
 # ============================================================
-# Test 1: VIP Management
-# ============================================================
-echo "--- Test 1: VIP Management ---"
-VIP_STATUS=$(kubectl get proxyvip test-vip -o jsonpath='{.status.conditions[0].status}')
-result "VIP Ready condition" "True" "$VIP_STATUS"
-
-VIP_REASON=$(kubectl get proxyvip test-vip -o jsonpath='{.status.conditions[0].reason}')
-result "VIP assigned reason" "VIPAssigned" "$VIP_REASON"
-echo ""
-
-# ============================================================
-# Test 2: HTTP Routing
+# Test 1: HTTP Routing
 # ============================================================
 echo "--- Test 2: HTTP Routing ---"
 PORT=$((PORT_BASE++))

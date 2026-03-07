@@ -39,7 +39,7 @@ var rootCmd = &cobra.Command{
 debugging, and monitoring the distributed load balancer system.
 
 It provides kubectl-style commands for managing ProxyGateway, ProxyRoute,
-ProxyBackend, ProxyPolicy, and ProxyVIP resources, as well as Gateway API
+ProxyBackend, and ProxyPolicy resources, as well as Gateway API
 resources (GatewayClass, Gateway, HTTPRoute), specialized commands for
 debugging routing, viewing metrics, and inspecting agents.`,
 	PersistentPreRunE: func(_ *cobra.Command, _ []string) error {

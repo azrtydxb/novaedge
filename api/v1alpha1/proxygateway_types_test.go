@@ -129,7 +129,6 @@ func TestProxyGateway(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: ProxyGatewaySpec{
-			VIPRef: "test-vip",
 			Listeners: []Listener{
 				{
 					Name:     "http",
@@ -152,7 +151,6 @@ func TestProxyGateway(t *testing.T) {
 
 	assert.Equal(t, "test-gateway", gateway.Name)
 	assert.Equal(t, "default", gateway.Namespace)
-	assert.Equal(t, "test-vip", gateway.Spec.VIPRef)
 	assert.Len(t, gateway.Spec.Listeners, 2)
 	assert.Equal(t, int32(80), gateway.Spec.Listeners[0].Port)
 	assert.Equal(t, int32(443), gateway.Spec.Listeners[1].Port)
@@ -261,7 +259,6 @@ func TestCertManagerAnnotations(t *testing.T) {
 
 func TestProxyGatewaySpec(t *testing.T) {
 	spec := ProxyGatewaySpec{
-		VIPRef:            "my-vip",
 		IngressClassName:  "novaedge",
 		LoadBalancerClass: "novaedge.io/proxy",
 		Listeners: []Listener{
@@ -273,7 +270,6 @@ func TestProxyGatewaySpec(t *testing.T) {
 		},
 	}
 
-	assert.Equal(t, "my-vip", spec.VIPRef)
 	assert.Equal(t, "novaedge", spec.IngressClassName)
 	assert.Equal(t, "novaedge.io/proxy", spec.LoadBalancerClass)
 	assert.Len(t, spec.Listeners, 1)

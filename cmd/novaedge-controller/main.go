@@ -82,7 +82,6 @@ type controllerFlags struct {
 	grpcTLSKey            string
 	grpcTLSCA             string
 	controllerClass       string
-	defaultVIPRef         string
 	enableCertManager     string
 	enableVault           string
 	vaultAddr             string
@@ -104,8 +103,6 @@ func parseControllerFlags() controllerFlags {
 	flag.StringVar(&f.grpcTLSCA, "grpc-tls-ca", "", "Path to gRPC CA certificate file for client verification")
 	flag.StringVar(&f.controllerClass, "controller-class", "novaedge.io/proxy",
 		"The loadBalancerClass this controller handles. Only gateways matching this class will be reconciled.")
-	flag.StringVar(&f.defaultVIPRef, "default-vip-ref", "default-vip",
-		"Default VIP reference name for Ingress resources that don't specify the novaedge.io/vip-ref annotation.")
 	flag.StringVar(&f.enableCertManager, "enable-cert-manager", "auto", "Enable cert-manager integration (auto|true|false)")
 	flag.StringVar(&f.enableVault, "enable-vault", "false", "Enable HashiCorp Vault integration (auto|true|false)")
 	flag.StringVar(&f.vaultAddr, "vault-addr", "", "HashiCorp Vault server address")
@@ -146,7 +143,7 @@ func registerReconcilers(mgr ctrl.Manager, f controllerFlags) *controller.ProxyG
 	})
 	registerReconciler(mgr, "Ingress", func(m ctrl.Manager) error {
 		return (&controller.IngressReconciler{
-			Client: m.GetClient(), Scheme: m.GetScheme(), DefaultVIPRef: f.defaultVIPRef,
+			Client: m.GetClient(), Scheme: m.GetScheme(),
 		}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "Gateway", func(m ctrl.Manager) error {

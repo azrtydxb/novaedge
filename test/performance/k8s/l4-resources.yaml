@@ -5,7 +5,6 @@ metadata:
   name: perf-l4-gateway
   namespace: novaedge-perf
 spec:
-  vipRef: perf-vip
   listeners:
     - name: tcp-iperf
       port: 5201

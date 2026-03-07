@@ -43,8 +43,6 @@ func runDelete(_ *cobra.Command, args []string) error {
 		rt = client.ResourceBackend
 	case resourceAliasPolicies, resourceAliasPolicy, resourceAliasPol:
 		rt = client.ResourcePolicy
-	case resourceAliasVIPs, resourceAliasVIP:
-		rt = client.ResourceVIP
 	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
 		rt = client.ResourceGRPCRoute
 	default:

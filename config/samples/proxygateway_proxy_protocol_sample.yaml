@@ -7,7 +7,6 @@ metadata:
   name: proxy-protocol-gateway
   namespace: default
 spec:
-  vipRef: external-vip
   listeners:
     - name: https-with-proxy
       port: 443

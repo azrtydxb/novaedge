@@ -91,7 +91,7 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	logger.Info("Reconciling ProxyGateway", "name", gateway.Name, "vipRef", gateway.Spec.VIPRef)
+	logger.Info("Reconciling ProxyGateway", "name", gateway.Name)
 
 	// Check loadBalancerClass: only reconcile gateways matching our class
 	if !r.shouldReconcileGateway(gateway) {

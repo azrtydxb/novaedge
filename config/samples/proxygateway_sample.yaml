@@ -4,7 +4,6 @@ metadata:
   name: external-gateway
   namespace: default
 spec:
-  vipRef: public-vip
   ingressClassName: novaedge
   listeners:
     - name: https
