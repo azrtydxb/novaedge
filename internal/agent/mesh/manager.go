@@ -157,7 +157,6 @@ type Manager struct {
 	// sockMapMgr is the eBPF SOCKMAP manager for same-node traffic
 	// acceleration. May be nil if eBPF SOCKMAP is not available.
 	sockMapMgr *sockmap.Manager
-
 }
 
 // ManagerConfig holds configuration for creating a mesh Manager.
