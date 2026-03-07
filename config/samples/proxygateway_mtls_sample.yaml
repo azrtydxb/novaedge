@@ -7,7 +7,6 @@ metadata:
   name: mtls-gateway
   namespace: default
 spec:
-  vipRef: internal-vip
   listeners:
     - name: https-mtls
       port: 443

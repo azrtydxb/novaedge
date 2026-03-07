@@ -48,11 +48,9 @@ const (
 	ResourceRoute       ResourceType = "routes"
 	ResourceBackend     ResourceType = "backends"
 	ResourcePolicy      ResourceType = "policies"
-	ResourceVIP         ResourceType = "vips"
 	ResourceTCPRoute    ResourceType = "tcproutes"
 	ResourceTLSRoute    ResourceType = "tlsroutes"
 	ResourceGRPCRoute   ResourceType = "grpcroutes"
-	ResourceIPPool      ResourceType = "ippools"
 	ResourceCertificate ResourceType = "certificates"
 )
 
@@ -71,8 +69,6 @@ func GetGVR(resourceType ResourceType) schema.GroupVersionResource {
 		resource = "proxybackends"
 	case ResourcePolicy:
 		resource = "proxypolicies"
-	case ResourceVIP:
-		resource = "proxyvips"
 	case ResourceTCPRoute:
 		resource = "tcproutes"
 	case ResourceTLSRoute:
@@ -83,8 +79,6 @@ func GetGVR(resourceType ResourceType) schema.GroupVersionResource {
 			Version:  "v1",
 			Resource: "grpcroutes",
 		}
-	case ResourceIPPool:
-		resource = "proxyippools"
 	case ResourceCertificate:
 		resource = "proxycertificates"
 	default:

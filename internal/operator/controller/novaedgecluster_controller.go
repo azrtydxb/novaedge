@@ -355,11 +355,6 @@ func (r *NovaEdgeClusterReconciler) reconcileAgentClusterRole(ctx context.Contex
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
-				APIGroups: []string{"novaedge.io"},
-				Resources: []string{"proxyvips", "proxyvips/status"},
-				Verbs:     []string{"get", "list", "watch", "update", "patch"},
-			},
-			{
 				APIGroups: []string{""},
 				Resources: []string{"nodes"},
 				Verbs:     []string{"get", "list", "watch"},

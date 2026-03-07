@@ -154,7 +154,7 @@ func validateSyncConfig(sync *novaedgev1alpha1.FederationSyncConfig) ([]string, 
 	}
 	validResourceTypes := map[string]bool{
 		"ProxyGateway": true, "ProxyRoute": true, "ProxyBackend": true,
-		"ProxyPolicy": true, "ProxyVIP": true,
+		"ProxyPolicy": true,
 	}
 	for _, rt := range sync.ResourceTypes {
 		if !validResourceTypes[rt] {

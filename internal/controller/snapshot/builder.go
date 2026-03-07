@@ -426,7 +426,6 @@ func (b *Builder) buildGateways(ctx context.Context, bc *buildContext) []*pb.Gat
 		gateway := &pb.Gateway{
 			Name:              gw.Name,
 			Namespace:         gw.Namespace,
-			VipRef:            gw.Spec.VIPRef,
 			IngressClassName:  gw.Spec.IngressClassName,
 			LoadBalancerClass: gw.Spec.LoadBalancerClass,
 			Listeners:         make([]*pb.Listener, 0, len(gw.Spec.Listeners)),
@@ -1224,7 +1223,6 @@ func sortSnapshot(s *pb.ConfigSnapshot) {
 	sort.Slice(s.Gateways, func(i, j int) bool { return s.Gateways[i].Name < s.Gateways[j].Name })
 	sort.Slice(s.Routes, func(i, j int) bool { return s.Routes[i].Name < s.Routes[j].Name })
 	sort.Slice(s.Clusters, func(i, j int) bool { return s.Clusters[i].Name < s.Clusters[j].Name })
-	sort.Slice(s.VipAssignments, func(i, j int) bool { return s.VipAssignments[i].Address < s.VipAssignments[j].Address })
 	sort.Slice(s.Policies, func(i, j int) bool { return s.Policies[i].Name < s.Policies[j].Name })
 	sort.Slice(s.AvailableControllers, func(i, j int) bool {
 		return s.AvailableControllers[i].Name < s.AvailableControllers[j].Name

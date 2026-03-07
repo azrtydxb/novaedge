@@ -32,7 +32,6 @@ backend health status, and active VIPs.`,
 
 	cmd.AddCommand(newAgentConfigCommand())
 	cmd.AddCommand(newAgentBackendsCommand())
-	cmd.AddCommand(newAgentVIPsCommand())
 
 	return cmd
 }
@@ -108,31 +107,15 @@ func runAgentConfig(_ *cobra.Command, args []string) error {
 	fmt.Printf("  Routes:    %d\n", agentConfig.RouteCount)
 	fmt.Printf("  Clusters:  %d\n", agentConfig.ClusterCount)
 	fmt.Printf("  Endpoints: %d\n", agentConfig.EndpointCount)
-	fmt.Printf("  VIPs:      %d\n", agentConfig.VIPCount)
 	fmt.Printf("  Policies:  %d\n", agentConfig.PolicyCount)
 
 	if len(agentConfig.Gateways) > 0 {
 		fmt.Printf("\nGateways:\n")
 		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "NAME\tNAMESPACE\tVIP\tLISTENERS")
+		_, _ = fmt.Fprintln(w, "NAME\tNAMESPACE\tLISTENERS")
 		for _, gw := range agentConfig.Gateways {
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\n",
-				gw.Name, gw.Namespace, gw.VIPRef, len(gw.Listeners))
-		}
-		_ = w.Flush()
-	}
-
-	if len(agentConfig.VIPs) > 0 {
-		fmt.Printf("\nVIP Assignments:\n")
-		w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
-		for _, vip := range agentConfig.VIPs {
-			active := statusNo
-			if vip.IsActive {
-				active = statusYes
-			}
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
-				vip.Name, vip.Address, vip.Mode, active, vip.Ports)
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%d\n",
+				gw.Name, gw.Namespace, len(gw.Listeners))
 		}
 		_ = w.Flush()
 	}
@@ -216,80 +199,6 @@ func runAgentBackends(_ *cobra.Command, args []string) error {
 		}
 		fmt.Println()
 	}
-
-	return nil
-}
-
-func newAgentVIPsCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "vips <node-name>",
-		Short: "Get active VIPs from a specific node",
-		Long: `Query the NovaEdge agent running on a specific node to retrieve
-information about VIPs that are currently active on that node.`,
-		Example: `  # Get active VIPs from agent on worker-1
-  novactl agent vips worker-1`,
-		Args: cobra.ExactArgs(1),
-		RunE: runAgentVIPs,
-	}
-
-	return cmd
-}
-
-func runAgentVIPs(_ *cobra.Command, args []string) error {
-	nodeName := args[0]
-	ctx := context.Background()
-
-	// Create Kubernetes client
-	c, err := client.NewClient(config)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
-	}
-
-	// Find the agent pod on this node
-	podName, err := grpcClient.FindAgentPod(ctx, c.Clientset, agentNamespace, nodeName)
-	if err != nil {
-		return fmt.Errorf("failed to find agent pod: %w", err)
-	}
-
-	fmt.Printf("Querying agent pod: %s (node: %s)\n\n", podName, nodeName)
-
-	// Create gRPC client
-	agentClient, err := grpcClient.NewAgentClient(ctx, c.Clientset, agentNamespace, nodeName)
-	if err != nil {
-		return fmt.Errorf("failed to create agent client: %w", err)
-	}
-	defer func() { _ = agentClient.Close() }()
-
-	// Get VIPs
-	vips, err := agentClient.GetVIPs(ctx)
-	if err != nil {
-		fmt.Println("Note: Direct VIP querying requires implementing additional gRPC methods.")
-		fmt.Println()
-		fmt.Println("To enable 'novactl agent vips', add to api/proto/config.proto:")
-		fmt.Println("  rpc GetVIPs(GetVIPsRequest) returns (VIPsResponse);")
-		return nil
-	}
-
-	if len(vips) == 0 {
-		fmt.Println("No VIPs assigned to this agent.")
-		return nil
-	}
-
-	fmt.Printf("Active VIPs:\n\n")
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NAME\tADDRESS\tMODE\tACTIVE\tPORTS")
-
-	for _, vip := range vips {
-		active := statusNo
-		if vip.IsActive {
-			active = statusYes
-		}
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%v\n",
-			vip.Name, vip.Address, vip.Mode, active, vip.Ports)
-	}
-
-	_ = w.Flush()
 
 	return nil
 }

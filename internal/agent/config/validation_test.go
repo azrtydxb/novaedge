@@ -169,23 +169,6 @@ func TestValidateSnapshot_InvalidEndpoints(t *testing.T) {
 	}
 }
 
-func TestValidateSnapshot_InvalidVIP(t *testing.T) {
-	v := NewValidator()
-
-	snapshot := &Snapshot{
-		ConfigSnapshot: &pb.ConfigSnapshot{
-			Version: "v1",
-			VipAssignments: []*pb.VIPAssignment{
-				{VipName: "", Address: "10.0.0.1"},
-			},
-		},
-	}
-	err := v.ValidateSnapshot(snapshot)
-	if err == nil {
-		t.Fatal("expected error for invalid VIP assignment")
-	}
-}
-
 func TestValidateSnapshot_FullValidSnapshot(t *testing.T) {
 	v := NewValidator()
 
@@ -238,13 +221,6 @@ func TestValidateSnapshot_FullValidSnapshot(t *testing.T) {
 					Endpoints: []*pb.Endpoint{
 						{Address: "10.0.0.1", Port: 8080, Ready: true},
 					},
-				},
-			},
-			VipAssignments: []*pb.VIPAssignment{
-				{
-					VipName: "my-vip",
-					Address: "192.168.1.100",
-					Mode:    pb.VIPMode_L2_ARP,
 				},
 			},
 		},
@@ -963,133 +939,6 @@ func TestValidateEndpoint_ValidPortRange(t *testing.T) {
 	}
 }
 
-// --- ValidateVIPAssignment tests ---
-
-func TestValidateVIPAssignment_Nil(t *testing.T) {
-	v := NewValidator()
-	err := v.ValidateVIPAssignment(nil, 0)
-	if err == nil {
-		t.Fatal("expected error for nil VIP assignment")
-	}
-}
-
-func TestValidateVIPAssignment_EmptyName(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{VipName: "", Address: "10.0.0.1", Mode: pb.VIPMode_L2_ARP}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err == nil {
-		t.Fatal("expected error for empty VIP name")
-	}
-}
-
-func TestValidateVIPAssignment_EmptyAddress(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{VipName: "vip1", Address: "", Mode: pb.VIPMode_L2_ARP}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err == nil {
-		t.Fatal("expected error for empty VIP address")
-	}
-}
-
-func TestValidateVIPAssignment_InvalidAddress(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{VipName: "vip1", Address: "not-an-ip", Mode: pb.VIPMode_L2_ARP}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err == nil {
-		t.Fatal("expected error for invalid VIP address")
-	}
-}
-
-func TestValidateVIPAssignment_ValidIP(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100", Mode: pb.VIPMode_L2_ARP}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-}
-
-func TestValidateVIPAssignment_ValidCIDR(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/32", Mode: pb.VIPMode_L2_ARP}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err != nil {
-		t.Fatalf("expected no error for CIDR address, got %v", err)
-	}
-}
-
-func TestValidateVIPAssignment_InvalidCIDR(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100/99", Mode: pb.VIPMode_L2_ARP}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err == nil {
-		t.Fatal("expected error for invalid CIDR")
-	}
-}
-
-func TestValidateVIPAssignment_UnspecifiedMode(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100", Mode: pb.VIPMode_VIP_MODE_UNSPECIFIED}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err == nil {
-		t.Fatal("expected error for unspecified VIP mode")
-	}
-}
-
-func TestValidateVIPAssignment_ValidModes(t *testing.T) {
-	v := NewValidator()
-	modes := []pb.VIPMode{pb.VIPMode_L2_ARP, pb.VIPMode_BGP, pb.VIPMode_OSPF}
-	for _, mode := range modes {
-		vipAssign := &pb.VIPAssignment{VipName: "vip1", Address: "192.168.1.100", Mode: mode}
-		err := v.ValidateVIPAssignment(vipAssign, 0)
-		if err != nil {
-			t.Errorf("expected no error for mode %s, got %v", mode.String(), err)
-		}
-	}
-}
-
-func TestValidateVIPAssignment_InvalidPort(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{
-		VipName: "vip1",
-		Address: "192.168.1.100",
-		Mode:    pb.VIPMode_L2_ARP,
-		Ports:   []int32{80, 0, 443},
-	}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err == nil {
-		t.Fatal("expected error for invalid VIP port")
-	}
-}
-
-func TestValidateVIPAssignment_ValidPorts(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{
-		VipName: "vip1",
-		Address: "192.168.1.100",
-		Mode:    pb.VIPMode_L2_ARP,
-		Ports:   []int32{80, 443, 8080},
-	}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err != nil {
-		t.Fatalf("expected no error for valid ports, got %v", err)
-	}
-}
-
-func TestValidateVIPAssignment_PortTooHigh(t *testing.T) {
-	v := NewValidator()
-	vipAssign := &pb.VIPAssignment{
-		VipName: "vip1",
-		Address: "192.168.1.100",
-		Mode:    pb.VIPMode_L2_ARP,
-		Ports:   []int32{80, 65536},
-	}
-	err := v.ValidateVIPAssignment(vipAssign, 0)
-	if err == nil {
-		t.Fatal("expected error for VIP port > 65535")
-	}
-}
-
 // --- isValidHostname tests ---
 
 func TestIsValidHostname(t *testing.T) {
@@ -1132,7 +981,6 @@ func TestValidationErrors_AreValidationErrorType(t *testing.T) {
 		{"nil route", func() error { return v.ValidateRoute(nil, 0) }},
 		{"nil cluster", func() error { return v.ValidateCluster(nil, 0) }},
 		{"nil endpoint", func() error { return v.ValidateEndpoint(nil, "cluster", 0) }},
-		{"nil VIP", func() error { return v.ValidateVIPAssignment(nil, 0) }},
 	}
 
 	for _, tt := range tests {

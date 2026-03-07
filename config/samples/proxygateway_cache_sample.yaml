@@ -6,7 +6,6 @@ metadata:
   name: cached-gateway
   namespace: default
 spec:
-  vipRef: web-vip
   loadBalancerClass: novaedge.io/proxy
   cache:
     enabled: true

@@ -24,7 +24,6 @@ mod proxy;
 mod sdwan;
 mod server;
 mod upstream;
-mod vip;
 
 /// NovaEdge Rust dataplane daemon.
 #[derive(Parser, Debug)]

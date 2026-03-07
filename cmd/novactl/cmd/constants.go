@@ -11,10 +11,6 @@ const (
 	resourceAliasPolicies = "policies"
 	resourceAliasPolicy   = "policy"
 	resourceAliasPol      = "pol"
-	resourceAliasVIPs     = "vips"
-	resourceAliasVIP      = "vip"
-	resourceAliasIPPools  = "ippools"
-	resourceAliasIPPool   = "ippool"
 
 	resourceAliasTCPRoutes  = "tcproutes"
 	resourceAliasTCPRoute   = "tcproute"

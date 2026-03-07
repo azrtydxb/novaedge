@@ -83,19 +83,6 @@ func (v *Validator) ValidateSnapshot(snapshot *Snapshot) error {
 		}
 	}
 
-	// Validate VIP assignments
-	for i, vip := range snapshot.VipAssignments {
-		if err := v.ValidateVIPAssignment(vip, i); err != nil {
-			var validationErr *pkgerrors.ValidationError
-			if ok := isValidationError(err, &validationErr); ok {
-				_ = parentErr.AddChild(validationErr)
-			} else {
-				_ = parentErr.AddChild(pkgerrors.NewValidationError(err.Error()))
-			}
-			hasErrors = true
-		}
-	}
-
 	if hasErrors {
 		return parentErr
 	}
@@ -430,57 +417,6 @@ func (v *Validator) ValidateEndpoint(ep *pb.Endpoint, clusterName string, index 
 		return pkgerrors.NewValidationError("endpoint port must be between 1 and 65535").
 			WithField("field", prefix+".port").
 			WithField("value", ep.Port)
-	}
-
-	return nil
-}
-
-// ValidateVIPAssignment validates a VIP assignment
-func (v *Validator) ValidateVIPAssignment(vip *pb.VIPAssignment, index int) error {
-	if vip == nil {
-		return pkgerrors.NewValidationError("VIP assignment cannot be nil").
-			WithField("field", fmt.Sprintf("vip_assignments[%d]", index))
-	}
-
-	prefix := fmt.Sprintf("vip_assignments[%d]", index)
-
-	if vip.VipName == "" {
-		return pkgerrors.NewValidationError("VIP name is required").
-			WithField("field", prefix+".vip_name")
-	}
-
-	if vip.Address == "" {
-		return pkgerrors.NewValidationError("VIP address is required").
-			WithField("field", prefix+".address")
-	}
-
-	// VIP address should be a valid IP (with optional CIDR notation)
-	addr := vip.Address
-	if strings.Contains(addr, "/") {
-		_, _, err := net.ParseCIDR(addr)
-		if err != nil {
-			return pkgerrors.NewValidationError("VIP address must be a valid CIDR").
-				WithField("field", prefix+".address").
-				WithField("value", addr)
-		}
-	} else if net.ParseIP(addr) == nil {
-		return pkgerrors.NewValidationError("VIP address must be a valid IP").
-			WithField("field", prefix+".address").
-			WithField("value", addr)
-	}
-
-	if vip.Mode == pb.VIPMode_VIP_MODE_UNSPECIFIED {
-		return pkgerrors.NewValidationError("VIP mode must be specified").
-			WithField("field", prefix+".mode")
-	}
-
-	// Validate ports if present
-	for i, port := range vip.Ports {
-		if port < 1 || port > 65535 {
-			return pkgerrors.NewValidationError("VIP port must be between 1 and 65535").
-				WithField("field", fmt.Sprintf("%s.ports[%d]", prefix, i)).
-				WithField("value", port)
-		}
 	}
 
 	return nil

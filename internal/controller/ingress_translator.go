@@ -40,9 +40,6 @@ const (
 	AnnotationRewriteTarget = "novaedge.io/rewrite-target"
 	// AnnotationLoadBalancing specifies load balancing algorithm
 	AnnotationLoadBalancing = "novaedge.io/load-balancing"
-	// AnnotationVIPRef specifies which VIP to use
-	AnnotationVIPRef = "novaedge.io/vip-ref"
-
 	// AnnotationSSLRedirect forces HTTPS redirect (default: true when TLS is configured)
 	AnnotationSSLRedirect = "novaedge.io/ssl-redirect"
 	// AnnotationForceSSLRedirect forces HTTPS redirect even without TLS configured
@@ -157,9 +154,6 @@ const (
 	// AnnotationUseRegex enables regex path matching
 	AnnotationUseRegex = "novaedge.io/use-regex"
 
-	// DefaultVIPRef is the VIP reference used when none is explicitly specified.
-	DefaultVIPRef = "default-vip"
-
 	// affinityCookie is the session affinity cookie type value
 	affinityCookie = "cookie"
 	// annotationValueTrue is the string "true" used in annotation comparisons
@@ -173,14 +167,12 @@ type ServicePortResolver func(ctx context.Context, namespace, serviceName, portN
 type IngressTranslator struct {
 	namespace           string
 	servicePortResolver ServicePortResolver
-	defaultVIPRef       string
 }
 
 // NewIngressTranslator creates a new IngressTranslator
 func NewIngressTranslator(namespace string) *IngressTranslator {
 	return &IngressTranslator{
-		namespace:     namespace,
-		defaultVIPRef: DefaultVIPRef,
+		namespace: namespace,
 	}
 }
 
@@ -189,20 +181,14 @@ func NewIngressTranslatorWithResolver(namespace string, resolver ServicePortReso
 	return &IngressTranslator{
 		namespace:           namespace,
 		servicePortResolver: resolver,
-		defaultVIPRef:       DefaultVIPRef,
 	}
 }
 
-// NewIngressTranslatorWithOptions creates a new IngressTranslator with a service port resolver and configurable default VIP ref
-func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver, defaultVIPRef string) *IngressTranslator {
-	vipRef := defaultVIPRef
-	if vipRef == "" {
-		vipRef = DefaultVIPRef
-	}
+// NewIngressTranslatorWithOptions creates a new IngressTranslator with a service port resolver
+func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver) *IngressTranslator {
 	return &IngressTranslator{
 		namespace:           namespace,
 		servicePortResolver: resolver,
-		defaultVIPRef:       vipRef,
 	}
 }
 
@@ -275,7 +261,6 @@ func (t *IngressTranslator) translateGateway(ingress *networkingv1.Ingress) *nov
 			},
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:           t.getVIPRef(ingress),
 			IngressClassName: t.getIngressClassName(ingress),
 			Listeners:        make([]novaedgev1alpha1.Listener, 0),
 		},
@@ -661,13 +646,6 @@ func (t *IngressTranslator) generateDefaultBackendName(ingress *networkingv1.Ing
 }
 
 // Helper functions for extracting configuration
-
-func (t *IngressTranslator) getVIPRef(ingress *networkingv1.Ingress) string {
-	if vipRef, exists := ingress.Annotations[AnnotationVIPRef]; exists {
-		return vipRef
-	}
-	return t.defaultVIPRef
-}
 
 func (t *IngressTranslator) getIngressClassName(ingress *networkingv1.Ingress) string {
 	if ingress.Spec.IngressClassName != nil {

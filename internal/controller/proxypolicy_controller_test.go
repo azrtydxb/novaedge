@@ -61,7 +61,6 @@ func TestProxyPolicyReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "dummy-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "http",
@@ -121,7 +120,6 @@ func TestProxyPolicyReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "dummy-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "http",
@@ -158,7 +156,6 @@ func TestProxyPolicyReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "dummy-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "http",
@@ -234,7 +231,6 @@ func TestProxyPolicyIPAllowList(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef: "dummy-vip",
 			Listeners: []novaedgev1alpha1.Listener{
 				{
 					Name:     "http",
@@ -308,7 +304,6 @@ func TestProxyPolicyMultipleTypes(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "dummy-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "http",
@@ -512,7 +507,6 @@ func TestProxyPolicyDeletion(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef: "dummy-vip",
 			Listeners: []novaedgev1alpha1.Listener{
 				{
 					Name:     "http",

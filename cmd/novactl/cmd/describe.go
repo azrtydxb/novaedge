@@ -54,16 +54,12 @@ func runDescribe(_ *cobra.Command, args []string) error {
 		rt = client.ResourceBackend
 	case resourceAliasPolicies, resourceAliasPolicy, resourceAliasPol:
 		rt = client.ResourcePolicy
-	case resourceAliasVIPs, resourceAliasVIP:
-		rt = client.ResourceVIP
 	case resourceAliasTCPRoutes, resourceAliasTCPRoute:
 		rt = client.ResourceTCPRoute
 	case resourceAliasTLSRoutes, resourceAliasTLSRoute:
 		rt = client.ResourceTLSRoute
 	case resourceAliasGRPCRoutes, resourceAliasGRPCRoute:
 		rt = client.ResourceGRPCRoute
-	case resourceAliasIPPools, resourceAliasIPPool:
-		rt = client.ResourceIPPool
 	case resourceAliasWASMPlugins, resourceAliasWASMPlugin, resourceAliasWASM:
 		// WASM plugins are shown via policies
 		rt = client.ResourcePolicy

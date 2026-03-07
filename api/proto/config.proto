@@ -25,8 +25,8 @@ message ConfigSnapshot {
   // Endpoint mappings for each cluster
   map<string, EndpointList> endpoints = 6;
 
-  // VIP assignments for this node
-  repeated VIPAssignment vip_assignments = 7;
+  // Field 7 reserved (was vip_assignments, removed in VIP cleanup)
+  reserved 7;
 
   // Policies to apply
   repeated Policy policies = 8;
@@ -105,7 +105,8 @@ message ControllerInfo {
 message Gateway {
   string name = 1;
   string namespace = 2;
-  string vip_ref = 3;
+  // Field 3 reserved (was vip_ref, removed in VIP cleanup)
+  reserved 3;
   string ingress_class_name = 4;
   repeated Listener listeners = 5;
   CompressionConfig compression = 6; // Response compression configuration
@@ -443,72 +444,6 @@ message Endpoint {
   map<string, string> labels = 4;
   // Weight for weighted load balancing (0 = default weight of 1).
   int32 weight = 5;
-}
-
-// VIPAssignment tells this node which VIPs to manage
-message VIPAssignment {
-  string vip_name = 1;
-  string address = 2;
-  VIPMode mode = 3;
-  repeated int32 ports = 4;
-  bool is_active = 5; // For L2ARP mode
-  BGPConfig bgp_config = 6; // BGP configuration (when mode is BGP)
-  OSPFConfig ospf_config = 7; // OSPF configuration (when mode is OSPF)
-  BFDConfig bfd_config = 8; // BFD configuration for fast failure detection
-  string ipv6_address = 9; // IPv6 address for dual-stack VIPs
-  string address_family = 10; // Address family: ipv4, ipv6, dual
-  string pool_ref = 11; // Reference to IP pool for auto-allocation
-}
-
-enum VIPMode {
-  VIP_MODE_UNSPECIFIED = 0;
-  L2_ARP = 1;
-  BGP = 2;
-  OSPF = 3;
-}
-
-// BGPConfig defines BGP speaker configuration
-message BGPConfig {
-  uint32 local_as = 1;
-  string router_id = 2;
-  repeated BGPPeer peers = 3;
-  repeated string communities = 4;
-  uint32 local_preference = 5;
-}
-
-// BGPPeer defines a BGP peer
-message BGPPeer {
-  string address = 1;
-  uint32 as = 2;
-  uint32 port = 3;
-}
-
-// OSPFConfig defines OSPF speaker configuration
-message OSPFConfig {
-  string router_id = 1;
-  uint32 area_id = 2;
-  repeated OSPFNeighbor neighbors = 3;
-  uint32 hello_interval = 4; // in seconds
-  uint32 dead_interval = 5; // in seconds
-  string auth_type = 6; // none, simple, md5
-  string auth_key = 7;
-  uint32 cost = 8; // OSPF route cost metric
-  bool graceful_restart = 9; // Enable OSPF graceful restart
-}
-
-// OSPFNeighbor defines an OSPF neighbor
-message OSPFNeighbor {
-  string address = 1;
-  uint32 priority = 2;
-}
-
-// BFDConfig defines BFD (Bidirectional Forwarding Detection) settings
-message BFDConfig {
-  bool enabled = 1;
-  int32 detect_multiplier = 2;
-  string desired_min_tx_interval = 3; // e.g., "300ms"
-  string required_min_rx_interval = 4; // e.g., "300ms"
-  bool echo_mode = 5;
 }
 
 // Policy represents a ProxyPolicy resource
@@ -1087,7 +1022,6 @@ service ConfigService {
   // Introspection RPCs for agent runtime state
   rpc GetAgentConfig(GetConfigRequest) returns (GetConfigResponse);
   rpc GetBackendHealth(GetBackendHealthRequest) returns (GetBackendHealthResponse);
-  rpc GetVIPs(GetVIPsRequest) returns (GetVIPsResponse);
 }
 
 // StreamConfigRequest is sent by agents to subscribe to config updates
@@ -1248,7 +1182,8 @@ message GetConfigResponse {
   int32 route_count = 4;
   int32 cluster_count = 5;
   int32 endpoint_count = 6;
-  int32 vip_count = 7;
+  // Field 7 reserved (was vip_count, removed in VIP cleanup)
+  reserved 7;
   int32 policy_count = 8;
 }
 
@@ -1271,16 +1206,3 @@ message GetBackendHealthResponse {
   repeated BackendHealthInfo backends = 1;
 }
 
-message GetVIPsRequest {}
-
-message VIPInfoResponse {
-  string name = 1;
-  string address = 2;
-  string mode = 3;
-  bool is_active = 4;
-  repeated int32 ports = 5;
-}
-
-message GetVIPsResponse {
-  repeated VIPInfoResponse vips = 1;
-}

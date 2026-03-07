@@ -177,7 +177,6 @@ func (cp *Persistence) SaveSnapshot(snapshot *pb.ConfigSnapshot) error {
 			"routes":   len(snapshot.Routes),
 			"clusters": len(snapshot.Clusters),
 			"policies": len(snapshot.Policies),
-			"vips":     len(snapshot.VipAssignments),
 		},
 	}
 

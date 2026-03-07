@@ -15,7 +15,6 @@ rules:
   - proxygateways
   - proxypolicies
   - proxyroutes
-  - proxyvips
   verbs:
   - get
   - list

@@ -32,7 +32,6 @@ func TestShouldReconcileGateway_MatchingClass(t *testing.T) {
 	gw := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:            "test-vip",
 			LoadBalancerClass: "novaedge.io/proxy",
 			Listeners: []novaedgev1alpha1.Listener{
 				{Name: "http", Port: 80, Protocol: "HTTP"},
@@ -53,7 +52,6 @@ func TestShouldReconcileGateway_NonMatchingClass(t *testing.T) {
 	gw := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:            "test-vip",
 			LoadBalancerClass: "other-controller.io/lb",
 			Listeners: []novaedgev1alpha1.Listener{
 				{Name: "http", Port: 80, Protocol: "HTTP"},
@@ -74,7 +72,6 @@ func TestShouldReconcileGateway_EmptyGatewayClass(t *testing.T) {
 	gw := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef: "test-vip",
 			// No LoadBalancerClass set
 			Listeners: []novaedgev1alpha1.Listener{
 				{Name: "http", Port: 80, Protocol: "HTTP"},
@@ -96,7 +93,6 @@ func TestShouldReconcileGateway_EmptyControllerClass(t *testing.T) {
 	gw := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:            "test-vip",
 			LoadBalancerClass: "novaedge.io/proxy",
 			Listeners: []novaedgev1alpha1.Listener{
 				{Name: "http", Port: 80, Protocol: "HTTP"},
@@ -117,7 +113,6 @@ func TestShouldReconcileGateway_CustomClass(t *testing.T) {
 	gw := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-gw", Namespace: "default"},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:            "test-vip",
 			LoadBalancerClass: "custom.io/loadbalancer",
 			Listeners: []novaedgev1alpha1.Listener{
 				{Name: "http", Port: 80, Protocol: "HTTP"},
@@ -133,7 +128,6 @@ func TestShouldReconcileGateway_CustomClass(t *testing.T) {
 	gwDefault := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{Name: "default-gw", Namespace: "default"},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:            "test-vip",
 			LoadBalancerClass: "novaedge.io/proxy",
 			Listeners: []novaedgev1alpha1.Listener{
 				{Name: "http", Port: 80, Protocol: "HTTP"},

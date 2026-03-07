@@ -20,7 +20,6 @@ func newMetricsCommand() *cobra.Command {
 
 	cmd.AddCommand(newMetricsAgentCommand())
 	cmd.AddCommand(newMetricsBackendsCommand())
-	cmd.AddCommand(newMetricsVIPsCommand())
 	cmd.AddCommand(newMetricsQueryCommand())
 	cmd.AddCommand(newMetricsTopBackendsCommand())
 	cmd.AddCommand(newMetricsTopRoutesCommand())
@@ -124,71 +123,6 @@ func runMetricsBackends(_ *cobra.Command, _ []string) error {
 		}
 
 		_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%d\t%d%%\n", name, total, healthy, unhealthy, healthPct)
-	}
-
-	_ = w.Flush()
-	return nil
-}
-
-func newMetricsVIPsCommand() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "vips",
-		Short: "Show VIP status across nodes",
-		Long:  `Display VIP assignments and status across all nodes.`,
-		Example: `  # Show VIP metrics
-  novactl metrics vips`,
-		RunE: runMetricsVIPs,
-	}
-
-	return cmd
-}
-
-func runMetricsVIPs(_ *cobra.Command, _ []string) error {
-	ctx := context.Background()
-
-	// Create client
-	c, err := client.NewClient(config)
-	if err != nil {
-		return fmt.Errorf("failed to create client: %w", err)
-	}
-
-	// List all VIPs
-	vips, err := c.ListResources(ctx, client.ResourceVIP, namespace)
-	if err != nil {
-		return fmt.Errorf("failed to list VIPs: %w", err)
-	}
-
-	if len(vips.Items) == 0 {
-		fmt.Println("No VIPs found.")
-		return nil
-	}
-
-	fmt.Printf("VIP Status:\n\n")
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 8, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "NAME\tIP\tMODE\tASSIGNED NODE\tSTATUS\tLAST TRANSITION")
-
-	for _, vip := range vips.Items {
-		name := vip.GetName()
-
-		spec, _, _ := unstructured.NestedMap(vip.Object, "spec")
-		ip, _, _ := unstructured.NestedString(spec, "ip")
-		mode, _, _ := unstructured.NestedString(spec, "mode")
-
-		status, _, _ := unstructured.NestedMap(vip.Object, "status")
-		assignedNode, _, _ := unstructured.NestedString(status, "assignedNode")
-		vipStatus, _, _ := unstructured.NestedString(status, "status")
-		lastTransition, _, _ := unstructured.NestedString(status, "lastTransitionTime")
-
-		if assignedNode == "" {
-			assignedNode = "-"
-		}
-		if vipStatus == "" {
-			vipStatus = statusUnknown
-		}
-
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			name, ip, mode, assignedNode, vipStatus, lastTransition)
 	}
 
 	_ = w.Flush()

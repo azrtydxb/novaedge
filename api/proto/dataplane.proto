@@ -33,12 +33,6 @@ service DataplaneControl {
   // DeleteCluster removes a backend cluster by name.
   rpc DeleteCluster(DeleteClusterRequest) returns (DeleteClusterResponse);
 
-  // ── VIP management ───────────────────────────────────────────────────
-  // UpsertVIP creates or updates a Virtual IP address.
-  rpc UpsertVIP(UpsertVIPRequest) returns (UpsertVIPResponse);
-  // DeleteVIP removes a VIP by name.
-  rpc DeleteVIP(DeleteVIPRequest) returns (DeleteVIPResponse);
-
   // ── L4 Listener management ──────────────────────────────────────────
   // UpsertL4Listener creates or updates a TCP/UDP/TLS passthrough listener.
   rpc UpsertL4Listener(UpsertL4ListenerRequest) returns (UpsertL4ListenerResponse);
@@ -110,8 +104,8 @@ message ApplyConfigRequest {
   repeated RouteConfig routes = 3;
   // clusters are the backend clusters with endpoints.
   repeated ClusterConfig clusters = 4;
-  // vips are the virtual IP configurations.
-  repeated VIPConfig vips = 5;
+  // Field 5 reserved (was vips, removed in VIP cleanup).
+  reserved 5;
   // l4_listeners are the L4 TCP/UDP/TLS listeners.
   repeated L4ListenerConfig l4_listeners = 6;
   // policies are the typed policies.
@@ -537,78 +531,6 @@ message DeleteClusterRequest {
 }
 
 message DeleteClusterResponse {
-  OperationStatus status = 1;
-  string message = 2;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// VIP management
-// ═══════════════════════════════════════════════════════════════════════
-
-// VIPMode defines the announcement mode for a VIP.
-enum VIPMode {
-  VIP_MODE_UNSPECIFIED = 0;
-  VIP_MODE_L2 = 1;
-  VIP_MODE_BGP = 2;
-  VIP_MODE_OSPF = 3;
-}
-
-// BGPConfig defines BGP announcement parameters.
-message BGPConfig {
-  // Local autonomous system number.
-  uint32 local_asn = 1;
-  // BGP router ID (typically an IP address).
-  string router_id = 2;
-  // Peer addresses.
-  repeated string peer_addresses = 3;
-  // BGP communities to attach to the announcement.
-  repeated string communities = 4;
-  // Local preference value.
-  uint32 local_preference = 5;
-  // Peer autonomous system numbers (parallel to peer_addresses).
-  repeated uint32 peer_as_numbers = 6;
-  // Peer ports (parallel to peer_addresses).
-  repeated uint32 peer_ports = 7;
-}
-
-// VIPConfig describes a Virtual IP address.
-message VIPConfig {
-  // Unique name for the VIP.
-  string name = 1;
-  // VIP address (IPv4 or IPv6 CIDR, e.g. "10.0.0.1/32").
-  string address = 2;
-  // Announcement mode.
-  VIPMode mode = 3;
-  // Network interface to bind the VIP to.
-  string interface = 4;
-  // BGP configuration (when mode = BGP).
-  BGPConfig bgp_config = 5;
-  // ARP interface for Gratuitous ARP (when mode = L2).
-  string arp_interface = 6;
-  // OSPF area ID (when mode = OSPF).
-  uint32 ospf_area_id = 7;
-  // Whether BFD (Bidirectional Forwarding Detection) is enabled.
-  bool bfd_enabled = 8;
-  // BFD detection interval in milliseconds.
-  uint64 bfd_interval_ms = 9;
-  // BFD detection multiplier.
-  uint32 bfd_multiplier = 10;
-}
-
-message UpsertVIPRequest {
-  VIPConfig vip = 1;
-}
-
-message UpsertVIPResponse {
-  OperationStatus status = 1;
-  string message = 2;
-}
-
-message DeleteVIPRequest {
-  string name = 1;
-}
-
-message DeleteVIPResponse {
   OperationStatus status = 1;
   string message = 2;
 }

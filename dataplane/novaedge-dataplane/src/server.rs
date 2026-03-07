@@ -21,7 +21,6 @@ use crate::mesh;
 use crate::proto;
 use crate::proto::dataplane_control_server::{DataplaneControl, DataplaneControlServer};
 use crate::sdwan;
-use crate::vip;
 
 /// The gRPC service implementation.
 pub struct DataplaneService {
@@ -30,8 +29,6 @@ pub struct DataplaneService {
     router: Arc<std::sync::RwLock<crate::proxy::router::Router>>,
     flow_tx: broadcast::Sender<proto::FlowEvent>,
     start_time: Instant,
-    vip_manager: std::sync::Mutex<vip::manager::VIPManager>,
-    route_client: tokio::sync::Mutex<Option<vip::routing::RouteClient>>,
     mesh_tls: std::sync::Mutex<Option<mesh::mtls::MeshTlsProvider>>,
     mesh_authz: std::sync::Mutex<mesh::authz::MeshAuthzPolicy>,
     mesh_tproxy: std::sync::Mutex<mesh::tproxy::TproxyInterceptor>,
@@ -53,8 +50,6 @@ impl DataplaneService {
             router,
             flow_tx,
             start_time: Instant::now(),
-            vip_manager: std::sync::Mutex::new(vip::manager::VIPManager::new()),
-            route_client: tokio::sync::Mutex::new(None),
             mesh_tls: std::sync::Mutex::new(None),
             mesh_authz: std::sync::Mutex::new(mesh::authz::MeshAuthzPolicy::new(
                 mesh::authz::AuthzAction::Allow,
@@ -71,33 +66,17 @@ impl DataplaneService {
         (proto::OperationStatus::Ok as i32, msg.into())
     }
 
-    /// Parse an IP address from a VIP address string (e.g. "10.0.0.1/32" → 10.0.0.1, prefix 32).
+    /// Parse an IP address with optional CIDR prefix (e.g. "10.0.0.1/32" -> (10.0.0.1, 32)).
     #[allow(clippy::result_large_err)]
-    fn parse_vip_address(addr: &str) -> Result<(std::net::IpAddr, u8), Status> {
+    fn parse_cidr_address(addr: &str) -> Result<(std::net::IpAddr, u8), Status> {
         let (ip_str, prefix_str) = addr.split_once('/').unwrap_or((addr, "32"));
         let ip: std::net::IpAddr = ip_str
             .parse()
-            .map_err(|e| Status::invalid_argument(format!("invalid VIP address '{addr}': {e}")))?;
+            .map_err(|e| Status::invalid_argument(format!("invalid address '{addr}': {e}")))?;
         let prefix: u8 = prefix_str
             .parse()
             .map_err(|e| Status::invalid_argument(format!("invalid prefix length: {e}")))?;
         Ok((ip, prefix))
-    }
-
-    /// Convert proto VIP mode to our VIPMode.
-    fn vip_mode_from_proto(
-        mode: i32,
-        bgp_config: &Option<proto::BgpConfig>,
-    ) -> vip::manager::VIPMode {
-        match mode {
-            1 => vip::manager::VIPMode::L2 { arp_enabled: true },
-            2 => {
-                let asn = bgp_config.as_ref().map_or(65000, |c| c.local_asn);
-                vip::manager::VIPMode::Bgp { asn }
-            }
-            3 => vip::manager::VIPMode::Ospf { area: 0, cost: 100 },
-            _ => vip::manager::VIPMode::L2 { arp_enabled: true },
-        }
     }
 
     /// Serialize a proto policy config variant to a JSON string.
@@ -199,42 +178,6 @@ impl DataplaneService {
             }
             _ => false, // v4/v6 mismatch
         }
-    }
-
-    /// Read the MAC address of a network interface.
-    /// Falls back to a broadcast MAC if the interface cannot be read.
-    #[cfg(target_os = "linux")]
-    fn read_interface_mac(interface: &str) -> [u8; 6] {
-        let path = format!("/sys/class/net/{interface}/address");
-        match std::fs::read_to_string(&path) {
-            Ok(contents) => {
-                let mac_str = contents.trim();
-                let parts: Vec<&str> = mac_str.split(':').collect();
-                if parts.len() == 6 {
-                    let mut mac = [0u8; 6];
-                    for (i, part) in parts.iter().enumerate() {
-                        mac[i] = u8::from_str_radix(part, 16).unwrap_or(0);
-                    }
-                    mac
-                } else {
-                    warn!(interface, "unexpected MAC format, using broadcast");
-                    [0xff; 6]
-                }
-            }
-            Err(e) => {
-                warn!(interface, error = %e, "cannot read interface MAC, using broadcast");
-                [0xff; 6]
-            }
-        }
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    fn read_interface_mac(interface: &str) -> [u8; 6] {
-        warn!(
-            interface,
-            "MAC address lookup not available on non-Linux, using broadcast"
-        );
-        [0xff; 6]
     }
 
     /// Convert a proto LBAlgorithm enum value to a string for our LB factory.
@@ -549,7 +492,6 @@ impl DataplaneControl for DataplaneService {
             gateways = req.gateways.len(),
             routes = req.routes.len(),
             clusters = req.clusters.len(),
-            vips = req.vips.len(),
             l4_listeners = req.l4_listeners.len(),
             policies = req.policies.len(),
             wan_links = req.wan_links.len(),
@@ -633,44 +575,6 @@ impl DataplaneControl for DataplaneService {
         }
 
         info!(version = %req.version, "Configuration applied to runtime state");
-
-        // Apply VIP assignments.
-        // Disconnect route client before resetting VIPs, since all routes will be re-advertised.
-        {
-            let mut rc = self.route_client.lock().await;
-            if let Some(ref mut client) = *rc {
-                if client.is_connected() {
-                    client.disconnect();
-                    info!("Route client disconnected for VIP reset");
-                }
-            }
-        }
-        {
-            let mut vip_mgr = self.vip_manager.lock().unwrap();
-            // Clear and re-apply all VIPs from snapshot.
-            *vip_mgr = vip::manager::VIPManager::new();
-            for vip_cfg in &req.vips {
-                if let Ok((ip, prefix)) = Self::parse_vip_address(&vip_cfg.address) {
-                    let mode = Self::vip_mode_from_proto(vip_cfg.mode, &vip_cfg.bgp_config);
-                    let iface = if vip_cfg.interface.is_empty() {
-                        "eth0"
-                    } else {
-                        &vip_cfg.interface
-                    };
-                    if vip_mgr.add_vip(ip, prefix, iface, mode).is_ok() {
-                        let _ = vip_mgr.activate(&ip);
-                    }
-                }
-            }
-            if !req.vips.is_empty() {
-                info!(
-                    count = req.vips.len(),
-                    total = vip_mgr.vip_count(),
-                    active = vip_mgr.active_vips().len(),
-                    "VIP assignments applied"
-                );
-            }
-        }
 
         // Apply mesh configuration.
         if let Some(mesh_cfg) = &req.mesh_config {
@@ -873,143 +777,6 @@ impl DataplaneControl for DataplaneService {
             status,
             message,
         }))
-    }
-
-    async fn upsert_vip(
-        &self,
-        request: Request<proto::UpsertVipRequest>,
-    ) -> Result<Response<proto::UpsertVipResponse>, Status> {
-        let req = request.into_inner();
-        let vip_cfg = req
-            .vip
-            .as_ref()
-            .ok_or_else(|| Status::invalid_argument("missing VIP config"))?;
-        info!(name = %vip_cfg.name, address = %vip_cfg.address, mode = vip_cfg.mode, "UpsertVIP");
-
-        let (ip, prefix) = Self::parse_vip_address(&vip_cfg.address)?;
-        let mode = Self::vip_mode_from_proto(vip_cfg.mode, &vip_cfg.bgp_config);
-        let interface = if vip_cfg.interface.is_empty() {
-            "eth0"
-        } else {
-            &vip_cfg.interface
-        };
-
-        // Check current VIP state before modifying.
-        let needs_route_advertise;
-        {
-            let mut mgr = self.vip_manager.lock().unwrap();
-
-            // Check if VIP already exists and log its current state.
-            if let Some(existing) = mgr.get_vip(&ip) {
-                info!(
-                    vip = %ip,
-                    current_status = ?existing.status,
-                    current_interface = %existing.interface,
-                    current_prefix = existing.prefix_len,
-                    current_mode = ?existing.mode,
-                    "Replacing existing VIP"
-                );
-            }
-
-            // Remove existing VIP at this address if present, then re-add.
-            let _ = mgr.remove_vip(&ip);
-            mgr.add_vip(ip, prefix, interface, mode.clone())
-                .map_err(|e| Status::internal(format!("failed to add VIP: {e}")))?;
-            mgr.activate(&ip)
-                .map_err(|e| Status::internal(format!("failed to activate VIP: {e}")))?;
-
-            // Determine if we need BGP/OSPF route advertisement.
-            needs_route_advertise = matches!(
-                mode,
-                vip::manager::VIPMode::Bgp { .. } | vip::manager::VIPMode::Ospf { .. }
-            );
-        }
-
-        // Send GARP for L2 VIPs.
-        if vip_cfg.mode == proto::VipMode::L2 as i32 && ip.is_ipv4() {
-            let mac = Self::read_interface_mac(interface);
-            let _ = vip::garp::send_garp(ip, interface, &mac, &vip::garp::GarpConfig::default());
-        }
-
-        // Advertise VIP via BGP/OSPF routing when applicable.
-        if needs_route_advertise {
-            let mut rc = self.route_client.lock().await;
-            if let Some(ref client) = *rc {
-                if client.is_connected() {
-                    if let Err(e) = client.advertise_vip(ip).await {
-                        warn!(vip = %ip, error = %e, "Failed to advertise VIP via routing");
-                    }
-                } else {
-                    info!(vip = %ip, "Route client not connected, skipping VIP advertisement");
-                }
-            } else {
-                // Lazily initialize the route client for BGP/OSPF VIPs.
-                let mut client = vip::routing::RouteClient::new("unix:///run/novaroute.sock");
-                if let Err(e) = client.connect().await {
-                    warn!(error = %e, "Failed to connect route client");
-                } else if let Err(e) = client.advertise_vip(ip).await {
-                    warn!(vip = %ip, error = %e, "Failed to advertise VIP via routing");
-                }
-                *rc = Some(client);
-            }
-        }
-
-        let (status, message) =
-            Self::ok_response(format!("VIP '{}' upserted and activated", vip_cfg.name));
-        Ok(Response::new(proto::UpsertVipResponse { status, message }))
-    }
-
-    async fn delete_vip(
-        &self,
-        request: Request<proto::DeleteVipRequest>,
-    ) -> Result<Response<proto::DeleteVipResponse>, Status> {
-        let req = request.into_inner();
-        info!(name = %req.name, "DeleteVIP");
-
-        // The name is used to identify the VIP; we search by iterating.
-        // Since VIPManager is keyed by IP, we need to find the IP by name.
-        // For now, try parsing the name as an address (the Go agent sends the address).
-        // If that fails, just acknowledge (the VIP may have been removed already).
-        let mut needs_route_withdraw = false;
-        let mut withdraw_ip = None;
-        if let Ok((ip, _)) = Self::parse_vip_address(&req.name) {
-            let mut mgr = self.vip_manager.lock().unwrap();
-            // Check the VIP mode before removing to determine if we need route withdrawal.
-            if let Some(vip_state) = mgr.get_vip(&ip) {
-                needs_route_withdraw = matches!(
-                    vip_state.mode,
-                    vip::manager::VIPMode::Bgp { .. } | vip::manager::VIPMode::Ospf { .. }
-                );
-                info!(
-                    vip = %ip,
-                    interface = %vip_state.interface,
-                    prefix_len = vip_state.prefix_len,
-                    mode = ?vip_state.mode,
-                    status = ?vip_state.status,
-                    "Deleting VIP"
-                );
-            }
-            let _ = mgr.deactivate(&ip);
-            let _ = mgr.remove_vip(&ip);
-            withdraw_ip = Some(ip);
-        }
-
-        // Withdraw VIP from BGP/OSPF routing when applicable.
-        if needs_route_withdraw {
-            if let Some(ip) = withdraw_ip {
-                let rc = self.route_client.lock().await;
-                if let Some(ref client) = *rc {
-                    if client.is_connected() {
-                        if let Err(e) = client.withdraw_vip(ip).await {
-                            warn!(vip = %ip, error = %e, "Failed to withdraw VIP from routing");
-                        }
-                    }
-                }
-            }
-        }
-
-        let (status, message) = Self::ok_response(format!("VIP '{}' deleted", req.name));
-        Ok(Response::new(proto::DeleteVipResponse { status, message }))
     }
 
     async fn upsert_l4_listener(
@@ -1625,12 +1392,12 @@ impl DataplaneControl for DataplaneService {
         let src_net: Option<(std::net::IpAddr, u8)> = if filter_src_cidr.is_empty() {
             None
         } else {
-            Self::parse_vip_address(&filter_src_cidr).ok()
+            Self::parse_cidr_address(&filter_src_cidr).ok()
         };
         let dst_net: Option<(std::net::IpAddr, u8)> = if filter_dst_cidr.is_empty() {
             None
         } else {
-            Self::parse_vip_address(&filter_dst_cidr).ok()
+            Self::parse_cidr_address(&filter_dst_cidr).ok()
         };
 
         let stream = async_stream::try_stream! {
@@ -1695,22 +1462,6 @@ impl DataplaneControl for DataplaneService {
                 );
             }
         }
-
-        // Report VIP status.
-        let vip_mgr = self.vip_manager.lock().unwrap();
-        let vip_total = vip_mgr.vip_count();
-        let active_vips = vip_mgr.active_vips();
-        let active_vip_count = active_vips.len();
-        for vip_state in &active_vips {
-            debug!(
-                vip_ip = %vip_state.ip,
-                prefix_len = vip_state.prefix_len,
-                interface = %vip_state.interface,
-                mode = ?vip_state.mode,
-                "Active VIP"
-            );
-        }
-        drop(vip_mgr);
 
         // Report mesh mTLS status.
         {
@@ -1789,16 +1540,6 @@ impl DataplaneControl for DataplaneService {
             proto::MapInfo {
                 name: "config_policies".into(),
                 entries: snap.policies.len() as u64,
-                max_entries: 0,
-            },
-            proto::MapInfo {
-                name: "vip_total".into(),
-                entries: vip_total as u64,
-                max_entries: 0,
-            },
-            proto::MapInfo {
-                name: "vip_active".into(),
-                entries: active_vip_count as u64,
                 max_entries: 0,
             },
             proto::MapInfo {

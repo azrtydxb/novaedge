@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -65,7 +64,6 @@ func (t *Translator) Sync(ctx context.Context, snapshot *configpb.ConfigSnapshot
 		zap.Int("gateways", len(req.GetGateways())),
 		zap.Int("routes", len(req.GetRoutes())),
 		zap.Int("clusters", len(req.GetClusters())),
-		zap.Int("vips", len(req.GetVips())),
 		zap.Int("l4_listeners", len(req.GetL4Listeners())),
 		zap.Int("policies", len(req.GetPolicies())),
 		zap.Int("wan_links", len(req.GetWanLinks())),
@@ -103,7 +101,6 @@ func TranslateSnapshot(snapshot *configpb.ConfigSnapshot) *pb.ApplyConfigRequest
 	req.Gateways = translateGateways(snapshot.GetGateways())
 	req.Routes = translateRoutes(snapshot.GetRoutes())
 	req.Clusters = translateClusters(snapshot.GetClusters(), snapshot.GetEndpoints())
-	req.Vips = translateVIPs(snapshot.GetVipAssignments())
 	req.L4Listeners = translateL4Listeners(snapshot.GetL4Listeners())
 	req.Policies = translatePolicies(snapshot.GetPolicies())
 	req.WanLinks = translateWANLinks(snapshot.GetWanLinks())
@@ -441,71 +438,6 @@ func translateLBAlgorithm(policy configpb.LoadBalancingPolicy) pb.LBAlgorithm {
 		return pb.LBAlgorithm_LB_ALGORITHM_ROUND_ROBIN
 	default:
 		return pb.LBAlgorithm_LB_ALGORITHM_ROUND_ROBIN
-	}
-}
-
-// ---------------------------------------------------------------------------
-// VIP translation
-// ---------------------------------------------------------------------------
-
-func translateVIPs(vips []*configpb.VIPAssignment) []*pb.VIPConfig {
-	result := make([]*pb.VIPConfig, 0, len(vips))
-	for _, v := range vips {
-		dpVIP := &pb.VIPConfig{
-			Name:    v.GetVipName(),
-			Address: v.GetAddress(),
-			Mode:    translateVIPMode(v.GetMode()),
-		}
-
-		if bgp := v.GetBgpConfig(); bgp != nil {
-			peerAddresses := make([]string, 0, len(bgp.GetPeers()))
-			peerASNumbers := make([]uint32, 0, len(bgp.GetPeers()))
-			peerPorts := make([]uint32, 0, len(bgp.GetPeers()))
-			for _, peer := range bgp.GetPeers() {
-				peerAddresses = append(peerAddresses, peer.GetAddress())
-				peerASNumbers = append(peerASNumbers, peer.GetAs())
-				peerPorts = append(peerPorts, peer.GetPort())
-			}
-			dpVIP.BgpConfig = &pb.BGPConfig{
-				LocalAsn:        bgp.GetLocalAs(),
-				RouterId:        bgp.GetRouterId(),
-				PeerAddresses:   peerAddresses,
-				PeerAsNumbers:   peerASNumbers,
-				PeerPorts:       peerPorts,
-				Communities:     bgp.GetCommunities(),
-				LocalPreference: bgp.GetLocalPreference(),
-			}
-		}
-
-		if ospf := v.GetOspfConfig(); ospf != nil {
-			dpVIP.OspfAreaId = ospf.GetAreaId()
-		}
-		if bfd := v.GetBfdConfig(); bfd != nil {
-			dpVIP.BfdEnabled = bfd.GetEnabled()
-			dpVIP.BfdMultiplier = uint32(bfd.GetDetectMultiplier()) //nolint:gosec // proto field
-			// BFD intervals in config are strings like "300ms"; parse to milliseconds.
-			if d, err := time.ParseDuration(bfd.GetDesiredMinTxInterval()); err == nil && d > 0 {
-				dpVIP.BfdIntervalMs = safeUint64(d.Milliseconds())
-			}
-		}
-
-		result = append(result, dpVIP)
-	}
-	return result
-}
-
-func translateVIPMode(mode configpb.VIPMode) pb.VIPMode {
-	switch mode {
-	case configpb.VIPMode_L2_ARP:
-		return pb.VIPMode_VIP_MODE_L2
-	case configpb.VIPMode_BGP:
-		return pb.VIPMode_VIP_MODE_BGP
-	case configpb.VIPMode_OSPF:
-		return pb.VIPMode_VIP_MODE_OSPF
-	case configpb.VIPMode_VIP_MODE_UNSPECIFIED:
-		return pb.VIPMode_VIP_MODE_UNSPECIFIED
-	default:
-		return pb.VIPMode_VIP_MODE_UNSPECIFIED
 	}
 }
 

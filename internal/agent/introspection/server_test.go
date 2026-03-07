@@ -86,10 +86,6 @@ func TestServer_GetAgentConfig_WithSnapshot(t *testing.T) {
 				},
 			},
 		},
-		VipAssignments: []*pb.VIPAssignment{
-			{VipName: "vip1"},
-			{VipName: "vip2"},
-		},
 		Policies: []*pb.Policy{
 			{Name: "policy1"},
 		},
@@ -106,7 +102,6 @@ func TestServer_GetAgentConfig_WithSnapshot(t *testing.T) {
 	assert.Equal(t, int32(1), resp.RouteCount)
 	assert.Equal(t, int32(3), resp.ClusterCount)
 	assert.Equal(t, int32(3), resp.EndpointCount) // 2 + 1 endpoints
-	assert.Equal(t, int32(2), resp.VipCount)
 	assert.Equal(t, int32(1), resp.PolicyCount)
 }
 
@@ -159,57 +154,6 @@ func TestServer_GetBackendHealth_WithSnapshot(t *testing.T) {
 
 	assert.Equal(t, "10.0.0.2", backend.Endpoints[1].Address)
 	assert.False(t, backend.Endpoints[1].Healthy)
-}
-
-func TestServer_GetVIPs_NilSnapshot(t *testing.T) {
-	provider := &mockStateProvider{snapshot: nil}
-	server := NewServer(provider, zap.NewNop())
-
-	resp, err := server.GetVIPs(context.Background(), &pb.GetVIPsRequest{})
-	require.NoError(t, err)
-	assert.NotNil(t, resp)
-	assert.Empty(t, resp.Vips)
-}
-
-func TestServer_GetVIPs_WithSnapshot(t *testing.T) {
-	snapshot := &pb.ConfigSnapshot{
-		VipAssignments: []*pb.VIPAssignment{
-			{
-				VipName:  "vip1",
-				Address:  "192.168.1.100",
-				Mode:     pb.VIPMode_L2_ARP,
-				IsActive: true,
-				Ports:    []int32{80, 443},
-			},
-			{
-				VipName:  "vip2",
-				Address:  "192.168.1.101",
-				Mode:     pb.VIPMode_BGP,
-				IsActive: false,
-				Ports:    []int32{8080},
-			},
-		},
-	}
-
-	provider := &mockStateProvider{snapshot: snapshot}
-	server := NewServer(provider, zap.NewNop())
-
-	resp, err := server.GetVIPs(context.Background(), &pb.GetVIPsRequest{})
-	require.NoError(t, err)
-	assert.NotNil(t, resp)
-	require.Len(t, resp.Vips, 2)
-
-	vip1 := resp.Vips[0]
-	assert.Equal(t, "vip1", vip1.Name)
-	assert.Equal(t, "192.168.1.100", vip1.Address)
-	assert.Equal(t, "L2_ARP", vip1.Mode)
-	assert.True(t, vip1.IsActive)
-	assert.Equal(t, []int32{80, 443}, vip1.Ports)
-
-	vip2 := resp.Vips[1]
-	assert.Equal(t, "vip2", vip2.Name)
-	assert.Equal(t, "192.168.1.101", vip2.Address)
-	assert.False(t, vip2.IsActive)
 }
 
 func TestSafeInt32(t *testing.T) {

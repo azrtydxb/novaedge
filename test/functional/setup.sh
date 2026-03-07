@@ -14,7 +14,6 @@ kubectl delete proxyroute api-route -n default 2>/dev/null || true
 kubectl delete proxypolicy -n default --all 2>/dev/null || true
 kubectl delete proxygateway test-gateway -n default 2>/dev/null || true
 kubectl delete proxybackend api-backend api-backend-v2 -n default 2>/dev/null || true
-kubectl delete proxyvip test-vip 2>/dev/null || true
 kubectl delete secret test-tls-cert -n default 2>/dev/null || true
 sleep 5
 
@@ -27,10 +26,6 @@ kubectl create secret tls test-tls-cert --cert=/tmp/tls.crt --key=/tmp/tls.key -
 rm -f /tmp/tls.key /tmp/tls.crt
 
 # Step 3: Apply CRDs in dependency order
-echo "Applying VIP..."
-kubectl apply -f "$SCRIPT_DIR/01-proxyvip.yaml"
-sleep 5
-
 echo "Applying gateway..."
 kubectl apply -f "$SCRIPT_DIR/02-proxygateway.yaml"
 
@@ -44,20 +39,13 @@ kubectl apply -f "$SCRIPT_DIR/04-proxyroute.yaml"
 echo "Waiting for config snapshot propagation..."
 sleep 15
 
-# Step 5: Verify VIP election
-ACTIVE_NODE=$(kubectl get proxyvip test-vip -o jsonpath='{.status.activeNode}' 2>/dev/null || echo "")
-if [ -z "$ACTIVE_NODE" ]; then
-    echo "ERROR: VIP not elected. Check controller logs."
-    exit 1
-fi
-echo "VIP elected on node: $ACTIVE_NODE"
-
-# Step 6: Find active agent pod
+# Step 5: Find an agent pod
 AGENT_POD=$(kubectl get pods -n nova-system -l app.kubernetes.io/name=novaedge-agent \
-  --field-selector "spec.nodeName=$ACTIVE_NODE" -o jsonpath='{.items[0].metadata.name}')
-echo "Active agent pod: $AGENT_POD"
+  -o jsonpath='{.items[0].metadata.name}')
+ACTIVE_NODE=$(kubectl get pod "$AGENT_POD" -n nova-system -o jsonpath='{.spec.nodeName}')
+echo "Agent pod: $AGENT_POD (node: $ACTIVE_NODE)"
 
-# Step 7: Verify agent has listeners
+# Step 6: Verify agent has listeners
 LISTENERS=$(kubectl logs "$AGENT_POD" -n nova-system --tail=5 | grep -o 'active_http_listeners":[0-9]*' | tail -1 | cut -d: -f2)
 if [ "${LISTENERS:-0}" -lt 1 ]; then
     echo "WARNING: Agent has $LISTENERS HTTP listeners (expected >= 1)"

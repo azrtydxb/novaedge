@@ -154,32 +154,6 @@ func (c *Client) DeleteCluster(ctx context.Context, req *pb.DeleteClusterRequest
 }
 
 // ---------------------------------------------------------------------------
-// VIP management
-// ---------------------------------------------------------------------------
-
-// UpsertVIP creates or updates a Virtual IP address.
-func (c *Client) UpsertVIP(ctx context.Context, req *pb.UpsertVIPRequest) (*pb.UpsertVIPResponse, error) {
-	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
-	defer cancel()
-	resp, err := c.client.UpsertVIP(callCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("dataplane: UpsertVIP: %w", err)
-	}
-	return resp, nil
-}
-
-// DeleteVIP removes a VIP by name.
-func (c *Client) DeleteVIP(ctx context.Context, req *pb.DeleteVIPRequest) (*pb.DeleteVIPResponse, error) {
-	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
-	defer cancel()
-	resp, err := c.client.DeleteVIP(callCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("dataplane: DeleteVIP: %w", err)
-	}
-	return resp, nil
-}
-
-// ---------------------------------------------------------------------------
 // L4 Listener management
 // ---------------------------------------------------------------------------
 

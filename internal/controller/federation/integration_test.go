@@ -565,7 +565,7 @@ func TestExtractResourceChanges_CreatedUpdatedUnchanged(t *testing.T) {
 	// Baseline has one gateway and one route
 	baseline := &pb.ConfigSnapshot{
 		Gateways: []*pb.Gateway{
-			{Namespace: "default", Name: "gw-1", VipRef: "vip-1"},
+			{Namespace: "default", Name: "gw-1"},
 		},
 		Routes: []*pb.Route{
 			{Namespace: "default", Name: "route-1", Hostnames: []string{"api.example.com"}},
@@ -581,8 +581,8 @@ func TestExtractResourceChanges_CreatedUpdatedUnchanged(t *testing.T) {
 	// - gw-2 created (new)
 	current := &pb.ConfigSnapshot{
 		Gateways: []*pb.Gateway{
-			{Namespace: "default", Name: "gw-1", VipRef: "vip-1"}, // unchanged
-			{Namespace: "default", Name: "gw-2", VipRef: "vip-2"}, // new
+			{Namespace: "default", Name: "gw-1"}, // unchanged
+			{Namespace: "default", Name: "gw-2"}, // new
 		},
 		Routes: []*pb.Route{
 			{Namespace: "default", Name: "route-1", Hostnames: []string{"api-v2.example.com"}}, // updated

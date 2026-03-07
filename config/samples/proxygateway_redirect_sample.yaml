@@ -4,7 +4,6 @@ metadata:
   name: web-gateway-with-redirect
   namespace: default
 spec:
-  vipRef: web-vip
   listeners:
     - name: http
       port: 80

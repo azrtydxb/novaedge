@@ -46,7 +46,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "test-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "http",
@@ -67,7 +66,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "test-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "https",
@@ -106,7 +104,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "test-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "https",
@@ -134,7 +131,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "test-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "https",
@@ -156,7 +152,6 @@ func TestProxyGatewayReconcile(t *testing.T) {
 					Namespace: "default",
 				},
 				Spec: novaedgev1alpha1.ProxyGatewaySpec{
-					VIPRef: "test-vip",
 					Listeners: []novaedgev1alpha1.Listener{
 						{
 							Name:     "https",
@@ -260,7 +255,6 @@ func TestProxyGatewayMultipleListeners(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef: "multi-vip",
 			Listeners: []novaedgev1alpha1.Listener{
 				{
 					Name:     "http",
@@ -332,7 +326,6 @@ func TestProxyGatewayStatusUpdate(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef: "status-vip",
 			Listeners: []novaedgev1alpha1.Listener{
 				{
 					Name:     "http",
@@ -389,7 +382,6 @@ func TestProxyGatewayIngressClassName(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef:           "ingress-vip",
 			IngressClassName: "novaedge",
 			Listeners: []novaedgev1alpha1.Listener{
 				{
@@ -436,7 +428,6 @@ func TestProxyGatewayDeletion(t *testing.T) {
 			Namespace: "default",
 		},
 		Spec: novaedgev1alpha1.ProxyGatewaySpec{
-			VIPRef: "delete-vip",
 			Listeners: []novaedgev1alpha1.Listener{
 				{
 					Name:     "http",
