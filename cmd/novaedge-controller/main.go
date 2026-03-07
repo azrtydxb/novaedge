@@ -52,6 +52,7 @@ import (
 	vaultpkg "github.com/azrtydxb/novaedge/internal/controller/vault"
 	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
 	"github.com/azrtydxb/novaedge/internal/pkg/tlsutil"
+	novanetv1alpha1 "github.com/azrtydxb/novanet/api/v1alpha1"
 )
 
 // Build-time variables set via ldflags.
@@ -69,6 +70,7 @@ var (
 func setupScheme() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(novaedgev1alpha1.AddToScheme(scheme))
+	utilruntime.Must(novanetv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(gatewayv1.Install(scheme))
 }
 
@@ -92,6 +94,7 @@ type controllerFlags struct {
 	federationID          string
 	federationLocalMember string
 	enableLeaderElection  bool
+	ipamSocket            string
 }
 
 func parseControllerFlags() controllerFlags {
@@ -119,6 +122,8 @@ func parseControllerFlags() controllerFlags {
 	flag.BoolVar(&f.enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+	flag.StringVar(&f.ipamSocket, "ipam-socket", "/run/novanet/ipam.sock",
+		"Path to NovaNet IPAM gRPC Unix socket. Falls back to local allocator if unavailable.")
 	return f
 }
 
@@ -131,7 +136,7 @@ func registerReconciler(mgr ctrl.Manager, name string, setupFn func(ctrl.Manager
 }
 
 // registerReconcilers registers all CRD and Gateway API reconcilers with the manager.
-func registerReconcilers(mgr ctrl.Manager, f controllerFlags, allocator *ipam.Allocator) *controller.ProxyGatewayReconciler {
+func registerReconcilers(mgr ctrl.Manager, f controllerFlags, allocator ipam.Client) *controller.ProxyGatewayReconciler {
 	registerReconciler(mgr, "ProxyVIP", func(m ctrl.Manager) error {
 		return (&controller.ProxyVIPReconciler{
 			Client: m.GetClient(), Scheme: m.GetScheme(), Allocator: allocator,
@@ -378,7 +383,18 @@ func main() {
 	}
 
 	ipamLogger, _ := uberzap.NewProduction()
-	allocator := ipam.NewAllocator(ipamLogger)
+	var allocator ipam.Client
+
+	// Try to connect to NovaNet IPAM gRPC service; fall back to local allocator.
+	grpcAllocator, grpcErr := ipam.NewGRPCAllocator(f.ipamSocket, ipamLogger)
+	if grpcErr != nil {
+		setupLog.Info("NovaNet IPAM socket unavailable, using local allocator",
+			"socket", f.ipamSocket, "error", grpcErr.Error())
+		allocator = ipam.NewAllocator(ipamLogger)
+	} else {
+		setupLog.Info("Connected to NovaNet IPAM service", "socket", f.ipamSocket)
+		allocator = grpcAllocator
+	}
 
 	proxyGatewayReconciler := registerReconcilers(mgr, f, allocator)
 
@@ -403,4 +419,11 @@ func main() {
 
 	// Graceful shutdown of gRPC server
 	grpcServer.GracefulStop()
+
+	// Close IPAM gRPC connection if applicable.
+	if grpcAllocator != nil {
+		if closeErr := grpcAllocator.Close(); closeErr != nil {
+			setupLog.Error(closeErr, "Failed to close IPAM gRPC connection")
+		}
+	}
 }

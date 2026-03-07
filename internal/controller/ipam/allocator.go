@@ -17,6 +17,7 @@ limitations under the License.
 package ipam
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -28,7 +29,11 @@ var (
 	errPool = errors.New("pool")
 )
 
-// Allocator manages IP address allocation across multiple pools
+// Verify that Allocator implements Client.
+var _ Client = (*Allocator)(nil)
+
+// Allocator manages IP address allocation across multiple pools.
+// It implements Client for use as a local/standalone IPAM backend.
 type Allocator struct {
 	mu     sync.RWMutex
 	logger *zap.Logger
@@ -99,8 +104,9 @@ func (a *Allocator) RemovePool(name string) {
 	}
 }
 
-// Allocate allocates an IP from the specified pool for a VIP
-func (a *Allocator) Allocate(poolName, vipName string) (string, error) {
+// Allocate allocates an IP from the specified pool for a resource.
+// The context parameter is accepted for interface compatibility but ignored locally.
+func (a *Allocator) Allocate(_ context.Context, poolName, resource string) (string, error) {
 	a.mu.RLock()
 	pool, ok := a.pools[poolName]
 	a.mu.RUnlock()
@@ -109,40 +115,44 @@ func (a *Allocator) Allocate(poolName, vipName string) (string, error) {
 		return "", fmt.Errorf("%w: %s not found", errPool, poolName)
 	}
 
-	addr, err := pool.Allocate(vipName)
+	addr, err := pool.Allocate(resource)
 	if err != nil {
 		return "", err
 	}
 
 	a.logger.Info("IP allocated",
 		zap.String("pool", poolName),
-		zap.String("vip", vipName),
+		zap.String("resource", resource),
 		zap.String("address", addr),
 	)
 
 	return addr, nil
 }
 
-// Release releases an IP allocation for a VIP from the specified pool
-func (a *Allocator) Release(poolName, vipName string) {
+// Release releases an IP allocation for a resource from the specified pool.
+// The context parameter is accepted for interface compatibility but ignored locally.
+func (a *Allocator) Release(_ context.Context, poolName, resource string) error {
 	a.mu.RLock()
 	pool, ok := a.pools[poolName]
 	a.mu.RUnlock()
 
 	if !ok {
-		return
+		return nil
 	}
 
-	pool.Release(vipName)
+	pool.Release(resource)
 
 	a.logger.Info("IP released",
 		zap.String("pool", poolName),
-		zap.String("vip", vipName),
+		zap.String("resource", resource),
 	)
+
+	return nil
 }
 
-// GetPoolStats returns allocation statistics for a pool
-func (a *Allocator) GetPoolStats(poolName string) (allocated, available int, err error) {
+// GetPoolStats returns allocation statistics for a pool.
+// The context parameter is accepted for interface compatibility but ignored locally.
+func (a *Allocator) GetPoolStats(_ context.Context, poolName string) (allocated, available int, err error) {
 	a.mu.RLock()
 	pool, ok := a.pools[poolName]
 	a.mu.RUnlock()
@@ -154,8 +164,9 @@ func (a *Allocator) GetPoolStats(poolName string) (allocated, available int, err
 	return pool.GetAllocatedCount(), pool.GetAvailableCount(), nil
 }
 
-// GetPoolAllocations returns all allocations for a pool
-func (a *Allocator) GetPoolAllocations(poolName string) (map[string]string, error) {
+// GetPoolAllocations returns all allocations for a pool.
+// The context parameter is accepted for interface compatibility but ignored locally.
+func (a *Allocator) GetPoolAllocations(_ context.Context, poolName string) (map[string]string, error) {
 	a.mu.RLock()
 	pool, ok := a.pools[poolName]
 	a.mu.RUnlock()
@@ -167,8 +178,9 @@ func (a *Allocator) GetPoolAllocations(poolName string) (map[string]string, erro
 	return pool.GetAllocations(), nil
 }
 
-// IsAddressConflict checks if an address is already allocated in any pool
-func (a *Allocator) IsAddressConflict(address string) (string, bool) {
+// IsAddressConflict checks if an address is already allocated in any pool.
+// The context parameter is accepted for interface compatibility but ignored locally.
+func (a *Allocator) IsAddressConflict(_ context.Context, address string) (string, bool) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
@@ -181,8 +193,9 @@ func (a *Allocator) IsAddressConflict(address string) (string, bool) {
 	return "", false
 }
 
-// GetPoolNames returns the names of all registered pools
-func (a *Allocator) GetPoolNames() []string {
+// GetPoolNames returns the names of all registered pools.
+// The context parameter is accepted for interface compatibility but ignored locally.
+func (a *Allocator) GetPoolNames(_ context.Context) []string {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 

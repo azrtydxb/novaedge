@@ -409,7 +409,7 @@ func TestServiceDeletionTriggersIPAMRelease(t *testing.T) {
 	}
 
 	// Verify IP was allocated
-	allocated1, _, err := env.allocator.GetPoolStats(defaultPoolName)
+	allocated1, _, err := env.allocator.GetPoolStats(ctx, defaultPoolName)
 	if err != nil {
 		t.Fatalf("failed to get pool stats: %v", err)
 	}
@@ -428,7 +428,7 @@ func TestServiceDeletionTriggersIPAMRelease(t *testing.T) {
 	}
 
 	// Verify IP was released
-	allocated2, _, err := env.allocator.GetPoolStats(defaultPoolName)
+	allocated2, _, err := env.allocator.GetPoolStats(ctx, defaultPoolName)
 	if err != nil {
 		t.Fatalf("failed to get pool stats after release: %v", err)
 	}
@@ -822,7 +822,7 @@ func TestIdempotentReconciliation(t *testing.T) {
 	}
 
 	// Verify only one allocation exists
-	allocated, _, err := env.allocator.GetPoolStats(defaultPoolName)
+	allocated, _, err := env.allocator.GetPoolStats(ctx, defaultPoolName)
 	if err != nil {
 		t.Fatalf("failed to get pool stats: %v", err)
 	}
