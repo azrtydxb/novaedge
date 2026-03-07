@@ -22,7 +22,7 @@ env:
 jobs:
   e2e:
     name: E2E Tests
-    runs-on: ubuntu-latest
+    runs-on: qnap-nas
     strategy:
       fail-fast: false
       matrix:
@@ -162,7 +162,7 @@ jobs:
   # TODO: Re-enable once test/e2e/envtest/ directory and tests are created.
   e2e-envtest:
     name: E2E Tests (envtest)
-    runs-on: ubuntu-latest
+    runs-on: qnap-nas
     if: false  # Disabled: test/e2e/envtest/ directory does not exist yet
     steps:
       - name: Checkout code
@@ -187,7 +187,7 @@ jobs:
   # Status check
   status-check:
     name: E2E Status Check
-    runs-on: ubuntu-latest
+    runs-on: qnap-nas
     needs: [e2e, e2e-envtest]
     if: always()
     steps:

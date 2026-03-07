@@ -22,7 +22,7 @@ jobs:
   # Build multi-arch binaries
   build-binaries:
     name: Build Binaries
-    runs-on: ubuntu-latest
+    runs-on: qnap-nas
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -75,7 +75,7 @@ jobs:
   # Create or update nightly pre-release
   nightly-release:
     name: Update Nightly Release
-    runs-on: ubuntu-latest
+    runs-on: qnap-nas
     needs: build-binaries
     steps:
       - name: Checkout code
@@ -190,13 +190,18 @@ jobs:
 
           rm -f "${NOTES_FILE}"
 
-  # Build and push multi-arch Docker images
+  # Build and push per-arch Docker images
   docker:
-    name: Docker Images
-    runs-on: ubuntu-latest
+    name: "Docker ${{ matrix.image.name }} (${{ matrix.arch.name }})"
+    runs-on: ${{ matrix.arch.runner }}
     strategy:
       fail-fast: false
       matrix:
+        arch:
+          - name: amd64
+            runner: qnap-nas
+          - name: arm64
+            runner: ubuntu-24.04-arm
         image:
           - name: novaedge-controller
             dockerfile: Dockerfile.controller
@@ -216,9 +221,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -234,9 +236,9 @@ jobs:
         with:
           context: .
           file: ${{ matrix.image.dockerfile }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/${{ matrix.arch.name }}
           push: true
-          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:nightly
+          tags: ${{ env.IMAGE_PREFIX }}/${{ matrix.image.name }}:nightly-${{ matrix.arch.name }}
           build-args: |
             VERSION=nightly
             COMMIT=${{ github.sha }}
@@ -244,11 +246,42 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # Create multi-arch manifests
+  docker-manifest:
+    name: "Docker Manifest ${{ matrix.image }}"
+    runs-on: qnap-nas
+    needs: docker
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - novaedge-controller
+          - novaedge-agent
+          - novactl
+          - novaedge-standalone
+          - novaedge-operator
+          - novaedge-webui
+          - novaedge-dataplane
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push manifest
+        run: |
+          docker manifest create ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:nightly \
+            --amend ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:nightly-amd64 \
+            --amend ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:nightly-arm64
+          docker manifest push ${{ env.IMAGE_PREFIX }}/${{ matrix.image }}:nightly
+
   # Vulnerability scanning for Docker images
   vulnerability-scan:
     name: Vulnerability Scan
-    runs-on: ubuntu-latest
-    needs: docker
+    runs-on: qnap-nas
+    needs: docker-manifest
     strategy:
       matrix:
         image:
@@ -287,8 +320,8 @@ jobs:
   # Generate SBOM for images
   sbom:
     name: Generate SBOM
-    runs-on: ubuntu-latest
-    needs: docker
+    runs-on: qnap-nas
+    needs: docker-manifest
     permissions:
       contents: write
       packages: write
@@ -320,8 +353,8 @@ jobs:
   # Sign images with cosign
   sign-images:
     name: Sign Images
-    runs-on: ubuntu-latest
-    needs: [docker, sbom]
+    runs-on: qnap-nas
+    needs: [docker-manifest, sbom]
     permissions:
       contents: write
       packages: write
@@ -361,7 +394,7 @@ jobs:
   # Benchmark regression detection
   benchmark:
     name: Benchmark Regression Detection
-    runs-on: ubuntu-latest
+    runs-on: qnap-nas
     needs: build-binaries
     steps:
       - name: Checkout code
