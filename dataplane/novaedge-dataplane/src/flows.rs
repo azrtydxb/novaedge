@@ -31,6 +31,7 @@ pub fn flow_channel() -> (
 
 /// Convert a raw `novaedge_common::FlowEvent` into a proto `FlowEvent`.
 #[cfg(any(target_os = "linux", test))]
+#[allow(dead_code)]
 pub fn raw_to_proto(raw: &novaedge_common::FlowEvent) -> proto::FlowEvent {
     let src_ip = Ipv4Addr::from(raw.src_ip.to_be()).to_string();
     let dst_ip = Ipv4Addr::from(raw.dst_ip.to_be()).to_string();
@@ -95,6 +96,7 @@ impl MockFlowInjector {
 /// This uses `AsyncFd` to efficiently wait for ring buffer data availability,
 /// then reads and broadcasts each event.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub async fn run_flow_reader_real(
     mut ring_buf: aya::maps::RingBuf<aya::maps::MapData>,
     tx: broadcast::Sender<proto::FlowEvent>,
