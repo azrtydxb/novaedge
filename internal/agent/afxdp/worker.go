@@ -23,6 +23,7 @@ package afxdp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -32,6 +33,15 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"go.uber.org/zap"
+)
+
+// Sentinel errors for the AF_XDP worker.
+var (
+	errWorkerAlreadyRunning = errors.New("AF_XDP worker already running")
+	errProgNotFound         = errors.New("afxdp_redirect_prog not found in BPF collection")
+	errVIPMapNotFound       = errors.New("afxdp_vips map not found")
+	errXSKMapNotFound       = errors.New("xsk_map not found in BPF collection")
+	errWorkerNotStarted     = errors.New("AF_XDP worker not started")
 )
 
 const subsystem = "afxdp"
@@ -101,7 +111,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	w.mu.Lock()
 	if w.running {
 		w.mu.Unlock()
-		return fmt.Errorf("AF_XDP worker already running")
+		return errWorkerAlreadyRunning
 	}
 
 	start := time.Now()
@@ -125,14 +135,14 @@ func (w *Worker) Start(ctx context.Context) error {
 	if prog == nil {
 		coll.Close()
 		w.mu.Unlock()
-		return fmt.Errorf("afxdp_redirect_prog not found in BPF collection")
+		return errProgNotFound
 	}
 
 	vipMap := coll.Maps["afxdp_vips"]
 	if vipMap == nil {
 		coll.Close()
 		w.mu.Unlock()
-		return fmt.Errorf("afxdp_vips map not found")
+		return errVIPMapNotFound
 	}
 
 	statsMap := coll.Maps["afxdp_stats"]
@@ -141,7 +151,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	if xskMap == nil {
 		coll.Close()
 		w.mu.Unlock()
-		return fmt.Errorf("xsk_map not found in BPF collection")
+		return errXSKMapNotFound
 	}
 
 	// Attach XDP program to interface.
@@ -172,7 +182,7 @@ func (w *Worker) Start(ctx context.Context) error {
 		NumFrames: w.config.NumFrames,
 	})
 	if err != nil {
-		xdpLink.Close()
+		_ = xdpLink.Close()
 		coll.Close()
 		w.mu.Unlock()
 		novaebpf.RecordError(subsystem, "xsk")
@@ -182,7 +192,7 @@ func (w *Worker) Start(ctx context.Context) error {
 	// Register socket in BPF xsk_map so the XDP program can redirect to it.
 	if err := xsk.registerInMap(xskMap); err != nil {
 		xsk.close()
-		xdpLink.Close()
+		_ = xdpLink.Close()
 		coll.Close()
 		w.mu.Unlock()
 		novaebpf.RecordError(subsystem, "xsk")
@@ -258,7 +268,7 @@ func (w *Worker) pollLoop(ctx context.Context) error {
 				// Write response into the same UMEM frame.
 				copy(w.xsk.umemArea[desc.Addr:], resp)
 				txDesc := desc
-				txDesc.Len = uint32(len(resp))
+				txDesc.Len = uint32(len(resp)) //nolint:gosec // len(resp) is bounded by FrameSize check above
 				if w.xsk.transmit(txDesc) {
 					txCount++
 				}
@@ -300,20 +310,20 @@ func (w *Worker) Stop() error {
 		w.xdpLink = nil
 	}
 	if w.prog != nil {
-		w.prog.Close()
+		_ = w.prog.Close()
 		w.prog = nil
 		novaebpf.RecordProgramUnloaded(subsystem)
 	}
 	if w.vipMap != nil {
-		w.vipMap.Close()
+		_ = w.vipMap.Close()
 		w.vipMap = nil
 	}
 	if w.statsMap != nil {
-		w.statsMap.Close()
+		_ = w.statsMap.Close()
 		w.statsMap = nil
 	}
 	if w.xskMap != nil {
-		w.xskMap.Close()
+		_ = w.xskMap.Close()
 		w.xskMap = nil
 	}
 
@@ -322,8 +332,8 @@ func (w *Worker) Stop() error {
 	return nil
 }
 
-// UpdateVIPs synchronizes the afxdp_vips BPF map with the desired set of
-// VIP keys to redirect to the AF_XDP socket.
+// VIPKey represents a VIP entry in the afxdp_vips BPF map, used to match
+// traffic for redirection to the AF_XDP socket.
 type VIPKey struct {
 	Addr  [4]byte
 	Port  uint16
@@ -337,7 +347,7 @@ func (w *Worker) SyncVIPs(vips []VIPKey) error {
 	defer w.mu.RUnlock()
 
 	if w.vipMap == nil {
-		return fmt.Errorf("AF_XDP worker not started")
+		return errWorkerNotStarted
 	}
 
 	// Delete all existing entries.

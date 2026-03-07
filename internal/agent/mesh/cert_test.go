@@ -233,11 +233,7 @@ func TestCertRequester_RequestAndApply(t *testing.T) {
 	}
 
 	// Verify key matches cert's public key
-	certPubKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		t.Fatal("cert public key is not ECDSA")
-	}
-	if certPubKey.X.Cmp(privKey.X) != 0 || certPubKey.Y.Cmp(privKey.Y) != 0 {
+	if !privKey.PublicKey.Equal(cert.PublicKey) {
 		t.Fatal("private key does not match certificate public key")
 	}
 }

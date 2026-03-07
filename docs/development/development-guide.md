@@ -139,6 +139,41 @@ err := pkgerrors.NewConfigError("invalid gateway spec").
 err := pkgerrors.NewValidationError("hostname", "required", "hostname cannot be empty")
 ```
 
+### Sentinel Errors (err113 Compliance)
+
+The `err113` linter requires all errors to be either wrapped static (sentinel) errors or
+standard library errors. Never create dynamic errors with `fmt.Errorf("message")` — always
+define sentinel errors and wrap them:
+
+```go
+// Define package-level sentinel errors
+var (
+    errNotInitialized = errors.New("rate limiter not initialized")
+    errInvalidIP      = errors.New("invalid IP address")
+    errNotIPv4        = errors.New("not an IPv4 address")
+)
+
+// Wrap with context using %w
+return fmt.Errorf("%w: %s", errInvalidIP, ip)
+
+// Or return directly when no extra context is needed
+return errNotInitialized
+```
+
+For `errcheck` compliance, explicitly ignore error returns in cleanup paths:
+
+```go
+// Cleanup — error is logged or not actionable
+_ = resource.Close()
+```
+
+For `gosec` G115 (integer overflow) in low-level code (eBPF, AF_XDP, syscalls),
+use `//nolint:gosec` with a justification comment when the conversion is provably safe:
+
+```go
+nsFD := int(nsFile.Fd()) //nolint:gosec // G115: Fd() returns uintptr, safe for netns fd
+```
+
 ### Error Wrapping
 
 Always wrap errors with context:

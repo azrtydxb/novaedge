@@ -20,6 +20,7 @@ package mesh
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 
@@ -27,6 +28,11 @@ import (
 	"github.com/google/nftables/expr"
 	"go.uber.org/zap"
 	"golang.org/x/sys/unix"
+)
+
+var (
+	errInvalidIPv4Addr = errors.New("invalid IPv4 address")
+	errPortOutOfRange  = errors.New("port out of range")
 )
 
 const (
@@ -136,13 +142,13 @@ func (b *nftablesBackend) Cleanup() error {
 func (b *nftablesBackend) buildRedirectRule(t InterceptTarget, tproxyPort int32) (*nftables.Rule, error) {
 	ip := net.ParseIP(t.ClusterIP).To4()
 	if ip == nil {
-		return nil, fmt.Errorf("invalid IPv4 address: %s", t.ClusterIP)
+		return nil, fmt.Errorf("%w: %s", errInvalidIPv4Addr, t.ClusterIP)
 	}
 	if t.Port < 1 || t.Port > 65535 {
-		return nil, fmt.Errorf("destination port out of range: %d", t.Port)
+		return nil, fmt.Errorf("destination %w: %d", errPortOutOfRange, t.Port)
 	}
 	if tproxyPort < 1 || tproxyPort > 65535 {
-		return nil, fmt.Errorf("redirect port out of range: %d", tproxyPort)
+		return nil, fmt.Errorf("redirect %w: %d", errPortOutOfRange, tproxyPort)
 	}
 
 	portBytes := make([]byte, 2)

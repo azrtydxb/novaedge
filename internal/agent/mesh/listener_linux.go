@@ -19,6 +19,7 @@ package mesh
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"net"
 	"syscall"
@@ -27,12 +28,14 @@ import (
 	"go.uber.org/zap"
 )
 
+var errNotTCPConnection = errors.New("not a TCP connection")
+
 // OriginalDst extracts the original destination address from a TPROXY'd
 // TCP connection using the SO_ORIGINAL_DST socket option.
 func OriginalDst(conn net.Conn) (net.IP, int, error) {
 	tcpConn, ok := conn.(*net.TCPConn)
 	if !ok {
-		return nil, 0, fmt.Errorf("not a TCP connection")
+		return nil, 0, errNotTCPConnection
 	}
 
 	rawConn, err := tcpConn.SyscallConn()

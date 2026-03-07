@@ -53,7 +53,7 @@ func TryBackend(logger *zap.Logger) mesh.RuleBackend {
 	if err := backend.Setup(); err != nil {
 		logger.Info("eBPF sk_lookup backend setup failed, falling back to nftables/iptables",
 			zap.Error(err))
-		backend.Cleanup()
+		_ = backend.Cleanup()
 		return nil
 	}
 
