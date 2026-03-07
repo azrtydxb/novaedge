@@ -23,8 +23,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/models"
-	"github.com/piwi3910/novaedge/internal/standalone"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/models"
+	"github.com/azrtydxb/novaedge/internal/standalone"
 	"gopkg.in/yaml.v3"
 )
 

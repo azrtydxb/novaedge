@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/printer"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/client"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/printer"
 	"github.com/spf13/cobra"
 )
 

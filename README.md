@@ -7,10 +7,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/piwi3910/novaedge/releases"><img src="https://img.shields.io/github/v/release/piwi3910/novaedge?style=flat-square" alt="Release"></a>
-  <a href="https://github.com/piwi3910/novaedge/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/piwi3910/novaedge/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
-<a href="https://piwi3910.github.io/novaedge"><img src="https://img.shields.io/badge/docs-mkdocs-blue?style=flat-square" alt="Documentation"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/piwi3910/novaedge?style=flat-square" alt="License"></a>
+  <a href="https://github.com/azrtydxb/novaedge/releases"><img src="https://img.shields.io/github/v/release/azrtydxb/novaedge?style=flat-square" alt="Release"></a>
+  <a href="https://github.com/azrtydxb/novaedge/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/azrtydxb/novaedge/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+<a href="https://azrtydxb.github.io/novaedge"><img src="https://img.shields.io/badge/docs-mkdocs-blue?style=flat-square" alt="Documentation"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/azrtydxb/novaedge?style=flat-square" alt="License"></a>
 </p>
 
 ---

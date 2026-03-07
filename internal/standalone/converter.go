@@ -32,8 +32,8 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
-	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

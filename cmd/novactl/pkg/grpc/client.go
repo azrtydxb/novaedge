@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

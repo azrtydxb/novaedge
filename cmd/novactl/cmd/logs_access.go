@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/client"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

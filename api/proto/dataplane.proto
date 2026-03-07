@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package novaedge.dataplane.v1;
 
-option go_package = "github.com/piwi3910/novaedge/api/proto/dataplane";
+option go_package = "github.com/azrtydxb/novaedge/api/proto/dataplane";
 
 // DataplaneControl is the gRPC service for agent→dataplane communication.
 // The Go agent pushes configuration to the Rust dataplane daemon over a

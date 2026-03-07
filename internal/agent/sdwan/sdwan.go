@@ -24,7 +24,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/piwi3910/novaedge/internal/agent/metrics"
+	"github.com/azrtydxb/novaedge/internal/agent/metrics"
 )
 
 const (

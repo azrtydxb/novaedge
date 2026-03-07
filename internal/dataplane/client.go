@@ -12,7 +12,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	pb "github.com/piwi3910/novaedge/api/proto/dataplane"
+	pb "github.com/azrtydxb/novaedge/api/proto/dataplane"
 )
 
 // defaultRPCTimeout bounds how long any single unary RPC will wait for the

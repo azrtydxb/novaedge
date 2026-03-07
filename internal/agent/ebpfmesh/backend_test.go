@@ -19,8 +19,8 @@ package ebpfmesh
 import (
 	"testing"
 
-	novaebpf "github.com/piwi3910/novaedge/internal/agent/ebpf"
-	"github.com/piwi3910/novaedge/internal/agent/mesh"
+	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
+	"github.com/azrtydxb/novaedge/internal/agent/mesh"
 	"go.uber.org/zap/zaptest"
 )
 

@@ -28,9 +28,9 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
-	"github.com/piwi3910/novaedge/internal/pkg/tlsutil"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
+	"github.com/azrtydxb/novaedge/internal/pkg/tlsutil"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

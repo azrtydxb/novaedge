@@ -30,8 +30,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"go.uber.org/zap"
 
-	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

@@ -25,8 +25,8 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest"
 
-	"github.com/piwi3910/novaedge/internal/agent/config"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/agent/config"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // newTestAdminServer creates an AdminServer wired up for unit tests.

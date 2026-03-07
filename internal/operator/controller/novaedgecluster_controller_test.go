@@ -27,7 +27,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
 func TestNovaEdgeClusterReconcileNotFound(t *testing.T) {
@@ -246,7 +246,7 @@ func TestNovaEdgeClusterGetImageDefaultRepo(t *testing.T) {
 	}
 
 	got := reconciler.getImage(cluster, "novaedge-controller")
-	want := "ghcr.io/piwi3910/novaedge/novaedge-controller:v1.0.0"
+	want := "ghcr.io/azrtydxb/novaedge/novaedge-controller:v1.0.0"
 	if got != want {
 		t.Errorf("getImage() = %v, want %v", got, want)
 	}

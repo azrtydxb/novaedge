@@ -19,7 +19,7 @@ package introspection
 import (
 	"sync/atomic"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // SnapshotHolder stores the latest ConfigSnapshot for introspection queries.

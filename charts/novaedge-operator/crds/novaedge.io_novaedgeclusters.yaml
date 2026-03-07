@@ -4748,7 +4748,7 @@ spec:
                   x-kubernetes-map-type: atomic
                 type: array
               imageRepository:
-                default: ghcr.io/piwi3910/novaedge
+                default: ghcr.io/azrtydxb/novaedge
                 description: ImageRepository is the container image repository for
                   NovaEdge images
                 type: string

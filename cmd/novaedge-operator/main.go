@@ -34,9 +34,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	ctrlwebhook "sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
-	"github.com/piwi3910/novaedge/internal/operator/controller"
-	"github.com/piwi3910/novaedge/internal/operator/webhook"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/operator/controller"
+	"github.com/azrtydxb/novaedge/internal/operator/webhook"
 )
 
 // Build-time variables set via ldflags.

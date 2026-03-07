@@ -31,8 +31,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/piwi3910/novaedge/internal/pkg/grpclimits"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (

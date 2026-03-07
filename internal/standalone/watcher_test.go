@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 
-	agentconfig "github.com/piwi3910/novaedge/internal/agent/config"
+	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
 )
 
 func TestNewConfigWatcher(t *testing.T) {

@@ -110,7 +110,7 @@ spec:
   version: "v0.1.0"
 
   # Image repository (optional)
-  imageRepository: ghcr.io/piwi3910/novaedge
+  imageRepository: ghcr.io/azrtydxb/novaedge
   imagePullPolicy: IfNotPresent
 
   # Controller configuration

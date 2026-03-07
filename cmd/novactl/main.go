@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/cmd"
+	"github.com/azrtydxb/novaedge/cmd/novactl/cmd"
 )
 
 // Build-time variables set via ldflags.

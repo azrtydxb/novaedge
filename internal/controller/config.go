@@ -30,7 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"github.com/piwi3910/novaedge/internal/controller/snapshot"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // Condition reason constants used across controllers

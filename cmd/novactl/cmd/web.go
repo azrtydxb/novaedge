@@ -10,8 +10,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui"
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/webui/auth"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/auth"
 	"github.com/spf13/cobra"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"

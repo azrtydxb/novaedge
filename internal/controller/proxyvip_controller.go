@@ -40,8 +40,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	novaedgev1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
-	"github.com/piwi3910/novaedge/internal/controller/ipam"
+	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/ipam"
 )
 
 // ProxyVIPReconciler reconciles a ProxyVIP object

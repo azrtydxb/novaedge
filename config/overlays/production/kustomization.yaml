@@ -69,11 +69,11 @@ patches:
 
 # Image configuration for production (use specific version tags)
 images:
-- name: ghcr.io/piwi3910/novaedge-controller
+- name: ghcr.io/azrtydxb/novaedge-controller
   newTag: v1.0.0
-- name: ghcr.io/piwi3910/novaedge-agent
+- name: ghcr.io/azrtydxb/novaedge-agent
   newTag: v1.0.0
-- name: ghcr.io/piwi3910/novaedge-novactl
+- name: ghcr.io/azrtydxb/novaedge-novactl
   newTag: v1.0.0
 
 # ConfigMap for production settings

@@ -14,7 +14,7 @@ controller:
   replicaCount: 3
 
   image:
-    repository: ghcr.io/piwi3910/novaedge-controller
+    repository: ghcr.io/azrtydxb/novaedge-controller
     tag: ""  # Defaults to Chart.appVersion
     pullPolicy: IfNotPresent
 
@@ -192,7 +192,7 @@ agent:
   enabled: true
 
   image:
-    repository: ghcr.io/piwi3910/novaedge-agent
+    repository: ghcr.io/azrtydxb/novaedge-agent
     tag: ""  # Defaults to Chart.appVersion
     pullPolicy: IfNotPresent
 
@@ -340,7 +340,7 @@ agent:
 dataplane:
   enabled: true
   image:
-    repository: ghcr.io/piwi3910/novaedge/novaedge-dataplane
+    repository: ghcr.io/azrtydxb/novaedge/novaedge-dataplane
     tag: latest
     pullPolicy: IfNotPresent
   resources:
@@ -361,7 +361,7 @@ webui:
   # Frontend container (nginx serving React SPA)
   frontend:
     image:
-      repository: ghcr.io/piwi3910/novaedge-webui
+      repository: ghcr.io/azrtydxb/novaedge-webui
       tag: ""  # Defaults to Chart.appVersion
       pullPolicy: IfNotPresent
     resources:
@@ -374,7 +374,7 @@ webui:
 
   # API backend container (novactl)
   image:
-    repository: ghcr.io/piwi3910/novaedge-novactl
+    repository: ghcr.io/azrtydxb/novaedge-novactl
     tag: ""  # Defaults to Chart.appVersion
     pullPolicy: IfNotPresent
 

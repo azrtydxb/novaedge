@@ -224,7 +224,7 @@ func (e *OTelExporter) buildResource(ctx context.Context) (*resource.Resource, e
 // createInstruments registers the OTel metric instruments that mirror existing
 // Prometheus metrics.
 func (e *OTelExporter) createInstruments() error {
-	meter := e.provider.Meter("github.com/piwi3910/novaedge/agent/metrics")
+	meter := e.provider.Meter("github.com/azrtydxb/novaedge/agent/metrics")
 
 	var err error
 

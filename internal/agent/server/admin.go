@@ -35,7 +35,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/piwi3910/novaedge/internal/agent/config"
+	"github.com/azrtydxb/novaedge/internal/agent/config"
 )
 
 // DefaultAdminAddr is the default listen address for the admin API.

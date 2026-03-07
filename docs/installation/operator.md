@@ -40,7 +40,7 @@ flowchart LR
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install the operator
@@ -231,7 +231,7 @@ spec:
 | Field | Type | Description |
 |-------|------|-------------|
 | `version` | string | NovaEdge version to deploy (required) |
-| `imageRepository` | string | Image repository (default: `ghcr.io/piwi3910/novaedge`) |
+| `imageRepository` | string | Image repository (default: `ghcr.io/azrtydxb/novaedge`) |
 | `imagePullPolicy` | string | Pull policy (default: `IfNotPresent`) |
 | `controller` | object | Controller configuration |
 | `agent` | object | Agent configuration |

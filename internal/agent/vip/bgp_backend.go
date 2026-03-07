@@ -19,7 +19,7 @@ package vip
 import (
 	"context"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // BGPBackend abstracts the BGP implementation used for VIP announcements.

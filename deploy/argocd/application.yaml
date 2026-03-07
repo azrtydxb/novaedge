@@ -5,10 +5,10 @@ metadata:
   namespace: argocd
   annotations:
     argocd-image-updater.argoproj.io/image-list: >-
-      controller=ghcr.io/piwi3910/novaedge-controller,
-      agent=ghcr.io/piwi3910/novaedge-agent,
-      dataplane=ghcr.io/piwi3910/novaedge-dataplane,
-      webui=ghcr.io/piwi3910/novaedge-webui
+      controller=ghcr.io/azrtydxb/novaedge-controller,
+      agent=ghcr.io/azrtydxb/novaedge-agent,
+      dataplane=ghcr.io/azrtydxb/novaedge-dataplane,
+      webui=ghcr.io/azrtydxb/novaedge-webui
     argocd-image-updater.argoproj.io/controller.update-strategy: latest
     argocd-image-updater.argoproj.io/agent.update-strategy: latest
     argocd-image-updater.argoproj.io/dataplane.update-strategy: latest
@@ -26,7 +26,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/piwi3910/novaedge
+    repoURL: https://github.com/azrtydxb/novaedge
     path: charts/novaedge
     targetRevision: main
     helm:
@@ -34,19 +34,19 @@ spec:
       valuesObject:
         controller:
           image:
-            repository: ghcr.io/piwi3910/novaedge-controller
+            repository: ghcr.io/azrtydxb/novaedge-controller
             tag: latest
         agent:
           image:
-            repository: ghcr.io/piwi3910/novaedge-agent
+            repository: ghcr.io/azrtydxb/novaedge-agent
             tag: latest
         dataplane:
           image:
-            repository: ghcr.io/piwi3910/novaedge-dataplane
+            repository: ghcr.io/azrtydxb/novaedge-dataplane
             tag: latest
         webui:
           image:
-            repository: ghcr.io/piwi3910/novaedge-webui
+            repository: ghcr.io/azrtydxb/novaedge-webui
             tag: latest
   destination:
     server: https://kubernetes.default.svc

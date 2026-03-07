@@ -29,7 +29,7 @@ type NovaEdgeClusterSpec struct {
 	Version string `json:"version"`
 
 	// ImageRepository is the container image repository for NovaEdge images
-	// +kubebuilder:default="ghcr.io/piwi3910/novaedge"
+	// +kubebuilder:default="ghcr.io/azrtydxb/novaedge"
 	// +optional
 	ImageRepository string `json:"imageRepository,omitempty"`
 

@@ -63,7 +63,7 @@ spec:
                 imageRepository:
                   type: string
                   description: ImageRepository is the container image repository for NovaEdge images
-                  default: ghcr.io/piwi3910/novaedge
+                  default: ghcr.io/azrtydxb/novaedge
                 imagePullPolicy:
                   type: string
                   description: ImagePullPolicy is the pull policy for NovaEdge images

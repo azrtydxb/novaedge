@@ -51,7 +51,7 @@ On each server node, generate a static pod manifest. Replace `10.0.0.100/32` wit
 # On server-1
 novactl generate static-pod \
   --vip-address 10.0.0.100/32 \
-  --image ghcr.io/piwi3910/novaedge-agent:latest \
+  --image ghcr.io/azrtydxb/novaedge-agent:latest \
   --node-name server-1 \
   > /var/lib/rancher/k3s/agent/pod-manifests/novaedge-cpvip.yaml
 ```
@@ -60,7 +60,7 @@ novactl generate static-pod \
 # On server-2
 novactl generate static-pod \
   --vip-address 10.0.0.100/32 \
-  --image ghcr.io/piwi3910/novaedge-agent:latest \
+  --image ghcr.io/azrtydxb/novaedge-agent:latest \
   --node-name server-2 \
   > /var/lib/rancher/k3s/agent/pod-manifests/novaedge-cpvip.yaml
 ```
@@ -69,7 +69,7 @@ novactl generate static-pod \
 # On server-3
 novactl generate static-pod \
   --vip-address 10.0.0.100/32 \
-  --image ghcr.io/piwi3910/novaedge-agent:latest \
+  --image ghcr.io/azrtydxb/novaedge-agent:latest \
   --node-name server-3 \
   > /var/lib/rancher/k3s/agent/pod-manifests/novaedge-cpvip.yaml
 ```
@@ -83,7 +83,7 @@ If you prefer running NovaEdge outside of Kubernetes (e.g., before the cluster i
 ```bash
 # Install the binary
 curl -Lo /usr/local/bin/novaedge-agent \
-  https://github.com/piwi3910/novaedge/releases/latest/download/novaedge-agent-linux-amd64
+  https://github.com/azrtydxb/novaedge/releases/latest/download/novaedge-agent-linux-amd64
 chmod +x /usr/local/bin/novaedge-agent
 
 # Generate the systemd unit
@@ -646,12 +646,12 @@ Svc pool: 10.0.0.200/28 (14 addresses)
 ```bash
 # Install novaedge-agent
 curl -Lo /usr/local/bin/novaedge-agent \
-  https://github.com/piwi3910/novaedge/releases/latest/download/novaedge-agent-linux-amd64
+  https://github.com/azrtydxb/novaedge/releases/latest/download/novaedge-agent-linux-amd64
 chmod +x /usr/local/bin/novaedge-agent
 
 # Install novactl
 curl -Lo /usr/local/bin/novactl \
-  https://github.com/piwi3910/novaedge/releases/latest/download/novactl-linux-amd64
+  https://github.com/azrtydxb/novaedge/releases/latest/download/novactl-linux-amd64
 chmod +x /usr/local/bin/novactl
 
 # Generate and install systemd unit for CP VIP
@@ -686,7 +686,7 @@ curl -sfL https://get.k3s.io | K3S_TOKEN=my-secret-token sh -s - server \
 
 ```bash
 # Install NovaEdge with Helm
-helm repo add novaedge https://piwi3910.github.io/novaedge
+helm repo add novaedge https://azrtydxb.github.io/novaedge
 helm install novaedge novaedge/novaedge \
   --namespace nova-system \
   --create-namespace \

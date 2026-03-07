@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	pkgerrors "github.com/piwi3910/novaedge/internal/pkg/errors"
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pkgerrors "github.com/azrtydxb/novaedge/internal/pkg/errors"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 func TestNewValidator(t *testing.T) {

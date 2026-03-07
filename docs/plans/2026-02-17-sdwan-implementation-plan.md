@@ -133,7 +133,7 @@ package tunnel
 import (
 	"testing"
 
-	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	v1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 	"go.uber.org/zap"
 )
 
@@ -229,7 +229,7 @@ import (
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
 
-	v1alpha1 "github.com/piwi3910/novaedge/api/v1alpha1"
+	v1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 )
 
 const (

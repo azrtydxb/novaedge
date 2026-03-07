@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	pb "github.com/piwi3910/novaedge/internal/proto/gen"
+	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 // RemoteEndpointCache stores ServiceEndpoints received from federated clusters.

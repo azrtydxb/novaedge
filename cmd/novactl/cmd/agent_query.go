@@ -6,8 +6,8 @@ import (
 	"os"
 	"text/tabwriter"
 
-	"github.com/piwi3910/novaedge/cmd/novactl/pkg/client"
-	grpcClient "github.com/piwi3910/novaedge/cmd/novactl/pkg/grpc"
+	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/client"
+	grpcClient "github.com/azrtydxb/novaedge/cmd/novactl/pkg/grpc"
 	"github.com/spf13/cobra"
 )
 

@@ -84,7 +84,7 @@ make test-conformance
 novactl conformance
 ```
 
-See [test/conformance/README.md](https://github.com/piwi3910/novaedge/blob/main/test/conformance/README.md) for detailed instructions.
+See [test/conformance/README.md](https://github.com/azrtydxb/novaedge/blob/main/test/conformance/README.md) for detailed instructions.
 
 ## Supported Features
 

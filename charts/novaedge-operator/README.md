@@ -24,7 +24,7 @@ The NovaEdge Operator provides a declarative way to deploy and manage NovaEdge c
 ### Add the NovaEdge Helm repository
 
 ```bash
-helm repo add novaedge https://piwi3910.github.io/novaedge/charts
+helm repo add novaedge https://azrtydxb.github.io/novaedge/charts
 helm repo update
 ```
 
@@ -43,7 +43,7 @@ helm install novaedge-operator novaedge/novaedge-operator \
 
 ```bash
 # Clone the repository
-git clone https://github.com/piwi3910/novaedge.git
+git clone https://github.com/azrtydxb/novaedge.git
 cd novaedge
 
 # Install the operator
@@ -104,7 +104,7 @@ kubectl apply -f novaedgecluster.yaml
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `replicaCount` | Number of operator replicas | `1` |
-| `image.repository` | Operator image repository | `ghcr.io/piwi3910/novaedge/novaedge-operator` |
+| `image.repository` | Operator image repository | `ghcr.io/azrtydxb/novaedge/novaedge-operator` |
 | `image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `image.tag` | Image tag | Chart appVersion |
 | `serviceAccount.create` | Create service account | `true` |
