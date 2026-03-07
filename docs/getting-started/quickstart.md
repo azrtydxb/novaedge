@@ -232,6 +232,5 @@ make build-novactl
 |-------|-------------|
 | [Installation](../installation/kubernetes.md) | Detailed installation options |
 | [Routing](../user-guide/routing.md) | Advanced routing configuration |
-| [VIP Management](../user-guide/vip-management.md) | L2, BGP, and OSPF modes |
 | [Policies](../user-guide/policies.md) | Rate limiting, CORS, JWT auth |
 | [Observability](../operations/observability.md) | Metrics and tracing |

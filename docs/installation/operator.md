@@ -369,5 +369,4 @@ kubectl logs -n nova-system -l app.kubernetes.io/component=agent
 
 - [Quick Start](../getting-started/quickstart.md) - Create your first gateway
 - [Routing](../user-guide/routing.md) - Configure routes
-- [VIP Management](../user-guide/vip-management.md) - Configure VIP modes
 - [Observability](../operations/observability.md) - Set up monitoring
