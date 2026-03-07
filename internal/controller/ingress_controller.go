@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -34,7 +33,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -106,8 +104,8 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		}
 	}
 
-	// Translate Ingress to CRDs with service port resolver, configurable default VIP, and VIP mode resolver
-	translator := NewIngressTranslatorWithOptions(ingress.Namespace, r.resolveServicePort, r.DefaultVIPRef, r.resolveVIPMode)
+	// Translate Ingress to CRDs with service port resolver and configurable default VIP
+	translator := NewIngressTranslatorWithOptions(ingress.Namespace, r.resolveServicePort, r.DefaultVIPRef)
 	result, err := translator.Translate(ctx, ingress)
 	if err != nil {
 		logger.Error(err, "Failed to translate Ingress to CRDs")
@@ -259,51 +257,10 @@ func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&novaedgev1alpha1.ProxyGateway{}).
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
 		Owns(&novaedgev1alpha1.ProxyBackend{}).
-		Watches(&novaedgev1alpha1.ProxyVIP{}, handler.EnqueueRequestsFromMapFunc(r.vipToIngress)).
 		WithOptions(controller.Options{
 			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
 		}).
 		Complete(r)
-}
-
-// vipToIngress maps a ProxyVIP change to all Ingress resources that reference it,
-// so that LB policy is re-evaluated when a VIP mode changes.
-func (r *IngressReconciler) vipToIngress(ctx context.Context, obj client.Object) []reconcile.Request {
-	logger := log.FromContext(ctx)
-	vipName := obj.GetName()
-
-	// List all Ingress resources managed by this controller
-	ingressList := &networkingv1.IngressList{}
-	if err := r.List(ctx, ingressList); err != nil {
-		logger.Error(err, "Failed to list Ingress resources for VIP mapping", "vip", vipName)
-		return nil
-	}
-
-	var requests []reconcile.Request
-	for _, ingress := range ingressList.Items {
-		if !r.shouldProcessIngress(ingress.DeepCopy()) {
-			continue
-		}
-
-		// Check if this Ingress references the changed VIP (via annotation or default)
-		ref := ingress.Annotations[AnnotationVIPRef]
-		if ref == "" {
-			ref = r.DefaultVIPRef
-		}
-		if ref == vipName {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{
-					Namespace: ingress.Namespace,
-					Name:      ingress.Name,
-				},
-			})
-		}
-	}
-
-	if len(requests) > 0 {
-		logger.Info("VIP change triggered Ingress re-reconciliation", "vip", vipName, "ingressCount", len(requests))
-	}
-	return requests
 }
 
 // resolveServicePort resolves a service port name to its port number
@@ -323,68 +280,8 @@ func (r *IngressReconciler) resolveServicePort(ctx context.Context, namespace, s
 	return 0, fmt.Errorf("%w: %s not found in service %s/%s", errPort, portName, namespace, serviceName)
 }
 
-// resolveVIPMode fetches a ProxyVIP by name and returns its mode (e.g. "BGP", "OSPF", "L2ARP").
-// Returns an empty string if the VIP cannot be found.
-func (r *IngressReconciler) resolveVIPMode(ctx context.Context, vipRef string) string {
-	vip := &novaedgev1alpha1.ProxyVIP{}
-	if err := r.Get(ctx, types.NamespacedName{Name: vipRef}, vip); err != nil {
-		log.FromContext(ctx).Error(err, "Failed to resolve VIP mode", "vipRef", vipRef)
-		return ""
-	}
-	return string(vip.Spec.Mode)
-}
-
-// updateIngressStatus updates the Ingress status with the LoadBalancer IP from the VIP
-func (r *IngressReconciler) updateIngressStatus(ctx context.Context, ingress *networkingv1.Ingress, vipRef string) error {
-	logger := log.FromContext(ctx)
-
-	// Get the VIP to retrieve the address
-	vip := &novaedgev1alpha1.ProxyVIP{}
-	if err := r.Get(ctx, types.NamespacedName{Name: vipRef}, vip); err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("VIP not found, skipping status update", "vipRef", vipRef)
-			return nil
-		}
-		return fmt.Errorf("failed to get VIP %s: %w", vipRef, err)
-	}
-
-	// Extract IP from CIDR notation (e.g., "192.168.1.100/32" -> "192.168.1.100")
-	vipAddress := vip.Spec.Address
-	if idx := strings.Index(vipAddress, "/"); idx > 0 {
-		vipAddress = vipAddress[:idx]
-	}
-
-	// Build the LoadBalancer ingress status
-	lbIngress := []networkingv1.IngressLoadBalancerIngress{
-		{
-			IP: vipAddress,
-		},
-	}
-
-	// Check if status needs update
-	if ingressStatusEqual(ingress.Status.LoadBalancer.Ingress, lbIngress) {
-		return nil
-	}
-
-	// Update the status
-	ingress.Status.LoadBalancer.Ingress = lbIngress
-	if err := r.Status().Update(ctx, ingress); err != nil {
-		return fmt.Errorf("failed to update Ingress status: %w", err)
-	}
-
-	logger.Info("Updated Ingress status with LoadBalancer IP", "ip", vipAddress)
+// updateIngressStatus is a no-op placeholder. VIP-based status has been removed;
+// the Ingress status is now set by the external LoadBalancer controller.
+func (r *IngressReconciler) updateIngressStatus(_ context.Context, _ *networkingv1.Ingress, _ string) error {
 	return nil
-}
-
-// ingressStatusEqual checks if two ingress status slices are equal
-func ingressStatusEqual(a, b []networkingv1.IngressLoadBalancerIngress) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i].IP != b[i].IP || a[i].Hostname != b[i].Hostname {
-			return false
-		}
-	}
-	return true
 }

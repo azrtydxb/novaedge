@@ -237,45 +237,6 @@ func TestFederationResourceApplier_Apply_ProxyPolicy(t *testing.T) {
 	assert.Equal(t, "test-policy", createdPolicy.Name)
 }
 
-func TestFederationResourceApplier_Apply_ProxyVIP(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = novaedgev1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	logger := zap.NewNop()
-
-	applier := NewFederationResourceApplier(fakeClient, scheme, logger)
-
-	vip := &novaedgev1alpha1.ProxyVIP{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "ProxyVIP",
-			APIVersion: "novaedge.piwi3910.com/v1alpha1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-vip",
-			Namespace: "default",
-		},
-	}
-
-	data, err := json.Marshal(vip)
-	require.NoError(t, err)
-
-	key := federation.ResourceKey{
-		Kind:      "ProxyVIP",
-		Name:      "test-vip",
-		Namespace: "default",
-	}
-
-	applier.Apply(context.Background(), key, federation.ChangeTypeCreated, data)
-
-	// Verify the VIP was created
-	var createdVIP novaedgev1alpha1.ProxyVIP
-	err = fakeClient.Get(context.Background(), client.ObjectKey{Namespace: "default", Name: "test-vip"}, &createdVIP)
-	assert.NoError(t, err)
-	assert.Equal(t, "test-vip", createdVIP.Name)
-}
-
 func TestFederationResourceApplier_Apply_Delete(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = novaedgev1alpha1.AddToScheme(scheme)

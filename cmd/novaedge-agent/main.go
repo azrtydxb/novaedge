@@ -15,21 +15,16 @@ limitations under the License.
 */
 
 // Package main implements the novaedge-agent binary, which runs as a DaemonSet
-// on each node to handle L4/L7 load balancing, VIP management, and policy enforcement.
+// on each node to handle L4/L7 load balancing and policy enforcement.
 package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"math"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -41,7 +36,6 @@ import (
 
 	"github.com/azrtydxb/novaedge/internal/agent/afxdp"
 	"github.com/azrtydxb/novaedge/internal/agent/config"
-	"github.com/azrtydxb/novaedge/internal/agent/cpvip"
 	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
 	ebpfhealth "github.com/azrtydxb/novaedge/internal/agent/ebpf/health"
 	ebpfratelimit "github.com/azrtydxb/novaedge/internal/agent/ebpf/ratelimit"
@@ -52,7 +46,6 @@ import (
 	"github.com/azrtydxb/novaedge/internal/agent/mesh"
 	"github.com/azrtydxb/novaedge/internal/agent/sdwan"
 	"github.com/azrtydxb/novaedge/internal/agent/server"
-	"github.com/azrtydxb/novaedge/internal/agent/vip"
 	dpctl "github.com/azrtydxb/novaedge/internal/dataplane"
 	"github.com/azrtydxb/novaedge/internal/observability"
 	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
@@ -62,20 +55,6 @@ import (
 	// Blank import: registers WASM plugin Prometheus metrics via promauto init().
 	_ "github.com/azrtydxb/novaedge/internal/agent/wasm"
 )
-
-var (
-	errInvalidBGPPeerFormat = errors.New("invalid BGP peer format")
-	errInvalidBGPPeerIP     = errors.New("invalid BGP peer IP")
-)
-
-// stringSlice implements flag.Value for repeatable string flags.
-type stringSlice []string
-
-func (s *stringSlice) String() string { return strings.Join(*s, ",") }
-func (s *stringSlice) Set(val string) error {
-	*s = append(*s, val)
-	return nil
-}
 
 // Build-time variables set via ldflags.
 var (
@@ -106,17 +85,6 @@ var (
 	tracingEndpoint   string
 	tracingSampleRate float64
 
-	// Control-plane VIP mode
-	controlPlaneVIP  bool
-	cpVIPAddress     string
-	cpVIPInterface   string
-	cpAPIPort        int
-	cpHealthInterval time.Duration
-	cpHealthTimeout  time.Duration
-
-	// Shutdown drain period
-	shutdownDrainPeriod time.Duration
-
 	// Service mesh configuration
 	meshEnabled    bool
 	meshTPROXYPort int
@@ -132,22 +100,6 @@ var (
 	// Force legacy paths (disable eBPF auto-detection)
 	forceLegacyMesh bool
 
-	// BGP backend selection
-	bgpBackend      string
-	novarouteSocket string
-	novarouteOwner  string
-	novarouteToken  string
-
-	// Control-plane VIP BGP/BFD configuration
-	cpVIPMode       string
-	cpBGPLocalAS    uint
-	cpBGPRouterID   string
-	cpBGPPeers      stringSlice
-	cpBFDEnabled    bool
-	cpBFDDetectMult int
-	cpBFDTxInterval string
-	cpBFDRxInterval string
-
 	// Rust dataplane connection
 	dataplaneSocket string
 )
@@ -156,7 +108,6 @@ var (
 type agentComponents struct {
 	watcher       *config.Watcher
 	gossiper      *gossip.ConfigGossiper
-	vipManager    *vip.DefaultManager
 	afxdpWorker   *afxdp.Worker
 	sockMapMgr    *sockmap.Manager
 	meshManager   *mesh.Manager
@@ -198,13 +149,6 @@ func main() {
 	logger.Info("Rust dataplane configured",
 		zap.String("dataplane_socket", dataplaneSocket),
 	)
-
-	// Control-plane VIP mode: run a simplified agent that only manages
-	// a VIP for kube-apiserver HA, without connecting to the controller.
-	if controlPlaneVIP {
-		runControlPlaneVIPMode(logger)
-		return
-	}
 
 	// Create context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -262,18 +206,6 @@ func parseFlags() {
 	flag.StringVar(&tracingEndpoint, "tracing-endpoint", "localhost:4317", "OTLP gRPC endpoint for trace export")
 	flag.Float64Var(&tracingSampleRate, "tracing-sample-rate", 0.1, "Trace sampling rate (0.0 to 1.0)")
 
-	// Control-plane VIP mode flags
-	flag.BoolVar(&controlPlaneVIP, "control-plane-vip", false, "Enable control-plane VIP mode for kube-apiserver HA")
-	flag.StringVar(&cpVIPAddress, "cp-vip-address", "", "Control-plane VIP address in CIDR notation (e.g., 10.0.0.100/32)")
-	flag.StringVar(&cpVIPInterface, "cp-vip-interface", "", "Network interface for control-plane VIP (auto-detect if empty)")
-	flag.IntVar(&cpAPIPort, "cp-api-port", 6443, "Kube-apiserver port for health checks")
-	flag.DurationVar(&cpHealthInterval, "cp-health-interval", time.Second, "Health check interval for control-plane VIP")
-	flag.DurationVar(&cpHealthTimeout, "cp-health-timeout", 3*time.Second, "Health check timeout for control-plane VIP")
-
-	// Shutdown drain period
-	flag.DurationVar(&shutdownDrainPeriod, "shutdown-drain-period", 3*time.Second,
-		"Delay between VIP release and server shutdown, allowing upstream routers to converge after BGP/OSPF withdrawal")
-
 	// Service mesh flags
 	flag.BoolVar(&meshEnabled, "mesh-enabled", false, "Enable service mesh east-west traffic interception")
 	flag.IntVar(&meshTPROXYPort, "mesh-tproxy-port", int(mesh.DefaultTPROXYPort), "Port for transparent proxy listener")
@@ -288,22 +220,6 @@ func parseFlags() {
 
 	// Force-legacy flags — explicitly disable eBPF auto-detection
 	flag.BoolVar(&forceLegacyMesh, "force-legacy-mesh", false, "Force legacy nftables/iptables mesh interception instead of eBPF sk_lookup")
-
-	// BGP backend flags
-	flag.StringVar(&bgpBackend, "bgp-backend", "gobgp", "BGP backend for VIP announcements: gobgp (built-in) or novaroute (delegated to NovaRoute agent)")
-	flag.StringVar(&novarouteSocket, "novaroute-socket", "/run/novaroute/novaroute.sock", "Unix domain socket path for NovaRoute gRPC API")
-	flag.StringVar(&novarouteOwner, "novaroute-owner", "novaedge", "Owner name for NovaRoute registration")
-	flag.StringVar(&novarouteToken, "novaroute-token", "", "Authentication token for NovaRoute registration")
-
-	// Control-plane VIP BGP/BFD flags
-	flag.StringVar(&cpVIPMode, "cp-vip-mode", "l2", "Control-plane VIP mode: l2 or bgp")
-	flag.UintVar(&cpBGPLocalAS, "cp-bgp-local-as", 0, "Local BGP AS number for CP VIP (required for bgp mode)")
-	flag.StringVar(&cpBGPRouterID, "cp-bgp-router-id", "", "BGP router ID for CP VIP (default: auto from node IP)")
-	flag.Var(&cpBGPPeers, "cp-bgp-peer", "BGP peer in format IP:AS[:PORT] (repeatable)")
-	flag.BoolVar(&cpBFDEnabled, "cp-bfd-enabled", false, "Enable BFD for CP VIP")
-	flag.IntVar(&cpBFDDetectMult, "cp-bfd-detect-mult", 3, "BFD detect multiplier for CP VIP")
-	flag.StringVar(&cpBFDTxInterval, "cp-bfd-tx-interval", "300ms", "BFD minimum TX interval for CP VIP")
-	flag.StringVar(&cpBFDRxInterval, "cp-bfd-rx-interval", "300ms", "BFD minimum RX interval for CP VIP")
 
 	// Rust dataplane socket
 	flag.StringVar(&dataplaneSocket, "dataplane-socket", dpctl.DefaultDataplaneSocket,
@@ -365,29 +281,6 @@ func initConfigWatcher(ctx context.Context, logger *zap.Logger) *config.Watcher 
 		logger.Warn("WARNING: Config watcher running without TLS (insecure)")
 	}
 	return watcher
-}
-
-// initVIPManager creates the VIP manager with the selected BGP backend.
-func initVIPManager(logger *zap.Logger) *vip.DefaultManager {
-	var vipOpts []vip.ManagerOption
-	switch bgpBackend {
-	case "novaroute":
-		logger.Info("Using NovaRoute BGP backend",
-			zap.String("socket", novarouteSocket),
-			zap.String("owner", novarouteOwner),
-		)
-		nrHandler := vip.NewNovaRouteBGPHandler(logger, novarouteSocket, novarouteOwner, novarouteToken)
-		vipOpts = append(vipOpts, vip.WithBGPBackend(nrHandler))
-	case "gobgp", "":
-		logger.Info("Using built-in GoBGP backend")
-	default:
-		logger.Fatal("Unknown BGP backend", zap.String("backend", bgpBackend))
-	}
-	vipManager, err := vip.NewManager(logger, vipOpts...)
-	if err != nil {
-		logger.Fatal("Failed to create VIP manager", zap.Error(err))
-	}
-	return vipManager
 }
 
 // initEBPFSubsystems creates AF_XDP subsystems.
@@ -463,7 +356,6 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 		logger.Warn("Failed to start config gossiper", zap.Error(err))
 	}
 
-	comp.vipManager = initVIPManager(logger)
 	comp.afxdpWorker = initEBPFSubsystems(ctx, logger)
 	comp.meshManager, comp.sockMapMgr = initMeshSubsystem(logger)
 
@@ -491,12 +383,8 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 	return comp
 }
 
-// startAgentManagers starts VIP, mesh, and SD-WAN managers.
+// startAgentManagers starts mesh and SD-WAN managers.
 func startAgentManagers(ctx context.Context, logger *zap.Logger, comp *agentComponents) {
-	if err := comp.vipManager.Start(ctx); err != nil {
-		logger.Fatal("Failed to start VIP manager", zap.Error(err))
-	}
-
 	if comp.meshManager != nil {
 		if err := comp.meshManager.Start(ctx); err != nil {
 			logger.Fatal("Failed to start mesh manager", zap.Error(err))
@@ -570,7 +458,6 @@ func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentCompon
 		zap.String("version", snapshot.Version),
 		zap.Int("gateways", len(snapshot.Gateways)),
 		zap.Int("routes", len(snapshot.Routes)),
-		zap.Int("vips", len(snapshot.VipAssignments)),
 	)
 
 	snapshotHolder.Store(snapshot.ConfigSnapshot)
@@ -580,10 +467,6 @@ func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentCompon
 		comp.healthServer.SetReady(false)
 		comp.adminServer.SetReady(false)
 		return syncErr
-	}
-
-	if err := comp.vipManager.ApplyVIPs(ctx, snapshot.GetVipAssignments()); err != nil {
-		logger.Error("Failed to apply VIPs", zap.Error(err))
 	}
 
 	if comp.meshManager != nil {
@@ -600,13 +483,6 @@ func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentCompon
 		policies := convertWANPolicies(snapshot.GetWanPolicies())
 		if err := comp.sdwanManager.ApplyConfig(links, policies); err != nil {
 			logger.Error("Failed to apply SD-WAN config", zap.Error(err))
-		}
-	}
-
-	if comp.afxdpWorker != nil && comp.afxdpWorker.IsRunning() {
-		vipKeys := buildAFXDPVIPKeys(snapshot.GetVipAssignments())
-		if err := comp.afxdpWorker.SyncVIPs(vipKeys); err != nil {
-			logger.Error("Failed to sync AF_XDP VIPs", zap.Error(err))
 		}
 	}
 
@@ -637,21 +513,6 @@ func closeIfNotNil(logger *zap.Logger, name string, c interface{ Close() error }
 func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-
-	logger.Info("Releasing VIPs...")
-	if err := comp.vipManager.Release(); err != nil {
-		logger.Error("Error releasing VIPs", zap.Error(err))
-	}
-
-	if shutdownDrainPeriod > 0 {
-		logger.Info("Draining connections after VIP release...",
-			zap.Duration("drain_period", shutdownDrainPeriod))
-		select {
-		case <-time.After(shutdownDrainPeriod):
-		case <-shutdownCtx.Done():
-			logger.Warn("Shutdown timeout reached during drain period")
-		}
-	}
 
 	if comp.meshManager != nil {
 		if err := comp.meshManager.Shutdown(shutdownCtx); err != nil {
@@ -684,158 +545,6 @@ func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	}
 
 	logger.Info("Agent stopped")
-}
-
-// parseBGPPeer parses a peer string in the format "IP:AS[:PORT]" into a BGPPeerConfig.
-func parseBGPPeer(peerStr string) (cpvip.BGPPeerConfig, error) {
-	parts := strings.Split(peerStr, ":")
-	if len(parts) < 2 || len(parts) > 3 {
-		return cpvip.BGPPeerConfig{}, fmt.Errorf("%w: %q: expected IP:AS[:PORT]", errInvalidBGPPeerFormat, peerStr)
-	}
-
-	if net.ParseIP(parts[0]) == nil {
-		return cpvip.BGPPeerConfig{}, fmt.Errorf("%w: %q", errInvalidBGPPeerIP, parts[0])
-	}
-
-	peerAS, err := strconv.ParseUint(parts[1], 10, 32)
-	if err != nil {
-		return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer AS %q: %w", parts[1], err)
-	}
-
-	var port uint16 = 179
-	if len(parts) == 3 {
-		p, err := strconv.ParseUint(parts[2], 10, 16)
-		if err != nil {
-			return cpvip.BGPPeerConfig{}, fmt.Errorf("invalid BGP peer port %q: %w", parts[2], err)
-		}
-		port = uint16(p)
-	}
-
-	return cpvip.BGPPeerConfig{
-		Address: parts[0],
-		AS:      uint32(peerAS),
-		Port:    port,
-	}, nil
-}
-
-// runControlPlaneVIPMode runs the agent in control-plane VIP mode.
-// This mode manages a single VIP for kube-apiserver HA without requiring
-// the NovaEdge controller, making it suitable for pre-bootstrap scenarios.
-func runControlPlaneVIPMode(logger *zap.Logger) {
-	logger.Info("Running in control-plane VIP mode",
-		zap.String("vip", cpVIPAddress),
-		zap.String("mode", cpVIPMode),
-		zap.String("interface", cpVIPInterface),
-		zap.Int("api_port", cpAPIPort),
-	)
-
-	// Validate required flags
-	if cpVIPAddress == "" {
-		logger.Fatal("--cp-vip-address is required when --control-plane-vip is enabled")
-	}
-
-	// Parse BGP peers
-	bgpPeers := make([]cpvip.BGPPeerConfig, 0, len(cpBGPPeers))
-	for _, peerStr := range cpBGPPeers {
-		peer, err := parseBGPPeer(peerStr)
-		if err != nil {
-			logger.Fatal("Failed to parse BGP peer", zap.String("peer", peerStr), zap.Error(err))
-		}
-		bgpPeers = append(bgpPeers, peer)
-	}
-
-	// Create context with cancellation
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Validate integer bounds before narrowing conversions
-	if cpBGPLocalAS > math.MaxUint32 {
-		logger.Fatal("--cp-bgp-local-as exceeds maximum uint32 value", zap.Uint("value", cpBGPLocalAS))
-	}
-	if cpBFDDetectMult < 0 || cpBFDDetectMult > math.MaxInt32 {
-		logger.Fatal("--cp-bfd-detect-mult out of int32 range", zap.Int("value", cpBFDDetectMult))
-	}
-
-	// Create CP VIP manager
-	cpManager, err := cpvip.NewManager(cpvip.Config{
-		VIPAddress:     cpVIPAddress,
-		Interface:      cpVIPInterface,
-		APIPort:        cpAPIPort,
-		HealthInterval: cpHealthInterval,
-		HealthTimeout:  cpHealthTimeout,
-		Mode:           cpVIPMode,
-		BGPLocalAS:     uint32(cpBGPLocalAS), //nolint:gosec // bounds checked above
-		BGPRouterID:    cpBGPRouterID,
-		BGPPeers:       bgpPeers,
-		BFDEnabled:     cpBFDEnabled,
-		BFDDetectMult:  int32(cpBFDDetectMult), //nolint:gosec // bounds checked above
-		BFDTxInterval:  cpBFDTxInterval,
-		BFDRxInterval:  cpBFDRxInterval,
-	}, logger)
-	if err != nil {
-		logger.Fatal("Failed to create control-plane VIP manager", zap.Error(err))
-	}
-
-	// Create metrics server
-	metricsServer := server.NewMetricsServer(logger, metricsPort)
-
-	// Create health probe server
-	healthServer := server.NewHealthServer(logger, healthProbePort)
-
-	// Mark health probe as ready (CP VIP mode is always ready once started)
-	healthServer.SetReady(true)
-
-	// Start CP VIP manager
-	cpvipChan := make(chan error, 1)
-	go func() {
-		cpvipChan <- cpManager.Start(ctx)
-	}()
-
-	// Start metrics server
-	metricsChan := make(chan error, 1)
-	go func() {
-		metricsChan <- metricsServer.Start(ctx)
-	}()
-
-	// Start health probe server
-	healthChan := make(chan error, 1)
-	go func() {
-		healthChan <- healthServer.Start(ctx)
-	}()
-
-	// Wait for shutdown signal or error
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	select {
-	case err := <-cpvipChan:
-		logger.Error("CP VIP manager failed", zap.Error(err))
-	case err := <-metricsChan:
-		logger.Error("Metrics server failed", zap.Error(err))
-	case err := <-healthChan:
-		logger.Error("Health probe failed", zap.Error(err))
-	case sig := <-sigChan:
-		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
-	}
-
-	// Graceful shutdown
-	logger.Info("Shutting down control-plane VIP mode...")
-	cancel()
-
-	// Release VIP
-	if err := cpManager.Stop(); err != nil {
-		logger.Error("Error stopping CP VIP manager", zap.Error(err))
-	}
-
-	// Shutdown metrics server
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-
-	if err := metricsServer.Shutdown(shutdownCtx); err != nil {
-		logger.Error("Error during metrics server shutdown", zap.Error(err))
-	}
-
-	logger.Info("Agent stopped (control-plane VIP mode)")
 }
 
 func initLogger(level string) (*zap.Logger, zap.AtomicLevel) {
@@ -941,35 +650,6 @@ func convertWANPolicies(wanPolicies []*pb.WANPolicy) []sdwan.PolicyConfig {
 		policies = append(policies, pc)
 	}
 	return policies
-}
-
-// buildAFXDPVIPKeys converts VIP assignments into afxdp.VIPKey entries
-// so the AF_XDP zero-copy fast path knows which packets to intercept.
-func buildAFXDPVIPKeys(vips []*pb.VIPAssignment) []afxdp.VIPKey {
-	var keys []afxdp.VIPKey
-	for _, v := range vips {
-		addr := v.GetAddress()
-		if idx := strings.IndexByte(addr, '/'); idx >= 0 {
-			addr = addr[:idx]
-		}
-		ip := net.ParseIP(addr)
-		if ip == nil {
-			continue
-		}
-		ip4 := ip.To4()
-		if ip4 == nil {
-			continue // AF_XDP VIPKey only supports IPv4
-		}
-
-		for _, port := range v.GetPorts() {
-			keys = append(keys, afxdp.VIPKey{
-				Addr:  [4]byte{ip4[0], ip4[1], ip4[2], ip4[3]},
-				Port:  uint16(port), //nolint:gosec // port range
-				Proto: 6,            // TCP
-			})
-		}
-	}
-	return keys
 }
 
 // configureEBPFRateLimiter extracts rate-limit configuration from snapshot policies

@@ -47,10 +47,8 @@ func registerTypes() bool {
 		&ProxyBackend{}, &ProxyBackendList{},
 		&ProxyCertificate{}, &ProxyCertificateList{},
 		&ProxyGateway{}, &ProxyGatewayList{},
-		&ProxyIPPool{}, &ProxyIPPoolList{},
 		&ProxyPolicy{}, &ProxyPolicyList{},
 		&ProxyRoute{}, &ProxyRouteList{},
-		&ProxyVIP{}, &ProxyVIPList{},
 		&ProxyWANLink{}, &ProxyWANLinkList{},
 		&ProxyWANPolicy{}, &ProxyWANPolicyList{},
 	)

@@ -125,42 +125,6 @@ func TestHeaderMatchType(t *testing.T) {
 	}
 }
 
-func TestVIPMode(t *testing.T) {
-	tests := []struct {
-		name     string
-		mode     VIPMode
-		expected string
-	}{
-		{"L2ARP", VIPModeL2ARP, "L2ARP"},
-		{"BGP", VIPModeBGP, "BGP"},
-		{"OSPF", VIPModeOSPF, "OSPF"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, VIPMode(tt.expected), tt.mode)
-		})
-	}
-}
-
-func TestAddressFamily(t *testing.T) {
-	tests := []struct {
-		name     string
-		family   AddressFamily
-		expected string
-	}{
-		{"IPv4", AddressFamilyIPv4, "ipv4"},
-		{"IPv6", AddressFamilyIPv6, "ipv6"},
-		{"Dual", AddressFamilyDual, "dual"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, AddressFamily(tt.expected), tt.family)
-		})
-	}
-}
-
 func TestConflictResolutionStrategy(t *testing.T) {
 	tests := []struct {
 		name     string

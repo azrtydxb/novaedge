@@ -89,8 +89,6 @@ func (a *FederationResourceApplier) Apply(ctx context.Context, key federation.Re
 		err = a.applyCRD(ctx, key, changeType, data, &novaedgev1alpha1.ProxyBackend{})
 	case "ProxyPolicy":
 		err = a.applyCRD(ctx, key, changeType, data, &novaedgev1alpha1.ProxyPolicy{})
-	case "ProxyVIP":
-		err = a.applyCRD(ctx, key, changeType, data, &novaedgev1alpha1.ProxyVIP{})
 	case "ConfigMap":
 		err = a.applyConfigMap(ctx, key, changeType, data)
 	case "Secret":

@@ -56,20 +56,6 @@ func TestBuildSnapshot(t *testing.T) {
 	_ = discoveryv1.AddToScheme(scheme)
 
 	// Create test resources
-	vip := &novaedgev1alpha1.ProxyVIP{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "test-vip",
-		},
-		Spec: novaedgev1alpha1.ProxyVIPSpec{
-			Address: "203.0.113.10/32",
-			Mode:    novaedgev1alpha1.VIPModeBGP,
-			Ports:   []int32{80, 443},
-		},
-		Status: novaedgev1alpha1.ProxyVIPStatus{
-			AnnouncingNodes: []string{"test-node"},
-		},
-	}
-
 	gateway := &novaedgev1alpha1.ProxyGateway{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-gateway",
@@ -92,8 +78,7 @@ func TestBuildSnapshot(t *testing.T) {
 	// Create fake client with test resources
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(vip, gateway).
-		WithStatusSubresource(vip).
+		WithObjects(gateway).
 		Build()
 
 	// Create builder and build snapshot
@@ -115,17 +100,6 @@ func TestBuildSnapshot(t *testing.T) {
 
 	if snapshot.GenerationTime == 0 {
 		t.Error("Snapshot generation time is zero")
-	}
-
-	if len(snapshot.VipAssignments) != 1 {
-		t.Errorf("Expected 1 VIP assignment, got %d", len(snapshot.VipAssignments))
-	} else {
-		if snapshot.VipAssignments[0].VipName != "test-vip" {
-			t.Errorf("Expected VIP name 'test-vip', got '%s'", snapshot.VipAssignments[0].VipName)
-		}
-		if snapshot.VipAssignments[0].Mode != pb.VIPMode_BGP {
-			t.Errorf("Expected VIP mode BGP, got %v", snapshot.VipAssignments[0].Mode)
-		}
 	}
 
 	if len(snapshot.Gateways) != 1 {
@@ -224,24 +198,6 @@ func TestGenerateVersion(t *testing.T) {
 
 	if vWAN == vNoWAN {
 		t.Error("Expected different versions when WAN links differ with no L4 listeners")
-	}
-}
-
-func TestConvertVIPMode(t *testing.T) {
-	tests := []struct {
-		input    novaedgev1alpha1.VIPMode
-		expected pb.VIPMode
-	}{
-		{novaedgev1alpha1.VIPModeL2ARP, pb.VIPMode_L2_ARP},
-		{novaedgev1alpha1.VIPModeBGP, pb.VIPMode_BGP},
-		{novaedgev1alpha1.VIPModeOSPF, pb.VIPMode_OSPF},
-	}
-
-	for _, tt := range tests {
-		result := convertVIPMode(tt.input)
-		if result != tt.expected {
-			t.Errorf("convertVIPMode(%v) = %v, want %v", tt.input, result, tt.expected)
-		}
 	}
 }
 
@@ -573,152 +529,6 @@ func TestResolveServiceEndpointsNilReadyTreatedAsReady(t *testing.T) {
 	// Endpoint with explicit false should NOT be ready
 	if result.Endpoints[2].Ready {
 		t.Errorf("Endpoint 2 (Ready=false): expected Ready=false, got Ready=true")
-	}
-}
-
-func TestBuildClustersECMPAutoPromoteToMaglev(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = novaedgev1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-	_ = discoveryv1.AddToScheme(scheme)
-
-	backend := &novaedgev1alpha1.ProxyBackend{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-backend",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyBackendSpec{
-			LBPolicy: "", // unspecified
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
-	builder := NewBuilder(fakeClient)
-	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
-
-	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-
-	if len(clusters) != 1 {
-		t.Fatalf("expected 1 cluster, got %d", len(clusters))
-	}
-
-	if clusters[0].LbPolicy != pb.LoadBalancingPolicy_MAGLEV {
-		t.Errorf("expected MAGLEV, got %v", clusters[0].LbPolicy)
-	}
-}
-
-func TestBuildClustersECMPAutoPromotesRoundRobin(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = novaedgev1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-	_ = discoveryv1.AddToScheme(scheme)
-
-	backend := &novaedgev1alpha1.ProxyBackend{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-backend",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyBackendSpec{
-			LBPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
-	builder := NewBuilder(fakeClient)
-	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
-
-	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-
-	if len(clusters) != 1 {
-		t.Fatalf("expected 1 cluster (auto-promoted), got %d", len(clusters))
-	}
-	if clusters[0].LbPolicy != pb.LoadBalancingPolicy_MAGLEV {
-		t.Errorf("expected Maglev after auto-promotion, got %s", clusters[0].LbPolicy.String())
-	}
-}
-
-func TestBuildClustersECMPRejectsNonHashLB(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = novaedgev1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-	_ = discoveryv1.AddToScheme(scheme)
-
-	backend := &novaedgev1alpha1.ProxyBackend{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-backend",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyBackendSpec{
-			LBPolicy: novaedgev1alpha1.LBPolicyLeastConn,
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
-	builder := NewBuilder(fakeClient)
-	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
-
-	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-
-	if len(clusters) != 0 {
-		t.Errorf("expected 0 clusters (rejected), got %d", len(clusters))
-	}
-}
-
-func TestBuildClustersNonECMPAllowsAnyLB(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = novaedgev1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-	_ = discoveryv1.AddToScheme(scheme)
-
-	backend := &novaedgev1alpha1.ProxyBackend{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-backend",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyBackendSpec{
-			LBPolicy: novaedgev1alpha1.LBPolicyRoundRobin,
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
-	builder := NewBuilder(fakeClient)
-	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
-
-	clusters, _ := builder.buildClusters(context.Background(), nil, bc)
-
-	if len(clusters) != 1 {
-		t.Errorf("expected 1 cluster, got %d", len(clusters))
-	}
-}
-
-func TestBuildClustersECMPAllowsHashLB(t *testing.T) {
-	scheme := runtime.NewScheme()
-	_ = novaedgev1alpha1.AddToScheme(scheme)
-	_ = corev1.AddToScheme(scheme)
-	_ = discoveryv1.AddToScheme(scheme)
-
-	backend := &novaedgev1alpha1.ProxyBackend{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-backend",
-			Namespace: "default",
-		},
-		Spec: novaedgev1alpha1.ProxyBackendSpec{
-			LBPolicy: novaedgev1alpha1.LBPolicyMaglev,
-		},
-	}
-
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(backend).Build()
-	builder := NewBuilder(fakeClient)
-	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
-
-	clusters, _ := builder.buildClusters(context.Background(), map[string]struct{}{"default/test-backend": {}}, bc)
-
-	if len(clusters) != 1 {
-		t.Fatalf("expected 1 cluster, got %d", len(clusters))
-	}
-
-	if clusters[0].LbPolicy != pb.LoadBalancingPolicy_MAGLEV {
-		t.Errorf("expected MAGLEV, got %v", clusters[0].LbPolicy)
 	}
 }
 

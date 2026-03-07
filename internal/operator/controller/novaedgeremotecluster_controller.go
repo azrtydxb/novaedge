@@ -438,7 +438,6 @@ func (r *NovaEdgeRemoteClusterReconciler) deleteFederatedResources(ctx context.C
 		{"ProxyRoute", &novaedgev1alpha1.ProxyRouteList{}},
 		{"ProxyBackend", &novaedgev1alpha1.ProxyBackendList{}},
 		{"ProxyPolicy", &novaedgev1alpha1.ProxyPolicyList{}},
-		{"ProxyVIP", &novaedgev1alpha1.ProxyVIPList{}},
 	}
 
 	for _, d := range crdDeleters {

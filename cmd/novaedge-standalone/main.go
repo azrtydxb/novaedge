@@ -33,7 +33,6 @@ import (
 
 	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
 	"github.com/azrtydxb/novaedge/internal/agent/server"
-	"github.com/azrtydxb/novaedge/internal/agent/vip"
 	dpctl "github.com/azrtydxb/novaedge/internal/dataplane"
 	"github.com/azrtydxb/novaedge/internal/standalone"
 )
@@ -57,7 +56,6 @@ var (
 // standaloneComponents holds the initialized components for the standalone agent.
 type standaloneComponents struct {
 	logger        *zap.Logger
-	vipManager    vip.Manager
 	dpClient      *dpctl.Client
 	dpTranslator  *dpctl.Translator
 	metricsServer *server.MetricsServer
@@ -80,14 +78,6 @@ func parseFlags() {
 // initComponents creates all standalone agent components.
 func initComponents(logger *zap.Logger) *standaloneComponents {
 	c := &standaloneComponents{logger: logger}
-
-	// Create VIP manager (optional - fails gracefully on non-Linux systems)
-	vm, err := vip.NewManager(logger)
-	if err != nil {
-		logger.Warn("VIP manager not available (VIP features disabled)", zap.Error(err))
-	} else {
-		c.vipManager = vm
-	}
 
 	// Create dataplane client for Rust forwarding plane
 	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
@@ -118,13 +108,6 @@ func shutdownComponents(c *standaloneComponents) {
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-
-	if c.vipManager != nil {
-		c.logger.Info("Releasing VIPs...")
-		if err := c.vipManager.Release(); err != nil {
-			c.logger.Error("Error releasing VIPs", zap.Error(err))
-		}
-	}
 
 	if c.dpClient != nil {
 		if err := c.dpClient.Close(); err != nil {
@@ -172,14 +155,6 @@ func main() {
 
 	c := initComponents(logger)
 
-	// Start VIP manager if available
-	if c.vipManager != nil {
-		if err := c.vipManager.Start(ctx); err != nil {
-			logger.Error("Failed to start VIP manager", zap.Error(err))
-			c.vipManager = nil
-		}
-	}
-
 	// Start config watcher
 	configChan := make(chan error, 1)
 	go func() {
@@ -188,14 +163,7 @@ func main() {
 				zap.String("version", snapshot.Version),
 				zap.Int("gateways", len(snapshot.Gateways)),
 				zap.Int("routes", len(snapshot.Routes)),
-				zap.Int("vips", len(snapshot.VipAssignments)),
 			)
-
-			if c.vipManager != nil {
-				if err := c.vipManager.ApplyVIPs(ctx, snapshot.VipAssignments); err != nil {
-					logger.Error("Failed to apply VIP assignments", zap.Error(err))
-				}
-			}
 
 			if syncErr := c.dpTranslator.Sync(ctx, snapshot.ConfigSnapshot); syncErr != nil {
 				logger.Error("Failed to sync config to Rust dataplane", zap.Error(syncErr))

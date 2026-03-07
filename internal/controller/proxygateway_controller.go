@@ -224,21 +224,6 @@ func (r *ProxyGatewayReconciler) validateAndUpdateStatus(ctx context.Context, ga
 	logger := log.FromContext(ctx)
 	var validationErrors []string
 
-	// Validate VIPRef exists
-	if gateway.Spec.VIPRef != "" {
-		vip := &novaedgev1alpha1.ProxyVIP{}
-		if err := r.Get(ctx, types.NamespacedName{
-			Name:      gateway.Spec.VIPRef,
-			Namespace: gateway.Namespace,
-		}, vip); err != nil {
-			if apierrors.IsNotFound(err) {
-				validationErrors = append(validationErrors, fmt.Sprintf("VIP %s not found", gateway.Spec.VIPRef))
-			} else {
-				logger.Error(err, "Failed to get VIP", "vip", gateway.Spec.VIPRef)
-			}
-		}
-	}
-
 	// Validate TLS secrets for HTTPS listeners
 	for _, listener := range gateway.Spec.Listeners {
 		if listener.Protocol == "HTTPS" || listener.Protocol == "TLS" {
