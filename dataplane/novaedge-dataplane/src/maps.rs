@@ -50,7 +50,11 @@ struct MockMaps {
 /// and `HashMap::remove` require `&mut self`, but `MapManager` exposes `&self`
 /// methods for ergonomic usage behind `Arc`. External synchronization (single
 /// writer from the gRPC thread) ensures safety.
+/// Some fields (rate_limit_cfg, vip_addrs) are not read by userspace code
+/// but must be kept alive to hold eBPF map file descriptors open for
+/// kernel-side programs (novaedge_ratelimit, novaedge_arp).
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub struct RealMaps {
     pub rate_limits:
         UnsafeCell<aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>>,

@@ -36,7 +36,7 @@ pub fn deterministic_subset(
         .collect();
 
     // Sort by score descending; take top subset_size.
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.sort_by_key(|b| std::cmp::Reverse(b.1));
     scored.truncate(subset_size);
     scored.into_iter().map(|(idx, _)| idx).collect()
 }

@@ -101,6 +101,7 @@ pub fn attach_xdp(bpf: &mut aya::Ebpf, program_name: &str, interface: &str) -> a
 /// (named differently per program). This function writes the interface MAC
 /// to the map at key 0 so the XDP program can use it as the source MAC.
 #[cfg(target_os = "linux")]
+#[allow(dead_code)]
 pub fn populate_local_mac(
     bpf: &mut aya::Ebpf,
     map_name: &str,
