@@ -26,7 +26,6 @@ type Config struct {
 	Gateways []Gateway `json:"gateways"`
 	Routes   []Route   `json:"routes"`
 	Backends []Backend `json:"backends"`
-	VIPs     []VIP     `json:"vips"`
 	Policies []Policy  `json:"policies"`
 }
 
@@ -38,7 +37,6 @@ type Gateway struct {
 
 	// Spec
 	Listeners []Listener     `json:"listeners"`
-	VIPRef    *VIPRef        `json:"vipRef,omitempty"`
 	Tracing   *Tracing       `json:"tracing,omitempty"`
 	AccessLog *AccessLog     `json:"accessLog,omitempty"`
 	Status    *GatewayStatus `json:"status,omitempty"`
@@ -84,12 +82,6 @@ type TLS struct {
 
 // SecretRef references a Kubernetes secret
 type SecretRef struct {
-	Name      string `json:"name"`
-	Namespace string `json:"namespace,omitempty"`
-}
-
-// VIPRef references a VIP
-type VIPRef struct {
 	Name      string `json:"name"`
 	Namespace string `json:"namespace,omitempty"`
 }
@@ -284,48 +276,6 @@ type BackendTLS struct {
 	ServerName         string `json:"serverName,omitempty"`
 }
 
-// VIP represents a virtual IP configuration
-type VIP struct {
-	// Metadata
-	Name      string `json:"name"`
-	Namespace string `json:"namespace,omitempty"`
-
-	// Spec
-	Address   string      `json:"address"` // IP/CIDR
-	Mode      string      `json:"mode"`    // L2, BGP, OSPF
-	Interface string      `json:"interface,omitempty"`
-	BGP       *BGPConfig  `json:"bgp,omitempty"`
-	OSPF      *OSPFConfig `json:"ospf,omitempty"`
-	Status    *VIPStatus  `json:"status,omitempty"`
-
-	// Resource version for optimistic locking
-	ResourceVersion string `json:"resourceVersion,omitempty"`
-}
-
-// VIPStatus represents VIP status
-type VIPStatus struct {
-	Bound      bool        `json:"bound"`
-	Node       string      `json:"node,omitempty"`
-	Conditions []Condition `json:"conditions,omitempty"`
-}
-
-// BGPConfig defines BGP settings
-type BGPConfig struct {
-	LocalAS       uint32 `json:"localAS"`
-	RouterID      string `json:"routerID"`
-	PeerAS        uint32 `json:"peerAS"`
-	PeerIP        string `json:"peerIP"`
-	HoldTime      int    `json:"holdTime,omitempty"`
-	KeepaliveTime int    `json:"keepaliveTime,omitempty"`
-}
-
-// OSPFConfig defines OSPF settings
-type OSPFConfig struct {
-	RouterID  string `json:"routerID"`
-	Area      string `json:"area"`
-	Interface string `json:"interface"`
-}
-
 // Policy represents a policy configuration
 type Policy struct {
 	// Metadata
@@ -501,7 +451,7 @@ type IPPoolStatus struct {
 // IPAllocation tracks a single IP allocation from a pool
 type IPAllocation struct {
 	Address string `json:"address" yaml:"address"`
-	VIPRef  string `json:"vipRef" yaml:"vipRef"`
+	Owner   string `json:"owner" yaml:"owner"`
 }
 
 // NovaEdgeClusterModel represents a NovaEdgeCluster configuration

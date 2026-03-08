@@ -30,7 +30,6 @@ export interface Gateway {
 
 export interface GatewaySpec {
   listeners?: Listener[]
-  vipRef?: ObjectRef
   tracing?: Tracing
   accessLog?: AccessLog
 }
@@ -242,45 +241,6 @@ export interface BackendTLS {
   serverName?: string
 }
 
-// VIP types
-export interface VIP {
-  apiVersion?: string
-  kind?: string
-  metadata?: ResourceMetadata
-  spec?: VIPSpec
-  status?: VIPStatus
-}
-
-export interface VIPSpec {
-  address?: string
-  mode?: 'L2' | 'BGP' | 'OSPF'
-  interface?: string
-  gatewayRef?: ObjectRef
-  bgp?: BGPConfig
-  ospf?: OSPFConfig
-}
-
-export interface VIPStatus {
-  bound?: boolean
-  node?: string
-  conditions?: Condition[]
-}
-
-export interface BGPConfig {
-  localAS?: number
-  routerID?: string
-  peerAS?: number
-  peerIP?: string
-  holdTime?: number
-  keepaliveTime?: number
-}
-
-export interface OSPFConfig {
-  routerID?: string
-  area?: string
-  interface?: string
-}
-
 // Policy types
 export interface Policy {
   apiVersion?: string
@@ -372,7 +332,6 @@ export interface DashboardMetrics {
   avgLatencyMs?: number
   bandwidthIn?: number
   bandwidthOut?: number
-  vipFailovers?: number
   healthyAgents?: number
   totalAgents?: number
   // Resource metrics (totals across all workers)
@@ -396,7 +355,6 @@ export interface Config {
   gateways?: Gateway[]
   routes?: Route[]
   backends?: Backend[]
-  vips?: VIP[]
   policies?: Policy[]
 }
 
@@ -790,5 +748,5 @@ export interface WASMPluginStatus {
 }
 
 // Resource type for generic handling
-export type ResourceType = 'gateway' | 'route' | 'backend' | 'vip' | 'policy' | 'certificate' | 'ippool'
-export type Resource = Gateway | Route | Backend | VIP | Policy | Certificate | IPPool
+export type ResourceType = 'gateway' | 'route' | 'backend' | 'policy' | 'certificate' | 'ippool'
+export type Resource = Gateway | Route | Backend | Policy | Certificate | IPPool

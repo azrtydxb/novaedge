@@ -176,7 +176,6 @@ func (w *ConfigWatcher) loadAndApply(applyFunc ApplyFunc) error {
 		zap.Int("listeners", len(standaloneConfig.Listeners)),
 		zap.Int("routes", len(standaloneConfig.Routes)),
 		zap.Int("backends", len(standaloneConfig.Backends)),
-		zap.Int("vips", len(standaloneConfig.VIPs)),
 		zap.Int("policies", len(standaloneConfig.Policies)))
 
 	// Wrap in agentconfig.Snapshot for compatibility with agent components

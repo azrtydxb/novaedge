@@ -6,7 +6,7 @@
  * This normalizer converts flat format to nested format for consistent frontend handling.
  */
 
-import type { Gateway, Route, Backend, VIP, Policy } from './types'
+import type { Gateway, Route, Backend, Policy } from './types'
 
 // Type guard to check if data is in flat format (has name at root level, not in metadata)
 function isFlatFormat(data: unknown): boolean {
@@ -37,7 +37,6 @@ export function normalizeGateway(data: AnyObject): Gateway {
     },
     spec: {
       listeners: data.listeners || [],
-      vipRef: data.vipRef,
       tracing: data.tracing,
       accessLog: data.accessLog,
     },
@@ -107,33 +106,6 @@ export function normalizeBackend(data: AnyObject): Backend {
 }
 
 /**
- * Normalizes a VIP from flat format to nested Kubernetes-style format
- */
-export function normalizeVIP(data: AnyObject): VIP {
-  if (!isFlatFormat(data)) {
-    return data as VIP
-  }
-
-  return {
-    apiVersion: 'novaedge.io/v1alpha1',
-    kind: 'ProxyVIP',
-    metadata: {
-      name: data.name,
-      namespace: data.namespace,
-      resourceVersion: data.resourceVersion,
-    },
-    spec: {
-      address: data.address,
-      mode: data.mode,
-      interface: data.interface,
-      bgp: data.bgp,
-      ospf: data.ospf,
-    },
-    status: data.status || { bound: false },
-  }
-}
-
-/**
  * Normalizes a Policy from flat format to nested Kubernetes-style format
  */
 export function normalizePolicy(data: AnyObject): Policy {
@@ -173,10 +145,6 @@ export function normalizeRoutes(data: AnyObject[]): Route[] {
 
 export function normalizeBackends(data: AnyObject[]): Backend[] {
   return data.map(normalizeBackend)
-}
-
-export function normalizeVIPs(data: AnyObject[]): VIP[] {
-  return data.map(normalizeVIP)
 }
 
 export function normalizePolicies(data: AnyObject[]): Policy[] {

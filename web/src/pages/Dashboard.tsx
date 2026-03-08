@@ -4,7 +4,7 @@ import {
   useGateways,
   useRoutes,
   useBackends,
-  useVIPs,
+
   usePolicies,
   useCertificates,
   useIPPools,
@@ -25,7 +25,6 @@ import {
   Server,
   GitBranch,
   Database,
-  Star,
   Shield,
   AlertCircle,
   Cpu,
@@ -57,7 +56,6 @@ export default function Dashboard() {
   const { data: gateways = [] } = useGateways(namespace)
   const { data: routes = [] } = useRoutes(namespace)
   const { data: backends = [] } = useBackends(namespace)
-  const { data: vips = [] } = useVIPs(namespace)
   const { data: policies = [] } = usePolicies(namespace)
   const { data: certificates = [] } = useCertificates(namespace)
   const { data: ippools = [] } = useIPPools()
@@ -76,7 +74,6 @@ export default function Dashboard() {
     { title: 'Gateways', value: gateways.length, icon: <Server className="h-4 w-4" />, link: '/gateways' },
     { title: 'Routes', value: routes.length, icon: <GitBranch className="h-4 w-4" />, link: '/routes' },
     { title: 'Backends', value: backends.length, icon: <Database className="h-4 w-4" />, link: '/backends' },
-    { title: 'VIPs', value: vips.length, icon: <Star className="h-4 w-4" />, link: '/vips' },
     { title: 'Policies', value: policies.length, icon: <Shield className="h-4 w-4" />, link: '/policies' },
     { title: 'Certificates', value: certificates.length, icon: <KeyRound className="h-4 w-4" />, link: '/certificates' },
     { title: 'IP Pools', value: ippools.length, icon: <Network className="h-4 w-4" />, link: '/ippools' },

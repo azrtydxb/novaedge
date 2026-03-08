@@ -11,7 +11,6 @@ const Dashboard = lazy(() => import('./pages/Dashboard'))
 const Gateways = lazy(() => import('./pages/Gateways'))
 const RoutesPage = lazy(() => import('./pages/Routes'))
 const Backends = lazy(() => import('./pages/Backends'))
-const VIPs = lazy(() => import('./pages/VIPs'))
 const Policies = lazy(() => import('./pages/Policies'))
 const Agents = lazy(() => import('./pages/Agents'))
 const Login = lazy(() => import('./pages/Login'))
@@ -101,7 +100,7 @@ export default function App() {
             <Route path="/gateways" element={<Gateways />} />
             <Route path="/routes" element={<RoutesPage />} />
             <Route path="/backends" element={<Backends />} />
-            <Route path="/vips" element={<VIPs />} />
+
             <Route path="/policies" element={<Policies />} />
             <Route path="/agents" element={<Agents />} />
             <Route path="/certificates" element={<Certificates />} />

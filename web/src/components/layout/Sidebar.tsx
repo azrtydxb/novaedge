@@ -5,7 +5,6 @@ import {
   GitBranch,
   Server,
   Shield,
-  Globe,
   LayoutGrid,
   Lock,
   Workflow,
@@ -61,7 +60,6 @@ const navGroups: NavGroup[] = [
   {
     label: 'Networking',
     items: [
-      { name: 'VIPs', path: '/vips', icon: Globe },
       { name: 'IP Pools', path: '/ippools', icon: LayoutGrid },
       { name: 'Certificates', path: '/certificates', icon: Lock },
       { name: 'SD-WAN', path: '/sdwan', icon: Radio },

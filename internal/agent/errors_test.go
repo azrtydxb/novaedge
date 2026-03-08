@@ -30,7 +30,6 @@ func TestCommonErrors(t *testing.T) {
 	assert.Error(t, ErrNoHealthyEndpoints)
 	assert.Error(t, ErrPoolNotFound)
 	assert.Error(t, ErrLoadBalancerNotFound)
-	assert.Error(t, ErrVIPOperationFailed)
 	assert.Error(t, ErrHealthCheckFailed)
 	assert.Error(t, ErrCircuitBreakerOpen)
 
@@ -40,7 +39,6 @@ func TestCommonErrors(t *testing.T) {
 	assert.Equal(t, "no healthy endpoints available", ErrNoHealthyEndpoints.Error())
 	assert.Equal(t, "connection pool not found", ErrPoolNotFound.Error())
 	assert.Equal(t, "load balancer not found", ErrLoadBalancerNotFound.Error())
-	assert.Equal(t, "VIP operation failed", ErrVIPOperationFailed.Error())
 	assert.Equal(t, "health check failed", ErrHealthCheckFailed.Error())
 	assert.Equal(t, "circuit breaker is open", ErrCircuitBreakerOpen.Error())
 }
@@ -173,80 +171,6 @@ func TestEndpointError_Is(t *testing.T) {
 	assert.False(t, errors.Is(endpointErr, errors.New("different error")))
 }
 
-func TestVIPError(t *testing.T) {
-	tests := []struct {
-		name     string
-		vipName  string
-		address  string
-		mode     string
-		message  string
-		err      error
-		expected string
-	}{
-		{
-			name:     "with underlying error",
-			vipName:  "vip-1",
-			address:  "192.168.1.100",
-			mode:     "L2_ARP",
-			message:  "failed to advertise",
-			err:      errors.New("interface not found"),
-			expected: "VIP error vip-1 (192.168.1.100) mode=L2_ARP: failed to advertise: interface not found",
-		},
-		{
-			name:     "without underlying error",
-			vipName:  "vip-2",
-			address:  "10.0.0.100",
-			mode:     "BGP",
-			message:  "BGP session failed",
-			err:      nil,
-			expected: "VIP error vip-2 (10.0.0.100) mode=BGP: BGP session failed",
-		},
-		{
-			name:     "OSPF mode",
-			vipName:  "vip-3",
-			address:  "172.16.0.100",
-			mode:     "OSPF",
-			message:  "OSPF neighbor down",
-			err:      nil,
-			expected: "VIP error vip-3 (172.16.0.100) mode=OSPF: OSPF neighbor down",
-		},
-		{
-			name:     "empty values",
-			vipName:  "",
-			address:  "",
-			mode:     "",
-			message:  "",
-			err:      nil,
-			expected: "VIP error  () mode=: ",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			vipErr := NewVIPError(tt.vipName, tt.address, tt.mode, tt.message, tt.err)
-			assert.Equal(t, tt.vipName, vipErr.VIPName)
-			assert.Equal(t, tt.address, vipErr.Address)
-			assert.Equal(t, tt.mode, vipErr.Mode)
-			assert.Equal(t, tt.message, vipErr.Message)
-			assert.Equal(t, tt.err, vipErr.Err)
-			assert.Equal(t, tt.expected, vipErr.Error())
-
-			// Test Unwrap
-			unwrapped := vipErr.Unwrap()
-			assert.Equal(t, tt.err, unwrapped)
-		})
-	}
-}
-
-func TestVIPError_Is(t *testing.T) {
-	underlyingErr := errors.New("underlying error")
-	vipErr := NewVIPError("vip-1", "192.168.1.100", "L2_ARP", "message", underlyingErr)
-
-	// Test errors.Is
-	assert.True(t, errors.Is(vipErr, underlyingErr))
-	assert.False(t, errors.Is(vipErr, errors.New("different error")))
-}
-
 func TestLoadBalancerError(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -337,12 +261,6 @@ func TestNewEndpointError_NilError(t *testing.T) {
 	endpointErr := NewEndpointError("192.168.1.1", 8080, "message", nil)
 	assert.Nil(t, endpointErr.Err)
 	assert.NotNil(t, endpointErr)
-}
-
-func TestNewVIPError_NilError(t *testing.T) {
-	vipErr := NewVIPError("vip-1", "192.168.1.100", "L2_ARP", "message", nil)
-	assert.Nil(t, vipErr.Err)
-	assert.NotNil(t, vipErr)
 }
 
 func TestNewLoadBalancerError_NilError(t *testing.T) {

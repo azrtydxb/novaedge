@@ -59,9 +59,6 @@ type Config struct {
 	// Backends define upstream services
 	Backends []BackendConfig `yaml:"backends"`
 
-	// VIPs define virtual IP addresses (optional)
-	VIPs []VIPConfig `yaml:"vips,omitempty"`
-
 	// L4Listeners define Layer 4 TCP/UDP/TLS passthrough listeners (optional)
 	L4Listeners []L4ListenerStandaloneConfig `yaml:"l4Listeners,omitempty"`
 
@@ -487,66 +484,6 @@ type SessionAffinityStandaloneConfig struct {
 
 	// SameSite attribute: Strict, Lax, None
 	SameSite string `yaml:"sameSite,omitempty"`
-}
-
-// VIPConfig defines a virtual IP address
-type VIPConfig struct {
-	Name    string `yaml:"name"`
-	Address string `yaml:"address"` // IP/CIDR format (IPv4 or IPv6)
-	Mode    string `yaml:"mode"`    // L2, BGP, OSPF
-
-	// IPv6Address is the IPv6 VIP address for dual-stack mode
-	IPv6Address string `yaml:"ipv6Address,omitempty"`
-
-	// AddressFamily: ipv4, ipv6, dual (default: ipv4)
-	AddressFamily string `yaml:"addressFamily,omitempty"`
-
-	// Interface to bind VIP (for L2 mode)
-	Interface string `yaml:"interface,omitempty"`
-
-	// BGP configuration
-	BGP *BGPConfig `yaml:"bgp,omitempty"`
-
-	// OSPF configuration
-	OSPF *OSPFConfig `yaml:"ospf,omitempty"`
-
-	// BFD configuration for fast failure detection
-	BFD *BFDStandaloneConfig `yaml:"bfd,omitempty"`
-
-	// PoolRef references an IP pool for automatic allocation
-	PoolRef string `yaml:"poolRef,omitempty"`
-}
-
-// BGPConfig defines BGP settings
-type BGPConfig struct {
-	LocalAS       uint32 `yaml:"localAS"`
-	RouterID      string `yaml:"routerID"`
-	PeerAS        uint32 `yaml:"peerAS"`
-	PeerIP        string `yaml:"peerIP"`
-	HoldTime      int    `yaml:"holdTime,omitempty"`
-	KeepaliveTime int    `yaml:"keepaliveTime,omitempty"`
-}
-
-// OSPFConfig defines OSPF settings
-type OSPFConfig struct {
-	RouterID        string `yaml:"routerID"`
-	Area            string `yaml:"area"`
-	Interface       string `yaml:"interface"`
-	Cost            int    `yaml:"cost,omitempty"`
-	HelloInterval   int    `yaml:"helloInterval,omitempty"`
-	DeadInterval    int    `yaml:"deadInterval,omitempty"`
-	AuthType        string `yaml:"authType,omitempty"`
-	AuthKey         string `yaml:"authKey,omitempty"` //nolint:gosec // G117: struct field name describes config key, not a hardcoded credential
-	GracefulRestart bool   `yaml:"gracefulRestart,omitempty"`
-}
-
-// BFDStandaloneConfig defines BFD settings for standalone mode
-type BFDStandaloneConfig struct {
-	Enabled               bool   `yaml:"enabled"`
-	DetectMultiplier      int    `yaml:"detectMultiplier,omitempty"`
-	DesiredMinTxInterval  string `yaml:"desiredMinTxInterval,omitempty"`
-	RequiredMinRxInterval string `yaml:"requiredMinRxInterval,omitempty"`
-	EchoMode              bool   `yaml:"echoMode,omitempty"`
 }
 
 // PolicyConfig defines a policy (rate limit, CORS, etc.)

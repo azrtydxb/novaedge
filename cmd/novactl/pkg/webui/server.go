@@ -171,8 +171,6 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/api/v1/routes/", s.handleRouteWithWrite)
 	mux.HandleFunc("/api/v1/backends", s.handleBackendsWithWrite)
 	mux.HandleFunc("/api/v1/backends/", s.handleBackendWithWrite)
-	mux.HandleFunc("/api/v1/vips", s.handleVIPsWithWrite)
-	mux.HandleFunc("/api/v1/vips/", s.handleVIPWithWrite)
 	mux.HandleFunc("/api/v1/policies", s.handlePoliciesWithWrite)
 	mux.HandleFunc("/api/v1/policies/", s.handlePolicyWithWrite)
 	mux.HandleFunc("/api/v1/certificates", s.handleCertificatesWithWrite)
@@ -442,30 +440,6 @@ func (s *Server) handleBackendWithWrite(w http.ResponseWriter, r *http.Request) 
 		s.handleBackend(w, r)
 	case http.MethodPut, http.MethodDelete:
 		s.handleBackendWrite(w, r)
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
-}
-
-// handleVIPsWithWrite dispatches to GET or POST handler
-func (s *Server) handleVIPsWithWrite(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleVIPs(w, r)
-	case http.MethodPost:
-		s.handleVIPWrite(w, r)
-	default:
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-	}
-}
-
-// handleVIPWithWrite dispatches to GET, PUT, or DELETE handler
-func (s *Server) handleVIPWithWrite(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleVIP(w, r)
-	case http.MethodPut, http.MethodDelete:
-		s.handleVIPWrite(w, r)
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -775,60 +749,6 @@ func (s *Server) handleBackend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, backend)
-}
-
-// handleVIPs handles GET /api/v1/vips
-func (s *Server) handleVIPs(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	ctx := r.Context()
-	namespace := parseNamespaceFromQuery(r)
-
-	vips, err := s.backend.ListVIPs(ctx, namespace)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to list vips: %v", err))
-		return
-	}
-
-	writeJSON(w, http.StatusOK, vips)
-}
-
-// handleVIP handles GET /api/v1/vips/{namespace}/{name}
-func (s *Server) handleVIP(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
-		return
-	}
-
-	if s.backend == nil {
-		writeError(w, http.StatusServiceUnavailable, "backend not initialized")
-		return
-	}
-
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/v1/vips/"), "/")
-	if len(parts) != 2 {
-		writeError(w, http.StatusBadRequest, "invalid path: expected /api/v1/vips/{namespace}/{name}")
-		return
-	}
-
-	namespace, name := parts[0], parts[1]
-	ctx := r.Context()
-
-	vip, err := s.backend.GetVIP(ctx, namespace, name)
-	if err != nil {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("vip not found: %v", err))
-		return
-	}
-
-	writeJSON(w, http.StatusOK, vip)
 }
 
 // handlePolicies handles GET /api/v1/policies
@@ -1293,7 +1213,6 @@ type DashboardMetrics struct {
 	ActiveConnections *float64 `json:"activeConnections,omitempty"`
 	ErrorRate         *float64 `json:"errorRate,omitempty"`
 	AvgLatency        *float64 `json:"avgLatency,omitempty"`
-	VIPFailovers      *float64 `json:"vipFailovers,omitempty"`
 	HealthyAgents     *float64 `json:"healthyAgents,omitempty"`
 	TotalAgents       *float64 `json:"totalAgents,omitempty"`
 	// Resource metrics (totals across all workers)
@@ -1339,7 +1258,6 @@ func (s *Server) handleMetricsDashboard(w http.ResponseWriter, r *http.Request) 
 	metrics.ActiveConnections = s.queryScalarMetric(ctx, `sum(novaedge_backend_active_connections) or vector(0)`)
 	metrics.ErrorRate = s.queryScalarMetric(ctx, `sum(rate(novaedge_http_requests_total{status=~"5.."}[5m])) or vector(0)`)
 	metrics.AvgLatency = s.queryScalarMetric(ctx, `histogram_quantile(0.5, sum(rate(novaedge_http_request_duration_seconds_bucket[5m])) by (le)) or vector(0)`)
-	metrics.VIPFailovers = s.queryScalarMetric(ctx, `sum(increase(novaedge_vip_failovers_total[24h])) or vector(0)`)
 	metrics.HealthyAgents = s.queryScalarMetric(ctx, `count(up{job="novaedge-agent-metrics"} == 1) or vector(0)`)
 	metrics.TotalAgents = s.queryScalarMetric(ctx, `count(up{job="novaedge-agent-metrics"}) or vector(0)`)
 	metrics.TotalCPUUsage = s.queryScalarMetric(ctx, `sum(rate(process_cpu_seconds_total{job=~"novaedge-agent-metrics|novaedge-controller"}[1m])) * 100`)

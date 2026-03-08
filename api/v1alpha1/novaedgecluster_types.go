@@ -194,10 +194,6 @@ type AgentSpec struct {
 	// +optional
 	HealthPort *int32 `json:"healthPort,omitempty"`
 
-	// VIP defines the VIP management configuration
-	// +optional
-	VIP *VIPConfig `json:"vip,omitempty"`
-
 	// ServiceAccount defines the service account configuration
 	// +optional
 	ServiceAccount *ServiceAccountSpec `json:"serviceAccount,omitempty"`
@@ -234,67 +230,6 @@ type AgentSpec struct {
 	// If not specified, agents connect to the local controller in the same cluster
 	// +optional
 	Controllers *AgentControllerConfig `json:"controllers,omitempty"`
-}
-
-// VIPConfig defines the VIP management configuration for agents
-type VIPConfig struct {
-	// Enabled enables VIP management
-	// +kubebuilder:default=true
-	// +optional
-	Enabled *bool `json:"enabled,omitempty"`
-
-	// Mode is the VIP mode (L2, BGP, or OSPF)
-	// +kubebuilder:default="L2"
-	// +kubebuilder:validation:Enum=L2;BGP;OSPF
-	// +optional
-	Mode string `json:"mode,omitempty"`
-
-	// Interface is the network interface for VIP binding (L2 mode)
-	// +optional
-	Interface string `json:"interface,omitempty"`
-
-	// BGP defines the BGP configuration for VIP announcement
-	// +optional
-	BGP *ClusterBGPConfig `json:"bgp,omitempty"`
-}
-
-// ClusterBGPConfig defines the BGP configuration for VIP announcement in NovaEdgeCluster
-type ClusterBGPConfig struct {
-	// ASN is the local autonomous system number
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=4294967295
-	ASN uint32 `json:"asn"`
-
-	// RouterID is the BGP router ID
-	// +optional
-	RouterID string `json:"routerID,omitempty"`
-
-	// Peers defines the list of BGP peer configurations
-	// +optional
-	Peers []ClusterBGPPeer `json:"peers,omitempty"`
-}
-
-// ClusterBGPPeer defines a BGP peer configuration for NovaEdgeCluster
-type ClusterBGPPeer struct {
-	// Address is the IP address of the BGP peer
-	// +kubebuilder:validation:Required
-	Address string `json:"address"`
-
-	// ASN is the peer's autonomous system number
-	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=4294967295
-	ASN uint32 `json:"asn"`
-
-	// Port is the BGP port (default 179)
-	// +kubebuilder:default=179
-	// +optional
-	Port *int32 `json:"port,omitempty"`
-
-	// Password is the BGP session password (optional)
-	// +optional
-	PasswordSecretRef *corev1.SecretKeySelector `json:"passwordSecretRef,omitempty"`
 }
 
 // AgentControllerConfig defines the controller connection configuration for agents

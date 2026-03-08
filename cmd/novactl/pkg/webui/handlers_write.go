@@ -158,17 +158,6 @@ func (s *Server) handleBackendWrite(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleVIPWrite handles POST/PUT/DELETE for VIPs
-func (s *Server) handleVIPWrite(w http.ResponseWriter, r *http.Request) {
-	handleNamespacedCRUD(s, w, r, namespacedResource[models.VIP]{
-		pathPrefix: "/api/v1/vips",
-		create:     s.backend.CreateVIP,
-		update:     s.backend.UpdateVIP,
-		delete:     s.backend.DeleteVIP,
-		setKey:     func(v *models.VIP, ns, name string) { v.Namespace = ns; v.Name = name },
-	})
-}
-
 // handlePolicyWrite handles POST/PUT/DELETE for policies
 func (s *Server) handlePolicyWrite(w http.ResponseWriter, r *http.Request) {
 	handleNamespacedCRUD(s, w, r, namespacedResource[models.Policy]{
@@ -390,7 +379,7 @@ type HistoryEntry struct {
 	ID           string `json:"id"`
 	Timestamp    string `json:"timestamp"`
 	Type         string `json:"type"`         // create, update, delete
-	ResourceType string `json:"resourceType"` // gateway, route, backend, vip, policy
+	ResourceType string `json:"resourceType"` // gateway, route, backend, policy
 	ResourceName string `json:"resourceName"`
 	Namespace    string `json:"namespace"`
 	Snapshot     string `json:"snapshot,omitempty"`

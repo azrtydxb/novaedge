@@ -88,21 +88,6 @@ type Backend interface {
 	// DeleteBackend deletes a backend
 	DeleteBackend(ctx context.Context, namespace, name string) error
 
-	// ListVIPs returns all VIPs
-	ListVIPs(ctx context.Context, namespace string) ([]models.VIP, error)
-
-	// GetVIP returns a specific VIP
-	GetVIP(ctx context.Context, namespace, name string) (*models.VIP, error)
-
-	// CreateVIP creates a new VIP
-	CreateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error)
-
-	// UpdateVIP updates an existing VIP
-	UpdateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error)
-
-	// DeleteVIP deletes a VIP
-	DeleteVIP(ctx context.Context, namespace, name string) error
-
 	// ListPolicies returns all policies
 	ListPolicies(ctx context.Context, namespace string) ([]models.Policy, error)
 

@@ -64,7 +64,6 @@ export function ImportDialog({ open, onOpenChange }: ImportDialogProps) {
       queryClient.invalidateQueries({ queryKey: ['gateways'] })
       queryClient.invalidateQueries({ queryKey: ['routes'] })
       queryClient.invalidateQueries({ queryKey: ['backends'] })
-      queryClient.invalidateQueries({ queryKey: ['vips'] })
       queryClient.invalidateQueries({ queryKey: ['policies'] })
       onOpenChange(false)
       setYamlContent('')

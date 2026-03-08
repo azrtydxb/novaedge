@@ -33,7 +33,6 @@ var (
 	errGateway                                         = errors.New("gateway '")
 	errRoute2                                          = errors.New("route '")
 	errBackend2                                        = errors.New("backend '")
-	errVIP                                             = errors.New("VIP '")
 	errPolicy                                          = errors.New("policy '")
 	errCertificatesAreNotSupportedInStandaloneMode     = errors.New("certificates are not supported in standalone mode")
 	errIPPoolsAreNotSupportedInStandaloneMode          = errors.New("IP pools are not supported in standalone mode")
@@ -620,136 +619,6 @@ func (s *StandaloneBackend) DeleteBackend(_ context.Context, _, name string) err
 	return fmt.Errorf("%w: %s' not found", errBackend2, name)
 }
 
-// ListVIPs returns all VIPs
-func (s *StandaloneBackend) ListVIPs(_ context.Context, _ string) ([]models.VIP, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	vips := make([]models.VIP, 0, len(s.config.VIPs))
-	for _, v := range s.config.VIPs {
-		vip := models.VIP{
-			Name:      v.Name,
-			Namespace: "standalone",
-			Address:   v.Address,
-			Mode:      v.Mode,
-			Interface: v.Interface,
-		}
-
-		if v.BGP != nil {
-			vip.BGP = &models.BGPConfig{
-				LocalAS:       v.BGP.LocalAS,
-				RouterID:      v.BGP.RouterID,
-				PeerAS:        v.BGP.PeerAS,
-				PeerIP:        v.BGP.PeerIP,
-				HoldTime:      v.BGP.HoldTime,
-				KeepaliveTime: v.BGP.KeepaliveTime,
-			}
-		}
-
-		if v.OSPF != nil {
-			vip.OSPF = &models.OSPFConfig{
-				RouterID:  v.OSPF.RouterID,
-				Area:      v.OSPF.Area,
-				Interface: v.OSPF.Interface,
-			}
-		}
-
-		vips = append(vips, vip)
-	}
-
-	return vips, nil
-}
-
-// GetVIP returns a specific VIP
-func (s *StandaloneBackend) GetVIP(ctx context.Context, namespace, name string) (*models.VIP, error) {
-	vips, err := s.ListVIPs(ctx, namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, v := range vips {
-		if v.Name == name {
-			return &v, nil
-		}
-	}
-
-	return nil, fmt.Errorf("%w: %s' not found", errVIP, name)
-}
-
-// CreateVIP creates a new VIP
-func (s *StandaloneBackend) CreateVIP(_ context.Context, vip *models.VIP) (*models.VIP, error) {
-	if s.readOnly {
-		return nil, errBackendIsReadOnly
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	// Check for duplicate
-	for _, v := range s.config.VIPs {
-		if v.Name == vip.Name {
-			return nil, fmt.Errorf("%w: %s' already exists", errVIP, vip.Name)
-		}
-	}
-
-	v := s.modelVIPToStandalone(vip)
-	s.config.VIPs = append(s.config.VIPs, *v)
-
-	if err := s.save(); err != nil {
-		return nil, err
-	}
-
-	return vip, nil
-}
-
-// UpdateVIP updates an existing VIP
-func (s *StandaloneBackend) UpdateVIP(_ context.Context, vip *models.VIP) (*models.VIP, error) {
-	if s.readOnly {
-		return nil, errBackendIsReadOnly
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	found := false
-	for i, v := range s.config.VIPs {
-		if v.Name == vip.Name {
-			s.config.VIPs[i] = *s.modelVIPToStandalone(vip)
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return nil, fmt.Errorf("%w: %s' not found", errVIP, vip.Name)
-	}
-
-	if err := s.save(); err != nil {
-		return nil, err
-	}
-
-	return vip, nil
-}
-
-// DeleteVIP deletes a VIP
-func (s *StandaloneBackend) DeleteVIP(_ context.Context, _, name string) error {
-	if s.readOnly {
-		return errBackendIsReadOnly
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	for i, v := range s.config.VIPs {
-		if v.Name == name {
-			s.config.VIPs = append(s.config.VIPs[:i], s.config.VIPs[i+1:]...)
-			return s.save()
-		}
-	}
-
-	return fmt.Errorf("%w: %s' not found", errVIP, name)
-}
-
 // ListPolicies returns all policies
 func (s *StandaloneBackend) ListPolicies(_ context.Context, _ string) ([]models.Policy, error) {
 	s.mu.RLock()
@@ -1074,12 +943,6 @@ func (s *StandaloneBackend) ImportConfig(_ context.Context, data []byte, dryRun 
 			Name: b.Name,
 		})
 	}
-	for _, v := range config.VIPs {
-		result.Created = append(result.Created, models.ResourceRef{
-			Kind: "VIP",
-			Name: v.Name,
-		})
-	}
 	for _, p := range config.Policies {
 		result.Created = append(result.Created, models.ResourceRef{
 			Kind: "Policy",
@@ -1218,36 +1081,6 @@ func (s *StandaloneBackend) modelBackendToStandalone(backend *models.Backend) *s
 	}
 
 	return b
-}
-
-func (s *StandaloneBackend) modelVIPToStandalone(vip *models.VIP) *standalone.VIPConfig {
-	v := &standalone.VIPConfig{
-		Name:      vip.Name,
-		Address:   vip.Address,
-		Mode:      vip.Mode,
-		Interface: vip.Interface,
-	}
-
-	if vip.BGP != nil {
-		v.BGP = &standalone.BGPConfig{
-			LocalAS:       vip.BGP.LocalAS,
-			RouterID:      vip.BGP.RouterID,
-			PeerAS:        vip.BGP.PeerAS,
-			PeerIP:        vip.BGP.PeerIP,
-			HoldTime:      vip.BGP.HoldTime,
-			KeepaliveTime: vip.BGP.KeepaliveTime,
-		}
-	}
-
-	if vip.OSPF != nil {
-		v.OSPF = &standalone.OSPFConfig{
-			RouterID:  vip.OSPF.RouterID,
-			Area:      vip.OSPF.Area,
-			Interface: vip.OSPF.Interface,
-		}
-	}
-
-	return v
 }
 
 func (s *StandaloneBackend) modelPolicyToStandalone(policy *models.Policy) *standalone.PolicyConfig {
