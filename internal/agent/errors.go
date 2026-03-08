@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package agent provides the NovaEdge node agent implementation for config management and VIP control.
+// Package agent provides the NovaEdge node agent implementation for config management.
 package agent
 
 import (
@@ -38,9 +38,6 @@ var (
 
 	// ErrLoadBalancerNotFound indicates a load balancer was not found
 	ErrLoadBalancerNotFound = errors.New("load balancer not found")
-
-	// ErrVIPOperationFailed indicates a VIP operation failed
-	ErrVIPOperationFailed = errors.New("VIP operation failed")
 
 	// ErrHealthCheckFailed indicates a health check failed
 	ErrHealthCheckFailed = errors.New("health check failed")
@@ -103,37 +100,6 @@ func NewEndpointError(address string, port uint32, message string, err error) *E
 	return &EndpointError{
 		Address: address,
 		Port:    port,
-		Message: message,
-		Err:     err,
-	}
-}
-
-// VIPError represents a VIP-related error
-type VIPError struct {
-	VIPName string // VIP name
-	Address string // VIP address
-	Mode    string // VIP mode (L2_ARP, BGP, OSPF)
-	Message string // Human-readable error message
-	Err     error  // Underlying error, if any
-}
-
-func (e *VIPError) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("VIP error %s (%s) mode=%s: %s: %v", e.VIPName, e.Address, e.Mode, e.Message, e.Err)
-	}
-	return fmt.Sprintf("VIP error %s (%s) mode=%s: %s", e.VIPName, e.Address, e.Mode, e.Message)
-}
-
-func (e *VIPError) Unwrap() error {
-	return e.Err
-}
-
-// NewVIPError creates a new VIP error
-func NewVIPError(vipName, address, mode, message string, err error) *VIPError {
-	return &VIPError{
-		VIPName: vipName,
-		Address: address,
-		Mode:    mode,
 		Message: message,
 		Err:     err,
 	}

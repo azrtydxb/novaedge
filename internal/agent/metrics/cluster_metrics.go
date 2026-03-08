@@ -24,51 +24,6 @@ import (
 )
 
 var (
-	// VIP Metrics
-
-	// VIPStatus tracks VIP status (1=active, 0=inactive)
-	VIPStatus = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "novaedge_vip_status",
-			Help: "VIP status (1=active, 0=inactive)",
-		},
-		[]string{"vip_name", "address", "mode"},
-	)
-
-	// BGPSessionStatus tracks BGP session status (1=established, 0=down)
-	BGPSessionStatus = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "novaedge_bgp_session_status",
-			Help: "BGP session status (1=established, 0=down)",
-		},
-		[]string{"peer_address", "peer_as"},
-	)
-
-	// BGPAnnouncedRoutes tracks number of announced BGP routes
-	BGPAnnouncedRoutes = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "novaedge_bgp_announced_routes",
-			Help: "Number of BGP routes currently announced",
-		},
-	)
-
-	// OSPFNeighborStatus tracks OSPF neighbor status (1=full, 0=down)
-	OSPFNeighborStatus = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "novaedge_ospf_neighbor_status",
-			Help: "OSPF neighbor status (1=full, 0=down)",
-		},
-		[]string{"neighbor_address", "area_id"},
-	)
-
-	// OSPFAnnouncedRoutes tracks number of announced OSPF LSAs
-	OSPFAnnouncedRoutes = promauto.NewGauge(
-		prometheus.GaugeOpts{
-			Name: "novaedge_ospf_announced_routes",
-			Help: "Number of OSPF LSAs currently announced",
-		},
-	)
-
 	// TLS Metrics
 
 	// TLSHandshakes tracks total TLS handshakes
@@ -286,30 +241,3 @@ var (
 		[]string{"result"}, // success, redirect, callback_success, exchange_error, forbidden, logout
 	)
 )
-
-// SetVIPStatus sets VIP status
-func SetVIPStatus(vipName, address, mode string, active bool) {
-	value := 0.0
-	if active {
-		value = 1.0
-	}
-	VIPStatus.WithLabelValues(vipName, address, mode).Set(value)
-}
-
-// SetBGPSessionStatus sets BGP session status
-func SetBGPSessionStatus(peerAddress, peerAS string, established bool) {
-	value := 0.0
-	if established {
-		value = 1.0
-	}
-	BGPSessionStatus.WithLabelValues(peerAddress, peerAS).Set(value)
-}
-
-// SetOSPFNeighborStatus sets OSPF neighbor status
-func SetOSPFNeighborStatus(neighborAddress, areaID string, full bool) {
-	value := 0.0
-	if full {
-		value = 1.0
-	}
-	OSPFNeighborStatus.WithLabelValues(neighborAddress, areaID).Set(value)
-}

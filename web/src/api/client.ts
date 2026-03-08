@@ -2,7 +2,7 @@ import type {
   Gateway,
   Route,
   Backend,
-  VIP,
+
   Policy,
   AgentInfo,
   DashboardMetrics,
@@ -42,8 +42,6 @@ import {
   normalizeRoute,
   normalizeBackends,
   normalizeBackend,
-  normalizeVIPs,
-  normalizeVIP,
   normalizePolicies,
   normalizePolicy,
 } from './normalizer'
@@ -165,34 +163,6 @@ const backendsAPI = {
   },
   delete: async (namespace: string, name: string): Promise<void> => {
     await fetchJSON<{ status: string }>(`${API_BASE}/backends/${namespace}/${name}`, { method: 'DELETE' })
-  },
-}
-
-const vipsAPI = {
-  list: async (namespace: string = 'all'): Promise<VIP[]> => {
-    const data = await fetchJSON<unknown[]>(`${API_BASE}/vips?namespace=${namespace}`)
-    return normalizeVIPs(data as Record<string, unknown>[])
-  },
-  get: async (namespace: string, name: string): Promise<VIP> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/vips/${namespace}/${name}`)
-    return normalizeVIP(data as Record<string, unknown>)
-  },
-  create: async (resource: VIP): Promise<VIP> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/vips`, {
-      method: 'POST',
-      body: JSON.stringify(resource),
-    })
-    return normalizeVIP(data as Record<string, unknown>)
-  },
-  update: async (namespace: string, name: string, resource: VIP): Promise<VIP> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/vips/${namespace}/${name}`, {
-      method: 'PUT',
-      body: JSON.stringify(resource),
-    })
-    return normalizeVIP(data as Record<string, unknown>)
-  },
-  delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/vips/${namespace}/${name}`, { method: 'DELETE' })
   },
 }
 
@@ -424,7 +394,6 @@ export const api = {
   gateways: gatewaysAPI,
   routes: routesAPI,
   backends: backendsAPI,
-  vips: vipsAPI,
   policies: policiesAPI,
 
   // New CRDs

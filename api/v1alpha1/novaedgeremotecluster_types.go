@@ -219,10 +219,6 @@ type RemoteAgentSpec struct {
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 
-	// VIP defines VIP configuration for this remote cluster
-	// +optional
-	VIP *VIPConfig `json:"vip,omitempty"`
-
 	// ExtraArgs are additional arguments passed to agents
 	// +optional
 	ExtraArgs []string `json:"extraArgs,omitempty"`

@@ -70,11 +70,6 @@ var (
 		Version:  "v1alpha1",
 		Resource: "proxybackends",
 	}
-	gvrVIP = schema.GroupVersionResource{
-		Group:    "novaedge.io",
-		Version:  "v1alpha1",
-		Resource: "proxyvips",
-	}
 	gvrPolicy = schema.GroupVersionResource{
 		Group:    "novaedge.io",
 		Version:  "v1alpha1",
@@ -390,90 +385,6 @@ func (k *KubernetesBackend) DeleteBackend(ctx context.Context, namespace, name s
 	}
 
 	return k.dynamic.Resource(gvrBackend).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
-}
-
-// ListVIPs returns all VIPs
-func (k *KubernetesBackend) ListVIPs(ctx context.Context, namespace string) ([]models.VIP, error) {
-	var list *unstructured.UnstructuredList
-	var err error
-
-	if namespace == "" || namespace == namespaceAll {
-		list, err = k.dynamic.Resource(gvrVIP).List(ctx, metav1.ListOptions{})
-	} else {
-		list, err = k.dynamic.Resource(gvrVIP).Namespace(namespace).List(ctx, metav1.ListOptions{})
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to list VIPs: %w", err)
-	}
-
-	vips := make([]models.VIP, 0, len(list.Items))
-	for _, item := range list.Items {
-		vip, err := k.unstructuredToVIP(&item)
-		if err != nil {
-			continue
-		}
-		vips = append(vips, *vip)
-	}
-
-	return vips, nil
-}
-
-// GetVIP returns a specific VIP
-func (k *KubernetesBackend) GetVIP(ctx context.Context, namespace, name string) (*models.VIP, error) {
-	obj, err := k.dynamic.Resource(gvrVIP).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("VIP not found: %w", err)
-	}
-	return k.unstructuredToVIP(obj)
-}
-
-// CreateVIP creates a new VIP
-func (k *KubernetesBackend) CreateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error) {
-	if k.readOnly {
-		return nil, errBackendIsReadOnly
-	}
-
-	obj := k.vipToUnstructured(vip)
-	namespace := vip.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	result, err := k.dynamic.Resource(gvrVIP).Namespace(namespace).Create(ctx, obj, metav1.CreateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create VIP: %w", err)
-	}
-
-	return k.unstructuredToVIP(result)
-}
-
-// UpdateVIP updates an existing VIP
-func (k *KubernetesBackend) UpdateVIP(ctx context.Context, vip *models.VIP) (*models.VIP, error) {
-	if k.readOnly {
-		return nil, errBackendIsReadOnly
-	}
-
-	obj := k.vipToUnstructured(vip)
-	namespace := vip.Namespace
-	if namespace == "" {
-		namespace = defaultNamespace
-	}
-
-	result, err := k.dynamic.Resource(gvrVIP).Namespace(namespace).Update(ctx, obj, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to update VIP: %w", err)
-	}
-
-	return k.unstructuredToVIP(result)
-}
-
-// DeleteVIP deletes a VIP
-func (k *KubernetesBackend) DeleteVIP(ctx context.Context, namespace, name string) error {
-	if k.readOnly {
-		return errBackendIsReadOnly
-	}
-
-	return k.dynamic.Resource(gvrVIP).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
 }
 
 // ListPolicies returns all policies
@@ -927,11 +838,6 @@ func (k *KubernetesBackend) ExportConfig(ctx context.Context, namespace string) 
 		config.Backends = backends
 	}
 
-	vips, err := k.ListVIPs(ctx, namespace)
-	if err == nil {
-		config.VIPs = vips
-	}
-
 	policies, err := k.ListPolicies(ctx, namespace)
 	if err == nil {
 		config.Policies = policies
@@ -999,13 +905,6 @@ func (k *KubernetesBackend) ImportConfig(ctx context.Context, data []byte, dryRu
 			func() error { _, e := k.GetBackend(ctx, be.Namespace, be.Name); return e },
 			func() error { _, e := k.CreateBackend(ctx, &be); return e },
 			func() error { _, e := k.UpdateBackend(ctx, &be); return e })
-	}
-	for _, vip := range config.VIPs {
-		vip := vip
-		importResource("VIP", vip.Name, vip.Namespace,
-			func() error { _, e := k.GetVIP(ctx, vip.Namespace, vip.Name); return e },
-			func() error { _, e := k.CreateVIP(ctx, &vip); return e },
-			func() error { _, e := k.UpdateVIP(ctx, &vip); return e })
 	}
 	for _, pol := range config.Policies {
 		pol := pol
@@ -1245,60 +1144,6 @@ func (k *KubernetesBackend) backendToUnstructured(be *models.Backend) *unstructu
 			endpoints = append(endpoints, endpoint)
 		}
 		spec["endpoints"] = endpoints
-	}
-
-	return obj
-}
-
-func (k *KubernetesBackend) unstructuredToVIP(obj *unstructured.Unstructured) (*models.VIP, error) {
-	vip := &models.VIP{
-		Name:            obj.GetName(),
-		Namespace:       obj.GetNamespace(),
-		ResourceVersion: obj.GetResourceVersion(),
-	}
-
-	spec, found, err := unstructured.NestedMap(obj.Object, "spec")
-	if err != nil {
-		return nil, fmt.Errorf("failed to read spec: %w", err)
-	}
-	if !found {
-		return vip, nil
-	}
-
-	vip.Address = getStringField(spec, "address")
-	vip.Mode = getStringField(spec, "mode")
-	vip.Interface = getStringField(spec, "interface")
-
-	return vip, nil
-}
-
-func (k *KubernetesBackend) vipToUnstructured(vip *models.VIP) *unstructured.Unstructured {
-	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
-			"apiVersion": "novaedge.io/v1alpha1",
-			"kind":       "ProxyVIP",
-			"metadata": map[string]interface{}{
-				"name":      vip.Name,
-				"namespace": vip.Namespace,
-			},
-			"spec": map[string]interface{}{
-				"address": vip.Address,
-				"mode":    vip.Mode,
-			},
-		},
-	}
-
-	if vip.ResourceVersion != "" {
-		obj.SetResourceVersion(vip.ResourceVersion)
-	}
-
-	spec, ok := obj.Object["spec"].(map[string]interface{})
-	if !ok {
-		return obj
-	}
-
-	if vip.Interface != "" {
-		spec["interface"] = vip.Interface
 	}
 
 	return obj

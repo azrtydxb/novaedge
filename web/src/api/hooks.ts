@@ -10,7 +10,7 @@ import type {
   Gateway,
   Route,
   Backend,
-  VIP,
+
   Policy,
   AgentInfo,
   DashboardMetrics,
@@ -212,65 +212,7 @@ export function useDeleteBackend() {
   })
 }
 
-// VIPs
-export function useVIPs(namespace: string) {
-  return useQuery({
-    queryKey: ['vips', namespace],
-    queryFn: () => api.vips.list(namespace),
-  })
-}
 
-export function useVIP(namespace: string, name: string) {
-  return useQuery({
-    queryKey: ['vips', namespace, name],
-    queryFn: () => api.vips.get(namespace, name),
-    enabled: !!namespace && !!name,
-  })
-}
-
-export function useCreateVIP() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (vip: VIP) => api.vips.create(vip),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vips'] })
-      toast({ title: 'VIP created successfully', variant: 'success' as const })
-    },
-    onError: (error: Error) => {
-      toast({ title: 'Failed to create VIP', description: error.message, variant: 'destructive' })
-    },
-  })
-}
-
-export function useUpdateVIP() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ namespace, name, vip }: { namespace: string; name: string; vip: VIP }) =>
-      api.vips.update(namespace, name, vip),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vips'] })
-      toast({ title: 'VIP updated successfully', variant: 'success' as const })
-    },
-    onError: (error: Error) => {
-      toast({ title: 'Failed to update VIP', description: error.message, variant: 'destructive' })
-    },
-  })
-}
-
-export function useDeleteVIP() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ namespace, name }: { namespace: string; name: string }) =>
-      api.vips.delete(namespace, name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['vips'] })
-      toast({ title: 'VIP deleted successfully', variant: 'success' as const })
-    },
-    onError: (error: Error) => {
-      toast({ title: 'Failed to delete VIP', description: error.message, variant: 'destructive' })
-    },
-  })
-}
 
 // Policies
 export function usePolicies(namespace: string) {
@@ -350,7 +292,7 @@ export function useDashboardMetrics() {
 }
 
 // Bulk delete mutation
-export function useBulkDelete(resourceType: 'gateways' | 'routes' | 'backends' | 'vips' | 'policies') {
+export function useBulkDelete(resourceType: 'gateways' | 'routes' | 'backends' | 'policies') {
   const queryClient = useQueryClient()
   const apiResource = api[resourceType]
 

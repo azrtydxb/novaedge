@@ -603,22 +603,15 @@ func (r *NovaEdgeClusterReconciler) reconcileAgent(ctx context.Context, cluster 
 		dnsPolicy = cluster.Spec.Agent.DNSPolicy
 	}
 
-	args := []string{
+	args := make([]string, 0, 5+len(cluster.Spec.Agent.ExtraArgs))
+	args = append(args,
 		fmt.Sprintf("--controller-address=%s-controller.%s.svc.cluster.local:%d",
 			cluster.Name, cluster.Namespace, controllerGRPCPort),
 		fmt.Sprintf("--http-port=%d", httpPort),
 		fmt.Sprintf("--https-port=%d", httpsPort),
 		fmt.Sprintf("--metrics-port=%d", metricsPort),
 		fmt.Sprintf("--health-port=%d", healthPort),
-	}
-
-	// Add VIP configuration
-	if cluster.Spec.Agent.VIP != nil && (cluster.Spec.Agent.VIP.Enabled == nil || *cluster.Spec.Agent.VIP.Enabled) {
-		args = append(args, fmt.Sprintf("--vip-mode=%s", cluster.Spec.Agent.VIP.Mode))
-		if cluster.Spec.Agent.VIP.Interface != "" {
-			args = append(args, fmt.Sprintf("--vip-interface=%s", cluster.Spec.Agent.VIP.Interface))
-		}
-	}
+	)
 
 	args = append(args, cluster.Spec.Agent.ExtraArgs...)
 
