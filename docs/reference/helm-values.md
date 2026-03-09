@@ -397,7 +397,6 @@ The Rust dataplane handles all L4/L7 traffic and runs as a sidecar alongside the
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `dataplane.socketPath` | Unix socket for agent-dataplane communication | `/run/novaedge/dataplane.sock` |
-| `dataplane.ebpfPath` | Path to eBPF programs | `/opt/novaedge/novaedge-ebpf` |
 
 ---
 
@@ -1026,26 +1025,24 @@ Used when `connection.mode=Tunnel` for NAT traversal or secure connectivity.
 | `healthChecking.outlierDetection.consecutiveErrors` | Consecutive errors for ejection | `5` |
 | `healthChecking.outlierDetection.interval` | Detection interval | `10s` |
 
-### eBPF/XDP Acceleration
+### NovaNet Integration
 
-eBPF/XDP features are enabled by default and auto-detected at runtime. If the kernel does not support a feature, the agent transparently falls back to the legacy path.
+eBPF acceleration services are provided by [NovaNet](https://github.com/azrtydxb/novanet). NovaEdge no longer loads or manages eBPF programs directly.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `ebpf.bpffsMount` | Mount `/sys/fs/bpf` for BPF map pinning | `true` |
-| `ebpf.xdpInterface` | NIC for AF_XDP attachment (enables zero-copy acceleration when set) | `""` |
-| `ebpf.forceLegacyMesh` | Force legacy nftables/iptables mesh interception instead of eBPF `SK_LOOKUP` | `false` |
+| `novanet.enabled` | Enable NovaNet eBPF services integration | `true` |
+| `novanet.ebpfServicesSocket` | Path to the NovaNet eBPF services Unix socket | `/run/novanet/ebpf-services.sock` |
 
 Example:
 
 ```yaml
-ebpf:
-  bpffsMount: true
-  xdpInterface: eth0    # Set to your NIC to enable AF_XDP zero-copy
-  forceLegacyMesh: false
+novanet:
+  enabled: true
+  ebpfServicesSocket: /run/novanet/ebpf-services.sock
 ```
 
-The agent container requires `CAP_BPF`, `CAP_NET_ADMIN`, and `CAP_SYS_ADMIN` capabilities for eBPF program loading. These are included in the default security context.
+The agent container no longer requires `CAP_BPF`, `CAP_SYS_ADMIN`, or `CAP_NET_RAW` for eBPF operations. Only `CAP_NET_ADMIN` and `CAP_NET_BIND_SERVICE` are needed. The `/run/novanet/` directory must be mounted for socket access.
 
 ### L4 Proxy (TCP/UDP)
 

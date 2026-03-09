@@ -41,38 +41,33 @@ For L4 TCP forwarding, NovaEdge uses the Linux `splice()` system call to move da
 
 **Configuration:** None. Splice is attempted automatically for every L4 TCP connection. No flag or setting controls this behavior.
 
-## eBPF/XDP Data Plane Acceleration
+## eBPF Acceleration (via NovaNet)
 
-NovaEdge uses eBPF/XDP by default for data plane acceleration. All features are auto-detected at runtime and require no configuration beyond setting `--xdp-interface` for AF_XDP. If the kernel does not support a feature, the agent transparently falls back to the legacy path. Kubernetes Service L4 load balancing is handled by [NovaNet](https://github.com/azrtydxb/novanet).
+eBPF data plane acceleration is provided by [NovaNet](https://github.com/azrtydxb/novanet), the Nova CNI component. NovaEdge no longer loads or manages eBPF programs directly. When NovaNet is installed, the following eBPF services are available to NovaEdge via a gRPC Unix socket:
 
-| Feature | Program Type | Minimum Kernel | Fallback |
-|---------|-------------|---------------|----------|
-| **AF_XDP Zero-Copy** | XDP + `AF_XDP` socket | 5.10+ | Kernel network stack |
-| **eBPF Mesh Redirect** | `BPF_PROG_TYPE_SK_LOOKUP` | 5.9+ | nftables/iptables TPROXY |
-| **SOCKMAP Same-Node Bypass** | `BPF_PROG_TYPE_SOCK_OPS` | 5.4+ | Kernel network stack |
-| **Conntrack** | `BPF_MAP_TYPE_LRU_HASH` | 5.4+ | Kernel conntrack |
+| Feature | Provided By | Fallback (NovaNet unavailable) |
+|---------|------------|-------------------------------|
+| **SOCKMAP Same-Node Bypass** | NovaNet | Kernel network stack |
+| **eBPF Mesh Redirect** | NovaNet | nftables/iptables TPROXY |
+| **Rate Limiting** | NovaNet | Userspace rate limiting |
+| **Health Monitoring** | NovaNet | Dataplane health checks |
 
 **Performance impact:**
 
-- **AF_XDP**: Zero-copy packet I/O via shared-memory ring buffers between NIC and userspace, removing all memory copies from the data path.
-- **eBPF Mesh Redirect**: Socket lookup redirection via `bpf_sk_assign()` replaces the full nftables/iptables rule chain traversal.
 - **SOCKMAP**: Bypasses the kernel network stack for same-node pod-to-pod traffic by short-circuiting socket pairs.
-- **Conntrack**: eBPF-based connection tracking for efficient flow state management.
+- **eBPF Mesh Redirect**: Socket lookup redirection via `bpf_sk_assign()` replaces the full nftables/iptables rule chain traversal.
 
-**Verifying acceleration is active:**
+**Verifying NovaNet acceleration is active:**
 
 ```bash
-# Check agent logs for eBPF status
-kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep -E "XDP|AF_XDP|eBPF|sk_lookup"
+# Check agent logs for NovaNet connection status
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep novanet
 
-# List loaded BPF programs
-bpftool prog list
-
-# Show XDP programs attached to interfaces
-bpftool net show
+# Expected on success:
+# {"level":"info","msg":"Connected to NovaNet eBPF services","socket":"/run/novanet/ebpf-services.sock"}
 ```
 
-To force the legacy path (for debugging or compatibility), use `--force-legacy-mesh` (mesh interception). See [eBPF/XDP Acceleration](../user-guide/ebpf-acceleration.md) for full details.
+See [eBPF Acceleration (NovaNet)](../user-guide/ebpf-acceleration.md) for full configuration details.
 
 ## Kernel Parameter Tuning
 
@@ -201,7 +196,7 @@ agent:
           sysctl -w net.ipv4.tcp_notsent_lowat=16384
 ```
 
-The init container requires `privileged: true` because modifying kernel parameters in `/proc/sys` requires `CAP_SYS_ADMIN`. Since the NovaEdge agent already runs with `hostNetwork: true` and elevated privileges for VIP and network operations, this does not change the security posture of the DaemonSet.
+The init container requires `privileged: true` because modifying kernel parameters in `/proc/sys` requires `CAP_SYS_ADMIN`. Note that the NovaEdge agent itself no longer requires `privileged: true` (eBPF is now handled by NovaNet), but the init container still needs it for sysctl tuning.
 
 ## Running Performance Tests
 

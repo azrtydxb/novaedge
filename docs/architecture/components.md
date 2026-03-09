@@ -196,8 +196,8 @@ flowchart TB
             VIP["VIP Manager<br/>(L2/BGP/OSPF/BFD)"]
         end
 
-        subgraph eBPFMgmt["eBPF Program Lifecycle"]
-            EBPF["eBPF Loader"]
+        subgraph NovaNetComm["NovaNet Communication"]
+            NOVANET["NovaNet gRPC Client"]
         end
 
         subgraph DataplanePush["Dataplane Communication"]
@@ -215,7 +215,7 @@ flowchart TB
     CM --> TRANSLATOR
     TRANSLATOR --> GRPC_PUSH
     CM --> VIP
-    CM --> EBPF
+    CM --> NOVANET
 ```
 
 ## Rust Dataplane (Traffic Handler)
@@ -232,12 +232,6 @@ flowchart TB
             CFG["Config Store"]
         end
 
-        subgraph eBPFAccel["eBPF/XDP Acceleration"]
-            AFXDP["AF_XDP Zero-Copy"]
-            SKLOOKUP["SK_LOOKUP Mesh Redirect"]
-            SOCKMAP["SOCKMAP Same-Node Bypass"]
-        end
-
         subgraph Traffic["Traffic Handling"]
             RT["Router"]
             POL["Policy Engine"]
@@ -252,12 +246,9 @@ flowchart TB
     end
 
     GRPC_RECV --> CFG
-    CFG --> RT & POL & LB & HC & AFXDP & SKLOOKUP & SOCKMAP
+    CFG --> RT & POL & LB & HC
 
-    eBPFAccel --> Traffic
     Traffic --> Backend
-
-    style eBPFAccel fill:#fff4e6
 ```
 
 ### Subcomponents
@@ -432,32 +423,28 @@ flowchart TB
 | STUN Discoverer | Discovers public endpoints for NAT traversal in tunnel establishment |
 | DSCP Marker | Applies DSCP markings for QoS enforcement on outbound traffic |
 
-#### eBPF/XDP Acceleration (Rust Dataplane + Go Agent)
+#### eBPF Acceleration (via NovaNet)
 
-The Rust dataplane uses eBPF/XDP by default for data plane acceleration, with the Go agent managing eBPF program lifecycle. All features are auto-detected at runtime and fall back to legacy paths if the kernel does not support them. Kubernetes Service L4 load balancing is handled by [NovaNet](https://github.com/azrtydxb/novanet).
+eBPF acceleration services (SOCKMAP bypass, mesh redirect, rate limiting, health monitoring) are provided by [NovaNet](https://github.com/azrtydxb/novanet), the Nova CNI component. NovaEdge no longer loads or manages eBPF programs directly. Instead, the Go agent communicates with NovaNet via a gRPC client over a Unix domain socket at `/run/novanet/ebpf-services.sock`.
 
 ```mermaid
 flowchart LR
-    subgraph eBPFSubsystem["eBPF/XDP Subsystem"]
-        CAP["Capability Detector"]
-        AFXDP["AF_XDP Worker<br/>(zero-copy ring buffers)"]
-        SKLOOKUP["SK_LOOKUP Mesh Redirect<br/>(BPF_PROG_TYPE_SK_LOOKUP)"]
-        SOCKMAP["SOCKMAP Same-Node Bypass<br/>(BPF_PROG_TYPE_SOCK_OPS)"]
-        MAPS["BPF Maps<br/>(conn track)"]
+    subgraph Agent["Go Agent"]
+        GC["NovaNet gRPC Client"]
     end
 
-    CAP -->|"probe"| AFXDP & SKLOOKUP & SOCKMAP
-    AFXDP --> MAPS
-    SKLOOKUP --> MAPS
-    SOCKMAP --> MAPS
+    subgraph NovaNet["NovaNet"]
+        SVC["eBPF Services API"]
+        SOCKMAP["SOCKMAP Bypass"]
+        SKLOOKUP["Mesh Redirect"]
+        RL["Rate Limiting"]
+    end
+
+    GC -->|"Unix socket"| SVC
+    SVC --> SOCKMAP & SKLOOKUP & RL
 ```
 
-| Component | Program Type | Fallback |
-|-----------|-------------|----------|
-| AF_XDP Zero-Copy | XDP + `AF_XDP` socket | Kernel network stack |
-| SK_LOOKUP Mesh Redirect | `BPF_PROG_TYPE_SK_LOOKUP` | nftables/iptables TPROXY |
-| SOCKMAP Same-Node Bypass | `BPF_PROG_TYPE_SOCK_OPS` | Kernel network stack |
-| Conntrack | `BPF_MAP_TYPE_LRU_HASH` | Kernel conntrack |
+If NovaNet is not available, NovaEdge continues to operate without eBPF acceleration (graceful degradation). See [eBPF Acceleration (NovaNet)](../user-guide/ebpf-acceleration.md) for details.
 
 ### Configuration
 
@@ -470,8 +457,7 @@ flowchart LR
 --metrics-port=9090                # Prometheus metrics port
 --health-port=8080                 # Health probe port
 --log-level=info                   # Log level
---xdp-interface=eth0               # NIC for AF_XDP attachment (enables zero-copy acceleration)
---force-legacy-mesh=false          # Force legacy nftables/iptables mesh (skip eBPF sk_lookup)
+--novanet-socket=/run/novanet/ebpf-services.sock  # NovaNet eBPF services socket
 ```
 
 ## Web UI
