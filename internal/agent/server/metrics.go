@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -35,6 +36,7 @@ const (
 // MetricsServer serves Prometheus metrics on a dedicated port
 type MetricsServer struct {
 	logger      *zap.Logger
+	mu          sync.Mutex
 	server      *http.Server
 	port        int
 	rateLimiter *IPRateLimiter
@@ -75,7 +77,7 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 		_, _ = w.Write([]byte("NovaEdge Metrics Server\n\nAvailable endpoints:\n- /metrics (Prometheus metrics)\n- /health (Health check)\n"))
 	})
 
-	m.server = &http.Server{
+	srv := &http.Server{
 		Addr:         fmt.Sprintf(":%d", m.port),
 		Handler:      mux,
 		ReadTimeout:  10 * time.Second,
@@ -83,11 +85,15 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	m.mu.Lock()
+	m.server = srv
+	m.mu.Unlock()
+
 	m.logger.Info("Starting metrics server", zap.Int("port", m.port))
 
 	// Start server in goroutine
 	go func() {
-		if err := m.server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			m.logger.Error("Metrics server error", zap.Error(err))
 		}
 	}()
@@ -103,7 +109,7 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 	defer cancel()
 
 	m.logger.Info("Shutting down metrics server")
-	if err := m.server.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown context intentionally derived from context.Background() after parent cancellation
+	if err := srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown context intentionally derived from context.Background() after parent cancellation
 		return fmt.Errorf("failed to shutdown metrics server: %w", err)
 	}
 
@@ -112,10 +118,14 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 
 // Shutdown gracefully shuts down the metrics server
 func (m *MetricsServer) Shutdown(ctx context.Context) error {
-	if m.server == nil {
+	m.mu.Lock()
+	srv := m.server
+	m.mu.Unlock()
+
+	if srv == nil {
 		return nil
 	}
 
 	m.logger.Info("Shutting down metrics server")
-	return m.server.Shutdown(ctx)
+	return srv.Shutdown(ctx)
 }
