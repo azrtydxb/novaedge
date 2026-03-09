@@ -1,4 +1,4 @@
-# Build stage: compile eBPF programs and Rust dataplane binary.
+# Build stage: compile Rust dataplane binary.
 # Uses TARGETARCH for multi-arch builds via docker buildx.
 FROM --platform=$BUILDPLATFORM rust:bookworm AS builder
 
@@ -11,26 +11,13 @@ RUN apt-get update && apt-get install -y \
     gcc-aarch64-linux-gnu \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup toolchain install nightly --component rust-src && \
-    rustup target add --toolchain nightly aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
-
-RUN cargo install bpf-linker
+RUN rustup target add aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu
 
 WORKDIR /build
 COPY . .
 
-# Build eBPF programs (BPF bytecode is architecture-independent)
-RUN cd dataplane && cargo +nightly build \
-    --package novaedge-ebpf \
-    --target bpfel-unknown-none \
-    -Z build-std=core \
-    --release
-
 # Build dataplane binary for target architecture.
-# Re-run rustup target add to guarantee targets are present regardless of
-# Docker layer caching (rustup target add is idempotent and instant).
-RUN rustup target add --toolchain nightly aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu && \
-    RUST_TARGET="" && \
+RUN RUST_TARGET="" && \
     LINKER_ENV="" && \
     case "$TARGETARCH" in \
       arm64) RUST_TARGET="aarch64-unknown-linux-gnu" && \
@@ -55,7 +42,6 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/out/novaedge-dataplane /usr/local/bin/
-COPY --from=builder /build/dataplane/target/bpfel-unknown-none/release/novaedge-ebpf /opt/novaedge/
 
 ENTRYPOINT ["novaedge-dataplane"]
-CMD ["--socket=/run/novaedge/dataplane.sock", "--ebpf-path=/opt/novaedge/novaedge-ebpf"]
+CMD ["--socket=/run/novaedge/dataplane.sock"]

@@ -5,13 +5,6 @@ ARG TARGETARCH
 
 WORKDIR /workspace
 
-# Install BPF compilation tools for go generate (eBPF/XDP programs).
-# These are only needed at build time; the runtime image is separate.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    clang llvm libbpf-dev linux-libc-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/include/$(gcc -dumpmachine)/asm /usr/include/asm
-
 # Copy the Go Modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
@@ -22,16 +15,10 @@ COPY go.sum go.sum
 ENV GOTOOLCHAIN=auto
 RUN go mod download
 
-# Copy the go source and BPF C programs
+# Copy the go source
 COPY cmd/ cmd/
 COPY api/ api/
 COPY internal/ internal/
-COPY bpf/ bpf/
-
-# Generate BPF Go bindings from C sources (produces *_bpfel.go and *.o files).
-# Required — the generated loadMeshRedirect/loadAfxdpRedirect
-# functions are called at runtime and have no placeholder fallback.
-RUN go generate ./internal/agent/ebpfmesh/... ./internal/agent/afxdp/...
 
 # Build args for version injection
 ARG VERSION=dev
@@ -44,10 +31,9 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath \
     -o novaedge-agent cmd/novaedge-agent/main.go
 
 # Agent requires nftables (preferred) or iptables for TPROXY mesh interception,
-# root for privileged network operations (VIP binding, BGP port 179, ARP/NDP),
-# and libbpf for eBPF program loading at runtime.
+# and root for privileged network operations (VIP binding, BGP port 179, ARP/NDP).
 FROM alpine:3.23
-RUN apk add --no-cache nftables iptables ip6tables iproute2 libbpf
+RUN apk add --no-cache nftables iptables ip6tables iproute2
 WORKDIR /
 COPY --from=builder /workspace/novaedge-agent .
 
