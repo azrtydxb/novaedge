@@ -45,6 +45,9 @@ spec:
             repository: ghcr.io/azrtydxb/novaedge/novaedge-dataplane
             tag: v1.7.4
         webui:
+          image:
+            repository: ghcr.io/azrtydxb/novaedge/novactl
+            tag: v1.7.4
           frontend:
             image:
               repository: ghcr.io/azrtydxb/novaedge/novaedge-webui
