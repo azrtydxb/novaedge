@@ -34,10 +34,6 @@ quinn = "0.11"
 h3 = "0.0.8"
 h3-quinn = "0.0.10"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-aya = "0.13"
-aya-log = "0.2"
-
 [build-dependencies]
 tonic-build = "0.12"
 
