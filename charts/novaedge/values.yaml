@@ -77,7 +77,7 @@ controller:
 
   # Enable ServiceLB controller
   serviceLB:
-    enabled: true
+    enabled: false
 
   # Certificate management
   certificates:

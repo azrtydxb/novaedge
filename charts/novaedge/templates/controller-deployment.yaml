@@ -64,9 +64,6 @@ spec:
         - --controller-class={{ .Values.controller.controllerClass }}
         {{- end }}
         {{- /* NOTE: ingress class is hardcoded to "novaedge" in the controller binary */}}
-        {{- if .Values.controller.serviceLB.enabled }}
-        - --enable-service-lb
-        {{- end }}
         {{- if .Values.controller.grpc.tls.enabled }}
         - --grpc-tls-cert-file=/etc/novaedge/grpc-tls/tls.crt
         - --grpc-tls-key-file=/etc/novaedge/grpc-tls/tls.key
