@@ -1,250 +1,172 @@
-# eBPF/XDP Data Plane Acceleration
+# eBPF Acceleration via NovaNet
 
-NovaEdge uses eBPF/XDP acceleration by default for the data plane, providing
-kernel-bypass packet processing that dramatically reduces latency and increases
-throughput for service mesh traffic interception and zero-copy packet I/O.
+NovaEdge leverages eBPF/XDP acceleration for the data plane through
+[NovaNet](https://github.com/azrtydxb/novanet), the Nova CNI component. NovaEdge
+itself no longer loads or manages eBPF programs directly. Instead, it communicates
+with NovaNet via a gRPC client over a Unix domain socket to request eBPF services.
 
 !!! note "L4 Load Balancing"
-    Kubernetes Service L4 load balancing is handled by [NovaNet](https://github.com/azrtydxb/novanet). NovaEdge focuses on L7 ingress load balancing and eBPF-accelerated mesh interception.
+    Kubernetes Service L4 load balancing is handled by [NovaNet](https://github.com/azrtydxb/novanet). NovaEdge focuses on L7 ingress load balancing.
 
 ## Overview
 
-The following eBPF acceleration features are available. All are **enabled by default**
-and auto-detected at runtime. If the kernel does not support a feature, the
-agent transparently falls back to the legacy path.
+The following eBPF acceleration features are provided by **NovaNet** and consumed
+by NovaEdge via gRPC. All features are auto-detected at runtime by NovaNet. If
+NovaNet is not available, NovaEdge continues to operate without eBPF acceleration
+(graceful degradation).
 
-| Feature | Program Type | Legacy Fallback | Auto-detected |
-|---------|-------------|----------------|---------------|
-| **eBPF Mesh Redirect** | `BPF_PROG_TYPE_SK_LOOKUP` | nftables/iptables TPROXY | Yes |
-| **AF_XDP Zero-Copy** | XDP + `AF_XDP` socket | Kernel network stack | Yes (requires `--xdp-interface`) |
-| **SOCKMAP Same-Node Bypass** | `BPF_PROG_TYPE_SOCK_OPS` | Kernel network stack | Yes |
-| **Conntrack** | `BPF_MAP_TYPE_LRU_HASH` | Kernel conntrack | Yes |
+| Feature | Provided By | Fallback (NovaNet unavailable) |
+|---------|------------|-------------------------------|
+| **SOCKMAP Same-Node Bypass** | NovaNet | Kernel network stack |
+| **eBPF Mesh Redirect** | NovaNet | nftables/iptables TPROXY |
+| **Rate Limiting** | NovaNet | Userspace rate limiting |
+| **Health Monitoring** | NovaNet | Dataplane health checks |
 
-To **force** the legacy path, use `--force-legacy-mesh` (mesh interception).
+## Architecture
 
-## Prerequisites
+### Previous Architecture (Removed)
 
-### Kernel Requirements
+Previously, NovaEdge loaded and managed eBPF programs directly within the Go
+agent, requiring `privileged: true`, `CAP_BPF`, `CAP_SYS_ADMIN`, and BPF
+filesystem mounts.
 
-| Feature | Minimum Kernel | Required Support |
-|---------|---------------|-----------------|
-| eBPF Mesh Redirect | 5.9+ | `BPF_PROG_TYPE_SK_LOOKUP` |
-| AF_XDP | 5.10+ | XDP + AF_XDP socket support |
-| SOCKMAP | 5.4+ | `BPF_PROG_TYPE_SOCK_OPS` |
-| Conntrack | 5.4+ | `BPF_MAP_TYPE_LRU_HASH` |
+### Current Architecture
 
-Check your kernel version:
+```mermaid
+flowchart LR
+    subgraph NovaEdge["NovaEdge Agent"]
+        GC["gRPC Client"]
+    end
 
-```bash
-uname -r
+    subgraph NovaNet["NovaNet (CNI)"]
+        EBPF["eBPF Services"]
+        SOCKMAP["SOCKMAP Bypass"]
+        SKLOOKUP["SK_LOOKUP Redirect"]
+        RL["Rate Limiting"]
+        HM["Health Monitor"]
+    end
+
+    GC -->|"Unix socket<br/>/run/novanet/ebpf-services.sock"| EBPF
+    EBPF --> SOCKMAP & SKLOOKUP & RL & HM
 ```
 
-### BTF Support
+NovaEdge connects to NovaNet via a Unix domain socket at
+`/run/novanet/ebpf-services.sock` (configurable via Helm). NovaNet handles all
+eBPF program loading, lifecycle management, and kernel interactions.
 
-BTF (BPF Type Format) is recommended for CO-RE (Compile Once, Run Everywhere)
-portability. Verify BTF is available:
+## Security Improvement
 
-```bash
-ls /sys/kernel/btf/vmlinux
-```
+By removing direct eBPF management from NovaEdge, the agent container no longer
+requires elevated privileges for BPF operations:
 
-### Capabilities
+| Requirement | Before (Direct eBPF) | After (NovaNet) |
+|-------------|---------------------|-----------------|
+| `privileged: true` | Required | **Not required** |
+| `CAP_BPF` | Required | **Not required** |
+| `CAP_SYS_ADMIN` | Required | **Not required** |
+| `CAP_NET_RAW` | Required | **Not required** |
+| `/sys/fs/bpf` mount | Required | **Not required** |
+| `/run/novanet/` mount | Not applicable | Required (for socket access) |
 
-The agent pod requires these Linux capabilities for eBPF acceleration:
-
-- `CAP_BPF` — load and manage BPF programs and maps
-- `CAP_NET_ADMIN` — attach XDP programs to network interfaces
-- `CAP_SYS_ADMIN` — required on kernels < 5.8 that lack `CAP_BPF`
-
-These are included in the default Helm chart security context.
+The NovaEdge agent now runs with a significantly reduced privilege set. Only
+`CAP_NET_ADMIN` and `CAP_NET_BIND_SERVICE` are needed for VIP management and
+binding privileged ports.
 
 ## Helm Configuration
 
-eBPF acceleration is enabled by default. Set `xdpInterface` to specify the
-NIC for AF_XDP attachment:
+### Enabling NovaNet Integration
 
 ```yaml
 # charts/novaedge-agent/values.yaml
-ebpf:
-  # Mount /sys/fs/bpf for BPF map pinning
-  bpffsMount: true
+novanet:
+  # Enable NovaNet eBPF services integration
+  enabled: true
 
-  # NIC for AF_XDP — enables zero-copy acceleration
-  xdpInterface: eth0
+  # Path to the NovaNet eBPF services Unix socket
+  ebpfServicesSocket: /run/novanet/ebpf-services.sock
 
-  # Force legacy paths (default: false — eBPF auto-detected)
-  forceLegacyMesh: false
-
-# Capabilities are included by default
+# Reduced security context — no BPF capabilities needed
 securityContext:
   capabilities:
     add:
       - NET_ADMIN
-      - NET_RAW
       - NET_BIND_SERVICE
-      - BPF
-      - SYS_ADMIN
     drop:
       - ALL
 ```
 
-## Agent Flags
+### Volume Mount
 
-```bash
-# Default: eBPF auto-detected, AF_XDP on eth0
-novaedge-agent \
-  --xdp-interface eth0 \
-  --mesh-enabled
+The agent DaemonSet needs access to the NovaNet socket directory:
 
-# Force legacy nftables/iptables mesh interception (skip eBPF sk_lookup)
-novaedge-agent \
-  --xdp-interface eth0 \
-  --mesh-enabled \
-  --force-legacy-mesh
+```yaml
+volumes:
+  - name: novanet-socket
+    hostPath:
+      path: /run/novanet
+      type: DirectoryOrCreate
+
+volumeMounts:
+  - name: novanet-socket
+    mountPath: /run/novanet
+    readOnly: true
 ```
 
-The eBPF mesh redirect is automatically detected and used when
-`--mesh-enabled` is set and the kernel supports `SK_LOOKUP`.
+## Graceful Degradation
 
-## Architecture
+If NovaNet is not available (not installed, socket not present, or service
+unavailable), NovaEdge continues to operate normally:
 
-### Packet Flow Without eBPF (Legacy)
+- **SOCKMAP bypass**: Falls back to kernel network stack for same-node traffic
+- **Mesh redirect**: Falls back to nftables/iptables TPROXY rules
+- **Rate limiting**: Falls back to userspace rate limiting in the Rust dataplane
+- **Health monitoring**: Falls back to dataplane-side health checks
 
-```mermaid
-graph LR
-    NIC[NIC] --> KS[Kernel Stack]
-    KS --> US[Userspace Proxy]
-    US --> KS2[Kernel Stack]
-    KS2 --> NIC2[NIC]
+The agent logs a warning at startup when NovaNet is not available and periodically
+retries the connection.
+
 ```
-
-Every packet crosses the kernel-userspace boundary twice, incurring context
-switches, memory copies, and syscall overhead.
-
-### Packet Flow With AF_XDP
-
-```mermaid
-graph LR
-    NIC[NIC] --> XDP[XDP Filter]
-    XDP -->|Match| XSK[AF_XDP Socket]
-    XSK --> US[Userspace Worker]
-    US --> XSK2[AF_XDP Socket]
-    XSK2 --> NIC2[NIC]
-    XDP -->|No match| KS[Kernel Stack]
+{"level":"warn","msg":"NovaNet eBPF services not available, operating in degraded mode","socket":"/run/novanet/ebpf-services.sock"}
 ```
-
-AF_XDP provides zero-copy packet I/O between the NIC and userspace via
-shared memory ring buffers, eliminating kernel stack traversal while
-maintaining full userspace programmability.
-
-## How It Works
-
-### eBPF Mesh Redirect
-
-The `SK_LOOKUP` program intercepts socket lookups for TCP connections matching
-service mesh targets. Instead of using nftables TPROXY rules, the BPF program
-directly assigns the connection to the TPROXY listener socket using
-`bpf_sk_assign()`. This eliminates the overhead of traversing the entire
-netfilter/nftables rule chain.
-
-### AF_XDP Zero-Copy
-
-AF_XDP extends XDP with userspace zero-copy packet processing:
-
-1. An XDP filter program matches flows against a VIP set
-2. Matched packets are redirected to an AF_XDP socket via `bpf_redirect_map()`
-3. The userspace worker reads packets from the UMEM ring buffer
-4. Processed responses are written back through the TX ring
-5. Non-matching packets pass to the normal kernel stack
 
 ## Monitoring
 
 ### Prometheus Metrics
 
-All eBPF subsystems expose Prometheus metrics:
+NovaNet integration exposes the following metrics:
 
-| Metric | Type | Labels | Description |
-|--------|------|--------|-------------|
-| `novaedge_ebpf_programs_loaded` | Gauge | `subsystem` | Number of loaded BPF programs |
-| `novaedge_ebpf_map_operations_total` | Counter | `map`, `op`, `result` | BPF map operations |
-| `novaedge_ebpf_errors_total` | Counter | `subsystem`, `type` | BPF-related errors |
-| `novaedge_ebpf_attach_duration_seconds` | Histogram | `subsystem` | Time to load and attach programs |
+| Metric | Type | Description |
+|--------|------|-------------|
+| `novaedge_novanet_connected` | Gauge | Whether the agent is connected to NovaNet (0 or 1) |
+| `novaedge_novanet_requests_total` | Counter | Total gRPC requests to NovaNet |
+| `novaedge_novanet_errors_total` | Counter | Total gRPC errors from NovaNet |
 
-### Verifying with bpftool
-
-```bash
-# List loaded BPF programs
-bpftool prog list
-
-# Show XDP programs attached to interfaces
-bpftool net show
-
-# Dump BPF map contents (e.g., conntrack entries)
-bpftool map dump name ct_entries
-```
-
-### Agent Logs
-
-Look for these log messages to confirm eBPF acceleration is active:
-
-```
-# eBPF mesh redirect (auto-detected)
-{"msg": "using eBPF sk_lookup backend for mesh interception"}
-
-# AF_XDP (auto-detected when --xdp-interface is set)
-{"msg": "AF_XDP zero-copy fast path enabled", "interface": "eth0"}
-
-# SOCKMAP same-node bypass
-{"msg": "SOCKMAP same-node bypass enabled"}
-
-# Conntrack
-{"msg": "eBPF conntrack active"}
-
-# Fallback messages (kernel doesn't support eBPF feature)
-{"msg": "AF_XDP not available, using kernel stack"}
-{"msg": "eBPF mesh redirect disabled by --force-legacy-mesh, using nftables/iptables"}
-```
+For eBPF program-level metrics (loaded programs, map operations, etc.), see the
+NovaNet documentation.
 
 ## Troubleshooting
 
-### BPF program fails to load
+### Agent cannot connect to NovaNet
 
-**Symptom:** Agent logs `AF_XDP not available, using kernel stack`
+**Symptom:** Agent logs `NovaNet eBPF services not available`
 
 **Common causes:**
 
-1. **Kernel too old** — check `uname -r` against the requirements table above
-2. **Missing capabilities** — ensure `CAP_BPF` and `CAP_NET_ADMIN` are granted
-3. **BTF not available** — check `/sys/kernel/btf/vmlinux` exists
-4. **NIC driver doesn't support XDP** — not all NICs support XDP driver mode;
-   virtual NICs (veth, bridge) use generic XDP which is slower
+1. **NovaNet not installed** -- install NovaNet as the cluster CNI
+2. **Socket path incorrect** -- verify `novanet.ebpfServicesSocket` matches the
+   actual NovaNet socket location
+3. **Missing volume mount** -- ensure `/run/novanet/` is mounted in the agent pod
+4. **Permissions** -- the socket file must be readable by the agent process
 
-### Permission denied errors
-
-Ensure the agent container runs with sufficient privileges:
-
-```yaml
-securityContext:
-  capabilities:
-    add: [BPF, NET_ADMIN, SYS_ADMIN, NET_RAW, NET_BIND_SERVICE]
-```
-
-On some distributions, you may also need `privileged: true` in the pod
-security context.
-
-### Forcing legacy mode
-
-If eBPF causes issues, you can force the legacy path without changing
-the kernel or capabilities:
+### Verifying NovaNet is providing eBPF services
 
 ```bash
-# Force legacy for mesh interception
-novaedge-agent --force-legacy-mesh ...
-```
+# Check if the NovaNet socket exists on the node
+ls -la /run/novanet/ebpf-services.sock
 
-Or via Helm:
+# Check agent logs for successful connection
+kubectl logs -n nova-system -l app.kubernetes.io/name=novaedge-agent | grep novanet
 
-```yaml
-ebpf:
-  forceLegacyMesh: true
+# Expected on success:
+# {"level":"info","msg":"Connected to NovaNet eBPF services","socket":"/run/novanet/ebpf-services.sock"}
 ```

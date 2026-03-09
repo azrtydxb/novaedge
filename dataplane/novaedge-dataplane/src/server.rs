@@ -1295,80 +1295,6 @@ impl DataplaneControl for DataplaneService {
         }))
     }
 
-    async fn attach_program(
-        &self,
-        request: Request<proto::AttachProgramRequest>,
-    ) -> Result<Response<proto::AttachProgramResponse>, Status> {
-        let req = request.into_inner();
-        info!(
-            name = %req.name,
-            object_path = %req.object_path,
-            interface = %req.interface,
-            attach_type = req.attach_type,
-            "AttachProgram"
-        );
-
-        #[cfg(target_os = "linux")]
-        {
-            // Load the eBPF object file and attach the specified program.
-            let mut load_result = crate::loader::load_ebpf(&req.object_path)
-                .map_err(|e| Status::internal(format!("failed to load eBPF object: {e}")))?;
-
-            if let Some(ref mut bpf) = load_result.bpf {
-                let iface = if req.interface.is_empty() {
-                    "eth0"
-                } else {
-                    &req.interface
-                };
-                // attach_type: 1 = XDP, 2 = TC
-                match req.attach_type {
-                    2 => crate::loader::attach_tc(bpf, &req.name, iface)
-                        .map_err(|e| Status::internal(format!("TC attach failed: {e}")))?,
-                    _ => crate::loader::attach_xdp(bpf, &req.name, iface)
-                        .map_err(|e| Status::internal(format!("XDP attach failed: {e}")))?,
-                }
-            } else {
-                return Err(Status::internal("eBPF handle not available after load"));
-            }
-
-            let (status, message) = Self::ok_response(format!("program '{}' attached", req.name));
-            Ok(Response::new(proto::AttachProgramResponse {
-                status,
-                message,
-                program_id: 1,
-            }))
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            Err(Status::unimplemented(
-                "eBPF program attachment requires Linux",
-            ))
-        }
-    }
-
-    async fn detach_program(
-        &self,
-        request: Request<proto::DetachProgramRequest>,
-    ) -> Result<Response<proto::DetachProgramResponse>, Status> {
-        let req = request.into_inner();
-        info!(name = %req.name, "DetachProgram");
-
-        // eBPF programs attached via aya are detached when the Ebpf handle is dropped.
-        // For runtime detachment, the caller must stop the dataplane or reload programs.
-        // Log the detach request; actual cleanup happens on process shutdown.
-        warn!(
-            name = %req.name,
-            "Program detach acknowledged — eBPF programs detach on handle drop"
-        );
-
-        let (status, message) = Self::ok_response(format!("program '{}' detached", req.name));
-        Ok(Response::new(proto::DetachProgramResponse {
-            status,
-            message,
-        }))
-    }
-
     type StreamFlowsStream =
         Pin<Box<dyn Stream<Item = Result<proto::FlowEvent, Status>> + Send + 'static>>;
 
@@ -1561,7 +1487,6 @@ impl DataplaneControl for DataplaneService {
 
         Ok(Response::new(proto::DataplaneStatus {
             mode: map_status.mode.into(),
-            loaded_programs: vec![],
             active_connections: 0,
             map_sizes,
             uptime_seconds: self.start_time.elapsed().as_secs(),
@@ -1736,7 +1661,6 @@ mod tests {
                 subset_size: 0,
                 remote_endpoint_groups: vec![],
             }],
-            vips: vec![],
             l4_listeners: vec![],
             policies: vec![],
             mesh_config: None,
@@ -1766,9 +1690,7 @@ mod tests {
             .await
             .unwrap();
         let status = resp.into_inner();
-        assert_eq!(status.mode, "mock");
-        // 1 eBPF map + 3 config maps + 2 VIP maps + 2 WAN link maps + 1 WireGuard map = 9
-        assert_eq!(status.map_sizes.len(), 9);
+        assert_eq!(status.mode, "in-memory");
     }
 
     #[tokio::test]
@@ -1899,32 +1821,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_upsert_delete_vip() {
-        let svc = make_service();
-        let req = Request::new(proto::UpsertVipRequest {
-            vip: Some(proto::VipConfig {
-                name: "test-vip".into(),
-                address: "10.0.0.1/32".into(),
-                mode: proto::VipMode::L2 as i32,
-                interface: "eth0".into(),
-                bgp_config: None,
-                arp_interface: String::new(),
-                ospf_area_id: 0,
-                bfd_enabled: false,
-                bfd_interval_ms: 0,
-                bfd_multiplier: 0,
-            }),
-        });
-        let resp = svc.upsert_vip(req).await.unwrap();
-        assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
-        let req = Request::new(proto::DeleteVipRequest {
-            name: "test-vip".into(),
-        });
-        let resp = svc.delete_vip(req).await.unwrap();
-        assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
-    }
-
-    #[tokio::test]
     async fn test_upsert_l4_listener_creates_gateway() {
         let svc = make_service();
         let req = Request::new(proto::UpsertL4ListenerRequest {
@@ -1946,33 +1842,6 @@ mod tests {
         assert_eq!(snap.gateways.len(), 1);
         assert_eq!(snap.gateways["tcp-1"].protocol, "TCP");
         assert_eq!(snap.gateways["tcp-1"].port, 3306);
-    }
-
-    #[tokio::test]
-    async fn test_attach_program_requires_linux() {
-        let svc = make_service();
-        let req = Request::new(proto::AttachProgramRequest {
-            name: "test-prog".into(),
-            object_path: "/tmp/test.o".into(),
-            attach_type: proto::EbpfAttachType::EbpfAttachXdp as i32,
-            interface: "eth0".into(),
-            section: "xdp".into(),
-            pin_path: String::new(),
-        });
-        let result = svc.attach_program(req).await;
-        // On non-Linux, attach_program returns Unimplemented.
-        // On Linux, it will fail with a load error (no object at /tmp/test.o).
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_detach_program() {
-        let svc = make_service();
-        let req = Request::new(proto::DetachProgramRequest {
-            name: "test-prog".into(),
-        });
-        let resp = svc.detach_program(req).await.unwrap();
-        assert_eq!(resp.into_inner().status, proto::OperationStatus::Ok as i32);
     }
 
     #[tokio::test]

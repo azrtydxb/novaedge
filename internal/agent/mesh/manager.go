@@ -30,21 +30,13 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
+	"github.com/azrtydxb/novaedge/internal/agent/novanet"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (
 	errMeshManagerNotStarted = errors.New("mesh manager not started")
 )
-
-// safePortToUint16 converts an int32 port to uint16 with bounds checking.
-func safePortToUint16(port int32) uint16 {
-	if port < 0 || port > 65535 {
-		return 0
-	}
-	return uint16(port)
-}
 
 const (
 	// DefaultTPROXYPort is the default port for the transparent listener.
@@ -151,12 +143,13 @@ type Manager struct {
 	cancel              context.CancelFunc
 
 	// nodeIP is the IP address of this node, used for identifying
-	// same-node endpoints eligible for SOCKMAP bypass.
+	// same-node endpoints eligible for SOCKMAP bypass via NovaNet.
 	nodeIP string
 
-	// sockMapMgr is the eBPF SOCKMAP manager for same-node traffic
-	// acceleration. May be nil if eBPF SOCKMAP is not available.
-	sockMapMgr *sockmap.Manager
+	// novanetClient delegates eBPF operations (SOCKMAP, mesh redirects,
+	// rate limiting, health monitoring) to the NovaNet agent. May be nil
+	// if NovaNet integration is not configured.
+	novanetClient *novanet.Client
 }
 
 // ManagerConfig holds configuration for creating a mesh Manager.
@@ -174,10 +167,9 @@ type ManagerConfig struct {
 	// nftables/iptables backend. This is used by the eBPF sk_lookup backend
 	// which is initialized before the mesh manager.
 	RuleBackendOverride RuleBackend
-	// SockMapManager, if non-nil, enables eBPF SOCKMAP-based same-node
-	// traffic acceleration. The caller is responsible for creating the
-	// manager (typically after eBPF capability detection).
-	SockMapManager *sockmap.Manager
+	// NovaNetClient, if non-nil, delegates eBPF operations (SOCKMAP,
+	// mesh redirects, rate limiting, health) to the NovaNet agent.
+	NovaNetClient *novanet.Client
 }
 
 // NewManager creates a new mesh manager with mTLS tunnel support.
@@ -197,27 +189,21 @@ func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
 		trustDomain:         trustDomain,
 		ruleBackendOverride: cfg.RuleBackendOverride,
 		nodeIP:              cfg.NodeIP,
-		sockMapMgr:          cfg.SockMapManager,
+		novanetClient:       cfg.NovaNetClient,
 	}
 
-	if m.sockMapMgr != nil {
-		namedLogger.Info("eBPF SOCKMAP acceleration enabled for same-node traffic")
+	if m.novanetClient != nil {
+		namedLogger.Info("NovaNet eBPF services integration enabled")
 	}
 
 	return m
 }
 
-// ListenerRegistrar is implemented by backends that need the listener
-// socket's file descriptor (e.g., eBPF SOCKMAP).
-type ListenerRegistrar interface {
-	SetListenerFD(fd int) error
-}
-
 // Start initializes the mesh data plane: sets up TPROXY interception rules,
 // starts the transparent listener, and starts the mTLS tunnel server.
-// If a RuleBackendOverride was provided via ManagerConfig (e.g. eBPF
-// sk_lookup), it is used directly; otherwise auto-detection selects the
-// best nftables/iptables backend.
+// If a RuleBackendOverride was provided via ManagerConfig, it is used
+// directly; otherwise auto-detection selects the best nftables/iptables
+// backend.
 //
 // All spawned goroutines share the same context. If any component fails to
 // start, the context is cancelled to stop all others, preventing goroutine
@@ -242,34 +228,8 @@ func (m *Manager) Start(ctx context.Context) error {
 
 	listener := NewTransparentListener(m.logger, m.tproxyPort, m.handleConn)
 
-	// If the backend needs the listener socket FD (eBPF SOCKMAP), create
-	// the listener first, register the FD, then start the accept loop.
-	if registrar, ok := m.ruleBackendOverride.(ListenerRegistrar); ok {
-		tcpListener, err := listener.CreateListener(egCtx)
-		if err != nil {
-			cancel()
-			return fmt.Errorf("creating listener for eBPF registration: %w", err)
-		}
-
-		if tcpLn, ok := tcpListener.(*net.TCPListener); ok {
-			file, err := tcpLn.File()
-			if err != nil {
-				_ = tcpListener.Close()
-				cancel()
-				return fmt.Errorf("getting listener file descriptor: %w", err)
-			}
-			fd := int(file.Fd()) //nolint:gosec // G115: file descriptor conversion is safe on supported 64-bit platforms
-			if err := registrar.SetListenerFD(fd); err != nil {
-				_ = file.Close()
-				_ = tcpListener.Close()
-				cancel()
-				return fmt.Errorf("registering listener FD with eBPF backend: %w", err)
-			}
-			_ = file.Close()
-		}
-
-		listener.SetListener(tcpListener)
-	}
+	// NovaNet handles eBPF-based redirection to well-known port 15001;
+	// no listener FD registration needed here.
 
 	eg.Go(func() error {
 		if err := listener.Start(egCtx); err != nil {
@@ -348,12 +308,9 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 		m.authorizer.UpdatePolicies(authzPolicies)
 	}
 
-	// Populate eBPF SOCKMAP endpoint map with same-node endpoints (#631).
-	// Only endpoints whose pod IP is on this node are eligible for
-	// SOCKMAP bypass, which redirects data directly between sockets
-	// without traversing the full TCP/IP stack.
-	if m.sockMapMgr != nil {
-		m.reconcileSockMapEndpoints(services)
+	// Request NovaNet to enable SOCKMAP acceleration for same-node endpoints.
+	if m.novanetClient != nil {
+		m.reconcileNovaNetSockMap(context.Background(), services)
 	}
 
 	m.logger.Info("Mesh config applied",
@@ -361,51 +318,37 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 		zap.Int("intercept_rules", len(targets)),
 		zap.Int("routing_entries", m.serviceTable.ServiceCount()),
 		zap.Int("authz_policies", len(authzPolicies)),
-		zap.Bool("sockmap_enabled", m.sockMapMgr != nil))
+		zap.Bool("novanet_connected", m.novanetClient != nil && m.novanetClient.IsConnected()))
 
 	return nil
 }
 
-// reconcileSockMapEndpoints identifies same-node endpoints from the service
-// list and updates the eBPF SOCKMAP endpoint map. An endpoint is considered
-// "same-node" if it matches the node's IP or is on the same node's pod CIDR.
-// For simplicity, we currently check all ready endpoints and mark those
-// that the BPF program should try to shortcircuit.
-func (m *Manager) reconcileSockMapEndpoints(services []*pb.InternalService) {
-	desired := make(map[sockmap.EndpointKey]sockmap.EndpointValue)
+// reconcileNovaNetSockMap identifies same-node endpoints from the service
+// list and requests NovaNet to enable SOCKMAP acceleration for the
+// corresponding pods. An endpoint is considered "same-node" if it matches
+// the node's IP or topology label.
+func (m *Manager) reconcileNovaNetSockMap(ctx context.Context, services []*pb.InternalService) {
 	for _, svc := range services {
 		if !svc.MeshEnabled {
 			continue
 		}
 		for _, ep := range svc.Endpoints {
-			if !ep.Ready {
+			if !ep.Ready || !m.isLocalEndpoint(ep) {
 				continue
 			}
-			// Check if endpoint is on this node.
-			// The endpoint's labels may contain topology info, or we can
-			// compare the address against the node IP range. For now,
-			// we use the "topology.kubernetes.io/zone" or node-local
-			// detection heuristic: if the endpoint address matches a
-			// known node-local CIDR or the node IP itself.
-			if !m.isLocalEndpoint(ep) {
+			// Extract pod namespace/name from endpoint labels if available.
+			ns := ep.Labels["kubernetes.io/namespace"]
+			name := ep.Labels["kubernetes.io/name"]
+			if ns == "" || name == "" {
 				continue
 			}
-			for _, port := range svc.Ports {
-				key, err := sockmap.NewEndpointKey(ep.Address, safePortToUint16(port.TargetPort))
-				if err != nil {
-					m.logger.Debug("Skipping invalid endpoint for SOCKMAP",
-						zap.String("address", ep.Address),
-						zap.Int32("port", port.TargetPort),
-						zap.Error(err))
-					continue
-				}
-				desired[key] = sockmap.EndpointValue{Eligible: 1}
+			if err := m.novanetClient.EnableSockmap(ctx, ns, name); err != nil {
+				m.logger.Warn("Failed to enable SOCKMAP via NovaNet",
+					zap.String("namespace", ns),
+					zap.String("pod", name),
+					zap.Error(err))
 			}
 		}
-	}
-
-	if err := m.sockMapMgr.SyncEndpoints(desired); err != nil {
-		m.logger.Warn("Failed to reconcile SOCKMAP endpoints", zap.Error(err))
 	}
 }
 
@@ -464,12 +407,8 @@ func (m *Manager) Shutdown(_ context.Context) error {
 		}
 	}
 
-	// Clean up eBPF acceleration resources.
-	if m.sockMapMgr != nil {
-		if err := m.sockMapMgr.Close(); err != nil {
-			m.logger.Error("SOCKMAP manager cleanup failed", zap.Error(err))
-		}
-	}
+	// NovaNet client lifecycle is managed by the caller (agent main);
+	// no eBPF cleanup needed here.
 	m.logger.Info("Mesh manager stopped")
 	return nil
 }

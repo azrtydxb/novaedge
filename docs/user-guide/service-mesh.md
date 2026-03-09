@@ -102,13 +102,13 @@ The agent will remove the corresponding REDIRECT rules on the next config reconc
 
 ## How Traffic Interception Works
 
-NovaEdge uses three interception backends, auto-detected in priority order:
+NovaEdge uses two interception backends, auto-detected in priority order:
 
-1. **eBPF `SK_LOOKUP`** (preferred) — a BPF program intercepts socket lookups for matching service mesh targets and directly assigns the connection to the transparent listener socket via `bpf_sk_assign()`, bypassing the entire nftables/iptables rule chain. Requires kernel 5.9+.
-2. **nftables** — NAT REDIRECT rules applied atomically via netlink. Used when eBPF `SK_LOOKUP` is not available.
-3. **iptables** (fallback) — exec-based NAT REDIRECT rules. Used when nftables is also not available.
+1. **nftables** (preferred) — NAT REDIRECT rules applied atomically via netlink.
+2. **iptables** (fallback) — exec-based NAT REDIRECT rules. Used when nftables is not available.
 
-To force the legacy nftables/iptables path, use `--force-legacy-mesh`.
+!!! tip "eBPF Mesh Redirect via NovaNet"
+    When [NovaNet](https://github.com/azrtydxb/novanet) is installed, it can provide eBPF `SK_LOOKUP`-based mesh redirect that bypasses the nftables/iptables rule chain entirely. This is handled transparently by NovaNet -- NovaEdge itself no longer loads or manages eBPF programs. See [eBPF Acceleration (NovaNet)](ebpf-acceleration.md) for details.
 
 For all backends, the REDIRECT rule rewrites the destination port to the agent's transparent listener while conntrack records the original ClusterIP destination, which the listener retrieves via `SO_ORIGINAL_DST`.
 

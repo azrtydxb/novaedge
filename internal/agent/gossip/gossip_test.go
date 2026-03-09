@@ -230,7 +230,7 @@ func TestConfigGossiper_checkQuorum_NoQuorum(t *testing.T) {
 
 	// Add peers but not majority with newer genTime
 	g.peerVersions.Store("peer1", peerState{genTime: 500, lastSeen: time.Now()})  // older
-	g.peerVersions.Store("peer2", peerState{genTime: 1500, lastSeen: time.Now()}) // newer but within threshold
+	g.peerVersions.Store("peer2", peerState{genTime: 1050, lastSeen: time.Now()}) // newer but within threshold (diff=50 < 60)
 	g.peerVersions.Store("peer3", peerState{genTime: 2000, lastSeen: time.Now()}) // newer
 
 	g.checkQuorum()

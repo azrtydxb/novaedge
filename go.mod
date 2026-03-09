@@ -4,7 +4,6 @@ go 1.26.1
 
 require (
 	github.com/azrtydxb/novanet v1.8.2-0.20260307101249-8e96b33353d9
-	github.com/cilium/ebpf v0.20.0
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/go-acme/lego/v4 v4.29.0
 	github.com/golang-jwt/jwt/v5 v5.3.1

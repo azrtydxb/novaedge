@@ -1,103 +1,48 @@
-//! Map manager abstraction for eBPF maps.
+//! Map manager for in-memory rate-limit state.
 //!
-//! Provides a unified API over either real eBPF maps (Linux) or mock
-//! in-memory maps (macOS / standalone mode / testing).
+//! With eBPF removed, this uses in-memory HashMaps for all platforms.
 
 use std::collections::HashMap;
 use std::sync::RwLock;
 use std::time::Instant;
 
-#[cfg(target_os = "linux")]
-use std::cell::UnsafeCell;
-
 use novaedge_common::{RateLimitKey, RateLimitValue};
-
-#[cfg(target_os = "linux")]
-use novaedge_common::RateLimitCfg;
 
 /// Status information about the map manager.
 #[derive(Debug, Clone)]
 pub struct MapStatus {
-    /// Operating mode: "mock" or "ebpf".
+    /// Operating mode (always "in-memory" now).
     pub mode: &'static str,
     /// Number of rate limit entries.
     pub rate_limit_count: usize,
 }
 
-/// MapManager abstracts over real eBPF maps and mock in-memory maps.
+/// MapManager provides in-memory rate-limit state storage.
 pub struct MapManager {
-    inner: MapManagerInner,
+    rate_limits: RwLock<HashMap<[u8; 4], [u8; 16]>>,
     /// Used by `uptime_seconds()` for status reporting.
     #[allow(dead_code)]
     start_time: Instant,
 }
 
-#[allow(clippy::large_enum_variant)]
-enum MapManagerInner {
-    Mock(MockMaps),
-    #[cfg(target_os = "linux")]
-    Real(Box<RealMaps>),
-}
-
-/// Mock map implementation using in-memory HashMaps.
-struct MockMaps {
-    rate_limits: RwLock<HashMap<[u8; 4], [u8; 16]>>,
-}
-
-/// Real eBPF map handles (Linux only).
-///
-/// Uses `UnsafeCell` for interior mutability because aya's `HashMap::insert`
-/// and `HashMap::remove` require `&mut self`, but `MapManager` exposes `&self`
-/// methods for ergonomic usage behind `Arc`. External synchronization (single
-/// writer from the gRPC thread) ensures safety.
-/// Some fields (rate_limit_cfg, vip_addrs) are not read by userspace code
-/// but must be kept alive to hold eBPF map file descriptors open for
-/// kernel-side programs (novaedge_ratelimit, novaedge_arp).
-#[cfg(target_os = "linux")]
-#[allow(dead_code)]
-pub struct RealMaps {
-    pub rate_limits:
-        UnsafeCell<aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitValue>>,
-    pub rate_limit_cfg:
-        UnsafeCell<aya::maps::HashMap<aya::maps::MapData, RateLimitKey, RateLimitCfg>>,
-    pub vip_addrs: UnsafeCell<aya::maps::HashMap<aya::maps::MapData, u32, [u8; 6]>>,
-}
-
-// SAFETY: RealMaps is safe to send between threads because the aya map
-// handles are just file descriptors. External synchronization (single
-// writer from gRPC thread) ensures no data races.
-#[cfg(target_os = "linux")]
-unsafe impl Send for RealMaps {}
-#[cfg(target_os = "linux")]
-unsafe impl Sync for RealMaps {}
-
 impl MapManager {
-    /// Create a new mock MapManager (for macOS, standalone, or testing).
-    pub fn new_mock() -> Self {
+    /// Create a new MapManager with in-memory storage.
+    pub fn new() -> Self {
         Self {
-            inner: MapManagerInner::Mock(MockMaps {
-                rate_limits: RwLock::new(HashMap::new()),
-            }),
+            rate_limits: RwLock::new(HashMap::new()),
             start_time: Instant::now(),
         }
     }
 
-    /// Create a new MapManager wrapping real eBPF maps (Linux only).
-    #[cfg(target_os = "linux")]
-    pub fn new_real(maps: RealMaps) -> Self {
-        Self {
-            inner: MapManagerInner::Real(Box::new(maps)),
-            start_time: Instant::now(),
-        }
+    /// Backwards-compatible alias for `new()` (used by tests).
+    #[allow(dead_code)]
+    pub fn new_mock() -> Self {
+        Self::new()
     }
 
     /// Return the mode string for status reporting.
     pub fn mode(&self) -> &'static str {
-        match &self.inner {
-            MapManagerInner::Mock(_) => "mock",
-            #[cfg(target_os = "linux")]
-            MapManagerInner::Real(_) => "ebpf",
-        }
+        "in-memory"
     }
 
     /// Return uptime in seconds since the manager was created.
@@ -115,49 +60,23 @@ impl MapManager {
         key: RateLimitKey,
         value: RateLimitValue,
     ) -> anyhow::Result<()> {
-        match &self.inner {
-            MapManagerInner::Mock(m) => {
-                let k = unsafe { core::mem::transmute::<RateLimitKey, [u8; 4]>(key) };
-                let v = unsafe { core::mem::transmute::<RateLimitValue, [u8; 16]>(value) };
-                m.rate_limits.write().unwrap().insert(k, v);
-                Ok(())
-            }
-            #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => {
-                // SAFETY: External synchronization ensures single-writer access.
-                unsafe { &mut *m.rate_limits.get() }
-                    .insert(key, value, 0)
-                    .map_err(|e| anyhow::anyhow!("rate_limits insert: {e}"))?;
-                Ok(())
-            }
-        }
+        let k = unsafe { core::mem::transmute::<RateLimitKey, [u8; 4]>(key) };
+        let v = unsafe { core::mem::transmute::<RateLimitValue, [u8; 16]>(value) };
+        self.rate_limits.write().unwrap().insert(k, v);
+        Ok(())
     }
 
     /// Delete a rate limit entry.
     #[allow(dead_code)]
     pub fn delete_rate_limit(&self, key: &RateLimitKey) -> anyhow::Result<()> {
-        match &self.inner {
-            MapManagerInner::Mock(m) => {
-                let k = unsafe { core::mem::transmute::<RateLimitKey, [u8; 4]>(*key) };
-                m.rate_limits.write().unwrap().remove(&k);
-                Ok(())
-            }
-            #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => {
-                // SAFETY: External synchronization ensures single-writer access.
-                let _ = unsafe { &mut *m.rate_limits.get() }.remove(key);
-                Ok(())
-            }
-        }
+        let k = unsafe { core::mem::transmute::<RateLimitKey, [u8; 4]>(*key) };
+        self.rate_limits.write().unwrap().remove(&k);
+        Ok(())
     }
 
     /// Get the number of rate limit entries.
     pub fn rate_limit_count(&self) -> usize {
-        match &self.inner {
-            MapManagerInner::Mock(m) => m.rate_limits.read().unwrap().len(),
-            #[cfg(target_os = "linux")]
-            MapManagerInner::Real(m) => unsafe { &*m.rate_limits.get() }.keys().count(),
-        }
+        self.rate_limits.read().unwrap().len()
     }
 
     // ── Status ─────────────────────────────────────────────────────────
@@ -193,16 +112,16 @@ mod tests {
 
     #[test]
     fn test_get_status() {
-        let mgr = MapManager::new_mock();
+        let mgr = MapManager::new();
         let status = mgr.get_status();
-        assert_eq!(status.mode, "mock");
+        assert_eq!(status.mode, "in-memory");
         assert_eq!(status.rate_limit_count, 0);
     }
 
     #[test]
-    fn test_mock_mode() {
-        let mgr = MapManager::new_mock();
-        assert_eq!(mgr.mode(), "mock");
+    fn test_mode() {
+        let mgr = MapManager::new();
+        assert_eq!(mgr.mode(), "in-memory");
     }
 
     #[test]

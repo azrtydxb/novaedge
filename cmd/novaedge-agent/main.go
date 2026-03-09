@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
 
@@ -34,16 +33,11 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/azrtydxb/novaedge/internal/agent/afxdp"
 	"github.com/azrtydxb/novaedge/internal/agent/config"
-	novaebpf "github.com/azrtydxb/novaedge/internal/agent/ebpf"
-	ebpfhealth "github.com/azrtydxb/novaedge/internal/agent/ebpf/health"
-	ebpfratelimit "github.com/azrtydxb/novaedge/internal/agent/ebpf/ratelimit"
-	"github.com/azrtydxb/novaedge/internal/agent/ebpf/sockmap"
-	"github.com/azrtydxb/novaedge/internal/agent/ebpfmesh"
 	"github.com/azrtydxb/novaedge/internal/agent/gossip"
 	"github.com/azrtydxb/novaedge/internal/agent/introspection"
 	"github.com/azrtydxb/novaedge/internal/agent/mesh"
+	"github.com/azrtydxb/novaedge/internal/agent/novanet"
 	"github.com/azrtydxb/novaedge/internal/agent/sdwan"
 	"github.com/azrtydxb/novaedge/internal/agent/server"
 	dpctl "github.com/azrtydxb/novaedge/internal/dataplane"
@@ -94,11 +88,8 @@ var (
 	sdwanEnabled    bool
 	meshTrustDomain string
 
-	// XDP/AF_XDP interface for eBPF acceleration
-	xdpInterface string
-
-	// Force legacy paths (disable eBPF auto-detection)
-	forceLegacyMesh bool
+	// NovaNet eBPF services socket
+	novanetSocket string
 
 	// Rust dataplane connection
 	dataplaneSocket string
@@ -108,12 +99,9 @@ var (
 type agentComponents struct {
 	watcher       *config.Watcher
 	gossiper      *gossip.ConfigGossiper
-	afxdpWorker   *afxdp.Worker
-	sockMapMgr    *sockmap.Manager
+	novanetClient *novanet.Client
 	meshManager   *mesh.Manager
 	sdwanManager  *sdwan.Manager
-	ebpfHealthMon *ebpfhealth.Monitor
-	ebpfRL        *ebpfratelimit.RateLimiter
 	dpClient      *dpctl.Client
 	dpTranslator  *dpctl.Translator
 
@@ -215,11 +203,9 @@ func parseFlags() {
 	// SD-WAN flags
 	flag.BoolVar(&sdwanEnabled, "sdwan-enabled", false, "Enable SD-WAN multi-link management")
 
-	// XDP/AF_XDP interface — when set, eBPF acceleration is auto-attempted
-	flag.StringVar(&xdpInterface, "xdp-interface", "", "Network interface for XDP/AF_XDP program attachment (enables eBPF acceleration when set)")
-
-	// Force-legacy flags — explicitly disable eBPF auto-detection
-	flag.BoolVar(&forceLegacyMesh, "force-legacy-mesh", false, "Force legacy nftables/iptables mesh interception instead of eBPF sk_lookup")
+	// NovaNet eBPF services socket
+	flag.StringVar(&novanetSocket, "novanet-socket", novanet.DefaultSocketPath,
+		"Unix domain socket path for the NovaNet eBPF services API")
 
 	// Rust dataplane socket
 	flag.StringVar(&dataplaneSocket, "dataplane-socket", dpctl.DefaultDataplaneSocket,
@@ -283,66 +269,28 @@ func initConfigWatcher(ctx context.Context, logger *zap.Logger) *config.Watcher 
 	return watcher
 }
 
-// initEBPFSubsystems creates AF_XDP subsystems.
-func initEBPFSubsystems(ctx context.Context, logger *zap.Logger) (afxdpW *afxdp.Worker) {
-	if xdpInterface != "" {
-		afxdpLoader := novaebpf.NewProgramLoader(logger, "")
-		afxdpW = afxdp.NewWorker(logger, afxdpLoader, afxdp.WorkerConfig{
-			InterfaceName: xdpInterface,
-			QueueID:       0,
-		}, nil)
-		go func() {
-			if startErr := afxdpW.Start(ctx); startErr != nil {
-				logger.Warn("AF_XDP not available, using kernel stack", zap.Error(startErr))
-			}
-		}()
-		logger.Info("AF_XDP zero-copy fast path enabled", zap.String("interface", xdpInterface))
+// initNovaNetClient creates the NovaNet eBPF services client.
+func initNovaNetClient(ctx context.Context, logger *zap.Logger) *novanet.Client {
+	client := novanet.NewClient(novanetSocket, logger.Named("novanet"))
+	if err := client.Connect(ctx); err != nil {
+		logger.Warn("NovaNet client connection failed", zap.Error(err))
 	}
-	return
+	return client
 }
 
-// initMeshSubsystem creates mesh manager and related eBPF accelerators.
-func initMeshSubsystem(logger *zap.Logger) (*mesh.Manager, *sockmap.Manager) {
+// initMeshSubsystem creates the mesh manager with NovaNet integration.
+func initMeshSubsystem(logger *zap.Logger, novanetClient *novanet.Client) *mesh.Manager {
 	if !meshEnabled {
-		return nil, nil
+		return nil
 	}
 
-	sockMapMgr := ebpfmesh.TrySockMap(logger)
-
-	var meshBackend mesh.RuleBackend
-	if !forceLegacyMesh {
-		meshBackend = ebpfmesh.TryBackend(logger)
-	} else {
-		logger.Info("eBPF mesh redirect disabled by --force-legacy-mesh, using nftables/iptables")
-	}
 	meshManager := mesh.NewManager(logger, mesh.ManagerConfig{
-		TPROXYPort:          int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
-		TunnelPort:          int32(meshTunnelPort), //nolint:gosec // port range validated by flag
-		TrustDomain:         meshTrustDomain,
-		RuleBackendOverride: meshBackend,
-		SockMapManager:      sockMapMgr,
+		TPROXYPort:    int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
+		TunnelPort:    int32(meshTunnelPort), //nolint:gosec // port range validated by flag
+		TrustDomain:   meshTrustDomain,
+		NovaNetClient: novanetClient,
 	})
-	return meshManager, sockMapMgr
-}
-
-// initEBPFMonitoring creates eBPF health monitor and rate limiter.
-func initEBPFMonitoring(logger *zap.Logger) (*ebpfhealth.Monitor, *ebpfratelimit.RateLimiter) {
-	ebpfHealthMon, err := ebpfhealth.NewMonitor(logger, 0)
-	if err != nil {
-		logger.Warn("eBPF health monitor not available, using active probes only", zap.Error(err))
-		ebpfHealthMon = nil
-	} else {
-		logger.Info("eBPF passive health monitor enabled")
-	}
-
-	ebpfRL, err := ebpfratelimit.NewRateLimiter(logger, 0)
-	if err != nil {
-		logger.Warn("eBPF rate limiter not available, using Go-side token buckets", zap.Error(err))
-		ebpfRL = nil
-	} else {
-		logger.Info("eBPF per-IP rate limiter enabled")
-	}
-	return ebpfHealthMon, ebpfRL
+	return meshManager
 }
 
 // initAgentComponents initializes all agent subsystem managers.
@@ -356,14 +304,12 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 		logger.Warn("Failed to start config gossiper", zap.Error(err))
 	}
 
-	comp.afxdpWorker = initEBPFSubsystems(ctx, logger)
-	comp.meshManager, comp.sockMapMgr = initMeshSubsystem(logger)
+	comp.novanetClient = initNovaNetClient(ctx, logger)
+	comp.meshManager = initMeshSubsystem(logger, comp.novanetClient)
 
 	if sdwanEnabled {
 		comp.sdwanManager = sdwan.NewManager(logger)
 	}
-
-	comp.ebpfHealthMon, comp.ebpfRL = initEBPFMonitoring(logger)
 
 	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
 	if dpErr != nil {
@@ -486,11 +432,8 @@ func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentCompon
 		}
 	}
 
-	if comp.ebpfRL != nil && comp.ebpfRL.IsActive() {
-		configureEBPFRateLimiter(comp.ebpfRL, snapshot.GetPolicies(), logger)
-	}
-
-	startEBPFHealthPoller(comp.ebpfHealthMon, logger)
+	// Rate limiting and health monitoring are now delegated to NovaNet
+	// via the novanet client (called through mesh manager).
 
 	comp.healthServer.SetReady(true)
 	comp.adminServer.SetSnapshot(snapshot)
@@ -527,15 +470,9 @@ func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	if comp.sdwanManager != nil {
 		comp.sdwanManager.Stop()
 	}
-	if comp.afxdpWorker != nil {
-		if err := comp.afxdpWorker.Stop(); err != nil {
-			logger.Error("Error during AF_XDP worker shutdown", zap.Error(err))
-		}
-	}
 
-	// Cleanup eBPF subsystem resources (idempotent Close methods).
-	closeIfNotNil(logger, "eBPF health monitor", comp.ebpfHealthMon)
-	closeIfNotNil(logger, "eBPF rate limiter", comp.ebpfRL)
+	// Close NovaNet client (eBPF operations now delegated to NovaNet).
+	closeIfNotNil(logger, "NovaNet client", comp.novanetClient)
 
 	if err := comp.metricsServer.Shutdown(shutdownCtx); err != nil {
 		logger.Error("Error during metrics server shutdown", zap.Error(err))
@@ -650,67 +587,4 @@ func convertWANPolicies(wanPolicies []*pb.WANPolicy) []sdwan.PolicyConfig {
 		policies = append(policies, pc)
 	}
 	return policies
-}
-
-// configureEBPFRateLimiter extracts rate-limit configuration from snapshot policies
-// and applies it to the eBPF per-IP rate limiter.
-func configureEBPFRateLimiter(rl *ebpfratelimit.RateLimiter, policies []*pb.Policy, logger *zap.Logger) {
-	for _, pol := range policies {
-		if pol.GetType() != pb.PolicyType_RATE_LIMIT {
-			continue
-		}
-		rlCfg := pol.GetRateLimit()
-		if rlCfg == nil {
-			continue
-		}
-		rps := rlCfg.GetRequestsPerSecond()
-		b := rlCfg.GetBurst()
-		if rps < 0 {
-			rps = 0
-		}
-		if b < 0 {
-			b = 0
-		}
-		rate := uint64(rps) //nolint:gosec // guarded above
-		burst := uint64(b)  //nolint:gosec // guarded above
-		if rate == 0 {
-			continue
-		}
-		if burst == 0 {
-			burst = rate // default burst = rate
-		}
-		if err := rl.Configure(rate, burst); err != nil {
-			logger.Error("Failed to configure eBPF rate limiter",
-				zap.Uint64("rate", rate),
-				zap.Uint64("burst", burst),
-				zap.Error(err))
-		} else {
-			logger.Debug("eBPF rate limiter configured",
-				zap.String("policy", pol.GetName()),
-				zap.Uint64("rate", rate),
-				zap.Uint64("burst", burst))
-		}
-		return // use first rate-limit policy
-	}
-}
-
-// ebpfHealthPollerOnce ensures the eBPF health monitor poller is started at most once.
-var ebpfHealthPollerOnce sync.Once
-
-// startEBPFHealthPoller starts the eBPF passive health monitor's polling goroutine
-// exactly once (on first config snapshot). Subsequent calls are no-ops.
-func startEBPFHealthPoller(mon *ebpfhealth.Monitor, logger *zap.Logger) {
-	if mon == nil || !mon.IsActive() {
-		return
-	}
-	ebpfHealthPollerOnce.Do(func() {
-		// Poll eBPF health map every 10 seconds; log aggregated results.
-		mon.StartPoller(context.Background(), 10*time.Second, func(results map[ebpfhealth.BackendKey]ebpfhealth.AggregatedHealth) {
-			if len(results) > 0 {
-				logger.Debug("eBPF passive health update",
-					zap.Int("backends", len(results)))
-			}
-		})
-		logger.Info("eBPF passive health monitor poller started")
-	})
 }

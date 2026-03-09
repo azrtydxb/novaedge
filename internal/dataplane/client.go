@@ -258,32 +258,6 @@ func (c *Client) DeleteWANLink(ctx context.Context, req *pb.DeleteWANLinkRequest
 }
 
 // ---------------------------------------------------------------------------
-// eBPF lifecycle
-// ---------------------------------------------------------------------------
-
-// AttachProgram loads and attaches an eBPF program.
-func (c *Client) AttachProgram(ctx context.Context, req *pb.AttachProgramRequest) (*pb.AttachProgramResponse, error) {
-	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
-	defer cancel()
-	resp, err := c.client.AttachProgram(callCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("dataplane: AttachProgram: %w", err)
-	}
-	return resp, nil
-}
-
-// DetachProgram detaches and unloads an eBPF program.
-func (c *Client) DetachProgram(ctx context.Context, req *pb.DetachProgramRequest) (*pb.DetachProgramResponse, error) {
-	callCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
-	defer cancel()
-	resp, err := c.client.DetachProgram(callCtx, req)
-	if err != nil {
-		return nil, fmt.Errorf("dataplane: DetachProgram: %w", err)
-	}
-	return resp, nil
-}
-
-// ---------------------------------------------------------------------------
 // Observability
 // ---------------------------------------------------------------------------
 

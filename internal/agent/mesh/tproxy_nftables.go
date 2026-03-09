@@ -212,10 +212,6 @@ func (b *nftablesBackend) buildRedirectRule(t InterceptTarget, tproxyPort int32)
 
 // detectBackend probes for the best available netfilter-based interception
 // backend: nftables (preferred) or iptables (fallback).
-//
-// For eBPF sk_lookup based interception (which bypasses netfilter entirely),
-// use NewTPROXYManagerWithBackend with an ebpfmesh.Backend instance. The
-// agent's main.go handles the eBPF capability check and backend selection.
 func detectBackend(logger *zap.Logger) RuleBackend {
 	conn, err := nftables.New()
 	if err != nil {

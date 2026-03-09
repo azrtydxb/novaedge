@@ -167,7 +167,7 @@ For `errcheck` compliance, explicitly ignore error returns in cleanup paths:
 _ = resource.Close()
 ```
 
-For `gosec` G115 (integer overflow) in low-level code (eBPF, AF_XDP, syscalls),
+For `gosec` G115 (integer overflow) in low-level code (syscalls, network operations),
 use `//nolint:gosec` with a justification comment when the conversion is provably safe:
 
 ```go

@@ -106,7 +106,7 @@ nav:
     - Cross-Cluster Routing: user-guide/cross-cluster-routing.md
     - Federation Tunnels: user-guide/federation-tunnels.md
     - SD-WAN: user-guide/sdwan.md
-    - eBPF/XDP Acceleration: user-guide/ebpf-acceleration.md
+    - eBPF Acceleration (NovaNet): user-guide/ebpf-acceleration.md
   - Advanced:
     - Multi-Cluster: advanced/multi-cluster.md
     - Federation Setup: advanced/federation-setup.md

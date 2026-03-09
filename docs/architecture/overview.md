@@ -192,28 +192,26 @@ flowchart TB
         HC["Health Checker"]
         POL["Policy Engine"]
         POOL["Connection Pool"]
+    end
 
-        subgraph eBPF["eBPF/XDP Acceleration"]
-            AFXDP["AF_XDP Zero-Copy"]
-            SKLOOKUP["SK_LOOKUP Mesh Redirect"]
-            SOCKMAP["SOCKMAP Same-Node Bypass"]
-        end
+    subgraph NovaNet["NovaNet (Optional)"]
+        EBPF_SVC["eBPF Services<br/>(SOCKMAP, Mesh Redirect)"]
     end
 
     GC --> TRANSLATOR
     TRANSLATOR --> GRPC_PUSH
     GRPC_PUSH -->|"config"| RT & LB & POL & HC
     GC -->|"VIP config"| VIP
+    GC -->|"gRPC over<br/>Unix socket"| EBPF_SVC
 
-    Traffic((Traffic)) --> AFXDP
-    AFXDP --> RT
+    Traffic((Traffic)) --> RT
     RT --> POL
     POL --> LB
     LB --> HC
     HC --> POOL
     POOL --> Backend((Backend))
 
-    style eBPF fill:#fff4e6
+    style NovaNet fill:#fff4e6
     style GoAgent fill:#e6f3ff
     style RustDP fill:#90EE90
 ```
@@ -224,7 +222,7 @@ flowchart TB
 2. Bind/unbind VIPs on node interface (L2 ARP/BGP/OSPF/BFD)
 3. Translate config and push to Rust dataplane via gRPC
 4. Manage iptables/nftables rules
-5. Manage eBPF program lifecycle
+5. Communicate with NovaNet for eBPF services (if available)
 
 **Rust Dataplane Responsibilities (Traffic Handler):**
 
@@ -234,7 +232,7 @@ flowchart TB
 4. Load balance across healthy backends
 5. Manage connection pools and circuit breakers
 6. Perform active and passive health checks
-7. Accelerate traffic via eBPF/XDP (AF_XDP zero-copy, SOCKMAP bypass, sk_lookup mesh redirect)
+7. Benefit from eBPF acceleration when NovaNet is available (SOCKMAP bypass, sk_lookup mesh redirect)
 
 ## VIP Modes
 
