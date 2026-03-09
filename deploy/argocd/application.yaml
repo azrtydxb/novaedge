@@ -9,18 +9,18 @@ metadata:
       agent=ghcr.io/azrtydxb/novaedge-agent,
       dataplane=ghcr.io/azrtydxb/novaedge-dataplane,
       webui=ghcr.io/azrtydxb/novaedge-webui
-    argocd-image-updater.argoproj.io/controller.update-strategy: latest
-    argocd-image-updater.argoproj.io/agent.update-strategy: latest
-    argocd-image-updater.argoproj.io/dataplane.update-strategy: latest
-    argocd-image-updater.argoproj.io/webui.update-strategy: latest
+    argocd-image-updater.argoproj.io/controller.update-strategy: semver
+    argocd-image-updater.argoproj.io/agent.update-strategy: semver
+    argocd-image-updater.argoproj.io/dataplane.update-strategy: semver
+    argocd-image-updater.argoproj.io/webui.update-strategy: semver
     argocd-image-updater.argoproj.io/controller.helm.image-name: controller.image.repository
     argocd-image-updater.argoproj.io/controller.helm.image-tag: controller.image.tag
     argocd-image-updater.argoproj.io/agent.helm.image-name: agent.image.repository
     argocd-image-updater.argoproj.io/agent.helm.image-tag: agent.image.tag
     argocd-image-updater.argoproj.io/dataplane.helm.image-name: dataplane.image.repository
     argocd-image-updater.argoproj.io/dataplane.helm.image-tag: dataplane.image.tag
-    argocd-image-updater.argoproj.io/webui.helm.image-name: webui.image.repository
-    argocd-image-updater.argoproj.io/webui.helm.image-tag: webui.image.tag
+    argocd-image-updater.argoproj.io/webui.helm.image-name: webui.frontend.image.repository
+    argocd-image-updater.argoproj.io/webui.helm.image-tag: webui.frontend.image.tag
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -35,19 +35,20 @@ spec:
         controller:
           image:
             repository: ghcr.io/azrtydxb/novaedge-controller
-            tag: latest
+            tag: v1.7.3
         agent:
           image:
             repository: ghcr.io/azrtydxb/novaedge-agent
-            tag: latest
+            tag: v1.7.3
         dataplane:
           image:
             repository: ghcr.io/azrtydxb/novaedge-dataplane
-            tag: latest
+            tag: v1.7.3
         webui:
-          image:
-            repository: ghcr.io/azrtydxb/novaedge-webui
-            tag: latest
+          frontend:
+            image:
+              repository: ghcr.io/azrtydxb/novaedge-webui
+              tag: v1.7.3
   destination:
     server: https://kubernetes.default.svc
     namespace: novaedge-system

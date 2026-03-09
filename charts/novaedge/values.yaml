@@ -337,8 +337,8 @@ agent:
 dataplane:
   enabled: true
   image:
-    repository: ghcr.io/azrtydxb/novaedge/novaedge-dataplane
-    tag: latest
+    repository: ghcr.io/azrtydxb/novaedge-dataplane
+    tag: ""  # Defaults to Chart.appVersion
     pullPolicy: IfNotPresent
   resources:
     requests:
