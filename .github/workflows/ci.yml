@@ -51,7 +51,6 @@ jobs:
               - 'go.sum'
               - 'Makefile'
               - '.golangci.yml'
-              - 'bpf/**'
             rust:
               - 'dataplane/**'
               - 'Dockerfile.build'
@@ -85,29 +84,6 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
-
-      - name: Install eBPF toolchain
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
-          # Create asm symlink for eBPF compilation on multiarch Ubuntu
-          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
-          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
-
-      - name: Generate eBPF code (bpf2go)
-        run: |
-          go generate ./internal/agent/ebpfmesh/
-          go generate ./internal/agent/afxdp/
-
-      - name: Verify generated eBPF files are committed
-        run: |
-          # Only check generated Go files, not .o binaries which vary by clang/llvm version
-          if [ -n "$(git diff --name-only -- '*.go')" ]; then
-            echo "::error::Generated eBPF Go files are out of date. Run 'go generate ./internal/agent/ebpf/...' on Linux and commit the results."
-            git diff --name-only -- '*.go'
-            exit 1
-          fi
 
       - name: Run gofmt
         run: |
@@ -336,19 +312,6 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Install eBPF toolchain
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
-          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
-          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
-
-      - name: Generate eBPF code (bpf2go)
-        run: |
-          go generate ./internal/agent/ebpfmesh/
-          go generate ./internal/agent/afxdp/
-
       - name: Run govulncheck
         run: |
           GOTOOLCHAIN=auto go install golang.org/x/vuln/cmd/govulncheck@latest
@@ -413,19 +376,6 @@ jobs:
           go-version-file: 'go.mod'
           cache: true
 
-      - name: Install eBPF toolchain
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
-          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
-          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
-
-      - name: Generate eBPF code (bpf2go)
-        run: |
-          go generate ./internal/agent/ebpfmesh/
-          go generate ./internal/agent/afxdp/
-
       - name: Install gotestsum
         run: GOTOOLCHAIN=auto go install gotest.tools/gotestsum@latest
 
@@ -436,15 +386,6 @@ jobs:
             --junitfile go-test-results.xml \
             --format pkgname \
             -- -race -timeout=10m -coverprofile=coverage.out -covermode=atomic ./...
-
-      - name: Check for skipped eBPF tests
-        if: always()
-        run: |
-          if grep -q "Skipping: eBPF unavailable" go-test-results.xml 2>/dev/null; then
-            echo "::notice::Some eBPF tests were skipped due to insufficient privileges. Run with CAP_BPF/CAP_SYS_ADMIN to execute them."
-            echo "### eBPF Tests Skipped" >> $GITHUB_STEP_SUMMARY
-            echo "Some eBPF tests were skipped because the CI runner lacks CAP_BPF/CAP_SYS_ADMIN privileges." >> $GITHUB_STEP_SUMMARY
-          fi
 
       - name: Check coverage threshold
         run: |
@@ -650,19 +591,6 @@ jobs:
         with:
           go-version-file: 'go.mod'
           cache: true
-
-      - name: Install eBPF toolchain
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential linux-headers-$(uname -r) || \
-            sudo apt-get install -y --no-install-recommends clang llvm libbpf-dev build-essential
-          ARCH_DIR=$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || echo "x86_64-linux-gnu")
-          sudo ln -sf /usr/include/${ARCH_DIR}/asm /usr/include/asm 2>/dev/null || true
-
-      - name: Generate eBPF code (bpf2go)
-        run: |
-          go generate ./internal/agent/ebpfmesh/
-          go generate ./internal/agent/afxdp/
 
       - name: Build ${{ matrix.binary.name }}
         env:
