@@ -32,7 +32,7 @@
     "d3": "^7.9.0",
     "date-fns": "^4.1.0",
     "js-yaml": "^4.1.1",
-    "lucide-react": "^0.574.0",
+    "lucide-react": "^0.577.0",
     "react": "^18.3.1",
     "react-diff-viewer-continued": "^4.1.2",
     "react-dom": "^18.3.1",
