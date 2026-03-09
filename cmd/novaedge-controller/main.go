@@ -93,8 +93,8 @@ type controllerFlags struct {
 	enableLeaderElection  bool
 }
 
-func parseControllerFlags() controllerFlags {
-	var f controllerFlags
+func parseControllerFlags() *controllerFlags {
+	f := &controllerFlags{}
 	flag.StringVar(&f.metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&f.probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.StringVar(&f.grpcAddr, "grpc-bind-address", ":9090", "The address the gRPC config server binds to.")
@@ -126,7 +126,7 @@ func registerReconciler(mgr ctrl.Manager, name string, setupFn func(ctrl.Manager
 }
 
 // registerReconcilers registers all CRD and Gateway API reconcilers with the manager.
-func registerReconcilers(mgr ctrl.Manager, f controllerFlags) *controller.ProxyGatewayReconciler {
+func registerReconcilers(mgr ctrl.Manager, f *controllerFlags) *controller.ProxyGatewayReconciler {
 	proxyGatewayReconciler := &controller.ProxyGatewayReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(), ControllerClass: f.controllerClass,
 	}
@@ -197,7 +197,7 @@ func initCertManagerIntegration(mgr ctrl.Manager, enableCertManager string, reco
 }
 
 // initVaultIntegration initializes HashiCorp Vault if enabled.
-func initVaultIntegration(f controllerFlags, reconciler *controller.ProxyGatewayReconciler) {
+func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewayReconciler) {
 	vaultMode := vaultpkg.EnableMode(f.enableVault)
 	if vaultMode == vaultpkg.EnableModeFalse {
 		return
@@ -233,7 +233,7 @@ func initVaultIntegration(f controllerFlags, reconciler *controller.ProxyGateway
 }
 
 // initConfigServer creates the config server, wires mesh CA and federation, and starts the gRPC server.
-func initConfigServer(mgr ctrl.Manager, f controllerFlags) *grpc.Server {
+func initConfigServer(mgr ctrl.Manager, f *controllerFlags) *grpc.Server {
 	// Initialize mesh CA for issuing workload certificates.
 	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
 	if err != nil {
