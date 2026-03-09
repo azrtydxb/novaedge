@@ -195,6 +195,8 @@ jobs:
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
 
   # Create multi-arch manifests for Go Docker images
   docker-manifest:
@@ -298,6 +300,8 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+          sbom: false
 
   # Create multi-arch manifest for webui Docker image
   docker-webui-manifest:
