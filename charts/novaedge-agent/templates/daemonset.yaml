@@ -90,14 +90,8 @@ spec:
             - --tracing-endpoint={{ .Values.tracing.endpoint }}
             - --tracing-sampling-rate={{ .Values.tracing.samplingRate }}
             {{- end }}
-            {{- if .Values.ebpf.xdpInterface }}
-            - --xdp-interface={{ .Values.ebpf.xdpInterface }}
-            {{- end }}
-            {{- if .Values.ebpf.forceLegacyLb }}
-            - --force-legacy-lb=true
-            {{- end }}
-            {{- if .Values.ebpf.forceLegacyMesh }}
-            - --force-legacy-mesh=true
+            {{- if and .Values.novanet .Values.novanet.enabled }}
+            - --novanet-socket={{ .Values.novanet.ebpfServicesSocket }}
             {{- end }}
             {{- if and .Values.dataplane .Values.dataplane.enabled }}
             - --dataplane-socket={{ .Values.dataplane.socketPath }}
@@ -195,9 +189,10 @@ spec:
             - name: dataplane-socket
               mountPath: /run/novaedge
             {{- end }}
-            {{- if .Values.ebpf.bpffsMount }}
-            - name: bpffs
-              mountPath: /sys/fs/bpf
+            {{- if and .Values.novanet .Values.novanet.enabled }}
+            - name: novanet-socket
+              mountPath: /run/novanet
+              readOnly: true
             {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -208,7 +203,6 @@ spec:
           imagePullPolicy: {{ .Values.dataplane.image.pullPolicy }}
           args:
             - --socket={{ .Values.dataplane.socketPath }}
-            - --ebpf-path={{ .Values.dataplane.ebpfPath }}
           ports:
             - name: http
               containerPort: {{ .Values.ports.http }}
@@ -219,11 +213,13 @@ spec:
               hostPort: {{ .Values.ports.https }}
               protocol: TCP
           securityContext:
-            privileged: true
             capabilities:
               add:
               - NET_ADMIN
-              - NET_RAW
+              - NET_BIND_SERVICE
+              drop:
+              - ALL
+            allowPrivilegeEscalation: false
           readinessProbe:
             exec:
               command:
@@ -241,8 +237,6 @@ spec:
           volumeMounts:
             - name: dataplane-socket
               mountPath: /run/novaedge
-            - name: dataplane-bpffs
-              mountPath: /sys/fs/bpf
       {{- end }}
       volumes:
         - name: config
@@ -263,19 +257,15 @@ spec:
             secretName: {{ .Values.tls.clientCertSecretName }}
         {{- end }}
         {{- end }}
-        {{- if .Values.ebpf.bpffsMount }}
-        - name: bpffs
+        {{- if and .Values.novanet .Values.novanet.enabled }}
+        - name: novanet-socket
           hostPath:
-            path: /sys/fs/bpf
+            path: /run/novanet
             type: DirectoryOrCreate
         {{- end }}
         {{- if and .Values.dataplane .Values.dataplane.enabled }}
         - name: dataplane-socket
           emptyDir: {}
-        - name: dataplane-bpffs
-          hostPath:
-            path: /sys/fs/bpf
-            type: DirectoryOrCreate
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
