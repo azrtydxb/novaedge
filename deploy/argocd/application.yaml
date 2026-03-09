@@ -5,10 +5,10 @@ metadata:
   namespace: argocd
   annotations:
     argocd-image-updater.argoproj.io/image-list: >-
-      controller=ghcr.io/azrtydxb/novaedge-controller,
-      agent=ghcr.io/azrtydxb/novaedge-agent,
-      dataplane=ghcr.io/azrtydxb/novaedge-dataplane,
-      webui=ghcr.io/azrtydxb/novaedge-webui
+      controller=ghcr.io/azrtydxb/novaedge/novaedge-controller,
+      agent=ghcr.io/azrtydxb/novaedge/novaedge-agent,
+      dataplane=ghcr.io/azrtydxb/novaedge/novaedge-dataplane,
+      webui=ghcr.io/azrtydxb/novaedge/novaedge-webui
     argocd-image-updater.argoproj.io/controller.update-strategy: semver
     argocd-image-updater.argoproj.io/agent.update-strategy: semver
     argocd-image-updater.argoproj.io/dataplane.update-strategy: semver
@@ -34,21 +34,21 @@ spec:
       valuesObject:
         controller:
           image:
-            repository: ghcr.io/azrtydxb/novaedge-controller
-            tag: v1.7.3
+            repository: ghcr.io/azrtydxb/novaedge/novaedge-controller
+            tag: v1.7.4
         agent:
           image:
-            repository: ghcr.io/azrtydxb/novaedge-agent
-            tag: v1.7.3
+            repository: ghcr.io/azrtydxb/novaedge/novaedge-agent
+            tag: v1.7.4
         dataplane:
           image:
-            repository: ghcr.io/azrtydxb/novaedge-dataplane
-            tag: v1.7.3
+            repository: ghcr.io/azrtydxb/novaedge/novaedge-dataplane
+            tag: v1.7.4
         webui:
           frontend:
             image:
-              repository: ghcr.io/azrtydxb/novaedge-webui
-              tag: v1.7.3
+              repository: ghcr.io/azrtydxb/novaedge/novaedge-webui
+              tag: v1.7.4
   destination:
     server: https://kubernetes.default.svc
     namespace: novaedge-system
