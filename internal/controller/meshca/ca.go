@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -53,9 +54,6 @@ const (
 	// caSecretName is the Kubernetes Secret storing the root CA.
 	caSecretName = "novaedge-mesh-ca" //nolint:gosec // not a credential, just a secret name
 
-	// caSecretNamespace is the namespace where the CA secret is stored.
-	caSecretNamespace = "nova-system"
-
 	// caSecretKeyCA is the key for the PEM-encoded CA certificate in the Secret.
 	caSecretKeyCA = "ca.crt"
 
@@ -78,6 +76,7 @@ type MeshCA struct {
 	mu          sync.RWMutex
 	logger      *zap.Logger
 	trustDomain string
+	namespace   string
 
 	caCert    *x509.Certificate
 	caKey     *ecdsa.PrivateKey
@@ -85,11 +84,21 @@ type MeshCA struct {
 }
 
 // NewMeshCA creates a new MeshCA instance. Call Initialize before using
-// any other methods.
-func NewMeshCA(logger *zap.Logger, trustDomain string) *MeshCA {
+// any other methods. The namespace parameter determines where the CA secret
+// is stored; if empty, it is auto-detected from the pod's service account.
+func NewMeshCA(logger *zap.Logger, trustDomain, namespace string) *MeshCA {
+	if namespace == "" {
+		// Auto-detect from the mounted service account namespace.
+		if data, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
+			namespace = string(data)
+		} else {
+			namespace = "novaedge-system" // fallback
+		}
+	}
 	return &MeshCA{
 		logger:      logger.Named("mesh-ca"),
 		trustDomain: trustDomain,
+		namespace:   namespace,
 	}
 }
 
@@ -103,13 +112,13 @@ func (ca *MeshCA) Initialize(ctx context.Context, cl client.Client) error {
 	secret := &corev1.Secret{}
 	err := cl.Get(ctx, types.NamespacedName{
 		Name:      caSecretName,
-		Namespace: caSecretNamespace,
+		Namespace: ca.namespace,
 	}, secret)
 
 	if err == nil {
 		ca.logger.Info("loading existing mesh CA from secret",
 			zap.String("secret", caSecretName),
-			zap.String("namespace", caSecretNamespace))
+			zap.String("namespace", ca.namespace))
 		return ca.loadFromSecret(secret)
 	}
 
@@ -134,7 +143,7 @@ func (ca *MeshCA) Initialize(ctx context.Context, cl client.Client) error {
 	secret = &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      caSecretName,
-			Namespace: caSecretNamespace,
+			Namespace: ca.namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "novaedge",
 				"app.kubernetes.io/component":  "mesh-ca",
@@ -153,7 +162,7 @@ func (ca *MeshCA) Initialize(ctx context.Context, cl client.Client) error {
 
 	ca.logger.Info("mesh CA initialized and persisted to secret",
 		zap.String("secret", caSecretName),
-		zap.String("namespace", caSecretNamespace))
+		zap.String("namespace", ca.namespace))
 
 	return nil
 }
@@ -290,12 +299,12 @@ func (ca *MeshCA) generateRootCA() error {
 func (ca *MeshCA) loadFromSecret(secret *corev1.Secret) error {
 	certPEM, ok := secret.Data[caSecretKeyCA]
 	if !ok {
-		return fmt.Errorf("%w: %s/%s missing key %q", errSecret, caSecretNamespace, caSecretName, caSecretKeyCA)
+		return fmt.Errorf("%w: %s/%s missing key %q", errSecret, ca.namespace, caSecretName, caSecretKeyCA)
 	}
 
 	keyPEM, ok := secret.Data[caSecretKeyKey]
 	if !ok {
-		return fmt.Errorf("%w: %s/%s missing key %q", errSecret, caSecretNamespace, caSecretName, caSecretKeyKey)
+		return fmt.Errorf("%w: %s/%s missing key %q", errSecret, ca.namespace, caSecretName, caSecretKeyKey)
 	}
 
 	certBlock, _ := pem.Decode(certPEM)

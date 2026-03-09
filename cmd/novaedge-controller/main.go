@@ -241,7 +241,7 @@ func initConfigServer(mgr ctrl.Manager, f controllerFlags) *grpc.Server {
 		os.Exit(1)
 	}
 	meshCALogger, _ := uberzap.NewProduction()
-	meshCA := meshca.NewMeshCA(meshCALogger, f.meshTrustDomain)
+	meshCA := meshca.NewMeshCA(meshCALogger, f.meshTrustDomain, "")
 	if err := meshCA.Initialize(context.Background(), directClient); err != nil {
 		setupLog.Error(err, "failed to initialize mesh CA")
 		os.Exit(1)

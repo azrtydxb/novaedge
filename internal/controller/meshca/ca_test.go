@@ -72,7 +72,7 @@ func TestMeshCAInitializeCreatesNewCA(t *testing.T) {
 		WithScheme(newTestScheme()).
 		Build()
 
-	ca := NewMeshCA(logger, "cluster.local")
+	ca := NewMeshCA(logger, "cluster.local", "test-ns")
 
 	ctx := context.Background()
 	if err := ca.Initialize(ctx, cl); err != nil {
@@ -128,7 +128,7 @@ func TestMeshCAInitializeCreatesNewCA(t *testing.T) {
 	}
 
 	// Verify the secret was persisted by loading a second CA from the same client.
-	ca2 := NewMeshCA(logger, "cluster.local")
+	ca2 := NewMeshCA(logger, "cluster.local", "test-ns")
 	if err := ca2.Initialize(ctx, cl); err != nil {
 		t.Fatalf("second Initialize failed: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestMeshCASignCSR(t *testing.T) {
 		WithScheme(newTestScheme()).
 		Build()
 
-	ca := NewMeshCA(logger, "cluster.local")
+	ca := NewMeshCA(logger, "cluster.local", "test-ns")
 	ctx := context.Background()
 
 	if err := ca.Initialize(ctx, cl); err != nil {
@@ -224,7 +224,7 @@ func TestMeshCASPIFFEID(t *testing.T) {
 		WithScheme(newTestScheme()).
 		Build()
 
-	ca := NewMeshCA(logger, "example.org")
+	ca := NewMeshCA(logger, "example.org", "test-ns")
 	ctx := context.Background()
 
 	if err := ca.Initialize(ctx, cl); err != nil {

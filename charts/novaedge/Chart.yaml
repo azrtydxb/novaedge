@@ -3,7 +3,7 @@ name: novaedge
 description: A Helm chart for NovaEdge - Kubernetes-native distributed load balancer, reverse proxy, and VIP controller
 type: application
 version: 0.1.0
-appVersion: "1.7.4"
+appVersion: "v1.7.4"
 keywords:
 - load-balancer
 - ingress
