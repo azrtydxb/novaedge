@@ -1295,34 +1295,6 @@ impl DataplaneControl for DataplaneService {
         }))
     }
 
-    async fn attach_program(
-        &self,
-        request: Request<proto::AttachProgramRequest>,
-    ) -> Result<Response<proto::AttachProgramResponse>, Status> {
-        let req = request.into_inner();
-        info!(
-            name = %req.name,
-            "AttachProgram — eBPF removed, returning unimplemented"
-        );
-        Err(Status::unimplemented(
-            "eBPF program attachment has been removed — use NovaNet for eBPF services",
-        ))
-    }
-
-    async fn detach_program(
-        &self,
-        request: Request<proto::DetachProgramRequest>,
-    ) -> Result<Response<proto::DetachProgramResponse>, Status> {
-        let req = request.into_inner();
-        info!(
-            name = %req.name,
-            "DetachProgram — eBPF removed, returning unimplemented"
-        );
-        Err(Status::unimplemented(
-            "eBPF program detachment has been removed — use NovaNet for eBPF services",
-        ))
-    }
-
     type StreamFlowsStream =
         Pin<Box<dyn Stream<Item = Result<proto::FlowEvent, Status>> + Send + 'static>>;
 
@@ -1515,7 +1487,6 @@ impl DataplaneControl for DataplaneService {
 
         Ok(Response::new(proto::DataplaneStatus {
             mode: map_status.mode.into(),
-            loaded_programs: vec![],
             active_connections: 0,
             map_sizes,
             uptime_seconds: self.start_time.elapsed().as_secs(),
@@ -1871,35 +1842,6 @@ mod tests {
         assert_eq!(snap.gateways.len(), 1);
         assert_eq!(snap.gateways["tcp-1"].protocol, "TCP");
         assert_eq!(snap.gateways["tcp-1"].port, 3306);
-    }
-
-    #[tokio::test]
-    async fn test_attach_program_requires_linux() {
-        let svc = make_service();
-        let req = Request::new(proto::AttachProgramRequest {
-            name: "test-prog".into(),
-            object_path: "/tmp/test.o".into(),
-            attach_type: proto::EbpfAttachType::EbpfAttachXdp as i32,
-            interface: "eth0".into(),
-            section: "xdp".into(),
-            pin_path: String::new(),
-        });
-        let result = svc.attach_program(req).await;
-        // On non-Linux, attach_program returns Unimplemented.
-        // On Linux, it will fail with a load error (no object at /tmp/test.o).
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_detach_program() {
-        let svc = make_service();
-        let req = Request::new(proto::DetachProgramRequest {
-            name: "test-prog".into(),
-        });
-        // eBPF removed — detach_program now returns Unimplemented.
-        let result = svc.detach_program(req).await;
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code(), tonic::Code::Unimplemented);
     }
 
     #[tokio::test]

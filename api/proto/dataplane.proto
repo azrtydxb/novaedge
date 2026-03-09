@@ -6,8 +6,8 @@ option go_package = "github.com/azrtydxb/novaedge/api/proto/dataplane";
 
 // DataplaneControl is the gRPC service for agent→dataplane communication.
 // The Go agent pushes configuration to the Rust dataplane daemon over a
-// Unix domain socket. The dataplane manages eBPF programs, L4/L7 forwarding,
-// VIP operations, and observability telemetry.
+// Unix domain socket. The dataplane manages L4/L7 forwarding and
+// observability telemetry.
 service DataplaneControl {
   // ── Full config push ─────────────────────────────────────────────────
   // ApplyConfig pushes a full configuration snapshot to the dataplane.
@@ -56,15 +56,6 @@ service DataplaneControl {
   rpc UpsertWANLink(UpsertWANLinkRequest) returns (UpsertWANLinkResponse);
   // DeleteWANLink removes a WAN link by name.
   rpc DeleteWANLink(DeleteWANLinkRequest) returns (DeleteWANLinkResponse);
-
-  // ── eBPF lifecycle ───────────────────────────────────────────────────
-  // AttachProgram loads and attaches an eBPF program.
-  rpc AttachProgram(AttachProgramRequest) returns (AttachProgramResponse);
-  // DetachProgram is a no-op by design. eBPF programs attached via aya are
-  // automatically detached when the Ebpf handle is dropped (i.e. on process
-  // shutdown). The RPC exists for API completeness; the Go agent manages
-  // eBPF lifecycle via cilium/ebpf and does not call this endpoint.
-  rpc DetachProgram(DetachProgramRequest) returns (DetachProgramResponse);
 
   // ── Observability ────────────────────────────────────────────────────
   // StreamFlows streams flow events captured from the eBPF ring buffer.
@@ -854,53 +845,6 @@ message DeleteWANLinkResponse {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// eBPF lifecycle
-// ═══════════════════════════════════════════════════════════════════════
-
-// EBPFAttachType defines where an eBPF program is attached.
-enum EBPFAttachType {
-  EBPF_ATTACH_TYPE_UNSPECIFIED = 0;
-  EBPF_ATTACH_XDP = 1;
-  EBPF_ATTACH_TC_INGRESS = 2;
-  EBPF_ATTACH_TC_EGRESS = 3;
-  EBPF_ATTACH_CGROUP = 4;
-  EBPF_ATTACH_SOCKOPS = 5;
-  EBPF_ATTACH_TRACEPOINT = 6;
-}
-
-message AttachProgramRequest {
-  // Name to identify this program.
-  string name = 1;
-  // Path to the compiled eBPF object file.
-  string object_path = 2;
-  // Attach type (XDP, TC, cgroup, etc.).
-  EBPFAttachType attach_type = 3;
-  // Network interface to attach to (for XDP/TC).
-  string interface = 4;
-  // Section name within the ELF object (e.g. "xdp", "classifier/ingress").
-  string section = 5;
-  // Pin path in the BPF filesystem (e.g. "/sys/fs/bpf/novaedge/prog_name").
-  string pin_path = 6;
-}
-
-message AttachProgramResponse {
-  OperationStatus status = 1;
-  string message = 2;
-  // Program FD or identifier for later detach.
-  uint32 program_id = 3;
-}
-
-message DetachProgramRequest {
-  // Name of the program to detach.
-  string name = 1;
-}
-
-message DetachProgramResponse {
-  OperationStatus status = 1;
-  string message = 2;
-}
-
-// ═══════════════════════════════════════════════════════════════════════
 // Observability — Flow streaming
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -955,18 +899,6 @@ message FlowEvent {
 
 message GetDataplaneStatusRequest {}
 
-// EBPFProgramInfo describes a loaded eBPF program.
-message EBPFProgramInfo {
-  // Program name.
-  string name = 1;
-  // Attach type.
-  EBPFAttachType attach_type = 2;
-  // Network interface (if applicable).
-  string interface = 3;
-  // Whether the program is currently attached.
-  bool attached = 4;
-}
-
 // MapInfo describes an eBPF map.
 message MapInfo {
   // Map name.
@@ -979,10 +911,10 @@ message MapInfo {
 
 // DataplaneStatus reports the current state of the dataplane.
 message DataplaneStatus {
-  // Dataplane operating mode ("ebpf" or "mock").
+  // Dataplane operating mode.
   string mode = 1;
-  // Loaded eBPF programs.
-  repeated EBPFProgramInfo loaded_programs = 2;
+  // Field 2 reserved (was loaded_programs, removed in eBPF cleanup).
+  reserved 2;
   // Active connections count.
   uint64 active_connections = 3;
   // eBPF map information.

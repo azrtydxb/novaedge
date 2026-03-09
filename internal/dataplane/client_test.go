@@ -85,14 +85,6 @@ func (f *fakeDataplaneServer) DeleteWANLink(_ context.Context, _ *pb.DeleteWANLi
 	return &pb.DeleteWANLinkResponse{Status: pb.OperationStatus_OK}, nil
 }
 
-func (f *fakeDataplaneServer) AttachProgram(_ context.Context, _ *pb.AttachProgramRequest) (*pb.AttachProgramResponse, error) {
-	return &pb.AttachProgramResponse{Status: pb.OperationStatus_OK, ProgramId: 1}, nil
-}
-
-func (f *fakeDataplaneServer) DetachProgram(_ context.Context, _ *pb.DetachProgramRequest) (*pb.DetachProgramResponse, error) {
-	return &pb.DetachProgramResponse{Status: pb.OperationStatus_OK}, nil
-}
-
 func (f *fakeDataplaneServer) GetDataplaneStatus(_ context.Context, _ *pb.GetDataplaneStatusRequest) (*pb.DataplaneStatus, error) {
 	return &pb.DataplaneStatus{
 		Mode:              "proxy",
@@ -428,45 +420,6 @@ func TestClient_UpsertDeleteWANLink(t *testing.T) {
 	}
 	if dResp.GetStatus() != pb.OperationStatus_OK {
 		t.Errorf("DeleteWANLink: expected OK, got %v", dResp.GetStatus())
-	}
-}
-
-func TestClient_AttachDetachProgram(t *testing.T) {
-	sockPath, cleanup := startFakeDataplaneServer(t)
-	defer cleanup()
-
-	logger := zaptest.NewLogger(t)
-	client, err := NewClient(sockPath, logger)
-	if err != nil {
-		t.Fatalf("NewClient() error: %v", err)
-	}
-	defer func() { _ = client.Close() }()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	aResp, err := client.AttachProgram(ctx, &pb.AttachProgramRequest{
-		Name:       "tc-ingress",
-		ObjectPath: "/sys/fs/bpf/tc_ingress",
-		AttachType: pb.EBPFAttachType_EBPF_ATTACH_XDP,
-		Interface:  "eth0",
-	})
-	if err != nil {
-		t.Fatalf("AttachProgram() error: %v", err)
-	}
-	if aResp.GetStatus() != pb.OperationStatus_OK {
-		t.Errorf("AttachProgram: expected OK, got %v", aResp.GetStatus())
-	}
-	if aResp.GetProgramId() == 0 {
-		t.Error("AttachProgram: expected non-zero program_id")
-	}
-
-	dResp, err := client.DetachProgram(ctx, &pb.DetachProgramRequest{Name: "tc-ingress"})
-	if err != nil {
-		t.Fatalf("DetachProgram() error: %v", err)
-	}
-	if dResp.GetStatus() != pb.OperationStatus_OK {
-		t.Errorf("DetachProgram: expected OK, got %v", dResp.GetStatus())
 	}
 }
 

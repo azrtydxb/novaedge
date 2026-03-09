@@ -34,8 +34,6 @@ const (
 	DataplaneControl_DeleteMeshConfig_FullMethodName   = "/novaedge.dataplane.v1.DataplaneControl/DeleteMeshConfig"
 	DataplaneControl_UpsertWANLink_FullMethodName      = "/novaedge.dataplane.v1.DataplaneControl/UpsertWANLink"
 	DataplaneControl_DeleteWANLink_FullMethodName      = "/novaedge.dataplane.v1.DataplaneControl/DeleteWANLink"
-	DataplaneControl_AttachProgram_FullMethodName      = "/novaedge.dataplane.v1.DataplaneControl/AttachProgram"
-	DataplaneControl_DetachProgram_FullMethodName      = "/novaedge.dataplane.v1.DataplaneControl/DetachProgram"
 	DataplaneControl_StreamFlows_FullMethodName        = "/novaedge.dataplane.v1.DataplaneControl/StreamFlows"
 	DataplaneControl_GetDataplaneStatus_FullMethodName = "/novaedge.dataplane.v1.DataplaneControl/GetDataplaneStatus"
 	DataplaneControl_StreamMetrics_FullMethodName      = "/novaedge.dataplane.v1.DataplaneControl/StreamMetrics"
@@ -47,8 +45,8 @@ const (
 //
 // DataplaneControl is the gRPC service for agent→dataplane communication.
 // The Go agent pushes configuration to the Rust dataplane daemon over a
-// Unix domain socket. The dataplane manages eBPF programs, L4/L7 forwarding,
-// VIP operations, and observability telemetry.
+// Unix domain socket. The dataplane manages L4/L7 forwarding and
+// observability telemetry.
 type DataplaneControlClient interface {
 	// ── Full config push ─────────────────────────────────────────────────
 	// ApplyConfig pushes a full configuration snapshot to the dataplane.
@@ -90,14 +88,6 @@ type DataplaneControlClient interface {
 	UpsertWANLink(ctx context.Context, in *UpsertWANLinkRequest, opts ...grpc.CallOption) (*UpsertWANLinkResponse, error)
 	// DeleteWANLink removes a WAN link by name.
 	DeleteWANLink(ctx context.Context, in *DeleteWANLinkRequest, opts ...grpc.CallOption) (*DeleteWANLinkResponse, error)
-	// ── eBPF lifecycle ───────────────────────────────────────────────────
-	// AttachProgram loads and attaches an eBPF program.
-	AttachProgram(ctx context.Context, in *AttachProgramRequest, opts ...grpc.CallOption) (*AttachProgramResponse, error)
-	// DetachProgram is a no-op by design. eBPF programs attached via aya are
-	// automatically detached when the Ebpf handle is dropped (i.e. on process
-	// shutdown). The RPC exists for API completeness; the Go agent manages
-	// eBPF lifecycle via cilium/ebpf and does not call this endpoint.
-	DetachProgram(ctx context.Context, in *DetachProgramRequest, opts ...grpc.CallOption) (*DetachProgramResponse, error)
 	// ── Observability ────────────────────────────────────────────────────
 	// StreamFlows streams flow events captured from the eBPF ring buffer.
 	StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error)
@@ -265,26 +255,6 @@ func (c *dataplaneControlClient) DeleteWANLink(ctx context.Context, in *DeleteWA
 	return out, nil
 }
 
-func (c *dataplaneControlClient) AttachProgram(ctx context.Context, in *AttachProgramRequest, opts ...grpc.CallOption) (*AttachProgramResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(AttachProgramResponse)
-	err := c.cc.Invoke(ctx, DataplaneControl_AttachProgram_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *dataplaneControlClient) DetachProgram(ctx context.Context, in *DetachProgramRequest, opts ...grpc.CallOption) (*DetachProgramResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DetachProgramResponse)
-	err := c.cc.Invoke(ctx, DataplaneControl_DetachProgram_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
 func (c *dataplaneControlClient) StreamFlows(ctx context.Context, in *StreamFlowsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FlowEvent], error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	stream, err := c.cc.NewStream(ctx, &DataplaneControl_ServiceDesc.Streams[0], DataplaneControl_StreamFlows_FullMethodName, cOpts...)
@@ -339,8 +309,8 @@ type DataplaneControl_StreamMetricsClient = grpc.ServerStreamingClient[MetricsSn
 //
 // DataplaneControl is the gRPC service for agent→dataplane communication.
 // The Go agent pushes configuration to the Rust dataplane daemon over a
-// Unix domain socket. The dataplane manages eBPF programs, L4/L7 forwarding,
-// VIP operations, and observability telemetry.
+// Unix domain socket. The dataplane manages L4/L7 forwarding and
+// observability telemetry.
 type DataplaneControlServer interface {
 	// ── Full config push ─────────────────────────────────────────────────
 	// ApplyConfig pushes a full configuration snapshot to the dataplane.
@@ -382,14 +352,6 @@ type DataplaneControlServer interface {
 	UpsertWANLink(context.Context, *UpsertWANLinkRequest) (*UpsertWANLinkResponse, error)
 	// DeleteWANLink removes a WAN link by name.
 	DeleteWANLink(context.Context, *DeleteWANLinkRequest) (*DeleteWANLinkResponse, error)
-	// ── eBPF lifecycle ───────────────────────────────────────────────────
-	// AttachProgram loads and attaches an eBPF program.
-	AttachProgram(context.Context, *AttachProgramRequest) (*AttachProgramResponse, error)
-	// DetachProgram is a no-op by design. eBPF programs attached via aya are
-	// automatically detached when the Ebpf handle is dropped (i.e. on process
-	// shutdown). The RPC exists for API completeness; the Go agent manages
-	// eBPF lifecycle via cilium/ebpf and does not call this endpoint.
-	DetachProgram(context.Context, *DetachProgramRequest) (*DetachProgramResponse, error)
 	// ── Observability ────────────────────────────────────────────────────
 	// StreamFlows streams flow events captured from the eBPF ring buffer.
 	StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error
@@ -451,12 +413,6 @@ func (UnimplementedDataplaneControlServer) UpsertWANLink(context.Context, *Upser
 }
 func (UnimplementedDataplaneControlServer) DeleteWANLink(context.Context, *DeleteWANLinkRequest) (*DeleteWANLinkResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteWANLink not implemented")
-}
-func (UnimplementedDataplaneControlServer) AttachProgram(context.Context, *AttachProgramRequest) (*AttachProgramResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method AttachProgram not implemented")
-}
-func (UnimplementedDataplaneControlServer) DetachProgram(context.Context, *DetachProgramRequest) (*DetachProgramResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DetachProgram not implemented")
 }
 func (UnimplementedDataplaneControlServer) StreamFlows(*StreamFlowsRequest, grpc.ServerStreamingServer[FlowEvent]) error {
 	return status.Errorf(codes.Unimplemented, "method StreamFlows not implemented")
@@ -758,42 +714,6 @@ func _DataplaneControl_DeleteWANLink_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_AttachProgram_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(AttachProgramRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DataplaneControlServer).AttachProgram(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DataplaneControl_AttachProgram_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DataplaneControlServer).AttachProgram(ctx, req.(*AttachProgramRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _DataplaneControl_DetachProgram_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DetachProgramRequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(DataplaneControlServer).DetachProgram(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: DataplaneControl_DetachProgram_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(DataplaneControlServer).DetachProgram(ctx, req.(*DetachProgramRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
 func _DataplaneControl_StreamFlows_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(StreamFlowsRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -900,14 +820,6 @@ var DataplaneControl_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteWANLink",
 			Handler:    _DataplaneControl_DeleteWANLink_Handler,
-		},
-		{
-			MethodName: "AttachProgram",
-			Handler:    _DataplaneControl_AttachProgram_Handler,
-		},
-		{
-			MethodName: "DetachProgram",
-			Handler:    _DataplaneControl_DetachProgram_Handler,
 		},
 		{
 			MethodName: "GetDataplaneStatus",
