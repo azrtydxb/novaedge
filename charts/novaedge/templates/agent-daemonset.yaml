@@ -190,7 +190,6 @@ spec:
         imagePullPolicy: {{ .Values.dataplane.image.pullPolicy }}
         args:
         - --socket={{ .Values.dataplane.socketPath }}
-        - --ebpf-path={{ .Values.dataplane.ebpfPath }}
         ports:
         - name: http
           containerPort: {{ .Values.agent.ports.http | default 80 }}
