@@ -54,6 +54,11 @@ generate-proto: protoc-gen-go protoc-gen-go-grpc ## Generate Go code from protob
 		--go-grpc_out=api/proto/dataplane --go-grpc_opt=paths=source_relative \
 		--proto_path=api/proto \
 		api/proto/dataplane.proto
+	mkdir -p api/proto/ebpfservices
+	PATH=$(LOCALBIN):$$PATH protoc --go_out=api/proto/ebpfservices --go_opt=paths=source_relative \
+		--go-grpc_out=api/proto/ebpfservices --go-grpc_opt=paths=source_relative \
+		--proto_path=api/proto \
+		api/proto/ebpf_services.proto
 
 .PHONY: fmt
 fmt: ## Run go fmt against code.
