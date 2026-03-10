@@ -966,6 +966,18 @@ func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *core
 
 			ready := ep.Conditions.Ready == nil || *ep.Conditions.Ready
 
+			// Build labels for the endpoint (namespace, pod name, node).
+			// These labels are consumed by the mesh SOCKMAP reconciler
+			// to identify same-node pods eligible for acceleration.
+			labels := make(map[string]string)
+			labels["kubernetes.io/namespace"] = es.Namespace
+			if ep.TargetRef != nil && ep.TargetRef.Name != "" {
+				labels["kubernetes.io/name"] = ep.TargetRef.Name
+			}
+			if ep.NodeName != nil && *ep.NodeName != "" {
+				labels["topology.kubernetes.io/node"] = *ep.NodeName
+			}
+
 			// For each port in the EndpointSlice, create endpoints
 			for _, p := range es.Ports {
 				if p.Port == nil {
@@ -976,6 +988,7 @@ func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *core
 						Address: addr,
 						Port:    *p.Port,
 						Ready:   ready,
+						Labels:  labels,
 					})
 				}
 			}

@@ -353,7 +353,9 @@ func startAgentManagers(ctx context.Context, logger *zap.Logger, comp *agentComp
 
 	// Start passive backend health monitoring via NovaNet. The health
 	// stream handles not-connected and reconnection internally with
-	// backoff, so it is safe to start unconditionally.
+	// backoff, so it is safe to start unconditionally. Log-only for now.
+	// In a future phase, these health events will be forwarded to the Rust
+	// dataplane to influence outlier detection and load balancing decisions.
 	if comp.novanetClient != nil {
 		comp.novanetClient.StartHealthStream(ctx, 5000, func(ip string, port uint32, health *ebpfpb.BackendHealthInfo) {
 			logger.Debug("Backend health event from NovaNet eBPF",

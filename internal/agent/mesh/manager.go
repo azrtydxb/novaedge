@@ -541,8 +541,12 @@ type RateLimitEntry struct {
 // This should be called when per-CIDR rate limit policies change in the
 // config snapshot. Entries not in the desired set are removed.
 //
-// TODO: Call this from applyAgentConfig() when per-CIDR rate limit policies
-// are extracted from the ConfigSnapshot's Policy objects.
+// This function is available for use by the agent config application path.
+// Currently, the ConfigSnapshot's ProxyPolicy objects carry rate limit
+// configuration as middleware parameters (token bucket rate/burst), but
+// they are keyed by route, not by source CIDR. A future feature will add
+// per-source-CIDR rate limit extraction from policies, at which point
+// applyAgentConfig() will call this method with the extracted entries.
 func (m *Manager) ApplyRateLimits(ctx context.Context, desired []RateLimitEntry) {
 	if m.novanetClient == nil {
 		return
