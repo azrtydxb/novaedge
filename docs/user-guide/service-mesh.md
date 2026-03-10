@@ -68,6 +68,25 @@ flowchart TB
 
 ## Enabling the Service Mesh
 
+### Helm Configuration
+
+The mesh CA must be enabled in the controller for mTLS certificate issuance. Set the following values in your Helm chart or ArgoCD application:
+
+```yaml
+controller:
+  meshCA:
+    enabled: true              # Enable the embedded mesh certificate authority
+    keyAlgorithm: ecdsa-p256   # Key algorithm for workload certs (ecdsa-p256, ecdsa-p384, rsa-2048)
+    certLifetime: 24h          # Lifetime of issued workload certificates
+    caValidity: 87600h         # Validity period of the root CA certificate (~10 years)
+
+agent:
+  mesh:
+    enabled: true              # Enable mesh traffic interception on agents
+```
+
+When `meshCA.enabled` is `false` (default), the controller does not initialize the certificate authority and agents cannot obtain SPIFFE workload certificates. Mesh traffic interception still works but without mTLS — connections are forwarded as plain TCP.
+
 ### Annotate services
 
 Add the `novaedge.io/mesh` annotation to any Kubernetes Service you want to enroll:
