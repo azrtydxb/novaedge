@@ -589,7 +589,11 @@ func TestLoadBalancingIntegration(t *testing.T) {
 			return
 		}
 		client := &http.Client{Timeout: 5 * time.Second}
-		req, _ := http.NewRequestWithContext(context.Background(), r.Method, forwardURL, r.Body)
+		req, reqErr := http.NewRequestWithContext(context.Background(), r.Method, forwardURL, r.Body)
+		if reqErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
 		resp, err := client.Do(req) //nolint:gosec // URL constructed from httptest server base via url.JoinPath
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
