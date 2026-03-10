@@ -23,6 +23,7 @@ package novanet
 import (
 	"context"
 	"sync"
+	"time"
 
 	pb "github.com/azrtydxb/novaedge/api/proto/ebpfservices"
 	"go.uber.org/zap"
@@ -166,6 +167,98 @@ func (c *Client) GetBackendHealth(ctx context.Context, ip string, port uint32) (
 		return nil, nil
 	}
 	return resp.Backends[0], nil
+}
+
+// GetSockmapStats retrieves SOCKMAP acceleration statistics from NovaNet.
+func (c *Client) GetSockmapStats(ctx context.Context) (redirected, fallback uint64, err error) {
+	if !c.IsConnected() {
+		return 0, 0, nil
+	}
+	resp, err := c.client.GetSockmapStats(ctx, &pb.GetSockmapStatsRequest{})
+	if err != nil {
+		return 0, 0, err
+	}
+	return resp.Redirected, resp.Fallback, nil
+}
+
+// ListMeshRedirects retrieves the current mesh redirect entries from NovaNet.
+func (c *Client) ListMeshRedirects(ctx context.Context) ([]*pb.MeshRedirectEntry, error) {
+	if !c.IsConnected() {
+		return nil, nil
+	}
+	resp, err := c.client.ListMeshRedirects(ctx, &pb.ListMeshRedirectsRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Entries, nil
+}
+
+// StreamBackendHealth opens a server-streaming RPC that receives passive
+// backend health events from NovaNet's eBPF layer.
+func (c *Client) StreamBackendHealth(ctx context.Context, pollIntervalMs uint32) (pb.EBPFServices_StreamBackendHealthClient, error) {
+	if !c.IsConnected() {
+		return nil, nil
+	}
+	return c.client.StreamBackendHealth(ctx, &pb.StreamBackendHealthRequest{
+		PollIntervalMs: pollIntervalMs,
+	})
+}
+
+// StartHealthStream starts a background goroutine that streams backend
+// health events from NovaNet and invokes the callback for each event.
+// The goroutine exits when ctx is cancelled.
+func (c *Client) StartHealthStream(ctx context.Context, pollIntervalMs uint32, callback func(ip string, port uint32, health *pb.BackendHealthInfo)) {
+	go func() {
+		c.logger.Info("Starting backend health stream from NovaNet",
+			zap.Uint32("poll_interval_ms", pollIntervalMs))
+		for {
+			stream, err := c.StreamBackendHealth(ctx, pollIntervalMs)
+			if err != nil {
+				c.logger.Warn("Failed to open backend health stream", zap.Error(err))
+				select {
+				case <-ctx.Done():
+					return
+				case <-c.reconnectDelay():
+					continue
+				}
+			}
+			if stream == nil {
+				// Not connected; wait and retry.
+				select {
+				case <-ctx.Done():
+					return
+				case <-c.reconnectDelay():
+					continue
+				}
+			}
+			for {
+				event, recvErr := stream.Recv()
+				if recvErr != nil {
+					if ctx.Err() != nil {
+						return
+					}
+					c.logger.Warn("Backend health stream interrupted, reconnecting after backoff", zap.Error(recvErr))
+					// Backoff before reconnecting to avoid spinning on
+					// rapid stream failures.
+					select {
+					case <-ctx.Done():
+						return
+					case <-c.reconnectDelay():
+					}
+					break // reconnect
+				}
+				if event.Backend != nil {
+					callback(event.Backend.Ip, event.Backend.Port, event.Backend)
+				}
+			}
+		}
+	}()
+}
+
+// reconnectDelay returns a channel that fires after a short delay, used
+// for reconnection back-off in streaming RPCs.
+func (c *Client) reconnectDelay() <-chan time.Time {
+	return time.After(5 * time.Second)
 }
 
 // Close shuts down the gRPC connection.

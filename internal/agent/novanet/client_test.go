@@ -80,6 +80,30 @@ func TestDegradedMode(t *testing.T) {
 	if info != nil {
 		t.Fatal("GetBackendHealth should return nil in degraded mode")
 	}
+
+	redirected, fallback, err := c.GetSockmapStats(ctx)
+	if err != nil {
+		t.Fatalf("GetSockmapStats in degraded mode: %v", err)
+	}
+	if redirected != 0 || fallback != 0 {
+		t.Fatalf("GetSockmapStats = (%d, %d), want (0, 0)", redirected, fallback)
+	}
+
+	entries, err := c.ListMeshRedirects(ctx)
+	if err != nil {
+		t.Fatalf("ListMeshRedirects in degraded mode: %v", err)
+	}
+	if entries != nil {
+		t.Fatal("ListMeshRedirects should return nil in degraded mode")
+	}
+
+	stream, err := c.StreamBackendHealth(ctx, 1000)
+	if err != nil {
+		t.Fatalf("StreamBackendHealth in degraded mode: %v", err)
+	}
+	if stream != nil {
+		t.Fatal("StreamBackendHealth should return nil in degraded mode")
+	}
 }
 
 func TestClose(t *testing.T) {
