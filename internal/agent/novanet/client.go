@@ -237,7 +237,14 @@ func (c *Client) StartHealthStream(ctx context.Context, pollIntervalMs uint32, c
 					if ctx.Err() != nil {
 						return
 					}
-					c.logger.Warn("Backend health stream interrupted", zap.Error(recvErr))
+					c.logger.Warn("Backend health stream interrupted, reconnecting after backoff", zap.Error(recvErr))
+					// Backoff before reconnecting to avoid spinning on
+					// rapid stream failures.
+					select {
+					case <-ctx.Done():
+						return
+					case <-c.reconnectDelay():
+					}
 					break // reconnect
 				}
 				if event.Backend != nil {
