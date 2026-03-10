@@ -29,13 +29,13 @@ import (
 )
 
 const (
-	// novaedgeChain is the iptables chain used for NAT REDIRECT rules.
+	// novaedgeChain is the iptables chain used for NAT DNAT rules.
 	novaedgeChain = "NOVAEDGE_MESH"
 )
 
 // iptablesBackend implements RuleBackend using iptables exec calls.
 // This is the fallback when nftables is not available. Like the nftables
-// backend, it uses NAT REDIRECT for universal CNI compatibility -- see the
+// backend, it uses NAT DNAT to 127.0.0.1 for universal CNI compatibility -- see the
 // package-level documentation in tproxy.go for the full rationale.
 type iptablesBackend struct {
 	logger       *zap.Logger
@@ -63,7 +63,7 @@ func (b *iptablesBackend) Setup() error {
 	return nil
 }
 
-// ApplyRules reconciles iptables NAT REDIRECT rules to match the
+// ApplyRules reconciles iptables NAT DNAT rules to match the
 // desired set. Rules for removed services are deleted; rules for new
 // services are added. Errors from individual rule operations are
 // aggregated and returned so callers can detect partial failures.
@@ -86,7 +86,7 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 				continue
 			}
 			if err := b.removeRule(parts[0], parts[1], tproxyPort); err != nil {
-				b.logger.Error("Failed to remove iptables redirect rule",
+				b.logger.Error("Failed to remove iptables DNAT rule",
 					zap.String("key", key), zap.Error(err))
 				errs = append(errs, fmt.Errorf("remove %s: %w", key, err))
 				// Keep key in currentRules so next reconcile retries.
@@ -100,7 +100,7 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 	for key, t := range desired {
 		if !b.currentRules[key] {
 			if err := b.addRule(t.ClusterIP, t.Port, tproxyPort); err != nil {
-				b.logger.Error("Failed to add iptables redirect rule",
+				b.logger.Error("Failed to add iptables DNAT rule",
 					zap.String("clusterIP", t.ClusterIP),
 					zap.Int32("port", t.Port),
 					zap.Error(err))
@@ -113,7 +113,7 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 	return errors.Join(errs...)
 }
 
-// Cleanup removes all redirect rules, the custom chain, and the
+// Cleanup removes all DNAT rules, the custom chain, and the
 // PREROUTING jump.
 func (b *iptablesBackend) Cleanup() error {
 	if b.chainCreated {
@@ -161,8 +161,8 @@ func (b *iptablesBackend) addRule(clusterIP string, port int32, tproxyPort int32
 		"-p", "tcp",
 		"-d", clusterIP,
 		"--dport", fmt.Sprintf("%d", port),
-		"-j", "REDIRECT",
-		"--to-ports", fmt.Sprintf("%d", tproxyPort),
+		"-j", "DNAT",
+		"--to-destination", fmt.Sprintf("127.0.0.1:%d", tproxyPort),
 	)
 }
 
@@ -173,8 +173,8 @@ func (b *iptablesBackend) removeRule(clusterIP string, dport string, tproxyPort 
 		"-p", "tcp",
 		"-d", clusterIP,
 		"--dport", dport,
-		"-j", "REDIRECT",
-		"--to-ports", fmt.Sprintf("%d", tproxyPort),
+		"-j", "DNAT",
+		"--to-destination", fmt.Sprintf("127.0.0.1:%d", tproxyPort),
 	)
 }
 
