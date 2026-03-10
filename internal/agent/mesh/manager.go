@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -150,6 +151,20 @@ type Manager struct {
 	// rate limiting, health monitoring) to the NovaNet agent. May be nil
 	// if NovaNet integration is not configured.
 	novanetClient *novanet.Client
+
+	// meshRedirects tracks the set of mesh redirect entries currently
+	// installed via NovaNet (key: "clusterIP:port"). Used to compute
+	// add/remove diffs during reconciliation.
+	meshRedirects map[string]bool
+
+	// sockmapPods tracks pods currently enabled for SOCKMAP acceleration
+	// via NovaNet (key: "namespace/name"). Used to disable acceleration
+	// for pods that are no longer in the desired set.
+	sockmapPods map[string]bool
+
+	// rateLimits tracks CIDRs with active kernel-level rate limits
+	// installed via NovaNet. Used to remove stale entries on reconciliation.
+	rateLimits map[string]bool
 }
 
 // ManagerConfig holds configuration for creating a mesh Manager.
@@ -190,6 +205,9 @@ func NewManager(logger *zap.Logger, cfg ManagerConfig) *Manager {
 		ruleBackendOverride: cfg.RuleBackendOverride,
 		nodeIP:              cfg.NodeIP,
 		novanetClient:       cfg.NovaNetClient,
+		meshRedirects:       make(map[string]bool),
+		sockmapPods:         make(map[string]bool),
+		rateLimits:          make(map[string]bool),
 	}
 
 	if m.novanetClient != nil {
@@ -308,8 +326,9 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 		m.authorizer.UpdatePolicies(authzPolicies)
 	}
 
-	// Request NovaNet to enable SOCKMAP acceleration for same-node endpoints.
+	// Request NovaNet to install eBPF mesh redirects and SOCKMAP acceleration.
 	if m.novanetClient != nil {
+		m.reconcileNovaNetMeshRedirects(context.Background(), services)
 		m.reconcileNovaNetSockMap(context.Background(), services)
 	}
 
@@ -323,11 +342,84 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 	return nil
 }
 
+// reconcileNovaNetMeshRedirects computes the desired set of mesh redirect
+// entries (clusterIP:port → tproxyPort) from mesh-enabled services and
+// reconciles them against the previously installed set by calling
+// AddMeshRedirect for new entries and RemoveMeshRedirect for stale ones.
+func (m *Manager) reconcileNovaNetMeshRedirects(ctx context.Context, services []*pb.InternalService) {
+	desired := make(map[string]bool)
+	type redirectEntry struct {
+		ip   string
+		port uint32
+	}
+	entries := make(map[string]redirectEntry)
+
+	for _, svc := range services {
+		if !svc.MeshEnabled {
+			continue
+		}
+		for _, port := range svc.Ports {
+			key := fmt.Sprintf("%s:%d", svc.ClusterIp, port.Port)
+			desired[key] = true
+			entries[key] = redirectEntry{ip: svc.ClusterIp, port: uint32(port.Port)} //nolint:gosec // port from proto is int32, always non-negative
+		}
+	}
+
+	// Add new redirect entries.
+	for key, entry := range entries {
+		if m.meshRedirects[key] {
+			continue
+		}
+		if err := m.novanetClient.AddMeshRedirect(ctx, entry.ip, entry.port, uint32(m.tproxyPort)); err != nil { //nolint:gosec // tproxyPort is always a valid port number
+			m.logger.Warn("Failed to add mesh redirect via NovaNet",
+				zap.String("target", key),
+				zap.Int32("tproxy_port", m.tproxyPort),
+				zap.Error(err))
+		} else {
+			m.logger.Debug("Added mesh redirect via NovaNet",
+				zap.String("target", key),
+				zap.Int32("tproxy_port", m.tproxyPort))
+		}
+	}
+
+	// Remove stale redirect entries.
+	for key := range m.meshRedirects {
+		if desired[key] {
+			continue
+		}
+		entry := entries[key]
+		if entry.ip == "" {
+			// Parse from the key for entries no longer in the desired set.
+			var ip string
+			var port uint32
+			if _, err := fmt.Sscanf(key, "%[^:]:%d", &ip, &port); err != nil {
+				m.logger.Warn("Failed to parse stale mesh redirect key", zap.String("key", key))
+				continue
+			}
+			entry = redirectEntry{ip: ip, port: port}
+		}
+		if err := m.novanetClient.RemoveMeshRedirect(ctx, entry.ip, entry.port); err != nil {
+			m.logger.Warn("Failed to remove mesh redirect via NovaNet",
+				zap.String("target", key),
+				zap.Error(err))
+		} else {
+			m.logger.Debug("Removed mesh redirect via NovaNet",
+				zap.String("target", key))
+		}
+	}
+
+	// Update tracked state.
+	m.meshRedirects = desired
+}
+
 // reconcileNovaNetSockMap identifies same-node endpoints from the service
 // list and requests NovaNet to enable SOCKMAP acceleration for the
 // corresponding pods. An endpoint is considered "same-node" if it matches
-// the node's IP or topology label.
+// the node's IP or topology label. Pods that were previously enabled but
+// are no longer in the desired set are disabled.
 func (m *Manager) reconcileNovaNetSockMap(ctx context.Context, services []*pb.InternalService) {
+	desired := make(map[string]bool)
+
 	for _, svc := range services {
 		if !svc.MeshEnabled {
 			continue
@@ -336,20 +428,58 @@ func (m *Manager) reconcileNovaNetSockMap(ctx context.Context, services []*pb.In
 			if !ep.Ready || !m.isLocalEndpoint(ep) {
 				continue
 			}
-			// Extract pod namespace/name from endpoint labels if available.
 			ns := ep.Labels["kubernetes.io/namespace"]
 			name := ep.Labels["kubernetes.io/name"]
 			if ns == "" || name == "" {
 				continue
+			}
+			key := ns + "/" + name
+			desired[key] = true
+
+			if m.sockmapPods[key] {
+				continue // already enabled
 			}
 			if err := m.novanetClient.EnableSockmap(ctx, ns, name); err != nil {
 				m.logger.Warn("Failed to enable SOCKMAP via NovaNet",
 					zap.String("namespace", ns),
 					zap.String("pod", name),
 					zap.Error(err))
+			} else {
+				m.logger.Debug("Enabled SOCKMAP via NovaNet",
+					zap.String("namespace", ns),
+					zap.String("pod", name))
 			}
 		}
 	}
+
+	// Disable SOCKMAP for pods no longer in the desired set.
+	for key := range m.sockmapPods {
+		if desired[key] {
+			continue
+		}
+		ns, name := splitNsName(key)
+		if err := m.novanetClient.DisableSockmap(ctx, ns, name); err != nil {
+			m.logger.Warn("Failed to disable SOCKMAP via NovaNet",
+				zap.String("namespace", ns),
+				zap.String("pod", name),
+				zap.Error(err))
+		} else {
+			m.logger.Debug("Disabled SOCKMAP via NovaNet",
+				zap.String("namespace", ns),
+				zap.String("pod", name))
+		}
+	}
+
+	m.sockmapPods = desired
+}
+
+// splitNsName splits a "namespace/name" key into its components.
+func splitNsName(key string) (string, string) {
+	parts := strings.SplitN(key, "/", 2)
+	if len(parts) != 2 {
+		return key, ""
+	}
+	return parts[0], parts[1]
 }
 
 // isLocalEndpoint determines whether a backend endpoint is running on the
@@ -367,6 +497,60 @@ func (m *Manager) isLocalEndpoint(ep *pb.Endpoint) bool {
 	}
 	// Fallback: not enough info to determine locality.
 	return false
+}
+
+// RateLimitEntry represents a per-CIDR kernel-level rate limit to be
+// pushed to NovaNet's eBPF layer.
+type RateLimitEntry struct {
+	CIDR  string
+	Rate  uint32
+	Burst uint32
+}
+
+// ApplyRateLimits reconciles kernel-level rate limits via the NovaNet client.
+// This should be called when per-CIDR rate limit policies change in the
+// config snapshot. Entries not in the desired set are removed.
+//
+// TODO: Call this from applyAgentConfig() when per-CIDR rate limit policies
+// are extracted from the ConfigSnapshot's Policy objects.
+func (m *Manager) ApplyRateLimits(ctx context.Context, desired []RateLimitEntry) {
+	if m.novanetClient == nil {
+		return
+	}
+
+	desiredSet := make(map[string]bool, len(desired))
+	for _, entry := range desired {
+		desiredSet[entry.CIDR] = true
+		if err := m.novanetClient.ConfigureRateLimit(ctx, entry.CIDR, entry.Rate, entry.Burst); err != nil {
+			m.logger.Warn("Failed to configure kernel rate limit via NovaNet",
+				zap.String("cidr", entry.CIDR),
+				zap.Uint32("rate", entry.Rate),
+				zap.Uint32("burst", entry.Burst),
+				zap.Error(err))
+		} else {
+			m.logger.Debug("Configured kernel rate limit via NovaNet",
+				zap.String("cidr", entry.CIDR),
+				zap.Uint32("rate", entry.Rate),
+				zap.Uint32("burst", entry.Burst))
+		}
+	}
+
+	// Remove rate limits that are no longer desired.
+	for cidr := range m.rateLimits {
+		if desiredSet[cidr] {
+			continue
+		}
+		if err := m.novanetClient.RemoveRateLimit(ctx, cidr); err != nil {
+			m.logger.Warn("Failed to remove kernel rate limit via NovaNet",
+				zap.String("cidr", cidr),
+				zap.Error(err))
+		} else {
+			m.logger.Debug("Removed kernel rate limit via NovaNet",
+				zap.String("cidr", cidr))
+		}
+	}
+
+	m.rateLimits = desiredSet
 }
 
 // StartCertRequester launches a background goroutine that requests a mesh
@@ -407,8 +591,21 @@ func (m *Manager) Shutdown(_ context.Context) error {
 		}
 	}
 
-	// NovaNet client lifecycle is managed by the caller (agent main);
-	// no eBPF cleanup needed here.
+	// Disable SOCKMAP for all tracked pods before shutdown.
+	if m.novanetClient != nil {
+		shutdownCtx := context.Background()
+		for key := range m.sockmapPods {
+			ns, name := splitNsName(key)
+			if err := m.novanetClient.DisableSockmap(shutdownCtx, ns, name); err != nil {
+				m.logger.Warn("Failed to disable SOCKMAP during shutdown",
+					zap.String("namespace", ns),
+					zap.String("pod", name),
+					zap.Error(err))
+			}
+		}
+		m.sockmapPods = make(map[string]bool)
+	}
+
 	m.logger.Info("Mesh manager stopped")
 	return nil
 }
