@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
@@ -47,9 +48,15 @@ const (
 )
 
 // nftablesBackend implements RuleBackend using the nftables netlink API
-// for atomic rule updates. It uses NAT REDIRECT (not TPROXY) for
-// universal CNI compatibility -- see the package-level documentation in
-// tproxy.go for the full rationale and trade-off analysis.
+// for atomic rule updates. It uses DNAT to 127.0.0.1 (not REDIRECT or
+// TPROXY) for universal CNI compatibility -- see the package-level
+// documentation in tproxy.go for the full rationale and trade-off analysis.
+//
+// We use explicit DNAT instead of nftables "redirect" because redirect
+// derives the destination IP from the incoming interface's primary IPv4
+// address. CNIs that use veth pairs without IPv4 addresses (e.g. NovaNet,
+// Calico eBPF mode) cause redirect to silently drop packets because there
+// is no IPv4 address on the veth to redirect to.
 type nftablesBackend struct {
 	logger *zap.Logger
 	conn   *nftables.Conn
@@ -67,13 +74,18 @@ func newNFTablesBackend(logger *zap.Logger, conn *nftables.Conn) *nftablesBacken
 func (b *nftablesBackend) Name() string { return "nftables" }
 
 // Setup creates the novaedge_mesh table with a single NAT chain:
-//   - mesh_redirect (prerouting, dstnat - 1 priority): redirects matching
-//     TCP packets to the local transparent listener port.
+//   - mesh_redirect (prerouting, dstnat - 1 priority): DNAT matching
+//     TCP packets to the local transparent listener at 127.0.0.1.
 //
-// The priority of -101 (NF_IP_PRI_NAT_DST - 1) ensures our REDIRECT fires
+// The priority of -101 (NF_IP_PRI_NAT_DST - 1) ensures our DNAT fires
 // before kube-proxy's DNAT rules at priority -100, so the original ClusterIP
 // destination is preserved in conntrack for SO_ORIGINAL_DST retrieval.
 func (b *nftablesBackend) Setup() error {
+	// Enable route_localnet so the kernel accepts DNAT to 127.0.0.1 on non-loopback interfaces.
+	if err := os.WriteFile("/proc/sys/net/ipv4/conf/all/route_localnet", []byte("1"), 0o600); err != nil {
+		return fmt.Errorf("failed to set route_localnet: %w", err)
+	}
+
 	// Delete existing table first to remove any stale chains/rules from
 	// previous versions (e.g. upgrading from TPROXY to REDIRECT).
 	b.conn.DelTable(&nftables.Table{
@@ -103,8 +115,8 @@ func (b *nftablesBackend) Setup() error {
 	return nil
 }
 
-// ApplyRules atomically replaces all redirect rules: flush the chain, add
-// one REDIRECT rule per target, then commit in a single netlink batch.
+// ApplyRules atomically replaces all DNAT rules: flush the chain, add
+// one DNAT rule per target, then commit in a single netlink batch.
 func (b *nftablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32) error {
 	b.conn.FlushChain(b.chain)
 
@@ -136,9 +148,16 @@ func (b *nftablesBackend) Cleanup() error {
 }
 
 // buildRedirectRule constructs an nftables rule matching TCP + dst IP + dst
-// port and redirecting to the local listener port. This is equivalent to:
+// port and DNAT-ing to 127.0.0.1:<tproxyPort>. This is equivalent to:
 //
-//	ip daddr <clusterIP> tcp dport <port> redirect to :<tproxyPort>
+//	ip daddr <clusterIP> tcp dport <port> dnat to 127.0.0.1:<tproxyPort>
+//
+// We use explicit DNAT instead of nftables "redirect" because redirect
+// derives the destination IP from the incoming interface's primary IPv4
+// address. CNIs that use veth pairs without IPv4 addresses (e.g. NovaNet,
+// Calico eBPF mode) cause redirect to silently fail because there is no
+// IPv4 address to redirect to. Explicit DNAT to 127.0.0.1 works
+// universally regardless of the incoming interface configuration.
 func (b *nftablesBackend) buildRedirectRule(t InterceptTarget, tproxyPort int32) (*nftables.Rule, error) {
 	ip := net.ParseIP(t.ClusterIP).To4()
 	if ip == nil {
@@ -195,16 +214,26 @@ func (b *nftablesBackend) buildRedirectRule(t InterceptTarget, tproxyPort int32)
 				Data:     portBytes,
 			},
 
-			// Load redirect port into register 1.
+			// Load 127.0.0.1 into register 1 for DNAT destination address.
 			&expr.Immediate{
 				Register: 1,
+				Data:     net.IPv4(127, 0, 0, 1).To4(),
+			},
+
+			// Load redirect port into register 2 for DNAT destination port.
+			&expr.Immediate{
+				Register: 2,
 				Data:     redirPortBytes,
 			},
 
-			// REDIRECT to local port (rewrites destination to 127.0.0.1:<port>).
-			&expr.Redir{
-				RegisterProtoMin: 1,
-				RegisterProtoMax: 1,
+			// DNAT to 127.0.0.1:<tproxyPort>. Unlike "redirect", DNAT uses
+			// an explicit destination address and does not depend on the
+			// incoming interface having an IPv4 address.
+			&expr.NAT{
+				Type:        expr.NATTypeDestNAT,
+				Family:      unix.NFPROTO_IPV4,
+				RegAddrMin:  1,
+				RegProtoMin: 2,
 			},
 		},
 	}, nil
