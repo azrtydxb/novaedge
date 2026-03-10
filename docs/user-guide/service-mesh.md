@@ -129,7 +129,9 @@ NovaEdge uses two interception backends, auto-detected in priority order:
 !!! tip "eBPF Mesh Redirect via NovaNet"
     When [NovaNet](https://github.com/azrtydxb/novanet) is installed, it can provide eBPF `SK_LOOKUP`-based mesh redirect that bypasses the nftables/iptables rule chain entirely. This is handled transparently by NovaNet -- NovaEdge itself no longer loads or manages eBPF programs. See [eBPF Acceleration (NovaNet)](ebpf-acceleration.md) for details.
 
-For all backends, the REDIRECT rule rewrites the destination port to the agent's transparent listener while conntrack records the original ClusterIP destination, which the listener retrieves via `SO_ORIGINAL_DST`.
+Both backends use DNAT to `127.0.0.1:<listener-port>` instead of plain REDIRECT for universal CNI compatibility (see [Why DNAT instead of REDIRECT](#why-dnat-instead-of-redirect) below). Because the DNAT destination is a loopback address arriving on a non-loopback interface, the agent sets the `net.ipv4.conf.all.route_localnet=1` sysctl at startup. Without this sysctl the kernel treats `127.0.0.0/8` as a martian address on non-loopback interfaces and silently drops the packets.
+
+Conntrack records the original ClusterIP destination, which the listener retrieves via `SO_ORIGINAL_DST`.
 
 ### Packet flow
 
