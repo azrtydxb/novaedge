@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	ebpfpb "github.com/azrtydxb/novaedge/api/proto/ebpfservices"
 	"github.com/azrtydxb/novaedge/internal/agent/config"
 	"github.com/azrtydxb/novaedge/internal/agent/gossip"
 	"github.com/azrtydxb/novaedge/internal/agent/introspection"
@@ -288,6 +289,7 @@ func initMeshSubsystem(logger *zap.Logger, novanetClient *novanet.Client) *mesh.
 		TPROXYPort:    int32(meshTPROXYPort), //nolint:gosec // port range validated by flag
 		TunnelPort:    int32(meshTunnelPort), //nolint:gosec // port range validated by flag
 		TrustDomain:   meshTrustDomain,
+		NodeIP:        os.Getenv("NODE_IP"),
 		NovaNetClient: novanetClient,
 	})
 	return meshManager
@@ -346,6 +348,18 @@ func startAgentManagers(ctx context.Context, logger *zap.Logger, comp *agentComp
 		if err := comp.sdwanManager.Start(ctx); err != nil {
 			logger.Fatal("Failed to start SD-WAN manager", zap.Error(err))
 		}
+	}
+
+	// Start passive backend health monitoring via NovaNet if connected.
+	if comp.novanetClient != nil && comp.novanetClient.IsConnected() {
+		comp.novanetClient.StartHealthStream(ctx, 5000, func(ip string, port uint32, health *ebpfpb.BackendHealthInfo) {
+			logger.Debug("Backend health event from NovaNet eBPF",
+				zap.String("ip", ip),
+				zap.Uint32("port", port),
+				zap.Uint64("total_conns", health.GetTotalConns()),
+				zap.Uint64("failed_conns", health.GetFailedConns()),
+				zap.Float64("failure_rate", health.GetFailureRate()))
+		})
 	}
 }
 
