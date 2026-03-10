@@ -17,13 +17,14 @@ limitations under the License.
 package protocol
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
 
 func TestIsGRPCRequest_HTTP2WithGRPCContentType(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/test.Service/Method", nil)
 	req.ProtoMajor = 2
 	req.Header.Set("Content-Type", "application/grpc")
 
@@ -33,7 +34,7 @@ func TestIsGRPCRequest_HTTP2WithGRPCContentType(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP2WithGRPCProto(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/test.Service/Method", nil)
 	req.ProtoMajor = 2
 	req.Header.Set("Content-Type", "application/grpc+proto")
 
@@ -43,7 +44,7 @@ func TestIsGRPCRequest_HTTP2WithGRPCProto(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP1_NotGRPC(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/test.Service/Method", nil)
 	req.ProtoMajor = 1
 	req.Header.Set("Content-Type", "application/grpc")
 
@@ -53,7 +54,7 @@ func TestIsGRPCRequest_HTTP1_NotGRPC(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP2WithJSONContentType(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/endpoint", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/endpoint", nil)
 	req.ProtoMajor = 2
 	req.Header.Set("Content-Type", "application/json")
 
@@ -63,7 +64,7 @@ func TestIsGRPCRequest_HTTP2WithJSONContentType(t *testing.T) {
 }
 
 func TestIsGRPCRequest_HTTP2NoContentType(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/healthz", nil)
 	req.ProtoMajor = 2
 
 	if IsGRPCRequest(req) {
@@ -72,7 +73,7 @@ func TestIsGRPCRequest_HTTP2NoContentType(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_Valid(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "upgrade")
 
@@ -82,7 +83,7 @@ func TestIsWebSocketUpgrade_Valid(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_CaseInsensitiveConnection(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "websocket")
 	req.Header.Set("Connection", "Upgrade")
 
@@ -92,7 +93,7 @@ func TestIsWebSocketUpgrade_CaseInsensitiveConnection(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_NoUpgradeHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/ws", nil)
 	req.Header.Set("Connection", "upgrade")
 
 	if IsWebSocketUpgrade(req) {
@@ -101,7 +102,7 @@ func TestIsWebSocketUpgrade_NoUpgradeHeader(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_NoConnectionHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "websocket")
 
 	if IsWebSocketUpgrade(req) {
@@ -110,7 +111,7 @@ func TestIsWebSocketUpgrade_NoConnectionHeader(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_WrongUpgradeValue(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/ws", nil)
 	req.Header.Set("Upgrade", "h2c")
 	req.Header.Set("Connection", "upgrade")
 
@@ -120,7 +121,7 @@ func TestIsWebSocketUpgrade_WrongUpgradeValue(t *testing.T) {
 }
 
 func TestIsWebSocketUpgrade_NormalHTTPRequest(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/api/data", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/data", nil)
 
 	if IsWebSocketUpgrade(req) {
 		t.Error("normal HTTP request should not be detected as WebSocket upgrade")
@@ -128,7 +129,7 @@ func TestIsWebSocketUpgrade_NormalHTTPRequest(t *testing.T) {
 }
 
 func TestIsSSERequest_WithAcceptHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/events", nil)
 	req.Header.Set("Accept", "text/event-stream")
 
 	if !IsSSERequest(req) {
@@ -137,7 +138,7 @@ func TestIsSSERequest_WithAcceptHeader(t *testing.T) {
 }
 
 func TestIsSSERequest_WithWrongAcceptHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/events", nil)
 	req.Header.Set("Accept", "application/json")
 
 	if IsSSERequest(req) {
@@ -146,7 +147,7 @@ func TestIsSSERequest_WithWrongAcceptHeader(t *testing.T) {
 }
 
 func TestIsSSERequest_WithoutAcceptHeader(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/events", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/events", nil)
 
 	if IsSSERequest(req) {
 		t.Error("should not detect SSE without Accept header")
@@ -154,7 +155,7 @@ func TestIsSSERequest_WithoutAcceptHeader(t *testing.T) {
 }
 
 func TestIsSSERequest_NormalHTTPRequest(t *testing.T) {
-	req := httptest.NewRequest(http.MethodPost, "/api/data", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/data", nil)
 	req.Header.Set("Content-Type", "application/json")
 
 	if IsSSERequest(req) {

@@ -102,7 +102,15 @@ func NewConfigGossiper(nodeName string, forceResyncFunc func(), logger *zap.Logg
 // Start begins the gossip protocol. It launches three goroutines:
 // broadcastLoop, receiveLoop, and quorumCheckLoop.
 func (g *ConfigGossiper) Start(ctx context.Context) error {
-	g.ctx, g.cancel = context.WithCancel(ctx)
+	childCtx, cancel := context.WithCancel(ctx)
+	// cancel is deferred so early-return error paths release the context;
+	// on success we nil-out cancel so the deferred call is a no-op, and
+	// ownership transfers to g.cancel for later cleanup.
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+	}()
 
 	addr, err := net.ResolveUDPAddr("udp4", g.multicastAddr)
 	if err != nil {
@@ -113,6 +121,10 @@ func (g *ConfigGossiper) Start(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to create multicast socket: %w", err)
 	}
+
+	g.ctx = childCtx
+	g.cancel = cancel
+	cancel = nil // ownership transferred to g.cancel
 	g.conn = conn
 
 	go g.broadcastLoop(addr)

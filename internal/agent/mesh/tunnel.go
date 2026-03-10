@@ -119,9 +119,12 @@ func (ts *TunnelServer) Start(ctx context.Context) error {
 	)
 
 	// Graceful shutdown on context cancellation.
+	// Use WithoutCancel so the shutdown timeout is not already expired
+	// when the parent context is cancelled.
+	detachedCtx := context.WithoutCancel(ctx)
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(detachedCtx, 5*time.Second)
 		defer cancel()
 		if shutdownErr := ts.server.Shutdown(shutdownCtx); shutdownErr != nil {
 			ts.logger.Error("Tunnel server shutdown error", zap.Error(shutdownErr))
