@@ -22,7 +22,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 
@@ -58,9 +57,10 @@ func (b *iptablesBackend) Name() string { return "iptables" }
 // fire before kube-proxy's KUBE-SERVICES chain, preserving the original
 // ClusterIP destination in conntrack for SO_ORIGINAL_DST retrieval.
 func (b *iptablesBackend) Setup() error {
-	// Enable route_localnet so the kernel accepts DNAT to 127.0.0.1 on non-loopback interfaces.
-	if err := os.WriteFile("/proc/sys/net/ipv4/conf/all/route_localnet", []byte("1"), 0o600); err != nil {
-		return fmt.Errorf("failed to set route_localnet: %w", err)
+	// Verify route_localnet is enabled (set by the sysctl-setup init container in k8s,
+	// or written directly in standalone/privileged mode).
+	if err := ensureRouteLocalnet(); err != nil {
+		return err
 	}
 
 	if err := b.ensureChain(); err != nil {
