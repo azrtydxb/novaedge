@@ -48,8 +48,22 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if .Values.agent.ebpf.enabled }}
+      {{- if or .Values.agent.ebpf.enabled .Values.agent.mesh.enabled }}
       initContainers:
+      {{- if .Values.agent.mesh.enabled }}
+      - name: sysctl-setup
+        image: {{ include "novaedge.agent.image" . }}
+        imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
+        command:
+        - sh
+        - -c
+        - |
+          echo 1 > /proc/sys/net/ipv4/conf/all/route_localnet
+          echo "route_localnet enabled for mesh DNAT"
+        securityContext:
+          privileged: true
+      {{- end }}
+      {{- if .Values.agent.ebpf.enabled }}
       - name: mount-bpffs
         image: {{ include "novaedge.agent.image" . }}
         imagePullPolicy: {{ .Values.agent.image.pullPolicy }}
@@ -67,6 +81,7 @@ spec:
         - name: bpffs
           mountPath: /sys/fs/bpf
           mountPropagation: Bidirectional
+      {{- end }}
       {{- end }}
       containers:
       - name: agent
