@@ -32,7 +32,7 @@ import (
 
 // DefaultSocketPath is the default Unix domain socket where the NovaNet
 // agent exposes its EBPFServices gRPC API.
-const DefaultSocketPath = "/var/run/novanet/ebpf.sock"
+const DefaultSocketPath = "/var/run/novanet/ebpf-services.sock"
 
 // Client wraps a gRPC connection to the NovaNet EBPFServices API.
 // When the NovaNet agent is unavailable, the client operates in degraded
