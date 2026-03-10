@@ -35,23 +35,25 @@ spec:
         controller:
           image:
             repository: ghcr.io/azrtydxb/novaedge/novaedge-controller
-            tag: v1.7.6
+            tag: v1.7.7
+          meshCA:
+            enabled: true
         agent:
           image:
             repository: ghcr.io/azrtydxb/novaedge/novaedge-agent
-            tag: v1.7.6
+            tag: v1.7.7
         dataplane:
           image:
             repository: ghcr.io/azrtydxb/novaedge/novaedge-dataplane
-            tag: v1.7.6
+            tag: v1.7.7
         webui:
           image:
             repository: ghcr.io/azrtydxb/novaedge/novactl
-            tag: v1.7.6
+            tag: v1.7.7
           frontend:
             image:
               repository: ghcr.io/azrtydxb/novaedge/novaedge-webui
-              tag: v1.7.6
+              tag: v1.7.7
   destination:
     server: https://kubernetes.default.svc
     namespace: novaedge-system
