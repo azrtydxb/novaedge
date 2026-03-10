@@ -17,6 +17,7 @@ limitations under the License.
 package acme
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -95,7 +96,7 @@ func TestHTTP01Provider_Handler(t *testing.T) {
 	t.Run("existing challenge", func(t *testing.T) {
 		_ = provider.Present("example.com", "test-token", "test-key-auth-value")
 
-		req := httptest.NewRequest("GET", "/test-token", nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/test-token", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -105,7 +106,7 @@ func TestHTTP01Provider_Handler(t *testing.T) {
 	})
 
 	t.Run("non-existing challenge", func(t *testing.T) {
-		req := httptest.NewRequest("GET", "/unknown-token", nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/unknown-token", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -115,7 +116,7 @@ func TestHTTP01Provider_Handler(t *testing.T) {
 	t.Run("with leading slash", func(t *testing.T) {
 		_ = provider.Present("example.com", "slash-token", "slash-key-auth")
 
-		req := httptest.NewRequest("GET", "/slash-token", nil)
+		req := httptest.NewRequestWithContext(context.Background(), "GET", "/slash-token", nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 

@@ -17,6 +17,7 @@ limitations under the License.
 package grpc
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -37,7 +38,7 @@ func TestPrepareGRPCRequest_PreservesHeaders(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewHandler(logger)
 
-	req := httptest.NewRequest(http.MethodPost, "http://backend/test.Service/Method", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "http://backend/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 	req.Header.Set("grpc-encoding", "gzip")
 	req.Header.Set("grpc-accept-encoding", "gzip,identity")
@@ -65,7 +66,7 @@ func TestPrepareGRPCRequest_ClonesRequest(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewHandler(logger)
 
-	req := httptest.NewRequest(http.MethodPost, "http://backend/test.Service/Method", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "http://backend/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 
 	prepared := h.PrepareGRPCRequest(req)
@@ -80,7 +81,7 @@ func TestValidateGRPCRequest_ValidPOST(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewHandler(logger)
 
-	req := httptest.NewRequest(http.MethodPost, "/test.Service/Method", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 
 	err := h.ValidateGRPCRequest(req)
@@ -93,7 +94,7 @@ func TestValidateGRPCRequest_NonPOST_NoError(t *testing.T) {
 	logger := zap.NewNop()
 	h := NewHandler(logger)
 
-	req := httptest.NewRequest(http.MethodGet, "/test.Service/Method", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/test.Service/Method", nil)
 	req.Header.Set("Content-Type", "application/grpc")
 
 	// ValidateGRPCRequest does not return an error for invalid methods; it logs a warning

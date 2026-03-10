@@ -90,6 +90,9 @@ func (h *HealthServer) Start(ctx context.Context) error {
 
 	h.logger.Info("Starting health probe server", zap.Int("port", h.port))
 
+	// Use WithoutCancel so the shutdown timeout is not already expired
+	// when the parent context is cancelled.
+	detachedCtx := context.WithoutCancel(ctx)
 	go func() {
 		<-ctx.Done()
 		h.logger.Info("Shutting down health probe server")
@@ -97,9 +100,9 @@ func (h *HealthServer) Start(ctx context.Context) error {
 		// Stop rate limiter cleanup routine
 		h.rateLimiter.Stop()
 
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(detachedCtx, 5*time.Second)
 		defer cancel()
-		if err := h.server.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck // shutdown context intentionally derived from context.Background() after parent cancellation
+		if err := h.server.Shutdown(shutdownCtx); err != nil {
 			h.logger.Error("Health server shutdown error", zap.Error(err))
 		}
 	}()

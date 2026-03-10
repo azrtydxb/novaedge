@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -120,7 +121,7 @@ func TestMiddlewareAllowsWhenDisabled(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/gateways", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/gateways", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -143,7 +144,7 @@ func TestMiddlewareBlocksUnauthed(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/gateways", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/gateways", nil)
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
 
@@ -178,7 +179,7 @@ func TestMiddlewareAllowsAuthPaths(t *testing.T) {
 	}
 
 	for _, path := range paths {
-		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
 
@@ -207,7 +208,7 @@ func TestMiddlewareAllowsValidSession(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/gateways", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/gateways", nil)
 	req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

@@ -582,10 +582,15 @@ func TestLoadBalancingIntegration(t *testing.T) {
 		currentBackend = (currentBackend + 1) % numBackends
 		mu.Unlock()
 
-		// Forward request
+		// Forward request — join URL from known-safe test-server base.
+		forwardURL, urlErr := url.JoinPath(target.URL, r.URL.Path)
+		if urlErr != nil {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
 		client := &http.Client{Timeout: 5 * time.Second}
-		req, _ := http.NewRequestWithContext(context.Background(), r.Method, mustParseURL(t, target.URL+r.URL.Path), r.Body)
-		resp, err := client.Do(req) //nolint:gosec // G704: test server URL validated via mustParseURL
+		req, _ := http.NewRequestWithContext(context.Background(), r.Method, forwardURL, r.Body)
+		resp, err := client.Do(req) //nolint:gosec // URL constructed from httptest server base via url.JoinPath
 		if err != nil {
 			w.WriteHeader(http.StatusBadGateway)
 			return
