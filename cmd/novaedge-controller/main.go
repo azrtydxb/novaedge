@@ -88,6 +88,10 @@ type controllerFlags struct {
 	vaultAuthMethod       string
 	vaultRole             string
 	meshTrustDomain       string
+	meshCAEnabled         bool
+	meshCAKeyAlgorithm    string
+	meshCACertLifetime    string
+	meshCAValidity        string
 	federationID          string
 	federationLocalMember string
 	enableLeaderElection  bool
@@ -109,6 +113,10 @@ func parseControllerFlags() *controllerFlags {
 	flag.StringVar(&f.vaultAuthMethod, "vault-auth-method", "kubernetes", "Vault auth method (kubernetes|approle|token)")
 	flag.StringVar(&f.vaultRole, "vault-role", "novaedge", "Vault auth role name")
 	flag.StringVar(&f.meshTrustDomain, "mesh-trust-domain", "cluster.local", "SPIFFE trust domain for mesh mTLS identity")
+	flag.BoolVar(&f.meshCAEnabled, "mesh-ca-enabled", false, "Enable the embedded mesh certificate authority for issuing SPIFFE workload certificates")
+	flag.StringVar(&f.meshCAKeyAlgorithm, "mesh-ca-key-algorithm", "ecdsa-p256", "Key algorithm for mesh CA certificates (ecdsa-p256, ecdsa-p384, rsa-2048)")
+	flag.StringVar(&f.meshCACertLifetime, "mesh-ca-cert-lifetime", "24h", "Lifetime of issued workload certificates")
+	flag.StringVar(&f.meshCAValidity, "mesh-ca-validity", "87600h", "Validity period of the root CA certificate")
 	flag.StringVar(&f.federationID, "federation-id", "", "Federation identifier. When set, enables federation state on config snapshots.")
 	flag.StringVar(&f.federationLocalMember, "federation-local-member", "", "Name of this controller in the federation.")
 	flag.BoolVar(&f.enableLeaderElection, "leader-elect", false,
@@ -234,22 +242,30 @@ func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewa
 
 // initConfigServer creates the config server, wires mesh CA and federation, and starts the gRPC server.
 func initConfigServer(mgr ctrl.Manager, f *controllerFlags) *grpc.Server {
-	// Initialize mesh CA for issuing workload certificates.
-	directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
-	if err != nil {
-		setupLog.Error(err, "failed to create direct client for mesh CA")
-		os.Exit(1)
-	}
-	meshCALogger, _ := uberzap.NewProduction()
-	meshCA := meshca.NewMeshCA(meshCALogger, f.meshTrustDomain, "")
-	if err := meshCA.Initialize(context.Background(), directClient); err != nil {
-		setupLog.Error(err, "failed to initialize mesh CA")
-		os.Exit(1)
-	}
-	setupLog.Info("Mesh CA initialized", "trustDomain", f.meshTrustDomain)
-
 	configServer := snapshot.NewServer(mgr.GetClient())
-	configServer.SetMeshCA(meshCA)
+
+	// Initialize mesh CA for issuing workload certificates (only when enabled).
+	if f.meshCAEnabled {
+		directClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
+		if err != nil {
+			setupLog.Error(err, "failed to create direct client for mesh CA")
+			os.Exit(1)
+		}
+		meshCALogger, _ := uberzap.NewProduction()
+		meshCA := meshca.NewMeshCA(meshCALogger, f.meshTrustDomain, "")
+		if err := meshCA.Initialize(context.Background(), directClient); err != nil {
+			setupLog.Error(err, "failed to initialize mesh CA")
+			os.Exit(1)
+		}
+		configServer.SetMeshCA(meshCA)
+		setupLog.Info("Mesh CA initialized",
+			"trustDomain", f.meshTrustDomain,
+			"keyAlgorithm", f.meshCAKeyAlgorithm,
+			"certLifetime", f.meshCACertLifetime,
+			"caValidity", f.meshCAValidity)
+	} else {
+		setupLog.Info("Mesh CA disabled (enable with --mesh-ca-enabled)")
+	}
 
 	// Wire federation state provider when configured.
 	if f.federationID != "" && f.federationLocalMember != "" {
