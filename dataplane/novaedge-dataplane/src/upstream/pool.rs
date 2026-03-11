@@ -209,6 +209,7 @@ impl ConnectionPool {
     pub async fn release(&self, addr: SocketAddr) {
         let mut pools = self.pools.lock().await;
         if let Some(host_pool) = pools.get_mut(&addr) {
+            let prev_active = host_pool.active;
             host_pool.active = host_pool.active.saturating_sub(1);
             host_pool.request_count = host_pool.request_count.saturating_add(1);
 
@@ -228,8 +229,11 @@ impl ConnectionPool {
                 host_pool.request_count = 0;
             }
 
-            // Return the semaphore permit.
-            host_pool.semaphore.add_permits(1);
+            // Only return the semaphore permit if active was > 0 before
+            // decrement to avoid adding extra permits on double-release.
+            if prev_active > 0 {
+                host_pool.semaphore.add_permits(1);
+            }
         }
     }
 

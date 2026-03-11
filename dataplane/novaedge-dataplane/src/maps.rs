@@ -62,7 +62,10 @@ impl MapManager {
     ) -> anyhow::Result<()> {
         let k = unsafe { core::mem::transmute::<RateLimitKey, [u8; 4]>(key) };
         let v = unsafe { core::mem::transmute::<RateLimitValue, [u8; 16]>(value) };
-        self.rate_limits.write().unwrap().insert(k, v);
+        self.rate_limits
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(k, v);
         Ok(())
     }
 
@@ -70,13 +73,19 @@ impl MapManager {
     #[allow(dead_code)]
     pub fn delete_rate_limit(&self, key: &RateLimitKey) -> anyhow::Result<()> {
         let k = unsafe { core::mem::transmute::<RateLimitKey, [u8; 4]>(*key) };
-        self.rate_limits.write().unwrap().remove(&k);
+        self.rate_limits
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(&k);
         Ok(())
     }
 
     /// Get the number of rate limit entries.
     pub fn rate_limit_count(&self) -> usize {
-        self.rate_limits.read().unwrap().len()
+        self.rate_limits
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .len()
     }
 
     // ── Status ─────────────────────────────────────────────────────────

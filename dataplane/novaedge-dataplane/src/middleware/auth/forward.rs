@@ -162,16 +162,22 @@ fn is_denied_ip(ip: &std::net::IpAddr) -> bool {
     }
 }
 
-/// Parse a simple HTTP URL into (host, port, path).
+/// Parse an HTTP or HTTPS URL into (host, port, path).
 #[allow(dead_code)] // Used by ForwardAuth::check() which requires async.
 fn parse_url(url: &str) -> (String, u16, String) {
-    let url = url.strip_prefix("http://").unwrap_or(url);
-    let (host_port, path) = url.split_once('/').unwrap_or((url, ""));
+    let (rest, default_port) = if let Some(stripped) = url.strip_prefix("https://") {
+        (stripped, 443u16)
+    } else if let Some(stripped) = url.strip_prefix("http://") {
+        (stripped, 80u16)
+    } else {
+        (url, 80u16)
+    };
+    let (host_port, path) = rest.split_once('/').unwrap_or((rest, ""));
     let path = format!("/{path}");
     let (host, port) = host_port
         .split_once(':')
-        .map(|(h, p)| (h.to_string(), p.parse().unwrap_or(80)))
-        .unwrap_or_else(|| (host_port.to_string(), 80));
+        .map(|(h, p)| (h.to_string(), p.parse().unwrap_or(default_port)))
+        .unwrap_or_else(|| (host_port.to_string(), default_port));
     (host, port, path)
 }
 
@@ -201,6 +207,22 @@ mod tests {
         assert_eq!(host, "auth-svc");
         assert_eq!(port, 8080);
         assert_eq!(path, "/");
+    }
+
+    #[test]
+    fn parse_url_https_with_port() {
+        let (host, port, path) = parse_url("https://auth-svc:9443/verify");
+        assert_eq!(host, "auth-svc");
+        assert_eq!(port, 9443);
+        assert_eq!(path, "/verify");
+    }
+
+    #[test]
+    fn parse_url_https_default_port() {
+        let (host, port, path) = parse_url("https://auth-svc/check");
+        assert_eq!(host, "auth-svc");
+        assert_eq!(port, 443);
+        assert_eq!(path, "/check");
     }
 
     #[test]
