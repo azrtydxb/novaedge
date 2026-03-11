@@ -32,8 +32,11 @@ var (
 	errConfigPathIsRequired                            = errors.New("config path is required")
 	errGatewayNotFound                                 = errors.New("gateway not found")
 	errRouteNotFound                                   = errors.New("route not found")
+	errRouteAlreadyExists                              = errors.New("route already exists")
 	errBackendNotFound                                 = errors.New("backend not found")
+	errBackendAlreadyExists                            = errors.New("backend already exists")
 	errPolicyNotFound                                  = errors.New("policy not found")
+	errPolicyAlreadyExists                             = errors.New("policy already exists")
 	errCertificatesAreNotSupportedInStandaloneMode     = errors.New("certificates are not supported in standalone mode")
 	errIPPoolsAreNotSupportedInStandaloneMode          = errors.New("IP pools are not supported in standalone mode")
 	errNovaEdgeClustersAreNotSupportedInStandaloneMode = errors.New("NovaEdge clusters are not supported in standalone mode")
@@ -391,7 +394,7 @@ func (s *StandaloneBackend) CreateRoute(_ context.Context, route *models.Route) 
 	// Check for duplicate
 	for _, r := range s.config.Routes {
 		if r.Name == route.Name {
-			return nil, fmt.Errorf("%w: %s already exists", errRouteNotFound, route.Name)
+			return nil, fmt.Errorf("%w: %s", errRouteAlreadyExists, route.Name)
 		}
 	}
 
@@ -557,7 +560,7 @@ func (s *StandaloneBackend) CreateBackend(_ context.Context, backend *models.Bac
 	// Check for duplicate
 	for _, b := range s.config.Backends {
 		if b.Name == backend.Name {
-			return nil, fmt.Errorf("%w: %s already exists", errBackendNotFound, backend.Name)
+			return nil, fmt.Errorf("%w: %s", errBackendAlreadyExists, backend.Name)
 		}
 	}
 
@@ -702,7 +705,7 @@ func (s *StandaloneBackend) CreatePolicy(_ context.Context, policy *models.Polic
 	// Check for duplicate
 	for _, p := range s.config.Policies {
 		if p.Name == policy.Name {
-			return nil, fmt.Errorf("%w: %s already exists", errPolicyNotFound, policy.Name)
+			return nil, fmt.Errorf("%w: %s", errPolicyAlreadyExists, policy.Name)
 		}
 	}
 
