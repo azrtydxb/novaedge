@@ -75,6 +75,11 @@ func NewRuntimeAPI(logger *zap.Logger) *RuntimeAPI {
 }
 
 // registerRoutes sets up the HTTP routing for the runtime API.
+//
+// Security: These endpoints have no authentication middleware because they are
+// only registered on the admin loopback interface (127.0.0.1), which is not
+// reachable from outside the node. The AdminServer binds exclusively to a
+// loopback address, so network-level isolation provides the access control.
 func (api *RuntimeAPI) registerRoutes() {
 	api.mux.HandleFunc("/api/v1/clusters/", api.handleClusters)
 	api.mux.HandleFunc("/api/v1/overrides", api.handleOverrides)
@@ -169,8 +174,7 @@ func (api *RuntimeAPI) handleAddEndpoint(w http.ResponseWriter, r *http.Request,
 		zap.Int32("weight", req.Weight),
 	)
 
-	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "added", "endpoint": key})
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "added", "endpoint": key})
 }
 
 // handleRemoveEndpoint handles DELETE /api/v1/clusters/{cluster}/endpoints/{endpoint}.

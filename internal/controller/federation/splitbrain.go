@@ -650,6 +650,9 @@ func (d *SplitBrainDetector) checkQuorum() {
 
 // countReachablePeers counts peers contacted within timeout
 func (d *SplitBrainDetector) countReachablePeers() int {
+	d.peersMu.RLock()
+	defer d.peersMu.RUnlock()
+
 	cutoff := time.Now().Add(-d.config.PartitionTimeout)
 	count := 0
 	for _, lastSeen := range d.reachablePeers {
@@ -662,6 +665,9 @@ func (d *SplitBrainDetector) countReachablePeers() int {
 
 // getReachablePeerNames returns names of reachable peers
 func (d *SplitBrainDetector) getReachablePeerNames() []string {
+	d.peersMu.RLock()
+	defer d.peersMu.RUnlock()
+
 	cutoff := time.Now().Add(-d.config.PartitionTimeout)
 	var names []string
 	for peer, lastSeen := range d.reachablePeers {
@@ -674,13 +680,15 @@ func (d *SplitBrainDetector) getReachablePeerNames() []string {
 
 // getUnreachablePeerNames returns names of unreachable peers
 func (d *SplitBrainDetector) getUnreachablePeerNames() []string {
-	cutoff := time.Now().Add(-d.config.PartitionTimeout)
+	d.peersMu.RLock()
 	reachable := make(map[string]bool)
+	cutoff := time.Now().Add(-d.config.PartitionTimeout)
 	for peer, lastSeen := range d.reachablePeers {
 		if lastSeen.After(cutoff) {
 			reachable[peer] = true
 		}
 	}
+	d.peersMu.RUnlock()
 
 	// Get all known peers from server
 	var unreachable []string

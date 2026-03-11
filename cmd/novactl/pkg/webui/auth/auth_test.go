@@ -221,24 +221,24 @@ func TestMiddlewareAllowsValidSession(t *testing.T) {
 
 func TestSetMaxSessions(t *testing.T) {
 	// Save original and restore after test.
-	orig := maxSessions
-	defer func() { maxSessions = orig }()
+	orig := maxSessions.Load()
+	defer maxSessions.Store(orig)
 
 	SetMaxSessions(50)
-	if maxSessions != 50 {
-		t.Fatalf("expected maxSessions=50, got %d", maxSessions)
+	if maxSessions.Load() != 50 {
+		t.Fatalf("expected maxSessions=50, got %d", maxSessions.Load())
 	}
 
 	// Zero resets to default.
 	SetMaxSessions(0)
-	if maxSessions != defaultMaxSessions {
-		t.Fatalf("expected maxSessions=%d after zero, got %d", defaultMaxSessions, maxSessions)
+	if maxSessions.Load() != int32(defaultMaxSessions) {
+		t.Fatalf("expected maxSessions=%d after zero, got %d", defaultMaxSessions, maxSessions.Load())
 	}
 
 	// Negative resets to default.
 	SetMaxSessions(-1)
-	if maxSessions != defaultMaxSessions {
-		t.Fatalf("expected maxSessions=%d after negative, got %d", defaultMaxSessions, maxSessions)
+	if maxSessions.Load() != int32(defaultMaxSessions) {
+		t.Fatalf("expected maxSessions=%d after negative, got %d", defaultMaxSessions, maxSessions.Load())
 	}
 }
 
@@ -280,8 +280,8 @@ func TestEvictExpiredSessions(t *testing.T) {
 
 func TestEvictExcessSessionsDeterministic(t *testing.T) {
 	// Save original and restore after test.
-	orig := maxSessions
-	defer func() { maxSessions = orig }()
+	orig := maxSessions.Load()
+	defer maxSessions.Store(orig)
 
 	SetMaxSessions(3)
 

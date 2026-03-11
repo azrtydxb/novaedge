@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -41,7 +43,13 @@ const (
 //
 // This value can be adjusted at runtime using SetMaxSessions. If it is not
 // changed, the default limit of 1000 sessions is used.
-var maxSessions = defaultMaxSessions
+var maxSessions = newMaxSessions()
+
+func newMaxSessions() *atomic.Int32 {
+	v := &atomic.Int32{}
+	v.Store(int32(defaultMaxSessions))
+	return v
+}
 
 // SetMaxSessions sets the global maximum number of concurrent sessions allowed.
 //
@@ -49,10 +57,13 @@ var maxSessions = defaultMaxSessions
 // is less than or equal to zero, the default value of 1000 is used.
 func SetMaxSessions(limit int) {
 	if limit <= 0 {
-		maxSessions = defaultMaxSessions
+		maxSessions.Store(int32(defaultMaxSessions))
 		return
 	}
-	maxSessions = limit
+	if limit > math.MaxInt32 {
+		limit = math.MaxInt32
+	}
+	maxSessions.Store(int32(limit))
 }
 
 // Config holds authentication configuration.
@@ -155,7 +166,8 @@ func (m *Manager) evictExcessSessions() {
 		return true
 	})
 
-	if len(entries) <= maxSessions {
+	limit := int(maxSessions.Load())
+	if len(entries) <= limit {
 		return
 	}
 
@@ -164,7 +176,7 @@ func (m *Manager) evictExcessSessions() {
 		return entries[i].expiry.Before(entries[j].expiry)
 	})
 
-	excess := len(entries) - maxSessions
+	excess := len(entries) - limit
 	for i := 0; i < excess; i++ {
 		m.sessions.Delete(entries[i].token)
 	}

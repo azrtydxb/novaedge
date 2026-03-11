@@ -28,6 +28,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -116,11 +117,18 @@ func (c *vaultHTTPClient) Delete(ctx context.Context, path string) (*Response, e
 }
 
 // buildURL constructs the full Vault API URL and validates it.
-func (c *vaultHTTPClient) buildURL(path string) string {
+func (c *vaultHTTPClient) buildURL(vaultPath string) string {
 	// Ensure path doesn't start with /v1/ (we'll add it)
-	path = strings.TrimPrefix(path, "/")
-	path = strings.TrimPrefix(path, "v1/")
-	result := fmt.Sprintf("%s/v1/%s", strings.TrimRight(c.address, "/"), path)
+	vaultPath = strings.TrimPrefix(vaultPath, "/")
+	vaultPath = strings.TrimPrefix(vaultPath, "v1/")
+
+	// Reject path traversal attempts
+	cleaned := path.Clean(vaultPath)
+	if strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, "/../") {
+		return ""
+	}
+
+	result := fmt.Sprintf("%s/v1/%s", strings.TrimRight(c.address, "/"), cleaned)
 	// Validate the URL to satisfy SSRF taint analysis
 	if _, err := url.ParseRequestURI(result); err != nil {
 		return ""

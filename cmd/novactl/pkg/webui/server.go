@@ -252,7 +252,7 @@ func (s *Server) Start() error {
 
 	s.server = &http.Server{
 		Addr:              s.addr,
-		Handler:           corsMiddleware(handler),
+		Handler:           corsMiddleware(handler, s.authManager != nil && s.authManager.Enabled()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
@@ -292,7 +292,7 @@ func (s *Server) setupTLS(cfg Config) error {
 		}
 		s.tlsConfig = &tls.Config{
 			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
+			MinVersion:   tls.VersionTLS13,
 		}
 		return nil
 	}
@@ -320,7 +320,7 @@ func (s *Server) setupTLS(cfg Config) error {
 
 		s.tlsConfig = &tls.Config{
 			Certificates: []tls.Certificate{*tlsCert},
-			MinVersion:   tls.VersionTLS12,
+			MinVersion:   tls.VersionTLS13,
 		}
 		return nil
 	}
@@ -333,10 +333,32 @@ func (s *Server) IsTLSEnabled() bool {
 	return s.tlsConfig != nil
 }
 
-// corsMiddleware adds CORS headers for development
-func corsMiddleware(next http.Handler) http.Handler {
+// corsMiddleware adds CORS headers. When authEnabled is true, only the
+// server's own origin is allowed; otherwise "*" is permitted for development.
+func corsMiddleware(next http.Handler, authEnabled bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if authEnabled {
+			// Only reflect the Origin when it matches the server's own host.
+			if origin != "" {
+				requestHost := r.Host
+				if requestHost == "" {
+					requestHost = r.URL.Host
+				}
+				// Origin is scheme://host — extract host portion for comparison.
+				originHost := origin
+				if idx := strings.Index(origin, "://"); idx >= 0 {
+					originHost = origin[idx+3:]
+				}
+				if originHost == requestHost {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Vary", "Origin")
+				}
+				// If no match, omit the CORS header entirely.
+			}
+		} else {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
