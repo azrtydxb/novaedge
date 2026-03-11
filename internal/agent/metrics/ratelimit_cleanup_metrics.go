@@ -26,16 +26,20 @@ var (
 	// removed during cleanup cycles.
 	RateLimiterCleanupsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_rate_limiter_cleanups_total",
-			Help: "Total number of inactive rate limiters removed during cleanup",
+			Namespace: "novaedge",
+			Subsystem: "rate_limiter",
+			Name:      "cleanups_total",
+			Help:      "Total number of inactive rate limiters removed during cleanup",
 		},
 	)
 
 	// RateLimiterActiveCount tracks the current number of active rate limiters.
 	RateLimiterActiveCount = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "novaedge_rate_limiter_active_count",
-			Help: "Current number of active rate limiters",
+			Namespace: "novaedge",
+			Subsystem: "rate_limiter",
+			Name:      "active_count",
+			Help:      "Current number of active rate limiters",
 		},
 	)
 )

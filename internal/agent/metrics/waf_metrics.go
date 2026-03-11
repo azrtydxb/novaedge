@@ -27,16 +27,20 @@ var (
 	// WAFRequestsBlocked tracks total requests blocked by WAF
 	WAFRequestsBlocked = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_waf_requests_blocked_total",
-			Help: "Total number of requests blocked by WAF",
+			Namespace: "novaedge",
+			Subsystem: "waf",
+			Name:      "requests_blocked_total",
+			Help:      "Total number of requests blocked by WAF",
 		},
 	)
 
 	// WAFRulesMatched tracks WAF rule matches by rule ID and category
 	WAFRulesMatched = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_waf_rules_matched_total",
-			Help: "Total number of WAF rules matched, labeled by rule ID and category",
+			Namespace: "novaedge",
+			Subsystem: "waf",
+			Name:      "rules_matched_total",
+			Help:      "Total number of WAF rules matched, labeled by rule ID and category",
 		},
 		[]string{"rule_id", "category"},
 	)
@@ -44,25 +48,31 @@ var (
 	// WAFAnomalyScore tracks WAF anomaly scores
 	WAFAnomalyScore = promauto.NewHistogram(
 		prometheus.HistogramOpts{
-			Name:    "novaedge_waf_anomaly_score",
-			Help:    "WAF anomaly score distribution",
-			Buckets: []float64{1, 2, 3, 5, 10, 15, 25, 50, 100},
+			Namespace: "novaedge",
+			Subsystem: "waf",
+			Name:      "anomaly_score",
+			Help:      "WAF anomaly score distribution",
+			Buckets:   []float64{1, 2, 3, 5, 10, 15, 25, 50, 100},
 		},
 	)
 
 	// WAFResponsesBlocked tracks total responses blocked by WAF response body inspection
 	WAFResponsesBlocked = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_waf_responses_blocked_total",
-			Help: "Total number of responses blocked by WAF response body inspection",
+			Namespace: "novaedge",
+			Subsystem: "waf",
+			Name:      "responses_blocked_total",
+			Help:      "Total number of responses blocked by WAF response body inspection",
 		},
 	)
 
 	// WAFProcessingErrorsTotal tracks WAF processing errors with fail mode and action labels
 	WAFProcessingErrorsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_waf_processing_errors_total",
-			Help: "Total number of WAF processing errors, labeled by fail mode and action taken",
+			Namespace: "novaedge",
+			Subsystem: "waf",
+			Name:      "processing_errors_total",
+			Help:      "Total number of WAF processing errors, labeled by fail mode and action taken",
 		},
 		[]string{"fail_mode", "action"},
 	)
