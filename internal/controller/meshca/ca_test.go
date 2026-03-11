@@ -24,7 +24,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"strings"
+	"errors"
 	"testing"
 	"time"
 
@@ -292,7 +292,7 @@ func TestMeshCASignCSRIdentityMismatch(t *testing.T) {
 		t.Fatal("expected SignCSR to reject mismatched node name, but it succeeded")
 	}
 
-	if !strings.Contains(err.Error(), "does not match requested node") {
-		t.Errorf("unexpected error message: %v", err)
+	if !errors.Is(err, errCSRCNMismatch) {
+		t.Errorf("expected errCSRCNMismatch, got: %v", err)
 	}
 }

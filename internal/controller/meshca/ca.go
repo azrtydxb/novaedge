@@ -194,8 +194,8 @@ func (ca *MeshCA) SignCSR(csrPEM []byte, nodeName string) ([]byte, error) {
 	}
 
 	// Validate that the nodeName matches the identity in the CSR.
-	// The CSR must contain a SPIFFE URI SAN matching the expected agent identity,
-	// or the Subject CN must match the nodeName.
+	// The CSR should contain a SPIFFE URI SAN matching the expected agent identity.
+	// If no SPIFFE URI SANs are present, the Subject CN must match the nodeName.
 	if err := validateCSRIdentity(csr, nodeName, ca.trustDomain); err != nil {
 		return nil, err
 	}

@@ -352,14 +352,12 @@ func validateDomain(domain string) error {
 }
 
 // certPath returns the storage path for a certificate.
-// The returned path is guaranteed to be within the basePath directory.
+// The returned path is constructed under the basePath directory.
+// Callers must validate the domain via validateDomain before calling this.
 func (s *FileStorage) certPath(domain string) string {
 	// Replace dots with underscores for filesystem safety
 	safeName := strings.ReplaceAll(domain, ".", "_")
 	// Replace wildcards
 	safeName = strings.ReplaceAll(safeName, "*", "wildcard")
-	result := filepath.Join(s.basePath, "certs", safeName)
-	// Clean the path to resolve any remaining traversal sequences
-	result = filepath.Clean(result)
-	return result
+	return filepath.Join(s.basePath, "certs", safeName)
 }

@@ -164,19 +164,24 @@ func validatePeerNodeName(ctx context.Context, requestedNode string) error {
 	peerCert := tlsInfo.State.PeerCertificates[0]
 
 	// Check SPIFFE URI SANs first (preferred identity format).
+	// Scan ALL SPIFFE URI SANs before rejecting — a cert may contain multiple.
+	foundSPIFFEAgent := false
 	for _, uri := range peerCert.URIs {
 		if uri.Scheme == "spiffe" {
 			// SPIFFE IDs follow the pattern: spiffe://<trust-domain>/agent/<node-name>
 			parts := strings.Split(uri.Path, "/")
 			if len(parts) >= 3 && parts[1] == "agent" {
-				spiffeNode := parts[2]
-				if spiffeNode == requestedNode {
+				foundSPIFFEAgent = true
+				if parts[2] == requestedNode {
 					return nil
 				}
-				return status.Errorf(codes.PermissionDenied,
-					"requested node %q does not match peer SPIFFE identity %q", requestedNode, spiffeNode)
 			}
 		}
+	}
+
+	if foundSPIFFEAgent {
+		return status.Errorf(codes.PermissionDenied,
+			"requested node %q does not match any peer SPIFFE /agent/ identity", requestedNode)
 	}
 
 	// Fall back to CN check.
@@ -188,8 +193,8 @@ func validatePeerNodeName(ctx context.Context, requestedNode string) error {
 			"requested node %q does not match peer certificate CN %q", requestedNode, peerCert.Subject.CommonName)
 	}
 
-	// No recognizable identity in the certificate — allow (best-effort).
-	return nil
+	// No recognizable identity in the certificate — fail closed to avoid identity bypass.
+	return status.Error(codes.PermissionDenied, "client certificate presented but no recognizable identity (SPIFFE /agent/<node> URI SAN or CN) found")
 }
 
 // StreamConfig implements the StreamConfig RPC method
@@ -606,6 +611,11 @@ func (s *Server) SetFederationProvider(provider FederationStateProvider) {
 // RequestMeshCertificate implements the RequestMeshCertificate RPC.
 // Agents call this to obtain a signed mesh workload certificate.
 func (s *Server) RequestMeshCertificate(ctx context.Context, req *pb.MeshCertificateRequest) (*pb.MeshCertificateResponse, error) {
+	// Validate that the requested NodeName matches the peer's TLS identity.
+	if err := validatePeerNodeName(ctx, req.NodeName); err != nil {
+		return nil, err
+	}
+
 	logger := log.FromContext(ctx).WithValues("node", req.NodeName)
 
 	if s.meshCA == nil {
