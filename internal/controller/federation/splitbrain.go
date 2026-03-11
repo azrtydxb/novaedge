@@ -746,8 +746,10 @@ func (d *SplitBrainDetector) GetAgentQuorumInfo() *AgentQuorumInfo {
 
 	// Count agents that can reach us
 	ourControllerName := ""
-	if d.server != nil && d.server.config.LocalMember != nil {
-		ourControllerName = d.server.config.LocalMember.Name
+	if d.server != nil {
+		if cfg := d.server.config.Load(); cfg != nil && cfg.LocalMember != nil {
+			ourControllerName = cfg.LocalMember.Name
+		}
 	}
 
 	agentsByController := make(map[string][]string)

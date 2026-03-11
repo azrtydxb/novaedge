@@ -502,7 +502,11 @@ func (m *AntiEntropyManager) compareWithPeer(peerName string) *DriftReport {
 	if !ok {
 		return nil
 	}
+	// Copy VectorClock under the mutex to avoid a data race with
+	// updatePeerState which writes state.VectorClock concurrently.
+	state.mu.Lock()
 	peerVC := state.VectorClock
+	state.mu.Unlock()
 
 	// Compare vector clocks
 	ourVCObj := NewVectorClockFromMap(ourVC)
@@ -557,7 +561,7 @@ func (m *AntiEntropyManager) handleConcurrentState(peerName string) *DriftReport
 	defer cancel()
 
 	// Request all resources from peer for comparison
-	batches, err := client.RequestFullSync(reqCtx, m.server.config.ResourceTypes, nil, m.server.vectorClock.ToMap())
+	batches, err := client.RequestFullSync(reqCtx, m.server.config.Load().ResourceTypes, nil, m.server.vectorClock.ToMap())
 	if err != nil {
 		m.logger.Error("Failed to request full sync from peer for anti-entropy",
 			zap.String("peer", peerName),
@@ -635,7 +639,7 @@ func (m *AntiEntropyManager) handleWeAreAhead(peerName string) *DriftReport {
 	reqCtx, cancel := context.WithTimeout(m.ctx, antiEntropyRequestTimeout)
 	defer cancel()
 
-	batches, err := client.RequestFullSync(reqCtx, m.server.config.ResourceTypes, nil, m.server.vectorClock.ToMap())
+	batches, err := client.RequestFullSync(reqCtx, m.server.config.Load().ResourceTypes, nil, m.server.vectorClock.ToMap())
 	if err != nil {
 		m.logger.Error("Failed to request full sync from peer for push comparison",
 			zap.String("peer", peerName),
@@ -740,7 +744,7 @@ func (m *AntiEntropyManager) handlePeerIsAhead(peerName string) *DriftReport {
 	reqCtx, cancel := context.WithTimeout(m.ctx, antiEntropyRequestTimeout)
 	defer cancel()
 
-	batches, err := client.RequestFullSync(reqCtx, m.server.config.ResourceTypes, nil, m.server.vectorClock.ToMap())
+	batches, err := client.RequestFullSync(reqCtx, m.server.config.Load().ResourceTypes, nil, m.server.vectorClock.ToMap())
 	if err != nil {
 		m.logger.Error("Failed to request full sync from peer for pull",
 			zap.String("peer", peerName),

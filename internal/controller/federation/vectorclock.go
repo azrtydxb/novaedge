@@ -115,8 +115,16 @@ func (vc *VectorClock) Compare(other *VectorClock) int {
 	if other == nil {
 		return 1
 	}
+
+	// Snapshot other's clocks first to avoid ABBA deadlock when two
+	// goroutines call vc1.Compare(vc2) and vc2.Compare(vc1) concurrently.
 	other.mu.RLock()
-	defer other.mu.RUnlock()
+	otherSnapshot := make(map[string]int64, len(other.clocks))
+	for k, v := range other.clocks {
+		otherSnapshot[k] = v
+	}
+	other.mu.RUnlock()
+
 	vc.mu.RLock()
 	defer vc.mu.RUnlock()
 
@@ -128,13 +136,13 @@ func (vc *VectorClock) Compare(other *VectorClock) int {
 	for m := range vc.clocks {
 		members[m] = true
 	}
-	for m := range other.clocks {
+	for m := range otherSnapshot {
 		members[m] = true
 	}
 
 	for member := range members {
 		thisVal := vc.clocks[member]
-		otherVal := other.clocks[member]
+		otherVal := otherSnapshot[member]
 
 		if thisVal > otherVal {
 			hasGreater = true
@@ -202,17 +210,25 @@ func (vc *VectorClock) Equal(other *VectorClock) bool {
 	if other == nil {
 		return false
 	}
+
+	// Snapshot other's clocks first to avoid ABBA deadlock when two
+	// goroutines call vc1.Equal(vc2) and vc2.Equal(vc1) concurrently.
 	other.mu.RLock()
-	defer other.mu.RUnlock()
+	otherSnapshot := make(map[string]int64, len(other.clocks))
+	for k, v := range other.clocks {
+		otherSnapshot[k] = v
+	}
+	other.mu.RUnlock()
+
 	vc.mu.RLock()
 	defer vc.mu.RUnlock()
 
-	if len(vc.clocks) != len(other.clocks) {
+	if len(vc.clocks) != len(otherSnapshot) {
 		return false
 	}
 
 	for k, v := range vc.clocks {
-		if other.clocks[k] != v {
+		if otherSnapshot[k] != v {
 			return false
 		}
 	}
