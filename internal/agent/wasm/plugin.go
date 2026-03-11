@@ -137,6 +137,11 @@ func (p *Plugin) executionTimeout() time.Duration {
 
 // instantiate creates a new WASM module instance from the compiled module.
 func (p *Plugin) instantiate(ctx context.Context) (api.Module, error) {
+	// TODO(#1000): wazero's WithMemoryLimitPages is a RuntimeConfig option
+	// applied globally at runtime creation time, not per-module. The per-plugin
+	// MaxMemoryPages from PluginConfig cannot be enforced at instantiation time
+	// with the current wazero API. The global runtime limit (set in NewRuntime
+	// via WithMemoryLimitPages) is the effective cap for all plugins.
 	cfg := wazero.NewModuleConfig().
 		WithName(""). // unnamed so multiple instances can coexist
 		WithStartFunctions("_start", "_initialize")

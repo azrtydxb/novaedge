@@ -448,7 +448,7 @@ func (r *NovaEdgeFederationReconciler) syncStatus(ctx context.Context, fed *nova
 	fed.Status.LastSyncTime = &now
 
 	// Update conditions
-	fed.Status.Conditions = r.buildConditions(crdPhase, fed.Status.Conditions)
+	fed.Status.Conditions = r.buildConditions(crdPhase, fed.Status.Conditions, fed.Generation)
 
 	if err := r.Status().Update(ctx, fed); err != nil {
 		log.Error("Failed to update federation status", zap.Error(err))
@@ -474,7 +474,7 @@ func (r *NovaEdgeFederationReconciler) syncStatus(ctx context.Context, fed *nova
 func (r *NovaEdgeFederationReconciler) updateStatus(ctx context.Context, fed *novaedgev1alpha1.NovaEdgeFederation, phase novaedgev1alpha1.FederationPhase, _ string, log *zap.Logger) (ctrl.Result, error) {
 	fed.Status.Phase = phase
 	fed.Status.ObservedGeneration = fed.Generation
-	fed.Status.Conditions = r.buildConditions(phase, fed.Status.Conditions)
+	fed.Status.Conditions = r.buildConditions(phase, fed.Status.Conditions, fed.Generation)
 
 	if err := r.Status().Update(ctx, fed); err != nil {
 		log.Error("Failed to update federation status", zap.Error(err))
@@ -485,7 +485,7 @@ func (r *NovaEdgeFederationReconciler) updateStatus(ctx context.Context, fed *no
 }
 
 // buildConditions builds conditions based on the current phase
-func (r *NovaEdgeFederationReconciler) buildConditions(phase novaedgev1alpha1.FederationPhase, existing []metav1.Condition) []metav1.Condition {
+func (r *NovaEdgeFederationReconciler) buildConditions(phase novaedgev1alpha1.FederationPhase, existing []metav1.Condition, generation int64) []metav1.Condition {
 	now := metav1.Now()
 
 	// Helper to find existing condition
@@ -502,7 +502,7 @@ func (r *NovaEdgeFederationReconciler) buildConditions(phase novaedgev1alpha1.Fe
 	readyCondition := metav1.Condition{
 		Type:               FederationConditionReady,
 		LastTransitionTime: now,
-		ObservedGeneration: 0,
+		ObservedGeneration: generation,
 	}
 
 	switch phase {

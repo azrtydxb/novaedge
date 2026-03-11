@@ -138,7 +138,7 @@ func (c *vaultHTTPClient) doRequest(req *http.Request) (*Response, error) {
 		req.Header.Set("X-Vault-Namespace", c.namespace)
 	}
 
-	httpClient, err := c.newHTTPClient()
+	httpClient, err := c.cachedHTTPClient()
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,26 @@ func (c *vaultHTTPClient) doRequest(req *http.Request) (*Response, error) {
 	return &vaultResp, nil
 }
 
+// cachedHTTPClient returns the shared HTTP client, initializing it once.
+// The client is safe for concurrent use and reuses connections across requests.
+func (c *vaultHTTPClient) cachedHTTPClient() (*http.Client, error) {
+	var initErr error
+	c.clientOnce.Do(func() {
+		client, err := c.newHTTPClient()
+		if err != nil {
+			initErr = err
+			return
+		}
+		c.client = client
+	})
+	if initErr != nil {
+		return nil, initErr
+	}
+	return c.client, nil
+}
+
 // newHTTPClient creates an HTTP client with optional TLS configuration.
+// Call cachedHTTPClient() instead to reuse the client across requests.
 func (c *vaultHTTPClient) newHTTPClient() (*http.Client, error) {
 	transport := &http.Transport{}
 
@@ -211,7 +230,7 @@ func (c *vaultHTTPClient) HealthCheck(ctx context.Context) (*HealthStatus, error
 		return nil, fmt.Errorf("failed to create health check request: %w", err)
 	}
 
-	httpClient, err := c.newHTTPClient()
+	httpClient, err := c.cachedHTTPClient()
 	if err != nil {
 		return nil, err
 	}

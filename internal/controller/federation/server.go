@@ -420,8 +420,14 @@ func (s *Server) handleResourceChange(_ context.Context, peerName string, change
 			s.applyServiceEndpoints(change.ResourceData, peerName)
 		}
 
-		// Notify callbacks
-		s.notifyChange(key, ChangeType(change.ChangeType.String()), change.ResourceData)
+		// Notify callbacks using internal constants to avoid proto-string/internal-string mismatch.
+		var localChangeType ChangeType
+		if change.ChangeType == pb.ChangeType_CREATED {
+			localChangeType = ChangeTypeCreated
+		} else {
+			localChangeType = ChangeTypeUpdated
+		}
+		s.notifyChange(key, localChangeType, change.ResourceData)
 
 	case pb.ChangeType_DELETED:
 		s.resources.Delete(keyStr)
