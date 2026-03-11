@@ -103,6 +103,8 @@ func (r *Runtime) LoadPlugin(ctx context.Context, cfg *PluginConfig) error {
 
 	plugin := NewPlugin(cfg, compiled, r.runtime, r.logger)
 	r.plugins[cfg.Name] = plugin
+	SetPluginsLoaded(len(r.plugins))
+	SetInstancePoolSize(cfg.Name, plugin.pool.Size())
 
 	r.logger.Info("Loaded WASM plugin",
 		zap.String("plugin", cfg.Name),
@@ -124,6 +126,7 @@ func (r *Runtime) UnloadPlugin(ctx context.Context, name string) error {
 
 	plugin.Close(ctx)
 	delete(r.plugins, name)
+	SetPluginsLoaded(len(r.plugins))
 
 	r.logger.Info("Unloaded WASM plugin", zap.String("plugin", name))
 	return nil
@@ -162,6 +165,7 @@ func (r *Runtime) Close(ctx context.Context) error {
 		plugin.Close(ctx)
 		delete(r.plugins, name)
 	}
+	SetPluginsLoaded(0)
 
 	r.logger.Info("WASM runtime closed")
 	return r.runtime.Close(ctx)

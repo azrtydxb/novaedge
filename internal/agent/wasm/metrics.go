@@ -55,7 +55,7 @@ var (
 		[]string{"plugin", "phase"},
 	)
 
-	_ = promauto.NewGauge(
+	wasmPluginsLoaded = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Namespace: "novaedge",
 			Subsystem: "wasm",
@@ -64,7 +64,7 @@ var (
 		},
 	)
 
-	_ = promauto.NewGaugeVec(
+	wasmInstancePoolSize = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "novaedge",
 			Subsystem: "wasm",
@@ -104,4 +104,14 @@ func RecordPluginError(plugin, phase string) {
 // RecordPluginTimeout records a WASM plugin execution timeout.
 func RecordPluginTimeout(plugin, phase string) {
 	wasmPluginTimeoutsTotal.WithLabelValues(plugin, phase).Inc()
+}
+
+// SetPluginsLoaded sets the gauge tracking how many plugins are loaded.
+func SetPluginsLoaded(count int) {
+	wasmPluginsLoaded.Set(float64(count))
+}
+
+// SetInstancePoolSize sets the gauge tracking the pool size for a plugin.
+func SetInstancePoolSize(plugin string, size int) {
+	wasmInstancePoolSize.WithLabelValues(plugin).Set(float64(size))
 }

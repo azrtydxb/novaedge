@@ -52,38 +52,14 @@ type ProxyPolicyReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *ProxyPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// Fetch the ProxyPolicy instance
 	policy := &novaedgev1alpha1.ProxyPolicy{}
-	err := r.Get(ctx, req.NamespacedName, policy)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("ProxyPolicy resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
-		}
-		logger.Error(err, "Failed to get ProxyPolicy")
-		return ctrl.Result{}, err
-	}
-
-	// Skip if already reconciled this generation (ObservedGeneration > 0
-	// ensures first-ever reconciliation always proceeds)
-	if policy.Status.ObservedGeneration != 0 && policy.Status.ObservedGeneration == policy.Generation {
-		return ctrl.Result{}, nil
-	}
-
-	logger.Info("Reconciling ProxyPolicy", "name", policy.Name, "type", policy.Spec.Type, "target", policy.Spec.TargetRef.Name)
-
-	// Validate and update status
-	if err := r.validateAndUpdateStatus(ctx, policy); err != nil {
-		logger.Error(err, "Failed to validate policy")
-		return ctrl.Result{}, err
-	}
-
-	// Trigger config update for all nodes
-	triggerConfigUpdate(r.ConfigServer)
-
-	return ctrl.Result{}, nil
+	return reconcileWithGenerationCheck(ctx, r.Client, req, policy, "ProxyPolicy", r.ConfigServer,
+		func() int64 { return policy.Status.ObservedGeneration },
+		func() []any {
+			return []any{"name", policy.Name, "type", policy.Spec.Type, "target", policy.Spec.TargetRef.Name}
+		},
+		func() error { return r.validateAndUpdateStatus(ctx, policy) },
+	)
 }
 
 // validateTargetRef validates the policy's target reference exists.
@@ -303,5 +279,6 @@ func (r *ProxyPolicyReconciler) validateAndUpdateStatus(ctx context.Context, pol
 func (r *ProxyPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.ProxyPolicy{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

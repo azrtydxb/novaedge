@@ -21,13 +21,17 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
@@ -123,4 +127,13 @@ func handleResourceDeletion(ctx context.Context, cli client.Client, source clien
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// defaultControllerOptions returns the standard controller.Options with
+// exponential backoff rate limiting (5ms base, 1000s max) used by all
+// NovaEdge controllers. This prevents API server overload during error storms.
+func defaultControllerOptions() controller.Options {
+	return controller.Options{
+		RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
+	}
 }
