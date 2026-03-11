@@ -145,13 +145,20 @@ type Authorizer struct {
 	mu       sync.RWMutex
 	logger   *zap.Logger
 	policies map[string][]*pb.MeshAuthorizationPolicy // key: "service.namespace"
+
+	// warnedNoPolicyMu guards warnedNoPolicy which tracks services that
+	// have already emitted a Warn-level "no policies" log so we only
+	// warn once per service instead of on every request.
+	warnedNoPolicyMu sync.Mutex
+	warnedNoPolicy   map[string]struct{}
 }
 
 // NewAuthorizer creates a new Authorizer.
 func NewAuthorizer(logger *zap.Logger) *Authorizer {
 	return &Authorizer{
-		logger:   logger,
-		policies: make(map[string][]*pb.MeshAuthorizationPolicy),
+		logger:         logger,
+		policies:       make(map[string][]*pb.MeshAuthorizationPolicy),
+		warnedNoPolicy: make(map[string]struct{}),
 	}
 }
 
@@ -167,6 +174,13 @@ func (a *Authorizer) UpdatePolicies(policies []*pb.MeshAuthorizationPolicy) {
 	}
 
 	a.policies = newPolicies
+
+	// Reset the warned-no-policy set so that the per-service Warn fires
+	// again after a policy update (the set of uncovered services may change).
+	a.warnedNoPolicyMu.Lock()
+	a.warnedNoPolicy = make(map[string]struct{})
+	a.warnedNoPolicyMu.Unlock()
+
 	a.logger.Info("updated mesh authorization policies",
 		zap.Int("policy_count", len(policies)),
 		zap.Int("service_count", len(newPolicies)),
@@ -188,7 +202,22 @@ func (a *Authorizer) Authorize(source SourceIdentity, destService, method, reque
 	// restrict access. Changing to default-deny would be a breaking change and
 	// should be a separate configurable option in a future release.
 	if !exists || len(servicePolicies) == 0 {
-		a.logger.Warn("mesh authorization default-allow: no policies defined for service, all traffic permitted",
+		// Emit a Warn once per service so operators notice the default-allow
+		// state without flooding logs on every request.
+		a.warnedNoPolicyMu.Lock()
+		_, alreadyWarned := a.warnedNoPolicy[destService]
+		if !alreadyWarned {
+			a.warnedNoPolicy[destService] = struct{}{}
+		}
+		a.warnedNoPolicyMu.Unlock()
+
+		if !alreadyWarned {
+			a.logger.Warn("mesh authorization default-allow: no policies defined for service, all traffic permitted",
+				zap.String("dest", destService),
+			)
+		}
+
+		a.logger.Debug("mesh authorization default-allow: no policies defined for service",
 			zap.String("source", source.SpiffeID),
 			zap.String("dest", destService),
 		)
