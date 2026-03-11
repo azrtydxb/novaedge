@@ -326,17 +326,16 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	zapLogger, zapErr := uberzap.NewProduction()
-	if zapErr != nil {
-		setupLog.Error(zapErr, "failed to create zap logger")
-		os.Exit(1)
-	}
-
-	// Expose dynamic log level endpoint on default mux.
+	// Create an AtomicLevel so /debug/loglevel can change log verbosity at runtime.
 	controllerAtomicLevel := uberzap.NewAtomicLevelAt(uberzap.InfoLevel)
 	http.Handle("/debug/loglevel", controllerAtomicLevel)
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.Level(controllerAtomicLevel)))
+
+	// Derive the raw *zap.Logger from the same controller-runtime zap options
+	// so that subsystems (meshca, federation, grpc, vault) honour --zap-log-level
+	// and the /debug/loglevel endpoint controls them at runtime.
+	zapLogger := zap.NewRaw(zap.UseFlagOptions(&opts), zap.Level(controllerAtomicLevel))
 
 	// Start debug server for pprof and log-level endpoints (localhost only).
 	go func() {
