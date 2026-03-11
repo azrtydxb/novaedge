@@ -903,6 +903,11 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
+	return LoadConfigFromBytes(data)
+}
+
+// LoadConfigFromBytes parses and validates a config from raw YAML bytes.
+func LoadConfigFromBytes(data []byte) (*Config, error) {
 	var config Config
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
