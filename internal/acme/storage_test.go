@@ -18,6 +18,7 @@ package acme
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -393,4 +394,34 @@ func TestConcurrentSaveCertificate(t *testing.T) {
 	certs, err := storage.ListCertificates(context.Background())
 	assert.NoError(t, err)
 	assert.Len(t, certs, 3)
+}
+
+func TestValidateDomain(t *testing.T) {
+	tests := []struct {
+		name    string
+		domain  string
+		wantErr bool
+	}{
+		{name: "valid domain", domain: "example.com", wantErr: false},
+		{name: "valid wildcard", domain: "*.example.com", wantErr: false},
+		{name: "path traversal dotdot", domain: "../evil.com", wantErr: true},
+		{name: "path traversal embedded dotdot", domain: "a..b.com", wantErr: true},
+		{name: "forward slash", domain: "a/b.com", wantErr: true},
+		{name: "backslash", domain: `a\b.com`, wantErr: true},
+		{name: "bare dotdot", domain: "..", wantErr: true},
+		{name: "null byte", domain: "evil.com\x00.txt", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDomain(tt.domain)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.True(t, errors.Is(err, errInvalidDomainPathTraversal),
+					"expected errInvalidDomainPathTraversal, got: %v", err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
