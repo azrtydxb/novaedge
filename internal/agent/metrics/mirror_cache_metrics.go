@@ -27,25 +27,31 @@ var (
 	// MirrorRequestsTotal tracks total mirrored requests
 	MirrorRequestsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_mirror_requests_total",
-			Help: "Total number of mirrored requests sent",
+			Namespace: "novaedge",
+			Subsystem: "mirror",
+			Name:      "requests_total",
+			Help:      "Total number of mirrored requests sent",
 		},
 	)
 
 	// MirrorErrorsTotal tracks total mirror request errors
 	MirrorErrorsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_mirror_errors_total",
-			Help: "Total number of mirror request errors",
+			Namespace: "novaedge",
+			Subsystem: "mirror",
+			Name:      "errors_total",
+			Help:      "Total number of mirror request errors",
 		},
 	)
 
 	// MirrorLatency tracks mirror request latency
 	MirrorLatency = promauto.NewHistogram(
 		prometheus.HistogramOpts{
-			Name:    "novaedge_mirror_latency_seconds",
-			Help:    "Latency of mirror requests in seconds",
-			Buckets: prometheus.DefBuckets,
+			Namespace: "novaedge",
+			Subsystem: "mirror",
+			Name:      "latency_seconds",
+			Help:      "Latency of mirror requests in seconds",
+			Buckets:   prometheus.DefBuckets,
 		},
 	)
 
@@ -54,32 +60,40 @@ var (
 	// CacheHitTotal tracks cache hits
 	CacheHitTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_cache_hit_total",
-			Help: "Total number of cache hits",
+			Namespace: "novaedge",
+			Subsystem: "cache",
+			Name:      "hit_total",
+			Help:      "Total number of cache hits",
 		},
 	)
 
 	// CacheMissTotal tracks cache misses
 	CacheMissTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_cache_miss_total",
-			Help: "Total number of cache misses",
+			Namespace: "novaedge",
+			Subsystem: "cache",
+			Name:      "miss_total",
+			Help:      "Total number of cache misses",
 		},
 	)
 
 	// CacheEvictionTotal tracks cache evictions
 	CacheEvictionTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_cache_eviction_total",
-			Help: "Total number of cache evictions",
+			Namespace: "novaedge",
+			Subsystem: "cache",
+			Name:      "eviction_total",
+			Help:      "Total number of cache evictions",
 		},
 	)
 
 	// CacheSizeBytes tracks current cache memory usage
 	CacheSizeBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "novaedge_cache_size_bytes",
-			Help: "Current cache memory usage in bytes",
+			Namespace: "novaedge",
+			Subsystem: "cache",
+			Name:      "size_bytes",
+			Help:      "Current cache memory usage in bytes",
 		},
 	)
 )

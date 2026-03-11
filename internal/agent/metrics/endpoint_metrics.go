@@ -27,8 +27,10 @@ var (
 	// BackendRequestsTotal tracks requests sent to backends
 	BackendRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_backend_requests_total",
-			Help: "Total number of requests sent to backends",
+			Namespace: "novaedge",
+			Subsystem: "backend",
+			Name:      "requests_total",
+			Help:      "Total number of requests sent to backends",
 		},
 		[]string{"cluster", "endpoint", "result"}, // result: success, failure
 	)
@@ -36,9 +38,11 @@ var (
 	// BackendResponseDuration tracks backend response time
 	BackendResponseDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "novaedge_backend_response_duration_seconds",
-			Help:    "Backend response duration in seconds",
-			Buckets: prometheus.DefBuckets,
+			Namespace: "novaedge",
+			Subsystem: "backend",
+			Name:      "response_duration_seconds",
+			Help:      "Backend response duration in seconds",
+			Buckets:   prometheus.DefBuckets,
 		},
 		[]string{"cluster", "endpoint"},
 	)
@@ -46,8 +50,10 @@ var (
 	// BackendHealthStatus tracks backend health (1=healthy, 0=unhealthy)
 	BackendHealthStatus = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_backend_health_status",
-			Help: "Backend health status (1=healthy, 0=unhealthy)",
+			Namespace: "novaedge",
+			Subsystem: "backend",
+			Name:      "health_status",
+			Help:      "Backend health status (1=healthy, 0=unhealthy)",
 		},
 		[]string{"cluster", "endpoint"},
 	)
@@ -55,8 +61,10 @@ var (
 	// BackendActiveConnections tracks active connections per backend
 	BackendActiveConnections = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_backend_active_connections",
-			Help: "Number of active connections to backend",
+			Namespace: "novaedge",
+			Subsystem: "backend",
+			Name:      "active_connections",
+			Help:      "Number of active connections to backend",
 		},
 		[]string{"cluster", "endpoint"},
 	)
@@ -66,8 +74,10 @@ var (
 	// HealthChecksTotal tracks health check attempts
 	HealthChecksTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_health_checks_total",
-			Help: "Total number of health check attempts",
+			Namespace: "novaedge",
+			Subsystem: "health_check",
+			Name:      "total",
+			Help:      "Total number of health check attempts",
 		},
 		[]string{"cluster", "endpoint", "result"}, // result: success, failure
 	)
@@ -75,9 +85,11 @@ var (
 	// HealthCheckDuration tracks health check duration
 	HealthCheckDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "novaedge_health_check_duration_seconds",
-			Help:    "Health check duration in seconds",
-			Buckets: []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
+			Namespace: "novaedge",
+			Subsystem: "health_check",
+			Name:      "duration_seconds",
+			Help:      "Health check duration in seconds",
+			Buckets:   []float64{0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 		},
 		[]string{"cluster", "endpoint"},
 	)
@@ -87,8 +99,10 @@ var (
 	// CircuitBreakerState tracks circuit breaker state (0=closed, 1=half-open, 2=open)
 	CircuitBreakerState = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_circuit_breaker_state",
-			Help: "Circuit breaker state (0=closed, 1=half-open, 2=open)",
+			Namespace: "novaedge",
+			Subsystem: "circuit_breaker",
+			Name:      "state",
+			Help:      "Circuit breaker state (0=closed, 1=half-open, 2=open)",
 		},
 		[]string{"cluster", "endpoint"},
 	)
@@ -96,8 +110,10 @@ var (
 	// CircuitBreakerTransitions tracks state transitions
 	CircuitBreakerTransitions = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_circuit_breaker_transitions_total",
-			Help: "Total number of circuit breaker state transitions",
+			Namespace: "novaedge",
+			Subsystem: "circuit_breaker",
+			Name:      "transitions_total",
+			Help:      "Total number of circuit breaker state transitions",
 		},
 		[]string{"cluster", "endpoint", "from_state", "to_state"},
 	)
@@ -107,8 +123,10 @@ var (
 	// EndpointEjectionsTotal tracks total ejections by endpoint and reason.
 	EndpointEjectionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_endpoint_ejections_total",
-			Help: "Total number of endpoint ejections by outlier detection",
+			Namespace: "novaedge",
+			Subsystem: "endpoint",
+			Name:      "ejections_total",
+			Help:      "Total number of endpoint ejections by outlier detection",
 		},
 		[]string{"cluster", "endpoint", "reason"}, // reason: success_rate, failure_percentage, consecutive_errors
 	)
@@ -116,8 +134,10 @@ var (
 	// EndpointsEjected tracks the current number of ejected endpoints per cluster.
 	EndpointsEjected = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_endpoints_ejected",
-			Help: "Current number of ejected endpoints per cluster",
+			Namespace: "novaedge",
+			Subsystem: "endpoints",
+			Name:      "ejected",
+			Help:      "Current number of ejected endpoints per cluster",
 		},
 		[]string{"cluster"},
 	)
@@ -125,8 +145,10 @@ var (
 	// CircuitBreakerOverflowTotal tracks circuit breaker resource limit overflows
 	CircuitBreakerOverflowTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_circuit_breaker_overflow_total",
-			Help: "Total number of circuit breaker resource limit overflows",
+			Namespace: "novaedge",
+			Subsystem: "circuit_breaker",
+			Name:      "overflow_total",
+			Help:      "Total number of circuit breaker resource limit overflows",
 		},
 		[]string{"cluster", "type"}, // type: connections, pending, requests, retries
 	)
@@ -136,8 +158,10 @@ var (
 	// increased or the request rate is overwhelming the passive health processor.
 	PassiveHealthDroppedTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_passive_health_events_dropped_total",
-			Help: "Total number of passive health events dropped due to full channel",
+			Namespace: "novaedge",
+			Subsystem: "passive_health",
+			Name:      "events_dropped_total",
+			Help:      "Total number of passive health events dropped due to full channel",
 		},
 		[]string{"cluster"},
 	)
@@ -147,8 +171,10 @@ var (
 	// LoadBalancerSelections tracks load balancer endpoint selections
 	LoadBalancerSelections = promauto.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "novaedge_load_balancer_selections_total",
-			Help: "Total number of load balancer endpoint selections",
+			Namespace: "novaedge",
+			Subsystem: "load_balancer",
+			Name:      "selections_total",
+			Help:      "Total number of load balancer endpoint selections",
 		},
 		[]string{"cluster", "algorithm", "endpoint"},
 	)
@@ -158,8 +184,10 @@ var (
 	// PoolConnectionsTotal tracks total connections in pool
 	PoolConnectionsTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_pool_connections_total",
-			Help: "Total number of connections in pool",
+			Namespace: "novaedge",
+			Subsystem: "pool",
+			Name:      "connections_total",
+			Help:      "Total number of connections in pool",
 		},
 		[]string{"cluster"},
 	)
@@ -167,8 +195,10 @@ var (
 	// PoolIdleConnections tracks idle connections in pool
 	PoolIdleConnections = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_pool_idle_connections",
-			Help: "Number of idle connections in pool",
+			Namespace: "novaedge",
+			Subsystem: "pool",
+			Name:      "idle_connections",
+			Help:      "Number of idle connections in pool",
 		},
 		[]string{"cluster"},
 	)
@@ -176,8 +206,10 @@ var (
 	// PoolActiveConnections tracks active (in-flight) connections in pool
 	PoolActiveConnections = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_pool_active_connections",
-			Help: "Number of active (in-flight) connections in pool",
+			Namespace: "novaedge",
+			Subsystem: "pool",
+			Name:      "active_connections",
+			Help:      "Number of active (in-flight) connections in pool",
 		},
 		[]string{"cluster"},
 	)
@@ -185,8 +217,10 @@ var (
 	// PoolHitsTotal tracks proxy cache hits (reused existing reverse proxy)
 	PoolHitsTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_pool_hits_total",
-			Help: "Total number of proxy cache hits (reused existing proxy on config update)",
+			Namespace: "novaedge",
+			Subsystem: "pool",
+			Name:      "hits_total",
+			Help:      "Total number of proxy cache hits (reused existing proxy on config update)",
 		},
 		[]string{"cluster"},
 	)
@@ -194,8 +228,10 @@ var (
 	// PoolMissesTotal tracks proxy cache misses (had to create new reverse proxy)
 	PoolMissesTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "novaedge_pool_misses_total",
-			Help: "Total number of proxy cache misses (created new proxy on config update)",
+			Namespace: "novaedge",
+			Subsystem: "pool",
+			Name:      "misses_total",
+			Help:      "Total number of proxy cache misses (created new proxy on config update)",
 		},
 		[]string{"cluster"},
 	)

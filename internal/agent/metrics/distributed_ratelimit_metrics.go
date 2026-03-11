@@ -27,16 +27,20 @@ var (
 	// DistributedRateLimitAllowed tracks requests allowed by distributed rate limiter
 	DistributedRateLimitAllowed = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_distributed_rate_limit_allowed_total",
-			Help: "Total number of requests allowed by distributed rate limiter",
+			Namespace: "novaedge",
+			Subsystem: "distributed_rate_limit",
+			Name:      "allowed_total",
+			Help:      "Total number of requests allowed by distributed rate limiter",
 		},
 	)
 
 	// DistributedRateLimitDenied tracks requests denied by distributed rate limiter
 	DistributedRateLimitDenied = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_distributed_rate_limit_denied_total",
-			Help: "Total number of requests denied by distributed rate limiter",
+			Namespace: "novaedge",
+			Subsystem: "distributed_rate_limit",
+			Name:      "denied_total",
+			Help:      "Total number of requests denied by distributed rate limiter",
 		},
 	)
 
@@ -45,17 +49,21 @@ var (
 	// RedisLatency tracks Redis operation latency
 	RedisLatency = promauto.NewHistogram(
 		prometheus.HistogramOpts{
-			Name:    "novaedge_redis_latency_seconds",
-			Help:    "Redis operation latency in seconds",
-			Buckets: []float64{0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
+			Namespace: "novaedge",
+			Subsystem: "redis",
+			Name:      "latency_seconds",
+			Help:      "Redis operation latency in seconds",
+			Buckets:   []float64{0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1},
 		},
 	)
 
 	// RedisErrors tracks Redis operation errors
 	RedisErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_redis_errors_total",
-			Help: "Total number of Redis operation errors",
+			Namespace: "novaedge",
+			Subsystem: "redis",
+			Name:      "errors_total",
+			Help:      "Total number of Redis operation errors",
 		},
 	)
 )

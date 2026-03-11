@@ -18,12 +18,12 @@ package federation
 
 import (
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
 var (
 	// FederationPeersTotal tracks the number of federation peers
-	FederationPeersTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	FederationPeersTotal = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "peers_total",
@@ -31,7 +31,7 @@ var (
 	})
 
 	// FederationPeersHealthy tracks healthy federation peers
-	FederationPeersHealthy = promauto.NewGauge(prometheus.GaugeOpts{
+	FederationPeersHealthy = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "peers_healthy",
@@ -39,7 +39,7 @@ var (
 	})
 
 	// FederationPeersConnected tracks connected federation peers
-	FederationPeersConnected = promauto.NewGauge(prometheus.GaugeOpts{
+	FederationPeersConnected = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "peers_connected",
@@ -47,7 +47,7 @@ var (
 	})
 
 	// FederationPhaseGauge tracks the current federation phase.
-	FederationPhaseGauge = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	FederationPhaseGauge = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "phase",
@@ -55,7 +55,7 @@ var (
 	}, []string{"phase"})
 
 	// FederationSyncTotal tracks sync operations
-	FederationSyncTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	FederationSyncTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "sync_total",
@@ -63,7 +63,7 @@ var (
 	}, []string{"type", "direction"})
 
 	// FederationSyncDuration tracks sync duration
-	FederationSyncDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	FederationSyncDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "sync_duration_seconds",
@@ -72,7 +72,7 @@ var (
 	}, []string{"peer"})
 
 	// FederationChangesReceived tracks changes received from peers
-	FederationChangesReceived = promauto.NewCounterVec(prometheus.CounterOpts{
+	FederationChangesReceived = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "changes_received_total",
@@ -80,7 +80,7 @@ var (
 	}, []string{"peer", "resource_type"})
 
 	// FederationChangesSent tracks changes sent to peers
-	FederationChangesSent = promauto.NewCounterVec(prometheus.CounterOpts{
+	FederationChangesSent = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "changes_sent_total",
@@ -88,7 +88,7 @@ var (
 	}, []string{"peer", "resource_type"})
 
 	// FederationConflictsTotal tracks detected conflicts
-	FederationConflictsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	FederationConflictsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "conflicts_total",
@@ -96,7 +96,7 @@ var (
 	}, []string{"resolution"})
 
 	// FederationConflictsPending tracks pending conflicts
-	FederationConflictsPending = promauto.NewGauge(prometheus.GaugeOpts{
+	FederationConflictsPending = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "conflicts_pending",
@@ -104,7 +104,7 @@ var (
 	})
 
 	// FederationVectorClockValue tracks vector clock values
-	FederationVectorClockValue = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	FederationVectorClockValue = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "vector_clock_value",
@@ -112,7 +112,7 @@ var (
 	}, []string{"member"})
 
 	// FederationPeerLatency tracks peer latency
-	FederationPeerLatency = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	FederationPeerLatency = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "peer_latency_seconds",
@@ -120,7 +120,7 @@ var (
 	}, []string{"peer"})
 
 	// FederationPeerSyncLag tracks sync lag with each peer
-	FederationPeerSyncLag = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	FederationPeerSyncLag = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "peer_sync_lag_seconds",
@@ -128,7 +128,7 @@ var (
 	}, []string{"peer"})
 
 	// FederationResourcesTotal tracks total synced resources
-	FederationResourcesTotal = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	FederationResourcesTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "resources_total",
@@ -136,7 +136,7 @@ var (
 	}, []string{"type"})
 
 	// FederationTombstonesTotal tracks tombstones
-	FederationTombstonesTotal = promauto.NewGauge(prometheus.GaugeOpts{
+	FederationTombstonesTotal = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "tombstones_total",
@@ -144,7 +144,7 @@ var (
 	})
 
 	// FederationPendingChanges tracks pending changes
-	FederationPendingChanges = promauto.NewGauge(prometheus.GaugeOpts{
+	FederationPendingChanges = prometheus.NewGauge(prometheus.GaugeOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "pending_changes",
@@ -152,7 +152,7 @@ var (
 	})
 
 	// FederationHeartbeatsTotal tracks heartbeats
-	FederationHeartbeatsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	FederationHeartbeatsTotal = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "heartbeats_total",
@@ -160,13 +160,41 @@ var (
 	}, []string{"direction", "peer"})
 
 	// FederationErrors tracks federation errors
-	FederationErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+	FederationErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "novaedge",
 		Subsystem: "federation",
 		Name:      "errors_total",
 		Help:      "Total number of federation errors",
 	}, []string{"type", "peer"})
 )
+
+// registerMetrics registers all federation metrics with the controller-runtime registry.
+// Invoked via package-level variable initialization to avoid init().
+var _ = registerMetrics()
+
+func registerMetrics() bool {
+	metrics.Registry.MustRegister(
+		FederationPeersTotal,
+		FederationPeersHealthy,
+		FederationPeersConnected,
+		FederationPhaseGauge,
+		FederationSyncTotal,
+		FederationSyncDuration,
+		FederationChangesReceived,
+		FederationChangesSent,
+		FederationConflictsTotal,
+		FederationConflictsPending,
+		FederationVectorClockValue,
+		FederationPeerLatency,
+		FederationPeerSyncLag,
+		FederationResourcesTotal,
+		FederationTombstonesTotal,
+		FederationPendingChanges,
+		FederationHeartbeatsTotal,
+		FederationErrors,
+	)
+	return true
+}
 
 // MetricsCollector collects federation metrics
 type MetricsCollector struct {

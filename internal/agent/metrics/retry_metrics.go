@@ -27,32 +27,40 @@ var (
 	// RetryCount tracks total retry attempts
 	RetryCount = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_retry_count_total",
-			Help: "Total number of retry attempts",
+			Namespace: "novaedge",
+			Subsystem: "retry",
+			Name:      "count_total",
+			Help:      "Total number of retry attempts",
 		},
 	)
 
 	// RetrySuccess tracks successful retries (request succeeded after at least one retry)
 	RetrySuccess = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_retry_success_total",
-			Help: "Total number of requests that succeeded after retry",
+			Namespace: "novaedge",
+			Subsystem: "retry",
+			Name:      "success_total",
+			Help:      "Total number of requests that succeeded after retry",
 		},
 	)
 
 	// RetryExhausted tracks cases where all retries were exhausted
 	RetryExhausted = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_retry_exhausted_total",
-			Help: "Total number of requests where all retries were exhausted",
+			Namespace: "novaedge",
+			Subsystem: "retry",
+			Name:      "exhausted_total",
+			Help:      "Total number of requests where all retries were exhausted",
 		},
 	)
 
 	// RetryBudgetExhausted tracks retries rejected because the retry budget was exceeded
 	RetryBudgetExhausted = promauto.NewCounter(
 		prometheus.CounterOpts{
-			Name: "novaedge_retry_budget_exhausted_total",
-			Help: "Total number of retries rejected because the per-cluster retry budget was exceeded",
+			Namespace: "novaedge",
+			Subsystem: "retry",
+			Name:      "budget_exhausted_total",
+			Help:      "Total number of retries rejected because the per-cluster retry budget was exceeded",
 		},
 	)
 )
