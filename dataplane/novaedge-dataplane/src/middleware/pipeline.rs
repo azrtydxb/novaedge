@@ -5,6 +5,8 @@
 //! or short-circuit with an immediate response.
 
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::Instant;
 
 use dashmap::DashMap;
 use tracing::{debug, warn};
@@ -16,10 +18,17 @@ use crate::config::RuntimeConfig;
 /// Beyond this, the oldest entries are evicted to prevent unbounded memory growth.
 const MAX_RATE_LIMITERS: usize = 10_000;
 
+/// Minimum interval between rate-limiter cleanup sweeps (seconds).
+const CLEANUP_INTERVAL_SECS: u64 = 60;
+
 /// Shared cache of rate-limiter instances keyed by policy name.
 /// This ensures rate-limit state is preserved across requests.
 static RATE_LIMITERS: std::sync::LazyLock<DashMap<String, super::ratelimit::TokenBucket>> =
     std::sync::LazyLock::new(DashMap::new);
+
+/// Tracks the last time a rate-limiter cleanup was performed.
+static LAST_CLEANUP: std::sync::LazyLock<Mutex<Instant>> =
+    std::sync::LazyLock::new(|| Mutex::new(Instant::now()));
 
 /// Shared HTTP response cache for the "cache" middleware policy type.
 static RESPONSE_CACHE: std::sync::LazyLock<super::cache::ResponseCache> =
@@ -244,11 +253,17 @@ fn run_rate_limit(policy_name: &str, config_json: &str, req: &Request) -> Middle
     let rps = config["requests_per_second"].as_f64().unwrap_or(100.0);
     let burst = config["burst"].as_u64().unwrap_or(10) as u32;
 
-    // Evict stale entries if cache is too large.
-    if RATE_LIMITERS.len() > MAX_RATE_LIMITERS {
-        // Cleanup stale per-key state inside each limiter.
+    // Evict stale per-key state if cache is too large or enough time has elapsed.
+    let needs_cleanup = RATE_LIMITERS.len() > MAX_RATE_LIMITERS || {
+        let last = LAST_CLEANUP.lock().unwrap_or_else(|e| e.into_inner());
+        last.elapsed().as_secs() >= CLEANUP_INTERVAL_SECS
+    };
+    if needs_cleanup {
         for entry in RATE_LIMITERS.iter() {
             entry.value().cleanup(std::time::Duration::from_secs(300));
+        }
+        if let Ok(mut last) = LAST_CLEANUP.lock() {
+            *last = Instant::now();
         }
     }
 

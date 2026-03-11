@@ -4,31 +4,41 @@ use std::collections::HashMap;
 
 use base64::Engine;
 
-/// Constant-time byte comparison to prevent timing attacks.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
-    }
-    diff == 0
-}
+/// The bcrypt hash prefix used to detect already-hashed passwords.
+const BCRYPT_PREFIX: &str = "$2b$";
 
 /// HTTP Basic authentication handler.
+///
+/// Passwords are stored as bcrypt hashes. Plaintext passwords provided at
+/// construction time are automatically hashed before storage.
 pub struct BasicAuth {
     /// Realm string for the WWW-Authenticate header.
     #[allow(dead_code)]
     // Pipeline constructs BasicAuth with realm; used by caller for WWW-Authenticate header.
     pub realm: String,
-    /// Mapping from username to password (plaintext comparison).
+    /// Mapping from username to bcrypt-hashed password.
     pub users: HashMap<String, String>,
 }
 
 impl BasicAuth {
     /// Create a new Basic auth handler.
+    ///
+    /// Passwords that are not already bcrypt-hashed (detected by the `$2b$`
+    /// prefix) are hashed on load using bcrypt with the default cost.
     pub fn new(realm: &str, users: HashMap<String, String>) -> Self {
+        let users = users
+            .into_iter()
+            .map(|(user, pass)| {
+                if pass.starts_with(BCRYPT_PREFIX) {
+                    (user, pass)
+                } else {
+                    let hashed =
+                        bcrypt::hash(&pass, bcrypt::DEFAULT_COST).unwrap_or_else(|_| pass.clone());
+                    (user, hashed)
+                }
+            })
+            .collect();
+
         Self {
             realm: realm.to_string(),
             users,
@@ -49,8 +59,8 @@ impl BasicAuth {
                 if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(encoded) {
                     if let Ok(creds) = String::from_utf8(decoded) {
                         if let Some((user, pass)) = creds.split_once(':') {
-                            if let Some(expected) = self.users.get(user) {
-                                if constant_time_eq(expected.as_bytes(), pass.as_bytes()) {
+                            if let Some(hash) = self.users.get(user) {
+                                if bcrypt::verify(pass, hash).unwrap_or(false) {
                                     return super::AuthResult::Authenticated {
                                         user: user.to_string(),
                                         claims: vec![],

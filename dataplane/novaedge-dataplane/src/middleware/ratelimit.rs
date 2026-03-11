@@ -68,7 +68,7 @@ impl TokenBucket {
     /// Check whether a request identified by `key` is allowed.
     pub fn check(&self, key: &str) -> RateLimitResult {
         let now = Instant::now();
-        let mut buckets = self.buckets.write().unwrap();
+        let mut buckets = self.buckets.write().unwrap_or_else(|e| e.into_inner());
         let state = buckets.entry(key.to_string()).or_insert(BucketState {
             tokens: self.config.burst as f64,
             last_refill: now,
@@ -100,14 +100,14 @@ impl TokenBucket {
         let cutoff = Instant::now() - max_age;
         self.buckets
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .retain(|_, s| s.last_refill > cutoff);
     }
 
     /// Return the number of active (tracked) keys.
     #[allow(dead_code)]
     pub fn active_count(&self) -> usize {
-        self.buckets.read().unwrap().len()
+        self.buckets.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
@@ -195,7 +195,7 @@ impl SlidingWindow {
     /// If the estimate is >= limit, the request is denied.
     pub fn check(&self, key: &str) -> RateLimitResult {
         let now = Instant::now();
-        let mut windows = self.windows.write().unwrap();
+        let mut windows = self.windows.write().unwrap_or_else(|e| e.into_inner());
         let state = windows.entry(key.to_string()).or_insert(WindowState {
             current_count: 0,
             previous_count: 0,
@@ -238,7 +238,7 @@ impl SlidingWindow {
 
     /// Return the number of active (tracked) keys.
     pub fn active_count(&self) -> usize {
-        self.windows.read().unwrap().len()
+        self.windows.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
