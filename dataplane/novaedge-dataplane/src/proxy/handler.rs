@@ -775,12 +775,25 @@ impl ProxyHandler {
 
                     let primary_fut = self.client.request(upstream_req);
                     let client = &self.client;
+                    let pool = &self.connection_pool;
 
                     tokio::select! {
                         result = primary_fut => result,
                         result = async {
                             tokio::time::sleep(hedge_delay).await;
                             if let Some(req) = hedge_req {
+                                // Acquire a pool guard for the hedge backend before sending.
+                                let _hedge_pool_guard = match pool.acquire(hedge_addr).await {
+                                    Ok(guard) => guard,
+                                    Err(e) => {
+                                        debug!(
+                                            hedge_backend = %hedge_addr,
+                                            error = %e,
+                                            "Hedge request pool limit reached, waiting for primary"
+                                        );
+                                        return std::future::pending().await;
+                                    }
+                                };
                                 debug!(hedge_backend = %hedge_addr, "Sending hedged request");
                                 client.request(req).await
                             } else {

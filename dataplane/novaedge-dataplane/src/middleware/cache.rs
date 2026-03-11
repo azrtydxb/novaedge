@@ -62,7 +62,7 @@ impl ResponseCache {
 
     /// Look up a cached response by key, returning `None` if absent or expired.
     pub fn get(&self, key: &str) -> Option<super::Response> {
-        let entries = self.entries.read().unwrap();
+        let entries = self.entries.read().unwrap_or_else(|e| e.into_inner());
         entries.get(key).and_then(|entry| {
             if entry.inserted.elapsed() < entry.ttl {
                 Some(entry.response.clone())
@@ -86,7 +86,7 @@ impl ResponseCache {
             .find(|(k, _)| k.eq_ignore_ascii_case("etag"))
             .map(|(_, v)| v.clone());
 
-        let mut entries = self.entries.write().unwrap();
+        let mut entries = self.entries.write().unwrap_or_else(|e| e.into_inner());
 
         // Evict oldest entry if at capacity.
         if entries.len() >= self.config.max_entries {
@@ -125,29 +125,38 @@ impl ResponseCache {
 
     /// Remove a specific key from the cache.
     pub fn invalidate(&self, key: &str) {
-        self.entries.write().unwrap().remove(key);
+        self.entries
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(key);
     }
 
     /// Remove all entries from the cache.
     pub fn clear(&self) {
-        self.entries.write().unwrap().clear();
+        self.entries
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
 
     /// Return the number of entries currently in the cache.
     pub fn len(&self) -> usize {
-        self.entries.read().unwrap().len()
+        self.entries.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Return whether the cache is empty.
     pub fn is_empty(&self) -> bool {
-        self.entries.read().unwrap().is_empty()
+        self.entries
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .is_empty()
     }
 
     /// Remove all expired entries from the cache.
     pub fn cleanup_expired(&self) {
         self.entries
             .write()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .retain(|_, e| e.inserted.elapsed() < e.ttl);
     }
 }
