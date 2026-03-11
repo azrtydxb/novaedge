@@ -20,6 +20,7 @@ package observability
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"go.opentelemetry.io/otel"
@@ -31,6 +32,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -41,6 +43,10 @@ type TracingConfig struct {
 	SampleRate     float64
 	ServiceName    string
 	ServiceVersion string
+	// Insecure disables TLS for the OTLP gRPC connection. When false (the
+	// default), TLS credentials are used. Can also be controlled via the
+	// OTEL_EXPORTER_OTLP_INSECURE environment variable.
+	Insecure bool
 }
 
 // TracerProvider wraps the OpenTelemetry tracer provider
@@ -69,10 +75,26 @@ func NewTracerProvider(ctx context.Context, config TracingConfig, logger *zap.Lo
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// Determine whether to use TLS or insecure credentials.
+	// Insecure mode must be explicitly opted into via config or env var.
+	useInsecure := config.Insecure
+	if !useInsecure {
+		if v := os.Getenv("OTEL_EXPORTER_OTLP_INSECURE"); v == "true" {
+			useInsecure = true
+		}
+	}
+
+	var transportCreds grpc.DialOption
+	if useInsecure {
+		transportCreds = grpc.WithTransportCredentials(insecure.NewCredentials())
+	} else {
+		transportCreds = grpc.WithTransportCredentials(credentials.NewClientTLSFromCert(nil, ""))
+	}
+
 	// Create gRPC connection to OTLP endpoint
 	conn, err := grpc.NewClient(
 		config.Endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		transportCreds,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create gRPC connection to OTLP endpoint: %w", err)

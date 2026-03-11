@@ -84,11 +84,11 @@ async function fetchText(url: string, options?: RequestInit): Promise<string> {
 // Resource CRUD operations with normalization for each type
 const gatewaysAPI = {
   list: async (namespace: string = 'all'): Promise<Gateway[]> => {
-    const data = await fetchJSON<unknown[]>(`${API_BASE}/gateways?namespace=${namespace}`)
+    const data = await fetchJSON<unknown[]>(`${API_BASE}/gateways?namespace=${encodeURIComponent(namespace)}`)
     return normalizeGateways(data as Record<string, unknown>[])
   },
   get: async (namespace: string, name: string): Promise<Gateway> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/gateways/${namespace}/${name}`)
+    const data = await fetchJSON<unknown>(`${API_BASE}/gateways/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
     return normalizeGateway(data as Record<string, unknown>)
   },
   create: async (resource: Gateway): Promise<Gateway> => {
@@ -99,24 +99,24 @@ const gatewaysAPI = {
     return normalizeGateway(data as Record<string, unknown>)
   },
   update: async (namespace: string, name: string, resource: Gateway): Promise<Gateway> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/gateways/${namespace}/${name}`, {
+    const data = await fetchJSON<unknown>(`${API_BASE}/gateways/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
     return normalizeGateway(data as Record<string, unknown>)
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/gateways/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/gateways/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
 const routesAPI = {
   list: async (namespace: string = 'all'): Promise<Route[]> => {
-    const data = await fetchJSON<unknown[]>(`${API_BASE}/routes?namespace=${namespace}`)
+    const data = await fetchJSON<unknown[]>(`${API_BASE}/routes?namespace=${encodeURIComponent(namespace)}`)
     return normalizeRoutes(data as Record<string, unknown>[])
   },
   get: async (namespace: string, name: string): Promise<Route> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/routes/${namespace}/${name}`)
+    const data = await fetchJSON<unknown>(`${API_BASE}/routes/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
     return normalizeRoute(data as Record<string, unknown>)
   },
   create: async (resource: Route): Promise<Route> => {
@@ -127,24 +127,24 @@ const routesAPI = {
     return normalizeRoute(data as Record<string, unknown>)
   },
   update: async (namespace: string, name: string, resource: Route): Promise<Route> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/routes/${namespace}/${name}`, {
+    const data = await fetchJSON<unknown>(`${API_BASE}/routes/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
     return normalizeRoute(data as Record<string, unknown>)
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/routes/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/routes/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
 const backendsAPI = {
   list: async (namespace: string = 'all'): Promise<Backend[]> => {
-    const data = await fetchJSON<unknown[]>(`${API_BASE}/backends?namespace=${namespace}`)
+    const data = await fetchJSON<unknown[]>(`${API_BASE}/backends?namespace=${encodeURIComponent(namespace)}`)
     return normalizeBackends(data as Record<string, unknown>[])
   },
   get: async (namespace: string, name: string): Promise<Backend> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/backends/${namespace}/${name}`)
+    const data = await fetchJSON<unknown>(`${API_BASE}/backends/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
     return normalizeBackend(data as Record<string, unknown>)
   },
   create: async (resource: Backend): Promise<Backend> => {
@@ -155,24 +155,24 @@ const backendsAPI = {
     return normalizeBackend(data as Record<string, unknown>)
   },
   update: async (namespace: string, name: string, resource: Backend): Promise<Backend> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/backends/${namespace}/${name}`, {
+    const data = await fetchJSON<unknown>(`${API_BASE}/backends/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
     return normalizeBackend(data as Record<string, unknown>)
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/backends/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/backends/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
 const policiesAPI = {
   list: async (namespace: string = 'all'): Promise<Policy[]> => {
-    const data = await fetchJSON<unknown[]>(`${API_BASE}/policies?namespace=${namespace}`)
+    const data = await fetchJSON<unknown[]>(`${API_BASE}/policies?namespace=${encodeURIComponent(namespace)}`)
     return normalizePolicies(data as Record<string, unknown>[])
   },
   get: async (namespace: string, name: string): Promise<Policy> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/policies/${namespace}/${name}`)
+    const data = await fetchJSON<unknown>(`${API_BASE}/policies/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
     return normalizePolicy(data as Record<string, unknown>)
   },
   create: async (resource: Policy): Promise<Policy> => {
@@ -183,24 +183,24 @@ const policiesAPI = {
     return normalizePolicy(data as Record<string, unknown>)
   },
   update: async (namespace: string, name: string, resource: Policy): Promise<Policy> => {
-    const data = await fetchJSON<unknown>(`${API_BASE}/policies/${namespace}/${name}`, {
+    const data = await fetchJSON<unknown>(`${API_BASE}/policies/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
     return normalizePolicy(data as Record<string, unknown>)
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/policies/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/policies/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
 // Certificates CRUD
 const certificatesAPI = {
   list: async (namespace: string = 'all'): Promise<Certificate[]> => {
-    return fetchJSON<Certificate[]>(`${API_BASE}/certificates?namespace=${namespace}`)
+    return fetchJSON<Certificate[]>(`${API_BASE}/certificates?namespace=${encodeURIComponent(namespace)}`)
   },
   get: async (namespace: string, name: string): Promise<Certificate> => {
-    return fetchJSON<Certificate>(`${API_BASE}/certificates/${namespace}/${name}`)
+    return fetchJSON<Certificate>(`${API_BASE}/certificates/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
   },
   create: async (resource: Certificate): Promise<Certificate> => {
     return fetchJSON<Certificate>(`${API_BASE}/certificates`, {
@@ -209,13 +209,13 @@ const certificatesAPI = {
     })
   },
   update: async (namespace: string, name: string, resource: Certificate): Promise<Certificate> => {
-    return fetchJSON<Certificate>(`${API_BASE}/certificates/${namespace}/${name}`, {
+    return fetchJSON<Certificate>(`${API_BASE}/certificates/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/certificates/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/certificates/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
@@ -225,7 +225,7 @@ const ippoolsAPI = {
     return fetchJSON<IPPool[]>(`${API_BASE}/ippools`)
   },
   get: async (name: string): Promise<IPPool> => {
-    return fetchJSON<IPPool>(`${API_BASE}/ippools/${name}`)
+    return fetchJSON<IPPool>(`${API_BASE}/ippools/${encodeURIComponent(name)}`)
   },
   create: async (resource: IPPool): Promise<IPPool> => {
     return fetchJSON<IPPool>(`${API_BASE}/ippools`, {
@@ -234,23 +234,23 @@ const ippoolsAPI = {
     })
   },
   update: async (name: string, resource: IPPool): Promise<IPPool> => {
-    return fetchJSON<IPPool>(`${API_BASE}/ippools/${name}`, {
+    return fetchJSON<IPPool>(`${API_BASE}/ippools/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
   },
   delete: async (name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/ippools/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/ippools/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
 // Clusters CRUD (NovaEdgeCluster)
 const clustersAPI = {
   list: async (namespace: string = 'all'): Promise<GenericResource[]> => {
-    return fetchJSON<GenericResource[]>(`${API_BASE}/clusters?namespace=${namespace}`)
+    return fetchJSON<GenericResource[]>(`${API_BASE}/clusters?namespace=${encodeURIComponent(namespace)}`)
   },
   get: async (namespace: string, name: string): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/clusters/${namespace}/${name}`)
+    return fetchJSON<GenericResource>(`${API_BASE}/clusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
   },
   create: async (resource: GenericResource): Promise<GenericResource> => {
     return fetchJSON<GenericResource>(`${API_BASE}/clusters`, {
@@ -259,23 +259,23 @@ const clustersAPI = {
     })
   },
   update: async (namespace: string, name: string, resource: GenericResource): Promise<GenericResource> => {
-    return fetchJSON<GenericResource>(`${API_BASE}/clusters/${namespace}/${name}`, {
+    return fetchJSON<GenericResource>(`${API_BASE}/clusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/clusters/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/clusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
 // Federations CRUD
 const federationsAPI = {
   list: async (namespace: string = 'all'): Promise<Federation[]> => {
-    return fetchJSON<Federation[]>(`${API_BASE}/federations?namespace=${namespace}`)
+    return fetchJSON<Federation[]>(`${API_BASE}/federations?namespace=${encodeURIComponent(namespace)}`)
   },
   get: async (namespace: string, name: string): Promise<Federation> => {
-    return fetchJSON<Federation>(`${API_BASE}/federations/${namespace}/${name}`)
+    return fetchJSON<Federation>(`${API_BASE}/federations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
   },
   create: async (resource: Federation): Promise<Federation> => {
     return fetchJSON<Federation>(`${API_BASE}/federations`, {
@@ -284,23 +284,23 @@ const federationsAPI = {
     })
   },
   update: async (namespace: string, name: string, resource: Federation): Promise<Federation> => {
-    return fetchJSON<Federation>(`${API_BASE}/federations/${namespace}/${name}`, {
+    return fetchJSON<Federation>(`${API_BASE}/federations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/federations/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/federations/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
 // Remote Clusters CRUD
 const remoteclustersAPI = {
   list: async (namespace: string = 'all'): Promise<RemoteCluster[]> => {
-    return fetchJSON<RemoteCluster[]>(`${API_BASE}/remoteclusters?namespace=${namespace}`)
+    return fetchJSON<RemoteCluster[]>(`${API_BASE}/remoteclusters?namespace=${encodeURIComponent(namespace)}`)
   },
   get: async (namespace: string, name: string): Promise<RemoteCluster> => {
-    return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters/${namespace}/${name}`)
+    return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`)
   },
   create: async (resource: RemoteCluster): Promise<RemoteCluster> => {
     return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters`, {
@@ -309,13 +309,13 @@ const remoteclustersAPI = {
     })
   },
   update: async (namespace: string, name: string, resource: RemoteCluster): Promise<RemoteCluster> => {
-    return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters/${namespace}/${name}`, {
+    return fetchJSON<RemoteCluster>(`${API_BASE}/remoteclusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, {
       method: 'PUT',
       body: JSON.stringify(resource),
     })
   },
   delete: async (namespace: string, name: string): Promise<void> => {
-    await fetchJSON<{ status: string }>(`${API_BASE}/remoteclusters/${namespace}/${name}`, { method: 'DELETE' })
+    await fetchJSON<{ status: string }>(`${API_BASE}/remoteclusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}`, { method: 'DELETE' })
   },
 }
 
@@ -341,7 +341,7 @@ const wasmPluginsAPI = {
     return fetchJSON<WASMPluginStatus[]>(`${API_BASE}/wasm/plugins`)
   },
   get: async (name: string): Promise<WASMPluginConfig> => {
-    return fetchJSON<WASMPluginConfig>(`${API_BASE}/wasm/plugins/${name}`)
+    return fetchJSON<WASMPluginConfig>(`${API_BASE}/wasm/plugins/${encodeURIComponent(name)}`)
   },
 }
 
@@ -409,7 +409,7 @@ export const api = {
   // Agents
   agents: {
     list: async (namespace: string = 'nova-system'): Promise<AgentInfo[]> => {
-      return fetchJSON<AgentInfo[]>(`${API_BASE}/agents?namespace=${namespace}`)
+      return fetchJSON<AgentInfo[]>(`${API_BASE}/agents?namespace=${encodeURIComponent(namespace)}`)
     },
   },
 
@@ -450,7 +450,7 @@ export const api = {
 
     export: async (namespace: string = 'all'): Promise<Blob> => {
       const response = await fetch(
-        `${API_BASE}/config/export?namespace=${namespace}`,
+        `${API_BASE}/config/export?namespace=${encodeURIComponent(namespace)}`,
         { method: 'POST' }
       )
       if (!response.ok) {
@@ -461,7 +461,7 @@ export const api = {
 
     import: async (data: string, dryRun: boolean = false): Promise<ImportResult> => {
       const response = await fetch(
-        `${API_BASE}/config/import?dryRun=${dryRun}`,
+        `${API_BASE}/config/import?dryRun=${encodeURIComponent(String(dryRun))}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-yaml' },
@@ -480,7 +480,7 @@ export const api = {
     },
 
     restore: async (id: string): Promise<void> => {
-      await fetchJSON(`${API_BASE}/config/history/${id}/restore`, {
+      await fetchJSON(`${API_BASE}/config/history/${encodeURIComponent(id)}/restore`, {
         method: 'POST',
       })
     },
@@ -492,7 +492,7 @@ export const api = {
       return fetchJSON<Trace[]>(`${API_BASE}/traces?${new URLSearchParams(params)}`)
     },
     get: async (traceID: string): Promise<Trace> => {
-      return fetchJSON<Trace>(`${API_BASE}/traces/${traceID}`)
+      return fetchJSON<Trace>(`${API_BASE}/traces/${encodeURIComponent(traceID)}`)
     },
     services: async (): Promise<string[]> => {
       return fetchJSON<string[]>(`${API_BASE}/traces/services`)
@@ -506,7 +506,7 @@ export const api = {
   logs: {
     get: async (pod: string, namespace: string, tailLines: number = 100): Promise<string> => {
       return fetchText(
-        `${API_BASE}/logs?pod=${encodeURIComponent(pod)}&namespace=${encodeURIComponent(namespace)}&tailLines=${tailLines}`
+        `${API_BASE}/logs?pod=${encodeURIComponent(pod)}&namespace=${encodeURIComponent(namespace)}&tailLines=${encodeURIComponent(String(tailLines))}`
       )
     },
   },
@@ -544,7 +544,7 @@ export const api = {
       return fetchJSON<ConfigSnapshot[]>(`${API_BASE}/config/snapshots`)
     },
     get: async (id: string): Promise<ConfigSnapshot> => {
-      return fetchJSON<ConfigSnapshot>(`${API_BASE}/config/snapshots/${id}`)
+      return fetchJSON<ConfigSnapshot>(`${API_BASE}/config/snapshots/${encodeURIComponent(id)}`)
     },
     create: async (comment?: string): Promise<ConfigSnapshot> => {
       return fetchJSON<ConfigSnapshot>(`${API_BASE}/config/snapshots`, {
@@ -553,10 +553,10 @@ export const api = {
       })
     },
     diff: async (fromId: string, toId: string): Promise<ConfigDiff> => {
-      return fetchJSON<ConfigDiff>(`${API_BASE}/config/diff?from=${fromId}&to=${toId}`)
+      return fetchJSON<ConfigDiff>(`${API_BASE}/config/diff?from=${encodeURIComponent(fromId)}&to=${encodeURIComponent(toId)}`)
     },
     rollback: async (id: string): Promise<void> => {
-      await fetchJSON<unknown>(`${API_BASE}/config/rollback/${id}`, { method: 'POST' })
+      await fetchJSON<unknown>(`${API_BASE}/config/rollback/${encodeURIComponent(id)}`, { method: 'POST' })
     },
   },
 

@@ -158,7 +158,15 @@ func (w *ConfigWatcher) Start(ctx context.Context, applyFunc ApplyFunc) error {
 
 // loadAndApply loads the config file and applies it
 func (w *ConfigWatcher) loadAndApply(applyFunc ApplyFunc) error {
-	standaloneConfig, err := LoadConfig(w.configPath)
+	// Read the raw file bytes once for both parsing and hashing so that
+	// we don't re-read from disk while holding the write lock.
+	data, err := os.ReadFile(w.configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	hash := computeHashFromData(data)
+
+	standaloneConfig, err := LoadConfigFromBytes(data)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -172,11 +180,6 @@ func (w *ConfigWatcher) loadAndApply(applyFunc ApplyFunc) error {
 	w.mu.Lock()
 	w.lastConfig = standaloneConfig
 	w.lastSnapshot = snapshot
-	hash, err := w.computeHash()
-	if err != nil {
-		w.mu.Unlock()
-		return fmt.Errorf("failed to compute config hash: %w", err)
-	}
 	w.lastHash = hash
 	w.mu.Unlock()
 
@@ -194,7 +197,7 @@ func (w *ConfigWatcher) loadAndApply(applyFunc ApplyFunc) error {
 
 // hasChanged checks if the config file has changed
 func (w *ConfigWatcher) hasChanged() (bool, error) {
-	hash, err := w.computeHash()
+	hash, err := w.computeHashFromFile()
 	if err != nil {
 		return false, err
 	}
@@ -206,14 +209,19 @@ func (w *ConfigWatcher) hasChanged() (bool, error) {
 	return hash != lastHash, nil
 }
 
-// computeHash computes SHA256 hash of the config file
-func (w *ConfigWatcher) computeHash() (string, error) {
+// computeHashFromData computes a SHA256 hash from in-memory data.
+func computeHashFromData(data []byte) string {
+	hash := sha256.Sum256(data)
+	return hex.EncodeToString(hash[:])
+}
+
+// computeHashFromFile reads the config file and computes its SHA256 hash.
+func (w *ConfigWatcher) computeHashFromFile() (string, error) {
 	data, err := os.ReadFile(w.configPath)
 	if err != nil {
 		return "", err
 	}
-	hash := sha256.Sum256(data)
-	return hex.EncodeToString(hash[:]), nil
+	return computeHashFromData(data), nil
 }
 
 // GetCurrentConfig returns the current configuration
