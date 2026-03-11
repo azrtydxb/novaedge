@@ -86,19 +86,17 @@ impl LoadBalancer for PowerOfTwoChoices {
         let wb = backends[b].weight.max(1) as u32;
 
         // Weight-normalized: compare ca/wa vs cb/wb via cross-multiply.
-        if ca * wb <= cb * wa {
-            Some(a)
-        } else {
-            Some(b)
-        }
+        let chosen = if ca * wb <= cb * wa { a } else { b };
+
+        // Increment connection count when a request starts.
+        self.increment(chosen);
+
+        Some(chosen)
     }
 
-    fn report(&self, backend_idx: usize, _latency: Duration, success: bool) {
-        if success {
-            self.increment(backend_idx);
-        } else {
-            self.decrement(backend_idx);
-        }
+    fn report(&self, backend_idx: usize, _latency: Duration, _success: bool) {
+        // Request completed — always decrement regardless of success/failure.
+        self.decrement(backend_idx);
     }
 
     fn name(&self) -> &'static str {

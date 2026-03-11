@@ -90,17 +90,33 @@ impl CircuitBreaker {
                 let now_ms = current_time_ms();
                 let last = self.last_failure_ms.load(Ordering::Relaxed);
                 if now_ms.saturating_sub(last) >= self.config.open_duration.as_millis() as u64 {
-                    // Transition to half-open with limited probe permits.
-                    // The transition itself counts as the first probe, so set
-                    // remaining permits to (max - 1).
-                    self.state
-                        .store(CircuitState::HalfOpen as u8, Ordering::Release);
-                    self.successes.store(0, Ordering::Relaxed);
-                    self.half_open_permits.store(
-                        self.config.half_open_max_requests.max(1).saturating_sub(1),
-                        Ordering::Relaxed,
-                    );
-                    true
+                    // Use compare_exchange to ensure only one thread transitions
+                    // from Open to HalfOpen, preventing a race where multiple
+                    // threads all observe the elapsed time and transition.
+                    if self
+                        .state
+                        .compare_exchange(
+                            CircuitState::Open as u8,
+                            CircuitState::HalfOpen as u8,
+                            Ordering::AcqRel,
+                            Ordering::Acquire,
+                        )
+                        .is_ok()
+                    {
+                        // We won the race — set up half-open state.
+                        // The transition itself counts as the first probe, so set
+                        // remaining permits to (max - 1).
+                        self.successes.store(0, Ordering::Relaxed);
+                        self.half_open_permits.store(
+                            self.config.half_open_max_requests.max(1).saturating_sub(1),
+                            Ordering::Relaxed,
+                        );
+                        true
+                    } else {
+                        // Another thread already transitioned; fall through to
+                        // HalfOpen permit logic on the next call.
+                        false
+                    }
                 } else {
                     false
                 }
