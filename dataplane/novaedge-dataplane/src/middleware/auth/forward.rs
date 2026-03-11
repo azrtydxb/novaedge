@@ -41,7 +41,7 @@ impl ForwardAuth {
     pub async fn check(&self, req: &super::super::Request) -> super::AuthResult {
         let (host, port, path) = parse_url(&self.config.auth_url);
 
-        // Build forwarded request with selected headers.
+        // Build forwarded request with selected headers (sanitised against injection).
         let mut forward_headers = String::new();
         for header_name in &self.config.auth_request_headers {
             if let Some((_, value)) = req
@@ -49,6 +49,14 @@ impl ForwardAuth {
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case(header_name))
             {
+                // Reject header names/values containing CR or LF to prevent request smuggling.
+                if contains_cr_lf(header_name) || contains_cr_lf(value) {
+                    tracing::warn!(
+                        header = %header_name,
+                        "Dropping header with CR/LF characters to prevent request smuggling"
+                    );
+                    continue;
+                }
                 forward_headers.push_str(&format!("{header_name}: {value}\r\n"));
             }
         }
@@ -58,6 +66,31 @@ impl ForwardAuth {
         );
 
         let addr = format!("{host}:{port}");
+
+        // SSRF protection: resolve DNS and check against denylist before connecting.
+        let resolved = match tokio::net::lookup_host(&addr).await {
+            Ok(addrs) => addrs.collect::<Vec<_>>(),
+            Err(_) => {
+                return super::AuthResult::Denied {
+                    status: 503,
+                    message: "Auth service DNS resolution failed".into(),
+                };
+            }
+        };
+        for sock_addr in &resolved {
+            if is_denied_ip(&sock_addr.ip()) {
+                tracing::warn!(
+                    addr = %sock_addr,
+                    auth_url = %self.config.auth_url,
+                    "Forward auth URL resolves to denied internal IP — blocking SSRF"
+                );
+                return super::AuthResult::Denied {
+                    status: 403,
+                    message: "Auth URL resolves to a denied internal address".into(),
+                };
+            }
+        }
+
         match tokio::time::timeout(self.config.timeout, async {
             let mut stream = TcpStream::connect(&addr).await?;
             stream.write_all(request.as_bytes()).await?;
@@ -90,6 +123,29 @@ impl ForwardAuth {
                 status: 503,
                 message: "Auth service unavailable".into(),
             },
+        }
+    }
+}
+
+/// Returns `true` if the string contains any CR (`\r`) or LF (`\n`) characters.
+fn contains_cr_lf(s: &str) -> bool {
+    s.bytes().any(|b| b == b'\r' || b == b'\n')
+}
+
+/// Check whether an IP address belongs to a denied range (internal/metadata).
+fn is_denied_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()                              // 127.0.0.0/8
+                || v4.octets()[0] == 10                   // 10.0.0.0/8
+                || (v4.octets()[0] == 172 && (v4.octets()[1] & 0xf0) == 16)  // 172.16.0.0/12
+                || (v4.octets()[0] == 192 && v4.octets()[1] == 168)          // 192.168.0.0/16
+                || (v4.octets()[0] == 169 && v4.octets()[1] == 254) // 169.254.0.0/16 (link-local / cloud metadata)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()                              // ::1
+                || v6.octets()[0] == 0xfd                 // fd00::/8 (ULA)
+                || v6.octets()[0] == 0xfe && (v6.octets()[1] & 0xc0) == 0x80 // fe80::/10 (link-local)
         }
     }
 }
@@ -166,6 +222,66 @@ mod tests {
                 assert_eq!(status, 503);
             }
             other => panic!("expected Denied/503, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cr_lf_detection() {
+        assert!(contains_cr_lf("value\r\nEvil: injected"));
+        assert!(contains_cr_lf("value\revil"));
+        assert!(contains_cr_lf("value\nevil"));
+        assert!(!contains_cr_lf("clean-value"));
+        assert!(!contains_cr_lf(""));
+    }
+
+    #[test]
+    fn ssrf_denylist() {
+        use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+        // Denied ranges
+        assert!(is_denied_ip(&IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
+        assert!(is_denied_ip(&IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+        assert!(is_denied_ip(&IpAddr::V4(Ipv4Addr::new(172, 16, 0, 1))));
+        assert!(is_denied_ip(&IpAddr::V4(Ipv4Addr::new(172, 31, 255, 255))));
+        assert!(is_denied_ip(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+        assert!(is_denied_ip(&IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
+        assert!(is_denied_ip(&IpAddr::V6(Ipv6Addr::LOCALHOST)));
+        assert!(is_denied_ip(&IpAddr::V6(Ipv6Addr::new(
+            0xfd00, 0, 0, 0, 0, 0, 0, 1
+        ))));
+
+        // Allowed ranges
+        assert!(!is_denied_ip(&IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+        assert!(!is_denied_ip(&IpAddr::V4(Ipv4Addr::new(172, 32, 0, 1))));
+        assert!(!is_denied_ip(&IpAddr::V6(Ipv6Addr::new(
+            0x2001, 0xdb8, 0, 0, 0, 0, 0, 1
+        ))));
+    }
+
+    #[tokio::test]
+    async fn forward_auth_ssrf_blocked() {
+        let fa = ForwardAuth::new(ForwardAuthConfig {
+            auth_url: "http://169.254.169.254/latest/meta-data".into(),
+            auth_request_headers: vec![],
+            auth_response_headers: vec![],
+            timeout: Duration::from_millis(100),
+        });
+
+        let req = crate::middleware::Request {
+            method: "GET".into(),
+            path: "/".into(),
+            host: "example.com".into(),
+            headers: vec![],
+            body: None,
+            client_ip: "127.0.0.1".into(),
+        };
+
+        match fa.check(&req).await {
+            super::super::AuthResult::Denied { status, message } => {
+                assert_eq!(status, 403);
+                assert!(message.contains("denied"), "got: {message}");
+            }
+            other => panic!("expected Denied/403, got: {other:?}"),
         }
     }
 }
