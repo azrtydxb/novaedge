@@ -730,6 +730,7 @@ func (s *Server) handleMeshPolicyWrite(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var resource map[string]any
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&resource); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -752,6 +753,7 @@ func (s *Server) handleMeshPolicyWrite(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var resource map[string]any
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&resource); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -845,6 +847,7 @@ func (s *Server) handleOverloadConfig(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		var config map[string]any
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return

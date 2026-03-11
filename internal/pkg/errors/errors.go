@@ -31,11 +31,7 @@ limitations under the License.
 //	    return fmt.Errorf("failed to connect to backend: %w", err)
 //	}
 //
-// 3. Use errors.Is() and errors.As() for error checking:
-//
-//	if errors.Is(err, errors.ErrInvalidConfig) {
-//	    // Handle invalid config
-//	}
+// 3. Use errors.As() for error checking:
 //
 //	var netErr *NetworkError
 //	if errors.As(err, &netErr) {
@@ -56,43 +52,8 @@ limitations under the License.
 package apperrors
 
 import (
-	"errors"
 	"fmt"
 	"strings"
-)
-
-// Standard error variables for common error conditions
-var (
-	// Configuration errors
-	ErrInvalidConfig    = errors.New("invalid configuration")
-	ErrMissingConfig    = errors.New("missing required configuration")
-	ErrConfigParse      = errors.New("failed to parse configuration")
-	ErrConfigValidation = errors.New("configuration validation failed")
-
-	// Network errors
-	ErrConnectionFailed   = errors.New("connection failed")
-	ErrConnectionTimeout  = errors.New("connection timeout")
-	ErrConnectionRefused  = errors.New("connection refused")
-	ErrDNSResolution      = errors.New("DNS resolution failed")
-	ErrNetworkUnreachable = errors.New("network unreachable")
-
-	// TLS errors
-	ErrTLSHandshake       = errors.New("TLS handshake failed")
-	ErrTLSCertificate     = errors.New("TLS certificate error")
-	ErrTLSVerification    = errors.New("TLS verification failed")
-	ErrInvalidCipherSuite = errors.New("invalid cipher suite")
-
-	// Validation errors
-	ErrValidationFailed = errors.New("validation failed")
-	ErrInvalidInput     = errors.New("invalid input")
-	ErrInvalidFormat    = errors.New("invalid format")
-	ErrMissingField     = errors.New("missing required field")
-
-	// Runtime errors
-	ErrNotFound      = errors.New("resource not found")
-	ErrAlreadyExists = errors.New("resource already exists")
-	ErrTimeout       = errors.New("operation timeout")
-	ErrCancelled     = errors.New("operation cancelled")
 )
 
 // NetworkError represents network-related errors

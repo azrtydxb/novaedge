@@ -24,44 +24,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStandardErrors(t *testing.T) {
-	tests := []struct {
-		name  string
-		err   error
-		msg   string
-		isErr error
-	}{
-		{"ErrInvalidConfig", ErrInvalidConfig, "invalid configuration", ErrInvalidConfig},
-		{"ErrMissingConfig", ErrMissingConfig, "missing required configuration", ErrMissingConfig},
-		{"ErrConfigParse", ErrConfigParse, "failed to parse configuration", ErrConfigParse},
-		{"ErrConfigValidation", ErrConfigValidation, "configuration validation failed", ErrConfigValidation},
-		{"ErrConnectionFailed", ErrConnectionFailed, "connection failed", ErrConnectionFailed},
-		{"ErrConnectionTimeout", ErrConnectionTimeout, "connection timeout", ErrConnectionTimeout},
-		{"ErrConnectionRefused", ErrConnectionRefused, "connection refused", ErrConnectionRefused},
-		{"ErrDNSResolution", ErrDNSResolution, "DNS resolution failed", ErrDNSResolution},
-		{"ErrNetworkUnreachable", ErrNetworkUnreachable, "network unreachable", ErrNetworkUnreachable},
-		{"ErrTLSHandshake", ErrTLSHandshake, "TLS handshake failed", ErrTLSHandshake},
-		{"ErrTLSCertificate", ErrTLSCertificate, "TLS certificate error", ErrTLSCertificate},
-		{"ErrTLSVerification", ErrTLSVerification, "TLS verification failed", ErrTLSVerification},
-		{"ErrInvalidCipherSuite", ErrInvalidCipherSuite, "invalid cipher suite", ErrInvalidCipherSuite},
-		{"ErrValidationFailed", ErrValidationFailed, "validation failed", ErrValidationFailed},
-		{"ErrInvalidInput", ErrInvalidInput, "invalid input", ErrInvalidInput},
-		{"ErrInvalidFormat", ErrInvalidFormat, "invalid format", ErrInvalidFormat},
-		{"ErrMissingField", ErrMissingField, "missing required field", ErrMissingField},
-		{"ErrNotFound", ErrNotFound, "resource not found", ErrNotFound},
-		{"ErrAlreadyExists", ErrAlreadyExists, "resource already exists", ErrAlreadyExists},
-		{"ErrTimeout", ErrTimeout, "operation timeout", ErrTimeout},
-		{"ErrCancelled", ErrCancelled, "operation cancelled", ErrCancelled},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.msg, tt.err.Error())
-			assert.True(t, errors.Is(tt.err, tt.isErr))
-		})
-	}
-}
-
 func TestNetworkError(t *testing.T) {
 	t.Run("Error with all fields", func(t *testing.T) {
 		err := &NetworkError{
@@ -446,7 +408,7 @@ func TestTLSError(t *testing.T) {
 
 func TestErrorWrappingAndUnwrapping(t *testing.T) {
 	t.Run("NetworkError supports errors.Is", func(t *testing.T) {
-		underlying := ErrConnectionFailed
+		underlying := errors.New("connection failed")
 		err := &NetworkError{
 			Message: "failed to connect",
 			Err:     underlying,
@@ -455,7 +417,7 @@ func TestErrorWrappingAndUnwrapping(t *testing.T) {
 	})
 
 	t.Run("ConfigError supports errors.Is", func(t *testing.T) {
-		underlying := ErrInvalidConfig
+		underlying := errors.New("invalid configuration")
 		err := &ConfigError{
 			Message: "bad config",
 			Err:     underlying,
@@ -464,7 +426,7 @@ func TestErrorWrappingAndUnwrapping(t *testing.T) {
 	})
 
 	t.Run("ValidationError supports errors.Is", func(t *testing.T) {
-		underlying := ErrValidationFailed
+		underlying := errors.New("validation failed")
 		err := &ValidationError{
 			Message: "validation failed",
 			Err:     underlying,
@@ -473,7 +435,7 @@ func TestErrorWrappingAndUnwrapping(t *testing.T) {
 	})
 
 	t.Run("TLSError supports errors.Is", func(t *testing.T) {
-		underlying := ErrTLSHandshake
+		underlying := errors.New("TLS handshake failed")
 		err := &TLSError{
 			Message: "handshake failed",
 			Err:     underlying,

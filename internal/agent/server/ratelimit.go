@@ -42,10 +42,19 @@ func DefaultObservabilityRateLimitConfig() RateLimiterConfig {
 	}
 }
 
+// limiterEntry wraps a rate.Limiter with a last-access timestamp for idle eviction.
+type limiterEntry struct {
+	limiter    *rate.Limiter
+	lastAccess time.Time
+}
+
+// idleEvictionTimeout is how long a limiter entry must be idle before cleanup evicts it.
+const idleEvictionTimeout = 10 * time.Minute
+
 // IPRateLimiter manages per-IP rate limiters
 type IPRateLimiter struct {
 	mu        sync.RWMutex
-	limiters  map[string]*rate.Limiter
+	limiters  map[string]*limiterEntry
 	config    RateLimiterConfig
 	cleanupCh chan struct{}
 }
@@ -53,7 +62,7 @@ type IPRateLimiter struct {
 // NewIPRateLimiter creates a new IP-based rate limiter
 func NewIPRateLimiter(config RateLimiterConfig) *IPRateLimiter {
 	rl := &IPRateLimiter{
-		limiters:  make(map[string]*rate.Limiter),
+		limiters:  make(map[string]*limiterEntry),
 		config:    config,
 		cleanupCh: make(chan struct{}),
 	}
@@ -69,20 +78,26 @@ func (rl *IPRateLimiter) getLimiter(ip string) *rate.Limiter {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	limiter, exists := rl.limiters[ip]
+	now := time.Now()
+	entry, exists := rl.limiters[ip]
 	if !exists {
 		// Create limiter with rate per second = requests per minute / 60
 		ratePerSecond := rate.Limit(float64(rl.config.RequestsPerMinute) / 60.0)
-		limiter = rate.NewLimiter(ratePerSecond, rl.config.Burst)
-		rl.limiters[ip] = limiter
+		entry = &limiterEntry{
+			limiter:    rate.NewLimiter(ratePerSecond, rl.config.Burst),
+			lastAccess: now,
+		}
+		rl.limiters[ip] = entry
+	} else {
+		entry.lastAccess = now
 	}
 
-	return limiter
+	return entry.limiter
 }
 
 // cleanupRoutine periodically removes stale limiters to prevent memory leaks
 func (rl *IPRateLimiter) cleanupRoutine() {
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	for {
@@ -95,15 +110,16 @@ func (rl *IPRateLimiter) cleanupRoutine() {
 	}
 }
 
-// cleanup removes limiters that haven't been used recently
+// cleanup removes limiters that haven't been accessed within the idle eviction timeout.
 func (rl *IPRateLimiter) cleanup() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	// Simple cleanup: clear all limiters periodically
-	// In production, you might want to track last access time
-	if len(rl.limiters) > 10000 {
-		rl.limiters = make(map[string]*rate.Limiter)
+	cutoff := time.Now().Add(-idleEvictionTimeout)
+	for ip, entry := range rl.limiters {
+		if entry.lastAccess.Before(cutoff) {
+			delete(rl.limiters, ip)
+		}
 	}
 }
 
