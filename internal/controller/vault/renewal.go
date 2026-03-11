@@ -48,6 +48,7 @@ type RenewalManager struct {
 	mu           sync.Mutex
 	trackedCerts map[string]*trackedCertificate
 	stopCh       chan struct{}
+	stopOnce     sync.Once
 	running      bool
 
 	// Callbacks
@@ -142,6 +143,7 @@ func (r *RenewalManager) Start(ctx context.Context) error {
 	}
 	r.running = true
 	r.stopCh = make(chan struct{})
+	r.stopOnce = sync.Once{} // reset so Stop() can close the new channel
 	r.mu.Unlock()
 
 	r.logger.Info("Starting Vault renewal manager",
@@ -161,7 +163,9 @@ func (r *RenewalManager) Stop() {
 	if !r.running {
 		return
 	}
-	close(r.stopCh)
+	// Use stopOnce to guard against double-close when ctx.Done fires while an
+	// external caller also invokes Stop() concurrently.
+	r.stopOnce.Do(func() { close(r.stopCh) })
 	r.running = false
 	r.logger.Info("Vault renewal manager stopped")
 }
@@ -174,7 +178,9 @@ func (r *RenewalManager) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			r.Stop()
+			// Do not call Stop() here — the external caller is responsible for
+			// stopping the manager. Calling Stop() from both here and externally
+			// would double-close stopCh and panic.
 			return
 		case <-r.stopCh:
 			return
