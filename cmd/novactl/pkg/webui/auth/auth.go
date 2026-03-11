@@ -32,10 +32,28 @@ const (
 	cookieName = "novaedge_session"
 	// defaultSessionTTL is the default session duration.
 	defaultSessionTTL = 8 * time.Hour
-	// maxSessions is the maximum number of concurrent sessions allowed.
-	// When the limit is reached, the oldest sessions are evicted.
-	maxSessions = 1000
+	// defaultMaxSessions is the default maximum number of concurrent sessions allowed.
+	defaultMaxSessions = 1000
 )
+
+// maxSessions is the maximum number of concurrent sessions allowed.
+// When the limit is reached, sessions with the earliest expiry (soonest to expire) are evicted.
+//
+// This value can be adjusted at runtime using SetMaxSessions. If it is not
+// changed, the default limit of 1000 sessions is used.
+var maxSessions = defaultMaxSessions
+
+// SetMaxSessions sets the global maximum number of concurrent sessions allowed.
+//
+// This should typically be called during application initialization. If limit
+// is less than or equal to zero, the default value of 1000 is used.
+func SetMaxSessions(limit int) {
+	if limit <= 0 {
+		maxSessions = defaultMaxSessions
+		return
+	}
+	maxSessions = limit
+}
 
 // Config holds authentication configuration.
 type Config struct {
@@ -105,7 +123,8 @@ func (m *Manager) Login(user, pass string) (string, error) {
 	return token, nil
 }
 
-// evictExcessSessions removes expired sessions and evicts the oldest when the count exceeds maxSessions.
+// evictExcessSessions removes expired sessions and evicts sessions with the earliest
+// expiry when the count exceeds maxSessions.
 func (m *Manager) evictExcessSessions() {
 	type entry struct {
 		token  string
@@ -116,7 +135,11 @@ func (m *Manager) evictExcessSessions() {
 	now := time.Now()
 
 	m.sessions.Range(func(key, value interface{}) bool {
-		tok, _ := key.(string)
+		tok, ok := key.(string)
+		if !ok {
+			m.sessions.Delete(key)
+			return true
+		}
 		exp, ok := value.(time.Time)
 		if !ok {
 			m.sessions.Delete(key)
