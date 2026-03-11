@@ -44,8 +44,11 @@ const (
 	StatusCleanupInterval = 10 * time.Second
 )
 
-// AgentStatusInfo tracks the health and connectivity of a node agent
+// AgentStatusInfo tracks the health and connectivity of a node agent.
+// All field accesses must be protected by mu.
 type AgentStatusInfo struct {
+	mu sync.Mutex
+
 	NodeName             string
 	AgentVersion         string
 	AppliedConfigVersion string
@@ -436,21 +439,16 @@ func (s *Server) RegisterServer(grpcServer *grpc.Server) {
 
 // storeAgentStatus stores the status information from an agent report
 func (s *Server) storeAgentStatus(req *pb.AgentStatus) {
-	// Get or create agent status info
-	var status *AgentStatusInfo
-	if val, ok := s.statusMap.Load(req.NodeName); ok {
-		if s, ok := val.(*AgentStatusInfo); ok {
-			status = s
-		} else {
-			status = &AgentStatusInfo{
-				NodeName: req.NodeName,
-			}
-		}
-	} else {
-		status = &AgentStatusInfo{
-			NodeName: req.NodeName,
-		}
+	// LoadOrStore ensures we always operate on the canonical *AgentStatusInfo
+	// for this node, eliminating the load-then-store race.
+	actual, _ := s.statusMap.LoadOrStore(req.NodeName, &AgentStatusInfo{NodeName: req.NodeName})
+	status, ok := actual.(*AgentStatusInfo)
+	if !ok {
+		return
 	}
+
+	status.mu.Lock()
+	defer status.mu.Unlock()
 
 	// Update status fields
 	status.AppliedConfigVersion = req.AppliedConfigVersion
@@ -463,9 +461,6 @@ func (s *Server) storeAgentStatus(req *pb.AgentStatus) {
 	if activeConns, ok := req.Metrics["active_connections"]; ok {
 		status.ActiveConnections = activeConns
 	}
-
-	// Store updated status
-	s.statusMap.Store(req.NodeName, status)
 }
 
 // updateAgentConnection updates the connection status of an agent
@@ -481,21 +476,16 @@ func (s *Server) updateAgentConnectionWithCluster(nodeName, agentVersion, cluste
 		key = clusterName + "/" + nodeName
 	}
 
-	// Get or create agent status info
-	var status *AgentStatusInfo
-	if val, ok := s.statusMap.Load(key); ok {
-		if s, ok := val.(*AgentStatusInfo); ok {
-			status = s
-		} else {
-			status = &AgentStatusInfo{
-				NodeName: nodeName,
-			}
-		}
-	} else {
-		status = &AgentStatusInfo{
-			NodeName: nodeName,
-		}
+	// LoadOrStore ensures we always operate on the canonical *AgentStatusInfo
+	// for this key, eliminating the load-then-store race.
+	actual, _ := s.statusMap.LoadOrStore(key, &AgentStatusInfo{NodeName: nodeName})
+	status, ok := actual.(*AgentStatusInfo)
+	if !ok {
+		return
 	}
+
+	status.mu.Lock()
+	defer status.mu.Unlock()
 
 	// Update connection fields
 	status.Connected = connected
@@ -504,9 +494,6 @@ func (s *Server) updateAgentConnectionWithCluster(nodeName, agentVersion, cluste
 	status.ClusterName = clusterName
 	status.ClusterRegion = clusterRegion
 	status.ClusterZone = clusterZone
-
-	// Store updated status
-	s.statusMap.Store(key, status)
 }
 
 // GetAgentStatus retrieves the status of a specific agent
@@ -520,8 +507,23 @@ func (s *Server) GetAgentStatus(nodeName string) (*AgentStatusInfo, bool) {
 	if !ok {
 		return nil, false
 	}
+
+	status.mu.Lock()
+	defer status.mu.Unlock()
+
 	// Create a copy to avoid concurrent modification issues
-	statusCopy := *status
+	statusCopy := AgentStatusInfo{
+		NodeName:             status.NodeName,
+		AgentVersion:         status.AgentVersion,
+		AppliedConfigVersion: status.AppliedConfigVersion,
+		Healthy:              status.Healthy,
+		LastSeen:             status.LastSeen,
+		Connected:            status.Connected,
+		ActiveConnections:    status.ActiveConnections,
+		ClusterName:          status.ClusterName,
+		ClusterRegion:        status.ClusterRegion,
+		ClusterZone:          status.ClusterZone,
+	}
 	if status.Errors != nil {
 		statusCopy.Errors = make([]string, len(status.Errors))
 		copy(statusCopy.Errors, status.Errors)
@@ -545,8 +547,20 @@ func (s *Server) GetAllAgentStatuses() []*AgentStatusInfo {
 		if !ok {
 			return true
 		}
+		status.mu.Lock()
 		// Create a copy to avoid concurrent modification issues
-		statusCopy := *status
+		statusCopy := AgentStatusInfo{
+			NodeName:             status.NodeName,
+			AgentVersion:         status.AgentVersion,
+			AppliedConfigVersion: status.AppliedConfigVersion,
+			Healthy:              status.Healthy,
+			LastSeen:             status.LastSeen,
+			Connected:            status.Connected,
+			ActiveConnections:    status.ActiveConnections,
+			ClusterName:          status.ClusterName,
+			ClusterRegion:        status.ClusterRegion,
+			ClusterZone:          status.ClusterZone,
+		}
 		if status.Errors != nil {
 			statusCopy.Errors = make([]string, len(status.Errors))
 			copy(statusCopy.Errors, status.Errors)
@@ -557,6 +571,8 @@ func (s *Server) GetAllAgentStatuses() []*AgentStatusInfo {
 				statusCopy.Metrics[k] = v
 			}
 		}
+		status.mu.Unlock()
+
 		statuses = append(statuses, &statusCopy)
 		return true
 	})
@@ -573,23 +589,23 @@ func (s *Server) cleanupStaleAgents() {
 		select {
 		case <-ticker.C:
 			now := time.Now()
-			s.statusMap.Range(func(key, value any) bool {
+			s.statusMap.Range(func(_, value any) bool {
 				status, ok := value.(*AgentStatusInfo)
 				if !ok {
 					return true
 				}
 
+				status.mu.Lock()
 				// If agent hasn't been seen in AgentExpiryDuration, mark as disconnected
 				if now.Sub(status.LastSeen) > AgentExpiryDuration && status.Connected {
 					status.Connected = false
-					s.statusMap.Store(key, status)
-
-					// Log the disconnection
 					log.Log.Info("Agent marked as disconnected due to inactivity",
 						"node", status.NodeName,
 						"lastSeen", status.LastSeen,
 					)
 				}
+				status.mu.Unlock()
+
 				return true
 			})
 		case <-s.shutdownCh:

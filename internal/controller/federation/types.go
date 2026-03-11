@@ -17,6 +17,7 @@ limitations under the License.
 package federation
 
 import (
+	"sync"
 	"time"
 )
 
@@ -74,8 +75,12 @@ type PeerInfo struct {
 	ClientKey  []byte //nolint:gosec // G117: struct field name for TLS credential holder, not a hardcoded credential
 }
 
-// PeerState represents the current state of a federation peer
+// PeerState represents the current state of a federation peer.
+// All field accesses must be protected by mu.
 type PeerState struct {
+	// mu protects all fields below from concurrent access.
+	mu sync.Mutex
+
 	// Info contains static peer configuration
 	Info *PeerInfo
 
