@@ -107,9 +107,10 @@ func (m *RenewalManager) run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Do not call Stop() here — the external caller is responsible for
-			// stopping the manager. Calling Stop() from both here and externally
-			// would double-close stopChan and panic.
+			// Call Stop() to clear running state and close stopChan.
+			// sync.Once prevents double-close if an external caller also
+			// invokes Stop() concurrently.
+			m.Stop()
 			return
 		case <-m.stopChan:
 			return
