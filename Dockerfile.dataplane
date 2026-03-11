@@ -39,9 +39,11 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y \
     libelf1 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system nonroot && useradd --system --gid nonroot nonroot
 
 COPY --from=builder /build/out/novaedge-dataplane /usr/local/bin/
 
+USER nonroot:nonroot
 ENTRYPOINT ["novaedge-dataplane"]
 CMD ["--socket=/run/novaedge/dataplane.sock"]

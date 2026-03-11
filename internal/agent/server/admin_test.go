@@ -33,7 +33,10 @@ import (
 func newTestAdminServer(t *testing.T) *AdminServer {
 	t.Helper()
 	logger := zaptest.NewLogger(t)
-	srv := NewAdminServer("", logger)
+	srv, err := NewAdminServer("", logger)
+	if err != nil {
+		t.Fatalf("NewAdminServer: %v", err)
+	}
 	srv.SetAtomicLevel(zap.NewAtomicLevelAt(zap.InfoLevel))
 	return srv
 }
@@ -331,16 +334,29 @@ func TestAdminUnknownEndpoint404(t *testing.T) {
 }
 
 func TestAdminDefaultAddr(t *testing.T) {
-	srv := NewAdminServer("", zaptest.NewLogger(t))
+	srv, err := NewAdminServer("", zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("NewAdminServer: %v", err)
+	}
 	if srv.addr != DefaultAdminAddr {
 		t.Fatalf("expected default addr %s, got %s", DefaultAdminAddr, srv.addr)
 	}
 }
 
-func TestAdminCustomAddr(t *testing.T) {
-	srv := NewAdminServer("0.0.0.0:8888", zaptest.NewLogger(t))
-	if srv.addr != "0.0.0.0:8888" {
-		t.Fatalf("expected 0.0.0.0:8888, got %s", srv.addr)
+func TestAdminLoopbackAddr(t *testing.T) {
+	srv, err := NewAdminServer("127.0.0.1:8888", zaptest.NewLogger(t))
+	if err != nil {
+		t.Fatalf("NewAdminServer: %v", err)
+	}
+	if srv.addr != "127.0.0.1:8888" {
+		t.Fatalf("expected 127.0.0.1:8888, got %s", srv.addr)
+	}
+}
+
+func TestAdminRejectsNonLoopback(t *testing.T) {
+	_, err := NewAdminServer("0.0.0.0:8888", zaptest.NewLogger(t))
+	if err == nil {
+		t.Fatal("expected error for non-loopback address, got nil")
 	}
 }
 

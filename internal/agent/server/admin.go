@@ -26,6 +26,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
@@ -40,6 +42,10 @@ import (
 
 // DefaultAdminAddr is the default listen address for the admin API.
 const DefaultAdminAddr = "127.0.0.1:9901"
+
+// errNonLoopbackAdmin is returned when NewAdminServer is called with a
+// non-loopback address, which would expose unauthenticated endpoints.
+var errNonLoopbackAdmin = errors.New("admin API address is not a loopback address")
 
 // AdminServer provides admin/debug HTTP endpoints for the NovaEdge agent.
 // It exposes health, stats, config, route, and cluster information as well
@@ -59,17 +65,39 @@ type AdminServer struct {
 	logLevel zap.AtomicLevel
 }
 
+// isLoopbackAddr returns true if the given host:port address binds to a
+// loopback interface (127.0.0.0/8 or ::1).
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	// An empty host means "all interfaces" which is NOT loopback.
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // NewAdminServer creates a new admin/debug HTTP server.
 // If addr is empty, DefaultAdminAddr is used.
-func NewAdminServer(addr string, logger *zap.Logger) *AdminServer {
+// The address MUST resolve to a loopback interface (127.0.0.1 / ::1);
+// binding to a non-loopback address is rejected because the admin API
+// exposes pprof, config introspection, and runtime log-level changes
+// without authentication.
+func NewAdminServer(addr string, logger *zap.Logger) (*AdminServer, error) {
 	if addr == "" {
 		addr = DefaultAdminAddr
+	}
+	if !isLoopbackAddr(addr) {
+		return nil, fmt.Errorf("%w: %q must be 127.0.0.1 or ::1", errNonLoopbackAdmin, addr)
 	}
 	return &AdminServer{
 		addr:      addr,
 		logger:    logger,
 		startedAt: time.Now(),
-	}
+	}, nil
 }
 
 // SetAtomicLevel configures the zap AtomicLevel that the PUT /logging
@@ -110,7 +138,7 @@ func (a *AdminServer) Start(ctx context.Context) error {
 	mux.HandleFunc("/logging", a.handleLogging)
 
 	// pprof endpoints for CPU/memory profiling during load tests.
-	// AdminServer binds to 127.0.0.1 only, so these are not externally accessible.
+	// NewAdminServer enforces loopback-only binding, so these are not externally accessible.
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)

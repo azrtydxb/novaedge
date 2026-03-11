@@ -33,8 +33,10 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -trimpath \
 # Agent requires nftables (preferred) or iptables for TPROXY mesh interception,
 # and root for privileged network operations (VIP binding, BGP port 179, ARP/NDP).
 FROM alpine:3.23
-RUN apk add --no-cache nftables iptables ip6tables iproute2
+RUN apk add --no-cache nftables iptables ip6tables iproute2 \
+    && addgroup -S nonroot && adduser -S nonroot -G nonroot
 WORKDIR /
 COPY --from=builder /workspace/novaedge-agent .
 
+USER nonroot:nonroot
 ENTRYPOINT ["/novaedge-agent"]
