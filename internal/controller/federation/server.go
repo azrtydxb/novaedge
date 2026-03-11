@@ -220,26 +220,45 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 		return status.Errorf(codes.Internal, "failed to send handshake: %v", err)
 	}
 
-	// Start goroutines for send and receive
+	// Start goroutines for send and receive with a derived context so
+	// that when the first goroutine exits we can signal the other to stop,
+	// preventing a goroutine leak (fixes #932).
+	streamCtx, streamCancel := context.WithCancel(ctx)
+	defer streamCancel()
+
 	errCh := make(chan error, 2)
 
 	// Receive goroutine
 	go func() {
-		errCh <- s.handleIncomingMessages(ctx, stream, peerName)
+		errCh <- s.handleIncomingMessages(streamCtx, stream, peerName)
 	}()
 
 	// Send goroutine - sends pending changes and heartbeats
 	go func() {
-		errCh <- s.handleOutgoingMessages(ctx, stream, peerName)
+		errCh <- s.handleOutgoingMessages(streamCtx, stream, peerName)
 	}()
 
-	// Wait for either to error
+	// Wait for the first goroutine to finish, then cancel the other.
 	err = <-errCh
+	streamCancel()
+
+	// Drain the second error so the goroutine is not leaked.
+	err2 := <-errCh
+
+	// Report the first non-nil, non-context-canceled error.
 	if err != nil && !errors.Is(err, context.Canceled) {
 		s.logger.Error("Sync stream error",
 			zap.String("peer", peerName),
 			zap.Error(err),
 		)
+		return err
+	}
+	if err2 != nil && !errors.Is(err2, context.Canceled) {
+		s.logger.Error("Sync stream error",
+			zap.String("peer", peerName),
+			zap.Error(err2),
+		)
+		return err2
 	}
 
 	return err
@@ -856,7 +875,7 @@ func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data 
 	select {
 	case s.pendingChanges <- entry:
 	default:
-		s.logger.Warn("Pending changes queue full, dropping oldest")
+		s.logger.Warn("Pending changes queue full, dropping newest change")
 	}
 }
 
