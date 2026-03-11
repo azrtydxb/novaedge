@@ -61,7 +61,13 @@ spec:
           echo 1 > /proc/sys/net/ipv4/conf/all/route_localnet
           echo "route_localnet enabled for mesh DNAT"
         securityContext:
-          privileged: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - NET_ADMIN
+              - SYS_ADMIN
       {{- end }}
       {{- if .Values.agent.ebpf.enabled }}
       - name: mount-bpffs
@@ -76,7 +82,12 @@ spec:
           fi
           mkdir -p /sys/fs/bpf/novaedge
         securityContext:
-          privileged: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+            add:
+              - SYS_ADMIN
         volumeMounts:
         - name: bpffs
           mountPath: /sys/fs/bpf
@@ -218,11 +229,12 @@ spec:
           hostPort: {{ .Values.agent.ports.https | default 443 }}
           protocol: TCP
         securityContext:
-          privileged: true
+          allowPrivilegeEscalation: false
           capabilities:
+            drop:
+            - ALL
             add:
-            - NET_ADMIN
-            - NET_RAW
+            - NET_BIND_SERVICE
         readinessProbe:
           exec:
             command:
