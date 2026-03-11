@@ -224,6 +224,8 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 	// that when the first goroutine exits we can signal the other to stop,
 	// preventing a goroutine leak (fixes #932).
 	streamCtx, streamCancel := context.WithCancel(ctx)
+	s.activeStreams.Store(peerName, streamCancel)
+	defer s.activeStreams.Delete(peerName)
 	defer streamCancel()
 
 	errCh := make(chan error, 2)
