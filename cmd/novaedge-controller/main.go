@@ -243,6 +243,7 @@ func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewa
 // initConfigServer creates the config server, wires mesh CA and federation, and starts the gRPC server.
 func initConfigServer(mgr ctrl.Manager, f *controllerFlags, zapLogger *uberzap.Logger) (*grpc.Server, *snapshot.Server) {
 	configServer := snapshot.NewServer(mgr.GetClient())
+	configServer.Start()
 
 	// Initialize mesh CA for issuing workload certificates (only when enabled).
 	if f.meshCAEnabled {

@@ -21,7 +21,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -29,14 +28,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 	"github.com/azrtydxb/novaedge/internal/controller/certmanager"
@@ -75,34 +71,25 @@ type ProxyGatewayReconciler struct {
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// Fetch the ProxyGateway instance
 	gateway := &novaedgev1alpha1.ProxyGateway{}
-	err := r.Get(ctx, req.NamespacedName, gateway)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("ProxyGateway resource not found. Ignoring since object must be deleted")
-			return ctrl.Result{}, nil
-		}
-		logger.Error(err, "Failed to get ProxyGateway")
-		return ctrl.Result{}, err
-	}
+	return reconcileWithGenerationCheck(ctx, r.Client, req, gateway, "ProxyGateway", r.ConfigServer,
+		func() int64 { return gateway.Status.ObservedGeneration },
+		func() []any { return []any{"name", gateway.Name} },
+		func() error { return r.reconcileGateway(ctx, gateway) },
+	)
+}
 
-	// Skip if already reconciled this generation (ObservedGeneration > 0
-	// ensures first-ever reconciliation always proceeds)
-	if gateway.Status.ObservedGeneration != 0 && gateway.Status.ObservedGeneration == gateway.Generation {
-		return ctrl.Result{}, nil
-	}
-
-	logger.Info("Reconciling ProxyGateway", "name", gateway.Name)
+// reconcileGateway performs the gateway-specific reconciliation logic:
+// loadBalancerClass filtering, cert-manager, Vault PKI, and status validation.
+func (r *ProxyGatewayReconciler) reconcileGateway(ctx context.Context, gateway *novaedgev1alpha1.ProxyGateway) error {
+	logger := log.FromContext(ctx)
 
 	// Check loadBalancerClass: only reconcile gateways matching our class
 	if !r.shouldReconcileGateway(gateway) {
 		logger.Info("Skipping gateway with non-matching loadBalancerClass",
 			"class", gateway.Spec.LoadBalancerClass,
 			"controllerClass", r.ControllerClass)
-		return ctrl.Result{}, nil
+		return nil
 	}
 
 	// Ensure cert-manager Certificate CRs for gateways with cert-manager annotations
@@ -122,15 +109,7 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Validate and update status
-	if err := r.validateAndUpdateStatus(ctx, gateway); err != nil {
-		logger.Error(err, "Failed to validate gateway")
-		return ctrl.Result{RequeueAfter: time.Second}, err
-	}
-
-	// Trigger config update for all nodes
-	triggerConfigUpdate(r.ConfigServer)
-
-	return ctrl.Result{}, nil
+	return r.validateAndUpdateStatus(ctx, gateway)
 }
 
 // ensureVaultCertificates issues certificates from Vault PKI for listeners that reference VaultCertRef,
@@ -326,8 +305,6 @@ func (r *ProxyGatewayReconciler) shouldReconcileGateway(gateway *novaedgev1alpha
 func (r *ProxyGatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.ProxyGateway{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
-		}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

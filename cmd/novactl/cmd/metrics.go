@@ -106,7 +106,7 @@ func runMetricsBackends(_ *cobra.Command, _ []string) error {
 
 		healthy := 0
 		for _, ep := range endpoints {
-			epMap, ok := ep.(map[string]interface{})
+			epMap, ok := ep.(map[string]any)
 			if !ok {
 				continue
 			}

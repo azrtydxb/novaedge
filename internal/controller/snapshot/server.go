@@ -112,9 +112,10 @@ type Server struct {
 	shutdownCh chan struct{}
 }
 
-// NewServer creates a new gRPC config server
+// NewServer creates a new gRPC config server.
+// Call Start() after construction to launch background goroutines.
 func NewServer(client client.Client) *Server {
-	s := &Server{
+	return &Server{
 		client:             client,
 		builder:            NewBuilder(client),
 		cache:              NewCache(),
@@ -122,11 +123,12 @@ func NewServer(client client.Client) *Server {
 		remoteAgentTracker: NewRemoteAgentTracker(),
 		shutdownCh:         make(chan struct{}),
 	}
+}
 
-	// Start the status cleanup goroutine
+// Start launches background goroutines such as the stale-agent cleanup loop.
+// It must be called after NewServer and before the server begins handling requests.
+func (s *Server) Start() {
 	go s.cleanupStaleAgents()
-
-	return s
 }
 
 // SetRemoteClusterHandler sets the handler for remote cluster updates
@@ -538,7 +540,7 @@ func (s *Server) GetAgentStatus(nodeName string) (*AgentStatusInfo, bool) {
 func (s *Server) GetAllAgentStatuses() []*AgentStatusInfo {
 	statuses := make([]*AgentStatusInfo, 0)
 
-	s.statusMap.Range(func(_, value interface{}) bool {
+	s.statusMap.Range(func(_, value any) bool {
 		status, ok := value.(*AgentStatusInfo)
 		if !ok {
 			return true
@@ -571,7 +573,7 @@ func (s *Server) cleanupStaleAgents() {
 		select {
 		case <-ticker.C:
 			now := time.Now()
-			s.statusMap.Range(func(key, value interface{}) bool {
+			s.statusMap.Range(func(key, value any) bool {
 				status, ok := value.(*AgentStatusInfo)
 				if !ok {
 					return true

@@ -53,5 +53,6 @@ func (r *EndpointSliceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 func (r *EndpointSliceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&discoveryv1.EndpointSlice{}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

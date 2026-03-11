@@ -154,9 +154,9 @@ func createTestCertificate(name, gatewayName string) *unstructured.Unstructured 
 	})
 
 	// Set spec
-	spec := map[string]interface{}{
+	spec := map[string]any{
 		"secretName": name + "-secret",
-		"dnsNames":   []interface{}{"example.com"},
+		"dnsNames":   []any{"example.com"},
 	}
 	_ = unstructured.SetNestedMap(cert.Object, spec, "spec")
 

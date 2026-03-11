@@ -227,7 +227,7 @@ func (c *Client) authenticateKubernetes(ctx context.Context) error {
 
 	// POST to /v1/auth/{mount}/login
 	loginPath := fmt.Sprintf("auth/%s/login", mountPath)
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"role": config.Role,
 		"jwt":  string(jwt),
 	}
@@ -277,7 +277,7 @@ func (c *Client) authenticateAppRole(ctx context.Context) error {
 	}
 
 	loginPath := fmt.Sprintf("auth/%s/login", mountPath)
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"role_id":   config.RoleID,
 		"secret_id": config.SecretID,
 	}
@@ -338,7 +338,7 @@ func (c *Client) Read(ctx context.Context, path string) (*Response, error) {
 }
 
 // Write writes data to Vault.
-func (c *Client) Write(ctx context.Context, path string, data map[string]interface{}) (*Response, error) {
+func (c *Client) Write(ctx context.Context, path string, data map[string]any) (*Response, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.httpClient.Write(ctx, path, data)

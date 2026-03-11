@@ -7,7 +7,7 @@ import (
 )
 
 // WriteJSON serializes v as pretty-printed JSON.
-func WriteJSON(w http.ResponseWriter, statusCode int, v interface{}) {
+func WriteJSON(w http.ResponseWriter, statusCode int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	enc := json.NewEncoder(w)
@@ -18,7 +18,7 @@ func WriteJSON(w http.ResponseWriter, statusCode int, v interface{}) {
 }
 
 // WriteJSONCompact serializes v as compact (non-indented) JSON.
-func WriteJSONCompact(w http.ResponseWriter, statusCode int, v interface{}) {
+func WriteJSONCompact(w http.ResponseWriter, statusCode int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(v); err != nil {

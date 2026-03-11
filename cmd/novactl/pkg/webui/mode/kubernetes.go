@@ -937,7 +937,7 @@ func (k *KubernetesBackend) unstructuredToGateway(obj *unstructured.Unstructured
 	// Parse listeners
 	if listeners, found, _ := unstructured.NestedSlice(spec, "listeners"); found {
 		for _, l := range listeners {
-			if lm, ok := l.(map[string]interface{}); ok {
+			if lm, ok := l.(map[string]any); ok {
 				listener := models.Listener{
 					Name:     getStringField(lm, "name"),
 					Port:     int(getInt64Field(lm, "port")),
@@ -956,14 +956,14 @@ func (k *KubernetesBackend) unstructuredToGateway(obj *unstructured.Unstructured
 
 func (k *KubernetesBackend) gatewayToUnstructured(gw *models.Gateway) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyGateway",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      gw.Name,
 				"namespace": gw.Namespace,
 			},
-			"spec": map[string]interface{}{},
+			"spec": map[string]any{},
 		},
 	}
 
@@ -971,16 +971,16 @@ func (k *KubernetesBackend) gatewayToUnstructured(gw *models.Gateway) *unstructu
 		obj.SetResourceVersion(gw.ResourceVersion)
 	}
 
-	spec, ok := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]any)
 	if !ok {
 		return obj
 	}
 
 	// Convert listeners
 	if len(gw.Listeners) > 0 {
-		listeners := make([]interface{}, 0, len(gw.Listeners))
+		listeners := make([]any, 0, len(gw.Listeners))
 		for _, l := range gw.Listeners {
-			listener := map[string]interface{}{
+			listener := map[string]any{
 				"name":     l.Name,
 				"port":     l.Port,
 				"protocol": l.Protocol,
@@ -1019,7 +1019,7 @@ func (k *KubernetesBackend) unstructuredToRoute(obj *unstructured.Unstructured) 
 	// Parse backend refs
 	if backends, found, _ := unstructured.NestedSlice(spec, "backendRefs"); found {
 		for _, b := range backends {
-			if bm, ok := b.(map[string]interface{}); ok {
+			if bm, ok := b.(map[string]any); ok {
 				ref := models.BackendRef{
 					Name:   getStringField(bm, "name"),
 					Weight: int(getInt64Field(bm, "weight")),
@@ -1034,14 +1034,14 @@ func (k *KubernetesBackend) unstructuredToRoute(obj *unstructured.Unstructured) 
 
 func (k *KubernetesBackend) routeToUnstructured(rt *models.Route) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyRoute",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      rt.Name,
 				"namespace": rt.Namespace,
 			},
-			"spec": map[string]interface{}{},
+			"spec": map[string]any{},
 		},
 	}
 
@@ -1049,7 +1049,7 @@ func (k *KubernetesBackend) routeToUnstructured(rt *models.Route) *unstructured.
 		obj.SetResourceVersion(rt.ResourceVersion)
 	}
 
-	spec, ok := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]any)
 	if !ok {
 		return obj
 	}
@@ -1059,9 +1059,9 @@ func (k *KubernetesBackend) routeToUnstructured(rt *models.Route) *unstructured.
 	}
 
 	if len(rt.BackendRefs) > 0 {
-		backends := make([]interface{}, 0, len(rt.BackendRefs))
+		backends := make([]any, 0, len(rt.BackendRefs))
 		for _, b := range rt.BackendRefs {
-			backend := map[string]interface{}{
+			backend := map[string]any{
 				"name": b.Name,
 			}
 			if b.Weight > 0 {
@@ -1095,7 +1095,7 @@ func (k *KubernetesBackend) unstructuredToBackend(obj *unstructured.Unstructured
 	// Parse endpoints
 	if endpoints, found, _ := unstructured.NestedSlice(spec, "endpoints"); found {
 		for _, e := range endpoints {
-			if em, ok := e.(map[string]interface{}); ok {
+			if em, ok := e.(map[string]any); ok {
 				endpoint := models.Endpoint{
 					Address: getStringField(em, "address"),
 					Weight:  int(getInt64Field(em, "weight")),
@@ -1110,14 +1110,14 @@ func (k *KubernetesBackend) unstructuredToBackend(obj *unstructured.Unstructured
 
 func (k *KubernetesBackend) backendToUnstructured(be *models.Backend) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyBackend",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      be.Name,
 				"namespace": be.Namespace,
 			},
-			"spec": map[string]interface{}{
+			"spec": map[string]any{
 				"lbPolicy": be.LBPolicy,
 			},
 		},
@@ -1127,15 +1127,15 @@ func (k *KubernetesBackend) backendToUnstructured(be *models.Backend) *unstructu
 		obj.SetResourceVersion(be.ResourceVersion)
 	}
 
-	spec, ok := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]any)
 	if !ok {
 		return obj
 	}
 
 	if len(be.Endpoints) > 0 {
-		endpoints := make([]interface{}, 0, len(be.Endpoints))
+		endpoints := make([]any, 0, len(be.Endpoints))
 		for _, e := range be.Endpoints {
-			endpoint := map[string]interface{}{
+			endpoint := map[string]any{
 				"address": e.Address,
 			}
 			if e.Weight > 0 {
@@ -1171,14 +1171,14 @@ func (k *KubernetesBackend) unstructuredToPolicy(obj *unstructured.Unstructured)
 
 func (k *KubernetesBackend) policyToUnstructured(pol *models.Policy) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyPolicy",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      pol.Name,
 				"namespace": pol.Namespace,
 			},
-			"spec": map[string]interface{}{
+			"spec": map[string]any{
 				"type": pol.Type,
 			},
 		},
@@ -1193,7 +1193,7 @@ func (k *KubernetesBackend) policyToUnstructured(pol *models.Policy) *unstructur
 
 // Helper functions
 
-func getStringField(m map[string]interface{}, key string) string {
+func getStringField(m map[string]any, key string) string {
 	if v, ok := m[key]; ok {
 		if s, ok := v.(string); ok {
 			return s
@@ -1202,7 +1202,7 @@ func getStringField(m map[string]interface{}, key string) string {
 	return ""
 }
 
-func getInt64Field(m map[string]interface{}, key string) int64 {
+func getInt64Field(m map[string]any, key string) int64 {
 	if v, ok := m[key]; ok {
 		switch n := v.(type) {
 		case int64:
@@ -1269,14 +1269,14 @@ func (k *KubernetesBackend) unstructuredToCertificate(obj *unstructured.Unstruct
 
 func (k *KubernetesBackend) certificateToUnstructured(cert *models.Certificate) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyCertificate",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name":      cert.Name,
 				"namespace": cert.Namespace,
 			},
-			"spec": map[string]interface{}{},
+			"spec": map[string]any{},
 		},
 	}
 
@@ -1290,24 +1290,24 @@ func (k *KubernetesBackend) certificateToUnstructured(cert *models.Certificate) 
 		obj.SetAnnotations(cert.Annotations)
 	}
 
-	spec, ok := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]any)
 	if !ok {
 		return obj
 	}
 
 	if len(cert.Spec.Domains) > 0 {
-		domains := make([]interface{}, len(cert.Spec.Domains))
+		domains := make([]any, len(cert.Spec.Domains))
 		for i, d := range cert.Spec.Domains {
 			domains[i] = d
 		}
 		spec["domains"] = domains
 	}
 
-	issuer := map[string]interface{}{
+	issuer := map[string]any{
 		"type": cert.Spec.Issuer.Type,
 	}
 	if cert.Spec.ACME != nil {
-		acme := map[string]interface{}{}
+		acme := map[string]any{}
 		if cert.Spec.ACME.Server != "" {
 			acme["server"] = cert.Spec.ACME.Server
 		}
@@ -1375,13 +1375,13 @@ func (k *KubernetesBackend) unstructuredToIPPool(obj *unstructured.Unstructured)
 
 func (k *KubernetesBackend) ipPoolToUnstructured(pool *models.IPPool) *unstructured.Unstructured {
 	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": "novaedge.io/v1alpha1",
 			"kind":       "ProxyIPPool",
-			"metadata": map[string]interface{}{
+			"metadata": map[string]any{
 				"name": pool.Name,
 			},
-			"spec": map[string]interface{}{},
+			"spec": map[string]any{},
 		},
 	}
 
@@ -1395,20 +1395,20 @@ func (k *KubernetesBackend) ipPoolToUnstructured(pool *models.IPPool) *unstructu
 		obj.SetAnnotations(pool.Annotations)
 	}
 
-	spec, ok := obj.Object["spec"].(map[string]interface{})
+	spec, ok := obj.Object["spec"].(map[string]any)
 	if !ok {
 		return obj
 	}
 
 	if len(pool.Spec.CIDRs) > 0 {
-		cidrs := make([]interface{}, len(pool.Spec.CIDRs))
+		cidrs := make([]any, len(pool.Spec.CIDRs))
 		for i, c := range pool.Spec.CIDRs {
 			cidrs[i] = c
 		}
 		spec["cidrs"] = cidrs
 	}
 	if len(pool.Spec.Addresses) > 0 {
-		addresses := make([]interface{}, len(pool.Spec.Addresses))
+		addresses := make([]any, len(pool.Spec.Addresses))
 		for i, a := range pool.Spec.Addresses {
 			addresses[i] = a
 		}
@@ -1426,8 +1426,8 @@ type genericModel struct {
 	namespace       string
 	labels          map[string]string
 	annotations     map[string]string
-	spec            map[string]interface{}
-	status          map[string]interface{}
+	spec            map[string]any
+	status          map[string]any
 	resourceVersion string
 }
 
@@ -1547,11 +1547,11 @@ func genericToRemoteClusterModel(g genericModel) *models.RemoteClusterModel {
 }
 
 func genericModelToUnstructured(kind, name, namespace string,
-	labels, annotations map[string]string, spec map[string]interface{}, resourceVersion string) *unstructured.Unstructured {
+	labels, annotations map[string]string, spec map[string]any, resourceVersion string) *unstructured.Unstructured {
 
 	const apiVersion = "novaedge.io/v1alpha1"
 
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"name": name,
 	}
 	if namespace != "" {
@@ -1559,7 +1559,7 @@ func genericModelToUnstructured(kind, name, namespace string,
 	}
 
 	obj := &unstructured.Unstructured{
-		Object: map[string]interface{}{
+		Object: map[string]any{
 			"apiVersion": apiVersion,
 			"kind":       kind,
 			"metadata":   metadata,
@@ -1579,13 +1579,13 @@ func genericModelToUnstructured(kind, name, namespace string,
 	if spec != nil {
 		obj.Object["spec"] = spec
 	} else {
-		obj.Object["spec"] = map[string]interface{}{}
+		obj.Object["spec"] = map[string]any{}
 	}
 
 	return obj
 }
 
-func getBoolField(m map[string]interface{}, key string) bool {
+func getBoolField(m map[string]any, key string) bool {
 	if v, ok := m[key]; ok {
 		if b, ok := v.(bool); ok {
 			return b

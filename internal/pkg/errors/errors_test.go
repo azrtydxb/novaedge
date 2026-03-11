@@ -118,7 +118,7 @@ func TestNetworkError(t *testing.T) {
 
 	t.Run("WithFields adds multiple fields", func(t *testing.T) {
 		err := NewNetworkError("test")
-		fields := map[string]interface{}{
+		fields := map[string]any{
 			"key1": "value1",
 			"key2": 42,
 		}
@@ -137,7 +137,7 @@ func TestNetworkError(t *testing.T) {
 
 	t.Run("WithFields on nil Fields map", func(t *testing.T) {
 		err := &NetworkError{}
-		result := err.WithFields(map[string]interface{}{"key": "value"})
+		result := err.WithFields(map[string]any{"key": "value"})
 		assert.Equal(t, err, result)
 		assert.Equal(t, "value", err.Fields["key"])
 	})
@@ -213,7 +213,7 @@ func TestConfigError(t *testing.T) {
 
 	t.Run("WithFields adds multiple fields", func(t *testing.T) {
 		err := NewConfigError("test")
-		fields := map[string]interface{}{
+		fields := map[string]any{
 			"key1": "value1",
 			"key2": 42,
 		}
@@ -310,7 +310,7 @@ func TestValidationError(t *testing.T) {
 
 	t.Run("WithFields adds multiple fields", func(t *testing.T) {
 		err := NewValidationError("test")
-		fields := map[string]interface{}{
+		fields := map[string]any{
 			"key1": "value1",
 			"key2": 42,
 		}
@@ -408,7 +408,7 @@ func TestTLSError(t *testing.T) {
 
 	t.Run("WithFields adds multiple fields", func(t *testing.T) {
 		err := NewTLSError("test")
-		fields := map[string]interface{}{
+		fields := map[string]any{
 			"key1": "value1",
 			"key2": 42,
 		}
@@ -487,7 +487,7 @@ func TestErrorChaining(t *testing.T) {
 		err := NewNetworkError("connection failed").
 			WithField("host", "example.com").
 			WithField("port", 8080).
-			WithFields(map[string]interface{}{
+			WithFields(map[string]any{
 				"timeout": 30,
 				"retry":   true,
 			})
@@ -501,7 +501,7 @@ func TestErrorChaining(t *testing.T) {
 	t.Run("ConfigError chaining", func(t *testing.T) {
 		err := NewConfigError("invalid config").
 			WithField("file", "config.yaml").
-			WithFields(map[string]interface{}{
+			WithFields(map[string]any{
 				"line": 10,
 			})
 
@@ -527,7 +527,7 @@ func TestErrorChaining(t *testing.T) {
 	t.Run("TLSError chaining", func(t *testing.T) {
 		err := NewTLSError("TLS failed").
 			WithField("version", "TLS1.3").
-			WithFields(map[string]interface{}{
+			WithFields(map[string]any{
 				"cipher": "AES-256-GCM",
 			})
 

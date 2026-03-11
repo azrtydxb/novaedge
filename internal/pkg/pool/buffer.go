@@ -27,7 +27,7 @@ import (
 // BufferPool is a sync.Pool for bytes.Buffer objects.
 // Use this for hot paths that frequently allocate byte buffers.
 var BufferPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(bytes.Buffer)
 	},
 }
@@ -58,7 +58,7 @@ func PutBuffer(buf *bytes.Buffer) {
 // StringBuilderPool is a sync.Pool for strings.Builder objects.
 // Use this for hot paths that frequently build strings.
 var StringBuilderPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return new(strings.Builder)
 	},
 }
@@ -97,7 +97,7 @@ func NewByteSlicePool(size int) *ByteSlicePool {
 	return &ByteSlicePool{
 		size: size,
 		pool: sync.Pool{
-			New: func() interface{} {
+			New: func() any {
 				buf := make([]byte, size)
 				return &buf
 			},

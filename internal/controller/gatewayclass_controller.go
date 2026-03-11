@@ -105,5 +105,6 @@ func (r *GatewayClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *GatewayClassReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gatewayv1.GatewayClass{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

@@ -22,7 +22,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -236,4 +235,3 @@ func getSignatureKey(secret, dateStamp, region, service string) []byte {
 }
 
 // Ensure xml import is used by referencing it.
-var _ = xml.Header

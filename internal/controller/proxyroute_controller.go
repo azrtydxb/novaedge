@@ -52,7 +52,7 @@ func (r *ProxyRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	route := &novaedgev1alpha1.ProxyRoute{}
 	return reconcileWithGenerationCheck(ctx, r.Client, req, route, "ProxyRoute", r.ConfigServer,
 		func() int64 { return route.Status.ObservedGeneration },
-		func() []interface{} { return []interface{}{"name", route.Name, "hostnames", route.Spec.Hostnames} },
+		func() []any { return []any{"name", route.Name, "hostnames", route.Spec.Hostnames} },
 		func() error { return r.validateAndUpdateStatus(ctx, route) },
 	)
 }
@@ -144,5 +144,6 @@ func (r *ProxyRouteReconciler) validateAndUpdateStatus(ctx context.Context, rout
 func (r *ProxyRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.ProxyRoute{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

@@ -114,7 +114,7 @@ func runCachePurge(agentAddr, pattern string) error {
 		return fmt.Errorf("%w: %d): %s", errCachePurgeFailedStatus, resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
+	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}
@@ -156,7 +156,7 @@ func runCacheStats(agentAddr string) error {
 		return fmt.Errorf("%w: %d): %s", errCacheStatsFailedStatus, resp.StatusCode, string(body))
 	}
 
-	var stats map[string]interface{}
+	var stats map[string]any
 	if err := json.Unmarshal(body, &stats); err != nil {
 		return fmt.Errorf("failed to parse response: %w", err)
 	}

@@ -387,5 +387,6 @@ func (r *HTTPRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&gatewayv1.HTTPRoute{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
 		Owns(&novaedgev1alpha1.ProxyBackend{}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

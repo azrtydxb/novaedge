@@ -99,7 +99,7 @@ func TestAdminHealthReturnsJSON(t *testing.T) {
 		t.Fatalf("expected application/json, got %s", ct)
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestAdminStatsReturnsJSON(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -161,11 +161,11 @@ func TestAdminClustersReturnsJSON(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	clusters, ok := body["clusters"].([]interface{})
+	clusters, ok := body["clusters"].([]any)
 	if !ok {
 		t.Fatal("expected clusters array")
 	}
@@ -192,7 +192,7 @@ func TestAdminConfigReturnsJSON(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
@@ -239,11 +239,11 @@ func TestAdminRoutesReturnsJSON(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var body map[string]interface{}
+	var body map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	routes, ok := body["routes"].(map[string]interface{})
+	routes, ok := body["routes"].(map[string]any)
 	if !ok {
 		t.Fatal("expected routes map")
 	}
@@ -371,7 +371,7 @@ func TestAdminNoSnapshotGraceful(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Errorf("%s: expected 200 with no snapshot, got %d", endpoint, rec.Code)
 		}
-		var body map[string]interface{}
+		var body map[string]any
 		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 			t.Errorf("%s: invalid JSON with no snapshot: %v", endpoint, err)
 		}

@@ -24,7 +24,7 @@ var (
 )
 
 // generateKeyPair generates a private/public key pair based on the configured key type.
-func generateKeyPair(keyType string) (privateKey, publicKey interface{}, err error) {
+func generateKeyPair(keyType string) (privateKey, publicKey any, err error) {
 	switch keyType {
 	case KeyTypeEC256:
 		key, genErr := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -211,7 +211,7 @@ func SignCertificate(caCert *Certificate, config *SelfSignedConfig) (*Certificat
 		return nil, errFailedToDecodeCAPrivateKey
 	}
 
-	var caPrivateKey interface{}
+	var caPrivateKey any
 	switch caKeyBlock.Type {
 	case "EC PRIVATE KEY":
 		caPrivateKey, err = x509.ParseECPrivateKey(caKeyBlock.Bytes)

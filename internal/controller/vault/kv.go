@@ -55,7 +55,7 @@ type KVManager struct {
 
 // cachedSecret stores a cached secret with expiry time.
 type cachedSecret struct {
-	data      map[string]interface{}
+	data      map[string]any
 	fetchedAt time.Time
 	ttl       time.Duration
 }
@@ -79,7 +79,7 @@ func NewKVManager(client *Client, logger *zap.Logger) *KVManager {
 
 // ReadSecret reads a secret from Vault KV engine.
 // For KV v2, the path is automatically adjusted to include "data/".
-func (k *KVManager) ReadSecret(ctx context.Context, engine KVEngine, path string) (map[string]interface{}, error) {
+func (k *KVManager) ReadSecret(ctx context.Context, engine KVEngine, path string) (map[string]any, error) {
 	apiPath := k.buildKVPath(engine, path)
 
 	resp, err := k.client.Read(ctx, apiPath)
@@ -93,7 +93,7 @@ func (k *KVManager) ReadSecret(ctx context.Context, engine KVEngine, path string
 
 	// KV v2 wraps data in a nested "data" key
 	if engine == KVEngineV2 {
-		if nestedData, ok := resp.Data["data"].(map[string]interface{}); ok {
+		if nestedData, ok := resp.Data["data"].(map[string]any); ok {
 			return nestedData, nil
 		}
 		return nil, fmt.Errorf("%w: %s", errUnexpectedKVV2ResponseStructureAtPath, path)
@@ -124,7 +124,7 @@ func (k *KVManager) ReadSecretKey(ctx context.Context, engine KVEngine, path, ke
 
 // ReadSecretCached reads a secret with caching support.
 // If the secret is in cache and not expired, the cached version is returned.
-func (k *KVManager) ReadSecretCached(ctx context.Context, engine KVEngine, path string, cacheTTL time.Duration) (map[string]interface{}, error) {
+func (k *KVManager) ReadSecretCached(ctx context.Context, engine KVEngine, path string, cacheTTL time.Duration) (map[string]any, error) {
 	cacheKey := fmt.Sprintf("%s:%s", engine, path)
 
 	// Check cache
@@ -169,12 +169,12 @@ func (k *KVManager) InvalidateAllCache() {
 }
 
 // WriteSecret writes a secret to Vault KV engine.
-func (k *KVManager) WriteSecret(ctx context.Context, engine KVEngine, path string, data map[string]interface{}) error {
+func (k *KVManager) WriteSecret(ctx context.Context, engine KVEngine, path string, data map[string]any) error {
 	apiPath := k.buildKVPath(engine, path)
 
-	var payload map[string]interface{}
+	var payload map[string]any
 	if engine == KVEngineV2 {
-		payload = map[string]interface{}{
+		payload = map[string]any{
 			"data": data,
 		}
 	} else {

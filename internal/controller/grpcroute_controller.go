@@ -29,7 +29,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
@@ -311,33 +310,12 @@ func (r *GRPCRouteReconciler) reconcileGRPCBackends(ctx context.Context, grpcRou
 	return nil
 }
 
-// handleGRPCRouteDeletion handles cleanup when a GRPCRoute is deleted
+// handleGRPCRouteDeletion handles cleanup when a GRPCRoute is deleted.
+// It delegates to the shared handleResourceDeletionWithName helper, passing
+// the "grpc-" prefixed name so the correct ProxyRoute is looked up.
 func (r *GRPCRouteReconciler) handleGRPCRouteDeletion(ctx context.Context, grpcRoute *gatewayv1.GRPCRoute) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-	logger.Info("Handling GRPCRoute deletion", "name", grpcRoute.Name)
-
-	grpcRouteName := "grpc-" + grpcRoute.Name
-	proxyRoute := &novaedgev1alpha1.ProxyRoute{}
-	err := r.Get(ctx, types.NamespacedName{Name: grpcRouteName, Namespace: grpcRoute.Namespace}, proxyRoute)
-	if err == nil {
-		logger.Info("Deleting associated ProxyRoute", "name", proxyRoute.Name)
-		if err := r.Delete(ctx, proxyRoute); err != nil && !apierrors.IsNotFound(err) {
-			logger.Error(err, "Failed to delete ProxyRoute")
-			return ctrl.Result{}, err
-		}
-	} else if !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to get ProxyRoute for deletion")
-		return ctrl.Result{}, err
-	}
-
-	if controllerutil.ContainsFinalizer(grpcRoute, "novaedge.io/grpcroute-finalizer") {
-		controllerutil.RemoveFinalizer(grpcRoute, "novaedge.io/grpcroute-finalizer")
-		if err := r.Update(ctx, grpcRoute); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
-
-	return ctrl.Result{}, nil
+	return handleResourceDeletionWithName(ctx, r.Client, grpcRoute, &novaedgev1alpha1.ProxyRoute{},
+		"grpc-"+grpcRoute.Name, "GRPCRoute", "novaedge.io/grpcroute-finalizer")
 }
 
 // updateGRPCRouteStatus updates the GRPCRoute status with the given condition
@@ -358,5 +336,6 @@ func (r *GRPCRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&gatewayv1.GRPCRoute{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
 		Owns(&novaedgev1alpha1.ProxyBackend{}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

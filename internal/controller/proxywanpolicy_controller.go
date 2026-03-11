@@ -109,7 +109,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: policy.Generation,
 		LastTransitionTime: metav1.Now(),
-		Reason:             "Reconciled",
+		Reason:             ConditionReasonValid,
 		Message:            "WAN policy configured successfully",
 	})
 
@@ -127,5 +127,6 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 func (r *ProxyWANPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.ProxyWANPolicy{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

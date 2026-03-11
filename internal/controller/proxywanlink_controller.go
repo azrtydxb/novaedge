@@ -111,7 +111,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: link.Generation,
 		LastTransitionTime: metav1.Now(),
-		Reason:             "Reconciled",
+		Reason:             ConditionReasonValid,
 		Message:            "WAN link configured successfully",
 	})
 
@@ -129,5 +129,6 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *ProxyWANLinkReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.ProxyWANLink{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

@@ -30,10 +30,13 @@ import (
 
 var (
 	errConfigPathIsRequired                            = errors.New("config path is required")
-	errGateway                                         = errors.New("gateway '")
-	errRoute2                                          = errors.New("route '")
-	errBackend2                                        = errors.New("backend '")
-	errPolicy                                          = errors.New("policy '")
+	errGatewayNotFound                                 = errors.New("gateway not found")
+	errRouteNotFound                                   = errors.New("route not found")
+	errRouteAlreadyExists                              = errors.New("route already exists")
+	errBackendNotFound                                 = errors.New("backend not found")
+	errBackendAlreadyExists                            = errors.New("backend already exists")
+	errPolicyNotFound                                  = errors.New("policy not found")
+	errPolicyAlreadyExists                             = errors.New("policy already exists")
 	errCertificatesAreNotSupportedInStandaloneMode     = errors.New("certificates are not supported in standalone mode")
 	errIPPoolsAreNotSupportedInStandaloneMode          = errors.New("IP pools are not supported in standalone mode")
 	errNovaEdgeClustersAreNotSupportedInStandaloneMode = errors.New("NovaEdge clusters are not supported in standalone mode")
@@ -180,7 +183,7 @@ func (s *StandaloneBackend) GetGateway(ctx context.Context, namespace, name stri
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s' not found", errGateway, name)
+	return nil, fmt.Errorf("%w: %s", errGatewayNotFound, name)
 }
 
 // CreateGateway creates a new gateway (adds listeners in standalone mode)
@@ -292,7 +295,7 @@ func (s *StandaloneBackend) DeleteGateway(_ context.Context, _, name string) err
 		return s.save()
 	}
 
-	return fmt.Errorf("%w: %s' not found", errGateway, name)
+	return fmt.Errorf("%w: %s", errGatewayNotFound, name)
 }
 
 // ListRoutes returns all routes
@@ -376,7 +379,7 @@ func (s *StandaloneBackend) GetRoute(ctx context.Context, namespace, name string
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s' not found", errRoute2, name)
+	return nil, fmt.Errorf("%w: %s", errRouteNotFound, name)
 }
 
 // CreateRoute creates a new route
@@ -391,7 +394,7 @@ func (s *StandaloneBackend) CreateRoute(_ context.Context, route *models.Route) 
 	// Check for duplicate
 	for _, r := range s.config.Routes {
 		if r.Name == route.Name {
-			return nil, fmt.Errorf("%w: %s' already exists", errRoute2, route.Name)
+			return nil, fmt.Errorf("%w: %s' ", errRouteAlreadyExists, route.Name)
 		}
 	}
 
@@ -424,7 +427,7 @@ func (s *StandaloneBackend) UpdateRoute(_ context.Context, route *models.Route) 
 	}
 
 	if !found {
-		return nil, fmt.Errorf("%w: %s' not found", errRoute2, route.Name)
+		return nil, fmt.Errorf("%w: %s", errRouteNotFound, route.Name)
 	}
 
 	if err := s.save(); err != nil {
@@ -450,7 +453,7 @@ func (s *StandaloneBackend) DeleteRoute(_ context.Context, _, name string) error
 		}
 	}
 
-	return fmt.Errorf("%w: %s' not found", errRoute2, name)
+	return fmt.Errorf("%w: %s", errRouteNotFound, name)
 }
 
 // ListBackends returns all backends
@@ -542,7 +545,7 @@ func (s *StandaloneBackend) GetBackend(ctx context.Context, namespace, name stri
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s' not found", errBackend2, name)
+	return nil, fmt.Errorf("%w: %s", errBackendNotFound, name)
 }
 
 // CreateBackend creates a new backend
@@ -557,7 +560,7 @@ func (s *StandaloneBackend) CreateBackend(_ context.Context, backend *models.Bac
 	// Check for duplicate
 	for _, b := range s.config.Backends {
 		if b.Name == backend.Name {
-			return nil, fmt.Errorf("%w: %s' already exists", errBackend2, backend.Name)
+			return nil, fmt.Errorf("%w: %s' ", errBackendAlreadyExists, backend.Name)
 		}
 	}
 
@@ -590,7 +593,7 @@ func (s *StandaloneBackend) UpdateBackend(_ context.Context, backend *models.Bac
 	}
 
 	if !found {
-		return nil, fmt.Errorf("%w: %s' not found", errBackend2, backend.Name)
+		return nil, fmt.Errorf("%w: %s", errBackendNotFound, backend.Name)
 	}
 
 	if err := s.save(); err != nil {
@@ -616,7 +619,7 @@ func (s *StandaloneBackend) DeleteBackend(_ context.Context, _, name string) err
 		}
 	}
 
-	return fmt.Errorf("%w: %s' not found", errBackend2, name)
+	return fmt.Errorf("%w: %s", errBackendNotFound, name)
 }
 
 // ListPolicies returns all policies
@@ -687,7 +690,7 @@ func (s *StandaloneBackend) GetPolicy(ctx context.Context, namespace, name strin
 		}
 	}
 
-	return nil, fmt.Errorf("%w: %s' not found", errPolicy, name)
+	return nil, fmt.Errorf("%w: %s", errPolicyNotFound, name)
 }
 
 // CreatePolicy creates a new policy
@@ -702,7 +705,7 @@ func (s *StandaloneBackend) CreatePolicy(_ context.Context, policy *models.Polic
 	// Check for duplicate
 	for _, p := range s.config.Policies {
 		if p.Name == policy.Name {
-			return nil, fmt.Errorf("%w: %s' already exists", errPolicy, policy.Name)
+			return nil, fmt.Errorf("%w: %s' ", errPolicyAlreadyExists, policy.Name)
 		}
 	}
 
@@ -735,7 +738,7 @@ func (s *StandaloneBackend) UpdatePolicy(_ context.Context, policy *models.Polic
 	}
 
 	if !found {
-		return nil, fmt.Errorf("%w: %s' not found", errPolicy, policy.Name)
+		return nil, fmt.Errorf("%w: %s", errPolicyNotFound, policy.Name)
 	}
 
 	if err := s.save(); err != nil {
@@ -761,7 +764,7 @@ func (s *StandaloneBackend) DeletePolicy(_ context.Context, _, name string) erro
 		}
 	}
 
-	return fmt.Errorf("%w: %s' not found", errPolicy, name)
+	return fmt.Errorf("%w: %s", errPolicyNotFound, name)
 }
 
 // ListCertificates returns all certificates (not supported in standalone mode)

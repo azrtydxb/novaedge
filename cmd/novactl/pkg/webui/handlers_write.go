@@ -117,7 +117,7 @@ func (s *Server) handleMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response := map[string]interface{}{
+	response := map[string]any{
 		"mode":     string(s.backend.Mode()),
 		"readOnly": s.backend.ReadOnly(),
 	}
@@ -445,7 +445,7 @@ func (s *Server) handleConfigHistoryRestore(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"message":    "configuration restored from snapshot",
 		"snapshotId": snapshotID,
 		"timestamp":  snapshot.Timestamp.Format(time.RFC3339),

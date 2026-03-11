@@ -441,5 +441,6 @@ func (r *GatewayReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gatewayv1.Gateway{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&novaedgev1alpha1.ProxyGateway{}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }

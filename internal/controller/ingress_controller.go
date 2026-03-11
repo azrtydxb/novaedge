@@ -20,22 +20,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
@@ -203,32 +199,7 @@ func (r *IngressReconciler) handleDeletion(ctx context.Context, ingress *network
 // reconcileResource creates or updates a NovaEdge proxy resource.
 // The kind parameter is used for logging (e.g. "ProxyGateway").
 func (r *IngressReconciler) reconcileResource(ctx context.Context, kind string, desired, existing client.Object, applySpec func()) error {
-	logger := log.FromContext(ctx)
-
-	err := r.Get(ctx, client.ObjectKey{
-		Name:      desired.GetName(),
-		Namespace: desired.GetNamespace(),
-	}, existing)
-
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			logger.Info("Creating "+kind, "name", desired.GetName())
-			if err := r.Create(ctx, desired); err != nil {
-				return fmt.Errorf("failed to create %s: %w", kind, err)
-			}
-			return nil
-		}
-		return fmt.Errorf("failed to get %s: %w", kind, err)
-	}
-
-	logger.Info("Updating "+kind, "name", desired.GetName())
-	applySpec()
-	existing.SetLabels(desired.GetLabels())
-	if err := r.Update(ctx, existing); err != nil {
-		return fmt.Errorf("failed to update %s: %w", kind, err)
-	}
-
-	return nil
+	return createOrUpdateResource(ctx, r.Client, kind, desired, existing, applySpec)
 }
 
 // reconcileGateway creates or updates a ProxyGateway
@@ -258,9 +229,7 @@ func (r *IngressReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&novaedgev1alpha1.ProxyGateway{}).
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
 		Owns(&novaedgev1alpha1.ProxyBackend{}).
-		WithOptions(controller.Options{
-			RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
-		}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }
 

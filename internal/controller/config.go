@@ -21,39 +21,42 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/workqueue"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // Condition reason constants used across controllers
 const (
-	// ConditionReasonValid indicates the resource configuration is valid
-	ConditionReasonValid = "Valid"
-	// ConditionReasonValidationFailed indicates the resource configuration failed validation
+	ConditionReasonValid            = "Valid"
 	ConditionReasonValidationFailed = "ValidationFailed"
 )
 
-// kindGateway is the Gateway API Kind string for Gateway resources.
 const kindGateway = "Gateway"
 
-// triggerConfigUpdate triggers a config update for all nodes via the given server.
-// If server is nil the call is a no-op.
 func triggerConfigUpdate(server *snapshot.Server) {
 	if server != nil {
 		server.TriggerUpdate("")
 	}
 }
 
-// reconcileWithGenerationCheck implements the common CRD reconciliation pattern:
-// fetch the resource, skip if not found, skip if generation already reconciled,
-// run validation, then trigger a config update.
+func defaultControllerOptions() controller.Options {
+	return controller.Options{
+		RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
+	}
+}
+
 func reconcileWithGenerationCheck(
 	ctx context.Context,
 	cli client.Client,
@@ -62,7 +65,7 @@ func reconcileWithGenerationCheck(
 	kind string,
 	cfgServer *snapshot.Server,
 	getObservedGeneration func() int64,
-	logFields func() []interface{},
+	logFields func() []any,
 	validate func() error,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
@@ -76,8 +79,6 @@ func reconcileWithGenerationCheck(
 		return ctrl.Result{}, err
 	}
 
-	// Skip if already reconciled this generation (ObservedGeneration > 0
-	// ensures first-ever reconciliation always proceeds)
 	observed := getObservedGeneration()
 	if observed != 0 && observed == obj.GetGeneration() {
 		return ctrl.Result{}, nil
@@ -87,7 +88,6 @@ func reconcileWithGenerationCheck(
 
 	if err := validate(); err != nil {
 		logger.Error(err, "Failed to validate "+kind)
-		// Return only the error so controller-runtime applies exponential backoff.
 		return ctrl.Result{}, err
 	}
 
@@ -95,14 +95,15 @@ func reconcileWithGenerationCheck(
 	return ctrl.Result{}, nil
 }
 
-// handleResourceDeletion is a shared helper that deletes an associated proxy resource and removes
-// a finalizer from the source Gateway API resource (Gateway or HTTPRoute).
 func handleResourceDeletion(ctx context.Context, cli client.Client, source client.Object, proxyObj client.Object, kind, finalizerName string) (ctrl.Result, error) {
+	return handleResourceDeletionWithName(ctx, cli, source, proxyObj, source.GetName(), kind, finalizerName)
+}
+
+func handleResourceDeletionWithName(ctx context.Context, cli client.Client, source client.Object, proxyObj client.Object, proxyName, kind, finalizerName string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	logger.Info("Handling "+kind+" deletion", "name", source.GetName())
 
-	// Delete associated proxy resource if it exists
-	err := cli.Get(ctx, types.NamespacedName{Name: source.GetName(), Namespace: source.GetNamespace()}, proxyObj)
+	err := cli.Get(ctx, types.NamespacedName{Name: proxyName, Namespace: source.GetNamespace()}, proxyObj)
 	if err == nil {
 		logger.Info("Deleting associated proxy resource", "kind", kind, "name", proxyObj.GetName())
 		if err := cli.Delete(ctx, proxyObj); err != nil && !apierrors.IsNotFound(err) {
@@ -114,7 +115,6 @@ func handleResourceDeletion(ctx context.Context, cli client.Client, source clien
 		return ctrl.Result{}, err
 	}
 
-	// Remove finalizer if it exists
 	if controllerutil.ContainsFinalizer(source, finalizerName) {
 		controllerutil.RemoveFinalizer(source, finalizerName)
 		if err := cli.Update(ctx, source); err != nil {
@@ -123,4 +123,33 @@ func handleResourceDeletion(ctx context.Context, cli client.Client, source clien
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func createOrUpdateResource(ctx context.Context, cli client.Client, kind string, desired, existing client.Object, applySpec func()) error {
+	logger := log.FromContext(ctx)
+
+	err := cli.Get(ctx, client.ObjectKey{
+		Name:      desired.GetName(),
+		Namespace: desired.GetNamespace(),
+	}, existing)
+
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			logger.Info("Creating "+kind, "name", desired.GetName())
+			if err := cli.Create(ctx, desired); err != nil {
+				return fmt.Errorf("failed to create %s: %w", kind, err)
+			}
+			return nil
+		}
+		return fmt.Errorf("failed to get %s: %w", kind, err)
+	}
+
+	logger.Info("Updating "+kind, "name", desired.GetName())
+	applySpec()
+	existing.SetLabels(desired.GetLabels())
+	if err := cli.Update(ctx, existing); err != nil {
+		return fmt.Errorf("failed to update %s: %w", kind, err)
+	}
+
+	return nil
 }

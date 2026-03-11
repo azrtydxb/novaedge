@@ -43,7 +43,7 @@ func TestKVManager_BuildKVPath_V2(t *testing.T) {
 
 func TestKVManager_CacheExpiry(t *testing.T) {
 	cached := &cachedSecret{
-		data:      map[string]interface{}{"key": "value"},
+		data:      map[string]any{"key": "value"},
 		fetchedAt: time.Now().Add(-10 * time.Minute),
 		ttl:       5 * time.Minute,
 	}
@@ -64,7 +64,7 @@ func TestKVManager_InvalidateCache(t *testing.T) {
 	// Add to cache
 	kv.mu.Lock()
 	kv.cache["kv-v2:secret/test"] = &cachedSecret{
-		data:      map[string]interface{}{"key": "value"},
+		data:      map[string]any{"key": "value"},
 		fetchedAt: time.Now(),
 		ttl:       5 * time.Minute,
 	}
@@ -94,8 +94,8 @@ func TestKVManager_InvalidateAllCache(t *testing.T) {
 	kv := NewKVManager(nil, zap.NewNop())
 
 	kv.mu.Lock()
-	kv.cache["key1"] = &cachedSecret{data: map[string]interface{}{"a": "1"}}
-	kv.cache["key2"] = &cachedSecret{data: map[string]interface{}{"b": "2"}}
+	kv.cache["key1"] = &cachedSecret{data: map[string]any{"a": "1"}}
+	kv.cache["key2"] = &cachedSecret{data: map[string]any{"b": "2"}}
 	kv.mu.Unlock()
 
 	kv.InvalidateAllCache()

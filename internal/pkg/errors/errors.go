@@ -97,12 +97,12 @@ var (
 
 // NetworkError represents network-related errors
 type NetworkError struct {
-	Op      string                 // Operation that failed (e.g., "dial", "connect", "read")
-	Host    string                 // Host or address
-	Port    int32                  // Port number
-	Message string                 // Error message
-	Err     error                  // Underlying error
-	Fields  map[string]interface{} // Additional structured context
+	Op      string         // Operation that failed (e.g., "dial", "connect", "read")
+	Host    string         // Host or address
+	Port    int32          // Port number
+	Message string         // Error message
+	Err     error          // Underlying error
+	Fields  map[string]any // Additional structured context
 }
 
 func (e *NetworkError) Error() string {
@@ -133,18 +133,18 @@ func (e *NetworkError) Unwrap() error {
 }
 
 // WithField adds a structured field to the error
-func (e *NetworkError) WithField(key string, value interface{}) *NetworkError {
+func (e *NetworkError) WithField(key string, value any) *NetworkError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	e.Fields[key] = value
 	return e
 }
 
 // WithFields adds multiple structured fields to the error
-func (e *NetworkError) WithFields(fields map[string]interface{}) *NetworkError {
+func (e *NetworkError) WithFields(fields map[string]any) *NetworkError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	for k, v := range fields {
 		e.Fields[k] = v
@@ -156,17 +156,17 @@ func (e *NetworkError) WithFields(fields map[string]interface{}) *NetworkError {
 func NewNetworkError(message string) *NetworkError {
 	return &NetworkError{
 		Message: message,
-		Fields:  make(map[string]interface{}),
+		Fields:  make(map[string]any),
 	}
 }
 
 // ConfigError represents configuration-related errors
 type ConfigError struct {
-	Field   string                 // Configuration field that caused error
-	Value   interface{}            // Invalid value
-	Message string                 // Error message
-	Err     error                  // Underlying error
-	Fields  map[string]interface{} // Additional structured context
+	Field   string         // Configuration field that caused error
+	Value   any            // Invalid value
+	Message string         // Error message
+	Err     error          // Underlying error
+	Fields  map[string]any // Additional structured context
 }
 
 func (e *ConfigError) Error() string {
@@ -193,18 +193,18 @@ func (e *ConfigError) Unwrap() error {
 }
 
 // WithField adds a structured field to the error
-func (e *ConfigError) WithField(key string, value interface{}) *ConfigError {
+func (e *ConfigError) WithField(key string, value any) *ConfigError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	e.Fields[key] = value
 	return e
 }
 
 // WithFields adds multiple structured fields to the error
-func (e *ConfigError) WithFields(fields map[string]interface{}) *ConfigError {
+func (e *ConfigError) WithFields(fields map[string]any) *ConfigError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	for k, v := range fields {
 		e.Fields[k] = v
@@ -216,19 +216,19 @@ func (e *ConfigError) WithFields(fields map[string]interface{}) *ConfigError {
 func NewConfigError(message string) *ConfigError {
 	return &ConfigError{
 		Message: message,
-		Fields:  make(map[string]interface{}),
+		Fields:  make(map[string]any),
 	}
 }
 
 // ValidationError represents validation-related errors
 type ValidationError struct {
-	Field    string                 // Field that failed validation
-	Value    interface{}            // Invalid value
-	Rule     string                 // Validation rule that failed
-	Message  string                 // Error message
-	Err      error                  // Underlying error
-	Fields   map[string]interface{} // Additional structured context
-	Children []*ValidationError     // Nested validation errors
+	Field    string             // Field that failed validation
+	Value    any                // Invalid value
+	Rule     string             // Validation rule that failed
+	Message  string             // Error message
+	Err      error              // Underlying error
+	Fields   map[string]any     // Additional structured context
+	Children []*ValidationError // Nested validation errors
 }
 
 func (e *ValidationError) Error() string {
@@ -268,18 +268,18 @@ func (e *ValidationError) Unwrap() error {
 }
 
 // WithField adds a structured field to the error
-func (e *ValidationError) WithField(key string, value interface{}) *ValidationError {
+func (e *ValidationError) WithField(key string, value any) *ValidationError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	e.Fields[key] = value
 	return e
 }
 
 // WithFields adds multiple structured fields to the error
-func (e *ValidationError) WithFields(fields map[string]interface{}) *ValidationError {
+func (e *ValidationError) WithFields(fields map[string]any) *ValidationError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	for k, v := range fields {
 		e.Fields[k] = v
@@ -297,18 +297,18 @@ func (e *ValidationError) AddChild(child *ValidationError) *ValidationError {
 func NewValidationError(message string) *ValidationError {
 	return &ValidationError{
 		Message:  message,
-		Fields:   make(map[string]interface{}),
+		Fields:   make(map[string]any),
 		Children: make([]*ValidationError, 0),
 	}
 }
 
 // TLSError represents TLS-related errors
 type TLSError struct {
-	Op      string                 // Operation that failed (e.g., "handshake", "verify")
-	Host    string                 // Host or SNI name
-	Message string                 // Error message
-	Err     error                  // Underlying error
-	Fields  map[string]interface{} // Additional structured context
+	Op      string         // Operation that failed (e.g., "handshake", "verify")
+	Host    string         // Host or SNI name
+	Message string         // Error message
+	Err     error          // Underlying error
+	Fields  map[string]any // Additional structured context
 }
 
 func (e *TLSError) Error() string {
@@ -335,18 +335,18 @@ func (e *TLSError) Unwrap() error {
 }
 
 // WithField adds a structured field to the error
-func (e *TLSError) WithField(key string, value interface{}) *TLSError {
+func (e *TLSError) WithField(key string, value any) *TLSError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	e.Fields[key] = value
 	return e
 }
 
 // WithFields adds multiple structured fields to the error
-func (e *TLSError) WithFields(fields map[string]interface{}) *TLSError {
+func (e *TLSError) WithFields(fields map[string]any) *TLSError {
 	if e.Fields == nil {
-		e.Fields = make(map[string]interface{})
+		e.Fields = make(map[string]any)
 	}
 	for k, v := range fields {
 		e.Fields[k] = v
@@ -358,6 +358,6 @@ func (e *TLSError) WithFields(fields map[string]interface{}) *TLSError {
 func NewTLSError(message string) *TLSError {
 	return &TLSError{
 		Message: message,
-		Fields:  make(map[string]interface{}),
+		Fields:  make(map[string]any),
 	}
 }

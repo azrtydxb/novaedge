@@ -56,6 +56,7 @@ func (r *TCPRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gatewayv1alpha2.TCPRoute{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }
 
@@ -85,5 +86,6 @@ func (r *TLSRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&gatewayv1alpha2.TLSRoute{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Owns(&novaedgev1alpha1.ProxyRoute{}).
+		WithOptions(defaultControllerOptions()).
 		Complete(r)
 }
