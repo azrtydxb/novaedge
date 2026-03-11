@@ -455,7 +455,10 @@ func splitBrainConfigEqual(a, b *SplitBrainConfig) bool {
 		a.HealingGracePeriod == b.HealingGracePeriod &&
 		a.AutoResolveOnHeal == b.AutoResolveOnHeal &&
 		a.FencingEnabled == b.FencingEnabled &&
-		a.QuorumMode == b.QuorumMode
+		a.QuorumMode == b.QuorumMode &&
+		a.AgentQuorumWeight == b.AgentQuorumWeight &&
+		a.ControllerQuorumWeight == b.ControllerQuorumWeight &&
+		a.MinAgentsForQuorum == b.MinAgentsForQuorum
 }
 
 // stringSliceEqual returns true when two string slices have the same elements in the same order.

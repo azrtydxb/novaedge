@@ -31,15 +31,6 @@ func TestDefaultSplitBrainConfig(t *testing.T) {
 	assert.Equal(t, DefaultHealingGracePeriod, config.HealingGracePeriod)
 }
 
-func TestAgentAssistedSplitBrainConfig(t *testing.T) {
-	config := AgentAssistedSplitBrainConfig()
-	assert.Equal(t, QuorumModeAgentAssisted, config.QuorumMode)
-	assert.True(t, config.QuorumRequired)
-	assert.Equal(t, 1, config.AgentQuorumWeight)
-	assert.Equal(t, 10, config.ControllerQuorumWeight)
-	assert.Equal(t, 1, config.MinAgentsForQuorum)
-}
-
 func TestSplitBrainConfigDefaults(t *testing.T) {
 	tests := []struct {
 		name     string

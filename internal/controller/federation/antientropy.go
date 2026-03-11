@@ -23,7 +23,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -907,30 +906,6 @@ func (m *AntiEntropyManager) pushResourceToPeer(client *PeerClient, resource *Tr
 	return client.SendChange(change)
 }
 
-// UpdateResource updates a resource in the local merkle tree
-func (m *AntiEntropyManager) UpdateResource(key, hash string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.localTree.Update(key, hash)
-}
-
-// RemoveResource removes a resource from the local merkle tree
-func (m *AntiEntropyManager) RemoveResource(key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.localTree.Remove(key)
-}
-
-// GetLocalTreeRoot returns the root hash of the local merkle tree
-func (m *AntiEntropyManager) GetLocalTreeRoot() string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	return m.localTree.GetRoot()
-}
-
 // DriftReport contains information about detected drift
 type DriftReport struct {
 	// Peer is the peer we compared with
@@ -950,61 +925,4 @@ type DriftReport struct {
 
 	// HashMismatches are keys where both have the resource but hashes differ
 	HashMismatches []string
-}
-
-// GetDriftReports returns the most recent drift reports from the last anti-entropy cycle
-func (m *AntiEntropyManager) GetDriftReports() []*DriftReport {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	if m.driftReports == nil {
-		return nil
-	}
-
-	// Return a copy to avoid data races
-	reports := make([]*DriftReport, len(m.driftReports))
-	copy(reports, m.driftReports)
-	return reports
-}
-
-// GetDriftReportForPeer returns the latest drift report for a specific peer, or nil
-func (m *AntiEntropyManager) GetDriftReportForPeer(peerName string) *DriftReport {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	for _, report := range m.driftReports {
-		if report.Peer == peerName {
-			return report
-		}
-	}
-	return nil
-}
-
-// TotalDrift returns the total number of differing keys across all peers
-func (m *AntiEntropyManager) TotalDrift() int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	total := 0
-	for _, report := range m.driftReports {
-		total += len(report.DifferingKeys)
-	}
-	return total
-}
-
-// FormatDriftSummary returns a summary string useful for logging
-func (m *AntiEntropyManager) FormatDriftSummary() string {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	if len(m.driftReports) == 0 {
-		return "no drift reports"
-	}
-
-	total := 0
-	for _, report := range m.driftReports {
-		total += len(report.DifferingKeys)
-	}
-
-	return fmt.Sprintf("%d peers checked, %d total differences", len(m.driftReports), total)
 }
