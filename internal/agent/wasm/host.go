@@ -23,6 +23,10 @@ import (
 	"go.uber.org/zap"
 )
 
+// hostLogger is the package-level logger used by host functions.
+// It is set when the Runtime is created via NewRuntime.
+var hostLogger = zap.NewNop()
+
 // hostModuleName is the WASM module name that exposes host functions.
 const hostModuleName = "novaedge"
 
@@ -129,7 +133,7 @@ func hostGetRequestHeader(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostGetRequestHeader"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostGetRequestHeader"))
 		stack[0] = 0
 		return
 	}
@@ -152,12 +156,12 @@ func hostSetRequestHeader(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
 		return
 	}
 	valBytes, ok := mem.Read(valPtr, valLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
 		return
 	}
 	rc.Request.Header.Set(string(nameBytes), string(valBytes))
@@ -177,7 +181,7 @@ func hostGetResponseHeader(ctx context.Context, mod api.Module, stack []uint64) 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostGetResponseHeader"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostGetResponseHeader"))
 		stack[0] = 0
 		return
 	}
@@ -200,12 +204,12 @@ func hostSetResponseHeader(ctx context.Context, mod api.Module, stack []uint64) 
 	mem := mod.Memory()
 	nameBytes, ok := mem.Read(namePtr, nameLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetResponseHeader"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostSetResponseHeader"))
 		return
 	}
 	valBytes, ok := mem.Read(valPtr, valLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSetResponseHeader"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostSetResponseHeader"))
 		return
 	}
 	if rc.ResponseHeaders == nil {
@@ -256,7 +260,7 @@ func hostGetConfigValue(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	keyBytes, ok := mem.Read(keyPtr, keyLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostGetConfigValue"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostGetConfigValue"))
 		stack[0] = 0
 		return
 	}
@@ -283,7 +287,7 @@ func hostLogMessage(_ context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	msgBytes, ok := mem.Read(msgPtr, msgLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostLogMessage"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostLogMessage"))
 		return
 	}
 
@@ -293,13 +297,13 @@ func hostLogMessage(_ context.Context, mod api.Module, stack []uint64) {
 	// In production the logger is injected via Plugin.
 	switch level {
 	case 0: // debug
-		zap.L().Debug("wasm plugin", zap.String("msg", msg))
+		hostLogger.Debug("wasm plugin", zap.String("msg", msg))
 	case 1: // info
-		zap.L().Info("wasm plugin", zap.String("msg", msg))
+		hostLogger.Info("wasm plugin", zap.String("msg", msg))
 	case 2: // warn
-		zap.L().Warn("wasm plugin", zap.String("msg", msg))
+		hostLogger.Warn("wasm plugin", zap.String("msg", msg))
 	default: // error
-		zap.L().Error("wasm plugin", zap.String("msg", msg))
+		hostLogger.Error("wasm plugin", zap.String("msg", msg))
 	}
 }
 
@@ -315,14 +319,14 @@ func hostSendResponse(ctx context.Context, mod api.Module, stack []uint64) {
 	mem := mod.Memory()
 	bodyBytes, ok := mem.Read(bodyPtr, bodyLen)
 	if !ok {
-		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSendResponse"))
+		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostSendResponse"))
 		bodyBytes = []byte("WASM plugin error: could not read body from memory")
 	}
 
 	// Validate the HTTP status code before writing to prevent invalid responses
 	// from malicious or buggy WASM plugins.
 	if statusCode < 100 || statusCode > 599 {
-		zap.L().Warn("WASM plugin attempted invalid status code", zap.Uint32("code", statusCode))
+		hostLogger.Warn("WASM plugin attempted invalid status code", zap.Uint32("code", statusCode))
 		statusCode = 500
 	}
 
@@ -343,7 +347,7 @@ func writeStringToMemory(mem api.Memory, ptr, bufCap uint32, value string) uint3
 		b = b[:bufCap]
 	}
 	if !mem.Write(ptr, b) {
-		zap.L().Debug("WASM host: memory write failed", zap.String("function", "writeStringToMemory"))
+		hostLogger.Debug("WASM host: memory write failed", zap.String("function", "writeStringToMemory"))
 		return 0
 	}
 	if len(b) > int(maxUint32) {

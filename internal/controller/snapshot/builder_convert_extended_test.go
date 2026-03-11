@@ -23,6 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/azrtydxb/novaedge/internal/pkg/convert"
+
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
@@ -348,7 +350,7 @@ func TestParseByteSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := parseByteSize(tt.input)
+			result, err := convert.ParseByteSize(tt.input)
 			if tt.expectError {
 				assert.Error(t, err)
 			} else {

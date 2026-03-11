@@ -67,7 +67,7 @@ func NewConfigWatcher(configPath, nodeName string, logger *zap.Logger) (*ConfigW
 		configPath: absPath,
 		nodeName:   nodeName,
 		logger:     logger,
-		converter:  NewConverter(),
+		converter:  NewConverter(logger),
 	}, nil
 }
 
