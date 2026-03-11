@@ -3,10 +3,12 @@ package auth
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -30,6 +32,9 @@ const (
 	cookieName = "novaedge_session"
 	// defaultSessionTTL is the default session duration.
 	defaultSessionTTL = 8 * time.Hour
+	// maxSessions is the maximum number of concurrent sessions allowed.
+	// When the limit is reached, the oldest sessions are evicted.
+	maxSessions = 1000
 )
 
 // Config holds authentication configuration.
@@ -82,7 +87,10 @@ func (m *Manager) Login(user, pass string) (string, error) {
 		return "", errAuthenticationIsNotConfigured
 	}
 
-	if user != m.config.BasicUser || pass != m.config.BasicPass {
+	userMatch := subtle.ConstantTimeCompare([]byte(user), []byte(m.config.BasicUser))
+	passMatch := subtle.ConstantTimeCompare([]byte(pass), []byte(m.config.BasicPass))
+
+	if userMatch&passMatch != 1 {
 		return "", errInvalidCredentials
 	}
 
@@ -92,8 +100,51 @@ func (m *Manager) Login(user, pass string) (string, error) {
 	}
 
 	m.sessions.Store(token, time.Now().Add(m.config.SessionTTL))
+	m.evictExcessSessions()
 
 	return token, nil
+}
+
+// evictExcessSessions removes expired sessions and evicts the oldest when the count exceeds maxSessions.
+func (m *Manager) evictExcessSessions() {
+	type entry struct {
+		token  string
+		expiry time.Time
+	}
+
+	var entries []entry
+	now := time.Now()
+
+	m.sessions.Range(func(key, value interface{}) bool {
+		tok, _ := key.(string)
+		exp, ok := value.(time.Time)
+		if !ok {
+			m.sessions.Delete(key)
+			return true
+		}
+
+		if now.After(exp) {
+			m.sessions.Delete(key)
+			return true
+		}
+
+		entries = append(entries, entry{token: tok, expiry: exp})
+		return true
+	})
+
+	if len(entries) <= maxSessions {
+		return
+	}
+
+	// Sort by expiry ascending so we evict the soonest-to-expire sessions first.
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].expiry.Before(entries[j].expiry)
+	})
+
+	excess := len(entries) - maxSessions
+	for i := 0; i < excess; i++ {
+		m.sessions.Delete(entries[i].token)
+	}
 }
 
 // createToken generates an HS256-signed JWT for the given username.
