@@ -91,6 +91,7 @@ func (p *InstancePool) Put(inst *Instance) {
 	// Return to pool or discard if full
 	select {
 	case p.pool <- inst:
+		SetInstancePoolSize(p.plugin.config.Name, len(p.pool))
 	default:
 		// Pool is full, close this instance
 		_ = inst.module.Close(context.Background())
@@ -111,6 +112,7 @@ func (p *InstancePool) Close(ctx context.Context) {
 				_ = inst.module.Close(ctx)
 			}
 		default:
+			SetInstancePoolSize(p.plugin.config.Name, 0)
 			return
 		}
 	}
@@ -138,6 +140,7 @@ func (p *InstancePool) createInstance(ctx context.Context) (*Instance, error) {
 	p.plugin.logger.Debug("Created new WASM instance",
 		zap.String("plugin", p.plugin.config.Name),
 	)
+	SetInstancePoolSize(p.plugin.config.Name, len(p.pool))
 
 	return &Instance{module: mod}, nil
 }
