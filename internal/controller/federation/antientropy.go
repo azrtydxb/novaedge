@@ -457,7 +457,7 @@ func (m *AntiEntropyManager) rebuildLocalTree() {
 	}
 
 	// Iterate through tracked resources
-	m.server.resources.Range(func(key, value interface{}) bool {
+	m.server.resources.Range(func(key, value any) bool {
 		keyStr, ok := key.(string)
 		if !ok {
 			return true
@@ -664,7 +664,7 @@ func (m *AntiEntropyManager) handleWeAreAhead(peerName string) *DriftReport {
 
 	// Find resources the peer is missing or has outdated versions of
 	sent := 0
-	m.server.resources.Range(func(key, value interface{}) bool {
+	m.server.resources.Range(func(key, value any) bool {
 		if sent >= m.config.BatchSize {
 			return false
 		}
@@ -785,7 +785,7 @@ func (m *AntiEntropyManager) handlePeerIsAhead(peerName string) *DriftReport {
 func (m *AntiEntropyManager) reconcileWithPeerResources(peerName string, peerResources map[string]*pb.ResourceChange, report *DriftReport) {
 	// Build local resource hashes
 	localHashes := make(map[string]string)
-	m.server.resources.Range(func(key, value interface{}) bool {
+	m.server.resources.Range(func(key, value any) bool {
 		keyStr, ok := key.(string)
 		if !ok {
 			return true
@@ -848,7 +848,7 @@ func (m *AntiEntropyManager) reconcileWithPeerResources(peerName string, peerRes
 			peerKeys[k] = true
 		}
 
-		m.server.resources.Range(func(key, value interface{}) bool {
+		m.server.resources.Range(func(key, value any) bool {
 			if pushed+applied >= m.config.BatchSize {
 				return false
 			}

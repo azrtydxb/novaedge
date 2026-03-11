@@ -682,7 +682,7 @@ func (d *SplitBrainDetector) getUnreachablePeerNames() []string {
 	// Get all known peers from server
 	var unreachable []string
 	if d.server != nil {
-		d.server.peerStates.Range(func(key, _ interface{}) bool {
+		d.server.peerStates.Range(func(key, _ any) bool {
 			peerName, ok := key.(string)
 			if !ok {
 				return true
@@ -872,16 +872,16 @@ func (d *SplitBrainDetector) CleanupStaleAgentReports() {
 }
 
 // GetAgentReachabilityStats returns statistics about agent reachability
-func (d *SplitBrainDetector) GetAgentReachabilityStats() map[string]interface{} {
+func (d *SplitBrainDetector) GetAgentReachabilityStats() map[string]any {
 	info := d.GetAgentQuorumInfo()
 	if info == nil {
-		return map[string]interface{}{
+		return map[string]any{
 			"mode":    string(d.config.QuorumMode),
 			"enabled": false,
 		}
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"mode":             string(d.config.QuorumMode),
 		"enabled":          true,
 		"totalAgents":      info.TotalAgents,

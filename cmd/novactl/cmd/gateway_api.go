@@ -116,17 +116,17 @@ func runGetGatewayClasses(_ *cobra.Command, _ []string) error {
 		name := item.GetName()
 
 		controllerName := ""
-		if spec, ok := item.Object["spec"].(map[string]interface{}); ok {
+		if spec, ok := item.Object["spec"].(map[string]any); ok {
 			if cn, ok := spec["controllerName"].(string); ok {
 				controllerName = cn
 			}
 		}
 
 		accepted := statusUnknown
-		if status, ok := item.Object["status"].(map[string]interface{}); ok {
-			if conditions, ok := status["conditions"].([]interface{}); ok {
+		if status, ok := item.Object["status"].(map[string]any); ok {
+			if conditions, ok := status["conditions"].([]any); ok {
 				for _, c := range conditions {
-					if cond, ok := c.(map[string]interface{}); ok {
+					if cond, ok := c.(map[string]any); ok {
 						condType, _ := cond["type"].(string)
 						condStatus, _ := cond["status"].(string)
 						if condType == conditionAccepted {
@@ -177,21 +177,21 @@ func runGetGatewayAPIGateways(_ *cobra.Command, _ []string) error {
 
 		className := ""
 		listenerCount := 0
-		if spec, ok := item.Object["spec"].(map[string]interface{}); ok {
+		if spec, ok := item.Object["spec"].(map[string]any); ok {
 			if cn, ok := spec["gatewayClassName"].(string); ok {
 				className = cn
 			}
-			if listeners, ok := spec["listeners"].([]interface{}); ok {
+			if listeners, ok := spec["listeners"].([]any); ok {
 				listenerCount = len(listeners)
 			}
 		}
 
 		accepted := statusUnknown
 		programmed := statusUnknown
-		if status, ok := item.Object["status"].(map[string]interface{}); ok {
-			if conditions, ok := status["conditions"].([]interface{}); ok {
+		if status, ok := item.Object["status"].(map[string]any); ok {
+			if conditions, ok := status["conditions"].([]any); ok {
 				for _, c := range conditions {
-					if cond, ok := c.(map[string]interface{}); ok {
+					if cond, ok := c.(map[string]any); ok {
 						condType, _ := cond["type"].(string)
 						condStatus, _ := cond["status"].(string)
 						switch condType {
@@ -248,8 +248,8 @@ func runGetHTTPRoutes(_ *cobra.Command, _ []string) error {
 
 		hostnames := "*"
 		parentCount := 0
-		if spec, ok := item.Object["spec"].(map[string]interface{}); ok {
-			if hn, ok := spec["hostnames"].([]interface{}); ok && len(hn) > 0 {
+		if spec, ok := item.Object["spec"].(map[string]any); ok {
+			if hn, ok := spec["hostnames"].([]any); ok && len(hn) > 0 {
 				hostnames = ""
 				for i, h := range hn {
 					if i > 0 {
@@ -260,7 +260,7 @@ func runGetHTTPRoutes(_ *cobra.Command, _ []string) error {
 					}
 				}
 			}
-			if parents, ok := spec["parentRefs"].([]interface{}); ok {
+			if parents, ok := spec["parentRefs"].([]any); ok {
 				parentCount = len(parents)
 			}
 		}
@@ -276,25 +276,25 @@ func runGetHTTPRoutes(_ *cobra.Command, _ []string) error {
 
 // httpRouteAcceptedStatus extracts the accepted status from the first parent
 // in an unstructured HTTPRoute object.
-func httpRouteAcceptedStatus(obj map[string]interface{}) string {
-	status, ok := obj["status"].(map[string]interface{})
+func httpRouteAcceptedStatus(obj map[string]any) string {
+	status, ok := obj["status"].(map[string]any)
 	if !ok {
 		return statusUnknown
 	}
-	parents, ok := status["parents"].([]interface{})
+	parents, ok := status["parents"].([]any)
 	if !ok || len(parents) == 0 {
 		return statusUnknown
 	}
-	parent, ok := parents[0].(map[string]interface{})
+	parent, ok := parents[0].(map[string]any)
 	if !ok {
 		return statusUnknown
 	}
-	conditions, ok := parent["conditions"].([]interface{})
+	conditions, ok := parent["conditions"].([]any)
 	if !ok {
 		return statusUnknown
 	}
 	for _, c := range conditions {
-		cond, ok := c.(map[string]interface{})
+		cond, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -311,7 +311,7 @@ func httpRouteAcceptedStatus(obj map[string]interface{}) string {
 }
 
 // getUnstructuredString returns a string value from an unstructured map.
-func getUnstructuredString(m map[string]interface{}, key string) string {
+func getUnstructuredString(m map[string]any, key string) string {
 	if v, ok := m[key].(string); ok {
 		return v
 	}
@@ -320,7 +320,7 @@ func getUnstructuredString(m map[string]interface{}, key string) string {
 
 // getUnstructuredInt64 returns an int64 value from an unstructured map,
 // handling both float64 and int64 representations.
-func getUnstructuredInt64(m map[string]interface{}, key string) int64 {
+func getUnstructuredInt64(m map[string]any, key string) int64 {
 	if v, ok := m[key].(float64); ok {
 		return int64(v)
 	}
@@ -331,18 +331,18 @@ func getUnstructuredInt64(m map[string]interface{}, key string) int64 {
 }
 
 // printGatewaySpec prints the spec section of a Gateway.
-func printGatewaySpec(spec map[string]interface{}) {
+func printGatewaySpec(spec map[string]any) {
 	if cn, ok := spec["gatewayClassName"].(string); ok {
 		fmt.Printf("GatewayClass: %s\n", cn)
 	}
 
-	listeners, ok := spec["listeners"].([]interface{})
+	listeners, ok := spec["listeners"].([]any)
 	if !ok {
 		return
 	}
 	fmt.Printf("\nListeners (%d):\n", len(listeners))
 	for _, l := range listeners {
-		if listener, ok := l.(map[string]interface{}); ok {
+		if listener, ok := l.(map[string]any); ok {
 			fmt.Printf("  - Name: %s, Port: %d, Protocol: %s\n",
 				getUnstructuredString(listener, "name"),
 				getUnstructuredInt64(listener, "port"),
@@ -352,11 +352,11 @@ func printGatewaySpec(spec map[string]interface{}) {
 }
 
 // printGatewayStatus prints the status section of a Gateway.
-func printGatewayStatus(status map[string]interface{}) {
-	if conditions, ok := status["conditions"].([]interface{}); ok && len(conditions) > 0 {
+func printGatewayStatus(status map[string]any) {
+	if conditions, ok := status["conditions"].([]any); ok && len(conditions) > 0 {
 		fmt.Printf("\nConditions:\n")
 		for _, c := range conditions {
-			if cond, ok := c.(map[string]interface{}); ok {
+			if cond, ok := c.(map[string]any); ok {
 				fmt.Printf("  Type:    %s\n", getUnstructuredString(cond, "type"))
 				fmt.Printf("  Status:  %s\n", getUnstructuredString(cond, "status"))
 				fmt.Printf("  Reason:  %s\n", getUnstructuredString(cond, "reason"))
@@ -366,19 +366,19 @@ func printGatewayStatus(status map[string]interface{}) {
 		}
 	}
 
-	listeners, ok := status["listeners"].([]interface{})
+	listeners, ok := status["listeners"].([]any)
 	if !ok || len(listeners) == 0 {
 		return
 	}
 	fmt.Printf("Listener Status:\n")
 	for _, l := range listeners {
-		if listener, ok := l.(map[string]interface{}); ok {
+		if listener, ok := l.(map[string]any); ok {
 			fmt.Printf("  - Name: %s, AttachedRoutes: %d\n",
 				getUnstructuredString(listener, "name"),
 				getUnstructuredInt64(listener, "attachedRoutes"))
-			if conditions, ok := listener["conditions"].([]interface{}); ok {
+			if conditions, ok := listener["conditions"].([]any); ok {
 				for _, c := range conditions {
-					if cond, ok := c.(map[string]interface{}); ok {
+					if cond, ok := c.(map[string]any); ok {
 						fmt.Printf("    %s: %s\n",
 							getUnstructuredString(cond, "type"),
 							getUnstructuredString(cond, "status"))
@@ -407,11 +407,11 @@ func runDescribeGatewayAPIGateway(_ *cobra.Command, args []string) error {
 	fmt.Printf("Namespace:    %s\n", gw.GetNamespace())
 	fmt.Printf("Age:          %s\n", formatResourceAge(gw.GetCreationTimestamp().Time))
 
-	if spec, ok := gw.Object["spec"].(map[string]interface{}); ok {
+	if spec, ok := gw.Object["spec"].(map[string]any); ok {
 		printGatewaySpec(spec)
 	}
 
-	if status, ok := gw.Object["status"].(map[string]interface{}); ok {
+	if status, ok := gw.Object["status"].(map[string]any); ok {
 		printGatewayStatus(status)
 	}
 

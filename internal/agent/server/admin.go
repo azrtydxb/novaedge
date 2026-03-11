@@ -221,11 +221,11 @@ func (a *AdminServer) handleHealth(w http.ResponseWriter, _ *http.Request) {
 		configVersion = snap.GetVersion()
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"uptime_seconds":  time.Since(a.startedAt).Seconds(),
 		"config_version":  configVersion,
 		"goroutine_count": runtime.NumGoroutine(),
-		"memory": map[string]interface{}{
+		"memory": map[string]any{
 			"alloc_bytes":       memStats.Alloc,
 			"total_alloc_bytes": memStats.TotalAlloc,
 			"sys_bytes":         memStats.Sys,
@@ -250,7 +250,7 @@ func (a *AdminServer) handleStats(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"total_clusters":  totalClusters,
 		"total_routes":    totalRoutes,
 		"total_endpoints": totalEndpoints,
@@ -303,13 +303,13 @@ func (a *AdminServer) handleClusters(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"clusters": clusters})
+	writeJSON(w, http.StatusOK, map[string]any{"clusters": clusters})
 }
 
 func (a *AdminServer) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	snap := a.getSnapshot()
 
-	resp := map[string]interface{}{
+	resp := map[string]any{
 		"version":          "",
 		"num_routes":       0,
 		"num_clusters":     0,
@@ -399,7 +399,7 @@ func (a *AdminServer) handleRoutes(w http.ResponseWriter, _ *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"routes": routeTable})
+	writeJSON(w, http.StatusOK, map[string]any{"routes": routeTable})
 }
 
 func (a *AdminServer) handleLogging(w http.ResponseWriter, r *http.Request) {

@@ -444,7 +444,7 @@ func RegisterDataplaneControlServer(s grpc.ServiceRegistrar, srv DataplaneContro
 	s.RegisterService(&DataplaneControl_ServiceDesc, srv)
 }
 
-func _DataplaneControl_ApplyConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_ApplyConfig_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(ApplyConfigRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -456,13 +456,13 @@ func _DataplaneControl_ApplyConfig_Handler(srv interface{}, ctx context.Context,
 		Server:     srv,
 		FullMethod: DataplaneControl_ApplyConfig_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).ApplyConfig(ctx, req.(*ApplyConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_UpsertGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_UpsertGateway_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(UpsertGatewayRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -474,13 +474,13 @@ func _DataplaneControl_UpsertGateway_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: DataplaneControl_UpsertGateway_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).UpsertGateway(ctx, req.(*UpsertGatewayRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_DeleteGateway_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_DeleteGateway_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DeleteGatewayRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -492,13 +492,13 @@ func _DataplaneControl_DeleteGateway_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: DataplaneControl_DeleteGateway_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).DeleteGateway(ctx, req.(*DeleteGatewayRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_UpsertRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_UpsertRoute_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(UpsertRouteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -510,13 +510,13 @@ func _DataplaneControl_UpsertRoute_Handler(srv interface{}, ctx context.Context,
 		Server:     srv,
 		FullMethod: DataplaneControl_UpsertRoute_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).UpsertRoute(ctx, req.(*UpsertRouteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_DeleteRoute_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_DeleteRoute_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DeleteRouteRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -528,13 +528,13 @@ func _DataplaneControl_DeleteRoute_Handler(srv interface{}, ctx context.Context,
 		Server:     srv,
 		FullMethod: DataplaneControl_DeleteRoute_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).DeleteRoute(ctx, req.(*DeleteRouteRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_UpsertCluster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_UpsertCluster_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(UpsertClusterRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -546,13 +546,13 @@ func _DataplaneControl_UpsertCluster_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: DataplaneControl_UpsertCluster_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).UpsertCluster(ctx, req.(*UpsertClusterRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_DeleteCluster_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_DeleteCluster_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DeleteClusterRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -564,13 +564,13 @@ func _DataplaneControl_DeleteCluster_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: DataplaneControl_DeleteCluster_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).DeleteCluster(ctx, req.(*DeleteClusterRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_UpsertL4Listener_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_UpsertL4Listener_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(UpsertL4ListenerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -582,13 +582,13 @@ func _DataplaneControl_UpsertL4Listener_Handler(srv interface{}, ctx context.Con
 		Server:     srv,
 		FullMethod: DataplaneControl_UpsertL4Listener_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).UpsertL4Listener(ctx, req.(*UpsertL4ListenerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_DeleteL4Listener_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_DeleteL4Listener_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DeleteL4ListenerRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -600,13 +600,13 @@ func _DataplaneControl_DeleteL4Listener_Handler(srv interface{}, ctx context.Con
 		Server:     srv,
 		FullMethod: DataplaneControl_DeleteL4Listener_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).DeleteL4Listener(ctx, req.(*DeleteL4ListenerRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_UpsertPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_UpsertPolicy_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(UpsertPolicyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -618,13 +618,13 @@ func _DataplaneControl_UpsertPolicy_Handler(srv interface{}, ctx context.Context
 		Server:     srv,
 		FullMethod: DataplaneControl_UpsertPolicy_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).UpsertPolicy(ctx, req.(*UpsertPolicyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_DeletePolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_DeletePolicy_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DeletePolicyRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -636,13 +636,13 @@ func _DataplaneControl_DeletePolicy_Handler(srv interface{}, ctx context.Context
 		Server:     srv,
 		FullMethod: DataplaneControl_DeletePolicy_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).DeletePolicy(ctx, req.(*DeletePolicyRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_UpsertMeshConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_UpsertMeshConfig_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(UpsertMeshConfigRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -654,13 +654,13 @@ func _DataplaneControl_UpsertMeshConfig_Handler(srv interface{}, ctx context.Con
 		Server:     srv,
 		FullMethod: DataplaneControl_UpsertMeshConfig_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).UpsertMeshConfig(ctx, req.(*UpsertMeshConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_DeleteMeshConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_DeleteMeshConfig_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DeleteMeshConfigRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -672,13 +672,13 @@ func _DataplaneControl_DeleteMeshConfig_Handler(srv interface{}, ctx context.Con
 		Server:     srv,
 		FullMethod: DataplaneControl_DeleteMeshConfig_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).DeleteMeshConfig(ctx, req.(*DeleteMeshConfigRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_UpsertWANLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_UpsertWANLink_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(UpsertWANLinkRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -690,13 +690,13 @@ func _DataplaneControl_UpsertWANLink_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: DataplaneControl_UpsertWANLink_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).UpsertWANLink(ctx, req.(*UpsertWANLinkRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_DeleteWANLink_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_DeleteWANLink_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DeleteWANLinkRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -708,13 +708,13 @@ func _DataplaneControl_DeleteWANLink_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: DataplaneControl_DeleteWANLink_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).DeleteWANLink(ctx, req.(*DeleteWANLinkRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_StreamFlows_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _DataplaneControl_StreamFlows_Handler(srv any, stream grpc.ServerStream) error {
 	m := new(StreamFlowsRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
@@ -725,7 +725,7 @@ func _DataplaneControl_StreamFlows_Handler(srv interface{}, stream grpc.ServerSt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type DataplaneControl_StreamFlowsServer = grpc.ServerStreamingServer[FlowEvent]
 
-func _DataplaneControl_GetDataplaneStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _DataplaneControl_GetDataplaneStatus_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(GetDataplaneStatusRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -737,13 +737,13 @@ func _DataplaneControl_GetDataplaneStatus_Handler(srv interface{}, ctx context.C
 		Server:     srv,
 		FullMethod: DataplaneControl_GetDataplaneStatus_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(DataplaneControlServer).GetDataplaneStatus(ctx, req.(*GetDataplaneStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _DataplaneControl_StreamMetrics_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _DataplaneControl_StreamMetrics_Handler(srv any, stream grpc.ServerStream) error {
 	m := new(StreamMetricsRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err

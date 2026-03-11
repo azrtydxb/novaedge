@@ -103,7 +103,7 @@ func runDebugRoutes(_ *cobra.Command, args []string) error {
 		if len(matches) > 0 {
 			fmt.Printf("Matches:\n")
 			for _, match := range matches {
-				m, ok := match.(map[string]interface{})
+				m, ok := match.(map[string]any)
 				if !ok {
 					continue
 				}
@@ -122,7 +122,7 @@ func runDebugRoutes(_ *cobra.Command, args []string) error {
 		if len(backends) > 0 {
 			fmt.Printf("Backends:\n")
 			for _, backend := range backends {
-				b, ok := backend.(map[string]interface{})
+				b, ok := backend.(map[string]any)
 				if !ok {
 					continue
 				}
@@ -205,7 +205,7 @@ func runDebugBackends(_ *cobra.Command, args []string) error {
 		_, _ = fmt.Fprintln(w, "ADDRESS\tPORT\tHEALTHY\tLAST CHECK")
 
 		for _, ep := range endpoints {
-			epMap, ok := ep.(map[string]interface{})
+			epMap, ok := ep.(map[string]any)
 			if !ok {
 				continue
 			}

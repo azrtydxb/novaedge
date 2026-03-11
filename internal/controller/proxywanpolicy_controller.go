@@ -109,7 +109,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: policy.Generation,
 		LastTransitionTime: metav1.Now(),
-		Reason:             "Reconciled",
+		Reason:             ConditionReasonValid,
 		Message:            "WAN policy configured successfully",
 	})
 

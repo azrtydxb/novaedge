@@ -269,7 +269,7 @@ func RegisterEBPFServicesServer(s grpc.ServiceRegistrar, srv EBPFServicesServer)
 	s.RegisterService(&EBPFServices_ServiceDesc, srv)
 }
 
-func _EBPFServices_EnableSockmap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_EnableSockmap_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(EnableSockmapRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -281,13 +281,13 @@ func _EBPFServices_EnableSockmap_Handler(srv interface{}, ctx context.Context, d
 		Server:     srv,
 		FullMethod: EBPFServices_EnableSockmap_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).EnableSockmap(ctx, req.(*EnableSockmapRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_DisableSockmap_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_DisableSockmap_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(DisableSockmapRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -299,13 +299,13 @@ func _EBPFServices_DisableSockmap_Handler(srv interface{}, ctx context.Context, 
 		Server:     srv,
 		FullMethod: EBPFServices_DisableSockmap_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).DisableSockmap(ctx, req.(*DisableSockmapRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_GetSockmapStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_GetSockmapStats_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(GetSockmapStatsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -317,13 +317,13 @@ func _EBPFServices_GetSockmapStats_Handler(srv interface{}, ctx context.Context,
 		Server:     srv,
 		FullMethod: EBPFServices_GetSockmapStats_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).GetSockmapStats(ctx, req.(*GetSockmapStatsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_AddMeshRedirect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_AddMeshRedirect_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(AddMeshRedirectRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -335,13 +335,13 @@ func _EBPFServices_AddMeshRedirect_Handler(srv interface{}, ctx context.Context,
 		Server:     srv,
 		FullMethod: EBPFServices_AddMeshRedirect_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).AddMeshRedirect(ctx, req.(*AddMeshRedirectRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_RemoveMeshRedirect_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_RemoveMeshRedirect_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(RemoveMeshRedirectRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -353,13 +353,13 @@ func _EBPFServices_RemoveMeshRedirect_Handler(srv interface{}, ctx context.Conte
 		Server:     srv,
 		FullMethod: EBPFServices_RemoveMeshRedirect_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).RemoveMeshRedirect(ctx, req.(*RemoveMeshRedirectRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_ListMeshRedirects_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_ListMeshRedirects_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(ListMeshRedirectsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -371,13 +371,13 @@ func _EBPFServices_ListMeshRedirects_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: EBPFServices_ListMeshRedirects_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).ListMeshRedirects(ctx, req.(*ListMeshRedirectsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_ConfigureRateLimit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_ConfigureRateLimit_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(ConfigureRateLimitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -389,13 +389,13 @@ func _EBPFServices_ConfigureRateLimit_Handler(srv interface{}, ctx context.Conte
 		Server:     srv,
 		FullMethod: EBPFServices_ConfigureRateLimit_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).ConfigureRateLimit(ctx, req.(*ConfigureRateLimitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_RemoveRateLimit_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_RemoveRateLimit_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(RemoveRateLimitRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -407,13 +407,13 @@ func _EBPFServices_RemoveRateLimit_Handler(srv interface{}, ctx context.Context,
 		Server:     srv,
 		FullMethod: EBPFServices_RemoveRateLimit_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).RemoveRateLimit(ctx, req.(*RemoveRateLimitRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_GetRateLimitStats_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_GetRateLimitStats_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(GetRateLimitStatsRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -425,13 +425,13 @@ func _EBPFServices_GetRateLimitStats_Handler(srv interface{}, ctx context.Contex
 		Server:     srv,
 		FullMethod: EBPFServices_GetRateLimitStats_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).GetRateLimitStats(ctx, req.(*GetRateLimitStatsRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_GetBackendHealth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _EBPFServices_GetBackendHealth_Handler(srv any, ctx context.Context, dec func(any) error, interceptor grpc.UnaryServerInterceptor) (any, error) {
 	in := new(GetBackendHealthRequest)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -443,13 +443,13 @@ func _EBPFServices_GetBackendHealth_Handler(srv interface{}, ctx context.Context
 		Server:     srv,
 		FullMethod: EBPFServices_GetBackendHealth_FullMethodName,
 	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+	handler := func(ctx context.Context, req any) (any, error) {
 		return srv.(EBPFServicesServer).GetBackendHealth(ctx, req.(*GetBackendHealthRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _EBPFServices_StreamBackendHealth_Handler(srv interface{}, stream grpc.ServerStream) error {
+func _EBPFServices_StreamBackendHealth_Handler(srv any, stream grpc.ServerStream) error {
 	m := new(StreamBackendHealthRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err

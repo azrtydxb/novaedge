@@ -87,10 +87,10 @@ func ClientOptions() []grpc.DialOption {
 func unaryServerLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		peerAddr := "unknown"
 		if p, ok := peer.FromContext(ctx); ok {
 			peerAddr = p.Addr.String()
@@ -122,7 +122,7 @@ func unaryServerLoggingInterceptor(logger *zap.Logger) grpc.UnaryServerIntercept
 // streamServerLoggingInterceptor logs streaming RPC calls with peer info.
 func streamServerLoggingInterceptor(logger *zap.Logger) grpc.StreamServerInterceptor {
 	return func(
-		srv interface{},
+		srv any,
 		ss grpc.ServerStream,
 		info *grpc.StreamServerInfo,
 		handler grpc.StreamHandler,

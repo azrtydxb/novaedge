@@ -101,7 +101,7 @@ func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PK
 
 	path := fmt.Sprintf("%s/issue/%s", req.MountPath, req.Role)
 
-	data := map[string]interface{}{
+	data := map[string]any{
 		"common_name": req.CommonName,
 	}
 
@@ -148,7 +148,7 @@ func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PK
 	}
 
 	// Parse CA chain
-	if chain, ok := resp.Data["ca_chain"].([]interface{}); ok {
+	if chain, ok := resp.Data["ca_chain"].([]any); ok {
 		for _, c := range chain {
 			if chainStr, ok := c.(string); ok {
 				cert.CAChain = append(cert.CAChain, chainStr)
@@ -178,7 +178,7 @@ func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PK
 func (p *PKIManager) RevokeCertificate(ctx context.Context, mountPath, serialNumber string) error {
 	path := fmt.Sprintf("%s/revoke", mountPath)
 
-	_, err := p.client.Write(ctx, path, map[string]interface{}{
+	_, err := p.client.Write(ctx, path, map[string]any{
 		"serial_number": serialNumber,
 	})
 	if err != nil {

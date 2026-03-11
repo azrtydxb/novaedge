@@ -148,6 +148,8 @@ impl Http3Server {
             "HTTP/3 QUIC listener started"
         );
 
+        let server_port = actual_addr.port();
+
         loop {
             tokio::select! {
                 conn = endpoint.accept() => {
@@ -155,7 +157,7 @@ impl Http3Server {
                         Some(incoming) => {
                             let handler = self.handler.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = handle_h3_connection(incoming, handler).await {
+                                if let Err(e) = handle_h3_connection(incoming, handler, server_port).await {
                                     debug!(error = %e, "HTTP/3 connection ended");
                                 }
                             });
@@ -182,6 +184,7 @@ impl Http3Server {
 async fn handle_h3_connection(
     incoming: quinn::Incoming,
     handler: Arc<ProxyHandler>,
+    server_port: u16,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let conn = incoming.await?;
     let remote_addr = conn.remote_address();
@@ -263,6 +266,7 @@ async fn handle_h3_connection(
                             &headers,
                             body_bytes,
                             client_addr,
+                            server_port,
                         )
                         .await;
 

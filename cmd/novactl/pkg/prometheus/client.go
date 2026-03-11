@@ -55,8 +55,8 @@ type QueryData struct {
 // Result represents a single result entry
 type Result struct {
 	Metric map[string]string `json:"metric"`
-	Value  []interface{}     `json:"value,omitempty"`  // For instant queries
-	Values [][]interface{}   `json:"values,omitempty"` // For range queries
+	Value  []any             `json:"value,omitempty"`  // For instant queries
+	Values [][]any           `json:"values,omitempty"` // For range queries
 }
 
 // InstantQueryParams defines parameters for instant queries

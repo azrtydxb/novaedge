@@ -47,7 +47,7 @@ func checkGatewayClasses(ctx context.Context, dynamicClient dynamic.Interface) {
 	found := false
 	for _, gc := range gcList.Items {
 		controllerName := ""
-		if spec, ok := gc.Object["spec"].(map[string]interface{}); ok {
+		if spec, ok := gc.Object["spec"].(map[string]any); ok {
 			controllerName, _ = spec["controllerName"].(string)
 		}
 		if controllerName != "novaedge.io/gateway-controller" {
@@ -67,17 +67,17 @@ func checkGatewayClasses(ctx context.Context, dynamicClient dynamic.Interface) {
 }
 
 // printStatusConditions prints conditions from a resource's status.
-func printStatusConditions(obj map[string]interface{}) {
-	status, ok := obj["status"].(map[string]interface{})
+func printStatusConditions(obj map[string]any) {
+	status, ok := obj["status"].(map[string]any)
 	if !ok {
 		return
 	}
-	conditions, ok := status["conditions"].([]interface{})
+	conditions, ok := status["conditions"].([]any)
 	if !ok {
 		return
 	}
 	for _, c := range conditions {
-		if cond, ok := c.(map[string]interface{}); ok {
+		if cond, ok := c.(map[string]any); ok {
 			condType, _ := cond["type"].(string)
 			condStatus, _ := cond["status"].(string)
 			condReason, _ := cond["reason"].(string)
@@ -87,9 +87,9 @@ func printStatusConditions(obj map[string]interface{}) {
 }
 
 // extractConditionStatus extracts condition values from a conditions list.
-func extractConditionStatus(conditions []interface{}, targets map[string]*string) {
+func extractConditionStatus(conditions []any, targets map[string]*string) {
 	for _, c := range conditions {
-		if cond, ok := c.(map[string]interface{}); ok {
+		if cond, ok := c.(map[string]any); ok {
 			condType, _ := cond["type"].(string)
 			condStatus, _ := cond["status"].(string)
 			if ptr, exists := targets[condType]; exists {
@@ -117,12 +117,12 @@ func checkGateways(ctx context.Context, dynamicClient dynamic.Interface) {
 		_, _ = fmt.Fprintln(w, "  NAME\tNAMESPACE\tCLASS\tACCEPTED\tPROGRAMMED")
 		for _, gw := range gwList.Items {
 			className := ""
-			if spec, ok := gw.Object["spec"].(map[string]interface{}); ok {
+			if spec, ok := gw.Object["spec"].(map[string]any); ok {
 				className, _ = spec["gatewayClassName"].(string)
 			}
 			accepted, programmed := "-", "-"
-			if status, ok := gw.Object["status"].(map[string]interface{}); ok {
-				if conditions, ok := status["conditions"].([]interface{}); ok {
+			if status, ok := gw.Object["status"].(map[string]any); ok {
+				if conditions, ok := status["conditions"].([]any); ok {
 					extractConditionStatus(conditions, map[string]*string{
 						"Accepted": &accepted, "Programmed": &programmed,
 					})
@@ -154,10 +154,10 @@ func checkHTTPRoutes(ctx context.Context, dynamicClient dynamic.Interface) {
 		_, _ = fmt.Fprintln(w, "  NAME\tNAMESPACE\tACCEPTED\tRESOLVED_REFS")
 		for _, hr := range hrList.Items {
 			accepted, resolvedRefs := "-", "-"
-			if status, ok := hr.Object["status"].(map[string]interface{}); ok {
-				if parents, ok := status["parents"].([]interface{}); ok && len(parents) > 0 {
-					if parent, ok := parents[0].(map[string]interface{}); ok {
-						if conditions, ok := parent["conditions"].([]interface{}); ok {
+			if status, ok := hr.Object["status"].(map[string]any); ok {
+				if parents, ok := status["parents"].([]any); ok && len(parents) > 0 {
+					if parent, ok := parents[0].(map[string]any); ok {
+						if conditions, ok := parent["conditions"].([]any); ok {
 							extractConditionStatus(conditions, map[string]*string{
 								"Accepted": &accepted, "ResolvedRefs": &resolvedRefs,
 							})

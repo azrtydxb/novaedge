@@ -169,7 +169,7 @@ func (p *Printer) printBackendTable(w *tabwriter.Writer, items []unstructured.Un
 		// Count healthy endpoints
 		healthyCount := 0
 		for _, ep := range endpoints {
-			epMap, ok := ep.(map[string]interface{})
+			epMap, ok := ep.(map[string]any)
 			if !ok {
 				continue
 			}

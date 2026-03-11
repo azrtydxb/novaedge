@@ -244,8 +244,8 @@ func TestCertificateManager_GetCertificateStatus_Ready(t *testing.T) {
 	cert.SetName("test-cert")
 	cert.SetNamespace("default")
 
-	conditions := []interface{}{
-		map[string]interface{}{
+	conditions := []any{
+		map[string]any{
 			"type":    "Ready",
 			"status":  "True",
 			"message": "Certificate is up to date",
@@ -280,8 +280,8 @@ func TestCertificateManager_GetCertificateStatus_NotReady(t *testing.T) {
 	cert.SetName("test-cert")
 	cert.SetNamespace("default")
 
-	conditions := []interface{}{
-		map[string]interface{}{
+	conditions := []any{
+		map[string]any{
 			"type":    "Ready",
 			"status":  "False",
 			"message": "Waiting for validation",

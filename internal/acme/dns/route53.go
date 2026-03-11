@@ -22,7 +22,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
@@ -234,6 +233,3 @@ func getSignatureKey(secret, dateStamp, region, service string) []byte {
 	kService := hmacSHA256(kRegion, []byte(service))
 	return hmacSHA256(kService, []byte("aws4_request"))
 }
-
-// Ensure xml import is used by referencing it.
-var _ = xml.Header

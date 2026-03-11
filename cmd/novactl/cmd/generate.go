@@ -236,8 +236,8 @@ redirected to a file (e.g., /etc/kubernetes/manifests/novaedge-cpvip.yaml).`,
 
 	addBGPFlags(cmd, &vipMode, &bgpLocalAS, &bgpRouterID, &bgpPeers, &bfdEnabled, &bfdDetectMult, &bfdTxInterval, &bfdRxInterval)
 
-	_ = cmd.MarkFlagRequired("vip-address")
-	_ = cmd.MarkFlagRequired("image")
+	cobra.CheckErr(cmd.MarkFlagRequired("vip-address"))
+	cobra.CheckErr(cmd.MarkFlagRequired("image"))
 
 	return cmd
 }
@@ -295,7 +295,7 @@ VIP mode. The unit file is written to stdout so it can be redirected to a file
 
 	addBGPFlags(cmd, &vipMode, &bgpLocalAS, &bgpRouterID, &bgpPeers, &bfdEnabled, &bfdDetectMult, &bfdTxInterval, &bfdRxInterval)
 
-	_ = cmd.MarkFlagRequired("vip-address")
+	cobra.CheckErr(cmd.MarkFlagRequired("vip-address"))
 
 	return cmd
 }
@@ -362,7 +362,7 @@ func runGenerateSystemdUnit(vipAddress, binaryPath, iface string, apiPort int, h
 	return renderTemplate(systemdUnitTemplate, "systemd-unit", data)
 }
 
-func renderTemplate(tmplText, name string, data interface{}) error {
+func renderTemplate(tmplText, name string, data any) error {
 	tmpl, err := template.New(name).Parse(tmplText)
 	if err != nil {
 		return fmt.Errorf("failed to parse template: %w", err)

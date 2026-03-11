@@ -66,7 +66,7 @@ func reconcileWithGenerationCheck(
 	kind string,
 	cfgServer *snapshot.Server,
 	getObservedGeneration func() int64,
-	logFields func() []interface{},
+	logFields func() []any,
 	validate func() error,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)

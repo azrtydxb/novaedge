@@ -456,33 +456,33 @@ type IPAllocation struct {
 
 // NovaEdgeClusterModel represents a NovaEdgeCluster configuration
 type NovaEdgeClusterModel struct {
-	Name            string                 `json:"name" yaml:"name"`
-	Namespace       string                 `json:"namespace,omitempty" yaml:"namespace,omitempty"`
-	Labels          map[string]string      `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Annotations     map[string]string      `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	Spec            map[string]interface{} `json:"spec" yaml:"spec"`
-	Status          map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
-	ResourceVersion string                 `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+	Name            string            `json:"name" yaml:"name"`
+	Namespace       string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            map[string]any    `json:"spec" yaml:"spec"`
+	Status          map[string]any    `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
 }
 
 // FederationModel represents a NovaEdgeFederation configuration
 type FederationModel struct {
-	Name            string                 `json:"name" yaml:"name"`
-	Namespace       string                 `json:"namespace,omitempty" yaml:"namespace,omitempty"`
-	Labels          map[string]string      `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Annotations     map[string]string      `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	Spec            map[string]interface{} `json:"spec" yaml:"spec"`
-	Status          map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
-	ResourceVersion string                 `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+	Name            string            `json:"name" yaml:"name"`
+	Namespace       string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            map[string]any    `json:"spec" yaml:"spec"`
+	Status          map[string]any    `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
 }
 
 // RemoteClusterModel represents a NovaEdgeRemoteCluster configuration
 type RemoteClusterModel struct {
-	Name            string                 `json:"name" yaml:"name"`
-	Namespace       string                 `json:"namespace,omitempty" yaml:"namespace,omitempty"`
-	Labels          map[string]string      `json:"labels,omitempty" yaml:"labels,omitempty"`
-	Annotations     map[string]string      `json:"annotations,omitempty" yaml:"annotations,omitempty"`
-	Spec            map[string]interface{} `json:"spec" yaml:"spec"`
-	Status          map[string]interface{} `json:"status,omitempty" yaml:"status,omitempty"`
-	ResourceVersion string                 `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
+	Name            string            `json:"name" yaml:"name"`
+	Namespace       string            `json:"namespace,omitempty" yaml:"namespace,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty" yaml:"labels,omitempty"`
+	Annotations     map[string]string `json:"annotations,omitempty" yaml:"annotations,omitempty"`
+	Spec            map[string]any    `json:"spec" yaml:"spec"`
+	Status          map[string]any    `json:"status,omitempty" yaml:"status,omitempty"`
+	ResourceVersion string            `json:"resourceVersion,omitempty" yaml:"resourceVersion,omitempty"`
 }
