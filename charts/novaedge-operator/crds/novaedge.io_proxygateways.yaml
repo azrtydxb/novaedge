@@ -15,9 +15,6 @@ spec:
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
-    - jsonPath: .spec.vipRef
-      name: VIP Ref
-      type: string
     - jsonPath: .spec.ingressClassName
       name: Ingress Class
       type: string
@@ -106,6 +103,12 @@ spec:
                     - file
                     - both
                     type: string
+                  sampleRate:
+                    description: SampleRate defines the fraction of requests to log
+                      (0.0-1.0). When omitted, all requests are logged.
+                    maximum: 1
+                    minimum: 0
+                    type: number
                   template:
                     description: Template defines a custom log format template (for
                       format=custom)
@@ -323,6 +326,7 @@ spec:
                       enum:
                       - HTTP
                       - HTTPS
+                      - HTTP3
                       - TCP
                       - TLS
                       - UDP
@@ -699,12 +703,8 @@ spec:
                     minimum: 0
                     type: integer
                 type: object
-              vipRef:
-                description: VIPRef references the ProxyVIP to use for this gateway
-                type: string
             required:
             - listeners
-            - vipRef
             type: object
           status:
             description: ProxyGatewayStatus defines the observed state of ProxyGateway
