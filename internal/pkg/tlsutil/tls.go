@@ -48,6 +48,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"go.uber.org/zap"
 	"google.golang.org/grpc/credentials"
 
 	pkgerrors "github.com/azrtydxb/novaedge/internal/pkg/errors"
@@ -303,6 +304,10 @@ func CreateBackendTLSConfig(caCertPEM []byte, serverName string, insecureSkipVer
 	// Callers are responsible for ensuring this is only enabled when appropriate.
 	if insecureSkipVerify {
 		config.InsecureSkipVerify = true
+		zap.L().Warn("TLS certificate verification disabled for backend connection",
+			zap.String("server_name", serverName),
+			zap.String("security_risk", "man-in-the-middle attacks possible"),
+		)
 	}
 
 	// Load CA certificate if provided

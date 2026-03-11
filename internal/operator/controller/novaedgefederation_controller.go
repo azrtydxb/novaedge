@@ -26,7 +26,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -83,7 +83,7 @@ func (r *NovaEdgeFederationReconciler) Reconcile(ctx context.Context, req ctrl.R
 	// Fetch the NovaEdgeFederation
 	fed := &novaedgev1alpha1.NovaEdgeFederation{}
 	if err := r.Get(ctx, req.NamespacedName, fed); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Federation was deleted, stop the manager
 			r.stopManager(req.String())
 			return ctrl.Result{}, nil
@@ -276,7 +276,7 @@ func (r *NovaEdgeFederationReconciler) loadTLSCredentials(ctx context.Context, f
 			}
 
 			if err := r.Get(ctx, secretKey, secret); err != nil {
-				if errors.IsNotFound(err) {
+				if apierrors.IsNotFound(err) {
 					log.Warn("CA secret not found for peer",
 						zap.String("peer", peer.Name),
 						zap.String("secret", secretKey.String()),
@@ -313,7 +313,7 @@ func (r *NovaEdgeFederationReconciler) loadTLSCredentials(ctx context.Context, f
 			}
 
 			if err := r.Get(ctx, secretKey, secret); err != nil {
-				if errors.IsNotFound(err) {
+				if apierrors.IsNotFound(err) {
 					log.Warn("Client cert secret not found for peer",
 						zap.String("peer", peer.Name),
 						zap.String("secret", secretKey.String()),

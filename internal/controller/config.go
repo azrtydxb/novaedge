@@ -23,8 +23,7 @@ import (
 	"context"
 	"sync"
 
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -96,7 +95,7 @@ func reconcileWithGenerationCheck(
 	logger := log.FromContext(ctx)
 
 	if err := cli.Get(ctx, req.NamespacedName, obj); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info(kind + " resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -132,11 +131,11 @@ func handleResourceDeletion(ctx context.Context, cli client.Client, source clien
 	err := cli.Get(ctx, types.NamespacedName{Name: source.GetName(), Namespace: source.GetNamespace()}, proxyObj)
 	if err == nil {
 		logger.Info("Deleting associated proxy resource", "kind", kind, "name", proxyObj.GetName())
-		if err := cli.Delete(ctx, proxyObj); err != nil && !errors.IsNotFound(err) {
+		if err := cli.Delete(ctx, proxyObj); err != nil && !apierrors.IsNotFound(err) {
 			logger.Error(err, "Failed to delete proxy resource")
 			return ctrl.Result{}, err
 		}
-	} else if !errors.IsNotFound(err) {
+	} else if !apierrors.IsNotFound(err) {
 		logger.Error(err, "Failed to get proxy resource for deletion")
 		return ctrl.Result{}, err
 	}
@@ -150,20 +149,4 @@ func handleResourceDeletion(ctx context.Context, cli client.Client, source clien
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// setCondition updates or adds a condition in a conditions slice.
-func setCondition(conditions *[]metav1.Condition, newCondition metav1.Condition) {
-	if conditions == nil {
-		return
-	}
-
-	for i, condition := range *conditions {
-		if condition.Type == newCondition.Type {
-			(*conditions)[i] = newCondition
-			return
-		}
-	}
-
-	*conditions = append(*conditions, newCondition)
 }
