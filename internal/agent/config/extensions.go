@@ -20,17 +20,13 @@ package config
 
 import (
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
+
+	snapshotpkg "github.com/azrtydxb/novaedge/internal/pkg/snapshot"
 )
 
-// SnapshotExtensions carries mTLS, PROXY protocol, and OCSP configuration
-// that extends the base proto ConfigSnapshot. These are keyed by listener
-// or cluster identifiers for easy lookup.
-type SnapshotExtensions struct {
-	// ListenerExtensions maps "gateway/listener" -> extensions
-	ListenerExtensions map[string]*pb.ListenerExtensions
-	// ClusterExtensions maps "namespace/name" -> extensions
-	ClusterExtensions map[string]*pb.ClusterExtensions
-}
+// SnapshotExtensions is an alias for the shared type in internal/pkg/snapshot.
+// This preserves backward compatibility for existing agent code.
+type SnapshotExtensions = snapshotpkg.Extensions
 
 // GetListenerExtensions returns extensions for the specified gateway and listener.
 // Returns nil if no extensions are configured.

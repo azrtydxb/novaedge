@@ -40,12 +40,18 @@ const (
 // newBuildContextForTest creates a buildContext with the given backends, services, and nodes.
 func newBuildContextForTest(backends []novaedgev1alpha1.ProxyBackend, services []corev1.Service) *buildContext {
 	bc := &buildContext{
-		nodes:      make(map[string]*corev1.Node),
-		secrets:    make(map[string]*corev1.Secret),
-		configMaps: make(map[string]*corev1.ConfigMap),
+		nodes:          make(map[string]*corev1.Node),
+		serviceMap:     make(map[string]*corev1.Service),
+		secrets:        make(map[string]*corev1.Secret),
+		configMaps:     make(map[string]*corev1.ConfigMap),
+		endpointSlices: make(map[string][]discoveryv1.EndpointSlice),
 	}
 	bc.backends = backends
 	bc.services = services
+	for i := range services {
+		key := services[i].Namespace + "/" + services[i].Name
+		bc.serviceMap[key] = &services[i]
+	}
 	return bc
 }
 
@@ -378,7 +384,8 @@ func TestResolveEndpointsTargetPort(t *testing.T) {
 		Port: 80, // Service port, NOT targetPort
 	}
 
-	bc := newBuildContextForTest(nil, nil)
+	bc := newBuildContextForTest(nil, []corev1.Service{*svc})
+	bc.endpointSlices["default/my-svc"] = []discoveryv1.EndpointSlice{*es}
 	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default", bc)
 	if err != nil {
 		t.Fatalf("resolveServiceEndpoints failed: %v", err)
@@ -472,7 +479,8 @@ func TestResolveServiceEndpointsNilReadyTreatedAsReady(t *testing.T) {
 		Port: 80,
 	}
 
-	bc := newBuildContextForTest(nil, nil)
+	bc := newBuildContextForTest(nil, []corev1.Service{*svc})
+	bc.endpointSlices["default/my-svc"] = []discoveryv1.EndpointSlice{*es}
 	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default", bc)
 	if err != nil {
 		t.Fatalf("resolveServiceEndpoints failed: %v", err)
@@ -555,7 +563,8 @@ func TestResolveEndpointsUnnamedPort(t *testing.T) {
 		Port: 80,
 	}
 
-	bc := newBuildContextForTest(nil, nil)
+	bc := newBuildContextForTest(nil, []corev1.Service{*svc})
+	bc.endpointSlices["default/unnamed-svc"] = []discoveryv1.EndpointSlice{*es}
 	result, err := builder.resolveServiceEndpoints(context.Background(), serviceRef, "default", bc)
 	if err != nil {
 		t.Fatalf("resolveServiceEndpoints failed: %v", err)
@@ -652,6 +661,7 @@ func TestBuildInternalServices(t *testing.T) {
 
 	builder := NewBuilder(fakeClient)
 	bc := newBuildContextForTest(nil, []corev1.Service{*meshSvc, *plainSvc, *headlessSvc})
+	bc.endpointSlices["app/web"] = []discoveryv1.EndpointSlice{*meshES}
 	services := builder.buildInternalServices(context.Background(), bc)
 
 	// Only the mesh-enabled non-headless service should be included
@@ -758,7 +768,8 @@ func TestBuildClustersFederationInactive(t *testing.T) {
 		},
 	})
 
-	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, []corev1.Service{*svc})
+	bc.endpointSlices["default/my-svc"] = []discoveryv1.EndpointSlice{*es}
 	_, endpoints := builder.buildClusters(context.Background(), nil, bc)
 
 	epList := endpoints["default/test-backend"]
@@ -842,7 +853,8 @@ func TestBuildClustersFederationMergesRemoteEndpoints(t *testing.T) {
 		},
 	})
 
-	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, nil)
+	bc := newBuildContextForTest([]novaedgev1alpha1.ProxyBackend{*backend}, []corev1.Service{*svc})
+	bc.endpointSlices["default/my-svc"] = []discoveryv1.EndpointSlice{*es}
 	_, endpoints := builder.buildClusters(context.Background(), nil, bc)
 
 	epList := endpoints["default/test-backend"]
