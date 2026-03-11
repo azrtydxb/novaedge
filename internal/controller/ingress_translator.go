@@ -176,14 +176,6 @@ func NewIngressTranslator(namespace string) *IngressTranslator {
 	}
 }
 
-// NewIngressTranslatorWithResolver creates a new IngressTranslator with a service port resolver
-func NewIngressTranslatorWithResolver(namespace string, resolver ServicePortResolver) *IngressTranslator {
-	return &IngressTranslator{
-		namespace:           namespace,
-		servicePortResolver: resolver,
-	}
-}
-
 // NewIngressTranslatorWithOptions creates a new IngressTranslator with a service port resolver
 func NewIngressTranslatorWithOptions(namespace string, resolver ServicePortResolver) *IngressTranslator {
 	return &IngressTranslator{
