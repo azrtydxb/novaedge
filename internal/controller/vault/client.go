@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -133,11 +134,13 @@ type Client struct {
 // vaultHTTPClient is a minimal Vault HTTP API client to avoid
 // large dependency on github.com/hashicorp/vault/api.
 type vaultHTTPClient struct {
-	address   string
-	token     string
-	namespace string
-	caCert    string
-	skipTLS   bool
+	address    string
+	token      string
+	namespace  string
+	caCert     string
+	skipTLS    bool
+	client     *http.Client
+	clientOnce sync.Once
 }
 
 // NewClient creates a new Vault client.

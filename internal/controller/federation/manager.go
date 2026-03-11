@@ -543,7 +543,11 @@ func (m *Manager) maintainPeerConnection(peerName string, client *PeerClient) {
 				zap.String("peer", peerName),
 				zap.Error(err),
 			)
-			time.Sleep(backoff)
+			select {
+			case <-m.ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
 			backoff = min(backoff*2, 30*time.Second)
 			continue
 		}
@@ -555,7 +559,11 @@ func (m *Manager) maintainPeerConnection(peerName string, client *PeerClient) {
 				zap.Error(err),
 			)
 			client.Disconnect()
-			time.Sleep(backoff)
+			select {
+			case <-m.ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
 			backoff = min(backoff*2, 30*time.Second)
 			continue
 		}
@@ -583,7 +591,11 @@ func (m *Manager) maintainPeerConnection(peerName string, client *PeerClient) {
 			m.logger.Info("Peer disconnected, will reconnect",
 				zap.String("peer", peerName),
 			)
-			time.Sleep(backoff)
+			select {
+			case <-m.ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
 		}
 	}
 }

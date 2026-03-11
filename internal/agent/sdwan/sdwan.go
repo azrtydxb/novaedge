@@ -19,6 +19,7 @@ package sdwan
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -173,7 +174,11 @@ func (m *Manager) ApplyConfig(links []LinkConfig, policies []PolicyConfig) error
 	for _, cfg := range links {
 		desired[cfg.Name] = struct{}{}
 		if err := m.AddLink(cfg); err != nil {
-			m.logger.Debug("Link already managed, skipping add", zap.String("link", cfg.Name))
+			if strings.Contains(err.Error(), "already exists") {
+				m.logger.Debug("Link already managed, skipping add", zap.String("link", cfg.Name))
+			} else {
+				m.logger.Error("Failed to add link", zap.String("link", cfg.Name), zap.Error(err))
+			}
 		}
 	}
 

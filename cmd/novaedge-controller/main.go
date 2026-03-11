@@ -385,6 +385,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Graceful shutdown of gRPC server
+	// Graceful shutdown: stop the snapshot server and gRPC server.
+	configServer.Shutdown()
 	grpcServer.GracefulStop()
 }

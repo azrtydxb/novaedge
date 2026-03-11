@@ -86,6 +86,7 @@ type ConfigGossiper struct {
 	logger          *zap.Logger
 	ctx             context.Context
 	cancel          context.CancelFunc
+	wg              sync.WaitGroup
 }
 
 // NewConfigGossiper creates a new config version gossiper.
@@ -127,9 +128,10 @@ func (g *ConfigGossiper) Start(ctx context.Context) error {
 	cancel = nil // ownership transferred to g.cancel
 	g.conn = conn
 
-	go g.broadcastLoop(addr)
-	go g.receiveLoop()
-	go g.quorumCheckLoop()
+	g.wg.Add(3)
+	go func() { defer g.wg.Done(); g.broadcastLoop(addr) }()
+	go func() { defer g.wg.Done(); g.receiveLoop() }()
+	go func() { defer g.wg.Done(); g.quorumCheckLoop() }()
 
 	g.logger.Info("Config gossip started",
 		zap.String("node", g.nodeName),
@@ -143,6 +145,19 @@ func (g *ConfigGossiper) Start(ctx context.Context) error {
 func (g *ConfigGossiper) UpdateGenTime(genTime int64) {
 	g.currentGenTime.Store(genTime)
 	g.logger.Debug("Gossip generation time updated", zap.Int64("genTime", genTime))
+}
+
+// Stop cancels the gossip context, closes the UDP connection, and waits for
+// all goroutines to exit cleanly.
+func (g *ConfigGossiper) Stop() {
+	if g.cancel != nil {
+		g.cancel()
+	}
+	if g.conn != nil {
+		_ = g.conn.Close()
+	}
+	g.wg.Wait()
+	g.logger.Info("Config gossip stopped")
 }
 
 // broadcastLoop multicasts this node's config generation time at regular intervals.

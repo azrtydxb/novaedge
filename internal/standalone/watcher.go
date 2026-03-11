@@ -125,8 +125,13 @@ func (w *ConfigWatcher) Start(ctx context.Context, applyFunc ApplyFunc) error {
 				w.logger.Info("Config file changed, reloading",
 					zap.String("event", event.Op.String()))
 
-				// Small delay to ensure file is fully written
-				time.Sleep(100 * time.Millisecond)
+				// Small delay to ensure file is fully written; respect context cancellation.
+				select {
+				case <-ctx.Done():
+					w.logger.Info("Config watcher stopped")
+					return ctx.Err()
+				case <-time.After(100 * time.Millisecond):
+				}
 
 				if err := w.loadAndApply(applyFunc); err != nil {
 					w.logger.Error("Failed to reload config", zap.Error(err))
@@ -167,7 +172,11 @@ func (w *ConfigWatcher) loadAndApply(applyFunc ApplyFunc) error {
 	w.mu.Lock()
 	w.lastConfig = standaloneConfig
 	w.lastSnapshot = snapshot
-	hash, _ := w.computeHash()
+	hash, err := w.computeHash()
+	if err != nil {
+		w.mu.Unlock()
+		return fmt.Errorf("failed to compute config hash: %w", err)
+	}
 	w.lastHash = hash
 	w.mu.Unlock()
 
