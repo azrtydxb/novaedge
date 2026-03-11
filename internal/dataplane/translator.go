@@ -34,9 +34,10 @@ func safeInt32ToUint32(v int32) uint32 {
 }
 
 // defaultBindAddress is the address used for gateway and L4 listener binds.
-// Using "::" (IPv6 any) enables dual-stack support — on most systems this
-// accepts both IPv4 and IPv6 connections (fixes #942).
-const defaultBindAddress = "::"
+// Use IPv4-any ("0.0.0.0") as a safe default that works even when IPv6 is
+// disabled or when IPv6 sockets are v6-only; callers can override via the
+// Listener or L4Listener bind_address field for dual-stack ("::" / "[::]").
+const defaultBindAddress = "0.0.0.0"
 
 // Translator converts Go agent ConfigSnapshot into dataplane gRPC calls.
 // It wraps a Client and provides a high-level Sync operation that pushes
@@ -125,9 +126,13 @@ func translateGateways(gateways []*configpb.Gateway) []*pb.GatewayConfig {
 	var result []*pb.GatewayConfig
 	for _, gw := range gateways {
 		for _, lis := range gw.GetListeners() {
+			bindAddr := lis.GetBindAddress()
+			if bindAddr == "" {
+				bindAddr = defaultBindAddress
+			}
 			dpGw := &pb.GatewayConfig{
 				Name:        gw.GetName() + "/" + lis.GetName(),
-				BindAddress: defaultBindAddress,
+				BindAddress: bindAddr,
 				Port:        uint32(lis.GetPort()), //nolint:gosec // proto field conversion
 				Protocol:    translateGatewayProtocol(lis.GetProtocol()),
 				Hostnames:   lis.GetHostnames(),
@@ -471,9 +476,13 @@ func translateLBAlgorithm(policy configpb.LoadBalancingPolicy) pb.LBAlgorithm {
 func translateL4Listeners(listeners []*configpb.L4Listener) []*pb.L4ListenerConfig {
 	result := make([]*pb.L4ListenerConfig, 0, len(listeners))
 	for _, l4 := range listeners {
+		bindAddr := l4.GetBindAddress()
+		if bindAddr == "" {
+			bindAddr = defaultBindAddress
+		}
 		dpL4 := &pb.L4ListenerConfig{
 			Name:        l4.GetName(),
-			BindAddress: defaultBindAddress,
+			BindAddress: bindAddr,
 			Port:        uint32(l4.GetPort()), //nolint:gosec // proto field
 			Protocol:    translateL4Protocol(l4.GetProtocol()),
 		}

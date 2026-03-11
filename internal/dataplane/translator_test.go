@@ -89,6 +89,9 @@ func TestTranslateSnapshot_Gateways(t *testing.T) {
 	if httpGw.GetPort() != 8080 {
 		t.Errorf("gateway port = %d, want %d", httpGw.GetPort(), 8080)
 	}
+	if httpGw.GetBindAddress() != "0.0.0.0" {
+		t.Errorf("gateway bind_address = %q, want %q", httpGw.GetBindAddress(), "0.0.0.0")
+	}
 	if httpGw.GetProtocol() != pb.GatewayProtocol_GATEWAY_PROTOCOL_HTTP {
 		t.Errorf("gateway protocol = %v, want HTTP", httpGw.GetProtocol())
 	}
@@ -402,6 +405,9 @@ func TestTranslateSnapshot_L4Listeners(t *testing.T) {
 	}
 	if tcp.GetPort() != 3306 {
 		t.Errorf("L4 port = %d, want %d", tcp.GetPort(), 3306)
+	}
+	if tcp.GetBindAddress() != "0.0.0.0" {
+		t.Errorf("L4 bind_address = %q, want %q", tcp.GetBindAddress(), "0.0.0.0")
 	}
 	if tcp.GetProtocol() != pb.L4Protocol_L4_PROTOCOL_TCP {
 		t.Errorf("L4 protocol = %v, want TCP", tcp.GetProtocol())
@@ -1265,6 +1271,14 @@ func TestTranslateSnapshot_Routes_RewriteAndHeaders(t *testing.T) {
 	rt0m1 := req.GetRoutes()[1]
 	if rt0m1.GetRewritePath() != "/api/v2" {
 		t.Errorf("rule-0/match-1 rewrite_path = %q, want %q", rt0m1.GetRewritePath(), "/api/v2")
+	}
+	if len(rt0m1.GetAddHeaders()) != len(wantHeaders) {
+		t.Fatalf("rule-0/match-1 add_headers len = %d, want %d", len(rt0m1.GetAddHeaders()), len(wantHeaders))
+	}
+	for k, v := range wantHeaders {
+		if got := rt0m1.GetAddHeaders()[k]; got != v {
+			t.Errorf("rule-0/match-1 add_headers[%q] = %q, want %q", k, got, v)
+		}
 	}
 	if len(rt0m1.GetMethods()) != 1 || rt0m1.GetMethods()[0] != "POST" {
 		t.Errorf("rule-0/match-1 methods = %v, want [POST]", rt0m1.GetMethods())
