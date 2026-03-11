@@ -15,17 +15,18 @@ const MAX_V1_LINE: usize = 108;
 ///
 /// Format: `PROXY TCP4 src_ip dst_ip src_port dst_port\r\n`
 pub fn parse_v1(data: &[u8]) -> Result<(ProxyHeader, usize), io::Error> {
-    if data.len() > MAX_V1_LINE {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "PROXY v1 line exceeds maximum length of 108 bytes",
-        ));
-    }
-
-    let line_end = data
+    // Only scan the first MAX_V1_LINE bytes for the CRLF terminator.
+    // The caller's buffer may contain data beyond the PROXY header (e.g.
+    // the proxied payload), so rejecting buffers larger than 108 bytes is
+    // incorrect. Instead, require that the CRLF appears within the first 108
+    // bytes; if it does not, the header is malformed or incomplete.
+    let search_limit = data.len().min(MAX_V1_LINE);
+    let line_end = data[..search_limit]
         .windows(2)
         .position(|w| w == b"\r\n")
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "no CRLF"))?;
+        .ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "no CRLF within first 108 bytes")
+        })?;
 
     let line = std::str::from_utf8(&data[..line_end])
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "not UTF-8"))?;
@@ -214,5 +215,35 @@ mod tests {
     fn test_parse_v1_invalid_port() {
         let data = b"PROXY TCP4 192.168.1.1 10.0.0.1 abc 443\r\n";
         assert!(parse_v1(data).is_err());
+    }
+
+    /// Buffer larger than MAX_V1_LINE bytes is valid as long as the PROXY
+    /// header CRLF terminator appears within the first 108 bytes. The
+    /// remainder is payload data that follows the header.
+    #[test]
+    fn test_parse_v1_buffer_with_payload() {
+        let header = b"PROXY TCP4 192.168.1.1 10.0.0.1 56324 443\r\n";
+        let mut data = header.to_vec();
+        // Append 200 bytes of payload after the PROXY header.
+        data.extend(vec![0u8; 200]);
+        let (parsed, consumed) = parse_v1(&data).unwrap();
+        assert_eq!(
+            parsed.src_addr,
+            "192.168.1.1:56324".parse::<SocketAddr>().unwrap()
+        );
+        assert_eq!(
+            parsed.dst_addr,
+            "10.0.0.1:443".parse::<SocketAddr>().unwrap()
+        );
+        assert_eq!(consumed, header.len());
+    }
+
+    /// If no CRLF appears in the first MAX_V1_LINE bytes, the header is
+    /// considered malformed regardless of total buffer length.
+    #[test]
+    fn test_parse_v1_no_crlf_within_limit() {
+        // A buffer that is well over 108 bytes but has no CRLF in the first 108.
+        let data = vec![b'A'; 200];
+        assert!(parse_v1(&data).is_err());
     }
 }

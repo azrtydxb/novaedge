@@ -105,6 +105,10 @@ type Server struct {
 
 	// fullSyncCooldowns tracks the last time each peer called RequestFullSync.
 	fullSyncCooldowns sync.Map // map[string]time.Time
+	// fullSyncMu serializes the load-check-store in checkFullSyncCooldown to
+	// prevent two concurrent callers from both passing the cooldown check
+	// before either records the new timestamp.
+	fullSyncMu sync.Mutex
 
 	// endpointCache stores remote cluster endpoints received via federation
 	endpointCache *RemoteEndpointCache
@@ -747,6 +751,9 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 		return status.Error(codes.PermissionDenied, "federation ID mismatch")
 	}
 
+	// TODO: validate req.RequesterMember against the authenticated peer identity
+	// extracted from the TLS client certificate to prevent a peer from
+	// impersonating another peer's cooldown slot.
 	if err := s.checkFullSyncCooldown(req.RequesterMember); err != nil {
 		return err
 	}
@@ -770,7 +777,12 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 }
 
 // checkFullSyncCooldown enforces a minimum interval between RequestFullSync calls from the same peer.
+// fullSyncMu serializes the load-check-store sequence to prevent a race where two concurrent
+// callers both pass the cooldown check before either records the new timestamp.
 func (s *Server) checkFullSyncCooldown(peerName string) error {
+	s.fullSyncMu.Lock()
+	defer s.fullSyncMu.Unlock()
+
 	now := time.Now()
 	if last, ok := s.fullSyncCooldowns.Load(peerName); ok {
 		if lastTime, ok := last.(time.Time); ok && now.Sub(lastTime) < fullSyncCooldown {
@@ -861,6 +873,10 @@ func (s *Server) sendFullSyncBatches(stream pb.FederationService_RequestFullSync
 	}
 
 	batchSize := int(s.config.BatchSize)
+	if batchSize == 0 {
+		// BatchSize=0 would cause an infinite loop; treat it as "one batch".
+		batchSize = len(resources)
+	}
 	totalResources := len(resources)
 	for i, batchNum := 0, 0; i < len(resources); i, batchNum = i+batchSize, batchNum+1 {
 		end := i + batchSize
@@ -1064,10 +1080,14 @@ func (s *Server) getPhase() Phase {
 		if !ok {
 			return true
 		}
-		if state.Connected {
+		state.mu.Lock()
+		connected := state.Connected
+		healthy := state.Healthy
+		state.mu.Unlock()
+		if connected {
 			connectedCount++
 		}
-		if state.Healthy {
+		if healthy {
 			healthyCount++
 		}
 		return true

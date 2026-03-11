@@ -76,7 +76,9 @@ type PeerInfo struct {
 }
 
 // PeerState represents the current state of a federation peer.
-// All field accesses must be protected by mu.
+// All field accesses must be protected by mu. External callers should use
+// the Server methods (e.g. updatePeerState) rather than accessing fields
+// directly; mu is intentionally unexported to enforce this boundary.
 type PeerState struct {
 	// mu protects all fields below from concurrent access.
 	mu sync.Mutex
