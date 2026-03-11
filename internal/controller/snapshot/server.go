@@ -19,12 +19,15 @@ package snapshot
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -136,8 +139,66 @@ func (s *Server) GetRemoteAgentTracker() *RemoteAgentTracker {
 	return s.remoteAgentTracker
 }
 
+// validatePeerNodeName checks that the NodeName in the request matches the
+// authenticated peer identity from the TLS certificate. If mTLS is not
+// configured (no peer credentials), the check is skipped to allow non-TLS
+// deployments.
+func validatePeerNodeName(ctx context.Context, requestedNode string) error {
+	p, ok := peer.FromContext(ctx)
+	if !ok {
+		// No peer info available — non-TLS connection, skip validation.
+		return nil
+	}
+
+	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
+	if !ok {
+		// Peer is present but not using TLS — skip validation.
+		return nil
+	}
+
+	if len(tlsInfo.State.PeerCertificates) == 0 {
+		// TLS without client certificate — skip validation.
+		return nil
+	}
+
+	peerCert := tlsInfo.State.PeerCertificates[0]
+
+	// Check SPIFFE URI SANs first (preferred identity format).
+	for _, uri := range peerCert.URIs {
+		if uri.Scheme == "spiffe" {
+			// SPIFFE IDs follow the pattern: spiffe://<trust-domain>/agent/<node-name>
+			parts := strings.Split(uri.Path, "/")
+			if len(parts) >= 3 && parts[1] == "agent" {
+				spiffeNode := parts[2]
+				if spiffeNode == requestedNode {
+					return nil
+				}
+				return status.Errorf(codes.PermissionDenied,
+					"requested node %q does not match peer SPIFFE identity %q", requestedNode, spiffeNode)
+			}
+		}
+	}
+
+	// Fall back to CN check.
+	if peerCert.Subject.CommonName != "" {
+		if peerCert.Subject.CommonName == requestedNode {
+			return nil
+		}
+		return status.Errorf(codes.PermissionDenied,
+			"requested node %q does not match peer certificate CN %q", requestedNode, peerCert.Subject.CommonName)
+	}
+
+	// No recognizable identity in the certificate — allow (best-effort).
+	return nil
+}
+
 // StreamConfig implements the StreamConfig RPC method
 func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigService_StreamConfigServer) error {
+	// Validate that the requested NodeName matches the peer's TLS identity.
+	if err := validatePeerNodeName(stream.Context(), req.NodeName); err != nil {
+		return err
+	}
+
 	isRemote := req.ClusterName != ""
 	logger := log.FromContext(stream.Context()).WithValues(
 		"node", req.NodeName,
@@ -276,6 +337,11 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 
 // ReportStatus implements the ReportStatus RPC method
 func (s *Server) ReportStatus(ctx context.Context, req *pb.AgentStatus) (*pb.StatusResponse, error) {
+	// Validate that the requested NodeName matches the peer's TLS identity.
+	if err := validatePeerNodeName(ctx, req.NodeName); err != nil {
+		return nil, err
+	}
+
 	isRemote := req.ClusterName != ""
 	logger := log.FromContext(ctx).WithValues(
 		"node", req.NodeName,

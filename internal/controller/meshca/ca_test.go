@@ -24,6 +24,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,7 +42,7 @@ func newTestScheme() *runtime.Scheme {
 
 const pemTypeCertificate = "CERTIFICATE"
 
-func generateTestCSR(t *testing.T) []byte {
+func generateTestCSRWithName(t *testing.T, nodeName string) []byte {
 	t.Helper()
 
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -51,7 +52,7 @@ func generateTestCSR(t *testing.T) []byte {
 
 	template := &x509.CertificateRequest{
 		Subject: pkix.Name{
-			CommonName: "test-agent",
+			CommonName: nodeName,
 		},
 	}
 
@@ -151,7 +152,7 @@ func TestMeshCASignCSR(t *testing.T) {
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
-	csrPEM := generateTestCSR(t)
+	csrPEM := generateTestCSRWithName(t, "worker-1")
 
 	certPEM, err := ca.SignCSR(csrPEM, "worker-1")
 	if err != nil {
@@ -231,7 +232,7 @@ func TestMeshCASPIFFEID(t *testing.T) {
 		t.Fatalf("Initialize failed: %v", err)
 	}
 
-	csrPEM := generateTestCSR(t)
+	csrPEM := generateTestCSRWithName(t, "node-alpha")
 
 	certPEM, err := ca.SignCSR(csrPEM, "node-alpha")
 	if err != nil {
@@ -267,5 +268,31 @@ func TestMeshCASPIFFEID(t *testing.T) {
 			uris = append(uris, uri.String())
 		}
 		t.Errorf("expected SPIFFE ID %q not found in URI SANs: %v", expectedSPIFFE, uris)
+	}
+}
+
+func TestMeshCASignCSRIdentityMismatch(t *testing.T) {
+	logger := zaptest.NewLogger(t)
+	cl := fake.NewClientBuilder().
+		WithScheme(newTestScheme()).
+		Build()
+
+	ca := NewMeshCA(logger, "cluster.local", "test-ns")
+	ctx := context.Background()
+
+	if err := ca.Initialize(ctx, cl); err != nil {
+		t.Fatalf("Initialize failed: %v", err)
+	}
+
+	// CSR has CN "attacker-node" but request is for "victim-node"
+	csrPEM := generateTestCSRWithName(t, "attacker-node")
+
+	_, err := ca.SignCSR(csrPEM, "victim-node")
+	if err == nil {
+		t.Fatal("expected SignCSR to reject mismatched node name, but it succeeded")
+	}
+
+	if !strings.Contains(err.Error(), "does not match requested node") {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }

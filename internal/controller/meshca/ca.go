@@ -48,6 +48,8 @@ var (
 	errSecret                         = errors.New("secret")
 	errFailedToDecodeCACertificatePEM = errors.New("failed to decode CA certificate PEM")
 	errFailedToDecodeCAPrivateKeyPEM  = errors.New("failed to decode CA private key PEM")
+	errCSRURISANMismatch              = errors.New("CSR URI SANs do not contain expected SPIFFE ID")
+	errCSRCNMismatch                  = errors.New("CSR subject CN does not match requested node")
 )
 
 const (
@@ -189,6 +191,13 @@ func (ca *MeshCA) SignCSR(csrPEM []byte, nodeName string) ([]byte, error) {
 
 	if err := csr.CheckSignature(); err != nil {
 		return nil, fmt.Errorf("CSR signature verification failed: %w", err)
+	}
+
+	// Validate that the nodeName matches the identity in the CSR.
+	// The CSR must contain a SPIFFE URI SAN matching the expected agent identity,
+	// or the Subject CN must match the nodeName.
+	if err := validateCSRIdentity(csr, nodeName, ca.trustDomain); err != nil {
+		return nil, err
 	}
 
 	serial, err := randomSerial()
@@ -336,6 +345,37 @@ func (ca *MeshCA) loadFromSecret(secret *corev1.Secret) error {
 		zap.Time("notAfter", cert.NotAfter))
 
 	return nil
+}
+
+// validateCSRIdentity checks that the CSR's identity matches the requested
+// nodeName. It checks URI SANs for a matching SPIFFE ID first, then falls
+// back to the Subject CN. If the CSR contains neither, the request is
+// rejected.
+func validateCSRIdentity(csr *x509.CertificateRequest, nodeName, trustDomain string) error {
+	expectedSPIFFE := fmt.Sprintf("spiffe://%s/agent/%s", trustDomain, nodeName)
+
+	// Check URI SANs for a matching SPIFFE ID.
+	for _, uri := range csr.URIs {
+		if uri.String() == expectedSPIFFE {
+			return nil
+		}
+	}
+
+	// If no URI SANs present, fall back to CN match.
+	if len(csr.URIs) == 0 && csr.Subject.CommonName == nodeName {
+		return nil
+	}
+
+	// If URI SANs are present but none match, reject.
+	if len(csr.URIs) > 0 {
+		uris := make([]string, 0, len(csr.URIs))
+		for _, u := range csr.URIs {
+			uris = append(uris, u.String())
+		}
+		return fmt.Errorf("%w: SANs=%v, expected=%q", errCSRURISANMismatch, uris, expectedSPIFFE)
+	}
+
+	return fmt.Errorf("%w: CN=%q, node=%q", errCSRCNMismatch, csr.Subject.CommonName, nodeName)
 }
 
 // randomSerial generates a cryptographically random 128-bit serial number.

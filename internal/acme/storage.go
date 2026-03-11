@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	errCertificateHasNoDomains = errors.New("certificate has no domains")
+	errCertificateHasNoDomains    = errors.New("certificate has no domains")
+	errInvalidDomainPathTraversal = errors.New("domain name contains path traversal characters")
 )
 
 // FileStorage implements Storage using the filesystem.
@@ -56,6 +57,9 @@ func (s *FileStorage) SaveCertificate(_ context.Context, cert *Certificate) erro
 	}
 
 	domain := cert.Domains[0]
+	if err := validateDomain(domain); err != nil {
+		return err
+	}
 	dir := s.certPath(domain)
 
 	// Create directory
@@ -124,6 +128,9 @@ func (s *FileStorage) LoadCertificate(_ context.Context, domain string) (*Certif
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if err := validateDomain(domain); err != nil {
+		return nil, err
+	}
 	dir := s.certPath(domain)
 
 	// Read certificate
@@ -185,6 +192,9 @@ func (s *FileStorage) DeleteCertificate(_ context.Context, domain string) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if err := validateDomain(domain); err != nil {
+		return err
+	}
 	dir := s.certPath(domain)
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("failed to delete certificate: %w", err)
@@ -327,11 +337,29 @@ func (s *FileStorage) LoadAccount(_ context.Context) (*AccountInfo, error) {
 	return account, nil
 }
 
+// validateDomain checks that a domain name does not contain path traversal
+// characters or sequences that could escape the storage directory.
+func validateDomain(domain string) error {
+	// Reject domains containing path separators or traversal sequences.
+	if strings.Contains(domain, "/") || strings.Contains(domain, "\\") || strings.Contains(domain, "..") {
+		return fmt.Errorf("%w: %q", errInvalidDomainPathTraversal, domain)
+	}
+	// Reject null bytes which could truncate paths in some OS APIs.
+	if strings.ContainsRune(domain, 0) {
+		return fmt.Errorf("%w: %q", errInvalidDomainPathTraversal, domain)
+	}
+	return nil
+}
+
 // certPath returns the storage path for a certificate.
+// The returned path is guaranteed to be within the basePath directory.
 func (s *FileStorage) certPath(domain string) string {
 	// Replace dots with underscores for filesystem safety
 	safeName := strings.ReplaceAll(domain, ".", "_")
 	// Replace wildcards
 	safeName = strings.ReplaceAll(safeName, "*", "wildcard")
-	return filepath.Join(s.basePath, "certs", safeName)
+	result := filepath.Join(s.basePath, "certs", safeName)
+	// Clean the path to resolve any remaining traversal sequences
+	result = filepath.Clean(result)
+	return result
 }
