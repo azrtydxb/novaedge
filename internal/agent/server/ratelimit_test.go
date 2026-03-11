@@ -130,14 +130,22 @@ func TestIPRateLimiter_Cleanup(t *testing.T) {
 	limiter.mu.RUnlock()
 	assert.Greater(t, initialCount, 10000)
 
-	// Trigger cleanup
+	// Mark all entries as stale by backdating their lastAccess
+	limiter.mu.Lock()
+	staleTime := time.Now().Add(-20 * time.Minute)
+	for _, entry := range limiter.limiters {
+		entry.lastAccess = staleTime
+	}
+	limiter.mu.Unlock()
+
+	// Trigger cleanup — stale entries should be evicted
 	limiter.cleanup()
 
 	limiter.mu.RLock()
 	finalCount := len(limiter.limiters)
 	limiter.mu.RUnlock()
 	assert.Less(t, finalCount, initialCount)
-	assert.Equal(t, 0, finalCount) // Should be cleared
+	assert.Equal(t, 0, finalCount) // All stale entries should be cleared
 }
 
 func TestIPRateLimiter_Cleanup_SmallMap(t *testing.T) {
