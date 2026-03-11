@@ -17,6 +17,7 @@ limitations under the License.
 package mesh
 
 import (
+	"context"
 	"testing"
 
 	"go.uber.org/zap"
@@ -200,7 +201,7 @@ func TestManagerApplyConfig(t *testing.T) {
 		},
 	}
 
-	if err := mgr.ApplyConfig(services, nil); err != nil {
+	if err := mgr.ApplyConfig(context.Background(), services, nil); err != nil {
 		t.Fatalf("ApplyConfig failed: %v", err)
 	}
 
@@ -221,7 +222,7 @@ func TestManagerApplyConfigNotStarted(t *testing.T) {
 		serviceTable: NewServiceTable(),
 	}
 
-	err := mgr.ApplyConfig(nil, nil)
+	err := mgr.ApplyConfig(context.Background(), nil, nil)
 	if err == nil {
 		t.Error("Expected error when manager not started")
 	}

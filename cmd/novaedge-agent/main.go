@@ -440,6 +440,7 @@ func applyAgentConfig(ctx context.Context, logger *zap.Logger, comp *agentCompon
 
 	if comp.meshManager != nil {
 		if err := comp.meshManager.ApplyConfig(
+			ctx,
 			snapshot.GetInternalServices(),
 			snapshot.GetMeshAuthzPolicies(),
 		); err != nil {

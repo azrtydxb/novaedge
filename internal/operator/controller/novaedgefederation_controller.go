@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -35,6 +34,7 @@ import (
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 	"github.com/azrtydxb/novaedge/internal/controller/federation"
+	"github.com/azrtydxb/novaedge/internal/pkg/convert"
 )
 
 const (
@@ -436,7 +436,7 @@ func (r *NovaEdgeFederationReconciler) syncStatus(ctx context.Context, fed *nova
 	// Update status
 	fed.Status.Phase = crdPhase
 	fed.Status.Members = memberStatuses
-	fed.Status.ConflictsPending = safeIntToInt32(len(conflicts))
+	fed.Status.ConflictsPending = convert.SafeIntToInt32(len(conflicts))
 	fed.Status.LocalVectorClock = vectorClock
 	fed.Status.ObservedGeneration = fed.Generation
 
@@ -555,15 +555,4 @@ func (r *NovaEdgeFederationReconciler) SetupWithManager(mgr ctrl.Manager) error 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&novaedgev1alpha1.NovaEdgeFederation{}).
 		Complete(r)
-}
-
-// safeIntToInt32 safely converts an int to int32, clamping to max int32 value if needed
-func safeIntToInt32(v int) int32 {
-	if v > math.MaxInt32 {
-		return math.MaxInt32
-	}
-	if v < math.MinInt32 {
-		return math.MinInt32
-	}
-	return int32(v) //nolint:gosec // bounds checked above
 }

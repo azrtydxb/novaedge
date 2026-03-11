@@ -358,7 +358,9 @@ func (s *Server) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 
 	dryRun := r.URL.Query().Get("dryRun") == "true"
 
-	data, err := io.ReadAll(r.Body)
+	// Limit request body to 10 MiB to prevent unbounded memory allocation.
+	const maxImportBody = 10 << 20 // 10 MiB
+	data, err := io.ReadAll(io.LimitReader(r.Body, maxImportBody))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "failed to read request body: "+err.Error())
 		return

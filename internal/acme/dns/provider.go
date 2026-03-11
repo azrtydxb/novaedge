@@ -103,6 +103,7 @@ func NewProvider(name string, credentials map[string]string, config *ProviderCon
 type DNS01ChallengeProvider struct {
 	provider Provider
 	logger   *zap.Logger
+	ctx      context.Context //nolint:containedctx // required: lego interface has no context param
 }
 
 // NewDNS01ChallengeProvider creates a new DNS-01 challenge provider wrapping a DNS Provider.
@@ -113,7 +114,16 @@ func NewDNS01ChallengeProvider(provider Provider, logger *zap.Logger) *DNS01Chal
 	return &DNS01ChallengeProvider{
 		provider: provider,
 		logger:   logger,
+		ctx:      context.Background(),
 	}
+}
+
+// WithContext returns a copy of the provider that uses the given context for
+// DNS operations, making Present/CleanUp cancellable.
+func (p *DNS01ChallengeProvider) WithContext(ctx context.Context) *DNS01ChallengeProvider {
+	cp := *p
+	cp.ctx = ctx
+	return &cp
 }
 
 // Present creates the DNS TXT record for the challenge.
@@ -124,14 +134,12 @@ func (p *DNS01ChallengeProvider) Present(domain, _, keyAuth string) error {
 		zap.String("domain", domain),
 		zap.String("fqdn", fqdn))
 
-	ctx := context.Background()
-
-	if err := p.provider.CreateTXTRecord(ctx, fqdn, keyAuth); err != nil {
+	if err := p.provider.CreateTXTRecord(p.ctx, fqdn, keyAuth); err != nil {
 		return fmt.Errorf("failed to create TXT record for %s: %w", domain, err)
 	}
 
 	// Wait for propagation
-	if err := p.provider.WaitForPropagation(ctx, fqdn, keyAuth); err != nil {
+	if err := p.provider.WaitForPropagation(p.ctx, fqdn, keyAuth); err != nil {
 		p.logger.Warn("DNS propagation wait failed, continuing anyway",
 			zap.String("domain", domain),
 			zap.Error(err))
@@ -148,8 +156,7 @@ func (p *DNS01ChallengeProvider) CleanUp(domain, _, keyAuth string) error {
 		zap.String("domain", domain),
 		zap.String("fqdn", fqdn))
 
-	ctx := context.Background()
-	return p.provider.DeleteTXTRecord(ctx, fqdn, keyAuth)
+	return p.provider.DeleteTXTRecord(p.ctx, fqdn, keyAuth)
 }
 
 // waitForDNSPropagation polls DNS until the expected TXT record is visible or the timeout expires.

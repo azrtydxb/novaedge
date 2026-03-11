@@ -18,6 +18,7 @@ package mesh
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"net"
 	"strings"
@@ -68,7 +69,7 @@ func DetectProtocol(conn net.Conn) (Protocol, *PeekConn) {
 
 	pc := &PeekConn{Conn: conn, reader: br}
 
-	if err != nil && (err != io.EOF || len(peeked) == 0) {
+	if err != nil && (!errors.Is(err, io.EOF) || len(peeked) == 0) {
 		return ProtocolOpaque, pc
 	}
 

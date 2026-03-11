@@ -24,7 +24,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -38,6 +37,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/azrtydxb/novaedge/internal/agent/config"
+	"github.com/azrtydxb/novaedge/internal/pkg/httpjson"
 )
 
 // DefaultAdminAddr is the default listen address for the admin API.
@@ -429,15 +429,5 @@ func (a *AdminServer) handleLogging(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// writeJSON serializes v as JSON and writes it to w with the given status code.
-func writeJSON(w http.ResponseWriter, statusCode int, v interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		// Best effort: the header has already been sent so we can only log.
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
-	}
-}
+// writeJSON serializes v as indented JSON using the shared httputil package.
+var writeJSON = httpjson.WriteJSON

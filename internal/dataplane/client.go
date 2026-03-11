@@ -4,6 +4,7 @@ package dataplane
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -276,7 +277,7 @@ func (c *Client) StreamFlows(ctx context.Context, req *pb.StreamFlowsRequest) (<
 		for {
 			event, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr != io.EOF {
+				if !errors.Is(recvErr, io.EOF) {
 					c.logger.Warn("StreamFlows recv error", zap.Error(recvErr))
 				}
 				return
@@ -307,7 +308,7 @@ func (c *Client) StreamMetrics(ctx context.Context, req *pb.StreamMetricsRequest
 		for {
 			snapshot, recvErr := stream.Recv()
 			if recvErr != nil {
-				if recvErr != io.EOF {
+				if !errors.Is(recvErr, io.EOF) {
 					c.logger.Warn("StreamMetrics recv error", zap.Error(recvErr))
 				}
 				return
