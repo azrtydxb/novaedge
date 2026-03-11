@@ -31,6 +31,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 var (
@@ -192,6 +194,11 @@ func (c *vaultHTTPClient) cachedHTTPClient() (*http.Client, error) {
 // Call cachedHTTPClient() instead to reuse the client across requests.
 func (c *vaultHTTPClient) newHTTPClient() (*http.Client, error) {
 	transport := &http.Transport{}
+
+	if c.skipTLS {
+		c.logger.Warn("Vault TLS verification is disabled (InsecureSkipVerify=true) -- this is insecure and should only be used in dev/test environments",
+			zap.String("vault_address", c.address))
+	}
 
 	//nolint:gosec // G402: InsecureSkipVerify is user-configurable via ProxyVaultConfig CRD for dev/test environments
 	tlsConfig := &tls.Config{

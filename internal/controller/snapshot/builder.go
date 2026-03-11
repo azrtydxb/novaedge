@@ -174,14 +174,18 @@ func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 		bc.nodes[nodeList.Items[i].Name] = &nodeList.Items[i]
 	}
 
-	// --- Secrets: batch-fetch all TLS and auth secrets ---
-	secretList := &corev1.SecretList{}
-	if err := b.client.List(ctx, secretList); err != nil {
-		return nil, fmt.Errorf("failed to list secrets: %w", err)
-	}
-	for i := range secretList.Items {
-		key := secretList.Items[i].Namespace + "/" + secretList.Items[i].Name
-		bc.secrets[key] = &secretList.Items[i]
+	// --- Secrets: fetch only those referenced by gateways, backends, and policies ---
+	secretRefs := collectReferencedSecrets(bc)
+	prefetchLog := log.FromContext(ctx)
+	for ref := range secretRefs {
+		secret := &corev1.Secret{}
+		if err := b.client.Get(ctx, ref, secret); err != nil {
+			prefetchLog.V(1).Info("Referenced secret not found",
+				"namespace", ref.Namespace, "name", ref.Name)
+			continue
+		}
+		key := secret.Namespace + "/" + secret.Name
+		bc.secrets[key] = secret
 	}
 
 	// --- ConfigMaps: batch-fetch for WAF rules and WASM binaries ---
@@ -210,6 +214,84 @@ func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 	}
 
 	return bc, nil
+}
+
+// secretRefSet accumulates unique secret references.
+type secretRefSet map[client.ObjectKey]struct{}
+
+func (s secretRefSet) add(ns, name string) {
+	if name != "" {
+		s[client.ObjectKey{Namespace: ns, Name: name}] = struct{}{}
+	}
+}
+
+// collectReferencedSecrets scans the already-fetched CRDs (gateways, backends,
+// policies) and returns the set of secret object keys they reference via TLS,
+// mTLS CA, backend TLS, and auth configurations.
+func collectReferencedSecrets(bc *buildContext) secretRefSet {
+	refs := make(secretRefSet)
+	collectGatewaySecretRefs(bc.gateways, refs)
+	collectBackendSecretRefs(bc.backends, refs)
+	collectPolicySecretRefs(bc.policies, refs)
+	return refs
+}
+
+// collectGatewaySecretRefs adds secret references from gateway listeners.
+func collectGatewaySecretRefs(gateways []novaedgev1alpha1.ProxyGateway, refs secretRefSet) {
+	for i := range gateways {
+		gw := &gateways[i]
+		for _, l := range gw.Spec.Listeners {
+			if l.TLS != nil && l.TLS.SecretRef != nil {
+				refs.add(secretRefNS(l.TLS.SecretRef.Namespace, gw.Namespace), l.TLS.SecretRef.Name)
+			}
+			for _, tlsCfg := range l.TLSCertificates {
+				if tlsCfg.SecretRef != nil {
+					refs.add(secretRefNS(tlsCfg.SecretRef.Namespace, gw.Namespace), tlsCfg.SecretRef.Name)
+				}
+			}
+			if l.ClientAuth != nil && l.ClientAuth.CACertRef != nil {
+				refs.add(secretRefNS(l.ClientAuth.CACertRef.Namespace, gw.Namespace), l.ClientAuth.CACertRef.Name)
+			}
+		}
+	}
+}
+
+// collectBackendSecretRefs adds secret references from backend TLS configs.
+func collectBackendSecretRefs(backends []novaedgev1alpha1.ProxyBackend, refs secretRefSet) {
+	for i := range backends {
+		b := &backends[i]
+		if b.Spec.TLS == nil {
+			continue
+		}
+		if b.Spec.TLS.CACertSecretRef != nil && *b.Spec.TLS.CACertSecretRef != "" {
+			refs.add(b.Namespace, *b.Spec.TLS.CACertSecretRef)
+		}
+		if b.Spec.TLS.ClientCertSecretRef != nil && *b.Spec.TLS.ClientCertSecretRef != "" {
+			refs.add(b.Namespace, *b.Spec.TLS.ClientCertSecretRef)
+		}
+	}
+}
+
+// collectPolicySecretRefs adds secret references from policy auth configs.
+func collectPolicySecretRefs(policies []novaedgev1alpha1.ProxyPolicy, refs secretRefSet) {
+	for i := range policies {
+		p := &policies[i]
+		if p.Spec.BasicAuth != nil {
+			refs.add(p.Namespace, p.Spec.BasicAuth.SecretRef.Name)
+		}
+		if p.Spec.OIDC != nil {
+			refs.add(p.Namespace, p.Spec.OIDC.ClientSecretRef.Name)
+			refs.add(p.Namespace, p.Spec.OIDC.SessionSecretRef.Name)
+		}
+	}
+}
+
+// secretRefNS returns ns if non-empty, otherwise defaultNS.
+func secretRefNS(ns, defaultNS string) string {
+	if ns == "" {
+		return defaultNS
+	}
+	return ns
 }
 
 // getSecret returns a pre-fetched Secret from the build context.
