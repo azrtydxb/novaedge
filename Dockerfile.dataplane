@@ -40,7 +40,8 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     libelf1 \
     && rm -rf /var/lib/apt/lists/* \
-    && groupadd --system nonroot && useradd --system --gid nonroot nonroot
+    && groupadd --system nonroot && useradd --system --gid nonroot nonroot \
+    && mkdir -p /run/novaedge && chown nonroot:nonroot /run/novaedge
 
 COPY --from=builder /build/out/novaedge-dataplane /usr/local/bin/
 

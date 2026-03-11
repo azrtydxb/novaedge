@@ -348,6 +348,15 @@ func corsMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// isSecureRequest returns true when the request was made over HTTPS, either
+// directly (r.TLS != nil) or via a trusted reverse-proxy (X-Forwarded-Proto).
+func isSecureRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return r.Header.Get("X-Forwarded-Proto") == "https"
+}
+
 // writeJSON writes a JSON response
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -1428,7 +1437,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 
@@ -1452,7 +1461,7 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   -1,
 	})

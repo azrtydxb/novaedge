@@ -66,7 +66,8 @@ type AdminServer struct {
 }
 
 // isLoopbackAddr returns true if the given host:port address binds to a
-// loopback interface (127.0.0.0/8 or ::1).
+// loopback interface (127.0.0.0/8 or ::1). Hostnames are resolved and all
+// resulting addresses must be loopback for the check to pass.
 func isLoopbackAddr(addr string) bool {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
@@ -76,13 +77,32 @@ func isLoopbackAddr(addr string) bool {
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		return false
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	// Try parsing as an IP literal first.
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	// Not an IP literal — resolve the hostname and require every address to
+	// be loopback so that a DNS misconfiguration cannot accidentally expose
+	// the admin API.
+	resolver := &net.Resolver{}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	addrs, err := resolver.LookupHost(ctx, host)
+	if err != nil || len(addrs) == 0 {
+		return false
+	}
+	for _, a := range addrs {
+		ip := net.ParseIP(a)
+		if ip == nil || !ip.IsLoopback() {
+			return false
+		}
+	}
+	return true
 }
 
 // NewAdminServer creates a new admin/debug HTTP server.
 // If addr is empty, DefaultAdminAddr is used.
-// The address MUST resolve to a loopback interface (127.0.0.1 / ::1);
+// The address MUST resolve to a loopback interface (127.0.0.0/8 or ::1);
 // binding to a non-loopback address is rejected because the admin API
 // exposes pprof, config introspection, and runtime log-level changes
 // without authentication.
@@ -91,7 +111,7 @@ func NewAdminServer(addr string, logger *zap.Logger) (*AdminServer, error) {
 		addr = DefaultAdminAddr
 	}
 	if !isLoopbackAddr(addr) {
-		return nil, fmt.Errorf("%w: %q must be 127.0.0.1 or ::1", errNonLoopbackAdmin, addr)
+		return nil, fmt.Errorf("%w: %q must be a loopback address (127.0.0.0/8 or ::1)", errNonLoopbackAdmin, addr)
 	}
 	return &AdminServer{
 		addr:      addr,
