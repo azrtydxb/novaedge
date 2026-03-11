@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -66,8 +67,10 @@ const (
 type Server struct {
 	pb.UnimplementedFederationServiceServer
 
-	// config holds the federation configuration
-	config *Config
+	// config holds the federation configuration, accessed atomically to
+	// avoid data races between gRPC handlers reading it and UpdateConfig
+	// writing it.
+	config atomic.Pointer[Config]
 
 	// vectorClock is this controller's vector clock
 	vectorClock *VectorClock
@@ -129,7 +132,6 @@ func NewServer(config *Config, logger *zap.Logger) *Server {
 	}
 
 	s := &Server{
-		config:         config,
 		vectorClock:    NewVectorClock(),
 		pendingChanges: make(chan *ChangeEntry, 10000),
 		endpointCache:  NewRemoteEndpointCache(),
@@ -137,6 +139,7 @@ func NewServer(config *Config, logger *zap.Logger) *Server {
 		logger:         logger.Named("federation"),
 		shutdownCh:     make(chan struct{}),
 	}
+	s.config.Store(config)
 
 	// Initialize vector clock with our member
 	if config.LocalMember != nil {
@@ -149,8 +152,8 @@ func NewServer(config *Config, logger *zap.Logger) *Server {
 // Start begins background processing for the federation server
 func (s *Server) Start(ctx context.Context) error {
 	s.logger.Info("Starting federation server",
-		zap.String("federation_id", s.config.FederationID),
-		zap.String("local_member", s.config.LocalMember.Name),
+		zap.String("federation_id", s.config.Load().FederationID),
+		zap.String("local_member", s.config.Load().LocalMember.Name),
 	)
 
 	// Start the tombstone cleanup goroutine
@@ -192,10 +195,10 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 	}
 
 	// Validate federation ID
-	if handshake.FederationId != s.config.FederationID {
+	if handshake.FederationId != s.config.Load().FederationID {
 		return status.Errorf(codes.PermissionDenied,
 			"federation ID mismatch: expected %s, got %s",
-			s.config.FederationID, handshake.FederationId)
+			s.config.Load().FederationID, handshake.FederationId)
 	}
 
 	// Validate protocol version
@@ -227,13 +230,13 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 	if err := stream.Send(&pb.SyncMessage{
 		Message: &pb.SyncMessage_Handshake{
 			Handshake: &pb.SyncHandshake{
-				FederationId:    s.config.FederationID,
-				MemberName:      s.config.LocalMember.Name,
-				Region:          s.config.LocalMember.Region,
-				Zone:            s.config.LocalMember.Zone,
+				FederationId:    s.config.Load().FederationID,
+				MemberName:      s.config.Load().LocalMember.Name,
+				Region:          s.config.Load().LocalMember.Region,
+				Zone:            s.config.Load().LocalMember.Zone,
 				VectorClock:     s.vectorClock.ToMap(),
 				ProtocolVersion: ProtocolVersion,
-				Compression:     s.config.CompressionEnabled,
+				Compression:     s.config.Load().CompressionEnabled,
 			},
 		},
 	}); err != nil {
@@ -504,7 +507,7 @@ func (s *Server) handleConflict(key ResourceKey, local *TrackedResource, remote 
 	s.logger.Warn("Conflict detected",
 		zap.String("key", keyStr),
 		zap.String("peer", peerName),
-		zap.String("strategy", s.config.ConflictResolutionStrategy),
+		zap.String("strategy", s.config.Load().ConflictResolutionStrategy),
 	)
 
 	remoteResource := &TrackedResource{
@@ -525,7 +528,7 @@ func (s *Server) handleConflict(key ResourceKey, local *TrackedResource, remote 
 		DetectedAt:    time.Now(),
 	}
 
-	switch s.config.ConflictResolutionStrategy {
+	switch s.config.Load().ConflictResolutionStrategy {
 	case StrategyLastWriterWins:
 		// Compare timestamps - newer wins
 		if remoteResource.LastModified.After(local.LastModified) {
@@ -590,13 +593,13 @@ func (s *Server) mergeResources(local, remote *TrackedResource) (*TrackedResourc
 	// Create merged resource with combined vector clock
 	mergedVC := NewVectorClockFromMap(local.VectorClock)
 	mergedVC.MergeMap(remote.VectorClock)
-	mergedVC.Increment(s.config.LocalMember.Name)
+	mergedVC.Increment(s.config.Load().LocalMember.Name)
 
 	return &TrackedResource{
 		Key:          local.Key,
 		Data:         mergedData,
 		VectorClock:  mergedVC.ToMap(),
-		OriginMember: s.config.LocalMember.Name,
+		OriginMember: s.config.Load().LocalMember.Name,
 		LastModified: time.Now(),
 		Labels:       mergeLabelMaps(local.Labels, remote.Labels),
 	}, nil
@@ -681,7 +684,7 @@ func (s *Server) handleConflictNotification(peerName string, notification *pb.Co
 
 // GetState implements the GetState RPC
 func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetStateResponse, error) {
-	if req.FederationId != s.config.FederationID {
+	if req.FederationId != s.config.Load().FederationID {
 		return nil, status.Error(codes.PermissionDenied, "federation ID mismatch")
 	}
 
@@ -725,9 +728,9 @@ func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetSt
 	s.agentMu.RUnlock()
 
 	return &pb.GetStateResponse{
-		MemberName:       s.config.LocalMember.Name,
-		Region:           s.config.LocalMember.Region,
-		Zone:             s.config.LocalMember.Zone,
+		MemberName:       s.config.Load().LocalMember.Name,
+		Region:           s.config.Load().LocalMember.Region,
+		Zone:             s.config.Load().LocalMember.Zone,
 		VectorClock:      s.vectorClock.ToMap(),
 		LastSyncTimes:    lastSyncTimes,
 		ResourceCounts:   resourceCounts,
@@ -740,12 +743,12 @@ func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetSt
 
 // Ping implements the Ping RPC
 func (s *Server) Ping(_ context.Context, req *pb.PingRequest) (*pb.PingResponse, error) {
-	if req.FederationId != s.config.FederationID {
+	if req.FederationId != s.config.Load().FederationID {
 		return nil, status.Error(codes.PermissionDenied, "federation ID mismatch")
 	}
 
 	return &pb.PingResponse{
-		MemberName: s.config.LocalMember.Name,
+		MemberName: s.config.Load().LocalMember.Name,
 		Timestamp:  time.Now().UnixNano(),
 		Healthy:    true,
 	}, nil
@@ -753,7 +756,7 @@ func (s *Server) Ping(_ context.Context, req *pb.PingRequest) (*pb.PingResponse,
 
 // RequestFullSync implements the RequestFullSync RPC
 func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationService_RequestFullSyncServer) error {
-	if req.FederationId != s.config.FederationID {
+	if req.FederationId != s.config.Load().FederationID {
 		return status.Error(codes.PermissionDenied, "federation ID mismatch")
 	}
 
@@ -878,7 +881,7 @@ func (s *Server) sendFullSyncBatches(stream pb.FederationService_RequestFullSync
 		})
 	}
 
-	batchSize := int(s.config.BatchSize)
+	batchSize := int(s.config.Load().BatchSize)
 	if batchSize == 0 {
 		// BatchSize=0 would cause an infinite loop; treat it as "one batch".
 		batchSize = len(resources)
@@ -910,7 +913,7 @@ func (s *Server) RegisterServer(grpcServer *grpc.Server) {
 
 // RecordLocalChange records a local change to be propagated to peers
 func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data []byte, labels map[string]string) {
-	s.vectorClock.Increment(s.config.LocalMember.Name)
+	s.vectorClock.Increment(s.config.Load().LocalMember.Name)
 	clock := s.vectorClock.ToMap()
 
 	entry := &ChangeEntry{
@@ -929,7 +932,7 @@ func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data 
 			Key:          key,
 			DeletionTime: time.Now(),
 			VectorClock:  clock,
-			OriginMember: s.config.LocalMember.Name,
+			OriginMember: s.config.Load().LocalMember.Name,
 		}
 		s.tombstones.Store(keyStr, entry.Tombstone)
 		s.resources.Delete(keyStr)
@@ -938,7 +941,7 @@ func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data 
 			Key:          key,
 			Data:         data,
 			VectorClock:  clock,
-			OriginMember: s.config.LocalMember.Name,
+			OriginMember: s.config.Load().LocalMember.Name,
 			LastModified: time.Now(),
 			Labels:       labels,
 		}
@@ -1079,7 +1082,7 @@ func (s *Server) updatePeerState(peerName string, updateFn func(*PeerState)) {
 func (s *Server) getPhase() Phase {
 	healthyCount := 0
 	connectedCount := 0
-	totalPeers := len(s.config.Peers)
+	totalPeers := len(s.config.Load().Peers)
 
 	s.peerStates.Range(func(_, value any) bool {
 		state, ok := value.(*PeerState)
@@ -1132,7 +1135,7 @@ func (s *Server) cleanupTombstones(ctx context.Context) {
 				if !ok {
 					return true
 				}
-				if now.Sub(tombstone.DeletionTime) > s.config.TombstoneTTL {
+				if now.Sub(tombstone.DeletionTime) > s.config.Load().TombstoneTTL {
 					s.tombstones.Delete(key)
 				}
 				return true

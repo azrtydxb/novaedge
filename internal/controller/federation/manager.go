@@ -511,7 +511,7 @@ func (m *Manager) UpdateConfig(newConfig *Config) error {
 			)
 		}
 		// The server holds a pointer to config; update it atomically.
-		m.server.config = newConfig
+		m.server.config.Store(newConfig)
 	}
 
 	// --- Update anti-entropy if interval changed ---

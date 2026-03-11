@@ -433,7 +433,7 @@ func (c *PeerClient) setHealthy(healthy bool) {
 // buildTLSConfig builds the TLS configuration for the peer connection
 func (c *PeerClient) buildTLSConfig() (*tls.Config, error) {
 	config := &tls.Config{
-		MinVersion:         tls.VersionTLS12,
+		MinVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: c.peer.InsecureSkipVerify, //nolint:gosec // G402: user-configurable from federation CRD spec
 	}
 
