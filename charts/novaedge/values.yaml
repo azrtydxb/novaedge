@@ -63,7 +63,7 @@ controller:
     port: 8082
     # TLS configuration for gRPC server
     tls:
-      enabled: false
+      enabled: true
       # Secret containing TLS certificate and key
       certSecretName: ""
       # CA certificate secret for client verification (mTLS)

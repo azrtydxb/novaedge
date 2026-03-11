@@ -326,7 +326,11 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 
 	comp.metricsServer = server.NewMetricsServer(logger, metricsPort)
 	comp.healthServer = server.NewHealthServer(logger, healthProbePort)
-	comp.adminServer = server.NewAdminServer("", logger)
+	adminSrv, err := server.NewAdminServer("", logger)
+	if err != nil {
+		logger.Fatal("Failed to create admin server", zap.Error(err))
+	}
+	comp.adminServer = adminSrv
 	comp.adminServer.SetAtomicLevel(atomicLevel)
 
 	return comp

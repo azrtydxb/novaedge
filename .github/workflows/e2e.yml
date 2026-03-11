@@ -29,19 +29,19 @@ jobs:
         k8s-version: ['v1.28.0', 'v1.29.0', 'v1.30.0']
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: 'go.mod'
           cache: true
 
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@bf6a7d304bc2fdb57e0331155b7ebf2c504acf0a # v4
 
       - name: Create kind cluster
-        uses: helm/kind-action@v1
+        uses: helm/kind-action@0b5c88445f37b7e12a2ce1ecca7805b9046a74db # v1
         with:
           node_image: kindest/node:${{ matrix.k8s-version }}
           cluster_name: novaedge-e2e
@@ -152,7 +152,7 @@ jobs:
 
       - name: Upload logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: e2e-logs-${{ matrix.k8s-version }}
           path: logs/
@@ -166,10 +166,10 @@ jobs:
     if: false  # Disabled: test/e2e/envtest/ directory does not exist yet
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: 'go.mod'
           cache: true

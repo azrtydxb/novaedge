@@ -32,8 +32,8 @@ jobs:
       github.event.inputs.test_suite == 'all' ||
       github.event.inputs.test_suite == 'integration'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -47,7 +47,7 @@ jobs:
             -- -race -tags=integration -count=1 -timeout=10m ./test/integration/...
       - name: Upload test report
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@71f2f95ef0c4a3656e44272deca4a1efe096628a # v1
         with:
           name: "CT: Integration Tests"
           path: ct-integration-results.xml
@@ -55,7 +55,7 @@ jobs:
           fail-on-error: false
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ct-integration-report
           path: ct-integration-results.xml
@@ -69,8 +69,8 @@ jobs:
       github.event.inputs.test_suite == 'all' ||
       github.event.inputs.test_suite == 'e2e'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -84,7 +84,7 @@ jobs:
             -- -tags=e2e -count=1 -timeout=30m ./test/e2e/...
       - name: Upload test report
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@71f2f95ef0c4a3656e44272deca4a1efe096628a # v1
         with:
           name: "CT: E2E Tests"
           path: ct-e2e-results.xml
@@ -92,7 +92,7 @@ jobs:
           fail-on-error: false
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ct-e2e-report
           path: ct-e2e-results.xml
@@ -106,8 +106,8 @@ jobs:
       github.event.inputs.test_suite == 'all' ||
       github.event.inputs.test_suite == 'functional'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -121,7 +121,7 @@ jobs:
             -- -tags=functional -count=1 -timeout=15m ./test/functional/...
       - name: Upload test report
         if: always()
-        uses: dorny/test-reporter@v1
+        uses: dorny/test-reporter@71f2f95ef0c4a3656e44272deca4a1efe096628a # v1
         with:
           name: "CT: Functional Tests"
           path: ct-functional-results.xml
@@ -129,7 +129,7 @@ jobs:
           fail-on-error: false
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ct-functional-report
           path: ct-functional-results.xml
@@ -143,8 +143,8 @@ jobs:
       github.event.inputs.test_suite == 'all' ||
       github.event.inputs.test_suite == 'performance'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
         with:
           go-version-file: 'go.mod'
           cache: true
@@ -165,7 +165,7 @@ jobs:
           echo '```' >> $GITHUB_STEP_SUMMARY
       - name: Upload artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ct-performance-report
           path: benchmark-results.txt
