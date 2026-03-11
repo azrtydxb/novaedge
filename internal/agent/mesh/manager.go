@@ -303,7 +303,7 @@ func (m *Manager) Start(ctx context.Context) error {
 
 // ApplyConfig updates the mesh routing table, TPROXY interception rules,
 // authorization policies, and eBPF acceleration maps from a config snapshot.
-func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*pb.MeshAuthorizationPolicy) error {
+func (m *Manager) ApplyConfig(ctx context.Context, services []*pb.InternalService, authzPolicies []*pb.MeshAuthorizationPolicy) error {
 	if m.tproxy == nil {
 		return errMeshManagerNotStarted
 	}
@@ -339,7 +339,7 @@ func (m *Manager) ApplyConfig(services []*pb.InternalService, authzPolicies []*p
 	// Skip reconciliation if NovaNet is not connected to avoid logging
 	// no-op successes and corrupting tracked state.
 	if m.novanetClient != nil && m.novanetClient.IsConnected() {
-		reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		reconcileCtx, reconcileCancel := context.WithTimeout(ctx, 10*time.Second)
 		defer reconcileCancel()
 		m.reconcileNovaNetMeshRedirects(reconcileCtx, services)
 		m.reconcileNovaNetSockMap(reconcileCtx, services)

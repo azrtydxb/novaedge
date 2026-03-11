@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -17,6 +18,13 @@ var (
 	errCachePurgeFailedStatus = errors.New("cache purge failed (status")
 	errCacheStatsFailedStatus = errors.New("cache stats failed (status")
 )
+
+// cacheHTTPClient has a sensible timeout, replacing http.DefaultClient.
+var cacheHTTPClient = &http.Client{
+	Timeout: 30 * time.Second,
+}
+
+const maxCacheResponseBody = 1 << 20 // 1 MiB
 
 func newCacheCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -91,13 +99,13 @@ func runCachePurge(agentAddr, pattern string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
+	resp, err := cacheHTTPClient.Do(req) //nolint:gosec // URL validated via url.ParseRequestURI above
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCacheResponseBody))
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}
@@ -133,13 +141,13 @@ func runCacheStats(agentAddr string) error {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
+	resp, err := cacheHTTPClient.Do(req) //nolint:gosec // URL validated via url.ParseRequestURI above
 	if err != nil {
 		return fmt.Errorf("failed to connect to agent at %s: %w", agentAddr, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxCacheResponseBody))
 	if err != nil {
 		return fmt.Errorf("failed to read response: %w", err)
 	}

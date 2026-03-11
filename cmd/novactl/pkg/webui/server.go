@@ -17,6 +17,7 @@ import (
 	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/auth"
 	"github.com/azrtydxb/novaedge/cmd/novactl/pkg/webui/mode"
 	"github.com/azrtydxb/novaedge/internal/acme"
+	"github.com/azrtydxb/novaedge/internal/pkg/httpjson"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -357,19 +358,11 @@ func isSecureRequest(r *http.Request) bool {
 	return r.Header.Get("X-Forwarded-Proto") == "https"
 }
 
-// writeJSON writes a JSON response
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
+// writeJSON writes a JSON response using the shared httputil package.
+var writeJSON = httpjson.WriteJSONCompact
 
-// writeError writes an error response
-func writeError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, map[string]string{"error": message})
-}
+// writeError writes an error response using the shared httputil package.
+var writeError = httpjson.WriteError
 
 // parseNamespaceFromQuery extracts namespace from query params
 func parseNamespaceFromQuery(r *http.Request) string {

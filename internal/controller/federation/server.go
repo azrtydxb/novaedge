@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -32,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/azrtydxb/novaedge/internal/pkg/convert"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
@@ -325,7 +325,7 @@ func (s *Server) handleOutgoingMessages(ctx context.Context, stream pb.Federatio
 					Heartbeat: &pb.Heartbeat{
 						VectorClock:    s.vectorClock.ToMap(),
 						Timestamp:      time.Now().UnixNano(),
-						PendingChanges: safeIntToInt32(len(s.pendingChanges)),
+						PendingChanges: convert.SafeIntToInt32(len(s.pendingChanges)),
 						AgentCount:     agentCount,
 					},
 				},
@@ -797,10 +797,10 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 		}
 
 		batch := &pb.ResourceBatch{
-			BatchNumber:    safeIntToInt32(batchNum),
+			BatchNumber:    convert.SafeIntToInt32(batchNum),
 			IsLast:         end == len(resources),
 			Resources:      resources[i:end],
-			TotalResources: safeIntToInt32(totalResources),
+			TotalResources: convert.SafeIntToInt32(totalResources),
 			VectorClock:    s.vectorClock.ToMap(),
 		}
 
@@ -1127,15 +1127,4 @@ func (s *Server) deleteServiceEndpoints(namespace, name, peerName string) {
 // Manager or other components.
 func (s *Server) GetEndpointCache() *RemoteEndpointCache {
 	return s.endpointCache
-}
-
-// safeIntToInt32 safely converts an int to int32, clamping to max int32 value if needed
-func safeIntToInt32(v int) int32 {
-	if v > math.MaxInt32 {
-		return math.MaxInt32
-	}
-	if v < math.MinInt32 {
-		return math.MinInt32
-	}
-	return int32(v) //nolint:gosec // bounds checked above
 }
