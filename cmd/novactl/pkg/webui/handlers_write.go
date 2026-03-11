@@ -50,6 +50,7 @@ func handleNamespacedCRUD[T any](s *Server, w http.ResponseWriter, r *http.Reque
 	switch r.Method {
 	case http.MethodPost:
 		var obj T
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&obj); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -71,6 +72,7 @@ func handleNamespacedCRUD[T any](s *Server, w http.ResponseWriter, r *http.Reque
 		}
 
 		var obj T
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&obj); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -193,6 +195,7 @@ func (s *Server) handleIPPoolWrite(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
 		var pool models.IPPool
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&pool); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -214,6 +217,7 @@ func (s *Server) handleIPPoolWrite(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var pool models.IPPool
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&pool); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -294,6 +298,7 @@ func (s *Server) handleConfigValidate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var config models.Config
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 		return

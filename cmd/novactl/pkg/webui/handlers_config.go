@@ -133,6 +133,7 @@ func (s *Server) handleConfigSnapshots(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var req snapshotRequest
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			// Allow empty body; default to "all" namespace and empty comment
 			req.Namespace = namespaceAll
