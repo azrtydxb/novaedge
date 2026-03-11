@@ -78,7 +78,7 @@ type NovaEdgeClusterReconciler struct {
 // +kubebuilder:rbac:groups=novaedge.io,resources=novaedgeclusters/finalizers,verbs=update
 // +kubebuilder:rbac:groups=apps,resources=deployments;daemonsets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=services;serviceaccounts;configmaps;secrets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=clusterroles;clusterrolebindings,verbs=get;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *NovaEdgeClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

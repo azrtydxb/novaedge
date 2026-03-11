@@ -311,7 +311,7 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 	comp.meshManager = initMeshSubsystem(logger, comp.novanetClient)
 
 	if sdwanEnabled {
-		comp.sdwanManager = sdwan.NewManager(logger.Named("sdwan"))
+		comp.sdwanManager = sdwan.NewManager(logger)
 	}
 
 	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
