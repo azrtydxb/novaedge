@@ -346,6 +346,7 @@ mod tests {
         let checker = HealthChecker::new(HealthCheckConfig {
             timeout: Duration::from_secs(1),
             healthy_threshold: 1,
+            unhealthy_threshold: 1,
             check: HealthCheckType::Http(HttpHealthCheck {
                 path: "/healthz".into(),
                 host: None,
