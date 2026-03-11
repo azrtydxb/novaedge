@@ -75,7 +75,7 @@ var (
 	HealthChecksTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "novaedge",
-			Subsystem: "health_checks",
+			Subsystem: "health_check",
 			Name:      "total",
 			Help:      "Total number of health check attempts",
 		},
@@ -135,7 +135,7 @@ var (
 	EndpointsEjected = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "novaedge",
-			Subsystem: "endpoints",
+			Subsystem: "endpoint",
 			Name:      "ejected",
 			Help:      "Current number of ejected endpoints per cluster",
 		},

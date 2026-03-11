@@ -23,7 +23,7 @@ import (
 )
 
 func TestConverterToSnapshot(t *testing.T) {
-	converter := NewConverter()
+	converter := NewConverter(nil)
 
 	config := &Config{
 		Version: "1.0",
@@ -113,7 +113,7 @@ func TestConverterToSnapshot(t *testing.T) {
 }
 
 func TestParseProtocol(t *testing.T) {
-	converter := NewConverter()
+	converter := NewConverter(nil)
 
 	tests := []struct {
 		input    string
@@ -139,7 +139,7 @@ func TestParseProtocol(t *testing.T) {
 }
 
 func TestParseLBPolicy(t *testing.T) {
-	converter := NewConverter()
+	converter := NewConverter(nil)
 
 	tests := []struct {
 		input    string
@@ -164,7 +164,7 @@ func TestParseLBPolicy(t *testing.T) {
 }
 
 func TestParsePathMatchType(t *testing.T) {
-	converter := NewConverter()
+	converter := NewConverter(nil)
 
 	tests := []struct {
 		input    string

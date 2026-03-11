@@ -20,7 +20,6 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -32,20 +31,22 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/azrtydxb/novaedge/internal/pkg/convert"
 	snapshotpkg "github.com/azrtydxb/novaedge/internal/pkg/snapshot"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
-var (
-	errInvalidByteSize = errors.New("invalid byte size")
-)
-
 // Converter converts standalone config to protobuf ConfigSnapshot
-type Converter struct{}
+type Converter struct {
+	logger *zap.Logger
+}
 
-// NewConverter creates a new converter
-func NewConverter() *Converter {
-	return &Converter{}
+// NewConverter creates a new converter with the given logger.
+func NewConverter(logger *zap.Logger) *Converter {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &Converter{logger: logger}
 }
 
 // safeInt32 converts an int to int32, clamping to math.MaxInt32 on overflow.
@@ -532,12 +533,7 @@ func (c *Converter) convertBackends(backends []BackendConfig) ([]*pb.Cluster, ma
 				Address: address,
 				Port:    port,
 				Ready:   true,
-			}
-			// Weight is stored in Labels for pb.Endpoint (no direct Weight field)
-			if e.Weight > 0 {
-				endpoint.Labels = map[string]string{
-					"weight": fmt.Sprintf("%d", e.Weight),
-				}
+				Weight:  safeInt32(e.Weight),
 			}
 			endpointList.Endpoints = append(endpointList.Endpoints, endpoint)
 		}
@@ -576,7 +572,7 @@ func (c *Converter) parseLBPolicy(policy string) pb.LoadBalancingPolicy {
 	case "LeastConn", "LeastConnections":
 		return pb.LoadBalancingPolicy_LEAST_CONN
 	default:
-		zap.L().Warn("Unknown LB policy, defaulting to RoundRobin", zap.String("policy", policy))
+		c.logger.Warn("Unknown LB policy, defaulting to RoundRobin", zap.String("policy", policy))
 		return pb.LoadBalancingPolicy_ROUND_ROBIN
 	}
 }
@@ -588,6 +584,7 @@ type standalonePolicyConverter func(p *PolicyConfig, policy *pb.Policy)
 var standalonePolicyConverters = map[string]standalonePolicyConverter{
 	"RateLimit": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.RateLimit != nil {
+			policy.Type = pb.PolicyType_RATE_LIMIT
 			policy.RateLimit = &pb.RateLimitConfig{
 				RequestsPerSecond: safeInt32(p.RateLimit.RequestsPerSecond),
 				Burst:             safeInt32(p.RateLimit.BurstSize),
@@ -597,6 +594,7 @@ var standalonePolicyConverters = map[string]standalonePolicyConverter{
 	},
 	"CORS": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.CORS != nil {
+			policy.Type = pb.PolicyType_CORS
 			policy.Cors = &pb.CORSConfig{
 				AllowOrigins:     p.CORS.AllowOrigins,
 				AllowMethods:     p.CORS.AllowMethods,
@@ -610,14 +608,18 @@ var standalonePolicyConverters = map[string]standalonePolicyConverter{
 	"IPFilter": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.IPFilter != nil {
 			cidrs := p.IPFilter.AllowList
-			if len(cidrs) == 0 {
+			if len(cidrs) > 0 {
+				policy.Type = pb.PolicyType_IP_ALLOW_LIST
+			} else {
 				cidrs = p.IPFilter.DenyList
+				policy.Type = pb.PolicyType_IP_DENY_LIST
 			}
 			policy.IpList = &pb.IPListConfig{Cidrs: cidrs}
 		}
 	},
 	"JWT": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.JWT != nil {
+			policy.Type = pb.PolicyType_JWT
 			policy.Jwt = &pb.JWTConfig{
 				Issuer:            p.JWT.Issuer,
 				Audience:          p.JWT.Audience,
@@ -661,6 +663,7 @@ var standalonePolicyConverters = map[string]standalonePolicyConverter{
 	},
 	"WASMPlugin": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.WASMPlugin != nil {
+			policy.Type = pb.PolicyType_WASM_PLUGIN
 			policy.WasmPlugin = &pb.WASMPluginConfig{
 				Source:   p.WASMPlugin.Source,
 				Config:   p.WASMPlugin.Config,
@@ -671,6 +674,7 @@ var standalonePolicyConverters = map[string]standalonePolicyConverter{
 	},
 	"BasicAuth": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.BasicAuth != nil {
+			policy.Type = pb.PolicyType_BASIC_AUTH
 			policy.BasicAuth = &pb.BasicAuthConfig{
 				Realm:     p.BasicAuth.Realm,
 				Htpasswd:  buildHtpasswdFromConfig(p.BasicAuth),
@@ -680,6 +684,7 @@ var standalonePolicyConverters = map[string]standalonePolicyConverter{
 	},
 	"ForwardAuth": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.ForwardAuth != nil {
+			policy.Type = pb.PolicyType_FORWARD_AUTH
 			config := &pb.ForwardAuthConfig{
 				Address:         p.ForwardAuth.Address,
 				AuthHeaders:     p.ForwardAuth.AuthHeaders,
@@ -696,6 +701,7 @@ var standalonePolicyConverters = map[string]standalonePolicyConverter{
 	},
 	"OIDC": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.OIDC != nil {
+			policy.Type = pb.PolicyType_OIDC
 			policy.Oidc = convertOIDCPolicy(p.OIDC)
 		}
 	},
@@ -729,7 +735,7 @@ func (c *Converter) convertCompression(comp *CompressionConfig) *pb.CompressionC
 	if comp.MinSize != "" {
 		n, err := strconv.ParseInt(comp.MinSize, 10, 64)
 		if err != nil {
-			zap.L().Warn("failed to parse compression min size, using 0",
+			c.logger.Warn("failed to parse compression min size, using 0",
 				zap.String("value", comp.MinSize), zap.Error(err))
 		} else {
 			minSize = n
@@ -750,9 +756,9 @@ func (c *Converter) convertRouteLimits(limits *RouteLimits) *pb.RouteLimitsConfi
 	}
 	result := &pb.RouteLimitsConfig{}
 	if limits.MaxRequestBodySize != "" {
-		n, err := standaloneParseByteSize(limits.MaxRequestBodySize)
+		n, err := convert.ParseByteSize(limits.MaxRequestBodySize)
 		if err != nil {
-			zap.L().Warn("failed to parse max request body size, using 0",
+			c.logger.Warn("failed to parse max request body size, using 0",
 				zap.String("value", limits.MaxRequestBodySize), zap.Error(err))
 		} else {
 			result.MaxRequestBodySize = n
@@ -761,7 +767,7 @@ func (c *Converter) convertRouteLimits(limits *RouteLimits) *pb.RouteLimitsConfi
 	if limits.RequestTimeout != "" {
 		d, err := time.ParseDuration(limits.RequestTimeout)
 		if err != nil {
-			zap.L().Warn("failed to parse request timeout, using 0",
+			c.logger.Warn("failed to parse request timeout, using 0",
 				zap.String("value", limits.RequestTimeout), zap.Error(err))
 		} else {
 			result.RequestTimeoutMs = d.Milliseconds()
@@ -770,7 +776,7 @@ func (c *Converter) convertRouteLimits(limits *RouteLimits) *pb.RouteLimitsConfi
 	if limits.IdleTimeout != "" {
 		d, err := time.ParseDuration(limits.IdleTimeout)
 		if err != nil {
-			zap.L().Warn("failed to parse idle timeout, using 0",
+			c.logger.Warn("failed to parse idle timeout, using 0",
 				zap.String("value", limits.IdleTimeout), zap.Error(err))
 		} else {
 			result.IdleTimeoutMs = d.Milliseconds()
@@ -788,40 +794,15 @@ func (c *Converter) convertRouteBuffering(buf *BufferingConfig) *pb.BufferingCon
 		ResponseBuffering: buf.Response,
 	}
 	if buf.MaxSize != "" {
-		n, err := standaloneParseByteSize(buf.MaxSize)
+		n, err := convert.ParseByteSize(buf.MaxSize)
 		if err != nil {
-			zap.L().Warn("failed to parse max buffer size, using 0",
+			c.logger.Warn("failed to parse max buffer size, using 0",
 				zap.String("value", buf.MaxSize), zap.Error(err))
 		} else {
 			result.MaxBufferSize = n
 		}
 	}
 	return result
-}
-
-// standaloneParseByteSize parses human-readable byte size (e.g., "10Mi", "1024").
-func standaloneParseByteSize(s string) (int64, error) {
-	if s == "" || s == "0" {
-		return 0, nil
-	}
-	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
-		return n, nil
-	}
-	multipliers := map[string]int64{
-		"Ki": 1 << 10, "Mi": 1 << 20, "Gi": 1 << 30,
-		"KB": 1000, "MB": 1000 * 1000, "GB": 1000 * 1000 * 1000,
-	}
-	for suffix, mult := range multipliers {
-		if strings.HasSuffix(s, suffix) {
-			numStr := strings.TrimSuffix(s, suffix)
-			n, err := strconv.ParseInt(numStr, 10, 64)
-			if err != nil {
-				return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
-			}
-			return n * mult, nil
-		}
-	}
-	return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 }
 
 func (c *Converter) convertL4Listeners(configs []L4ListenerStandaloneConfig, endpoints map[string]*pb.EndpointList) []*pb.L4Listener {
@@ -926,7 +907,7 @@ func (c *Converter) convertSessionAffinity(sa *SessionAffinityStandaloneConfig) 
 	case "SourceIP":
 		affinityType = "source_ip"
 	default:
-		zap.L().Warn("Unknown session affinity type, defaulting to cookie", zap.String("type", sa.Type))
+		c.logger.Warn("Unknown session affinity type, defaulting to cookie", zap.String("type", sa.Type))
 	}
 
 	cookieName := sa.CookieName
@@ -944,7 +925,7 @@ func (c *Converter) convertSessionAffinity(sa *SessionAffinityStandaloneConfig) 
 		if d, err := time.ParseDuration(sa.CookieTTL); err == nil {
 			ttlSeconds = int64(d.Seconds())
 		} else {
-			zap.L().Warn("Failed to parse session affinity cookie TTL duration", zap.String("ttl", sa.CookieTTL), zap.Error(err))
+			c.logger.Warn("Failed to parse session affinity cookie TTL duration", zap.String("ttl", sa.CookieTTL), zap.Error(err))
 		}
 	}
 

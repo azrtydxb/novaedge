@@ -17,7 +17,6 @@ limitations under the License.
 package snapshot
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -30,11 +29,8 @@ import (
 	"go.uber.org/zap"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/pkg/convert"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
-)
-
-var (
-	errInvalidByteSize = errors.New("invalid byte size")
 )
 
 // convertProtocol converts NovaEdge ProtocolType to protobuf Protocol
@@ -371,7 +367,7 @@ func convertCompressionConfig(config *novaedgev1alpha1.CompressionConfig) *pb.Co
 		return nil
 	}
 
-	minSize, err := parseByteSize(config.MinSize)
+	minSize, err := convert.ParseByteSize(config.MinSize)
 	if err != nil {
 		zap.L().Warn("failed to parse compression min size, using 0",
 			zap.String("value", config.MinSize), zap.Error(err))
@@ -392,7 +388,7 @@ func convertRouteLimits(limits *novaedgev1alpha1.RouteLimits) *pb.RouteLimitsCon
 		return nil
 	}
 
-	maxBody, err := parseByteSize(limits.MaxRequestBodySize)
+	maxBody, err := convert.ParseByteSize(limits.MaxRequestBodySize)
 	if err != nil {
 		zap.L().Warn("failed to parse max request body size, using 0",
 			zap.String("value", limits.MaxRequestBodySize), zap.Error(err))
@@ -421,7 +417,7 @@ func convertBufferingConfig(config *novaedgev1alpha1.RouteBufferingConfig) *pb.B
 		return nil
 	}
 
-	maxSize, err := parseByteSize(config.MaxSize)
+	maxSize, err := convert.ParseByteSize(config.MaxSize)
 	if err != nil {
 		zap.L().Warn("failed to parse max buffer size, using 0",
 			zap.String("value", config.MaxSize), zap.Error(err))
@@ -531,43 +527,6 @@ func parseConfigMapRules(content string) []string {
 		rules = append(rules, current.String())
 	}
 	return rules
-}
-
-// parseByteSize parses a human-readable byte size string (e.g., "10Mi", "1024", "50MB").
-func parseByteSize(s string) (int64, error) {
-	if s == "" || s == "0" {
-		return 0, nil
-	}
-
-	// Try plain integer first
-	n, err := parseInt64(s)
-	if err == nil {
-		return n, nil
-	}
-
-	// Binary units
-	multipliers := map[string]int64{
-		"Ki": 1 << 10,
-		"Mi": 1 << 20,
-		"Gi": 1 << 30,
-		"Ti": 1 << 40,
-		"KB": 1000,
-		"MB": 1000 * 1000,
-		"GB": 1000 * 1000 * 1000,
-	}
-
-	for suffix, mult := range multipliers {
-		if len(s) > len(suffix) && s[len(s)-len(suffix):] == suffix {
-			numStr := s[:len(s)-len(suffix)]
-			num, parseErr := parseInt64(numStr)
-			if parseErr != nil {
-				return 0, parseErr
-			}
-			return num * mult, nil
-		}
-	}
-
-	return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 }
 
 // parseDurationMs parses a duration string and returns milliseconds.

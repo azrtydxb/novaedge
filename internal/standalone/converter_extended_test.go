@@ -25,7 +25,7 @@ import (
 )
 
 func TestConverter_parseHeaderMatchType(t *testing.T) {
-	converter := NewConverter()
+	converter := NewConverter(nil)
 
 	tests := []struct {
 		name     string
@@ -63,7 +63,7 @@ func TestConverter_parseHeaderMatchType(t *testing.T) {
 }
 
 func TestConverter_parseFilterType(t *testing.T) {
-	converter := NewConverter()
+	converter := NewConverter(nil)
 
 	tests := []struct {
 		name     string
@@ -111,7 +111,7 @@ func TestConverter_parseFilterType(t *testing.T) {
 }
 
 func TestConverter_parsePathMatchType(t *testing.T) {
-	converter := NewConverter()
+	converter := NewConverter(nil)
 
 	tests := []struct {
 		name     string

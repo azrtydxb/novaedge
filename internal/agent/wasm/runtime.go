@@ -51,6 +51,9 @@ func NewRuntime(ctx context.Context, logger *zap.Logger) (*Runtime, error) {
 
 	rt := wazero.NewRuntimeWithConfig(ctx, cfg)
 
+	// Set the package-level logger so host functions can use it.
+	hostLogger = logger
+
 	r := &Runtime{
 		logger:  logger,
 		runtime: rt,

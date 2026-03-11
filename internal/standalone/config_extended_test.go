@@ -19,6 +19,8 @@ package standalone
 import (
 	"testing"
 	"time"
+
+	"github.com/azrtydxb/novaedge/internal/pkg/convert"
 )
 
 func TestRouteConfig_GetTimeout(t *testing.T) {
@@ -303,13 +305,13 @@ func TestStandaloneParseByteSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := standaloneParseByteSize(tt.input)
+			result, err := convert.ParseByteSize(tt.input)
 			if (err != nil) != tt.wantErr {
-				t.Errorf("standaloneParseByteSize() error = %v, wantErr %v", err, tt.wantErr)
+				t.Errorf("convert.ParseByteSize() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
 			if result != tt.expected {
-				t.Errorf("standaloneParseByteSize() = %v, want %v", result, tt.expected)
+				t.Errorf("convert.ParseByteSize() = %v, want %v", result, tt.expected)
 			}
 		})
 	}
