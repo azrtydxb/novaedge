@@ -105,7 +105,7 @@ spec:
                     type: string
                   sampleRate:
                     description: SampleRate defines the fraction of requests to log
-                      (0.0-1.0, default 1.0)
+                      (0.0-1.0). When omitted, all requests are logged.
                     maximum: 1
                     minimum: 0
                     type: number

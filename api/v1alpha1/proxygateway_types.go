@@ -356,7 +356,7 @@ type AccessLogConfig struct {
 	// +optional
 	FilterStatusCodes []int32 `json:"filterStatusCodes,omitempty"`
 
-	// SampleRate defines the fraction of requests to log (0.0-1.0, default 1.0)
+	// SampleRate defines the fraction of requests to log (0.0-1.0). When omitted, all requests are logged.
 	// +optional
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=1
