@@ -690,7 +690,7 @@ func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetSt
 		return true
 	})
 
-	// Collect last sync times
+	// Collect last sync times (lock each PeerState to avoid races with updatePeerState).
 	lastSyncTimes := make(map[string]int64)
 	s.peerStates.Range(func(key, value any) bool {
 		state, ok := value.(*PeerState)
@@ -701,8 +701,11 @@ func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetSt
 		if !ok {
 			return true
 		}
-		if !state.LastSyncTime.IsZero() {
-			lastSyncTimes[keyStr] = state.LastSyncTime.UnixNano()
+		state.mu.Lock()
+		lastSync := state.LastSyncTime
+		state.mu.Unlock()
+		if !lastSync.IsZero() {
+			lastSyncTimes[keyStr] = lastSync.UnixNano()
 		}
 		return true
 	})

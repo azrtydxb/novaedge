@@ -10,11 +10,10 @@ use tracing::{debug, error, info, warn};
 pub struct TcpProxyConfig {
     pub listen_addr: SocketAddr,
     pub connect_timeout: std::time::Duration,
-    /// Maximum total connection lifetime. This is a total lifetime cap, not a
-    /// true per-read/write idle timeout — any connection open longer than this
+    /// Maximum total connection lifetime. Any connection open longer than this
     /// duration will be closed regardless of activity. A true idle timeout
     /// would require per-read/write deadline tracking (e.g. tokio_io_timeout).
-    pub idle_timeout: std::time::Duration,
+    pub max_lifetime: std::time::Duration,
     pub max_connections: u32,
 }
 
@@ -23,7 +22,7 @@ impl Default for TcpProxyConfig {
         Self {
             listen_addr: "0.0.0.0:0".parse().unwrap(),
             connect_timeout: std::time::Duration::from_secs(5),
-            idle_timeout: std::time::Duration::from_secs(300),
+            max_lifetime: std::time::Duration::from_secs(300),
             max_connections: 10000,
         }
     }
@@ -79,12 +78,12 @@ impl TcpProxy {
                         let bytes_tx = self.total_bytes_tx.clone();
                         let bytes_rx = self.total_bytes_rx.clone();
                         let timeout = self.config.connect_timeout;
-                        let idle = self.config.idle_timeout;
+                        let lifetime = self.config.max_lifetime;
                         active.fetch_add(1, Ordering::Relaxed);
 
                         tokio::spawn(async move {
                             if let Err(e) = proxy_connection(
-                                stream, backend, timeout, idle, &bytes_tx, &bytes_rx,
+                                stream, backend, timeout, lifetime, &bytes_tx, &bytes_rx,
                             )
                             .await
                             {
@@ -123,7 +122,7 @@ async fn proxy_connection(
     mut client: TcpStream,
     backend_addr: SocketAddr,
     connect_timeout: std::time::Duration,
-    idle_timeout: std::time::Duration,
+    max_lifetime: std::time::Duration,
     bytes_tx: &AtomicU64,
     bytes_rx: &AtomicU64,
 ) -> anyhow::Result<()> {
@@ -132,7 +131,7 @@ async fn proxy_connection(
         .map_err(|_| anyhow::anyhow!("connect timeout"))??;
 
     match tokio::time::timeout(
-        idle_timeout,
+        max_lifetime,
         io::copy_bidirectional(&mut client, &mut upstream),
     )
     .await
@@ -144,10 +143,8 @@ async fn proxy_connection(
         }
         Ok(Err(e)) => Err(e.into()),
         Err(_) => {
-            // idle_timeout is a total connection lifetime cap, not a true
-            // idle timeout; the connection has been open for the full duration.
             error!(
-                "Connection to {backend_addr} exceeded lifetime cap of {idle_timeout:?}, closing"
+                "Connection to {backend_addr} exceeded lifetime cap of {max_lifetime:?}, closing"
             );
             Ok(())
         }
