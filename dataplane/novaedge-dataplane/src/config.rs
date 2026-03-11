@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::{watch, RwLock};
+use tracing::debug;
 
 use crate::lb::{self, LoadBalancer};
 
@@ -493,7 +494,7 @@ impl RuntimeConfig {
             for ep in &mut cluster_state.endpoints {
                 if ep.address == addr && ep.port == port {
                     if ep.healthy != healthy {
-                        tracing::debug!(
+                        debug!(
                             cluster,
                             endpoint = %format!("{}:{}", addr, port),
                             healthy,
@@ -523,7 +524,7 @@ impl RuntimeConfig {
                 }
             });
             if cluster.endpoints.len() < before {
-                tracing::debug!(
+                debug!(
                     cluster = %cluster.name,
                     removed = before - cluster.endpoints.len(),
                     "Cleaned up expired draining endpoints"

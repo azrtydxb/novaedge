@@ -1,6 +1,7 @@
 //! HTTP response caching middleware.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
 
@@ -37,12 +38,16 @@ struct CacheEntry {
     ttl: Duration,
     #[allow(dead_code)]
     etag: Option<String>,
+    /// Monotonic insertion order for eviction. Lower values are older.
+    order: u64,
 }
 
 /// In-memory HTTP response cache.
 pub struct ResponseCache {
     config: CacheConfig,
     entries: RwLock<HashMap<String, CacheEntry>>,
+    /// Monotonic counter for insertion order tracking.
+    insert_counter: AtomicU64,
 }
 
 #[allow(dead_code)]
@@ -52,6 +57,7 @@ impl ResponseCache {
         Self {
             config,
             entries: RwLock::new(HashMap::new()),
+            insert_counter: AtomicU64::new(0),
         }
     }
 
@@ -89,16 +95,20 @@ impl ResponseCache {
         let mut entries = self.entries.write().unwrap_or_else(|e| e.into_inner());
 
         // Evict oldest entry if at capacity.
+        // NOTE: This is O(n) over all entries. A proper LRU data structure
+        // (e.g. `lru` crate) would make eviction O(1) and is the natural
+        // next improvement.
         if entries.len() >= self.config.max_entries {
             if let Some(oldest_key) = entries
                 .iter()
-                .min_by_key(|(_, e)| e.inserted)
+                .min_by_key(|(_, e)| e.order)
                 .map(|(k, _)| k.clone())
             {
                 entries.remove(&oldest_key);
             }
         }
 
+        let order = self.insert_counter.fetch_add(1, Ordering::Relaxed);
         entries.insert(
             key,
             CacheEntry {
@@ -106,6 +116,7 @@ impl ResponseCache {
                 inserted: Instant::now(),
                 ttl,
                 etag,
+                order,
             },
         );
     }

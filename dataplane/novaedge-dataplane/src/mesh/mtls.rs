@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use tracing::info;
+
 /// Mesh mTLS configuration.
 #[derive(Debug, Clone)]
 pub struct MeshTlsConfig {
@@ -50,7 +52,7 @@ impl MeshTlsProvider {
         }
         self.initialized = true;
         self.initialized_at = Some(Instant::now());
-        tracing::info!(spiffe_id = %self.config.spiffe_id, "mTLS provider initialized");
+        info!(spiffe_id = %self.config.spiffe_id, "mTLS provider initialized");
         Ok(())
     }
 
@@ -77,7 +79,7 @@ impl MeshTlsProvider {
         self.config.workload_cert_pem = cert_pem;
         self.config.workload_key_pem = key_pem;
         self.initialized_at = Some(Instant::now());
-        tracing::info!("Mesh certificates updated");
+        info!("Mesh certificates updated");
     }
 
     pub fn spiffe_id(&self) -> &str {

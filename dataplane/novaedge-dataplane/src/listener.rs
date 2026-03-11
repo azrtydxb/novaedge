@@ -287,7 +287,7 @@ impl ListenerManager {
                                         let tls_stream = match acceptor.accept(stream).await {
                                             Ok(s) => s,
                                             Err(e) => {
-                                                tracing::debug!(error = %e, "TLS handshake failed");
+                                                debug!(error = %e, "TLS handshake failed");
                                                 return;
                                             }
                                         };
@@ -304,7 +304,7 @@ impl ListenerManager {
                                             )
                                             .await
                                         {
-                                            tracing::debug!(error = %e, "HTTPS connection ended");
+                                            debug!(error = %e, "HTTPS connection ended");
                                         }
                                     });
                                 } else {
@@ -323,7 +323,7 @@ impl ListenerManager {
                                             )
                                             .await
                                         {
-                                            tracing::debug!(error = %e, "HTTP connection ended");
+                                            debug!(error = %e, "HTTP connection ended");
                                         }
                                     });
                                 }
@@ -430,12 +430,12 @@ impl ListenerManager {
                                                 let _ = tokio::io::copy_bidirectional(&mut client, &mut upstream).await;
                                             }
                                             Err(e) => {
-                                                tracing::debug!(backend = %backend, error = %e, "L4 backend connection failed");
+                                                debug!(backend = %backend, error = %e, "L4 backend connection failed");
                                             }
                                         }
                                     });
                                 } else {
-                                    tracing::debug!(gateway = %gw_name, "No backend for L4 connection");
+                                    debug!(gateway = %gw_name, "No backend for L4 connection");
                                     drop(client);
                                 }
                             }
