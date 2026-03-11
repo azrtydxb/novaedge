@@ -300,7 +300,7 @@ func initMeshSubsystem(logger *zap.Logger, novanetClient *novanet.Client) *mesh.
 func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel zap.AtomicLevel) *agentComponents {
 	comp := &agentComponents{}
 
-	comp.watcher = initConfigWatcher(ctx, logger)
+	comp.watcher = initConfigWatcher(ctx, logger.Named("config"))
 
 	comp.gossiper = gossip.NewConfigGossiper(nodeName, comp.watcher.ForceResync, logger)
 	if err := comp.gossiper.Start(ctx); err != nil {
@@ -311,7 +311,7 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 	comp.meshManager = initMeshSubsystem(logger, comp.novanetClient)
 
 	if sdwanEnabled {
-		comp.sdwanManager = sdwan.NewManager(logger)
+		comp.sdwanManager = sdwan.NewManager(logger.Named("sdwan"))
 	}
 
 	dpClient, dpErr := dpctl.NewClient(dataplaneSocket, logger.Named("dataplane"))
