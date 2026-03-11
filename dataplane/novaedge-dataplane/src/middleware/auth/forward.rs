@@ -155,8 +155,12 @@ fn is_denied_ip(ip: &std::net::IpAddr) -> bool {
                 || (v4.octets()[0] == 169 && v4.octets()[1] == 254) // 169.254.0.0/16 (link-local / cloud metadata)
         }
         std::net::IpAddr::V6(v6) => {
+            // Detect IPv4-mapped IPv6 (::ffff:x.x.x.x) and check the inner v4 address.
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_denied_ip(&std::net::IpAddr::V4(v4));
+            }
             v6.is_loopback()                              // ::1
-                || v6.octets()[0] == 0xfd                 // fd00::/8 (ULA)
+                || (v6.octets()[0] & 0xfe) == 0xfc        // fc00::/7 (ULA)
                 || v6.octets()[0] == 0xfe && (v6.octets()[1] & 0xc0) == 0x80 // fe80::/10 (link-local)
         }
     }
@@ -263,6 +267,17 @@ mod tests {
         assert!(is_denied_ip(&IpAddr::V6(Ipv6Addr::LOCALHOST)));
         assert!(is_denied_ip(&IpAddr::V6(Ipv6Addr::new(
             0xfd00, 0, 0, 0, 0, 0, 0, 1
+        ))));
+        // fc00::/8 (ULA — the other half of fc00::/7)
+        assert!(is_denied_ip(&IpAddr::V6(Ipv6Addr::new(
+            0xfc00, 0, 0, 0, 0, 0, 0, 1
+        ))));
+        // IPv4-mapped IPv6 addresses must be checked against the v4 denylist
+        assert!(is_denied_ip(&IpAddr::V6(Ipv6Addr::new(
+            0, 0, 0, 0, 0, 0xffff, 0x7f00, 0x0001 // ::ffff:127.0.0.1
+        ))));
+        assert!(is_denied_ip(&IpAddr::V6(Ipv6Addr::new(
+            0, 0, 0, 0, 0, 0xffff, 0xa9fe, 0xa9fe // ::ffff:169.254.169.254
         ))));
 
         // Allowed ranges

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 /// A route configuration for the HTTP proxy.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Route {
     pub name: String,
     pub hostnames: Vec<HostMatch>,
@@ -15,13 +17,35 @@ pub struct Route {
     pub rewrite_path: Option<String>,
     pub add_headers: HashMap<String, String>,
     pub middleware_refs: Vec<String>,
+    /// Per-route counter for deterministic weighted round-robin backend selection.
+    pub rr_counter: Arc<AtomicU64>,
+}
+
+impl std::fmt::Debug for Route {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Route")
+            .field("name", &self.name)
+            .field("hostnames", &self.hostnames)
+            .field("paths", &self.paths)
+            .field("methods", &self.methods)
+            .field("headers", &self.headers)
+            .field("query_params", &self.query_params)
+            .field("backend_refs", &self.backend_refs)
+            .field("priority", &self.priority)
+            .field("rewrite_path", &self.rewrite_path)
+            .field("add_headers", &self.add_headers)
+            .field("middleware_refs", &self.middleware_refs)
+            .field("rr_counter", &self.rr_counter.load(Ordering::Relaxed))
+            .finish()
+    }
 }
 
 impl Route {
-    /// Select a backend cluster name using weighted random selection.
+    /// Select a backend cluster name using deterministic weighted round-robin.
     ///
-    /// If there is only one backend, returns it directly. If multiple, picks
-    /// one randomly proportional to weights.
+    /// If there is only one backend, returns it directly. If multiple, uses
+    /// a per-route atomic counter to cycle through backends proportional to
+    /// their weights. This is deterministic and thread-safe.
     pub fn select_backend(&self) -> Option<&str> {
         match self.backend_refs.len() {
             0 => None,
@@ -31,21 +55,13 @@ impl Route {
                 if total_weight == 0 {
                     return Some(&self.backend_refs[0].0);
                 }
-                let mut rng_val = {
-                    // Use a fast inline xorshift for weight selection to avoid
-                    // pulling in rand as a dependency just for this.
-                    use std::time::SystemTime;
-                    let seed = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .subsec_nanos();
-                    seed % total_weight
-                };
+                let slot = self.rr_counter.fetch_add(1, Ordering::Relaxed) % total_weight as u64;
+                let mut remaining = slot as u32;
                 for (name, weight) in &self.backend_refs {
-                    if rng_val < *weight {
+                    if remaining < *weight {
                         return Some(name);
                     }
-                    rng_val -= weight;
+                    remaining -= weight;
                 }
                 // Fallback (shouldn't reach here).
                 Some(&self.backend_refs[0].0)
@@ -303,6 +319,7 @@ mod tests {
             rewrite_path: None,
             add_headers: HashMap::new(),
             middleware_refs: Vec::new(),
+            rr_counter: Arc::new(AtomicU64::new(0)),
         }
     }
 

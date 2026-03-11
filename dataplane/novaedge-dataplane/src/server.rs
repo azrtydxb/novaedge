@@ -66,6 +66,70 @@ impl DataplaneService {
         (proto::OperationStatus::Ok as i32, msg.into())
     }
 
+    /// Rebuild the proxy router from the current RuntimeConfig routes.
+    ///
+    /// Called after apply_config, upsert_route, and delete_route to keep
+    /// the Router in sync with the RuntimeConfig route table.
+    fn rebuild_router(&self) {
+        let snap = self.runtime_config.snapshot();
+        let router_routes: Vec<crate::proxy::router::Route> = snap
+            .routes
+            .values()
+            .map(|rs| {
+                use crate::proxy::router::{HostMatch, PathMatch, Route as ProxyRoute};
+                let hostnames = rs
+                    .hostnames
+                    .iter()
+                    .map(|h| {
+                        if h.starts_with("*.") {
+                            HostMatch::Wildcard(h.clone())
+                        } else {
+                            HostMatch::Exact(h.clone())
+                        }
+                    })
+                    .collect();
+
+                let mut paths = Vec::new();
+                if !rs.path_exact.is_empty() {
+                    paths.push(PathMatch::Exact(rs.path_exact.clone()));
+                }
+                if !rs.path_prefix.is_empty() {
+                    paths.push(PathMatch::Prefix(rs.path_prefix.clone()));
+                }
+                if !rs.path_regex.is_empty() {
+                    match regex::Regex::new(&rs.path_regex) {
+                        Ok(re) => paths.push(PathMatch::Regex(re)),
+                        Err(e) => {
+                            warn!(route = %rs.name, regex = %rs.path_regex, error = %e, "Invalid path regex, skipping regex match");
+                            if paths.is_empty() {
+                                warn!(route = %rs.name, "Route has no valid path constraints after regex failure, route will never match");
+                            }
+                        }
+                    }
+                }
+
+                ProxyRoute {
+                    name: rs.name.clone(),
+                    hostnames,
+                    paths,
+                    methods: rs.methods.clone(),
+                    headers: Vec::new(),
+                    query_params: Vec::new(),
+                    backend_refs: rs.backend_refs.clone(),
+                    priority: rs.priority,
+                    rewrite_path: rs.rewrite_path.clone(),
+                    add_headers: rs.add_headers.clone(),
+                    middleware_refs: rs.middleware_refs.clone(),
+                    rr_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+                }
+            })
+            .collect();
+
+        let route_count = router_routes.len();
+        self.router.write().unwrap().set_routes(router_routes);
+        debug!(count = route_count, "Router rebuilt from runtime config");
+    }
+
     /// Parse an IP address with optional CIDR prefix (e.g. "10.0.0.1/32" -> (10.0.0.1, 32)).
     #[allow(clippy::result_large_err)]
     fn parse_cidr_address(addr: &str) -> Result<(std::net::IpAddr, u8), Status> {
@@ -506,73 +570,13 @@ impl DataplaneControl for DataplaneService {
             req.clusters.iter().map(Self::cluster_from_proto).collect();
         let policies: Vec<PolicyState> = req.policies.iter().map(Self::policy_from_proto).collect();
 
-        // Build proxy router routes before consuming the RouteState vec.
-        let router_routes: Vec<crate::proxy::router::Route> = routes
-            .iter()
-            .map(|rs| {
-                use crate::proxy::router::{HostMatch, PathMatch, Route as ProxyRoute};
-                let hostnames = rs
-                    .hostnames
-                    .iter()
-                    .map(|h| {
-                        if h.starts_with("*.") {
-                            HostMatch::Wildcard(h.clone())
-                        } else {
-                            HostMatch::Exact(h.clone())
-                        }
-                    })
-                    .collect();
-
-                let mut paths = Vec::new();
-                if !rs.path_exact.is_empty() {
-                    paths.push(PathMatch::Exact(rs.path_exact.clone()));
-                }
-                if !rs.path_prefix.is_empty() {
-                    paths.push(PathMatch::Prefix(rs.path_prefix.clone()));
-                }
-                if !rs.path_regex.is_empty() {
-                    match regex::Regex::new(&rs.path_regex) {
-                        Ok(re) => paths.push(PathMatch::Regex(re)),
-                        Err(e) => {
-                            warn!(route = %rs.name, regex = %rs.path_regex, error = %e, "Invalid path regex, skipping regex match");
-                            // If no other path constraints exist, add a catch-none to avoid
-                            // accidentally matching all paths.
-                            if paths.is_empty() {
-                                warn!(route = %rs.name, "Route has no valid path constraints after regex failure, route will never match");
-                            }
-                        }
-                    }
-                }
-                // If paths is empty (no path constraints at all), the route matches all paths
-                // which is valid Gateway API behavior (no pathMatch = match everything).
-
-                ProxyRoute {
-                    name: rs.name.clone(),
-                    hostnames,
-                    paths,
-                    methods: rs.methods.clone(),
-                    headers: Vec::new(),
-                    query_params: Vec::new(),
-                    backend_refs: rs.backend_refs.clone(),
-                    priority: rs.priority,
-                    rewrite_path: rs.rewrite_path.clone(),
-                    add_headers: rs.add_headers.clone(),
-                    middleware_refs: rs.middleware_refs.clone(),
-                }
-            })
-            .collect();
-
         // Atomically replace all runtime config.
         self.runtime_config
             .apply_full(req.version.clone(), gateways, routes, clusters, policies)
             .await;
 
-        // Push routes to the proxy router.
-        {
-            let route_count = router_routes.len();
-            self.router.write().unwrap().set_routes(router_routes);
-            info!(count = route_count, "Routes pushed to proxy router");
-        }
+        // Rebuild the proxy router from the updated runtime config.
+        self.rebuild_router();
 
         info!(version = %req.version, "Configuration applied to runtime state");
 
@@ -719,6 +723,9 @@ impl DataplaneControl for DataplaneService {
         self.runtime_config
             .upsert_route(Self::route_from_proto(route));
 
+        // Rebuild the proxy router so the new/updated route takes effect.
+        self.rebuild_router();
+
         let (status, message) = Self::ok_response(format!("route '{}' upserted", route.name));
         Ok(Response::new(proto::UpsertRouteResponse {
             status,
@@ -734,6 +741,9 @@ impl DataplaneControl for DataplaneService {
         info!(name = %req.name, "DeleteRoute");
 
         self.runtime_config.delete_route(&req.name);
+
+        // Rebuild the proxy router so the deletion takes effect.
+        self.rebuild_router();
 
         let (status, message) = Self::ok_response(format!("route '{}' deleted", req.name));
         Ok(Response::new(proto::DeleteRouteResponse {
@@ -754,7 +764,8 @@ impl DataplaneControl for DataplaneService {
         info!(name = %cluster.name, endpoints = cluster.endpoints.len(), "UpsertCluster");
 
         self.runtime_config
-            .upsert_cluster(Self::cluster_from_proto(cluster));
+            .upsert_cluster(Self::cluster_from_proto(cluster))
+            .await;
 
         let (status, message) = Self::ok_response(format!("cluster '{}' upserted", cluster.name));
         Ok(Response::new(proto::UpsertClusterResponse {
@@ -770,7 +781,7 @@ impl DataplaneControl for DataplaneService {
         let req = request.into_inner();
         info!(name = %req.name, "DeleteCluster");
 
-        self.runtime_config.delete_cluster(&req.name);
+        self.runtime_config.delete_cluster(&req.name).await;
 
         let (status, message) = Self::ok_response(format!("cluster '{}' deleted", req.name));
         Ok(Response::new(proto::DeleteClusterResponse {
