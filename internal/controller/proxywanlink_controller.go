@@ -31,6 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 const (
@@ -41,7 +42,8 @@ const (
 // ProxyWANLinkReconciler reconciles a ProxyWANLink object.
 type ProxyWANLinkReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxywanlinks,verbs=get;list;watch;create;update;patch;delete
@@ -56,7 +58,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if err := r.Get(ctx, req.NamespacedName, link); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("ProxyWANLink deleted, triggering config update")
-			TriggerConfigUpdate()
+			triggerConfigUpdate(r.ConfigServer)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get ProxyWANLink: %w", err)
@@ -117,7 +119,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, fmt.Errorf("failed to update ProxyWANLink status: %w", err)
 	}
 
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	logger.Info("Reconciled ProxyWANLink", "name", link.Name, "site", link.Spec.Site)
 	return ctrl.Result{}, nil

@@ -33,12 +33,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // ProxyPolicyReconciler reconciles a ProxyPolicy object
 type ProxyPolicyReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxypolicies,verbs=get;list;watch;create;update;patch;delete
@@ -75,11 +77,11 @@ func (r *ProxyPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Validate and update status
 	if err := r.validateAndUpdateStatus(ctx, policy); err != nil {
 		logger.Error(err, "Failed to validate policy")
-		return ctrl.Result{Requeue: true}, err
+		return ctrl.Result{}, err
 	}
 
 	// Trigger config update for all nodes
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	return ctrl.Result{}, nil
 }

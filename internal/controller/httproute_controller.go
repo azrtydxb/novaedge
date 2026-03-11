@@ -34,12 +34,14 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // HTTPRouteReconciler reconciles a Gateway API HTTPRoute object
 type HTTPRouteReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=httproutes,verbs=get;list;watch;update;patch
@@ -257,7 +259,7 @@ func (r *HTTPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Trigger config update for all nodes
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	logger.Info("Successfully reconciled HTTPRoute")
 	return ctrl.Result{}, nil

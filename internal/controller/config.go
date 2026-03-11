@@ -21,7 +21,6 @@ package controller
 
 import (
 	"context"
-	"sync"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -44,38 +43,11 @@ const (
 // kindGateway is the Gateway API Kind string for Gateway resources.
 const kindGateway = "Gateway"
 
-var (
-	configServer   *snapshot.Server
-	configServerMu sync.RWMutex
-)
-
-// SetConfigServer sets the config server instance for reconcilers to use
-func SetConfigServer(server *snapshot.Server) {
-	configServerMu.Lock()
-	defer configServerMu.Unlock()
-	configServer = server
-}
-
-// GetConfigServer returns the config server instance
-func GetConfigServer() *snapshot.Server {
-	configServerMu.RLock()
-	defer configServerMu.RUnlock()
-	return configServer
-}
-
-// TriggerConfigUpdate triggers a config update for all nodes
-func TriggerConfigUpdate() {
-	server := GetConfigServer()
+// triggerConfigUpdate triggers a config update for all nodes via the given server.
+// If server is nil the call is a no-op.
+func triggerConfigUpdate(server *snapshot.Server) {
 	if server != nil {
 		server.TriggerUpdate("")
-	}
-}
-
-// TriggerNodeConfigUpdate triggers a config update for a specific node
-func TriggerNodeConfigUpdate(nodeName string) {
-	server := GetConfigServer()
-	if server != nil {
-		server.TriggerUpdate(nodeName)
 	}
 }
 
@@ -88,6 +60,7 @@ func reconcileWithGenerationCheck(
 	req ctrl.Request,
 	obj client.Object,
 	kind string,
+	cfgServer *snapshot.Server,
 	getObservedGeneration func() int64,
 	logFields func() []interface{},
 	validate func() error,
@@ -114,10 +87,11 @@ func reconcileWithGenerationCheck(
 
 	if err := validate(); err != nil {
 		logger.Error(err, "Failed to validate "+kind)
-		return ctrl.Result{Requeue: true}, err
+		// Return only the error so controller-runtime applies exponential backoff.
+		return ctrl.Result{}, err
 	}
 
-	TriggerConfigUpdate()
+	triggerConfigUpdate(cfgServer)
 	return ctrl.Result{}, nil
 }
 

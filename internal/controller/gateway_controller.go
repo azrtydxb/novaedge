@@ -33,6 +33,7 @@ import (
 	gatewayv1 "sigs.k8s.io/gateway-api/apis/v1"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // GatewayReconciler reconciles a Gateway API Gateway object
@@ -40,6 +41,7 @@ type GatewayReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	GatewayClassName string // Configurable GatewayClass name (default: "novaedge")
+	ConfigServer     *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=gateways,verbs=get;list;watch;update;patch
@@ -199,7 +201,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Trigger config update for all nodes
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	logger.Info("Successfully reconciled Gateway")
 	return ctrl.Result{}, nil

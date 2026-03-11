@@ -31,12 +31,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // ProxyWANPolicyReconciler reconciles a ProxyWANPolicy object.
 type ProxyWANPolicyReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxywanpolicies,verbs=get;list;watch;create;update;patch;delete
@@ -51,7 +53,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := r.Get(ctx, req.NamespacedName, policy); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("ProxyWANPolicy deleted, triggering config update")
-			TriggerConfigUpdate()
+			triggerConfigUpdate(r.ConfigServer)
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, fmt.Errorf("failed to get ProxyWANPolicy: %w", err)
@@ -115,7 +117,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, fmt.Errorf("failed to update ProxyWANPolicy status: %w", err)
 	}
 
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	logger.Info("Reconciled ProxyWANPolicy", "name", policy.Name, "strategy", policy.Spec.PathSelection.Strategy)
 	return ctrl.Result{}, nil
