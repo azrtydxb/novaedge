@@ -62,20 +62,22 @@ impl JwtValidator {
             return Err("invalid JWT format".into());
         }
 
-        // Reject "alg":"none" tokens unconditionally.
+        // Reject "alg":"none" tokens unconditionally — parse the header as JSON
+        // to avoid substring-check bypasses (e.g. padding or field ordering tricks).
         if let Ok(header_bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[0])
         {
-            if let Ok(header_str) = std::str::from_utf8(&header_bytes) {
-                let header_lower = header_str.to_ascii_lowercase();
-                if header_lower.contains("\"alg\"") && header_lower.contains("\"none\"") {
-                    return Err("algorithm 'none' is not permitted".into());
+            if let Ok(header_json) = serde_json::from_slice::<serde_json::Value>(&header_bytes) {
+                if let Some(alg) = header_json.get("alg").and_then(|v| v.as_str()) {
+                    if alg.eq_ignore_ascii_case("none") {
+                        return Err("algorithm 'none' is not permitted".into());
+                    }
                 }
             }
         }
 
         // Verify HMAC-SHA256 signature — fail-closed when no secret is configured.
-        match self.config.secret {
-            Some(ref secret) => {
+        match self.config.secret.as_ref() {
+            Some(secret) => {
                 let signing_input = format!("{}.{}", parts[0], parts[1]);
                 let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
                     .decode(parts[2])

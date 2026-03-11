@@ -41,6 +41,15 @@ impl ForwardAuth {
     pub async fn check(&self, req: &super::super::Request) -> super::AuthResult {
         let (host, port, path) = parse_url(&self.config.auth_url);
 
+        // Reject CR/LF in host or path to prevent HTTP request smuggling via
+        // a maliciously crafted auth_url config value.
+        if contains_cr_lf(&host) || contains_cr_lf(&path) {
+            return super::AuthResult::Denied {
+                status: 500,
+                message: "Auth URL contains invalid characters".into(),
+            };
+        }
+
         // Build forwarded request with selected headers (sanitised against injection).
         let mut forward_headers = String::new();
         for header_name in &self.config.auth_request_headers {
@@ -91,8 +100,11 @@ impl ForwardAuth {
             }
         }
 
-        match tokio::time::timeout(self.config.timeout, async {
-            let mut stream = TcpStream::connect(&addr).await?;
+        // Connect directly to the first resolved address to prevent DNS rebinding:
+        // a second DNS lookup after the denylist check could return a different IP.
+        let first_addr = resolved[0];
+        match tokio::time::timeout(self.config.timeout, async move {
+            let mut stream = TcpStream::connect(first_addr).await?;
             stream.write_all(request.as_bytes()).await?;
             let mut response = vec![0u8; 4096];
             let n = stream.read(&mut response).await?;
@@ -200,7 +212,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn forward_auth_service_unavailable() {
+    async fn forward_auth_loopback_blocked() {
+        // 127.0.0.1 is a denied internal address; the SSRF denylist must block it
+        // before any connection attempt, returning 403 rather than a timeout 503.
         let fa = ForwardAuth::new(ForwardAuthConfig {
             auth_url: "http://127.0.0.1:19999/verify".into(),
             auth_request_headers: vec![],
@@ -218,10 +232,11 @@ mod tests {
         };
 
         match fa.check(&req).await {
-            super::super::AuthResult::Denied { status, .. } => {
-                assert_eq!(status, 503);
+            super::super::AuthResult::Denied { status, message } => {
+                assert_eq!(status, 403);
+                assert!(message.contains("denied"), "got: {message}");
             }
-            other => panic!("expected Denied/503, got: {other:?}"),
+            other => panic!("expected Denied/403, got: {other:?}"),
         }
     }
 

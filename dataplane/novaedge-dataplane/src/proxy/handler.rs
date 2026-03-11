@@ -971,18 +971,14 @@ impl ProxyHandler {
             && !cluster.session_affinity_cookie.is_empty()
             && extract_cookie(headers, &cluster.session_affinity_cookie).is_none()
         {
-            let is_tls = client_addr.port() == 443 || client_addr.port() == 8443;
-            let cookie_value = if is_tls {
-                format!(
-                    "{}={}; Path=/; HttpOnly; Secure; SameSite=Lax",
-                    cluster.session_affinity_cookie, final_backend_addr,
-                )
-            } else {
-                format!(
-                    "{}={}; Path=/; HttpOnly; SameSite=Lax",
-                    cluster.session_affinity_cookie, final_backend_addr,
-                )
-            };
+            // Always set Secure: the client's ephemeral port cannot reliably indicate
+            // whether the *listener* is TLS. In Kubernetes ingress the external connection
+            // is virtually always TLS-terminated. Secure cookies are safe to send over
+            // localhost HTTP in development environments.
+            let cookie_value = format!(
+                "{}={}; Path=/; HttpOnly; Secure; SameSite=Lax",
+                cluster.session_affinity_cookie, final_backend_addr,
+            );
             resp = resp.header("Set-Cookie", cookie_value);
         }
 
