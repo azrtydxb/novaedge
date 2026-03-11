@@ -41,12 +41,17 @@ const (
 func newBuildContextForTest(backends []novaedgev1alpha1.ProxyBackend, services []corev1.Service) *buildContext {
 	bc := &buildContext{
 		nodes:          make(map[string]*corev1.Node),
+		serviceMap:     make(map[string]*corev1.Service),
 		secrets:        make(map[string]*corev1.Secret),
 		configMaps:     make(map[string]*corev1.ConfigMap),
 		endpointSlices: make(map[string][]discoveryv1.EndpointSlice),
 	}
 	bc.backends = backends
 	bc.services = services
+	for i := range services {
+		key := services[i].Namespace + "/" + services[i].Name
+		bc.serviceMap[key] = &services[i]
+	}
 	return bc
 }
 

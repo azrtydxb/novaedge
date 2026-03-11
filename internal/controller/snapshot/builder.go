@@ -93,6 +93,10 @@ type buildContext struct {
 	// Pre-loaded node map for O(1) topology lookups (fixes N+1 node fetches)
 	nodes map[string]*corev1.Node
 
+	// Pre-fetched Services keyed by "namespace/name" for O(1) lookup
+	// (eliminates per-backend Get() calls in resolveServiceEndpoints)
+	serviceMap map[string]*corev1.Service
+
 	// Pre-fetched Secrets and ConfigMaps keyed by "namespace/name" for O(1) lookup
 	// (eliminates per-policy/per-route Get() calls)
 	secrets    map[string]*corev1.Secret
@@ -108,6 +112,7 @@ type buildContext struct {
 func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 	bc := &buildContext{
 		nodes:          make(map[string]*corev1.Node),
+		serviceMap:     make(map[string]*corev1.Service),
 		secrets:        make(map[string]*corev1.Secret),
 		configMaps:     make(map[string]*corev1.ConfigMap),
 		endpointSlices: make(map[string][]discoveryv1.EndpointSlice),
@@ -143,6 +148,10 @@ func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
 	bc.services = serviceList.Items
+	for i := range serviceList.Items {
+		key := serviceList.Items[i].Namespace + "/" + serviceList.Items[i].Name
+		bc.serviceMap[key] = &serviceList.Items[i]
+	}
 
 	wanLinkList := &novaedgev1alpha1.ProxyWANLinkList{}
 	if err := b.client.List(ctx, wanLinkList); err != nil {
@@ -209,20 +218,16 @@ func (bc *buildContext) getSecret(namespace, name string) (*corev1.Secret, bool)
 	return s, ok
 }
 
+// getService returns a pre-fetched Service from the build context.
+func (bc *buildContext) getService(namespace, name string) (*corev1.Service, bool) {
+	s, ok := bc.serviceMap[namespace+"/"+name]
+	return s, ok
+}
+
 // getConfigMap returns a pre-fetched ConfigMap from the build context.
 func (bc *buildContext) getConfigMap(namespace, name string) (*corev1.ConfigMap, bool) {
 	cm, ok := bc.configMaps[namespace+"/"+name]
 	return cm, ok
-}
-
-// getService returns a pre-fetched Service by namespace and name.
-func (bc *buildContext) getService(namespace, name string) (*corev1.Service, bool) {
-	for i := range bc.services {
-		if bc.services[i].Namespace == namespace && bc.services[i].Name == name {
-			return &bc.services[i], true
-		}
-	}
-	return nil, false
 }
 
 // getEndpointSlices returns pre-fetched EndpointSlices for a given service.
