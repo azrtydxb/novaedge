@@ -214,10 +214,14 @@ func (r *NovaEdgeFederationReconciler) ensureManager(ctx context.Context, fed *n
 		manager.RegisterServer(r.GRPCServer)
 	}
 
-	// Set up resource application callback
+	// Set up resource application callback.
+	// context.Background() is intentional: the callback is registered for the
+	// lifetime of the federation manager, which outlives any single Reconcile
+	// call. Using ctx here would cause the Apply call to fail the moment the
+	// reconcile loop returns and cancels its context.
 	applier := NewFederationResourceApplier(r.Client, r.Scheme, log)
 	manager.OnResourceChange(func(key federation.ResourceKey, changeType federation.ChangeType, data []byte) {
-		applier.Apply(ctx, key, changeType, data)
+		applier.Apply(context.Background(), key, changeType, data)
 	})
 
 	// Start the manager

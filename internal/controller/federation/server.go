@@ -911,7 +911,8 @@ func (s *Server) GetStats() SyncStats {
 	return *s.stats
 }
 
-// GetPeerStates returns the state of all peers
+// GetPeerStates returns a snapshot copy of the state of all peers.
+// Each returned *PeerState is a shallow copy taken under that entry's lock.
 func (s *Server) GetPeerStates() map[string]*PeerState {
 	result := make(map[string]*PeerState)
 	s.peerStates.Range(func(key, value any) bool {
@@ -923,7 +924,21 @@ func (s *Server) GetPeerStates() map[string]*PeerState {
 		if !ok {
 			return true
 		}
-		result[keyStr] = state
+		state.mu.Lock()
+		stateCopy := PeerState{
+			Info:                state.Info,
+			VectorClock:         state.VectorClock,
+			LastSeen:            state.LastSeen,
+			LastSyncTime:        state.LastSyncTime,
+			Healthy:             state.Healthy,
+			Connected:           state.Connected,
+			AgentCount:          state.AgentCount,
+			SyncLag:             state.SyncLag,
+			LastError:           state.LastError,
+			ConsecutiveFailures: state.ConsecutiveFailures,
+		}
+		state.mu.Unlock()
+		result[keyStr] = &stateCopy
 		return true
 	})
 	return result
@@ -982,7 +997,9 @@ func (s *Server) updatePeerState(peerName string, updateFn func(*PeerState)) {
 	if !ok {
 		return
 	}
+	state.mu.Lock()
 	updateFn(state)
+	state.mu.Unlock()
 }
 
 // getPhase returns the current federation phase
