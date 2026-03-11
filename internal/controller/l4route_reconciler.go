@@ -30,6 +30,7 @@ import (
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // tcpRouteWrapper adapts TCPRoute to the l4RouteObject interface.
@@ -81,6 +82,7 @@ func reconcileL4Controller(
 	wrap func() l4RouteObject,
 	routeKind string,
 	translate func() (*novaedgev1alpha1.ProxyRoute, error),
+	cfgServer *snapshot.Server,
 ) (ctrl.Result, error) {
 	if err := cli.Get(ctx, req.NamespacedName, route); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -89,7 +91,7 @@ func reconcileL4Controller(
 		}
 		return ctrl.Result{}, err
 	}
-	a := &l4RouteAdapter{client: cli, statusCli: statusCli}
+	a := &l4RouteAdapter{client: cli, statusCli: statusCli, configServer: cfgServer}
 	w := wrap()
 	return a.reconcileL4Route(ctx, routeKind, w,
 		translate,
@@ -102,8 +104,9 @@ func reconcileL4Controller(
 
 // l4RouteAdapter wraps common reconcile logic for L4 route types (TCPRoute, TLSRoute).
 type l4RouteAdapter struct {
-	client    client.Client
-	statusCli client.SubResourceWriter
+	client       client.Client
+	statusCli    client.SubResourceWriter
+	configServer *snapshot.Server
 }
 
 // reconcileL4Route performs the shared reconcile logic for TCP/TLS routes.
@@ -182,7 +185,7 @@ func (a *l4RouteAdapter) handleL4RouteDeletion(ctx context.Context, routeKind st
 		return ctrl.Result{}, err
 	}
 
-	TriggerConfigUpdate()
+	triggerConfigUpdate(a.configServer)
 	return ctrl.Result{}, nil
 }
 
@@ -201,6 +204,6 @@ func (a *l4RouteAdapter) updateL4RouteStatus(
 	if err := a.statusCli.Update(ctx, route.Unwrap()); err != nil {
 		return ctrl.Result{}, err
 	}
-	TriggerConfigUpdate()
+	triggerConfigUpdate(a.configServer)
 	return ctrl.Result{}, nil
 }

@@ -24,13 +24,16 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // EndpointSliceReconciler watches EndpointSlice changes and triggers config
 // snapshot rebuilds so agents receive updated backend endpoints promptly.
 type EndpointSliceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=discovery.k8s.io,resources=endpointslices,verbs=get;list;watch
@@ -41,7 +44,7 @@ func (r *EndpointSliceReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	logger.V(1).Info("EndpointSlice changed, triggering config update",
 		"name", req.Name, "namespace", req.Namespace)
 
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	return ctrl.Result{}, nil
 }

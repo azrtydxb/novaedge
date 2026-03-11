@@ -27,12 +27,14 @@ import (
 	gatewayv1alpha2 "sigs.k8s.io/gateway-api/apis/v1alpha2"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // TCPRouteReconciler reconciles Gateway API TCPRoute objects
 type TCPRouteReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=tcproutes,verbs=get;list;watch;update;patch
@@ -45,6 +47,7 @@ func (r *TCPRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		func() l4RouteObject { return &tcpRouteWrapper{route} },
 		"TCPRoute",
 		func() (*novaedgev1alpha1.ProxyRoute, error) { return TranslateTCPRouteToProxyRoute(route) },
+		r.ConfigServer,
 	)
 }
 
@@ -59,7 +62,8 @@ func (r *TCPRouteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // TLSRouteReconciler reconciles Gateway API TLSRoute objects
 type TLSRouteReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=gateway.networking.k8s.io,resources=tlsroutes,verbs=get;list;watch;update;patch
@@ -72,6 +76,7 @@ func (r *TLSRouteReconciler) Reconcile(ctx context.Context, req ctrl.Request) (c
 		func() l4RouteObject { return &tlsRouteWrapper{route} },
 		"TLSRoute",
 		func() (*novaedgev1alpha1.ProxyRoute, error) { return TranslateTLSRouteToProxyRoute(route) },
+		r.ConfigServer,
 	)
 }
 

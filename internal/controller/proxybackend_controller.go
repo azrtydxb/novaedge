@@ -33,12 +33,14 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 // ProxyBackendReconciler reconciles a ProxyBackend object
 type ProxyBackendReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxybackends,verbs=get;list;watch;create;update;patch;delete
@@ -51,7 +53,7 @@ type ProxyBackendReconciler struct {
 // Reconcile is part of the main kubernetes reconciliation loop
 func (r *ProxyBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	backend := &novaedgev1alpha1.ProxyBackend{}
-	return reconcileWithGenerationCheck(ctx, r.Client, req, backend, "ProxyBackend",
+	return reconcileWithGenerationCheck(ctx, r.Client, req, backend, "ProxyBackend", r.ConfigServer,
 		func() int64 { return backend.Status.ObservedGeneration },
 		func() []interface{} { return []interface{}{"name", backend.Name, "lbPolicy", backend.Spec.LBPolicy} },
 		func() error { return r.validateAndUpdateStatus(ctx, backend) },

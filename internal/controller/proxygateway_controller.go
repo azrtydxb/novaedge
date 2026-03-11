@@ -40,6 +40,7 @@ import (
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 	"github.com/azrtydxb/novaedge/internal/controller/certmanager"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 	"github.com/azrtydxb/novaedge/internal/controller/vault"
 )
 
@@ -62,6 +63,9 @@ type ProxyGatewayReconciler struct {
 	// When non-nil, listeners with VaultCertRef will have certificates
 	// issued from Vault and cached in Kubernetes Secrets.
 	VaultPKI *vault.PKIManager
+
+	// ConfigServer is the snapshot server for triggering config updates.
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=novaedge.io,resources=proxygateways,verbs=get;list;watch;create;update;patch;delete
@@ -124,7 +128,7 @@ func (r *ProxyGatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Trigger config update for all nodes
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	return ctrl.Result{}, nil
 }

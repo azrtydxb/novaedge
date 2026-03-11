@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
+	"github.com/azrtydxb/novaedge/internal/controller/snapshot"
 )
 
 var (
@@ -56,6 +57,7 @@ type IngressReconciler struct {
 	client.Client
 	Scheme       *runtime.Scheme
 	IngressClass string // Configurable ingress class name to watch
+	ConfigServer *snapshot.Server
 }
 
 // +kubebuilder:rbac:groups=networking.k8s.io,resources=ingresses,verbs=get;list;watch;update;patch
@@ -140,7 +142,7 @@ func (r *IngressReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	}
 
 	// Trigger config update for all nodes
-	TriggerConfigUpdate()
+	triggerConfigUpdate(r.ConfigServer)
 
 	logger.Info("Successfully reconciled Ingress",
 		"gateway", result.Gateway.Name,

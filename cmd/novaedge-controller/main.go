@@ -134,46 +134,47 @@ func registerReconciler(mgr ctrl.Manager, name string, setupFn func(ctrl.Manager
 }
 
 // registerReconcilers registers all CRD and Gateway API reconcilers with the manager.
-func registerReconcilers(mgr ctrl.Manager, f *controllerFlags) *controller.ProxyGatewayReconciler {
+func registerReconcilers(mgr ctrl.Manager, f *controllerFlags, configServer *snapshot.Server) *controller.ProxyGatewayReconciler {
 	proxyGatewayReconciler := &controller.ProxyGatewayReconciler{
 		Client: mgr.GetClient(), Scheme: mgr.GetScheme(), ControllerClass: f.controllerClass,
+		ConfigServer: configServer,
 	}
 	registerReconciler(mgr, "ProxyGateway", proxyGatewayReconciler.SetupWithManager)
 
 	registerReconciler(mgr, "ProxyRoute", func(m ctrl.Manager) error {
-		return (&controller.ProxyRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.ProxyRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "ProxyBackend", func(m ctrl.Manager) error {
-		return (&controller.ProxyBackendReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.ProxyBackendReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "ProxyPolicy", func(m ctrl.Manager) error {
-		return (&controller.ProxyPolicyReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.ProxyPolicyReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "Ingress", func(m ctrl.Manager) error {
 		return (&controller.IngressReconciler{
-			Client: m.GetClient(), Scheme: m.GetScheme(),
+			Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer,
 		}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "Gateway", func(m ctrl.Manager) error {
-		return (&controller.GatewayReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.GatewayReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "GRPCRoute", func(m ctrl.Manager) error {
-		return (&controller.GRPCRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.GRPCRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "HTTPRoute", func(m ctrl.Manager) error {
-		return (&controller.HTTPRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.HTTPRouteReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "GatewayClass", func(m ctrl.Manager) error {
 		return (&controller.GatewayClassReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "EndpointSlice", func(m ctrl.Manager) error {
-		return (&controller.EndpointSliceReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.EndpointSliceReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "ProxyWANLink", func(m ctrl.Manager) error {
-		return (&controller.ProxyWANLinkReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.ProxyWANLinkReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 	registerReconciler(mgr, "ProxyWANPolicy", func(m ctrl.Manager) error {
-		return (&controller.ProxyWANPolicyReconciler{Client: m.GetClient(), Scheme: m.GetScheme()}).SetupWithManager(m)
+		return (&controller.ProxyWANPolicyReconciler{Client: m.GetClient(), Scheme: m.GetScheme(), ConfigServer: configServer}).SetupWithManager(m)
 	})
 
 	return proxyGatewayReconciler
@@ -205,7 +206,7 @@ func initCertManagerIntegration(mgr ctrl.Manager, enableCertManager string, reco
 }
 
 // initVaultIntegration initializes HashiCorp Vault if enabled.
-func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewayReconciler) {
+func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewayReconciler, zapLogger *uberzap.Logger) {
 	vaultMode := vaultpkg.EnableMode(f.enableVault)
 	if vaultMode == vaultpkg.EnableModeFalse {
 		return
@@ -219,7 +220,6 @@ func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewa
 			Role: f.vaultRole,
 		}
 	}
-	zapLogger, _ := uberzap.NewProduction()
 	vaultEnabled, vaultErr := vaultpkg.ShouldEnable(context.Background(), vaultConfig, vaultMode, zapLogger)
 	switch {
 	case vaultErr != nil:
@@ -241,7 +241,7 @@ func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewa
 }
 
 // initConfigServer creates the config server, wires mesh CA and federation, and starts the gRPC server.
-func initConfigServer(mgr ctrl.Manager, f *controllerFlags) *grpc.Server {
+func initConfigServer(mgr ctrl.Manager, f *controllerFlags, zapLogger *uberzap.Logger) (*grpc.Server, *snapshot.Server) {
 	configServer := snapshot.NewServer(mgr.GetClient())
 
 	// Initialize mesh CA for issuing workload certificates (only when enabled).
@@ -251,8 +251,7 @@ func initConfigServer(mgr ctrl.Manager, f *controllerFlags) *grpc.Server {
 			setupLog.Error(err, "failed to create direct client for mesh CA")
 			os.Exit(1)
 		}
-		meshCALogger, _ := uberzap.NewProduction()
-		meshCA := meshca.NewMeshCA(meshCALogger, f.meshTrustDomain, "")
+		meshCA := meshca.NewMeshCA(zapLogger.Named("meshca"), f.meshTrustDomain, "")
 		if err := meshCA.Initialize(context.Background(), directClient); err != nil {
 			setupLog.Error(err, "failed to initialize mesh CA")
 			os.Exit(1)
@@ -273,16 +272,14 @@ func initConfigServer(mgr ctrl.Manager, f *controllerFlags) *grpc.Server {
 			FederationID: f.federationID,
 			LocalMember:  &federation.PeerInfo{Name: f.federationLocalMember},
 		}
-		fedLogger, _ := uberzap.NewProduction()
-		fedManager := federation.NewManager(fedConfig, fedLogger)
+		fedManager := federation.NewManager(fedConfig, zapLogger.Named("federation"))
 		configServer.SetFederationProvider(fedManager)
 		setupLog.Info("Federation state provider wired into snapshot builder",
 			"federationID", f.federationID, "localMember", f.federationLocalMember)
 	}
 
 	// Create gRPC server with message size limits and interceptors
-	grpcLogger, _ := uberzap.NewProduction()
-	serverOpts := grpclimits.ServerOptions(grpcLogger)
+	serverOpts := grpclimits.ServerOptions(zapLogger.Named("grpc"))
 
 	var grpcServer *grpc.Server
 	if f.grpcTLSCert != "" && f.grpcTLSKey != "" && f.grpcTLSCA != "" {
@@ -318,10 +315,7 @@ func initConfigServer(mgr ctrl.Manager, f *controllerFlags) *grpc.Server {
 		}
 	}()
 
-	// Pass config server to reconcilers so they can trigger updates
-	controller.SetConfigServer(configServer)
-
-	return grpcServer
+	return grpcServer, configServer
 }
 
 func main() {
@@ -332,11 +326,16 @@ func main() {
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
-	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
-
-	// Expose dynamic log level endpoint on default mux.
+	// Create an AtomicLevel so /debug/loglevel can change log verbosity at runtime.
 	controllerAtomicLevel := uberzap.NewAtomicLevelAt(uberzap.InfoLevel)
 	http.Handle("/debug/loglevel", controllerAtomicLevel)
+
+	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts), zap.Level(controllerAtomicLevel)))
+
+	// Derive the raw *zap.Logger from the same controller-runtime zap options
+	// so that subsystems (meshca, federation, grpc, vault) honour --zap-log-level
+	// and the /debug/loglevel endpoint controls them at runtime.
+	zapLogger := zap.NewRaw(zap.UseFlagOptions(&opts), zap.Level(controllerAtomicLevel))
 
 	// Start debug server for pprof and log-level endpoints (localhost only).
 	go func() {
@@ -363,7 +362,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	proxyGatewayReconciler := registerReconcilers(mgr, f)
+	grpcServer, configServer := initConfigServer(mgr, f, zapLogger)
+
+	proxyGatewayReconciler := registerReconcilers(mgr, f, configServer)
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
@@ -375,8 +376,7 @@ func main() {
 	}
 
 	initCertManagerIntegration(mgr, f.enableCertManager, proxyGatewayReconciler)
-	initVaultIntegration(f, proxyGatewayReconciler)
-	grpcServer := initConfigServer(mgr, f)
+	initVaultIntegration(f, proxyGatewayReconciler, zapLogger)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
