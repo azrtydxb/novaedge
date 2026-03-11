@@ -34,17 +34,18 @@ import (
 	"google.golang.org/protobuf/proto"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
-	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
+	snapshotpkg "github.com/azrtydxb/novaedge/internal/pkg/snapshot"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
 var (
 	errNoCACertificateFoundInSecret  = errors.New("no CA certificate found in secret")
+	errSecretNotFoundInCache         = errors.New("secret not found in prefetch cache")
+	errServiceNotFoundInCache        = errors.New("service not found in prefetch cache")
 	errTLSSecret                     = errors.New("TLS secret")
 	errTLSCrtNotFoundInSecret        = errors.New("tls.crt not found in secret")
 	errTLSKeyNotFoundInSecret        = errors.New("tls.key not found in secret")
@@ -96,15 +97,20 @@ type buildContext struct {
 	// (eliminates per-policy/per-route Get() calls)
 	secrets    map[string]*corev1.Secret
 	configMaps map[string]*corev1.ConfigMap
+
+	// Pre-fetched EndpointSlices keyed by "namespace/serviceName" for O(1) lookup
+	// (eliminates per-backend and per-service List() calls)
+	endpointSlices map[string][]discoveryv1.EndpointSlice
 }
 
 // prefetch loads all Kubernetes resources needed for a snapshot build pass
 // into the buildContext with a minimal number of API calls.
 func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 	bc := &buildContext{
-		nodes:      make(map[string]*corev1.Node),
-		secrets:    make(map[string]*corev1.Secret),
-		configMaps: make(map[string]*corev1.ConfigMap),
+		nodes:          make(map[string]*corev1.Node),
+		secrets:        make(map[string]*corev1.Secret),
+		configMaps:     make(map[string]*corev1.ConfigMap),
+		endpointSlices: make(map[string][]discoveryv1.EndpointSlice),
 	}
 
 	// --- CRD resources ---
@@ -179,6 +185,21 @@ func (b *Builder) prefetch(ctx context.Context) (*buildContext, error) {
 		bc.configMaps[key] = &configMapList.Items[i]
 	}
 
+	// --- EndpointSlices: batch-fetch and index by service name ---
+	endpointSliceList := &discoveryv1.EndpointSliceList{}
+	if err := b.client.List(ctx, endpointSliceList); err != nil {
+		return nil, fmt.Errorf("failed to list endpoint slices: %w", err)
+	}
+	for i := range endpointSliceList.Items {
+		es := &endpointSliceList.Items[i]
+		svcName := es.Labels["kubernetes.io/service-name"]
+		if svcName == "" {
+			continue
+		}
+		key := es.Namespace + "/" + svcName
+		bc.endpointSlices[key] = append(bc.endpointSlices[key], *es)
+	}
+
 	return bc, nil
 }
 
@@ -194,6 +215,21 @@ func (bc *buildContext) getConfigMap(namespace, name string) (*corev1.ConfigMap,
 	return cm, ok
 }
 
+// getService returns a pre-fetched Service by namespace and name.
+func (bc *buildContext) getService(namespace, name string) (*corev1.Service, bool) {
+	for i := range bc.services {
+		if bc.services[i].Namespace == namespace && bc.services[i].Name == name {
+			return &bc.services[i], true
+		}
+	}
+	return nil, false
+}
+
+// getEndpointSlices returns pre-fetched EndpointSlices for a given service.
+func (bc *buildContext) getEndpointSlices(namespace, serviceName string) []discoveryv1.EndpointSlice {
+	return bc.endpointSlices[namespace+"/"+serviceName]
+}
+
 // SetFederationProvider sets the federation state provider used to populate
 // FederationMetadata on built snapshots. When nil, snapshots are built
 // without federation metadata.
@@ -202,36 +238,28 @@ func (b *Builder) SetFederationProvider(provider FederationStateProvider) {
 }
 
 // BuildSnapshotWithExtensions builds a complete ConfigSnapshot with TLS extensions for a specific node
-func (b *Builder) BuildSnapshotWithExtensions(ctx context.Context, nodeName string) (*pb.ConfigSnapshot, *agentconfig.SnapshotExtensions, error) {
-	snapshot, err := b.BuildSnapshot(ctx, nodeName)
+func (b *Builder) BuildSnapshotWithExtensions(ctx context.Context, nodeName string) (*pb.ConfigSnapshot, *snapshotpkg.Extensions, error) {
+	snapshot, bc, err := b.buildSnapshotInternal(ctx, nodeName)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	extensions, err := b.buildExtensions(ctx, snapshot)
-	if err != nil {
-		log.FromContext(ctx).Error(err, "Failed to build snapshot extensions")
-		// Non-fatal: return snapshot without extensions
-		return snapshot, nil, nil
-	}
+	extensions := b.buildExtensions(ctx, bc)
 
 	return snapshot, extensions, nil
 }
 
-// buildExtensions builds mTLS, PROXY protocol, and OCSP extensions from gateway/backend CRDs
-func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*agentconfig.SnapshotExtensions, error) {
-	ext := &agentconfig.SnapshotExtensions{
+// buildExtensions builds mTLS, PROXY protocol, and OCSP extensions from
+// the prefetched gateway/backend CRDs in the buildContext, avoiding redundant
+// API calls (#936).
+func (b *Builder) buildExtensions(ctx context.Context, bc *buildContext) *snapshotpkg.Extensions {
+	ext := &snapshotpkg.Extensions{
 		ListenerExtensions: make(map[string]*pb.ListenerExtensions),
 		ClusterExtensions:  make(map[string]*pb.ClusterExtensions),
 	}
 
-	// Build listener extensions from gateways
-	gatewayList := &novaedgev1alpha1.ProxyGatewayList{}
-	if err := b.client.List(ctx, gatewayList); err != nil {
-		return nil, err
-	}
-
-	for _, gw := range gatewayList.Items {
+	// Build listener extensions from prefetched gateways
+	for _, gw := range bc.gateways {
 		for _, listener := range gw.Spec.Listeners {
 			listenerExt := &pb.ListenerExtensions{
 				OCSPStapling: listener.OCSPStapling,
@@ -245,10 +273,10 @@ func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*a
 					RequiredSans:       listener.ClientAuth.RequiredSANs,
 				}
 
-				// Load CA certificate from secret
+				// Load CA certificate from prefetched secrets
 				if listener.ClientAuth.CACertRef != nil {
 					caCert, err := b.loadCACert(ctx, listener.ClientAuth.CACertRef.Name,
-						listener.ClientAuth.CACertRef.Namespace, gw.Namespace)
+						listener.ClientAuth.CACertRef.Namespace, gw.Namespace, bc)
 					if err != nil {
 						log.FromContext(ctx).Error(err, "Failed to load mTLS CA cert",
 							"gateway", gw.Name, "listener", listener.Name)
@@ -274,13 +302,8 @@ func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*a
 		}
 	}
 
-	// Build cluster extensions from backends
-	backendList := &novaedgev1alpha1.ProxyBackendList{}
-	if err := b.client.List(ctx, backendList); err != nil {
-		return nil, err
-	}
-
-	for _, backend := range backendList.Items {
+	// Build cluster extensions from prefetched backends
+	for _, backend := range bc.backends {
 		if backend.Spec.UpstreamProxyProtocol != nil && backend.Spec.UpstreamProxyProtocol.Enabled {
 			clusterKey := fmt.Sprintf("%s/%s", backend.Namespace, backend.Name)
 			ext.ClusterExtensions[clusterKey] = &pb.ClusterExtensions{
@@ -292,22 +315,19 @@ func (b *Builder) buildExtensions(ctx context.Context, _ *pb.ConfigSnapshot) (*a
 		}
 	}
 
-	return ext, nil
+	return ext
 }
 
-// loadCACert loads a CA certificate from a Kubernetes Secret
-func (b *Builder) loadCACert(ctx context.Context, secretName, secretNamespace, defaultNamespace string) ([]byte, error) {
+// loadCACert loads a CA certificate from the prefetched secrets in the buildContext.
+func (b *Builder) loadCACert(_ context.Context, secretName, secretNamespace, defaultNamespace string, bc *buildContext) ([]byte, error) {
 	namespace := secretNamespace
 	if namespace == "" {
 		namespace = defaultNamespace
 	}
 
-	secret := &corev1.Secret{}
-	if err := b.client.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      secretName,
-	}, secret); err != nil {
-		return nil, fmt.Errorf("failed to get CA cert secret %s/%s: %w", namespace, secretName, err)
+	secret, ok := bc.getSecret(namespace, secretName)
+	if !ok {
+		return nil, fmt.Errorf("CA cert secret %s/%s: %w", namespace, secretName, errSecretNotFoundInCache)
 	}
 
 	// Try common CA cert keys
@@ -322,6 +342,14 @@ func (b *Builder) loadCACert(ctx context.Context, secretName, secretNamespace, d
 
 // BuildSnapshot builds a complete ConfigSnapshot for a specific node
 func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.ConfigSnapshot, error) {
+	snapshot, _, err := b.buildSnapshotInternal(ctx, nodeName)
+	return snapshot, err
+}
+
+// buildSnapshotInternal is the core implementation shared by BuildSnapshot and
+// BuildSnapshotWithExtensions. It returns both the snapshot and the buildContext
+// so that callers like buildExtensions can reuse prefetched data.
+func (b *Builder) buildSnapshotInternal(ctx context.Context, nodeName string) (*pb.ConfigSnapshot, *buildContext, error) {
 	logger := log.FromContext(ctx).WithValues("node", nodeName)
 	logger.Info("Building config snapshot")
 
@@ -335,7 +363,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 	// of making its own List()/Get() calls.
 	bc, err := b.prefetch(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prefetch resources: %w", err)
+		return nil, nil, fmt.Errorf("failed to prefetch resources: %w", err)
 	}
 
 	// Build gateways
@@ -416,7 +444,7 @@ func (b *Builder) BuildSnapshot(ctx context.Context, nodeName string) (*pb.Confi
 		"duration_ms", duration*1000,
 		"size_bytes", sizeBytes)
 
-	return snapshot, nil
+	return snapshot, bc, nil
 }
 
 // buildGateways builds gateway configurations
@@ -904,13 +932,8 @@ func (b *Builder) buildInternalServices(ctx context.Context, bc *buildContext) [
 			})
 		}
 
-		// Resolve endpoints from EndpointSlices
-		endpoints, err := b.resolveInternalServiceEndpoints(ctx, svc)
-		if err != nil {
-			logger.Error(err, "Failed to resolve endpoints for mesh service",
-				"service", svc.Name, "namespace", svc.Namespace)
-			continue
-		}
+		// Resolve endpoints from prefetched EndpointSlices
+		endpoints := b.resolveInternalServiceEndpoints(svc, bc)
 
 		// Determine mTLS mode from annotation (default: permissive)
 		mtlsMode := "permissive"
@@ -946,19 +969,12 @@ func (b *Builder) buildInternalServices(ctx context.Context, bc *buildContext) [
 }
 
 // resolveInternalServiceEndpoints resolves all endpoints for a Service
-// from its EndpointSlices, across all ports.
-func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *corev1.Service) ([]*pb.Endpoint, error) {
-	endpointSliceList := &discoveryv1.EndpointSliceList{}
-	if err := b.client.List(ctx, endpointSliceList,
-		client.InNamespace(svc.Namespace),
-		client.MatchingLabels{
-			"kubernetes.io/service-name": svc.Name,
-		}); err != nil {
-		return nil, fmt.Errorf("failed to list endpoint slices: %w", err)
-	}
+// from the prefetched EndpointSlices in the buildContext, across all ports.
+func (b *Builder) resolveInternalServiceEndpoints(svc *corev1.Service, bc *buildContext) []*pb.Endpoint {
+	slices := bc.getEndpointSlices(svc.Namespace, svc.Name)
 
 	var endpoints []*pb.Endpoint
-	for _, es := range endpointSliceList.Items {
+	for _, es := range slices {
 		for _, ep := range es.Endpoints {
 			if len(ep.Addresses) == 0 {
 				continue
@@ -995,7 +1011,7 @@ func (b *Builder) resolveInternalServiceEndpoints(ctx context.Context, svc *core
 		}
 	}
 
-	return endpoints, nil
+	return endpoints
 }
 
 // Topology label keys used for locality-aware routing.
@@ -1030,17 +1046,15 @@ func matchEndpointSlicePort(esPorts []discoveryv1.EndpointPort, targetPortName s
 	return 0
 }
 
-// resolveServiceEndpoints resolves endpoints from a ServiceReference
+// resolveServiceEndpoints resolves endpoints from a ServiceReference using
+// the prefetched buildContext data instead of making direct API calls (#936).
 func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novaedgev1alpha1.ServiceReference, defaultNamespace string, bc *buildContext) (*pb.EndpointList, error) {
 	namespace := getNamespace(serviceRef.Namespace, defaultNamespace)
 
-	// Get the Service
-	svc := &corev1.Service{}
-	if err := b.client.Get(ctx, types.NamespacedName{
-		Namespace: namespace,
-		Name:      serviceRef.Name,
-	}, svc); err != nil {
-		return nil, fmt.Errorf("failed to get service: %w", err)
+	// Look up the Service from the prefetch cache
+	svc, ok := bc.getService(namespace, serviceRef.Name)
+	if !ok {
+		return nil, fmt.Errorf("service %s/%s: %w", namespace, serviceRef.Name, errServiceNotFoundInCache)
 	}
 
 	// Resolve the target port name and numeric targetPort from the Service spec.
@@ -1056,17 +1070,11 @@ func (b *Builder) resolveServiceEndpoints(ctx context.Context, serviceRef *novae
 		}
 	}
 
-	// Get EndpointSlices for the Service
-	endpointSliceList := &discoveryv1.EndpointSliceList{}
-	if err := b.client.List(ctx, endpointSliceList, client.InNamespace(namespace),
-		client.MatchingLabels{
-			"kubernetes.io/service-name": serviceRef.Name,
-		}); err != nil {
-		return nil, fmt.Errorf("failed to list endpoint slices: %w", err)
-	}
+	// Use prefetched EndpointSlices for the Service
+	slices := bc.getEndpointSlices(namespace, serviceRef.Name)
 
 	var endpoints []*pb.Endpoint
-	for _, es := range endpointSliceList.Items {
+	for _, es := range slices {
 		for _, ep := range es.Endpoints {
 			if len(ep.Addresses) == 0 {
 				continue

@@ -32,7 +32,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
-	agentconfig "github.com/azrtydxb/novaedge/internal/agent/config"
+	snapshotpkg "github.com/azrtydxb/novaedge/internal/pkg/snapshot"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 )
 
@@ -128,7 +128,7 @@ func (c *Converter) ToSnapshot(cfg *Config, _ string) (*pb.ConfigSnapshot, error
 }
 
 // ToSnapshotWithExtensions converts a standalone Config to a ConfigSnapshot with TLS extensions
-func (c *Converter) ToSnapshotWithExtensions(cfg *Config, nodeName string) (*pb.ConfigSnapshot, *agentconfig.SnapshotExtensions, error) {
+func (c *Converter) ToSnapshotWithExtensions(cfg *Config, nodeName string) (*pb.ConfigSnapshot, *snapshotpkg.Extensions, error) {
 	snapshot, err := c.ToSnapshot(cfg, nodeName)
 	if err != nil {
 		return nil, nil, err
@@ -139,8 +139,8 @@ func (c *Converter) ToSnapshotWithExtensions(cfg *Config, nodeName string) (*pb.
 }
 
 // buildExtensions builds TLS extensions from standalone configuration
-func (c *Converter) buildExtensions(cfg *Config) *agentconfig.SnapshotExtensions {
-	ext := &agentconfig.SnapshotExtensions{
+func (c *Converter) buildExtensions(cfg *Config) *snapshotpkg.Extensions {
+	ext := &snapshotpkg.Extensions{
 		ListenerExtensions: make(map[string]*pb.ListenerExtensions),
 		ClusterExtensions:  make(map[string]*pb.ClusterExtensions),
 	}
