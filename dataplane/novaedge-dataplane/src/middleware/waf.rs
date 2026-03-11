@@ -130,7 +130,23 @@ impl CompiledRules {
 }
 
 /// URL-decode a string (handles %XX sequences).
+///
+/// Decodes iteratively (up to 3 passes) to defeat double/triple encoding
+/// evasion attacks (e.g. `%2525` → `%25` → `%`).
 fn url_decode(input: &str) -> String {
+    let mut current = input.to_string();
+    for _ in 0..3 {
+        let decoded = url_decode_single(&current);
+        if decoded == current {
+            break;
+        }
+        current = decoded;
+    }
+    current
+}
+
+/// Single-pass URL decode (handles %XX sequences).
+fn url_decode_single(input: &str) -> String {
     let mut result = String::with_capacity(input.len());
     let mut chars = input.bytes();
     while let Some(b) = chars.next() {
@@ -220,6 +236,53 @@ impl WafEngine {
                 target: WafTarget::UserAgent,
                 pattern: r"nikto".into(),
                 severity: WafSeverity::Medium,
+            },
+            // Command injection patterns (shell metacharacters).
+            WafRule {
+                id: 932100,
+                description: "Command Injection: Shell Metacharacters".into(),
+                target: WafTarget::QueryString,
+                pattern: r"[;|`]\s*\w+".into(),
+                severity: WafSeverity::Critical,
+            },
+            // Log4Shell / JNDI injection.
+            WafRule {
+                id: 944100,
+                description: "Log4Shell: JNDI Injection".into(),
+                target: WafTarget::Headers,
+                pattern: r"\$\{jndi:".into(),
+                severity: WafSeverity::Critical,
+            },
+            WafRule {
+                id: 944110,
+                description: "Log4Shell: JNDI Injection in Query".into(),
+                target: WafTarget::QueryString,
+                pattern: r"\$\{jndi:".into(),
+                severity: WafSeverity::Critical,
+            },
+            // XXE: External entity declaration.
+            WafRule {
+                id: 934100,
+                description: "XXE: External Entity Declaration".into(),
+                target: WafTarget::Body,
+                pattern: r"<!ENTITY".into(),
+                severity: WafSeverity::Critical,
+            },
+            // Path traversal in query string.
+            WafRule {
+                id: 930110,
+                description: "Path Traversal in Query String".into(),
+                target: WafTarget::QueryString,
+                pattern: r"\.\.[\\/]".into(),
+                severity: WafSeverity::High,
+            },
+            // SSRF: Internal IP patterns in query values.
+            WafRule {
+                id: 934110,
+                description: "SSRF: Internal Network Address".into(),
+                target: WafTarget::QueryString,
+                pattern: r"(?:https?://)?(?:127\.|10\.|172\.(?:1[6-9]|2\d|3[01])\.|192\.168\.|0\.0\.0\.0|localhost|\[::1\])".into(),
+                severity: WafSeverity::High,
             },
         ];
         Self::new(WafConfig { mode, rules })
@@ -545,7 +608,7 @@ mod tests {
     #[test]
     fn rule_count() {
         let waf = WafEngine::with_default_rules(WafMode::Block);
-        assert!(waf.rule_count() >= 7);
+        assert!(waf.rule_count() >= 13);
     }
 
     #[test]

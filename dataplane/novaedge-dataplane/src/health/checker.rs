@@ -16,6 +16,9 @@ use super::types::*;
 pub struct HealthChecker {
     config: HealthCheckConfig,
     states: Arc<RwLock<HashMap<SocketAddr, HealthState>>>,
+    /// Tracks consecutive failure count before the unhealthy threshold is met.
+    /// Once threshold is reached, the count moves into `HealthState::Unhealthy`.
+    failure_counts: Arc<RwLock<HashMap<SocketAddr, u32>>>,
 }
 
 impl HealthChecker {
@@ -24,6 +27,7 @@ impl HealthChecker {
         Self {
             config,
             states: Arc::new(RwLock::new(HashMap::new())),
+            failure_counts: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -103,9 +107,13 @@ impl HealthChecker {
     async fn update_state(&self, addr: SocketAddr, result: Result<(), String>) -> bool {
         let mut states = self.states.write().await;
         let state = states.entry(addr).or_insert(HealthState::Unknown);
+        let mut failure_counts = self.failure_counts.write().await;
 
         match result {
             Ok(()) => {
+                // Reset consecutive failure counter on success.
+                failure_counts.remove(&addr);
+
                 let count = match state {
                     HealthState::Healthy {
                         consecutive_successes,
@@ -119,19 +127,23 @@ impl HealthChecker {
                 is_healthy
             }
             Err(err) => {
-                let count = match state {
-                    HealthState::Unhealthy {
-                        consecutive_failures,
-                        ..
-                    } => *consecutive_failures + 1,
-                    _ => 1,
-                };
-                warn!(%addr, error = %err, consecutive = count, "backend unhealthy");
-                *state = HealthState::Unhealthy {
-                    consecutive_failures: count,
-                    last_error: err,
-                };
-                false
+                let count = failure_counts.entry(addr).or_insert(0);
+                *count += 1;
+                let consecutive = *count;
+
+                warn!(%addr, error = %err, consecutive = consecutive, "backend unhealthy");
+
+                // Only transition to Unhealthy once the threshold is met.
+                if consecutive >= self.config.unhealthy_threshold {
+                    *state = HealthState::Unhealthy {
+                        consecutive_failures: consecutive,
+                        last_error: err,
+                    };
+                    false
+                } else {
+                    // Below threshold — keep previous state, backend still considered OK.
+                    !matches!(state, HealthState::Unhealthy { .. })
+                }
             }
         }
     }
