@@ -153,8 +153,8 @@ func TestCertificateWatcher_HandleCertificateEvent_Ready(t *testing.T) {
 	_ = unstructured.SetNestedField(cert.Object, "test-secret", "spec", "secretName")
 
 	// Set Ready condition
-	conditions := []interface{}{
-		map[string]interface{}{
+	conditions := []any{
+		map[string]any{
 			"type":    "Ready",
 			"status":  "True",
 			"message": "Certificate is ready",
@@ -202,13 +202,13 @@ func TestCertificateWatcher_HandleCertificateEvent_Failed(t *testing.T) {
 	cert.SetName("test-cert")
 	cert.SetNamespace("test-ns")
 
-	conditions := []interface{}{
-		map[string]interface{}{
+	conditions := []any{
+		map[string]any{
 			"type":    "Ready",
 			"status":  "False",
 			"message": "Certificate validation failed",
 		},
-		map[string]interface{}{
+		map[string]any{
 			"type":   "Issuing",
 			"status": "False",
 		},
@@ -230,13 +230,13 @@ func TestCertificateWatcher_HandleCertificateEvent_Failed(t *testing.T) {
 func TestIsCertFailed(t *testing.T) {
 	tests := []struct {
 		name       string
-		conditions []interface{}
+		conditions []any
 		expected   bool
 	}{
 		{
 			name: "issuing false indicates failure",
-			conditions: []interface{}{
-				map[string]interface{}{
+			conditions: []any{
+				map[string]any{
 					"type":   "Issuing",
 					"status": "False",
 				},
@@ -245,8 +245,8 @@ func TestIsCertFailed(t *testing.T) {
 		},
 		{
 			name: "issuing true is not failure",
-			conditions: []interface{}{
-				map[string]interface{}{
+			conditions: []any{
+				map[string]any{
 					"type":   "Issuing",
 					"status": "True",
 				},
@@ -255,8 +255,8 @@ func TestIsCertFailed(t *testing.T) {
 		},
 		{
 			name: "no issuing condition is not failure",
-			conditions: []interface{}{
-				map[string]interface{}{
+			conditions: []any{
+				map[string]any{
 					"type":   "Ready",
 					"status": "False",
 				},
@@ -273,7 +273,7 @@ func TestIsCertFailed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cert := &unstructured.Unstructured{
-				Object: make(map[string]interface{}),
+				Object: make(map[string]any),
 			}
 			if tt.conditions != nil {
 				_ = unstructured.SetNestedSlice(cert.Object, tt.conditions, "status", "conditions")

@@ -60,7 +60,7 @@ func (s *Server) handleTraces(w http.ResponseWriter, r *http.Request) {
 
 	// Jaeger requires a service parameter; return empty list if not provided
 	if params.ServiceName == "" {
-		writeJSON(w, http.StatusOK, []interface{}{})
+		writeJSON(w, http.StatusOK, []any{})
 		return
 	}
 
@@ -650,17 +650,17 @@ func (s *Server) handleMeshPoliciesList(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Filter for policies that are of mesh authorization type
-	meshPolicies := make([]map[string]interface{}, 0)
+	meshPolicies := make([]map[string]any, 0)
 	for _, p := range policies {
 		if p.Type == "MeshAuthorization" {
-			meshPolicies = append(meshPolicies, map[string]interface{}{
+			meshPolicies = append(meshPolicies, map[string]any{
 				"apiVersion": "novaedge.io/v1alpha1",
 				"kind":       "MeshAuthorizationPolicy",
-				"metadata": map[string]interface{}{
+				"metadata": map[string]any{
 					"name":      p.Name,
 					"namespace": p.Namespace,
 				},
-				"spec": map[string]interface{}{
+				"spec": map[string]any{
 					"targetRef": p.TargetRef,
 				},
 			})
@@ -692,14 +692,14 @@ func (s *Server) handleMeshPolicyGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := map[string]interface{}{
+	result := map[string]any{
 		"apiVersion": "novaedge.io/v1alpha1",
 		"kind":       "MeshAuthorizationPolicy",
-		"metadata": map[string]interface{}{
+		"metadata": map[string]any{
 			"name":      policy.Name,
 			"namespace": policy.Namespace,
 		},
-		"spec": map[string]interface{}{
+		"spec": map[string]any{
 			"type":      policy.Type,
 			"targetRef": policy.TargetRef,
 			"rateLimit": policy.RateLimit,
@@ -729,7 +729,7 @@ func (s *Server) handleMeshPolicyWrite(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodPost:
-		var resource map[string]interface{}
+		var resource map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&resource); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -751,7 +751,7 @@ func (s *Server) handleMeshPolicyWrite(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var resource map[string]interface{}
+		var resource map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&resource); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return
@@ -789,12 +789,12 @@ func (s *Server) handleMeshPolicyWrite(w http.ResponseWriter, r *http.Request) {
 }
 
 // meshResourceToPolicy converts a generic mesh policy resource to a Policy model
-func meshResourceToPolicy(resource map[string]interface{}) *models.Policy {
+func meshResourceToPolicy(resource map[string]any) *models.Policy {
 	policy := &models.Policy{
 		Type: "MeshAuthorization",
 	}
 
-	if metadata, ok := resource["metadata"].(map[string]interface{}); ok {
+	if metadata, ok := resource["metadata"].(map[string]any); ok {
 		if name, ok := metadata["name"].(string); ok {
 			policy.Name = name
 		}
@@ -816,7 +816,7 @@ func (s *Server) handleOverloadStatus(w http.ResponseWriter, r *http.Request) {
 	// Return current overload status.
 	// The novactl backend doesn't embed the overload manager directly; return
 	// reasonable defaults so that the UI renders without errors.
-	status := map[string]interface{}{
+	status := map[string]any{
 		"state":             "normal",
 		"heapUsageRatio":    0.0,
 		"goroutineCount":    0,
@@ -831,7 +831,7 @@ func (s *Server) handleOverloadStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOverloadConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		config := map[string]interface{}{
+		config := map[string]any{
 			"enabled":                      false,
 			"heapMemoryTriggerPercent":     90,
 			"heapMemoryRecoverPercent":     80,
@@ -844,7 +844,7 @@ func (s *Server) handleOverloadConfig(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, config)
 
 	case http.MethodPost:
-		var config map[string]interface{}
+		var config map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
 			writeError(w, http.StatusBadRequest, "invalid JSON: "+err.Error())
 			return

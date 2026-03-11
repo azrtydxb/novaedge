@@ -158,7 +158,7 @@ func (w *CertificateWatcher) watch(ctx context.Context) error {
 }
 
 // handleCertificateEvent processes a Certificate watch event.
-func (w *CertificateWatcher) handleCertificateEvent(ctx context.Context, obj interface{}) {
+func (w *CertificateWatcher) handleCertificateEvent(ctx context.Context, obj any) {
 	logger := log.FromContext(ctx).WithName("cert-manager-watcher")
 
 	u, ok := obj.(*unstructured.Unstructured)
@@ -203,7 +203,7 @@ func isCertFailed(cert *unstructured.Unstructured) bool {
 	}
 
 	for _, c := range conditions {
-		condMap, ok := c.(map[string]interface{})
+		condMap, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}

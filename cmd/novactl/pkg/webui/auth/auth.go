@@ -134,7 +134,7 @@ func (m *Manager) evictExcessSessions() {
 	var entries []entry
 	now := time.Now()
 
-	m.sessions.Range(func(key, value interface{}) bool {
+	m.sessions.Range(func(key, value any) bool {
 		tok, ok := key.(string)
 		if !ok {
 			m.sessions.Delete(key)
@@ -191,7 +191,7 @@ func (m *Manager) createToken(user string) (string, error) {
 
 // ValidateToken verifies the JWT signature and checks that the session has not expired or been revoked.
 func (m *Manager) ValidateToken(tokenStr string) error {
-	_, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+	_, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
 		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 			return nil, fmt.Errorf("%w: %v", errUnexpectedSigningMethod, t.Header["alg"])
 		}

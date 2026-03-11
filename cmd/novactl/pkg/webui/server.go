@@ -1481,7 +1481,7 @@ func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"authenticated": authenticated,
 		"authEnabled":   authEnabled,
 		"oidcEnabled":   s.authManager.OIDCEnabled(),

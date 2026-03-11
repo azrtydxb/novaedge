@@ -181,6 +181,7 @@ impl ProxyHandler {
         &self,
         req: hyper::Request<Incoming>,
         client_addr: SocketAddr,
+        server_port: u16,
     ) -> Result<hyper::Response<Full<Bytes>>, hyper::Error> {
         let method = req.method().to_string();
         let path = req.uri().path().to_string();
@@ -274,6 +275,7 @@ impl ProxyHandler {
                 &headers,
                 body_bytes,
                 client_addr,
+                server_port,
             )
             .await)
     }
@@ -294,6 +296,7 @@ impl ProxyHandler {
         headers: &[(String, String)],
         body_bytes: Bytes,
         client_addr: SocketAddr,
+        server_port: u16,
     ) -> hyper::Response<Full<Bytes>> {
         // Load shedding: reject requests if active count exceeds limit.
         if self.max_active_requests > 0 {
@@ -321,7 +324,7 @@ impl ProxyHandler {
 
         // Match route (with query param support).
         let matched_route = {
-            let router = self.router.read().unwrap();
+            let router = self.router.read().unwrap_or_else(|e| e.into_inner());
             router
                 .match_request_with_query(host, path, method, headers, query_string)
                 .cloned()
@@ -331,7 +334,7 @@ impl ProxyHandler {
             Some(r) => r,
             None => {
                 let default_backend = {
-                    let router = self.router.read().unwrap();
+                    let router = self.router.read().unwrap_or_else(|e| e.into_inner());
                     router.default_backend().map(String::from)
                 };
                 if let Some(backend) = default_backend {
@@ -961,8 +964,8 @@ impl ProxyHandler {
             }
         }
 
-        if client_addr.port() == 443 || client_addr.port() == 8443 {
-            let alt_svc = super::http3::alt_svc_header(client_addr.port());
+        if server_port == 443 || server_port == 8443 {
+            let alt_svc = super::http3::alt_svc_header(server_port);
             resp = resp.header("Alt-Svc", alt_svc);
         }
 
@@ -1074,7 +1077,7 @@ impl ProxyHandler {
         client_addr: SocketAddr,
     ) -> Result<(super::router::Route, SocketAddr, String), hyper::Response<Full<Bytes>>> {
         let matched_route = {
-            let router = self.router.read().unwrap();
+            let router = self.router.read().unwrap_or_else(|e| e.into_inner());
             router
                 .match_request_with_query(host, path, method, headers, query_string)
                 .cloned()
@@ -1084,7 +1087,7 @@ impl ProxyHandler {
             Some(r) => r,
             None => {
                 let default_backend = {
-                    let router = self.router.read().unwrap();
+                    let router = self.router.read().unwrap_or_else(|e| e.into_inner());
                     router.default_backend().map(String::from)
                 };
                 if let Some(backend) = default_backend {
@@ -1440,7 +1443,10 @@ impl ProxyHandler {
     /// directly, but this method provides a higher-level alternative.
     #[allow(dead_code)]
     pub async fn update_routes(&self, routes: Vec<super::router::Route>) {
-        self.router.write().unwrap().set_routes(routes);
+        self.router
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_routes(routes);
     }
 }
 
@@ -1714,7 +1720,11 @@ mod tests {
                     io,
                     service_fn(move |req| {
                         let handler = handler.clone();
-                        async move { handler.handle_request(req, client_addr).await }
+                        async move {
+                            handler
+                                .handle_request(req, client_addr, proxy_addr.port())
+                                .await
+                        }
                     }),
                 )
                 .await;

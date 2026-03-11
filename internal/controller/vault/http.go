@@ -46,10 +46,10 @@ const (
 // Response represents a response from the Vault HTTP API.
 type Response struct {
 	// Auth contains authentication info (for login responses)
-	Auth map[string]interface{} `json:"auth,omitempty"`
+	Auth map[string]any `json:"auth,omitempty"`
 
 	// Data contains the secret data
-	Data map[string]interface{} `json:"data,omitempty"`
+	Data map[string]any `json:"data,omitempty"`
 
 	// LeaseDuration is the lease duration in seconds
 	LeaseDuration int `json:"lease_duration,omitempty"`
@@ -77,7 +77,7 @@ func (c *vaultHTTPClient) Read(ctx context.Context, path string) (*Response, err
 }
 
 // Write writes to the Vault API (POST/PUT request).
-func (c *vaultHTTPClient) Write(ctx context.Context, path string, data map[string]interface{}) (*Response, error) {
+func (c *vaultHTTPClient) Write(ctx context.Context, path string, data map[string]any) (*Response, error) {
 	url := c.buildURL(path)
 
 	var body io.Reader

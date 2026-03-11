@@ -84,10 +84,10 @@ type cloudflareRecord struct {
 }
 
 type cloudflareResponse struct {
-	Success  bool                     `json:"success"`
-	Errors   []cloudflareError        `json:"errors"`
-	Result   json.RawMessage          `json:"result"`
-	Messages []map[string]interface{} `json:"messages"`
+	Success  bool              `json:"success"`
+	Errors   []cloudflareError `json:"errors"`
+	Result   json.RawMessage   `json:"result"`
+	Messages []map[string]any  `json:"messages"`
 }
 
 type cloudflareError struct {
@@ -104,7 +104,7 @@ func (p *CloudflareProvider) CreateTXTRecord(ctx context.Context, fqdn, value st
 		return fmt.Errorf("failed to find zone for %s: %w", recordName, err)
 	}
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"type":    "TXT",
 		"name":    recordName,
 		"content": value,

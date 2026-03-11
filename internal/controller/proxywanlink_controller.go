@@ -111,7 +111,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: link.Generation,
 		LastTransitionTime: metav1.Now(),
-		Reason:             "Reconciled",
+		Reason:             ConditionReasonValid,
 		Message:            "WAN link configured successfully",
 	})
 

@@ -213,10 +213,10 @@ func buildCertificateUnstructured(
 	cert.SetOwnerReferences([]metav1.OwnerReference{ownerRef})
 
 	// Build spec
-	spec := map[string]interface{}{
+	spec := map[string]any{
 		"dnsNames":   toInterfaceSlice(dnsNames),
 		"secretName": secretName,
-		"issuerRef": map[string]interface{}{
+		"issuerRef": map[string]any{
 			"name":  issuerName,
 			"kind":  issuerKind,
 			"group": "cert-manager.io",
@@ -232,8 +232,8 @@ func buildCertificateUnstructured(
 }
 
 // toInterfaceSlice converts a string slice to interface slice for unstructured objects.
-func toInterfaceSlice(ss []string) []interface{} {
-	result := make([]interface{}, len(ss))
+func toInterfaceSlice(ss []string) []any {
+	result := make([]any, len(ss))
 	for i, s := range ss {
 		result[i] = s
 	}
@@ -251,7 +251,7 @@ func extractReadyCondition(cert *unstructured.Unstructured) (bool, string, error
 	}
 
 	for _, c := range conditions {
-		condMap, ok := c.(map[string]interface{})
+		condMap, ok := c.(map[string]any)
 		if !ok {
 			continue
 		}

@@ -265,6 +265,7 @@ impl ListenerManager {
         };
 
         let actual_addr = listener.local_addr().unwrap_or(addr);
+        let server_port = actual_addr.port();
         let proto_label = protocol.to_string();
         info!(gateway = %name, addr = %actual_addr, protocol = %proto_label, "HTTP listener started");
 
@@ -297,7 +298,7 @@ impl ListenerManager {
                                                 service_fn(move |req| {
                                                     let handler = handler.clone();
                                                     async move {
-                                                        handler.handle_request(req, client_addr).await
+                                                        handler.handle_request(req, client_addr, server_port).await
                                                     }
                                                 }),
                                             )
@@ -316,7 +317,7 @@ impl ListenerManager {
                                                 service_fn(move |req| {
                                                     let handler = handler.clone();
                                                     async move {
-                                                        handler.handle_request(req, client_addr).await
+                                                        handler.handle_request(req, client_addr, server_port).await
                                                     }
                                                 }),
                                             )

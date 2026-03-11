@@ -148,7 +148,7 @@ func (s *Server) Stop() {
 	close(s.shutdownCh)
 
 	// Cancel all active streams
-	s.activeStreams.Range(func(_, value interface{}) bool {
+	s.activeStreams.Range(func(_, value any) bool {
 		if cancel, ok := value.(context.CancelFunc); ok {
 			cancel()
 		}
@@ -533,7 +533,7 @@ func (s *Server) mergeResources(local, remote *TrackedResource) (*TrackedResourc
 	// For now, we implement a simple JSON merge for maps
 	// In practice, this should be resource-type specific
 
-	var localData, remoteData map[string]interface{}
+	var localData, remoteData map[string]any
 	if err := json.Unmarshal(local.Data, &localData); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal local data: %w", err)
 	}
@@ -565,15 +565,15 @@ func (s *Server) mergeResources(local, remote *TrackedResource) (*TrackedResourc
 }
 
 // mergeMaps recursively merges two maps
-func mergeMaps(base, overlay map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
+func mergeMaps(base, overlay map[string]any) map[string]any {
+	result := make(map[string]any)
 	for k, v := range base {
 		result[k] = v
 	}
 	for k, v := range overlay {
 		if baseVal, ok := result[k]; ok {
-			if baseMap, ok := baseVal.(map[string]interface{}); ok {
-				if overlayMap, ok := v.(map[string]interface{}); ok {
+			if baseMap, ok := baseVal.(map[string]any); ok {
+				if overlayMap, ok := v.(map[string]any); ok {
 					result[k] = mergeMaps(baseMap, overlayMap)
 					continue
 				}
@@ -649,7 +649,7 @@ func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetSt
 
 	// Count resources by type
 	resourceCounts := make(map[string]int32)
-	s.resources.Range(func(_, value interface{}) bool {
+	s.resources.Range(func(_, value any) bool {
 		res, ok := value.(*TrackedResource)
 		if !ok {
 			return true
@@ -660,7 +660,7 @@ func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetSt
 
 	// Collect last sync times
 	lastSyncTimes := make(map[string]int64)
-	s.peerStates.Range(func(key, value interface{}) bool {
+	s.peerStates.Range(func(key, value any) bool {
 		state, ok := value.(*PeerState)
 		if !ok {
 			return true
@@ -677,7 +677,7 @@ func (s *Server) GetState(_ context.Context, req *pb.GetStateRequest) (*pb.GetSt
 
 	// Count pending conflicts
 	var conflictCount int32
-	s.conflicts.Range(func(_, _ interface{}) bool {
+	s.conflicts.Range(func(_, _ any) bool {
 		conflictCount++
 		return true
 	})
@@ -728,7 +728,7 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 	var resources []*pb.ResourceChange
 	requesterVC := NewVectorClockFromMap(req.VectorClock)
 
-	s.resources.Range(func(_, value interface{}) bool {
+	s.resources.Range(func(_, value any) bool {
 		res, ok := value.(*TrackedResource)
 		if !ok {
 			return true
@@ -914,7 +914,7 @@ func (s *Server) GetStats() SyncStats {
 // GetPeerStates returns the state of all peers
 func (s *Server) GetPeerStates() map[string]*PeerState {
 	result := make(map[string]*PeerState)
-	s.peerStates.Range(func(key, value interface{}) bool {
+	s.peerStates.Range(func(key, value any) bool {
 		keyStr, ok := key.(string)
 		if !ok {
 			return true
@@ -932,7 +932,7 @@ func (s *Server) GetPeerStates() map[string]*PeerState {
 // GetConflicts returns all pending conflicts
 func (s *Server) GetConflicts() []*ConflictInfo {
 	var conflicts []*ConflictInfo
-	s.conflicts.Range(func(_, value interface{}) bool {
+	s.conflicts.Range(func(_, value any) bool {
 		conflict, ok := value.(*ConflictInfo)
 		if !ok {
 			return true
@@ -991,7 +991,7 @@ func (s *Server) getPhase() Phase {
 	connectedCount := 0
 	totalPeers := len(s.config.Peers)
 
-	s.peerStates.Range(func(_, value interface{}) bool {
+	s.peerStates.Range(func(_, value any) bool {
 		state, ok := value.(*PeerState)
 		if !ok {
 			return true
@@ -1033,7 +1033,7 @@ func (s *Server) cleanupTombstones(ctx context.Context) {
 			return
 		case <-ticker.C:
 			now := time.Now()
-			s.tombstones.Range(func(key, value interface{}) bool {
+			s.tombstones.Range(func(key, value any) bool {
 				tombstone, ok := value.(*Tombstone)
 				if !ok {
 					return true

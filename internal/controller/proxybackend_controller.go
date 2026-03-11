@@ -55,7 +55,7 @@ func (r *ProxyBackendReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	backend := &novaedgev1alpha1.ProxyBackend{}
 	return reconcileWithGenerationCheck(ctx, r.Client, req, backend, "ProxyBackend", r.ConfigServer,
 		func() int64 { return backend.Status.ObservedGeneration },
-		func() []interface{} { return []interface{}{"name", backend.Name, "lbPolicy", backend.Spec.LBPolicy} },
+		func() []any { return []any{"name", backend.Name, "lbPolicy", backend.Spec.LBPolicy} },
 		func() error { return r.validateAndUpdateStatus(ctx, backend) },
 	)
 }
