@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -83,7 +83,7 @@ func reconcileL4Controller(
 	translate func() (*novaedgev1alpha1.ProxyRoute, error),
 ) (ctrl.Result, error) {
 	if err := cli.Get(ctx, req.NamespacedName, route); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			log.FromContext(ctx).Info(routeKind + " not found, ignoring")
 			return ctrl.Result{}, nil
 		}
@@ -138,7 +138,7 @@ func (a *l4RouteAdapter) reconcileL4Route(
 	existing := &novaedgev1alpha1.ProxyRoute{}
 	err = a.client.Get(ctx, types.NamespacedName{Name: route.GetName(), Namespace: route.GetNamespace()}, existing)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("Creating ProxyRoute from "+routeKind, "name", proxyRoute.Name)
 			if err := a.client.Create(ctx, proxyRoute); err != nil {
 				logger.Error(err, "Failed to create ProxyRoute from "+routeKind)
@@ -175,10 +175,10 @@ func (a *l4RouteAdapter) handleL4RouteDeletion(ctx context.Context, routeKind st
 	err := a.client.Get(ctx, types.NamespacedName{Name: route.GetName(), Namespace: route.GetNamespace()}, proxyRoute)
 	if err == nil {
 		logger.Info("Deleting ProxyRoute from "+routeKind+" deletion", "name", proxyRoute.Name)
-		if err := a.client.Delete(ctx, proxyRoute); err != nil && !errors.IsNotFound(err) {
+		if err := a.client.Delete(ctx, proxyRoute); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
-	} else if !errors.IsNotFound(err) {
+	} else if !apierrors.IsNotFound(err) {
 		return ctrl.Result{}, err
 	}
 

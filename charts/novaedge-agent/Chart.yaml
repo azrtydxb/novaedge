@@ -3,7 +3,7 @@ name: novaedge-agent
 description: NovaEdge Agent for remote/edge cluster deployments in a hub-spoke architecture
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+appVersion: "v1.7.7"
 keywords:
   - novaedge
   - load-balancer
@@ -15,7 +15,9 @@ home: https://github.com/azrtydxb/novaedge
 sources:
   - https://github.com/azrtydxb/novaedge
 maintainers:
-  - name: NovaEdge Authors
-    url: https://github.com/azrtydxb/novaedge
+  - name: azrtydxb
+    email: pascal@novaedge.io
+icon: https://raw.githubusercontent.com/azrtydxb/novaedge/main/docs/logo.png
 annotations:
-  category: Networking
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: networking

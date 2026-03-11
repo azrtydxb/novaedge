@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,7 +54,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	gateway := &gatewayv1.Gateway{}
 	err := r.Get(ctx, req.NamespacedName, gateway)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("Gateway resource not found. Ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
@@ -77,7 +77,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// Verify the GatewayClass exists and is accepted
 	gatewayClass := &gatewayv1.GatewayClass{}
 	if err := r.Get(ctx, types.NamespacedName{Name: NovaEdgeGatewayClassName}, gatewayClass); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			return r.updateGatewayStatus(ctx, gateway, metav1.Condition{
 				Type:               string(gatewayv1.GatewayConditionAccepted),
 				Status:             metav1.ConditionFalse,
@@ -119,7 +119,7 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	existingProxyGateway := &novaedgev1alpha1.ProxyGateway{}
 	err = r.Get(ctx, types.NamespacedName{Name: gateway.Name, Namespace: gateway.Namespace}, existingProxyGateway)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			// Create new ProxyGateway
 			logger.Info("Creating ProxyGateway", "name", proxyGateway.Name)
 			if err := r.Create(ctx, proxyGateway); err != nil {

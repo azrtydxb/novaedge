@@ -20,7 +20,8 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -48,7 +49,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 
 	policy := &novaedgev1alpha1.ProxyWANPolicy{}
 	if err := r.Get(ctx, req.NamespacedName, policy); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("ProxyWANPolicy deleted, triggering config update")
 			TriggerConfigUpdate()
 			return ctrl.Result{}, nil
@@ -80,7 +81,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		policy.Status.Phase = "Invalid"
 		policy.Status.ObservedGeneration = policy.Generation
 
-		setCondition(&policy.Status.Conditions, metav1.Condition{
+		meta.SetStatusCondition(&policy.Status.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: policy.Generation,
@@ -101,7 +102,7 @@ func (r *ProxyWANPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	policy.Status.Phase = phaseActive
 	policy.Status.ObservedGeneration = policy.Generation
 
-	setCondition(&policy.Status.Conditions, metav1.Condition{
+	meta.SetStatusCondition(&policy.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: policy.Generation,

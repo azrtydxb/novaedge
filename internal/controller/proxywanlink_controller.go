@@ -20,7 +20,8 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -53,7 +54,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	link := &novaedgev1alpha1.ProxyWANLink{}
 	if err := r.Get(ctx, req.NamespacedName, link); err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("ProxyWANLink deleted, triggering config update")
 			TriggerConfigUpdate()
 			return ctrl.Result{}, nil
@@ -81,7 +82,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		link.Status.ObservedGeneration = link.Generation
 		link.Status.Healthy = false
 
-		setCondition(&link.Status.Conditions, metav1.Condition{
+		meta.SetStatusCondition(&link.Status.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
 			ObservedGeneration: link.Generation,
@@ -103,7 +104,7 @@ func (r *ProxyWANLinkReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	link.Status.ObservedGeneration = link.Generation
 	link.Status.Healthy = true
 
-	setCondition(&link.Status.Conditions, metav1.Condition{
+	meta.SetStatusCondition(&link.Status.Conditions, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionTrue,
 		ObservedGeneration: link.Generation,

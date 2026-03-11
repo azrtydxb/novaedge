@@ -3,7 +3,7 @@ name: novaedge-operator
 description: A Helm chart for deploying the NovaEdge Operator - manages NovaEdge clusters on Kubernetes
 type: application
 version: 0.1.0
-appVersion: "0.1.0"
+appVersion: "v1.7.7"
 keywords:
   - novaedge
   - operator
@@ -15,4 +15,8 @@ sources:
   - https://github.com/azrtydxb/novaedge
 maintainers:
   - name: azrtydxb
-    url: https://github.com/azrtydxb
+    email: pascal@novaedge.io
+icon: https://raw.githubusercontent.com/azrtydxb/novaedge/main/docs/logo.png
+annotations:
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/category: networking

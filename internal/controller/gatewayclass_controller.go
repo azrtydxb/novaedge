@@ -19,7 +19,7 @@ package controller
 import (
 	"context"
 
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -51,7 +51,7 @@ func (r *GatewayClassReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	gatewayClass := &gatewayv1.GatewayClass{}
 	err := r.Get(ctx, req.NamespacedName, gatewayClass)
 	if err != nil {
-		if errors.IsNotFound(err) {
+		if apierrors.IsNotFound(err) {
 			logger.Info("GatewayClass resource not found, ignoring since object must be deleted")
 			return ctrl.Result{}, nil
 		}
