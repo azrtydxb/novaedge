@@ -38,7 +38,7 @@ import (
 )
 
 var (
-	errConfigIsRequired                = errors.New("config is required")
+	errConfigIsRequired                = errors.New("ACME config is required")
 	errStorageIsRequired               = errors.New("storage is required")
 	errFailedToDecodeAccountPrivateKey = errors.New("failed to decode account private key")
 	errUnsupportedPrivateKeyType       = errors.New("unsupported private key type")

@@ -16,22 +16,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-/*
-Copyright 2024 NovaEdge Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package mesh
 
 import (
@@ -72,14 +56,14 @@ func (b *iptablesBackend) Name() string { return "iptables" }
 // PREROUTING jump. The chain is inserted at the top of PREROUTING to
 // fire before kube-proxy's KUBE-SERVICES chain, preserving the original
 // ClusterIP destination in conntrack for SO_ORIGINAL_DST retrieval.
-func (b *iptablesBackend) Setup() error {
+func (b *iptablesBackend) Setup(ctx context.Context) error {
 	// Verify route_localnet is enabled (set by the sysctl-setup init container in k8s,
 	// or written directly in standalone/privileged mode).
 	if err := ensureRouteLocalnet(); err != nil {
 		return err
 	}
 
-	if err := b.ensureChain(); err != nil {
+	if err := b.ensureChain(ctx); err != nil {
 		return fmt.Errorf("failed to create iptables chain: %w", err)
 	}
 	return nil
@@ -89,7 +73,7 @@ func (b *iptablesBackend) Setup() error {
 // desired set. Rules for removed services are deleted; rules for new
 // services are added. Errors from individual rule operations are
 // aggregated and returned so callers can detect partial failures.
-func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32) error {
+func (b *iptablesBackend) ApplyRules(ctx context.Context, targets []InterceptTarget, tproxyPort int32) error {
 	desired := make(map[string]InterceptTarget, len(targets))
 	for _, t := range targets {
 		desired[t.Key()] = t
@@ -107,7 +91,7 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 				delete(b.currentRules, key)
 				continue
 			}
-			if err := b.removeRule(parts[0], parts[1], tproxyPort); err != nil {
+			if err := b.removeRule(ctx, parts[0], parts[1], tproxyPort); err != nil {
 				b.logger.Error("Failed to remove iptables DNAT rule",
 					zap.String("key", key), zap.Error(err))
 				errs = append(errs, fmt.Errorf("remove %s: %w", key, err))
@@ -121,7 +105,7 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 	// Add rules for newly desired services.
 	for key, t := range desired {
 		if !b.currentRules[key] {
-			if err := b.addRule(t.ClusterIP, t.Port, tproxyPort); err != nil {
+			if err := b.addRule(ctx, t.ClusterIP, t.Port, tproxyPort); err != nil {
 				b.logger.Error("Failed to add iptables DNAT rule",
 					zap.String("clusterIP", t.ClusterIP),
 					zap.Int32("port", t.Port),
@@ -137,11 +121,11 @@ func (b *iptablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 
 // Cleanup removes all DNAT rules, the custom chain, and the
 // PREROUTING jump.
-func (b *iptablesBackend) Cleanup() error {
+func (b *iptablesBackend) Cleanup(ctx context.Context) error {
 	if b.chainCreated {
-		_ = b.run("-t", "nat", "-D", "PREROUTING", "-j", novaedgeChain)
-		_ = b.run("-t", "nat", "-F", novaedgeChain)
-		_ = b.run("-t", "nat", "-X", novaedgeChain)
+		_ = b.run(ctx, "-t", "nat", "-D", "PREROUTING", "-j", novaedgeChain)
+		_ = b.run(ctx, "-t", "nat", "-F", novaedgeChain)
+		_ = b.run(ctx, "-t", "nat", "-X", novaedgeChain)
 		b.chainCreated = false
 	}
 
@@ -151,23 +135,23 @@ func (b *iptablesBackend) Cleanup() error {
 
 // ensureChain creates the NOVAEDGE_MESH chain in the nat table and
 // inserts it at the top of PREROUTING so it fires before kube-proxy.
-func (b *iptablesBackend) ensureChain() error {
+func (b *iptablesBackend) ensureChain(ctx context.Context) error {
 	// Create chain. The -N command returns an error if the chain already
 	// exists, which is expected on restart -- only propagate unexpected errors.
-	if err := b.run("-t", "nat", "-N", novaedgeChain); err != nil {
+	if err := b.run(ctx, "-t", "nat", "-N", novaedgeChain); err != nil {
 		if !strings.Contains(err.Error(), "Chain already exists") {
 			return fmt.Errorf("create chain %s: %w", novaedgeChain, err)
 		}
 	}
 
 	// Check if jump already exists.
-	out, err := b.output("-t", "nat", "-S", "PREROUTING")
+	out, err := b.output(ctx, "-t", "nat", "-S", "PREROUTING")
 	if err != nil {
 		return fmt.Errorf("list PREROUTING rules: %w", err)
 	}
 	if !strings.Contains(out, novaedgeChain) {
 		// Insert at position 1 to fire before kube-proxy KUBE-SERVICES.
-		if err := b.run("-t", "nat", "-I", "PREROUTING", "1", "-j", novaedgeChain); err != nil {
+		if err := b.run(ctx, "-t", "nat", "-I", "PREROUTING", "1", "-j", novaedgeChain); err != nil {
 			return fmt.Errorf("insert PREROUTING jump: %w", err)
 		}
 	}
@@ -176,8 +160,8 @@ func (b *iptablesBackend) ensureChain() error {
 	return nil
 }
 
-func (b *iptablesBackend) addRule(clusterIP string, port int32, tproxyPort int32) error {
-	return b.run(
+func (b *iptablesBackend) addRule(ctx context.Context, clusterIP string, port int32, tproxyPort int32) error {
+	return b.run(ctx,
 		"-t", "nat",
 		"-A", novaedgeChain,
 		"-p", "tcp",
@@ -188,8 +172,8 @@ func (b *iptablesBackend) addRule(clusterIP string, port int32, tproxyPort int32
 	)
 }
 
-func (b *iptablesBackend) removeRule(clusterIP string, dport string, tproxyPort int32) error {
-	return b.run(
+func (b *iptablesBackend) removeRule(ctx context.Context, clusterIP string, dport string, tproxyPort int32) error {
+	return b.run(ctx,
 		"-t", "nat",
 		"-D", novaedgeChain,
 		"-p", "tcp",
@@ -200,8 +184,8 @@ func (b *iptablesBackend) removeRule(clusterIP string, dport string, tproxyPort 
 	)
 }
 
-func (b *iptablesBackend) run(args ...string) error {
-	cmd := exec.CommandContext(context.Background(), "iptables", args...) //nolint:gosec // args are constructed internally
+func (b *iptablesBackend) run(ctx context.Context, args ...string) error {
+	cmd := exec.CommandContext(ctx, "iptables", args...) //nolint:gosec // args are constructed internally
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("iptables %s: %s: %w", strings.Join(args, " "), string(out), err)
@@ -209,8 +193,8 @@ func (b *iptablesBackend) run(args ...string) error {
 	return nil
 }
 
-func (b *iptablesBackend) output(args ...string) (string, error) {
-	cmd := exec.CommandContext(context.Background(), "iptables", args...) //nolint:gosec // args are constructed internally
+func (b *iptablesBackend) output(ctx context.Context, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "iptables", args...) //nolint:gosec // args are constructed internally
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("iptables %s: %s: %w", strings.Join(args, " "), string(out), err)

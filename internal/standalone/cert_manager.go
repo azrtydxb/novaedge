@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	errConfigIsRequired             = errors.New("config is required")
+	errConfigIsRequired             = errors.New("certificate manager config is required")
 	errUnsupportedIssuerType        = errors.New("unsupported issuer type")
 	errCertificateNotFound          = errors.New("certificate not found")
 	errCertificateNotLoaded         = errors.New("certificate not loaded")

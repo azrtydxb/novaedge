@@ -45,7 +45,7 @@ import (
 var (
 	errMeshCANotInitialized           = errors.New("mesh CA not initialized")
 	errFailedToDecodeCSRPEM           = errors.New("failed to decode CSR PEM")
-	errSecret                         = errors.New("secret")
+	errSecret                         = errors.New("mesh CA secret")
 	errFailedToDecodeCACertificatePEM = errors.New("failed to decode CA certificate PEM")
 	errFailedToDecodeCAPrivateKeyPEM  = errors.New("failed to decode CA private key PEM")
 	errCSRURISANMismatch              = errors.New("CSR URI SANs do not contain expected SPIFFE ID")

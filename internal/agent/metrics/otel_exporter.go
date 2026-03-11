@@ -34,7 +34,7 @@ import (
 var (
 	errOtelExporterAlreadyStarted  = errors.New("otel exporter already started")
 	errOtelExporterHasBeenShutDown = errors.New("otel exporter has been shut down")
-	errUnsupportedProtocol         = errors.New("unsupported protocol")
+	errUnsupportedProtocol         = errors.New("unsupported OTel export protocol")
 )
 
 // OTelExporter manages the OpenTelemetry metrics pipeline that exports

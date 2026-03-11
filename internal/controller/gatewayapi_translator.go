@@ -29,7 +29,7 @@ import (
 
 var (
 	errGatewayClass                                   = errors.New("gateway class")
-	errUnsupportedProtocol                            = errors.New("unsupported protocol")
+	errUnsupportedProtocol                            = errors.New("unsupported gateway protocol")
 	errListener                                       = errors.New("listener")
 	errRuleHasNoBackendRefs                           = errors.New("rule has no backend refs")
 	errUnsupportedPathMatchType                       = errors.New("unsupported path match type")
