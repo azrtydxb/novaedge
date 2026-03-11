@@ -8,10 +8,20 @@ pub struct ProxyHeader {
     pub dst_addr: SocketAddr,
 }
 
+/// Maximum length of a PROXY protocol v1 header line per RFC specification.
+const MAX_V1_LINE: usize = 108;
+
 /// Parse PROXY protocol v1 header from a text line.
 ///
 /// Format: `PROXY TCP4 src_ip dst_ip src_port dst_port\r\n`
 pub fn parse_v1(data: &[u8]) -> Result<(ProxyHeader, usize), io::Error> {
+    if data.len() > MAX_V1_LINE {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "PROXY v1 line exceeds maximum length of 108 bytes",
+        ));
+    }
+
     let line_end = data
         .windows(2)
         .position(|w| w == b"\r\n")

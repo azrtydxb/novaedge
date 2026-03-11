@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Configuration for the TCP proxy.
 pub struct TcpProxyConfig {
@@ -119,7 +119,7 @@ async fn proxy_connection(
     mut client: TcpStream,
     backend_addr: SocketAddr,
     connect_timeout: std::time::Duration,
-    _idle_timeout: std::time::Duration,
+    idle_timeout: std::time::Duration,
     bytes_tx: &AtomicU64,
     bytes_rx: &AtomicU64,
 ) -> anyhow::Result<()> {
@@ -127,10 +127,23 @@ async fn proxy_connection(
         .await
         .map_err(|_| anyhow::anyhow!("connect timeout"))??;
 
-    let (tx, rx) = io::copy_bidirectional(&mut client, &mut upstream).await?;
-    bytes_tx.fetch_add(tx, Ordering::Relaxed);
-    bytes_rx.fetch_add(rx, Ordering::Relaxed);
-    Ok(())
+    match tokio::time::timeout(
+        idle_timeout,
+        io::copy_bidirectional(&mut client, &mut upstream),
+    )
+    .await
+    {
+        Ok(Ok((tx, rx))) => {
+            bytes_tx.fetch_add(tx, Ordering::Relaxed);
+            bytes_rx.fetch_add(rx, Ordering::Relaxed);
+            Ok(())
+        }
+        Ok(Err(e)) => Err(e.into()),
+        Err(_) => {
+            error!("Connection to {backend_addr} idle for {idle_timeout:?}, closing");
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]

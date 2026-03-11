@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/uuid"
 	"go.uber.org/zap"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -50,6 +51,15 @@ const (
 
 	// StreamTimeout is the timeout for stream operations
 	StreamTimeout = 30 * time.Second
+
+	// peerMessageRate is the steady-state token rate (messages/sec) for per-peer rate limiting.
+	peerMessageRate rate.Limit = 100
+
+	// peerMessageBurst is the burst capacity for per-peer rate limiting.
+	peerMessageBurst = 200
+
+	// fullSyncCooldown is the minimum interval between RequestFullSync calls from the same peer.
+	fullSyncCooldown = 30 * time.Second
 )
 
 // Server implements the FederationService gRPC server
@@ -89,6 +99,12 @@ type Server struct {
 
 	// activeStreams tracks active peer connections
 	activeStreams sync.Map // map[string]context.CancelFunc
+
+	// peerLimiters holds a per-peer rate.Limiter to cap incoming message rates.
+	peerLimiters sync.Map // map[string]*rate.Limiter
+
+	// fullSyncCooldowns tracks the last time each peer called RequestFullSync.
+	fullSyncCooldowns sync.Map // map[string]time.Time
 
 	// endpointCache stores remote cluster endpoints received via federation
 	endpointCache *RemoteEndpointCache
@@ -266,6 +282,13 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 	return err
 }
 
+// peerLimiterFor returns the rate.Limiter for the given peer, creating one if it does not yet exist.
+func (s *Server) peerLimiterFor(peerName string) *rate.Limiter {
+	val, _ := s.peerLimiters.LoadOrStore(peerName, rate.NewLimiter(peerMessageRate, peerMessageBurst))
+	lim, _ := val.(*rate.Limiter)
+	return lim
+}
+
 // handleIncomingMessages processes messages from a peer
 func (s *Server) handleIncomingMessages(ctx context.Context, stream pb.FederationService_SyncStreamServer, peerName string) error {
 	for {
@@ -277,6 +300,11 @@ func (s *Server) handleIncomingMessages(ctx context.Context, stream pb.Federatio
 
 		msg, err := stream.Recv()
 		if err != nil {
+			return err
+		}
+
+		// Enforce per-peer rate limit to prevent message floods.
+		if err := s.peerLimiterFor(peerName).Wait(ctx); err != nil {
 			return err
 		}
 
@@ -719,12 +747,45 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 		return status.Error(codes.PermissionDenied, "federation ID mismatch")
 	}
 
+	if err := s.checkFullSyncCooldown(req.RequesterMember); err != nil {
+		return err
+	}
+
 	s.logger.Info("Full sync requested",
 		zap.String("requester", req.RequesterMember),
 		zap.Strings("resourceTypes", req.ResourceTypes),
 	)
 
-	// Collect resources to sync
+	resources := s.collectFullSyncResources(req)
+
+	if err := s.sendFullSyncBatches(stream, resources); err != nil {
+		return err
+	}
+
+	s.statsMu.Lock()
+	s.stats.FullSyncs++
+	s.statsMu.Unlock()
+
+	return nil
+}
+
+// checkFullSyncCooldown enforces a minimum interval between RequestFullSync calls from the same peer.
+func (s *Server) checkFullSyncCooldown(peerName string) error {
+	now := time.Now()
+	if last, ok := s.fullSyncCooldowns.Load(peerName); ok {
+		if lastTime, ok := last.(time.Time); ok && now.Sub(lastTime) < fullSyncCooldown {
+			return status.Errorf(codes.ResourceExhausted,
+				"full sync requested too soon; retry after %s",
+				(fullSyncCooldown - now.Sub(lastTime)).Truncate(time.Second),
+			)
+		}
+	}
+	s.fullSyncCooldowns.Store(peerName, now)
+	return nil
+}
+
+// collectFullSyncResources gathers the resources that should be sent in a full sync response.
+func (s *Server) collectFullSyncResources(req *pb.FullSyncRequest) []*pb.ResourceChange {
 	var resources []*pb.ResourceChange
 	requesterVC := NewVectorClockFromMap(req.VectorClock)
 
@@ -733,41 +794,13 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 		if !ok {
 			return true
 		}
-
-		// Filter by resource type if specified
-		if len(req.ResourceTypes) > 0 {
-			found := false
-			for _, rt := range req.ResourceTypes {
-				if res.Key.Kind == rt {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return true
-			}
+		if !s.resourceMatchesFilter(res, req.ResourceTypes, req.Namespaces) {
+			return true
 		}
-
-		// Filter by namespace if specified
-		if len(req.Namespaces) > 0 {
-			found := false
-			for _, ns := range req.Namespaces {
-				if res.Key.Namespace == ns {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return true
-			}
-		}
-
-		// Only send if our version is newer
 		resVC := NewVectorClockFromMap(res.VectorClock)
 		if !resVC.HappenedAfter(requesterVC) && !resVC.Concurrent(requesterVC) {
 			return true
 		}
-
 		resources = append(resources, &pb.ResourceChange{
 			ChangeId:        uuid.New().String(),
 			VectorClock:     res.VectorClock,
@@ -784,18 +817,56 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 		})
 		return true
 	})
+	return resources
+}
 
-	// Send in batches
+// resourceMatchesFilter returns true when res passes the resource-type and namespace filters from req.
+func (s *Server) resourceMatchesFilter(res *TrackedResource, resourceTypes, namespaces []string) bool {
+	if len(resourceTypes) > 0 {
+		found := false
+		for _, rt := range resourceTypes {
+			if res.Key.Kind == rt {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	if len(namespaces) > 0 {
+		found := false
+		for _, ns := range namespaces {
+			if res.Key.Namespace == ns {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+// sendFullSyncBatches sends collected resources to the stream in batch messages.
+func (s *Server) sendFullSyncBatches(stream pb.FederationService_RequestFullSyncServer, resources []*pb.ResourceChange) error {
+	if len(resources) == 0 {
+		return stream.Send(&pb.ResourceBatch{
+			BatchNumber:    0,
+			IsLast:         true,
+			TotalResources: 0,
+			VectorClock:    s.vectorClock.ToMap(),
+		})
+	}
+
 	batchSize := int(s.config.BatchSize)
 	totalResources := len(resources)
-	batchNum := 0
-
-	for i := 0; i < len(resources); i += batchSize {
+	for i, batchNum := 0, 0; i < len(resources); i, batchNum = i+batchSize, batchNum+1 {
 		end := i + batchSize
 		if end > len(resources) {
 			end = len(resources)
 		}
-
 		batch := &pb.ResourceBatch{
 			BatchNumber:    convert.SafeIntToInt32(batchNum),
 			IsLast:         end == len(resources),
@@ -803,30 +874,10 @@ func (s *Server) RequestFullSync(req *pb.FullSyncRequest, stream pb.FederationSe
 			TotalResources: convert.SafeIntToInt32(totalResources),
 			VectorClock:    s.vectorClock.ToMap(),
 		}
-
 		if err := stream.Send(batch); err != nil {
 			return err
 		}
-		batchNum++
 	}
-
-	// If no resources, send empty final batch
-	if len(resources) == 0 {
-		if err := stream.Send(&pb.ResourceBatch{
-			BatchNumber:    0,
-			IsLast:         true,
-			Resources:      nil,
-			TotalResources: 0,
-			VectorClock:    s.vectorClock.ToMap(),
-		}); err != nil {
-			return err
-		}
-	}
-
-	s.statsMu.Lock()
-	s.stats.FullSyncs++
-	s.statsMu.Unlock()
-
 	return nil
 }
 
