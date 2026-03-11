@@ -75,7 +75,7 @@ var (
 	HealthChecksTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "novaedge",
-			Subsystem: "health_check",
+			Subsystem: "health_checks",
 			Name:      "total",
 			Help:      "Total number of health check attempts",
 		},
