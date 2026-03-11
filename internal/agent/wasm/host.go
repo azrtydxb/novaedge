@@ -14,11 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package wasm provides a WebAssembly plugin runtime using Wazero for the NovaEdge agent.
-//
-// DEPRECATED: This package will be removed once --forwarding-plane=rust is
-// validated and the Rust dataplane handles WASM plugins natively.
-// See docs/plans/forwarding-deprecation.md for the removal timeline.
 package wasm
 
 import (
@@ -33,6 +28,10 @@ const hostModuleName = "novaedge"
 
 // maxUint32 is the maximum value for uint32, used for safe conversion checks.
 const maxUint32 = 1<<32 - 1
+
+// maxLogMessageLen caps the message length a WASM plugin can log in a single
+// call to prevent log flooding from untrusted plugins.
+const maxLogMessageLen uint32 = 8192
 
 // safeU32 safely converts a uint64 stack value to uint32.
 // WASM i32 values are stored as uint64 on the Go side but are guaranteed
@@ -276,6 +275,11 @@ func hostLogMessage(_ context.Context, mod api.Module, stack []uint64) {
 	msgPtr := safeU32(stack[1])
 	msgLen := safeU32(stack[2])
 
+	// Cap message length to prevent log flooding from untrusted WASM plugins.
+	if msgLen > maxLogMessageLen {
+		msgLen = maxLogMessageLen
+	}
+
 	mem := mod.Memory()
 	msgBytes, ok := mem.Read(msgPtr, msgLen)
 	if !ok {
@@ -313,6 +317,13 @@ func hostSendResponse(ctx context.Context, mod api.Module, stack []uint64) {
 	if !ok {
 		zap.L().Debug("WASM host: memory read failed", zap.String("function", "hostSendResponse"))
 		bodyBytes = []byte("WASM plugin error: could not read body from memory")
+	}
+
+	// Validate the HTTP status code before writing to prevent invalid responses
+	// from malicious or buggy WASM plugins.
+	if statusCode < 100 || statusCode > 599 {
+		zap.L().Warn("WASM plugin attempted invalid status code", zap.Uint32("code", statusCode))
+		statusCode = 500
 	}
 
 	rc.ResponseWriter.WriteHeader(int(statusCode))

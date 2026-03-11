@@ -434,7 +434,7 @@ func (m *CertificateManager) checkRenewals(ctx context.Context) {
 
 			client, ok := m.acmeClients[name]
 			if !ok {
-				m.logger.Error("ACME client not found for certificate", zap.String("name", name))
+				m.logger.Warn("ACME client not found for certificate", zap.String("name", name))
 				continue
 			}
 
@@ -448,7 +448,7 @@ func (m *CertificateManager) checkRenewals(ctx context.Context) {
 			}
 
 			if certConfig == nil {
-				m.logger.Error("Certificate config not found", zap.String("name", name))
+				m.logger.Warn("Certificate config not found", zap.String("name", name))
 				continue
 			}
 

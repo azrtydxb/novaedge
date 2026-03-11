@@ -14,7 +14,6 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package wasm provides a sandboxed WASM plugin runtime for custom middleware.
 package wasm
 
 import (

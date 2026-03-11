@@ -11,12 +11,22 @@ rules:
   - ""
   resources:
   - configmaps
-  - secrets
   - serviceaccounts
   - services
   verbs:
   - create
   - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
   - get
   - list
   - patch
@@ -169,8 +179,6 @@ rules:
   resources:
   - clusterrolebindings
   - clusterroles
-  - rolebindings
-  - roles
   verbs:
   - create
   - delete
