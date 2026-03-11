@@ -22,7 +22,7 @@ import (
 )
 
 // ProtocolType defines the application protocol
-// +kubebuilder:validation:Enum=HTTP;HTTPS;TCP;TLS;UDP
+// +kubebuilder:validation:Enum=HTTP;HTTPS;HTTP3;TCP;TLS;UDP
 type ProtocolType string
 
 // Cert-manager annotation keys recognized by ProxyGateway.
@@ -359,6 +359,8 @@ type AccessLogConfig struct {
 	// SampleRate defines the fraction of requests to log (0.0-1.0, default 1.0)
 	// +optional
 	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=1
+	SampleRate *float64 `json:"sampleRate,omitempty"`
 }
 
 // CustomErrorPage defines a custom error page configuration

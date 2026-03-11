@@ -103,6 +103,12 @@ spec:
                     - file
                     - both
                     type: string
+                  sampleRate:
+                    description: SampleRate defines the fraction of requests to log
+                      (0.0-1.0, default 1.0)
+                    maximum: 1
+                    minimum: 0
+                    type: number
                   template:
                     description: Template defines a custom log format template (for
                       format=custom)
@@ -320,6 +326,7 @@ spec:
                       enum:
                       - HTTP
                       - HTTPS
+                      - HTTP3
                       - TCP
                       - TLS
                       - UDP
