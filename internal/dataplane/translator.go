@@ -33,6 +33,12 @@ func safeInt32ToUint32(v int32) uint32 {
 	return uint32(v)
 }
 
+// defaultBindAddress is the address used for gateway and L4 listener binds.
+// Use IPv4-any ("0.0.0.0") as a safe default that works even when IPv6 is
+// disabled or when IPv6 sockets are v6-only; callers can override via the
+// Listener or L4Listener bind_address field for dual-stack ("::" / "[::]").
+const defaultBindAddress = "0.0.0.0"
+
 // Translator converts Go agent ConfigSnapshot into dataplane gRPC calls.
 // It wraps a Client and provides a high-level Sync operation that pushes
 // the full configuration to the Rust dataplane via ApplyConfig RPC.
@@ -120,9 +126,13 @@ func translateGateways(gateways []*configpb.Gateway) []*pb.GatewayConfig {
 	var result []*pb.GatewayConfig
 	for _, gw := range gateways {
 		for _, lis := range gw.GetListeners() {
+			bindAddr := lis.GetBindAddress()
+			if bindAddr == "" {
+				bindAddr = defaultBindAddress
+			}
 			dpGw := &pb.GatewayConfig{
 				Name:        gw.GetName() + "/" + lis.GetName(),
-				BindAddress: "0.0.0.0",
+				BindAddress: bindAddr,
 				Port:        uint32(lis.GetPort()), //nolint:gosec // proto field conversion
 				Protocol:    translateGatewayProtocol(lis.GetProtocol()),
 				Hostnames:   lis.GetHostnames(),
@@ -184,66 +194,84 @@ func translateTLS(tls *configpb.TLSConfig) *pb.TLSConfig {
 // Route translation
 // ---------------------------------------------------------------------------
 
-// translateRouteRule translates a single config RouteRule into a dataplane RouteConfig.
-func translateRouteRule(rt *configpb.Route, ruleIdx int, rule *configpb.RouteRule, middlewareRefs []string) *pb.RouteConfig {
-	dpRoute := &pb.RouteConfig{
-		Name:           fmt.Sprintf("%s/rule-%d", rt.GetName(), ruleIdx),
-		Hostnames:      rt.GetHostnames(),
-		MiddlewareRefs: middlewareRefs,
+// translateRouteRule translates a single config RouteRule into one or more
+// dataplane RouteConfig entries. Following the Envoy pattern, each match
+// entry fans out into a separate RouteConfig so that all match conditions
+// are evaluated by the dataplane (fixes #935).
+func translateRouteRule(rt *configpb.Route, ruleIdx int, rule *configpb.RouteRule, middlewareRefs []string) []*pb.RouteConfig {
+	matches := rule.GetMatches()
+	if len(matches) == 0 {
+		// No matches — produce a single route with no match predicates.
+		matches = []*configpb.RouteMatch{nil}
 	}
 
-	// Path and header matches from the first match entry.
-	if len(rule.GetMatches()) > 0 {
-		m := rule.GetMatches()[0]
-		if m.GetPath() != nil {
-			dpRoute.PathMatch = &pb.PathMatch{
-				MatchType: translatePathMatchType(m.GetPath().GetType()),
-				Value:     m.GetPath().GetValue(),
+	results := make([]*pb.RouteConfig, 0, len(matches))
+	for matchIdx, m := range matches {
+		name := fmt.Sprintf("%s/rule-%d", rt.GetName(), ruleIdx)
+		if len(matches) > 1 {
+			name = fmt.Sprintf("%s/rule-%d/match-%d", rt.GetName(), ruleIdx, matchIdx)
+		}
+
+		dpRoute := &pb.RouteConfig{
+			Name:           name,
+			Hostnames:      rt.GetHostnames(),
+			MiddlewareRefs: middlewareRefs,
+		}
+
+		// Apply match predicates (path, headers, method).
+		if m != nil {
+			if m.GetPath() != nil {
+				dpRoute.PathMatch = &pb.PathMatch{
+					MatchType: translatePathMatchType(m.GetPath().GetType()),
+					Value:     m.GetPath().GetValue(),
+				}
+			}
+			for _, hdr := range m.GetHeaders() {
+				dpRoute.HeaderMatches = append(dpRoute.HeaderMatches, &pb.HeaderMatch{
+					Name:  hdr.GetName(),
+					Value: hdr.GetValue(),
+				})
+			}
+			if method := m.GetMethod(); method != "" {
+				dpRoute.Methods = append(dpRoute.Methods, method)
 			}
 		}
-		for _, hdr := range m.GetHeaders() {
-			dpRoute.HeaderMatches = append(dpRoute.HeaderMatches, &pb.HeaderMatch{
-				Name:  hdr.GetName(),
-				Value: hdr.GetValue(),
+
+		for _, br := range rule.GetBackendRefs() {
+			dpRoute.BackendRefs = append(dpRoute.BackendRefs, &pb.BackendRef{
+				ClusterName: br.GetName(),
+				Weight:      uint32(br.GetWeight()), //nolint:gosec // proto field
 			})
 		}
-		if method := m.GetMethod(); method != "" {
-			dpRoute.Methods = append(dpRoute.Methods, method)
+
+		if rule.GetRetry() != nil {
+			dpRoute.Retry = &pb.RetryPolicy{
+				MaxRetries:      uint32(rule.GetRetry().GetMaxRetries()), //nolint:gosec // proto field
+				PerTryTimeoutMs: safeUint64(rule.GetRetry().GetPerTryTimeoutMs()),
+				RetryOn:         rule.GetRetry().GetRetryOn(),
+				BackoffBaseMs:   safeUint64(rule.GetRetry().GetBackoffBaseMs()),
+			}
 		}
-	}
 
-	for _, br := range rule.GetBackendRefs() {
-		dpRoute.BackendRefs = append(dpRoute.BackendRefs, &pb.BackendRef{
-			ClusterName: br.GetName(),
-			Weight:      uint32(br.GetWeight()), //nolint:gosec // proto field
-		})
-	}
-
-	if rule.GetRetry() != nil {
-		dpRoute.Retry = &pb.RetryPolicy{
-			MaxRetries:      uint32(rule.GetRetry().GetMaxRetries()), //nolint:gosec // proto field
-			PerTryTimeoutMs: safeUint64(rule.GetRetry().GetPerTryTimeoutMs()),
-			RetryOn:         rule.GetRetry().GetRetryOn(),
-			BackoffBaseMs:   safeUint64(rule.GetRetry().GetBackoffBaseMs()),
+		if lim := rule.GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
+			dpRoute.TimeoutMs = safeUint64(lim.GetRequestTimeoutMs())
 		}
-	}
 
-	if lim := rule.GetLimits(); lim != nil && lim.GetRequestTimeoutMs() > 0 {
-		dpRoute.TimeoutMs = safeUint64(lim.GetRequestTimeoutMs())
-	}
+		applyRouteFilters(dpRoute, rule.GetFilters())
 
-	applyRouteFilters(dpRoute, rule.GetFilters())
-
-	if rule.GetMirrorBackend() != nil && rule.GetMirrorBackend().GetName() != "" {
-		dpRoute.MirrorCluster = rule.GetMirrorBackend().GetName()
-		if rule.GetMirrorPercent() > 0 {
-			dpRoute.MirrorPercent = uint32(rule.GetMirrorPercent()) //nolint:gosec // proto field
-		} else {
-			dpRoute.MirrorPercent = 100
+		if rule.GetMirrorBackend() != nil && rule.GetMirrorBackend().GetName() != "" {
+			dpRoute.MirrorCluster = rule.GetMirrorBackend().GetName()
+			if rule.GetMirrorPercent() > 0 {
+				dpRoute.MirrorPercent = uint32(rule.GetMirrorPercent()) //nolint:gosec // proto field
+			} else {
+				dpRoute.MirrorPercent = 100
+			}
 		}
+
+		results = append(results, dpRoute)
 	}
 
-	return dpRoute
+	return results
 }
 
 // applyRouteFilters applies rewrite_path and add_headers filters to a RouteConfig.
@@ -270,7 +298,7 @@ func translateRoutes(routes []*configpb.Route) []*pb.RouteConfig {
 		}
 
 		for ruleIdx, rule := range rt.GetRules() {
-			result = append(result, translateRouteRule(rt, ruleIdx, rule, middlewareRefs))
+			result = append(result, translateRouteRule(rt, ruleIdx, rule, middlewareRefs)...)
 		}
 	}
 	return result
@@ -448,9 +476,13 @@ func translateLBAlgorithm(policy configpb.LoadBalancingPolicy) pb.LBAlgorithm {
 func translateL4Listeners(listeners []*configpb.L4Listener) []*pb.L4ListenerConfig {
 	result := make([]*pb.L4ListenerConfig, 0, len(listeners))
 	for _, l4 := range listeners {
+		bindAddr := l4.GetBindAddress()
+		if bindAddr == "" {
+			bindAddr = defaultBindAddress
+		}
 		dpL4 := &pb.L4ListenerConfig{
 			Name:        l4.GetName(),
-			BindAddress: "0.0.0.0",
+			BindAddress: bindAddr,
 			Port:        uint32(l4.GetPort()), //nolint:gosec // proto field
 			Protocol:    translateL4Protocol(l4.GetProtocol()),
 		}

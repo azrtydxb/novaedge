@@ -89,6 +89,9 @@ func TestTranslateSnapshot_Gateways(t *testing.T) {
 	if httpGw.GetPort() != 8080 {
 		t.Errorf("gateway port = %d, want %d", httpGw.GetPort(), 8080)
 	}
+	if httpGw.GetBindAddress() != "0.0.0.0" {
+		t.Errorf("gateway bind_address = %q, want %q", httpGw.GetBindAddress(), "0.0.0.0")
+	}
 	if httpGw.GetProtocol() != pb.GatewayProtocol_GATEWAY_PROTOCOL_HTTP {
 		t.Errorf("gateway protocol = %v, want HTTP", httpGw.GetProtocol())
 	}
@@ -402,6 +405,9 @@ func TestTranslateSnapshot_L4Listeners(t *testing.T) {
 	}
 	if tcp.GetPort() != 3306 {
 		t.Errorf("L4 port = %d, want %d", tcp.GetPort(), 3306)
+	}
+	if tcp.GetBindAddress() != "0.0.0.0" {
+		t.Errorf("L4 bind_address = %q, want %q", tcp.GetBindAddress(), "0.0.0.0")
 	}
 	if tcp.GetProtocol() != pb.L4Protocol_L4_PROTOCOL_TCP {
 		t.Errorf("L4 protocol = %v, want TCP", tcp.GetProtocol())
@@ -1237,36 +1243,63 @@ func TestTranslateSnapshot_Routes_RewriteAndHeaders(t *testing.T) {
 
 	req := TranslateSnapshot(snap)
 
-	// Each rule produces a separate RouteConfig.
-	if len(req.GetRoutes()) != 2 {
-		t.Fatalf("expected 2 routes (one per rule), got %d", len(req.GetRoutes()))
+	// Each match fans out into a separate RouteConfig (Envoy pattern).
+	// Rule 0 has 2 matches (GET, POST), rule 1 has 2 matches (POST, DELETE) = 4 routes.
+	if len(req.GetRoutes()) != 4 {
+		t.Fatalf("expected 4 routes (one per match entry), got %d", len(req.GetRoutes()))
 	}
 
-	// Rule 0: has filters and method from first match (GET).
-	rt0 := req.GetRoutes()[0]
-	if rt0.GetRewritePath() != "/api/v2" {
-		t.Errorf("rule-0 rewrite_path = %q, want %q", rt0.GetRewritePath(), "/api/v2")
+	// Rule 0, match 0: has filters, method GET.
+	rt0m0 := req.GetRoutes()[0]
+	if rt0m0.GetRewritePath() != "/api/v2" {
+		t.Errorf("rule-0/match-0 rewrite_path = %q, want %q", rt0m0.GetRewritePath(), "/api/v2")
 	}
 	wantHeaders := map[string]string{"X-Custom": "hello", "X-Source": "novaedge"}
-	if len(rt0.GetAddHeaders()) != len(wantHeaders) {
-		t.Fatalf("rule-0 add_headers len = %d, want %d", len(rt0.GetAddHeaders()), len(wantHeaders))
+	if len(rt0m0.GetAddHeaders()) != len(wantHeaders) {
+		t.Fatalf("rule-0/match-0 add_headers len = %d, want %d", len(rt0m0.GetAddHeaders()), len(wantHeaders))
 	}
 	for k, v := range wantHeaders {
-		if got := rt0.GetAddHeaders()[k]; got != v {
-			t.Errorf("rule-0 add_headers[%q] = %q, want %q", k, got, v)
+		if got := rt0m0.GetAddHeaders()[k]; got != v {
+			t.Errorf("rule-0/match-0 add_headers[%q] = %q, want %q", k, got, v)
 		}
 	}
-	if len(rt0.GetMethods()) != 1 || rt0.GetMethods()[0] != "GET" {
-		t.Errorf("rule-0 methods = %v, want [GET]", rt0.GetMethods())
+	if len(rt0m0.GetMethods()) != 1 || rt0m0.GetMethods()[0] != "GET" {
+		t.Errorf("rule-0/match-0 methods = %v, want [GET]", rt0m0.GetMethods())
 	}
 
-	// Rule 1: no filters, method from first match (POST).
-	rt1 := req.GetRoutes()[1]
-	if rt1.GetRewritePath() != "" {
-		t.Errorf("rule-1 rewrite_path = %q, want empty", rt1.GetRewritePath())
+	// Rule 0, match 1: has filters, method POST.
+	rt0m1 := req.GetRoutes()[1]
+	if rt0m1.GetRewritePath() != "/api/v2" {
+		t.Errorf("rule-0/match-1 rewrite_path = %q, want %q", rt0m1.GetRewritePath(), "/api/v2")
 	}
-	if len(rt1.GetMethods()) != 1 || rt1.GetMethods()[0] != "POST" {
-		t.Errorf("rule-1 methods = %v, want [POST]", rt1.GetMethods())
+	if len(rt0m1.GetAddHeaders()) != len(wantHeaders) {
+		t.Fatalf("rule-0/match-1 add_headers len = %d, want %d", len(rt0m1.GetAddHeaders()), len(wantHeaders))
+	}
+	for k, v := range wantHeaders {
+		if got := rt0m1.GetAddHeaders()[k]; got != v {
+			t.Errorf("rule-0/match-1 add_headers[%q] = %q, want %q", k, got, v)
+		}
+	}
+	if len(rt0m1.GetMethods()) != 1 || rt0m1.GetMethods()[0] != "POST" {
+		t.Errorf("rule-0/match-1 methods = %v, want [POST]", rt0m1.GetMethods())
+	}
+
+	// Rule 1, match 0: no filters, method POST.
+	rt1m0 := req.GetRoutes()[2]
+	if rt1m0.GetRewritePath() != "" {
+		t.Errorf("rule-1/match-0 rewrite_path = %q, want empty", rt1m0.GetRewritePath())
+	}
+	if len(rt1m0.GetMethods()) != 1 || rt1m0.GetMethods()[0] != "POST" {
+		t.Errorf("rule-1/match-0 methods = %v, want [POST]", rt1m0.GetMethods())
+	}
+
+	// Rule 1, match 1: no filters, method DELETE.
+	rt1m1 := req.GetRoutes()[3]
+	if rt1m1.GetRewritePath() != "" {
+		t.Errorf("rule-1/match-1 rewrite_path = %q, want empty", rt1m1.GetRewritePath())
+	}
+	if len(rt1m1.GetMethods()) != 1 || rt1m1.GetMethods()[0] != "DELETE" {
+		t.Errorf("rule-1/match-1 methods = %v, want [DELETE]", rt1m1.GetMethods())
 	}
 }
 

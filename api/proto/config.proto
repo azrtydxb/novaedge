@@ -155,6 +155,7 @@ message Listener {
   ProxyProtocolConfig proxy_protocol = 13; // PROXY protocol configuration
   bool ssl_redirect = 14; // Automatic redirect from HTTP to HTTPS
   repeated string allowed_source_ranges = 15; // CIDR ranges allowed to access this listener
+  string bind_address = 16; // Bind address override (default: "0.0.0.0")
 }
 
 // Protocol defines the application protocol
@@ -595,6 +596,8 @@ message L4Listener {
   repeated L4TLSRoute tls_routes = 8;
   // Default TLS backend when no SNI match is found
   L4TLSRoute default_tls_backend = 9;
+  // Bind address override (default: "0.0.0.0")
+  string bind_address = 10;
 }
 
 // L4TCPConfig holds TCP-specific proxy configuration
