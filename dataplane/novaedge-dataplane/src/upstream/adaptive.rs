@@ -77,9 +77,26 @@ impl AdaptiveLimiter {
         }
     }
 
-    /// Check if a new request should be allowed.
+    /// Atomically try to acquire a concurrency slot.
+    ///
+    /// Increments the active count and checks against the limit in one step
+    /// to avoid a TOCTOU race between checking and incrementing. Returns
+    /// `true` if the slot was acquired; `false` (and reverted) if over limit.
+    pub fn try_acquire(&self) -> bool {
+        let prev = self.active.fetch_add(1, Ordering::Relaxed);
+        let limit = self.limit.load(Ordering::Relaxed);
+        if prev >= limit {
+            // Over limit — revert the increment.
+            self.active.fetch_sub(1, Ordering::Relaxed);
+            return false;
+        }
+        true
+    }
+
+    /// Check if a new request should be allowed (non-acquiring check).
     ///
     /// Returns `true` if current active requests are below the limit.
+    /// Prefer [`try_acquire`] to avoid TOCTOU races.
     pub fn allow_request(&self) -> bool {
         let active = self.active.load(Ordering::Relaxed);
         let limit = self.limit.load(Ordering::Relaxed);
@@ -164,6 +181,25 @@ mod tests {
     fn allows_requests_under_limit() {
         let limiter = AdaptiveLimiter::new(AdaptiveConfig::default());
         assert!(limiter.allow_request());
+    }
+
+    #[test]
+    fn try_acquire_atomic() {
+        let limiter = AdaptiveLimiter::new(AdaptiveConfig {
+            min_limit: 2,
+            max_limit: 2,
+            min_samples: 10,
+        });
+        // Force limit to 2 for the test.
+        limiter.limit.store(2, Ordering::Relaxed);
+
+        assert!(limiter.try_acquire());
+        assert_eq!(limiter.current_active(), 1);
+        assert!(limiter.try_acquire());
+        assert_eq!(limiter.current_active(), 2);
+        // Third acquire must fail and not inflate active.
+        assert!(!limiter.try_acquire());
+        assert_eq!(limiter.current_active(), 2);
     }
 
     #[test]

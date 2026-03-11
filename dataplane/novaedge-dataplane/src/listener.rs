@@ -147,7 +147,7 @@ impl ListenerManager {
                 }
 
                 let bind = if gw.bind_address.is_empty() {
-                    "0.0.0.0"
+                    "::"
                 } else {
                     &gw.bind_address
                 };
