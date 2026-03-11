@@ -4,12 +4,16 @@ use std::sync::Arc;
 
 use tokio::io;
 use tokio::net::{TcpListener, TcpStream};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Configuration for the TCP proxy.
 pub struct TcpProxyConfig {
     pub listen_addr: SocketAddr,
     pub connect_timeout: std::time::Duration,
+    /// Maximum total connection lifetime. This is a total lifetime cap, not a
+    /// true per-read/write idle timeout — any connection open longer than this
+    /// duration will be closed regardless of activity. A true idle timeout
+    /// would require per-read/write deadline tracking (e.g. tokio_io_timeout).
     pub idle_timeout: std::time::Duration,
     pub max_connections: u32,
 }
@@ -119,7 +123,7 @@ async fn proxy_connection(
     mut client: TcpStream,
     backend_addr: SocketAddr,
     connect_timeout: std::time::Duration,
-    _idle_timeout: std::time::Duration,
+    idle_timeout: std::time::Duration,
     bytes_tx: &AtomicU64,
     bytes_rx: &AtomicU64,
 ) -> anyhow::Result<()> {
@@ -127,10 +131,27 @@ async fn proxy_connection(
         .await
         .map_err(|_| anyhow::anyhow!("connect timeout"))??;
 
-    let (tx, rx) = io::copy_bidirectional(&mut client, &mut upstream).await?;
-    bytes_tx.fetch_add(tx, Ordering::Relaxed);
-    bytes_rx.fetch_add(rx, Ordering::Relaxed);
-    Ok(())
+    match tokio::time::timeout(
+        idle_timeout,
+        io::copy_bidirectional(&mut client, &mut upstream),
+    )
+    .await
+    {
+        Ok(Ok((tx, rx))) => {
+            bytes_tx.fetch_add(tx, Ordering::Relaxed);
+            bytes_rx.fetch_add(rx, Ordering::Relaxed);
+            Ok(())
+        }
+        Ok(Err(e)) => Err(e.into()),
+        Err(_) => {
+            // idle_timeout is a total connection lifetime cap, not a true
+            // idle timeout; the connection has been open for the full duration.
+            error!(
+                "Connection to {backend_addr} exceeded lifetime cap of {idle_timeout:?}, closing"
+            );
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
