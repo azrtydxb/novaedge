@@ -107,11 +107,17 @@ func RecordPluginTimeout(plugin, phase string) {
 }
 
 // SetPluginsLoaded sets the gauge tracking how many plugins are loaded.
+// This is an intentionally thin wrapper; it is exercised end-to-end by the
+// runtime/pool lifecycle (LoadPlugin, UnloadPlugin) and is therefore
+// integration-tested rather than unit-tested in isolation.
 func SetPluginsLoaded(count int) {
 	wasmPluginsLoaded.Set(float64(count))
 }
 
 // SetInstancePoolSize sets the gauge tracking the pool size for a plugin.
+// This is an intentionally thin wrapper; it is exercised end-to-end by the
+// instance pool lifecycle (pool Put/Close/createInstance) and is therefore
+// integration-tested rather than unit-tested in isolation.
 func SetInstancePoolSize(plugin string, size int) {
 	wasmInstancePoolSize.WithLabelValues(plugin).Set(float64(size))
 }

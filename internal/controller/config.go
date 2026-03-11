@@ -129,9 +129,10 @@ func handleResourceDeletion(ctx context.Context, cli client.Client, source clien
 	return ctrl.Result{}, nil
 }
 
-// defaultControllerOptions returns the standard controller.Options with
-// exponential backoff rate limiting (5ms base, 1000s max) used by all
-// NovaEdge controllers. This prevents API server overload during error storms.
+// defaultControllerOptions returns standard controller.Options configured with
+// exponential backoff rate limiting (5ms base, 1000s max) suitable for
+// NovaEdge controllers that opt in. Using these options helps prevent API
+// server overload during error storms.
 func defaultControllerOptions() controller.Options {
 	return controller.Options{
 		RateLimiter: workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Millisecond, 1000*time.Second),
