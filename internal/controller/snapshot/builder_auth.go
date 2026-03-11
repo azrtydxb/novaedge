@@ -28,7 +28,7 @@ import (
 var (
 	errBasicAuthSpecIsNil = errors.New("basicAuth spec is nil")
 	errHtpasswdSecret     = errors.New("htpasswd secret")
-	errSecret             = errors.New("secret")
+	errSecret             = errors.New("auth secret")
 	errOidcSpecIsNil      = errors.New("oidc spec is nil")
 )
 

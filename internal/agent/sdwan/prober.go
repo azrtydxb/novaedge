@@ -199,6 +199,7 @@ type probeTarget struct {
 	remoteSite string
 	addr       string
 	sla        *WANLinkSLA
+	cancel     context.CancelFunc // per-target cancellation
 }
 
 // Prober performs periodic quality measurements for WAN links using
@@ -255,15 +256,21 @@ func (p *Prober) AddTarget(linkName, remoteSite, addr string, sla *WANLinkSLA) {
 
 	// If the prober is already running, start a probe loop for this target
 	if p.started {
+		targetCtx, targetCancel := context.WithCancel(p.ctx)
+		p.targets[linkName].cancel = targetCancel
 		p.wg.Add(1)
-		go p.probeLoop(p.targets[linkName])
+		go p.probeLoop(targetCtx, p.targets[linkName])
 	}
 }
 
-// RemoveTarget unregisters a probe target.
+// RemoveTarget unregisters a probe target and stops its probe loop.
 func (p *Prober) RemoveTarget(linkName string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	if target, ok := p.targets[linkName]; ok && target.cancel != nil {
+		target.cancel()
+	}
 
 	delete(p.targets, linkName)
 	delete(p.qualities, linkName)
@@ -281,8 +288,10 @@ func (p *Prober) Start(ctx context.Context) {
 	p.started = true
 	// Start a probe loop for each existing target
 	for _, target := range p.targets {
+		targetCtx, targetCancel := context.WithCancel(p.ctx)
+		target.cancel = targetCancel
 		p.wg.Add(1)
-		go p.probeLoop(target)
+		go p.probeLoop(targetCtx, target)
 	}
 	p.mu.Unlock()
 
@@ -327,7 +336,7 @@ func (p *Prober) GetAllQualities() map[string]*LinkQuality {
 }
 
 // probeLoop runs the continuous probe cycle for a single target.
-func (p *Prober) probeLoop(target *probeTarget) {
+func (p *Prober) probeLoop(ctx context.Context, target *probeTarget) {
 	defer p.wg.Done()
 
 	ticker := time.NewTicker(defaultProbeInterval)
@@ -340,7 +349,7 @@ func (p *Prober) probeLoop(target *probeTarget) {
 
 	for {
 		select {
-		case <-p.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			p.performProbe(target)

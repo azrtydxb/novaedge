@@ -16,25 +16,10 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-/*
-Copyright 2024 NovaEdge Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package mesh
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -95,7 +80,7 @@ func (b *nftablesBackend) Name() string { return "nftables" }
 // The priority of -101 (NF_IP_PRI_NAT_DST - 1) ensures our DNAT fires
 // before kube-proxy's DNAT rules at priority -100, so the original ClusterIP
 // destination is preserved in conntrack for SO_ORIGINAL_DST retrieval.
-func (b *nftablesBackend) Setup() error {
+func (b *nftablesBackend) Setup(_ context.Context) error {
 	// Verify route_localnet is enabled (set by the sysctl-setup init container in k8s,
 	// or written directly in standalone/privileged mode).
 	if err := ensureRouteLocalnet(); err != nil {
@@ -133,7 +118,7 @@ func (b *nftablesBackend) Setup() error {
 
 // ApplyRules atomically replaces all DNAT rules: flush the chain, add
 // one DNAT rule per target, then commit in a single netlink batch.
-func (b *nftablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32) error {
+func (b *nftablesBackend) ApplyRules(_ context.Context, targets []InterceptTarget, tproxyPort int32) error {
 	b.conn.FlushChain(b.chain)
 
 	for _, t := range targets {
@@ -151,7 +136,7 @@ func (b *nftablesBackend) ApplyRules(targets []InterceptTarget, tproxyPort int32
 }
 
 // Cleanup removes the entire novaedge_mesh table and all its chains/rules.
-func (b *nftablesBackend) Cleanup() error {
+func (b *nftablesBackend) Cleanup(_ context.Context) error {
 	if b.table != nil {
 		b.conn.DelTable(b.table)
 		if err := b.conn.Flush(); err != nil {

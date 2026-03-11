@@ -242,7 +242,7 @@ func (m *Manager) Start(ctx context.Context) error {
 		m.tproxy = NewTPROXYManager(m.logger, m.tproxyPort)
 	}
 
-	if err := m.tproxy.Setup(); err != nil {
+	if err := m.tproxy.Setup(ctx); err != nil {
 		return fmt.Errorf("TPROXY setup failed: %w", err)
 	}
 
@@ -326,7 +326,7 @@ func (m *Manager) ApplyConfig(ctx context.Context, services []*pb.InternalServic
 	}
 
 	// Reconcile iptables rules
-	if err := m.tproxy.ApplyRules(targets); err != nil {
+	if err := m.tproxy.ApplyRules(ctx, targets); err != nil {
 		return fmt.Errorf("failed to apply TPROXY rules: %w", err)
 	}
 
@@ -622,7 +622,7 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 	}
 
 	if m.tproxy != nil {
-		if err := m.tproxy.Cleanup(); err != nil {
+		if err := m.tproxy.Cleanup(ctx); err != nil {
 			m.logger.Error("TPROXY cleanup failed", zap.Error(err))
 		}
 	}

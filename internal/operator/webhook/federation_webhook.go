@@ -35,7 +35,7 @@ import (
 var (
 	errFederationIDIsImmutableCannotChangeFrom    = errors.New("federation ID is immutable: cannot change from")
 	errLocalMemberNameIsImmutableCannotChangeFrom = errors.New("local member name is immutable: cannot change from")
-	errValidationFailed                           = errors.New("validation failed")
+	errValidationFailed                           = errors.New("webhook validation failed")
 	errInvalidName                                = errors.New("invalid name")
 	errName                                       = errors.New("name")
 	errInvalidEndpoint                            = errors.New("invalid endpoint")

@@ -17,6 +17,7 @@ limitations under the License.
 package mesh
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -42,14 +43,14 @@ func newFakeBackend() *fakeBackend {
 
 func (f *fakeBackend) Name() string { return "fake" }
 
-func (f *fakeBackend) Setup() error {
+func (f *fakeBackend) Setup(_ context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.setupCalled = true
 	return nil
 }
 
-func (f *fakeBackend) ApplyRules(targets []InterceptTarget, _ int32) error {
+func (f *fakeBackend) ApplyRules(_ context.Context, targets []InterceptTarget, _ int32) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.applyCnt++
@@ -65,7 +66,7 @@ func (f *fakeBackend) ApplyRules(targets []InterceptTarget, _ int32) error {
 	return nil
 }
 
-func (f *fakeBackend) Cleanup() error {
+func (f *fakeBackend) Cleanup(_ context.Context) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cleanupCnt++
@@ -93,13 +94,14 @@ func newTestManager(backend *fakeBackend) *TPROXYManager {
 func TestApplyRulesAddsNewRules(t *testing.T) {
 	backend := newFakeBackend()
 	mgr := newTestManager(backend)
+	ctx := context.Background()
 
 	targets := []InterceptTarget{
 		{ClusterIP: "10.96.0.10", Port: 80},
 		{ClusterIP: "10.96.0.20", Port: 443},
 	}
 
-	if err := mgr.ApplyRules(targets); err != nil {
+	if err := mgr.ApplyRules(ctx, targets); err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
 
@@ -118,9 +120,10 @@ func TestApplyRulesAddsNewRules(t *testing.T) {
 func TestApplyRulesRemovesOldRules(t *testing.T) {
 	backend := newFakeBackend()
 	mgr := newTestManager(backend)
+	ctx := context.Background()
 
 	// Apply initial rules.
-	if err := mgr.ApplyRules([]InterceptTarget{
+	if err := mgr.ApplyRules(ctx, []InterceptTarget{
 		{ClusterIP: "10.96.0.10", Port: 80},
 		{ClusterIP: "10.96.0.20", Port: 443},
 	}); err != nil {
@@ -128,7 +131,7 @@ func TestApplyRulesRemovesOldRules(t *testing.T) {
 	}
 
 	// Apply with one removed.
-	if err := mgr.ApplyRules([]InterceptTarget{
+	if err := mgr.ApplyRules(ctx, []InterceptTarget{
 		{ClusterIP: "10.96.0.10", Port: 80},
 	}); err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
@@ -146,17 +149,18 @@ func TestApplyRulesRemovesOldRules(t *testing.T) {
 func TestApplyRulesIdempotent(t *testing.T) {
 	backend := newFakeBackend()
 	mgr := newTestManager(backend)
+	ctx := context.Background()
 
 	targets := []InterceptTarget{
 		{ClusterIP: "10.96.0.10", Port: 80},
 	}
 
 	// Apply twice.
-	if err := mgr.ApplyRules(targets); err != nil {
+	if err := mgr.ApplyRules(ctx, targets); err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
 
-	if err := mgr.ApplyRules(targets); err != nil {
+	if err := mgr.ApplyRules(ctx, targets); err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
 
@@ -172,16 +176,17 @@ func TestApplyRulesIdempotent(t *testing.T) {
 func TestApplyRulesEmptyDesired(t *testing.T) {
 	backend := newFakeBackend()
 	mgr := newTestManager(backend)
+	ctx := context.Background()
 
 	// Add a rule.
-	if err := mgr.ApplyRules([]InterceptTarget{
+	if err := mgr.ApplyRules(ctx, []InterceptTarget{
 		{ClusterIP: "10.96.0.10", Port: 80},
 	}); err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
 
 	// Apply empty → should remove all.
-	if err := mgr.ApplyRules(nil); err != nil {
+	if err := mgr.ApplyRules(ctx, nil); err != nil {
 		t.Fatalf("ApplyRules failed: %v", err)
 	}
 
@@ -192,6 +197,7 @@ func TestApplyRulesEmptyDesired(t *testing.T) {
 
 func TestApplyRulesReturnsErrorOnFailure(t *testing.T) {
 	backend := newFakeBackend()
+	ctx := context.Background()
 	backend.failOn = "10.96.0.20:443"
 	mgr := newTestManager(backend)
 
@@ -200,7 +206,7 @@ func TestApplyRulesReturnsErrorOnFailure(t *testing.T) {
 		{ClusterIP: "10.96.0.20", Port: 443}, // This will fail
 	}
 
-	err := mgr.ApplyRules(targets)
+	err := mgr.ApplyRules(ctx, targets)
 	if err == nil {
 		t.Fatal("Expected error from ApplyRules")
 	}

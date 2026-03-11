@@ -115,6 +115,7 @@ limitations under the License.
 package mesh
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -129,18 +130,18 @@ import (
 type RuleBackend interface {
 	// Setup initialises chains/tables needed for NAT REDIRECT interception.
 	// It is called once before the first ApplyRules call.
-	Setup() error
+	Setup(ctx context.Context) error
 
 	// ApplyRules reconciles the set of intercepted targets so that, after
 	// the call returns, only the given targets are matched. The nftables
 	// backend applies changes atomically via a single netlink batch; the
 	// iptables backend applies per-rule changes and may partially fail
 	// (errors are aggregated and returned).
-	ApplyRules(targets []InterceptTarget, tproxyPort int32) error
+	ApplyRules(ctx context.Context, targets []InterceptTarget, tproxyPort int32) error
 
 	// Cleanup removes all rules, chains/tables, and routing entries
 	// created by Setup/ApplyRules.
-	Cleanup() error
+	Cleanup(ctx context.Context) error
 
 	// Name returns a human-readable backend identifier (e.g. "nftables").
 	Name() string
@@ -200,11 +201,11 @@ func NewTPROXYManagerWithBackend(logger *zap.Logger, tproxyPort int32, backend R
 
 // Setup initializes the backend (chains/tables and routing rules).
 // Must be called before ApplyRules.
-func (m *TPROXYManager) Setup() error {
+func (m *TPROXYManager) Setup(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := m.backend.Setup(); err != nil {
+	if err := m.backend.Setup(ctx); err != nil {
 		return fmt.Errorf("TPROXY backend setup failed (%s): %w", m.backend.Name(), err)
 	}
 	return nil
@@ -212,11 +213,11 @@ func (m *TPROXYManager) Setup() error {
 
 // ApplyRules reconciles TPROXY rules to match the desired set of
 // intercepted ClusterIP:port pairs.
-func (m *TPROXYManager) ApplyRules(desired []InterceptTarget) error {
+func (m *TPROXYManager) ApplyRules(ctx context.Context, desired []InterceptTarget) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := m.backend.ApplyRules(desired, m.tproxyPort); err != nil {
+	if err := m.backend.ApplyRules(ctx, desired, m.tproxyPort); err != nil {
 		return fmt.Errorf("TPROXY apply rules failed (%s): %w", m.backend.Name(), err)
 	}
 
@@ -233,11 +234,11 @@ func (m *TPROXYManager) ApplyRules(desired []InterceptTarget) error {
 }
 
 // Cleanup removes all TPROXY rules and routing entries.
-func (m *TPROXYManager) Cleanup() error {
+func (m *TPROXYManager) Cleanup(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if err := m.backend.Cleanup(); err != nil {
+	if err := m.backend.Cleanup(ctx); err != nil {
 		m.logger.Error("TPROXY cleanup failed",
 			zap.String("backend", m.backend.Name()),
 			zap.Error(err))
