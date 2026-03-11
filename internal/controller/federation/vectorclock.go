@@ -73,14 +73,22 @@ func (vc *VectorClock) Merge(other *VectorClock) {
 	if other == nil {
 		return
 	}
+
+	// Copy other's entries under RLock into a local snapshot to avoid
+	// ABBA deadlock when two goroutines call Merge(vc1, vc2) and Merge(vc2, vc1)
+	// concurrently.
 	other.mu.RLock()
-	defer other.mu.RUnlock()
+	snapshot := make(map[string]int64, len(other.clocks))
+	for k, v := range other.clocks {
+		snapshot[k] = v
+	}
+	other.mu.RUnlock()
+
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
-
-	for member, value := range other.clocks {
-		if value > vc.clocks[member] {
-			vc.clocks[member] = value
+	for k, v := range snapshot {
+		if v > vc.clocks[k] {
+			vc.clocks[k] = v
 		}
 	}
 }

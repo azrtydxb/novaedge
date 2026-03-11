@@ -516,16 +516,19 @@ func (d *SplitBrainDetector) checkForPartition() {
 
 // checkPartitionHealing checks if partition is healing
 func (d *SplitBrainDetector) checkPartitionHealing() {
+	// Snapshot peer data first (peersMu before stateMu) to match the lock
+	// acquisition order used in checkForPartition(), preventing an ABBA deadlock
+	// between the two methods when called concurrently.
+	d.peersMu.RLock()
+	unreachable := d.getUnreachablePeerNames()
+	d.peersMu.RUnlock()
+
 	d.stateMu.Lock()
 	defer d.stateMu.Unlock()
 
 	if d.state != PartitionStateConfirmed && d.state != PartitionStateSuspected {
 		return
 	}
-
-	d.peersMu.RLock()
-	unreachable := d.getUnreachablePeerNames()
-	d.peersMu.RUnlock()
 
 	if len(unreachable) == 0 {
 		// All peers now reachable - start healing
