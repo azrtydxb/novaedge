@@ -67,9 +67,9 @@ struct PooledConn {
 
 /// RAII guard returned by [`ConnectionPool::acquire`].
 ///
-/// Tracks that a connection slot has been acquired. The caller should
-/// call [`ConnectionPool::release`] when the connection is returned to
-/// the pool (or dropped).
+/// Tracks that a connection slot has been acquired. When dropped without
+/// an explicit `mark_released()`, the semaphore permit is returned
+/// automatically to prevent permit leaks on panics or early returns.
 #[derive(Debug)]
 #[allow(dead_code)]
 pub struct PoolGuard {
@@ -77,6 +77,28 @@ pub struct PoolGuard {
     pub addr: SocketAddr,
     /// When the connection was acquired.
     pub acquired_at: Instant,
+    /// Semaphore to return the permit to on drop.
+    semaphore: Arc<Semaphore>,
+    /// Whether the permit has already been returned via `ConnectionPool::release`.
+    released: bool,
+}
+
+impl PoolGuard {
+    /// Mark this guard as released so `Drop` won't double-return the permit.
+    ///
+    /// Must be called before `ConnectionPool::release()` to avoid a
+    /// double-return of the semaphore permit.
+    pub fn mark_released(&mut self) {
+        self.released = true;
+    }
+}
+
+impl Drop for PoolGuard {
+    fn drop(&mut self) {
+        if !self.released {
+            self.semaphore.add_permits(1);
+        }
+    }
 }
 
 impl ConnectionPool {
@@ -161,6 +183,9 @@ impl ConnectionPool {
             self.config.connect_timeout
         };
 
+        // Clone the semaphore before acquire_owned consumes the Arc.
+        let sem_for_guard = semaphore.clone();
+
         // Acquire a permit (blocks if at max connections).
         let permit = tokio::time::timeout(wait_timeout, semaphore.acquire_owned())
             .await
@@ -174,8 +199,9 @@ impl ConnectionPool {
             })?;
         queued.fetch_sub(1, Ordering::Relaxed);
 
-        // We don't hold the permit in the guard — we track it via active count.
-        // Forget the permit so the semaphore slot is consumed until release().
+        // Forget the permit — the PoolGuard's Drop impl will return it via
+        // semaphore.add_permits(1) if the guard is dropped without an explicit
+        // release, preventing permit leaks on panics.
         permit.forget();
 
         let mut pools = self.pools.lock().await;
@@ -188,6 +214,8 @@ impl ConnectionPool {
                     return Ok(PoolGuard {
                         addr,
                         acquired_at: conn.last_used,
+                        semaphore: sem_for_guard,
+                        released: false,
                     });
                 }
                 // Expired idle connection — discard it.
@@ -198,6 +226,8 @@ impl ConnectionPool {
         Ok(PoolGuard {
             addr,
             acquired_at: Instant::now(),
+            semaphore: sem_for_guard,
+            released: false,
         })
     }
 
@@ -311,12 +341,13 @@ mod tests {
         let pool = ConnectionPool::new(PoolConfig::default());
         let addr = test_addr(8080);
 
-        let guard = pool.acquire(addr).await.unwrap();
+        let mut guard = pool.acquire(addr).await.unwrap();
         assert_eq!(guard.addr, addr);
 
         // Active count should be 1.
         assert_eq!(pool.active_count(&addr), 1);
 
+        guard.mark_released();
         pool.release(addr).await;
         // Active count should be 0 after release.
         assert_eq!(pool.active_count(&addr), 0);
@@ -349,7 +380,8 @@ mod tests {
         });
         let addr = test_addr(8082);
 
-        let _g = pool.acquire(addr).await.unwrap();
+        let mut g = pool.acquire(addr).await.unwrap();
+        g.mark_released();
         pool.release(addr).await;
 
         // The idle pool should have 1 connection.
@@ -370,7 +402,8 @@ mod tests {
         });
         let addr = test_addr(8083);
 
-        let _g = pool.acquire(addr).await.unwrap();
+        let mut g = pool.acquire(addr).await.unwrap();
+        g.mark_released();
         pool.release(addr).await;
 
         // Wait for idle timeout.
@@ -394,8 +427,9 @@ mod tests {
         for _ in 0..10 {
             let pool = pool.clone();
             handles.push(tokio::spawn(async move {
-                let _g = pool.acquire(addr).await.unwrap();
+                let mut g = pool.acquire(addr).await.unwrap();
                 tokio::time::sleep(Duration::from_millis(5)).await;
+                g.mark_released();
                 pool.release(addr).await;
             }));
         }
@@ -439,7 +473,8 @@ mod tests {
 
         // Serve 3 requests (the max).
         for _ in 0..3 {
-            let _g = pool.acquire(addr).await.unwrap();
+            let mut g = pool.acquire(addr).await.unwrap();
+            g.mark_released();
             pool.release(addr).await;
         }
 

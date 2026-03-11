@@ -351,6 +351,7 @@ impl ProxyHandler {
                         rewrite_path: None,
                         add_headers: HashMap::new(),
                         middleware_refs: Vec::new(),
+                        rr_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
                     }
                 } else {
                     debug!("No route matched for {method} {host}{path}");
@@ -682,7 +683,7 @@ impl ProxyHandler {
             let backend_addr = SocketAddr::new(selected.addr, selected.port);
 
             // Pool acquire.
-            let _pool_guard = match self.connection_pool.acquire(backend_addr).await {
+            let mut pool_guard = match self.connection_pool.acquire(backend_addr).await {
                 Ok(guard) => guard,
                 Err(e) => {
                     warn!(
@@ -841,6 +842,7 @@ impl ProxyHandler {
                             cb.record_failure();
                             outlier_detector.record_failure(backend_addr);
                             balancer.report(backend_idx, upstream_start.elapsed(), false);
+                            pool_guard.mark_released();
                             self.connection_pool.release(backend_addr).await;
                             if attempt < max_attempts - 1
                                 && is_retryable_condition("reset", &retry_on)
@@ -857,6 +859,7 @@ impl ProxyHandler {
                         }
                     };
 
+                    pool_guard.mark_released();
                     self.connection_pool.release(backend_addr).await;
 
                     final_status = status;
@@ -881,6 +884,7 @@ impl ProxyHandler {
                     cb.record_failure();
                     outlier_detector.record_failure(backend_addr);
                     balancer.report(backend_idx, upstream_latency, false);
+                    pool_guard.mark_released();
                     self.connection_pool.release(backend_addr).await;
                     self.connection_pool
                         .record_connection_failure(backend_addr)
@@ -1116,6 +1120,7 @@ impl ProxyHandler {
                         rewrite_path: None,
                         add_headers: HashMap::new(),
                         middleware_refs: Vec::new(),
+                        rr_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
                     }
                 } else {
                     return Err(hyper::Response::builder()
@@ -1544,6 +1549,7 @@ mod tests {
             rewrite_path: None,
             add_headers: HashMap::new(),
             middleware_refs: Vec::new(),
+            rr_counter: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
         }
     }
 
@@ -1623,7 +1629,8 @@ mod tests {
             request_queue_timeout_ms: 0,
             subset_size: 0,
             remote_endpoints: Vec::new(),
-        });
+        })
+        .await;
 
         let _handler = test_handler(router, cfg.clone());
         let cluster = cfg.get_cluster("test-cluster").unwrap();
@@ -1715,7 +1722,8 @@ mod tests {
             request_queue_timeout_ms: 0,
             subset_size: 0,
             remote_endpoints: Vec::new(),
-        });
+        })
+        .await;
 
         let handler = Arc::new(test_handler(router, cfg));
 

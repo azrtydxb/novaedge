@@ -272,23 +272,18 @@ impl RuntimeConfig {
     ///
     /// Also invalidates the cached LB instance for this cluster so that
     /// endpoint or algorithm changes take effect on the next request.
-    pub fn upsert_cluster(&self, cluster: ClusterState) {
+    pub async fn upsert_cluster(&self, cluster: ClusterState) {
         let name = cluster.name.clone();
         self.clusters.insert(name.clone(), cluster);
-        // Invalidate the LB cache entry for this cluster (best-effort; uses try_write
-        // to avoid blocking the caller if the lock is held by an async task).
-        if let Ok(mut cache) = self.lb_cache.try_write() {
-            cache.remove(&name);
-        }
+        // Invalidate the LB cache entry for this cluster.
+        self.lb_cache.write().await.remove(&name);
         self.bump();
     }
 
     /// Remove a cluster by name.
-    pub fn delete_cluster(&self, name: &str) {
+    pub async fn delete_cluster(&self, name: &str) {
         self.clusters.remove(name);
-        if let Ok(mut cache) = self.lb_cache.try_write() {
-            cache.remove(name);
-        }
+        self.lb_cache.write().await.remove(name);
         self.bump();
     }
 
@@ -659,34 +654,34 @@ mod tests {
         assert_eq!(snap.routes["route-1"].backend_refs[0].0, "backend-1");
     }
 
-    #[test]
-    fn test_upsert_and_get_cluster() {
+    #[tokio::test]
+    async fn test_upsert_and_get_cluster() {
         let cfg = RuntimeConfig::new();
-        cfg.upsert_cluster(test_cluster("cluster-1"));
+        cfg.upsert_cluster(test_cluster("cluster-1")).await;
         let snap = cfg.snapshot();
         assert_eq!(snap.clusters.len(), 1);
         assert_eq!(snap.clusters["cluster-1"].endpoints.len(), 1);
     }
 
-    #[test]
-    fn test_get_cluster() {
+    #[tokio::test]
+    async fn test_get_cluster() {
         let cfg = RuntimeConfig::new();
         assert!(cfg.get_cluster("missing").is_none());
-        cfg.upsert_cluster(test_cluster("cluster-1"));
+        cfg.upsert_cluster(test_cluster("cluster-1")).await;
         let c = cfg.get_cluster("cluster-1").unwrap();
         assert_eq!(c.endpoints.len(), 1);
     }
 
-    #[test]
-    fn test_delete_removes_entry() {
+    #[tokio::test]
+    async fn test_delete_removes_entry() {
         let cfg = RuntimeConfig::new();
         cfg.upsert_gateway(test_gateway("gw-1", 8080));
         cfg.upsert_route(test_route("route-1", "b"));
-        cfg.upsert_cluster(test_cluster("cluster-1"));
+        cfg.upsert_cluster(test_cluster("cluster-1")).await;
 
         cfg.delete_gateway("gw-1");
         cfg.delete_route("route-1");
-        cfg.delete_cluster("cluster-1");
+        cfg.delete_cluster("cluster-1").await;
 
         let snap = cfg.snapshot();
         assert!(snap.gateways.is_empty());
