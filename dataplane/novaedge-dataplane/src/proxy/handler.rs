@@ -46,6 +46,8 @@ pub struct ProxyHandler {
     error_pages: Vec<ErrorPage>,
     /// Response header actions applied to all upstream responses.
     response_header_actions: Vec<HeaderAction>,
+    /// When true, include X-Route debug headers in responses.
+    debug_headers: bool,
 }
 
 impl ProxyHandler {
@@ -72,6 +74,7 @@ impl ProxyHandler {
             max_active_requests: 0,
             error_pages: Vec::new(),
             response_header_actions: Vec::new(),
+            debug_headers: false,
         }
     }
 
@@ -363,7 +366,6 @@ impl ProxyHandler {
                 warn!(route = %route.name, "Route has no backend_refs");
                 return hyper::Response::builder()
                     .status(502)
-                    .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("No upstream cluster")))
                     .unwrap();
             }
@@ -419,7 +421,6 @@ impl ProxyHandler {
                 );
                 return hyper::Response::builder()
                     .status(502)
-                    .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("No upstream cluster")))
                     .unwrap();
             }
@@ -518,7 +519,6 @@ impl ProxyHandler {
             );
             return hyper::Response::builder()
                 .status(503)
-                .header("X-Route", route.name.as_str())
                 .body(Full::new(Bytes::from("Circuit breaker open")))
                 .unwrap();
         }
@@ -668,7 +668,6 @@ impl ProxyHandler {
                         cb.record_failure();
                         return hyper::Response::builder()
                             .status(503)
-                            .header("X-Route", route.name.as_str())
                             .body(Full::new(Bytes::from("No healthy upstream")))
                             .unwrap();
                     }
@@ -700,7 +699,6 @@ impl ProxyHandler {
                     if !got_response {
                         return hyper::Response::builder()
                             .status(503)
-                            .header("X-Route", route.name.as_str())
                             .body(Full::new(Bytes::from("Connection pool exhausted")))
                             .unwrap();
                     }
@@ -816,7 +814,11 @@ impl ProxyHandler {
                         .map(|(k, v)| (k.to_string(), v.to_str().unwrap_or("").to_string()))
                         .collect();
 
-                    let body = match upstream_resp.into_body().collect().await {
+                    // Limit upstream response body to 100 MiB to prevent OOM.
+                    const MAX_RESPONSE_BODY: usize = 100 * 1024 * 1024;
+                    let limited =
+                        http_body_util::Limited::new(upstream_resp.into_body(), MAX_RESPONSE_BODY);
+                    let body = match limited.collect().await {
                         Ok(collected) => collected.to_bytes(),
                         Err(e) => {
                             warn!(backend = %backend_addr, error = %e, "Failed to read upstream response body");
@@ -832,7 +834,6 @@ impl ProxyHandler {
                             if !got_response {
                                 return hyper::Response::builder()
                                     .status(502)
-                                    .header("X-Route", route.name.as_str())
                                     .body(Full::new(Bytes::from("Bad Gateway")))
                                     .unwrap();
                             }
@@ -895,9 +896,10 @@ impl ProxyHandler {
         }
 
         // Build the final response from the last attempt result.
-        let mut resp = hyper::Response::builder()
-            .status(final_status)
-            .header("X-Route", route.name.as_str());
+        let mut resp = hyper::Response::builder().status(final_status);
+        if self.debug_headers {
+            resp = resp.header("X-Route", route.name.as_str());
+        }
 
         for (key, value) in &final_resp_headers {
             if key.eq_ignore_ascii_case("transfer-encoding")
@@ -969,8 +971,12 @@ impl ProxyHandler {
             && !cluster.session_affinity_cookie.is_empty()
             && extract_cookie(headers, &cluster.session_affinity_cookie).is_none()
         {
+            // Always set Secure: the client's ephemeral port cannot reliably indicate
+            // whether the *listener* is TLS. In Kubernetes ingress the external connection
+            // is virtually always TLS-terminated. Secure cookies are safe to send over
+            // localhost HTTP in development environments.
             let cookie_value = format!(
-                "{}={}; Path=/; HttpOnly",
+                "{}={}; Path=/; HttpOnly; Secure; SameSite=Lax",
                 cluster.session_affinity_cookie, final_backend_addr,
             );
             resp = resp.header("Set-Cookie", cookie_value);
@@ -1109,7 +1115,6 @@ impl ProxyHandler {
             None => {
                 return Err(hyper::Response::builder()
                     .status(502)
-                    .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("No upstream cluster")))
                     .unwrap());
             }
@@ -1120,7 +1125,6 @@ impl ProxyHandler {
             None => {
                 return Err(hyper::Response::builder()
                     .status(502)
-                    .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("No upstream cluster")))
                     .unwrap());
             }
@@ -1162,7 +1166,6 @@ impl ProxyHandler {
         if !cb.allow_request() {
             return Err(hyper::Response::builder()
                 .status(503)
-                .header("X-Route", route.name.as_str())
                 .body(Full::new(Bytes::from("Circuit breaker open")))
                 .unwrap());
         }
@@ -1221,7 +1224,6 @@ impl ProxyHandler {
             None => {
                 return Err(hyper::Response::builder()
                     .status(503)
-                    .header("X-Route", route.name.as_str())
                     .body(Full::new(Bytes::from("No healthy upstream")))
                     .unwrap());
             }
@@ -1282,10 +1284,23 @@ impl ProxyHandler {
             if key.eq_ignore_ascii_case("host") {
                 continue; // We already set Host above.
             }
+            // Sanitize against header injection (CR/LF in key or value).
+            if key.bytes().any(|b| b == b'\r' || b == b'\n')
+                || value.bytes().any(|b| b == b'\r' || b == b'\n')
+            {
+                warn!(header = %key, "Dropping WebSocket header with CR/LF to prevent request smuggling");
+                continue;
+            }
             upgrade_request.push_str(&format!("{key}: {value}\r\n"));
         }
         // Add route-specific headers.
         for (key, value) in &route.add_headers {
+            if key.bytes().any(|b| b == b'\r' || b == b'\n')
+                || value.bytes().any(|b| b == b'\r' || b == b'\n')
+            {
+                warn!(header = %key, "Dropping route header with CR/LF to prevent request smuggling");
+                continue;
+            }
             upgrade_request.push_str(&format!("{key}: {value}\r\n"));
         }
         upgrade_request.push_str("\r\n");
@@ -1358,9 +1373,7 @@ impl ProxyHandler {
         }
 
         // Parse upstream response headers.
-        let mut resp_builder = hyper::Response::builder()
-            .status(101)
-            .header("X-Route", route.name.as_str());
+        let mut resp_builder = hyper::Response::builder().status(101);
 
         for line in response_str.lines().skip(1) {
             let line = line.trim();

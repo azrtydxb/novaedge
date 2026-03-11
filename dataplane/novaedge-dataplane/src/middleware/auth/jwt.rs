@@ -62,18 +62,36 @@ impl JwtValidator {
             return Err("invalid JWT format".into());
         }
 
-        // Verify HMAC-SHA256 signature if a secret is configured.
-        if let Some(ref secret) = self.config.secret {
-            let signing_input = format!("{}.{}", parts[0], parts[1]);
-            let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .decode(parts[2])
-                .map_err(|e| format!("signature base64 decode error: {e}"))?;
+        // Reject "alg":"none" tokens unconditionally — parse the header as JSON
+        // to avoid substring-check bypasses (e.g. padding or field ordering tricks).
+        if let Ok(header_bytes) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(parts[0])
+        {
+            if let Ok(header_json) = serde_json::from_slice::<serde_json::Value>(&header_bytes) {
+                if let Some(alg) = header_json.get("alg").and_then(|v| v.as_str()) {
+                    if alg.eq_ignore_ascii_case("none") {
+                        return Err("algorithm 'none' is not permitted".into());
+                    }
+                }
+            }
+        }
 
-            let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-                .map_err(|e| format!("HMAC key error: {e}"))?;
-            mac.update(signing_input.as_bytes());
-            mac.verify_slice(&signature)
-                .map_err(|_| "invalid signature".to_string())?;
+        // Verify HMAC-SHA256 signature — fail-closed when no secret is configured.
+        match self.config.secret.as_ref() {
+            Some(secret) => {
+                let signing_input = format!("{}.{}", parts[0], parts[1]);
+                let signature = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(parts[2])
+                    .map_err(|e| format!("signature base64 decode error: {e}"))?;
+
+                let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
+                    .map_err(|e| format!("HMAC key error: {e}"))?;
+                mac.update(signing_input.as_bytes());
+                mac.verify_slice(&signature)
+                    .map_err(|_| "invalid signature".to_string())?;
+            }
+            None => {
+                return Err("no signing secret configured — rejecting token".into());
+            }
         }
 
         // Decode payload (part 1).
@@ -213,11 +231,11 @@ fn parse_jwt_claims(json: &str) -> Result<JwtClaims, String> {
 mod tests {
     use super::*;
 
-    /// Helper: build a JWT from a JSON payload (no real signature).
+    /// Helper: build a signed JWT from a JSON payload using a test secret.
+    const TEST_SECRET: &str = "test-secret-key-for-unit-tests";
+
     fn make_jwt(payload_json: &str) -> String {
-        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
-        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(payload_json);
-        format!("{header}.{payload}.nosig")
+        make_signed_jwt(payload_json, TEST_SECRET)
     }
 
     fn make_req(auth_header: Option<&str>) -> crate::middleware::Request {
@@ -254,7 +272,7 @@ mod tests {
     #[test]
     fn valid_token() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec![],
@@ -271,7 +289,7 @@ mod tests {
     #[test]
     fn expired_token() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec![],
@@ -286,7 +304,7 @@ mod tests {
     #[test]
     fn not_yet_valid_token() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec![],
@@ -305,7 +323,7 @@ mod tests {
     #[test]
     fn invalid_issuer() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: Some("expected-issuer".into()),
             audiences: vec![],
             required_claims: vec![],
@@ -322,7 +340,7 @@ mod tests {
     #[test]
     fn valid_issuer() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: Some("my-issuer".into()),
             audiences: vec![],
             required_claims: vec![],
@@ -339,7 +357,7 @@ mod tests {
     #[test]
     fn invalid_audience() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec!["aud-a".into(), "aud-b".into()],
             required_claims: vec![],
@@ -353,7 +371,7 @@ mod tests {
     #[test]
     fn valid_audience() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec!["aud-a".into(), "aud-b".into()],
             required_claims: vec![],
@@ -367,7 +385,7 @@ mod tests {
     #[test]
     fn missing_audience_when_required() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec!["aud-a".into()],
             required_claims: vec![],
@@ -381,7 +399,7 @@ mod tests {
     #[test]
     fn invalid_jwt_format() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec![],
@@ -394,7 +412,7 @@ mod tests {
     #[test]
     fn check_with_bearer_token() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec![],
@@ -415,7 +433,7 @@ mod tests {
     #[test]
     fn check_missing_bearer() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec![],
@@ -431,7 +449,7 @@ mod tests {
     #[test]
     fn check_expired_bearer() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec![],
@@ -450,7 +468,7 @@ mod tests {
     #[test]
     fn required_claims_present() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec!["sub".into(), "exp".into()],
@@ -464,7 +482,7 @@ mod tests {
     #[test]
     fn required_claims_missing() {
         let validator = JwtValidator::new(JwtConfig {
-            secret: None,
+            secret: Some(TEST_SECRET.into()),
             issuer: None,
             audiences: vec![],
             required_claims: vec!["sub".into()],
@@ -544,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn no_secret_skips_verification() {
+    fn no_secret_rejects_all_tokens() {
         let validator = JwtValidator::new(JwtConfig {
             secret: None,
             issuer: None,
@@ -552,9 +570,29 @@ mod tests {
             required_claims: vec![],
         });
 
-        // Token with garbage signature still passes when no secret is set.
+        // Fail-closed: tokens must be rejected when no signing secret is configured.
         let payload = format!(r#"{{"sub":"user1","exp":{}}}"#, future_ts());
-        let token = make_jwt(&payload);
-        assert!(validator.validate(&token).is_ok());
+        let token = make_signed_jwt(&payload, "any-secret");
+        let err = validator.validate(&token).unwrap_err();
+        assert!(err.contains("no signing secret configured"), "got: {err}");
+    }
+
+    #[test]
+    fn alg_none_rejected() {
+        let validator = JwtValidator::new(JwtConfig {
+            secret: Some(TEST_SECRET.into()),
+            issuer: None,
+            audiences: vec![],
+            required_claims: vec![],
+        });
+
+        // Build a token with alg:none header.
+        let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
+        let payload_json = format!(r#"{{"sub":"user1","exp":{}}}"#, future_ts());
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&payload_json);
+        let token = format!("{header}.{payload}.nosig");
+
+        let err = validator.validate(&token).unwrap_err();
+        assert!(err.contains("none"), "got: {err}");
     }
 }
