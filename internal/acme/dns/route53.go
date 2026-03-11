@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/url"
@@ -108,6 +109,11 @@ func (p *Route53Provider) changeRecord(ctx context.Context, action, fqdn, value 
 		recordName += "."
 	}
 
+	// Escape interpolated values to prevent XML injection.
+	safeAction := html.EscapeString(action)
+	safeRecordName := html.EscapeString(recordName)
+	safeValue := html.EscapeString(value)
+
 	// Build Route53 XML payload
 	payload := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <ChangeResourceRecordSetsRequest xmlns="https://route53.amazonaws.com/doc/2013-04-01/">
@@ -129,7 +135,7 @@ func (p *Route53Provider) changeRecord(ctx context.Context, action, fqdn, value 
       </Change>
     </Changes>
   </ChangeBatch>
-</ChangeResourceRecordSetsRequest>`, action, recordName, value)
+</ChangeResourceRecordSetsRequest>`, safeAction, safeRecordName, safeValue)
 
 	apiURL := fmt.Sprintf("%s/2013-04-01/hostedzone/%s/rrset",
 		route53APIBase, url.PathEscape(p.hostedZoneID))

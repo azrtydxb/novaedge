@@ -139,6 +139,7 @@ type vaultHTTPClient struct {
 	namespace  string
 	caCert     string
 	skipTLS    bool
+	logger     *zap.Logger
 	client     *http.Client
 	clientOnce sync.Once
 }
@@ -167,6 +168,7 @@ func NewClient(config *Config, logger *zap.Logger) (*Client, error) {
 			namespace: config.Namespace,
 			caCert:    config.CACert,
 			skipTLS:   config.TLSSkipVerify,
+			logger:    logger,
 		},
 	}
 

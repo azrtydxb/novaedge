@@ -102,6 +102,7 @@ type agentComponents struct {
 	gossiper      *gossip.ConfigGossiper
 	novanetClient *novanet.Client
 	meshManager   *mesh.Manager
+	meshConn      *grpc.ClientConn
 	sdwanManager  *sdwan.Manager
 	dpClient      *dpctl.Client
 	dpTranslator  *dpctl.Translator
@@ -346,6 +347,7 @@ func startAgentManagers(ctx context.Context, logger *zap.Logger, comp *agentComp
 		if meshConnErr != nil {
 			logger.Fatal("Failed to create gRPC connection for mesh cert requester", zap.Error(meshConnErr))
 		}
+		comp.meshConn = meshConn
 		comp.meshManager.StartCertRequester(ctx, nodeName, meshConn)
 	}
 
@@ -484,6 +486,11 @@ func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
 	if comp.meshManager != nil {
 		if err := comp.meshManager.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Error during mesh manager shutdown", zap.Error(err))
+		}
+	}
+	if comp.meshConn != nil {
+		if err := comp.meshConn.Close(); err != nil {
+			logger.Error("Error closing mesh gRPC connection", zap.Error(err))
 		}
 	}
 	if comp.dpClient != nil {
