@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tracing::warn;
 
 /// Forward auth configuration.
 #[allow(dead_code)] // Forward auth requires async network calls; handled separately from sync pipeline.
@@ -60,7 +61,7 @@ impl ForwardAuth {
             {
                 // Reject header names/values containing CR or LF to prevent request smuggling.
                 if contains_cr_lf(header_name) || contains_cr_lf(value) {
-                    tracing::warn!(
+                    warn!(
                         header = %header_name,
                         "Dropping header with CR/LF characters to prevent request smuggling"
                     );
@@ -88,7 +89,7 @@ impl ForwardAuth {
         };
         for sock_addr in &resolved {
             if is_denied_ip(&sock_addr.ip()) {
-                tracing::warn!(
+                warn!(
                     addr = %sock_addr,
                     auth_url = %self.config.auth_url,
                     "Forward auth URL resolves to denied internal IP — blocking SSRF"

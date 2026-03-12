@@ -672,16 +672,7 @@ var standalonePolicyConverters = map[string]standalonePolicyConverter{
 			}
 		}
 	},
-	"BasicAuth": func(p *PolicyConfig, policy *pb.Policy) {
-		if p.BasicAuth != nil {
-			policy.Type = pb.PolicyType_BASIC_AUTH
-			policy.BasicAuth = &pb.BasicAuthConfig{
-				Realm:     p.BasicAuth.Realm,
-				Htpasswd:  buildHtpasswdFromConfig(p.BasicAuth),
-				StripAuth: p.BasicAuth.StripAuth,
-			}
-		}
-	},
+	"BasicAuth": nil, // handled in convertPolicies to pass logger
 	"ForwardAuth": func(p *PolicyConfig, policy *pb.Policy) {
 		if p.ForwardAuth != nil {
 			policy.Type = pb.PolicyType_FORWARD_AUTH
@@ -717,8 +708,15 @@ func (c *Converter) convertPolicies(policies []PolicyConfig) []*pb.Policy {
 			Namespace: "default",
 		}
 
-		if converter, ok := standalonePolicyConverters[p.Type]; ok {
+		if converter, ok := standalonePolicyConverters[p.Type]; ok && converter != nil {
 			converter(p, policy)
+		} else if p.Type == "BasicAuth" && p.BasicAuth != nil {
+			policy.Type = pb.PolicyType_BASIC_AUTH
+			policy.BasicAuth = &pb.BasicAuthConfig{
+				Realm:     p.BasicAuth.Realm,
+				Htpasswd:  buildHtpasswdFromConfig(c.logger, p.BasicAuth),
+				StripAuth: p.BasicAuth.StripAuth,
+			}
 		}
 
 		result = append(result, policy)
@@ -735,7 +733,7 @@ func (c *Converter) convertCompression(comp *CompressionConfig) *pb.CompressionC
 	if comp.MinSize != "" {
 		n, err := strconv.ParseInt(comp.MinSize, 10, 64)
 		if err != nil {
-			c.logger.Warn("failed to parse compression min size, using 0",
+			c.logger.Warn("Failed to parse compression min size, using 0",
 				zap.String("value", comp.MinSize), zap.Error(err))
 		} else {
 			minSize = n
@@ -758,7 +756,7 @@ func (c *Converter) convertRouteLimits(limits *RouteLimits) *pb.RouteLimitsConfi
 	if limits.MaxRequestBodySize != "" {
 		n, err := convert.ParseByteSize(limits.MaxRequestBodySize)
 		if err != nil {
-			c.logger.Warn("failed to parse max request body size, using 0",
+			c.logger.Warn("Failed to parse max request body size, using 0",
 				zap.String("value", limits.MaxRequestBodySize), zap.Error(err))
 		} else {
 			result.MaxRequestBodySize = n
@@ -767,7 +765,7 @@ func (c *Converter) convertRouteLimits(limits *RouteLimits) *pb.RouteLimitsConfi
 	if limits.RequestTimeout != "" {
 		d, err := time.ParseDuration(limits.RequestTimeout)
 		if err != nil {
-			c.logger.Warn("failed to parse request timeout, using 0",
+			c.logger.Warn("Failed to parse request timeout, using 0",
 				zap.String("value", limits.RequestTimeout), zap.Error(err))
 		} else {
 			result.RequestTimeoutMs = d.Milliseconds()
@@ -776,7 +774,7 @@ func (c *Converter) convertRouteLimits(limits *RouteLimits) *pb.RouteLimitsConfi
 	if limits.IdleTimeout != "" {
 		d, err := time.ParseDuration(limits.IdleTimeout)
 		if err != nil {
-			c.logger.Warn("failed to parse idle timeout, using 0",
+			c.logger.Warn("Failed to parse idle timeout, using 0",
 				zap.String("value", limits.IdleTimeout), zap.Error(err))
 		} else {
 			result.IdleTimeoutMs = d.Milliseconds()
@@ -796,7 +794,7 @@ func (c *Converter) convertRouteBuffering(buf *BufferingConfig) *pb.BufferingCon
 	if buf.MaxSize != "" {
 		n, err := convert.ParseByteSize(buf.MaxSize)
 		if err != nil {
-			c.logger.Warn("failed to parse max buffer size, using 0",
+			c.logger.Warn("Failed to parse max buffer size, using 0",
 				zap.String("value", buf.MaxSize), zap.Error(err))
 		} else {
 			result.MaxBufferSize = n
@@ -961,14 +959,14 @@ func (c *Converter) convertErrorPages(ep *ErrorPagesConfig) *pb.ErrorPageConfig 
 }
 
 // buildHtpasswdFromConfig builds htpasswd content from standalone BasicAuth config.
-func buildHtpasswdFromConfig(config *BasicAuthPolicy) string {
+func buildHtpasswdFromConfig(logger *zap.Logger, config *BasicAuthPolicy) string {
 	// Load from htpasswd file if specified
 	if config.HtpasswdFile != "" {
 		data, err := os.ReadFile(filepath.Clean(config.HtpasswdFile))
 		if err == nil {
 			return string(data)
 		}
-		zap.L().Warn("failed to read htpasswd file, falling back to inline users",
+		logger.Warn("Failed to read htpasswd file, falling back to inline users",
 			zap.String("file", config.HtpasswdFile),
 			zap.Error(err))
 	}

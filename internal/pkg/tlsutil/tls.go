@@ -292,7 +292,7 @@ func CreateClientTLSConfigWithMTLS(certPEM, keyPEM, caPEM []byte, serverName str
 
 // CreateBackendTLSConfig creates a TLS config for backend connections
 // This is used by the upstream pool to connect to backend services
-func CreateBackendTLSConfig(caCertPEM []byte, serverName string, insecureSkipVerify bool) (*tls.Config, error) {
+func CreateBackendTLSConfig(logger *zap.Logger, caCertPEM []byte, serverName string, insecureSkipVerify bool) (*tls.Config, error) {
 	config := &tls.Config{
 		ServerName:   serverName,
 		MinVersion:   tls.VersionTLS13,
@@ -304,7 +304,7 @@ func CreateBackendTLSConfig(caCertPEM []byte, serverName string, insecureSkipVer
 	// Callers are responsible for ensuring this is only enabled when appropriate.
 	if insecureSkipVerify {
 		config.InsecureSkipVerify = true
-		zap.L().Warn("TLS certificate verification disabled for backend connection",
+		logger.Warn("TLS certificate verification disabled for backend connection",
 			zap.String("server_name", serverName),
 			zap.String("security_risk", "man-in-the-middle attacks possible"),
 		)

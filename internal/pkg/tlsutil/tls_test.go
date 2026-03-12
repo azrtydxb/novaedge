@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // generateTestCertificate creates a self-signed certificate for testing
@@ -407,7 +409,7 @@ func TestCreateBackendTLSConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config, err := CreateBackendTLSConfig(tt.caCertPEM, tt.serverName, tt.insecureSkipVerify)
+			config, err := CreateBackendTLSConfig(zap.NewNop(), tt.caCertPEM, tt.serverName, tt.insecureSkipVerify)
 			if err != nil {
 				t.Fatalf("CreateBackendTLSConfig() error = %v", err)
 			}
@@ -432,7 +434,7 @@ func TestCreateBackendTLSConfig(t *testing.T) {
 }
 
 func TestCreateBackendTLSConfig_InvalidCA(t *testing.T) {
-	_, err := CreateBackendTLSConfig([]byte("invalid-ca"), "backend.example.com", false)
+	_, err := CreateBackendTLSConfig(zap.NewNop(), []byte("invalid-ca"), "backend.example.com", false)
 	if err == nil {
 		t.Error("CreateBackendTLSConfig() should return error for invalid CA")
 	}

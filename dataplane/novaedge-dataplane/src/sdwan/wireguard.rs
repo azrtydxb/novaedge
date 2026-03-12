@@ -2,6 +2,8 @@ use std::fmt;
 use std::net::SocketAddr;
 use std::time::Duration;
 
+use tracing::info;
+
 /// WireGuard peer configuration.
 #[derive(Clone)]
 pub struct WireGuardPeer {
@@ -73,14 +75,14 @@ impl WireGuardManager {
     }
 
     pub fn add_tunnel(&mut self, config: WireGuardConfig) -> anyhow::Result<()> {
-        tracing::info!(interface = %config.interface_name, "Adding WireGuard tunnel");
+        info!(interface = %config.interface_name, "Adding WireGuard tunnel");
         self.tunnels.push(config);
         Ok(())
     }
 
     pub fn remove_tunnel(&mut self, interface: &str) -> anyhow::Result<()> {
         self.tunnels.retain(|t| t.interface_name != interface);
-        tracing::info!(interface = %interface, "Removed WireGuard tunnel");
+        info!(interface = %interface, "Removed WireGuard tunnel");
         Ok(())
     }
 
@@ -95,14 +97,14 @@ impl WireGuardManager {
     #[cfg(target_os = "linux")]
     pub fn apply(&mut self) -> anyhow::Result<()> {
         // On Linux: create WireGuard interface via netlink, configure peers
-        tracing::info!("Applying WireGuard configuration (Linux)");
+        info!("Applying WireGuard configuration (Linux)");
         self.active = true;
         Ok(())
     }
 
     #[cfg(not(target_os = "linux"))]
     pub fn apply(&mut self) -> anyhow::Result<()> {
-        tracing::info!("WireGuard apply: mock mode (non-Linux)");
+        info!("WireGuard apply: mock mode (non-Linux)");
         self.active = true;
         Ok(())
     }
