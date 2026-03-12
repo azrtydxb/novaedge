@@ -533,6 +533,11 @@ impl RuntimeConfig {
         }
     }
 
+    /// Return the set of all cluster names currently in the configuration.
+    pub fn cluster_names(&self) -> HashSet<String> {
+        self.clusters.iter().map(|e| e.key().clone()).collect()
+    }
+
     /// Get the current config generation number.
     pub fn generation(&self) -> u64 {
         self.generation.load(Ordering::Relaxed)

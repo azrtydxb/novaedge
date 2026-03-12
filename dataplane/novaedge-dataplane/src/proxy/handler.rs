@@ -1,8 +1,8 @@
 //! HTTP proxy handler that routes requests to backend endpoints via hyper.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
@@ -48,6 +48,8 @@ pub struct ProxyHandler {
     response_header_actions: Vec<HeaderAction>,
     /// When true, include X-Route debug headers in responses.
     debug_headers: bool,
+    /// Config generation at which stale circuit breakers/outlier detectors were last pruned.
+    last_cleanup_generation: AtomicU64,
 }
 
 impl ProxyHandler {
@@ -75,6 +77,7 @@ impl ProxyHandler {
             error_pages: Vec::new(),
             response_header_actions: Vec::new(),
             debug_headers: false,
+            last_cleanup_generation: AtomicU64::new(0),
         }
     }
 
@@ -82,6 +85,9 @@ impl ProxyHandler {
     /// config from the ClusterState (failure threshold, success threshold,
     /// open duration).
     async fn get_circuit_breaker(&self, cluster_name: &str) -> Arc<CircuitBreaker> {
+        // Prune stale entries if config has changed since the last cleanup.
+        self.maybe_cleanup_stale_entries().await;
+
         // Fast path: check read lock.
         {
             let cbs = self.circuit_breakers.read().await;
@@ -125,6 +131,9 @@ impl ProxyHandler {
 
     /// Get or create a per-cluster outlier detector, using config from ClusterState.
     async fn get_outlier_detector(&self, cluster_name: &str) -> Arc<OutlierDetector> {
+        // Prune stale entries if config has changed since the last cleanup.
+        self.maybe_cleanup_stale_entries().await;
+
         // Fast path: check read lock.
         {
             let ods = self.outlier_detectors.read().await;
@@ -174,6 +183,51 @@ impl ProxyHandler {
         ods.entry(cluster_name.to_string())
             .or_insert_with(|| Arc::new(OutlierDetector::new(od_config)))
             .clone()
+    }
+
+    /// Remove circuit breaker and outlier detector entries for clusters that are
+    /// no longer present in the active configuration.  This prevents the maps
+    /// from growing monotonically as clusters are added and removed over time.
+    pub async fn cleanup_stale_entries(&self, active_clusters: &HashSet<String>) {
+        {
+            let mut cbs = self.circuit_breakers.write().await;
+            let before = cbs.len();
+            cbs.retain(|k, _| active_clusters.contains(k));
+            let removed = before - cbs.len();
+            if removed > 0 {
+                info!(
+                    removed,
+                    remaining = cbs.len(),
+                    "Pruned stale circuit breaker entries"
+                );
+            }
+        }
+        {
+            let mut ods = self.outlier_detectors.write().await;
+            let before = ods.len();
+            ods.retain(|k, _| active_clusters.contains(k));
+            let removed = before - ods.len();
+            if removed > 0 {
+                info!(
+                    removed,
+                    remaining = ods.len(),
+                    "Pruned stale outlier detector entries"
+                );
+            }
+        }
+    }
+
+    /// Check if the config generation has changed since the last cleanup and,
+    /// if so, prune stale circuit breaker and outlier detector entries.
+    async fn maybe_cleanup_stale_entries(&self) {
+        let current_gen = self.config.generation();
+        let last_gen = self.last_cleanup_generation.load(Ordering::Relaxed);
+        if current_gen != last_gen {
+            let active_clusters = self.config.cluster_names();
+            self.cleanup_stale_entries(&active_clusters).await;
+            self.last_cleanup_generation
+                .store(current_gen, Ordering::Relaxed);
+        }
     }
 
     /// Handle an incoming HTTP request: match route, select backend, forward.
