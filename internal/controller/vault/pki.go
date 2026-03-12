@@ -98,6 +98,12 @@ func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PK
 	if req.CommonName == "" {
 		return nil, errCommonNameIsRequired
 	}
+	if !isValidMountPath(req.MountPath) {
+		return nil, fmt.Errorf("%w: %q", errInvalidMountPath, req.MountPath)
+	}
+	if !isValidMountPath(req.Role) {
+		return nil, fmt.Errorf("%w: %q", errInvalidMountPath, req.Role)
+	}
 
 	path := fmt.Sprintf("%s/issue/%s", req.MountPath, req.Role)
 
@@ -125,6 +131,23 @@ func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PK
 		return nil, fmt.Errorf("failed to issue certificate from Vault PKI: %w", err)
 	}
 
+	cert, err := parsePKICertificate(resp)
+	if err != nil {
+		return nil, err
+	}
+
+	p.logger.Info("Issued certificate from Vault PKI",
+		zap.String("mountPath", req.MountPath),
+		zap.String("role", req.Role),
+		zap.String("commonName", req.CommonName),
+		zap.String("serialNumber", cert.SerialNumber),
+		zap.Time("expiresAt", cert.ExpiresAt))
+
+	return cert, nil
+}
+
+// parsePKICertificate extracts a PKICertificate from a Vault PKI response.
+func parsePKICertificate(resp *Response) (*PKICertificate, error) {
 	cert := &PKICertificate{}
 
 	if certStr, ok := resp.Data["certificate"].(string); ok {
@@ -163,13 +186,6 @@ func (p *PKIManager) IssueCertificate(ctx context.Context, req *PKIRequest) (*PK
 	if cert.PrivateKey == "" {
 		return nil, errVaultPKIResponseMissingPrivateKeyField
 	}
-
-	p.logger.Info("Issued certificate from Vault PKI",
-		zap.String("mountPath", req.MountPath),
-		zap.String("role", req.Role),
-		zap.String("commonName", req.CommonName),
-		zap.String("serialNumber", cert.SerialNumber),
-		zap.Time("expiresAt", cert.ExpiresAt))
 
 	return cert, nil
 }
