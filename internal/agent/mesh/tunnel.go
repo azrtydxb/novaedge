@@ -439,7 +439,7 @@ func (tp *TunnelPool) DialVia(ctx context.Context, nodeAddr, backendAddr, source
 		},
 	}
 
-	connectClient := &http.Client{Transport: transport}
+	connectClient := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 
 	resp, err := connectClient.Do(req) //nolint:gosec // G704: URL validated via url.ParseRequestURI above
 	if err != nil {
@@ -508,6 +508,7 @@ func (tp *TunnelPool) getOrCreateClient(nodeAddr string) *http.Client {
 		Transport: &http2.Transport{
 			TLSClientConfig: tp.tlsConfig,
 		},
+		Timeout: 30 * time.Second,
 	}
 	tp.clients[nodeAddr] = &pooledClient{
 		client:   client,

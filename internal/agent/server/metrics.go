@@ -105,7 +105,7 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 	m.rateLimiter.Stop()
 
 	// Graceful shutdown
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	defer cancel()
 
 	m.logger.Info("Shutting down metrics server")

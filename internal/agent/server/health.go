@@ -100,7 +100,7 @@ func (h *HealthServer) Start(ctx context.Context) error {
 		// Stop rate limiter cleanup routine
 		h.rateLimiter.Stop()
 
-		shutdownCtx, cancel := context.WithTimeout(detachedCtx, 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(detachedCtx, serverShutdownTimeout)
 		defer cancel()
 		if err := h.server.Shutdown(shutdownCtx); err != nil {
 			h.logger.Error("Health server shutdown error", zap.Error(err))

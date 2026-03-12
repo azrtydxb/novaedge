@@ -51,6 +51,9 @@ import (
 	_ "github.com/azrtydxb/novaedge/internal/agent/wasm"
 )
 
+// shutdownTimeout is the grace period for orderly shutdown of all subsystems.
+const shutdownTimeout = 10 * time.Second
+
 // Build-time variables set via ldflags.
 var (
 	version = "dev"
@@ -156,7 +159,7 @@ func main() {
 		logger.Fatal("Failed to initialize tracing", zap.Error(err))
 	}
 	defer func() {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 		defer shutdownCancel()
 		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
 			logger.Error("Failed to shutdown tracer provider", zap.Error(err))
@@ -480,7 +483,7 @@ func closeIfNotNil(logger *zap.Logger, name string, c interface{ Close() error }
 
 // shutdownAgent performs graceful shutdown of all agent subsystems.
 func shutdownAgent(logger *zap.Logger, comp *agentComponents) {
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer shutdownCancel()
 
 	if comp.meshManager != nil {
