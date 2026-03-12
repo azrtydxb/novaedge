@@ -484,47 +484,6 @@ func (tp *TunnelPool) Close() {
 	tp.logger.Info("Tunnel pool closed")
 }
 
-// getOrCreateClient returns an existing HTTP/2 client for the node address
-// or creates a new one. It updates the lastUsed timestamp on every access.
-func (tp *TunnelPool) getOrCreateClient(nodeAddr string) *http.Client {
-	tp.mu.RLock()
-	pc, ok := tp.clients[nodeAddr]
-	tp.mu.RUnlock()
-	if ok {
-		// Update lastUsed under write lock.
-		tp.mu.Lock()
-		pc.lastUsed = time.Now()
-		tp.mu.Unlock()
-		return pc.client
-	}
-
-	tp.mu.Lock()
-	defer tp.mu.Unlock()
-
-	// Double-check after acquiring write lock.
-	if pc, ok = tp.clients[nodeAddr]; ok {
-		pc.lastUsed = time.Now()
-		return pc.client
-	}
-
-	client := &http.Client{
-		Transport: &http2.Transport{
-			TLSClientConfig: tp.tlsConfig,
-		},
-		Timeout: 30 * time.Second,
-	}
-	tp.clients[nodeAddr] = &pooledClient{
-		client:   client,
-		lastUsed: time.Now(),
-	}
-
-	tp.logger.Debug("Created HTTP/2 client for peer",
-		zap.String("node_addr", nodeAddr),
-	)
-
-	return client
-}
-
 // streamConn wraps an HTTP/2 CONNECT stream as a net.Conn.
 // Reads come from the response body and writes go to the request body
 // pipe writer. This allows the tunnel stream to be used as a regular

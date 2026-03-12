@@ -501,25 +501,6 @@ func TestTunnelPoolDialVia(t *testing.T) {
 	}
 }
 
-func TestTunnelPoolReusesClient(t *testing.T) {
-	pool := NewTunnelPool(zap.NewNop(), &tls.Config{MinVersion: tls.VersionTLS12})
-	defer pool.Close()
-
-	// Getting a client twice for the same address should return the same one.
-	c1 := pool.getOrCreateClient("192.168.1.1:15002")
-	c2 := pool.getOrCreateClient("192.168.1.1:15002")
-
-	if c1 != c2 {
-		t.Error("expected same client instance for same address")
-	}
-
-	// Different address should return different client.
-	c3 := pool.getOrCreateClient("192.168.1.2:15002")
-	if c1 == c3 {
-		t.Error("expected different client for different address")
-	}
-}
-
 func TestStreamConnInterface(t *testing.T) {
 	// Verify streamConn implements net.Conn at compile time.
 	var _ net.Conn = (*streamConn)(nil)

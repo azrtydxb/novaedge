@@ -84,7 +84,7 @@ func TestAgentConnectionTracking(t *testing.T) {
 	defer server.Shutdown()
 
 	// Test updateAgentConnection
-	server.updateAgentConnection("test-node-2", "v1.2.3", true)
+	server.updateAgentConnectionWithCluster("test-node-2", "v1.2.3", "", "", "", true)
 
 	status, ok := server.GetAgentStatus("test-node-2")
 	if !ok {
@@ -100,7 +100,7 @@ func TestAgentConnectionTracking(t *testing.T) {
 	}
 
 	// Update to disconnected
-	server.updateAgentConnection("test-node-2", "v1.2.3", false)
+	server.updateAgentConnectionWithCluster("test-node-2", "v1.2.3", "", "", "", false)
 
 	status, ok = server.GetAgentStatus("test-node-2")
 	if !ok {
@@ -120,9 +120,9 @@ func TestGetAllAgentStatuses(t *testing.T) {
 	defer server.Shutdown()
 
 	// Add multiple agents
-	server.updateAgentConnection("node-1", "v1.0.0", true)
-	server.updateAgentConnection("node-2", "v1.0.1", true)
-	server.updateAgentConnection("node-3", "v1.0.2", false)
+	server.updateAgentConnectionWithCluster("node-1", "v1.0.0", "", "", "", true)
+	server.updateAgentConnectionWithCluster("node-2", "v1.0.1", "", "", "", true)
+	server.updateAgentConnectionWithCluster("node-3", "v1.0.2", "", "", "", false)
 
 	// Get all statuses
 	statuses := server.GetAllAgentStatuses()

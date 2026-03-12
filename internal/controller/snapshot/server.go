@@ -83,9 +83,6 @@ type Server struct {
 	builder *Builder
 	cache   *Cache
 
-	// Channels for notifying clients of updates
-	updateNotifier chan string
-
 	// Agent status tracking
 	statusMap sync.Map // map[string]*AgentStatusInfo
 
@@ -122,7 +119,6 @@ func NewServer(client client.Client) *Server {
 		client:             client,
 		builder:            NewBuilder(client),
 		cache:              NewCache(),
-		updateNotifier:     make(chan string, 100),
 		remoteAgentTracker: NewRemoteAgentTracker(),
 		shutdownCh:         make(chan struct{}),
 	}
@@ -462,11 +458,6 @@ func (s *Server) storeAgentStatus(req *pb.AgentStatus) {
 	if activeConns, ok := req.Metrics["active_connections"]; ok {
 		status.ActiveConnections = activeConns
 	}
-}
-
-// updateAgentConnection updates the connection status of an agent
-func (s *Server) updateAgentConnection(nodeName, agentVersion string, connected bool) {
-	s.updateAgentConnectionWithCluster(nodeName, agentVersion, "", "", "", connected)
 }
 
 // updateAgentConnectionWithCluster updates the connection status of an agent with cluster info
