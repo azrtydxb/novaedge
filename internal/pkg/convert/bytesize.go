@@ -23,8 +23,8 @@ import (
 	"strings"
 )
 
-// ErrInvalidByteSize is returned when a byte size string cannot be parsed.
-var ErrInvalidByteSize = errors.New("invalid byte size")
+// errInvalidByteSize is returned when a byte size string cannot be parsed.
+var errInvalidByteSize = errors.New("invalid byte size")
 
 // ParseByteSize parses a human-readable byte size string (e.g., "10Mi", "1024", "50MB").
 func ParseByteSize(s string) (int64, error) {
@@ -53,11 +53,11 @@ func ParseByteSize(s string) (int64, error) {
 			numStr := strings.TrimSuffix(s, suffix)
 			n, err := strconv.ParseInt(numStr, 10, 64)
 			if err != nil {
-				return 0, fmt.Errorf("%w: %s", ErrInvalidByteSize, s)
+				return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 			}
 			return n * mult, nil
 		}
 	}
 
-	return 0, fmt.Errorf("%w: %s", ErrInvalidByteSize, s)
+	return 0, fmt.Errorf("%w: %s", errInvalidByteSize, s)
 }

@@ -1,3 +1,5 @@
+//! Service mesh module.
+
 pub mod authz;
 pub mod mtls;
 pub mod spiffe;
