@@ -87,6 +87,9 @@ func (h *HealthServer) Start(ctx context.Context) error {
 		Addr:              fmt.Sprintf(":%d", h.port),
 		Handler:           mux,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	h.logger.Info("Starting health probe server", zap.Int("port", h.port))

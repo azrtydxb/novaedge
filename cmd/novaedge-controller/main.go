@@ -343,7 +343,7 @@ func main() {
 
 	// Start debug server for pprof and log-level endpoints (localhost only).
 	go func() {
-		debugServer := &http.Server{Addr: "127.0.0.1:6060", Handler: nil} //nolint:gosec // intentionally serves DefaultServeMux on localhost
+		debugServer := &http.Server{Addr: "127.0.0.1:6060", Handler: nil, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 10 * time.Second} //nolint:gosec // intentionally serves DefaultServeMux on localhost
 		if err := debugServer.ListenAndServe(); err != nil {
 			setupLog.Error(err, "debug server failed")
 		}

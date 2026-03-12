@@ -79,11 +79,12 @@ func (m *MetricsServer) Start(ctx context.Context) error {
 	})
 
 	srv := &http.Server{
-		Addr:         fmt.Sprintf(":%d", m.port),
-		Handler:      mux,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              fmt.Sprintf(":%d", m.port),
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	m.mu.Lock()

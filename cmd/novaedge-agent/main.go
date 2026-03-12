@@ -404,8 +404,8 @@ func runAgentLoop(ctx context.Context, cancel context.CancelFunc, logger *zap.Lo
 	go func() { adminChan <- comp.adminServer.Start(ctx) }()
 
 	// Wait for shutdown signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
 	case err := <-configChan:
@@ -416,7 +416,7 @@ func runAgentLoop(ctx context.Context, cancel context.CancelFunc, logger *zap.Lo
 		logger.Error("Health probe failed", zap.Error(err))
 	case err := <-adminChan:
 		logger.Error("Admin server failed", zap.Error(err))
-	case sig := <-sigChan:
+	case sig := <-sigCh:
 		logger.Info("Received shutdown signal", zap.String("signal", sig.String()))
 	}
 
