@@ -21,9 +21,17 @@ const MAX_RATE_LIMITERS: usize = 10_000;
 /// Minimum interval between rate-limiter cleanup sweeps (seconds).
 const CLEANUP_INTERVAL_SECS: u64 = 60;
 
+/// A cached rate limiter together with the config parameters used to create it.
+/// When the config changes, the cached entry is replaced with a fresh `TokenBucket`.
+struct CachedRateLimiter {
+    bucket: super::ratelimit::TokenBucket,
+    requests_per_second: f64,
+    burst: u32,
+}
+
 /// Shared cache of rate-limiter instances keyed by policy name.
 /// This ensures rate-limit state is preserved across requests.
-static RATE_LIMITERS: std::sync::LazyLock<DashMap<String, super::ratelimit::TokenBucket>> =
+static RATE_LIMITERS: std::sync::LazyLock<DashMap<String, CachedRateLimiter>> =
     std::sync::LazyLock::new(DashMap::new);
 
 /// Tracks the last time a rate-limiter cleanup was performed.
@@ -260,26 +268,60 @@ fn run_rate_limit(policy_name: &str, config_json: &str, req: &Request) -> Middle
     };
     if needs_cleanup {
         for entry in RATE_LIMITERS.iter() {
-            entry.value().cleanup(std::time::Duration::from_secs(300));
+            entry
+                .value()
+                .bucket
+                .cleanup(std::time::Duration::from_secs(300));
         }
         if let Ok(mut last) = LAST_CLEANUP.lock() {
             *last = Instant::now();
         }
     }
 
+    // Check if the cached rate limiter has matching config; replace if stale.
+    let config_changed = RATE_LIMITERS
+        .get(policy_name)
+        .map(|entry| {
+            (entry.value().requests_per_second - rps).abs() > f64::EPSILON
+                || entry.value().burst != burst
+        })
+        .unwrap_or(false);
+    if config_changed {
+        debug!(
+            policy = %policy_name,
+            rps,
+            burst,
+            "Rate limiter config changed, replacing cached instance"
+        );
+        RATE_LIMITERS.insert(
+            policy_name.to_string(),
+            CachedRateLimiter {
+                bucket: super::ratelimit::TokenBucket::new(super::ratelimit::RateLimitConfig {
+                    requests_per_second: rps,
+                    burst,
+                    key_type: super::ratelimit::RateLimitKeyType::SourceIP,
+                }),
+                requests_per_second: rps,
+                burst,
+            },
+        );
+    }
+
     // Get or create a cached TokenBucket for this policy.
     let limiter = RATE_LIMITERS
         .entry(policy_name.to_string())
-        .or_insert_with(|| {
-            super::ratelimit::TokenBucket::new(super::ratelimit::RateLimitConfig {
+        .or_insert_with(|| CachedRateLimiter {
+            bucket: super::ratelimit::TokenBucket::new(super::ratelimit::RateLimitConfig {
                 requests_per_second: rps,
                 burst,
                 key_type: super::ratelimit::RateLimitKeyType::SourceIP,
-            })
+            }),
+            requests_per_second: rps,
+            burst,
         });
 
     let key = &req.client_ip;
-    match limiter.check(key) {
+    match limiter.bucket.check(key) {
         super::ratelimit::RateLimitResult::Allowed { .. } => {
             MiddlewareResult::Continue(req.clone())
         }

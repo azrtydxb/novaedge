@@ -92,10 +92,8 @@ test-conformance: ## Run Gateway API conformance tests (requires running cluster
 .PHONY: benchmark
 benchmark: ## Run Go micro-benchmarks locally.
 	go test -bench=. -benchmem -count=3 \
-		./internal/agent/lb/... \
-		./internal/agent/router/... \
-		./internal/agent/upstream/... \
-		./internal/agent/policy/...
+		./internal/agent/gossip/... \
+		./internal/agent/server/...
 
 .PHONY: perf-test
 perf-test: ## Run live cluster performance tests (requires k8s cluster).

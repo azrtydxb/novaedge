@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -42,7 +43,16 @@ var (
 	errApproleAuthConfigIsRequired           = errors.New("approle auth config is required")
 	errNoClientTokenInApproleAuthResponse    = errors.New("no client_token in approle auth response")
 	errInvalidVaultEnableMode                = errors.New("invalid vault enable mode")
+	errInvalidMountPath                      = errors.New("invalid mount path: must match ^[a-zA-Z0-9_-]+$")
 )
+
+// validMountPathRe matches safe Vault mount path segments.
+var validMountPathRe = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
+
+// isValidMountPath returns true only if s matches ^[a-zA-Z0-9_-]+$.
+func isValidMountPath(s string) bool {
+	return validMountPathRe.MatchString(s)
+}
 
 // EnableMode defines the Vault enablement mode.
 type EnableMode string
@@ -220,6 +230,10 @@ func (c *Client) authenticateKubernetes(ctx context.Context) error {
 		mountPath = "kubernetes"
 	}
 
+	if !isValidMountPath(mountPath) {
+		return fmt.Errorf("%w: %q", errInvalidMountPath, mountPath)
+	}
+
 	saPath := config.ServiceAccountTokenPath
 	if saPath == "" {
 		saPath = "/var/run/secrets/kubernetes.io/serviceaccount/token" //nolint:gosec // G101: not a credential, standard Kubernetes service account path
@@ -279,6 +293,10 @@ func (c *Client) authenticateAppRole(ctx context.Context) error {
 	mountPath := config.MountPath
 	if mountPath == "" {
 		mountPath = "approle"
+	}
+
+	if !isValidMountPath(mountPath) {
+		return fmt.Errorf("%w: %q", errInvalidMountPath, mountPath)
 	}
 
 	loginPath := fmt.Sprintf("auth/%s/login", mountPath)

@@ -35,6 +35,10 @@ import (
 // agent exposes its EBPFServices gRPC API.
 const DefaultSocketPath = "/var/run/novanet/ebpf-services.sock"
 
+// defaultRPCTimeout bounds how long any single unary RPC will wait for the
+// NovaNet agent to respond before being cancelled.
+const defaultRPCTimeout = 30 * time.Second
+
 // Client wraps a gRPC connection to the NovaNet EBPFServices API.
 // When the NovaNet agent is unavailable, the client operates in degraded
 // mode — all methods return nil gracefully so that the mesh and agent
@@ -85,6 +89,8 @@ func (c *Client) EnableSockmap(ctx context.Context, namespace, name string) erro
 	if !c.IsConnected() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	_, err := c.client.EnableSockmap(ctx, &pb.EnableSockmapRequest{PodNamespace: namespace, PodName: name})
 	return err
 }
@@ -94,6 +100,8 @@ func (c *Client) DisableSockmap(ctx context.Context, namespace, name string) err
 	if !c.IsConnected() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	_, err := c.client.DisableSockmap(ctx, &pb.DisableSockmapRequest{PodNamespace: namespace, PodName: name})
 	return err
 }
@@ -103,6 +111,8 @@ func (c *Client) AddMeshRedirect(ctx context.Context, ip string, port, redirectP
 	if !c.IsConnected() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	_, err := c.client.AddMeshRedirect(ctx, &pb.AddMeshRedirectRequest{
 		Ip:           ip,
 		Port:         port,
@@ -116,6 +126,8 @@ func (c *Client) RemoveMeshRedirect(ctx context.Context, ip string, port uint32)
 	if !c.IsConnected() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	_, err := c.client.RemoveMeshRedirect(ctx, &pb.RemoveMeshRedirectRequest{Ip: ip, Port: port})
 	return err
 }
@@ -125,6 +137,8 @@ func (c *Client) ConfigureRateLimit(ctx context.Context, cidr string, rate, burs
 	if !c.IsConnected() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	_, err := c.client.ConfigureRateLimit(ctx, &pb.ConfigureRateLimitRequest{
 		Cidr:  cidr,
 		Rate:  rate,
@@ -138,6 +152,8 @@ func (c *Client) RemoveRateLimit(ctx context.Context, cidr string) error {
 	if !c.IsConnected() {
 		return nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	_, err := c.client.RemoveRateLimit(ctx, &pb.RemoveRateLimitRequest{Cidr: cidr})
 	return err
 }
@@ -147,6 +163,8 @@ func (c *Client) GetRateLimitStats(ctx context.Context, cidr string) (allowed, d
 	if !c.IsConnected() {
 		return 0, 0, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	resp, err := c.client.GetRateLimitStats(ctx, &pb.GetRateLimitStatsRequest{Cidr: cidr})
 	if err != nil {
 		return 0, 0, err
@@ -159,6 +177,8 @@ func (c *Client) GetBackendHealth(ctx context.Context, ip string, port uint32) (
 	if !c.IsConnected() {
 		return nil, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	resp, err := c.client.GetBackendHealth(ctx, &pb.GetBackendHealthRequest{Ip: ip, Port: port})
 	if err != nil {
 		return nil, err
@@ -174,6 +194,8 @@ func (c *Client) GetSockmapStats(ctx context.Context) (redirected, fallback uint
 	if !c.IsConnected() {
 		return 0, 0, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	resp, err := c.client.GetSockmapStats(ctx, &pb.GetSockmapStatsRequest{})
 	if err != nil {
 		return 0, 0, err
@@ -186,6 +208,8 @@ func (c *Client) ListMeshRedirects(ctx context.Context) ([]*pb.MeshRedirectEntry
 	if !c.IsConnected() {
 		return nil, nil
 	}
+	ctx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
 	resp, err := c.client.ListMeshRedirects(ctx, &pb.ListMeshRedirectsRequest{})
 	if err != nil {
 		return nil, err
