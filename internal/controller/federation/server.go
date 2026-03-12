@@ -41,6 +41,7 @@ var (
 	errUnexpectedTypeInResourcesMapForKey = errors.New("unexpected type in resources map for key")
 	errConflictNotFound                   = errors.New("conflict not found")
 	errUnexpectedTypeForConflict          = errors.New("unexpected type for conflict")
+	errNoPeerOutbox                       = errors.New("no outbox channel for peer")
 )
 
 const (
@@ -84,8 +85,13 @@ type Server struct {
 	// tombstones tracks deleted resources
 	tombstones sync.Map // map[string]*Tombstone
 
-	// pendingChanges is the queue of changes to propagate
+	// pendingChanges is the queue of changes to propagate (kept for backward compatibility)
 	pendingChanges chan *ChangeEntry
+
+	// peerOutboxes holds per-peer buffered channels so that each connected
+	// peer receives every change independently (fan-out).
+	peerOutboxes   map[string]chan *ChangeEntry
+	peerOutboxesMu sync.Mutex
 
 	// conflicts tracks unresolved conflicts
 	conflicts sync.Map // map[string]*ConflictInfo
@@ -134,6 +140,7 @@ func NewServer(config *Config, logger *zap.Logger) *Server {
 	s := &Server{
 		vectorClock:    NewVectorClock(),
 		pendingChanges: make(chan *ChangeEntry, 10000),
+		peerOutboxes:   make(map[string]chan *ChangeEntry),
 		endpointCache:  NewRemoteEndpointCache(),
 		stats:          &SyncStats{},
 		logger:         logger.Named("federation"),
@@ -243,6 +250,23 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 		return status.Errorf(codes.Internal, "failed to send handshake: %v", err)
 	}
 
+	// Create a per-peer outbox channel so every connected peer gets every
+	// change independently (fan-out instead of competing consumers).
+	peerCh := make(chan *ChangeEntry, 1000)
+	s.peerOutboxesMu.Lock()
+	s.peerOutboxes[peerName] = peerCh
+	s.peerOutboxesMu.Unlock()
+	defer func() {
+		s.peerOutboxesMu.Lock()
+		delete(s.peerOutboxes, peerName)
+		close(peerCh)
+		s.peerOutboxesMu.Unlock()
+		// Drain remaining entries so they can be garbage-collected.
+		for entry := range peerCh {
+			_ = entry
+		}
+	}()
+
 	// Start goroutines for send and receive with a derived context so
 	// that when the first goroutine exits we can signal the other to stop,
 	// preventing a goroutine leak (fixes #932).
@@ -345,6 +369,14 @@ func (s *Server) handleOutgoingMessages(ctx context.Context, stream pb.Federatio
 	heartbeatTicker := time.NewTicker(HeartbeatInterval)
 	defer heartbeatTicker.Stop()
 
+	// Look up the per-peer outbox created in SyncStream.
+	s.peerOutboxesMu.Lock()
+	peerCh, ok := s.peerOutboxes[peerName]
+	s.peerOutboxesMu.Unlock()
+	if !ok {
+		return fmt.Errorf("%w: %s", errNoPeerOutbox, peerName)
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -355,12 +387,13 @@ func (s *Server) handleOutgoingMessages(ctx context.Context, stream pb.Federatio
 			agentCount := s.agentCount
 			s.agentMu.RUnlock()
 
+			// Report the number of entries queued for this peer.
 			if err := stream.Send(&pb.SyncMessage{
 				Message: &pb.SyncMessage_Heartbeat{
 					Heartbeat: &pb.Heartbeat{
 						VectorClock:    s.vectorClock.ToMap(),
 						Timestamp:      time.Now().UnixNano(),
-						PendingChanges: convert.SafeIntToInt32(len(s.pendingChanges)),
+						PendingChanges: convert.SafeIntToInt32(len(peerCh)),
 						AgentCount:     agentCount,
 					},
 				},
@@ -368,7 +401,10 @@ func (s *Server) handleOutgoingMessages(ctx context.Context, stream pb.Federatio
 				return err
 			}
 
-		case change := <-s.pendingChanges:
+		case change, chanOpen := <-peerCh:
+			if !chanOpen {
+				return nil
+			}
 			// Don't send changes back to their origin
 			if change.Resource != nil && change.Resource.OriginMember == peerName {
 				continue
@@ -949,12 +985,18 @@ func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data 
 		s.tombstones.Delete(keyStr)
 	}
 
-	// Queue for propagation
-	select {
-	case s.pendingChanges <- entry:
-	default:
-		s.logger.Warn("Pending changes queue full, dropping newest change")
+	// Fan out to all connected peer outboxes.
+	s.peerOutboxesMu.Lock()
+	for peer, ch := range s.peerOutboxes {
+		select {
+		case ch <- entry:
+		default:
+			s.logger.Warn("Peer outbox full, dropping newest change",
+				zap.String("peer", peer),
+			)
+		}
 	}
+	s.peerOutboxesMu.Unlock()
 }
 
 // OnChange registers a callback to be called when resources change

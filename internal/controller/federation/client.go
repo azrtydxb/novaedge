@@ -22,6 +22,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
@@ -40,6 +41,13 @@ var (
 	errExpectedHandshakeResponseGot      = errors.New("expected handshake response, got")
 	errSyncStreamNotEstablished          = errors.New("sync stream not established")
 	errFailedToParseCACertificateForPeer = errors.New("failed to parse CA certificate for peer")
+	errFullSyncBatchLimitExceeded        = errors.New("full sync batch limit exceeded")
+)
+
+const (
+	// maxFullSyncBatches is the maximum number of batches accepted during a
+	// full-sync stream to prevent unbounded memory accumulation.
+	maxFullSyncBatches = 10000
 )
 
 // PeerClient manages the connection to a federation peer
@@ -371,12 +379,15 @@ func (c *PeerClient) RequestFullSync(ctx context.Context, resourceTypes, namespa
 	for {
 		batch, err := stream.Recv()
 		if err != nil {
-			if err.Error() == "EOF" {
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return batches, err
 		}
 		batches = append(batches, batch)
+		if len(batches) > maxFullSyncBatches {
+			return nil, fmt.Errorf("%w: received more than %d batches", errFullSyncBatchLimitExceeded, maxFullSyncBatches)
+		}
 		if batch.IsLast {
 			break
 		}
@@ -466,22 +477,4 @@ func (c *PeerClient) buildTLSConfig() (*tls.Config, error) {
 	}
 
 	return config, nil
-}
-
-// PeerClientWithCerts adds certificate support to the peer client
-type PeerClientWithCerts struct {
-	*PeerClient
-	caCert     []byte
-	clientCert []byte
-	clientKey  []byte
-}
-
-// NewPeerClientWithCerts creates a peer client with TLS certificates
-func NewPeerClientWithCerts(peer *PeerInfo, config *Config, logger *zap.Logger, caCert, clientCert, clientKey []byte) *PeerClientWithCerts {
-	return &PeerClientWithCerts{
-		PeerClient: NewPeerClient(peer, config, logger),
-		caCert:     caCert,
-		clientCert: clientCert,
-		clientKey:  clientKey,
-	}
 }
