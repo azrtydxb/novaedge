@@ -909,15 +909,24 @@ func isWebUIEnabled(cluster *novaedgev1alpha1.NovaEdgeCluster) bool {
 	return cluster.Spec.WebUI != nil && (cluster.Spec.WebUI.Enabled == nil || *cluster.Spec.WebUI.Enabled)
 }
 
+// replicasOrDefault safely dereferences a *int32 replica count, returning 1 if nil.
+func replicasOrDefault(r *int32) int32 {
+	if r == nil {
+		return 1
+	}
+	return *r
+}
+
 // fetchComponentStatuses fetches and sets the component statuses on the cluster object.
 func (r *NovaEdgeClusterReconciler) fetchComponentStatuses(ctx context.Context, cluster *novaedgev1alpha1.NovaEdgeCluster) {
 	controllerDeploy := &appsv1.Deployment{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name: fmt.Sprintf("%s-controller", cluster.Name), Namespace: cluster.Namespace,
 	}, controllerDeploy); err == nil {
+		replicas := replicasOrDefault(controllerDeploy.Spec.Replicas)
 		cluster.Status.Controller = &novaedgev1alpha1.ComponentStatus{
-			Ready:           controllerDeploy.Status.ReadyReplicas == *controllerDeploy.Spec.Replicas,
-			Replicas:        *controllerDeploy.Spec.Replicas,
+			Ready:           controllerDeploy.Status.ReadyReplicas == replicas,
+			Replicas:        replicas,
 			ReadyReplicas:   controllerDeploy.Status.ReadyReplicas,
 			UpdatedReplicas: controllerDeploy.Status.UpdatedReplicas,
 			Version:         cluster.Spec.Version,
@@ -942,9 +951,10 @@ func (r *NovaEdgeClusterReconciler) fetchComponentStatuses(ctx context.Context, 
 		if err := r.Get(ctx, types.NamespacedName{
 			Name: fmt.Sprintf("%s-webui", cluster.Name), Namespace: cluster.Namespace,
 		}, webUIDeploy); err == nil {
+			replicas := replicasOrDefault(webUIDeploy.Spec.Replicas)
 			cluster.Status.WebUI = &novaedgev1alpha1.ComponentStatus{
-				Ready:           webUIDeploy.Status.ReadyReplicas == *webUIDeploy.Spec.Replicas,
-				Replicas:        *webUIDeploy.Spec.Replicas,
+				Ready:           webUIDeploy.Status.ReadyReplicas == replicas,
+				Replicas:        replicas,
 				ReadyReplicas:   webUIDeploy.Status.ReadyReplicas,
 				UpdatedReplicas: webUIDeploy.Status.UpdatedReplicas,
 				Version:         cluster.Spec.Version,
