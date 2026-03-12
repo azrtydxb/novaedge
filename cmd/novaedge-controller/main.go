@@ -22,10 +22,12 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"net"
 	"net/http"
 	_ "net/http/pprof" //nolint:gosec // G108: pprof is served on localhost:6060 only, not publicly exposed
 	"os"
+	"time"
 
 	uberzap "go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -241,7 +243,8 @@ func initVaultIntegration(f *controllerFlags, reconciler *controller.ProxyGatewa
 }
 
 // initConfigServer creates the config server, wires mesh CA and federation, and starts the gRPC server.
-func initConfigServer(mgr ctrl.Manager, f *controllerFlags, zapLogger *uberzap.Logger) (*grpc.Server, *snapshot.Server) {
+// It returns the gRPC server, the snapshot server, and an error channel that receives any gRPC serve errors.
+func initConfigServer(mgr ctrl.Manager, f *controllerFlags, zapLogger *uberzap.Logger) (*grpc.Server, *snapshot.Server, <-chan error) {
 	configServer := snapshot.NewServer(mgr.GetClient())
 	configServer.Start()
 
@@ -301,22 +304,22 @@ func initConfigServer(mgr ctrl.Manager, f *controllerFlags, zapLogger *uberzap.L
 
 	configServer.RegisterServer(grpcServer)
 
-	// Start gRPC server in a goroutine
+	// Start gRPC server in a goroutine, sending errors to a channel instead of calling os.Exit.
+	grpcErrCh := make(chan error, 1)
 	go func() {
 		var lc net.ListenConfig
 		lis, lisErr := lc.Listen(context.Background(), "tcp", f.grpcAddr)
 		if lisErr != nil {
-			setupLog.Error(lisErr, "failed to listen for gRPC")
-			os.Exit(1)
+			grpcErrCh <- fmt.Errorf("failed to listen for gRPC: %w", lisErr)
+			return
 		}
 		setupLog.Info("starting gRPC config server", "address", f.grpcAddr)
 		if serveErr := grpcServer.Serve(lis); serveErr != nil {
-			setupLog.Error(serveErr, "failed to serve gRPC")
-			os.Exit(1)
+			grpcErrCh <- fmt.Errorf("failed to serve gRPC: %w", serveErr)
 		}
 	}()
 
-	return grpcServer, configServer
+	return grpcServer, configServer, grpcErrCh
 }
 
 func main() {
@@ -363,7 +366,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	grpcServer, configServer := initConfigServer(mgr, f, zapLogger)
+	grpcServer, configServer, grpcErrCh := initConfigServer(mgr, f, zapLogger)
 
 	proxyGatewayReconciler := registerReconcilers(mgr, f, configServer)
 
@@ -379,13 +382,37 @@ func main() {
 	initCertManagerIntegration(mgr, f.enableCertManager, proxyGatewayReconciler)
 	initVaultIntegration(f, proxyGatewayReconciler, zapLogger)
 
+	// Start manager and monitor both it and the gRPC server for errors.
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+	mgrCtx := ctrl.SetupSignalHandler()
+	mgrErrCh := make(chan error, 1)
+	go func() {
+		mgrErrCh <- mgr.Start(mgrCtx)
+	}()
+
+	select {
+	case err := <-grpcErrCh:
+		setupLog.Error(err, "gRPC server failed, shutting down")
+	case err := <-mgrErrCh:
+		if err != nil {
+			setupLog.Error(err, "problem running manager")
+		}
 	}
 
-	// Graceful shutdown: stop the snapshot server and gRPC server.
+	// Graceful shutdown: stop the snapshot server and gRPC server with a timeout.
 	configServer.Shutdown()
-	grpcServer.GracefulStop()
+
+	const grpcShutdownTimeout = 15 * time.Second
+	shutdownDone := make(chan struct{})
+	go func() {
+		grpcServer.GracefulStop()
+		close(shutdownDone)
+	}()
+	select {
+	case <-shutdownDone:
+		setupLog.Info("gRPC server stopped gracefully")
+	case <-time.After(grpcShutdownTimeout):
+		setupLog.Info("gRPC graceful stop timed out, forcing stop")
+		grpcServer.Stop()
+	}
 }

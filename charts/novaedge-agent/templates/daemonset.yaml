@@ -199,7 +199,7 @@ spec:
             {{- end }}
       {{- if and .Values.dataplane .Values.dataplane.enabled }}
         - name: novaedge-dataplane
-          image: "{{ .Values.dataplane.image.repository }}:{{ .Values.dataplane.image.tag }}"
+          image: "{{ .Values.dataplane.image.repository }}:{{ .Values.dataplane.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.dataplane.image.pullPolicy }}
           args:
             - --socket={{ .Values.dataplane.socketPath }}
