@@ -688,7 +688,7 @@ func (m *Manager) proxyTCP(ctx context.Context, clientConn io.ReadWriteCloser, b
 	defer func() { _ = backendConn.Close() }()
 
 	// Bidirectional copy
-	done := make(chan struct{})
+	done := make(chan struct{}, 1)
 	go func() {
 		if _, err := io.Copy(backendConn, clientConn); err != nil {
 			m.logger.Debug("io.Copy client->backend finished with error", zap.Error(err))

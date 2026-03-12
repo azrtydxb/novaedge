@@ -225,37 +225,37 @@ func (s *FileStorage) DeleteCertificate(_ context.Context, domain string) error 
 
 // ListCertificates returns all stored certificates.
 func (s *FileStorage) ListCertificates(ctx context.Context) ([]*Certificate, error) {
+	// Collect domain names under RLock, then release before loading each cert.
 	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	certsDir := filepath.Join(s.basePath, "certs")
 	entries, err := os.ReadDir(certsDir)
 	if err != nil {
+		s.mu.RUnlock()
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to list certificates: %w", err)
 	}
 
-	certs := make([]*Certificate, 0, len(entries))
+	domains := make([]string, 0, len(entries))
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-
-		// Reconstruct domain from directory name
 		domain := strings.ReplaceAll(entry.Name(), "_", ".")
 		domain = strings.ReplaceAll(domain, "wildcard", "*")
+		domains = append(domains, domain)
+	}
+	s.mu.RUnlock()
 
-		// Need to release lock to call LoadCertificate
-		s.mu.RUnlock()
-		cert, err := s.LoadCertificate(ctx, domain)
-		s.mu.RLock()
-
-		if err != nil {
+	// Load each certificate without holding the lock.
+	certs := make([]*Certificate, 0, len(domains))
+	for _, domain := range domains {
+		cert, loadErr := s.LoadCertificate(ctx, domain)
+		if loadErr != nil {
 			s.logger.Warn("Failed to load certificate",
 				zap.String("domain", domain),
-				zap.Error(err),
+				zap.Error(loadErr),
 			)
 			continue
 		}

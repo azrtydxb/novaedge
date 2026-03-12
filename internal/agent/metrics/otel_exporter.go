@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -52,8 +53,8 @@ type OTelExporter struct {
 	upstreamRequestDurationSecs otelmetric.Float64Histogram
 
 	mu       sync.Mutex
-	started  bool
-	shutdown bool
+	started  atomic.Bool
+	shutdown atomic.Bool
 }
 
 // NewOTelExporter creates a new OTelExporter with the supplied configuration.
@@ -76,10 +77,10 @@ func (e *OTelExporter) Start(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.started {
+	if e.started.Load() {
 		return errOtelExporterAlreadyStarted
 	}
-	if e.shutdown {
+	if e.shutdown.Load() {
 		return errOtelExporterHasBeenShutDown
 	}
 
@@ -107,7 +108,7 @@ func (e *OTelExporter) Start(ctx context.Context) error {
 		return fmt.Errorf("creating OTel metric instruments: %w", err)
 	}
 
-	e.started = true
+	e.started.Store(true)
 	return nil
 }
 
@@ -117,11 +118,11 @@ func (e *OTelExporter) Shutdown(ctx context.Context) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !e.started || e.shutdown {
+	if !e.started.Load() || e.shutdown.Load() {
 		return nil
 	}
 
-	e.shutdown = true
+	e.shutdown.Store(true)
 	if e.provider != nil {
 		return e.provider.Shutdown(ctx)
 	}
@@ -138,7 +139,7 @@ func (e *OTelExporter) MeterProvider() *metric.MeterProvider {
 // This should be called alongside the Prometheus RecordHTTPRequest function
 // so that both exporters receive the same data.
 func (e *OTelExporter) RecordHTTPRequest(ctx context.Context, method, statusClass, cluster string, duration float64) {
-	if !e.started || e.shutdown {
+	if !e.started.Load() || e.shutdown.Load() {
 		return
 	}
 
@@ -158,7 +159,7 @@ func (e *OTelExporter) RecordHTTPRequest(ctx context.Context, method, statusClas
 
 // RecordInFlightChange adjusts the in-flight request gauge by delta (+1 or -1).
 func (e *OTelExporter) RecordInFlightChange(ctx context.Context, delta int64) {
-	if !e.started || e.shutdown {
+	if !e.started.Load() || e.shutdown.Load() {
 		return
 	}
 	e.httpRequestsInFlight.Add(ctx, delta)
@@ -166,7 +167,7 @@ func (e *OTelExporter) RecordInFlightChange(ctx context.Context, delta int64) {
 
 // RecordUpstreamDuration records an upstream (backend) request duration.
 func (e *OTelExporter) RecordUpstreamDuration(ctx context.Context, cluster, endpoint string, duration float64) {
-	if !e.started || e.shutdown {
+	if !e.started.Load() || e.shutdown.Load() {
 		return
 	}
 	attrs := otelmetric.WithAttributes(
