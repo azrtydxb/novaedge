@@ -254,6 +254,8 @@ func (s *Server) Start() error {
 		Addr:              s.addr,
 		Handler:           corsMiddleware(handler, s.authManager != nil && s.authManager.Enabled()),
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
 	}
 
 	// Use TLS if configured

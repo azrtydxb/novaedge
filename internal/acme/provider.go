@@ -20,11 +20,15 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sync"
 
 	"github.com/go-acme/lego/v4/challenge"
 	"go.uber.org/zap"
 )
+
+// acmeTokenRe validates ACME challenge tokens (base64url-safe characters, 1-256 chars).
+var acmeTokenRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,256}$`)
 
 // ChallengeProvider is the interface for ACME challenge providers.
 // It embeds lego's challenge.Provider interface.
@@ -113,6 +117,12 @@ func (p *HTTP01Provider) Handler() http.Handler {
 		// Remove leading slash if present
 		if len(token) > 0 && token[0] == '/' {
 			token = token[1:]
+		}
+
+		// Validate token format to prevent path traversal or injection
+		if !acmeTokenRe.MatchString(token) {
+			http.Error(w, "invalid token format", http.StatusBadRequest)
+			return
 		}
 
 		keyAuth, ok := p.GetKeyAuth(token)

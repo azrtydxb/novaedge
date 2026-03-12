@@ -765,7 +765,7 @@ dataplane:
   enabled: true
   image:
     repository: ghcr.io/azrtydxb/novaedge/novaedge-dataplane
-    tag: latest
+    tag: ""
     pullPolicy: IfNotPresent
   resources:
     requests:

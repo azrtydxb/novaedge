@@ -227,9 +227,9 @@ func (p *CloudflareProvider) findZoneID(ctx context.Context, recordName string) 
 		if err != nil {
 			return "", fmt.Errorf("cloudflare API request failed: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+		_ = resp.Body.Close()
 		if err != nil {
 			return "", fmt.Errorf("failed to read response: %w", err)
 		}

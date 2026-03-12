@@ -647,7 +647,7 @@ func (s *Server) RequestMeshCertificate(ctx context.Context, req *pb.MeshCertifi
 		return nil, status.Errorf(codes.InvalidArgument, "node_name is required")
 	}
 
-	certPEM, err := s.meshCA.SignCSR(req.Csr, req.NodeName)
+	certPEM, notAfter, err := s.meshCA.SignCSR(req.Csr, req.NodeName)
 	if err != nil {
 		logger.Error(err, "Failed to sign mesh CSR")
 		return nil, status.Errorf(codes.Internal, "failed to sign CSR: %v", err)
@@ -661,7 +661,7 @@ func (s *Server) RequestMeshCertificate(ctx context.Context, req *pb.MeshCertifi
 		Certificate:   certPEM,
 		CaCertificate: s.meshCA.CACertPEM(),
 		SpiffeId:      spiffeID,
-		ExpiryUnix:    time.Now().Add(24 * time.Hour).Unix(),
+		ExpiryUnix:    notAfter.Unix(),
 	}, nil
 }
 

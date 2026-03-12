@@ -154,13 +154,17 @@ func TestMeshCASignCSR(t *testing.T) {
 
 	csrPEM := generateTestCSRWithName(t, "worker-1")
 
-	certPEM, err := ca.SignCSR(csrPEM, "worker-1")
+	certPEM, notAfter, err := ca.SignCSR(csrPEM, "worker-1")
 	if err != nil {
 		t.Fatalf("SignCSR failed: %v", err)
 	}
 
 	if len(certPEM) == 0 {
 		t.Fatal("SignCSR returned empty certificate")
+	}
+
+	if notAfter.IsZero() {
+		t.Fatal("SignCSR returned zero NotAfter time")
 	}
 
 	block, _ := pem.Decode(certPEM)
@@ -234,7 +238,7 @@ func TestMeshCASPIFFEID(t *testing.T) {
 
 	csrPEM := generateTestCSRWithName(t, "node-alpha")
 
-	certPEM, err := ca.SignCSR(csrPEM, "node-alpha")
+	certPEM, _, err := ca.SignCSR(csrPEM, "node-alpha")
 	if err != nil {
 		t.Fatalf("SignCSR failed: %v", err)
 	}
@@ -287,7 +291,7 @@ func TestMeshCASignCSRIdentityMismatch(t *testing.T) {
 	// CSR has CN "attacker-node" but request is for "victim-node"
 	csrPEM := generateTestCSRWithName(t, "attacker-node")
 
-	_, err := ca.SignCSR(csrPEM, "victim-node")
+	_, _, err := ca.SignCSR(csrPEM, "victim-node")
 	if err == nil {
 		t.Fatal("expected SignCSR to reject mismatched node name, but it succeeded")
 	}

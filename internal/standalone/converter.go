@@ -888,7 +888,10 @@ func (c *Converter) convertL4Listeners(configs []L4ListenerStandaloneConfig, end
 	return result
 }
 func (c *Converter) generateVersion(snapshot *pb.ConfigSnapshot) string {
-	data, _ := proto.Marshal(snapshot)
+	data, err := proto.Marshal(snapshot)
+	if err != nil {
+		c.logger.Error("failed to marshal snapshot for version hash", zap.Error(err))
+	}
 	hash := sha256.Sum256(data)
 	return hex.EncodeToString(hash[:8])
 }
@@ -965,6 +968,9 @@ func buildHtpasswdFromConfig(config *BasicAuthPolicy) string {
 		if err == nil {
 			return string(data)
 		}
+		zap.L().Warn("failed to read htpasswd file, falling back to inline users",
+			zap.String("file", config.HtpasswdFile),
+			zap.Error(err))
 	}
 
 	// Build from inline users map
