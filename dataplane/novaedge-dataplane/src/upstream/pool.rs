@@ -322,11 +322,10 @@ impl ConnectionPool {
             host_pool.idle.retain(|c| {
                 now.duration_since(c.last_used) < timeout && c.created.elapsed() < MAX_CONN_AGE
             });
-            let removed = before - host_pool.idle.len();
-            // Return permits for removed idle connections.
-            if removed > 0 {
-                host_pool.semaphore.add_permits(removed);
-            }
+            let _removed = before - host_pool.idle.len();
+            // Note: permits are NOT returned here because idle connections
+            // already had their permits returned via `release()` when they
+            // transitioned from active to idle.
         }
     }
 }

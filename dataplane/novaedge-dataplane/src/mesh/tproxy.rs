@@ -1,3 +1,7 @@
+use tracing::info;
+#[cfg(target_os = "linux")]
+use tracing::{debug, warn};
+
 /// TPROXY interception configuration.
 #[derive(Debug, Clone)]
 pub struct TproxyConfig {
@@ -44,7 +48,7 @@ impl TproxyInterceptor {
     /// Install TPROXY interception rules.
     #[cfg(target_os = "linux")]
     pub fn install(&mut self) -> anyhow::Result<()> {
-        tracing::info!(
+        info!(
             inbound_port = self.config.inbound_port,
             outbound_port = self.config.outbound_port,
             "Installing TPROXY rules"
@@ -59,14 +63,14 @@ impl TproxyInterceptor {
                 .output();
             match output {
                 Ok(out) if out.status.success() => {
-                    tracing::debug!(cmd = %cmd_str, "iptables rule applied");
+                    debug!(cmd = %cmd_str, "iptables rule applied");
                 }
                 Ok(out) => {
                     let stderr = String::from_utf8_lossy(&out.stderr);
-                    tracing::warn!(cmd = %cmd_str, stderr = %stderr, "iptables rule failed (may already exist)");
+                    warn!(cmd = %cmd_str, stderr = %stderr, "iptables rule failed (may already exist)");
                 }
                 Err(e) => {
-                    tracing::warn!(cmd = %cmd_str, error = %e, "failed to execute iptables");
+                    warn!(cmd = %cmd_str, error = %e, "failed to execute iptables");
                 }
             }
         }
@@ -76,7 +80,7 @@ impl TproxyInterceptor {
 
     #[cfg(not(target_os = "linux"))]
     pub fn install(&mut self) -> anyhow::Result<()> {
-        tracing::info!("TPROXY interception not available on non-Linux (mock mode)");
+        info!("TPROXY interception not available on non-Linux (mock mode)");
         self.active = true;
         Ok(())
     }
@@ -84,7 +88,7 @@ impl TproxyInterceptor {
     /// Remove TPROXY interception rules.
     #[cfg(target_os = "linux")]
     pub fn uninstall(&mut self) -> anyhow::Result<()> {
-        tracing::info!("Removing TPROXY rules");
+        info!("Removing TPROXY rules");
         // Remove rules by changing -A (append) / -I (insert) to -D (delete).
         for cmd_str in self.iptables_commands() {
             let del_cmd = cmd_str.replace(" -A ", " -D ").replace(" -I ", " -D ");
@@ -97,14 +101,14 @@ impl TproxyInterceptor {
                 .output();
             match output {
                 Ok(out) if out.status.success() => {
-                    tracing::debug!(cmd = %del_cmd, "iptables rule removed");
+                    debug!(cmd = %del_cmd, "iptables rule removed");
                 }
                 Ok(out) => {
                     let stderr = String::from_utf8_lossy(&out.stderr);
-                    tracing::warn!(cmd = %del_cmd, stderr = %stderr, "iptables rule removal failed (may not exist)");
+                    warn!(cmd = %del_cmd, stderr = %stderr, "iptables rule removal failed (may not exist)");
                 }
                 Err(e) => {
-                    tracing::warn!(cmd = %del_cmd, error = %e, "failed to execute iptables");
+                    warn!(cmd = %del_cmd, error = %e, "failed to execute iptables");
                 }
             }
         }
@@ -115,7 +119,7 @@ impl TproxyInterceptor {
     #[cfg(not(target_os = "linux"))]
     pub fn uninstall(&mut self) -> anyhow::Result<()> {
         self.active = false;
-        tracing::info!("TPROXY rules removed (mock mode)");
+        info!("TPROXY rules removed (mock mode)");
         Ok(())
     }
 

@@ -1,8 +1,9 @@
+use std::fmt;
 use std::net::SocketAddr;
 use std::time::Duration;
 
 /// WireGuard peer configuration.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WireGuardPeer {
     pub public_key: String,
     pub endpoint: Option<SocketAddr>,
@@ -11,14 +12,38 @@ pub struct WireGuardPeer {
     pub preshared_key: Option<String>,
 }
 
+impl fmt::Debug for WireGuardPeer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WireGuardPeer")
+            .field("public_key", &self.public_key)
+            .field("endpoint", &self.endpoint)
+            .field("allowed_ips", &self.allowed_ips)
+            .field("keepalive_interval", &self.keepalive_interval)
+            .field("preshared_key", &"[REDACTED]")
+            .finish()
+    }
+}
+
 /// WireGuard tunnel configuration.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct WireGuardConfig {
     pub interface_name: String,
     pub private_key: String,
     pub listen_port: u16,
     pub peers: Vec<WireGuardPeer>,
     pub mtu: u32,
+}
+
+impl fmt::Debug for WireGuardConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WireGuardConfig")
+            .field("interface_name", &self.interface_name)
+            .field("private_key", &"[REDACTED]")
+            .field("listen_port", &self.listen_port)
+            .field("peers", &self.peers)
+            .field("mtu", &self.mtu)
+            .finish()
+    }
 }
 
 impl Default for WireGuardConfig {
