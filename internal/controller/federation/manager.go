@@ -638,7 +638,7 @@ func (m *Manager) runHealthChecker(ctx context.Context) {
 
 	for {
 		select {
-		case <-m.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			m.checkPeerHealth(ctx)
