@@ -79,13 +79,13 @@ func (r *GatewayReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	// Verify the GatewayClass exists and is accepted
 	gatewayClass := &gatewayv1.GatewayClass{}
-	if err := r.Get(ctx, types.NamespacedName{Name: NovaEdgeGatewayClassName}, gatewayClass); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: expectedClass}, gatewayClass); err != nil {
 		if apierrors.IsNotFound(err) {
 			return r.updateGatewayStatus(ctx, gateway, metav1.Condition{
 				Type:               string(gatewayv1.GatewayConditionAccepted),
 				Status:             metav1.ConditionFalse,
 				Reason:             string(gatewayv1.GatewayReasonInvalid),
-				Message:            fmt.Sprintf("GatewayClass %s not found", NovaEdgeGatewayClassName),
+				Message:            fmt.Sprintf("GatewayClass %s not found", expectedClass),
 				ObservedGeneration: gateway.Generation,
 				LastTransitionTime: metav1.Now(),
 			})

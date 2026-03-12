@@ -98,16 +98,22 @@ func (r *RenewalManager) SetCheckInterval(d time.Duration) {
 
 // OnTokenRenewed sets the callback for successful token renewal.
 func (r *RenewalManager) OnTokenRenewed(fn func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.onTokenRenewed = fn
 }
 
 // OnCertRenewed sets the callback for successful certificate renewal.
 func (r *RenewalManager) OnCertRenewed(fn func(name string, cert *PKICertificate)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.onCertRenewed = fn
 }
 
 // OnRenewalError sets the callback for renewal errors.
 func (r *RenewalManager) OnRenewalError(fn func(name string, err error)) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.onRenewalError = fn
 }
 
@@ -203,15 +209,21 @@ func (r *RenewalManager) checkTokenRenewal(ctx context.Context) {
 	// Renew token by re-authenticating
 	if err := r.client.Authenticate(ctx); err != nil {
 		r.logger.Error("Failed to renew Vault token", zap.Error(err))
-		if r.onRenewalError != nil {
-			r.onRenewalError("vault-token", err)
+		r.mu.Lock()
+		fn := r.onRenewalError
+		r.mu.Unlock()
+		if fn != nil {
+			fn("vault-token", err)
 		}
 		return
 	}
 
 	r.logger.Info("Vault token renewed")
-	if r.onTokenRenewed != nil {
-		r.onTokenRenewed()
+	r.mu.Lock()
+	fn := r.onTokenRenewed
+	r.mu.Unlock()
+	if fn != nil {
+		fn()
 	}
 }
 
@@ -239,8 +251,11 @@ func (r *RenewalManager) checkCertRenewals(ctx context.Context) {
 			r.logger.Error("Failed to renew certificate",
 				zap.String("name", name),
 				zap.Error(err))
-			if r.onRenewalError != nil {
-				r.onRenewalError(name, err)
+			r.mu.Lock()
+			errFn := r.onRenewalError
+			r.mu.Unlock()
+			if errFn != nil {
+				errFn(name, err)
 			}
 			continue
 		}
@@ -250,14 +265,15 @@ func (r *RenewalManager) checkCertRenewals(ctx context.Context) {
 		if t, ok := r.trackedCerts[name]; ok {
 			t.cert = newCert
 		}
+		certFn := r.onCertRenewed
 		r.mu.Unlock()
 
 		r.logger.Info("Certificate renewed",
 			zap.String("name", name),
 			zap.Time("newExpiry", newCert.ExpiresAt))
 
-		if r.onCertRenewed != nil {
-			r.onCertRenewed(name, newCert)
+		if certFn != nil {
+			certFn(name, newCert)
 		}
 	}
 }

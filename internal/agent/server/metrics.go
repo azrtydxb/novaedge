@@ -42,8 +42,9 @@ type MetricsServer struct {
 	rateLimiter *IPRateLimiter
 }
 
-// NewMetricsServer creates a new metrics server
-func NewMetricsServer(logger *zap.Logger, port int) *MetricsServer {
+// NewMetricsServer creates a new metrics server.
+// The provided context controls the lifetime of background goroutines (e.g. rate-limiter cleanup).
+func NewMetricsServer(ctx context.Context, logger *zap.Logger, port int) *MetricsServer {
 	if port == 0 {
 		port = DefaultMetricsPort
 	}
@@ -51,7 +52,7 @@ func NewMetricsServer(logger *zap.Logger, port int) *MetricsServer {
 	return &MetricsServer{
 		logger:      logger,
 		port:        port,
-		rateLimiter: NewIPRateLimiter(DefaultObservabilityRateLimitConfig()),
+		rateLimiter: NewIPRateLimiter(ctx, DefaultObservabilityRateLimitConfig()),
 	}
 }
 

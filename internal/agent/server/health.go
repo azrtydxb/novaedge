@@ -36,12 +36,13 @@ type HealthServer struct {
 	rateLimiter *IPRateLimiter
 }
 
-// NewHealthServer creates a new health probe server
-func NewHealthServer(logger *zap.Logger, port int) *HealthServer {
+// NewHealthServer creates a new health probe server.
+// The provided context controls the lifetime of background goroutines (e.g. rate-limiter cleanup).
+func NewHealthServer(ctx context.Context, logger *zap.Logger, port int) *HealthServer {
 	return &HealthServer{
 		logger:      logger,
 		port:        port,
-		rateLimiter: NewIPRateLimiter(DefaultObservabilityRateLimitConfig()),
+		rateLimiter: NewIPRateLimiter(ctx, DefaultObservabilityRateLimitConfig()),
 	}
 }
 

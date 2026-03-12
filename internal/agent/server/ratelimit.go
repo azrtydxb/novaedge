@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"sync"
@@ -59,8 +60,10 @@ type IPRateLimiter struct {
 	cleanupCh chan struct{}
 }
 
-// NewIPRateLimiter creates a new IP-based rate limiter
-func NewIPRateLimiter(config RateLimiterConfig) *IPRateLimiter {
+// NewIPRateLimiter creates a new IP-based rate limiter.
+// The provided context controls the lifetime of the cleanup goroutine;
+// when the context is cancelled, the goroutine exits.
+func NewIPRateLimiter(ctx context.Context, config RateLimiterConfig) *IPRateLimiter {
 	rl := &IPRateLimiter{
 		limiters:  make(map[string]*limiterEntry),
 		config:    config,
@@ -68,7 +71,7 @@ func NewIPRateLimiter(config RateLimiterConfig) *IPRateLimiter {
 	}
 
 	// Start cleanup goroutine to remove stale limiters
-	go rl.cleanupRoutine()
+	go rl.cleanupRoutine(ctx)
 
 	return rl
 }
@@ -96,7 +99,7 @@ func (rl *IPRateLimiter) getLimiter(ip string) *rate.Limiter {
 }
 
 // cleanupRoutine periodically removes stale limiters to prevent memory leaks
-func (rl *IPRateLimiter) cleanupRoutine() {
+func (rl *IPRateLimiter) cleanupRoutine(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
@@ -104,6 +107,8 @@ func (rl *IPRateLimiter) cleanupRoutine() {
 		select {
 		case <-ticker.C:
 			rl.cleanup()
+		case <-ctx.Done():
+			return
 		case <-rl.cleanupCh:
 			return
 		}

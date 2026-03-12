@@ -58,7 +58,7 @@ func TestNewMetricsServer(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			server := NewMetricsServer(logger, tt.port)
+			server := NewMetricsServer(context.Background(), logger, tt.port)
 			require.NotNil(t, server)
 			assert.Equal(t, tt.expectedPort, server.port)
 			assert.NotNil(t, server.logger)
@@ -74,7 +74,7 @@ func TestMetricsServer_StartAndShutdown(t *testing.T) {
 	logger := zap.NewNop()
 
 	// Use a random available port
-	server := NewMetricsServer(logger, 0) // Will use default port
+	server := NewMetricsServer(context.Background(), logger, 0) // Will use default port
 	require.NotNil(t, server)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -111,7 +111,7 @@ func TestMetricsServer_Shutdown(t *testing.T) {
 	})
 
 	t.Run("running server", func(t *testing.T) {
-		server := NewMetricsServer(logger, 0)
+		server := NewMetricsServer(context.Background(), logger, 0)
 		require.NotNil(t, server)
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -138,7 +138,7 @@ func TestMetricsServer_HTTPEndpoints(t *testing.T) {
 	logger := zap.NewNop()
 
 	// Find available port
-	server := NewMetricsServer(logger, 0)
+	server := NewMetricsServer(context.Background(), logger, 0)
 	require.NotNil(t, server)
 
 	// Manually create server for testing
@@ -184,7 +184,7 @@ func TestMetricsServer_HTTPEndpoints(t *testing.T) {
 func TestMetricsServer_RateLimitIntegration(t *testing.T) {
 	logger := zap.NewNop()
 
-	server := NewMetricsServer(logger, 0)
+	server := NewMetricsServer(context.Background(), logger, 0)
 	require.NotNil(t, server)
 	defer server.rateLimiter.Stop()
 
@@ -200,7 +200,7 @@ func TestMetricsServer_RateLimitIntegration(t *testing.T) {
 func TestMetricsServer_ConcurrentAccess(t *testing.T) {
 	logger := zap.NewNop()
 
-	server := NewMetricsServer(logger, 0)
+	server := NewMetricsServer(context.Background(), logger, 0)
 	require.NotNil(t, server)
 	defer server.rateLimiter.Stop()
 
@@ -222,7 +222,7 @@ func TestMetricsServer_ConcurrentAccess(t *testing.T) {
 
 func TestMetricsServer_StructFields(t *testing.T) {
 	logger := zap.NewNop()
-	server := NewMetricsServer(logger, 9091)
+	server := NewMetricsServer(context.Background(), logger, 9091)
 
 	require.NotNil(t, server)
 	assert.Equal(t, 9091, server.port)
@@ -235,7 +235,7 @@ func TestMetricsServer_StructFields(t *testing.T) {
 
 func TestMetricsServer_DefaultRateLimitConfig(t *testing.T) {
 	logger := zap.NewNop()
-	server := NewMetricsServer(logger, 0)
+	server := NewMetricsServer(context.Background(), logger, 0)
 	require.NotNil(t, server)
 	defer server.rateLimiter.Stop()
 
@@ -251,14 +251,14 @@ func BenchmarkNewMetricsServer(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		server := NewMetricsServer(logger, 9090)
+		server := NewMetricsServer(context.Background(), logger, 9090)
 		server.rateLimiter.Stop()
 	}
 }
 
 func BenchmarkMetricsServer_RateLimiter(b *testing.B) {
 	logger := zap.NewNop()
-	server := NewMetricsServer(logger, 9090)
+	server := NewMetricsServer(context.Background(), logger, 9090)
 	defer server.rateLimiter.Stop()
 
 	b.ResetTimer()
