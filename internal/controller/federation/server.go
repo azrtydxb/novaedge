@@ -85,9 +85,6 @@ type Server struct {
 	// tombstones tracks deleted resources
 	tombstones sync.Map // map[string]*Tombstone
 
-	// pendingChanges is the queue of changes to propagate (kept for backward compatibility)
-	pendingChanges chan *ChangeEntry
-
 	// peerOutboxes holds per-peer buffered channels so that each connected
 	// peer receives every change independently (fan-out).
 	peerOutboxes   map[string]chan *ChangeEntry
@@ -125,6 +122,8 @@ type Server struct {
 	// changeCallbacks are called when a resource changes
 	changeCallbacks []func(key ResourceKey, change ChangeType, data []byte)
 	callbackMu      sync.RWMutex
+	// callbackSem limits concurrent callback goroutines to prevent unbounded spawning.
+	callbackSem chan struct{}
 
 	// agentCount tracks connected agents (for heartbeats)
 	agentCount int32
@@ -138,13 +137,13 @@ func NewServer(config *Config, logger *zap.Logger) *Server {
 	}
 
 	s := &Server{
-		vectorClock:    NewVectorClock(),
-		pendingChanges: make(chan *ChangeEntry, 10000),
-		peerOutboxes:   make(map[string]chan *ChangeEntry),
-		endpointCache:  NewRemoteEndpointCache(),
-		stats:          &SyncStats{},
-		logger:         logger.Named("federation"),
-		shutdownCh:     make(chan struct{}),
+		vectorClock:   NewVectorClock(),
+		peerOutboxes:  make(map[string]chan *ChangeEntry),
+		endpointCache: NewRemoteEndpointCache(),
+		stats:         &SyncStats{},
+		logger:        logger.Named("federation"),
+		shutdownCh:    make(chan struct{}),
+		callbackSem:   make(chan struct{}, 100),
 	}
 	s.config.Store(config)
 
@@ -201,11 +200,14 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 		return status.Error(codes.InvalidArgument, "first message must be handshake")
 	}
 
+	// Snapshot config once to avoid TOCTOU races from multiple config.Load() calls.
+	cfg := s.config.Load()
+
 	// Validate federation ID
-	if handshake.FederationId != s.config.Load().FederationID {
+	if handshake.FederationId != cfg.FederationID {
 		return status.Errorf(codes.PermissionDenied,
 			"federation ID mismatch: expected %s, got %s",
-			s.config.Load().FederationID, handshake.FederationId)
+			cfg.FederationID, handshake.FederationId)
 	}
 
 	// Validate protocol version
@@ -237,13 +239,13 @@ func (s *Server) SyncStream(stream pb.FederationService_SyncStreamServer) error 
 	if err := stream.Send(&pb.SyncMessage{
 		Message: &pb.SyncMessage_Handshake{
 			Handshake: &pb.SyncHandshake{
-				FederationId:    s.config.Load().FederationID,
-				MemberName:      s.config.Load().LocalMember.Name,
-				Region:          s.config.Load().LocalMember.Region,
-				Zone:            s.config.Load().LocalMember.Zone,
+				FederationId:    cfg.FederationID,
+				MemberName:      cfg.LocalMember.Name,
+				Region:          cfg.LocalMember.Region,
+				Zone:            cfg.LocalMember.Zone,
 				VectorClock:     s.vectorClock.ToMap(),
 				ProtocolVersion: ProtocolVersion,
-				Compression:     s.config.Load().CompressionEnabled,
+				Compression:     cfg.CompressionEnabled,
 			},
 		},
 	}); err != nil {
@@ -949,7 +951,10 @@ func (s *Server) RegisterServer(grpcServer *grpc.Server) {
 
 // RecordLocalChange records a local change to be propagated to peers
 func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data []byte, labels map[string]string) {
-	s.vectorClock.Increment(s.config.Load().LocalMember.Name)
+	// Snapshot config once to avoid TOCTOU races from multiple config.Load() calls.
+	cfg := s.config.Load()
+
+	s.vectorClock.Increment(cfg.LocalMember.Name)
 	clock := s.vectorClock.ToMap()
 
 	entry := &ChangeEntry{
@@ -968,7 +973,7 @@ func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data 
 			Key:          key,
 			DeletionTime: time.Now(),
 			VectorClock:  clock,
-			OriginMember: s.config.Load().LocalMember.Name,
+			OriginMember: cfg.LocalMember.Name,
 		}
 		s.tombstones.Store(keyStr, entry.Tombstone)
 		s.resources.Delete(keyStr)
@@ -977,7 +982,7 @@ func (s *Server) RecordLocalChange(key ResourceKey, changeType ChangeType, data 
 			Key:          key,
 			Data:         data,
 			VectorClock:  clock,
-			OriginMember: s.config.Load().LocalMember.Name,
+			OriginMember: cfg.LocalMember.Name,
 			LastModified: time.Now(),
 			Labels:       labels,
 		}
@@ -1011,7 +1016,12 @@ func (s *Server) notifyChange(key ResourceKey, change ChangeType, data []byte) {
 	s.callbackMu.RLock()
 	defer s.callbackMu.RUnlock()
 	for _, cb := range s.changeCallbacks {
-		go cb(key, change, data)
+		cb := cb // capture loop variable
+		s.callbackSem <- struct{}{}
+		go func() {
+			defer func() { <-s.callbackSem }()
+			cb(key, change, data)
+		}()
 	}
 }
 

@@ -70,6 +70,7 @@ type PeerClient struct {
 	// Callbacks
 	onMessage    func(*pb.SyncMessage)
 	onDisconnect func()
+	cbMu         sync.RWMutex
 
 	// State
 	connected bool
@@ -226,8 +227,11 @@ func (c *PeerClient) StartSyncStream(ctx context.Context, localVectorClock map[s
 func (c *PeerClient) receiveLoop(ctx context.Context) {
 	defer func() {
 		c.setConnected(false)
-		if c.onDisconnect != nil {
-			c.onDisconnect()
+		c.cbMu.RLock()
+		fn := c.onDisconnect
+		c.cbMu.RUnlock()
+		if fn != nil {
+			fn()
 		}
 	}()
 
@@ -252,8 +256,11 @@ func (c *PeerClient) receiveLoop(ctx context.Context) {
 			return
 		}
 
-		if c.onMessage != nil {
-			c.onMessage(msg)
+		c.cbMu.RLock()
+		fn := c.onMessage
+		c.cbMu.RUnlock()
+		if fn != nil {
+			fn(msg)
 		}
 	}
 }
@@ -398,11 +405,15 @@ func (c *PeerClient) RequestFullSync(ctx context.Context, resourceTypes, namespa
 
 // OnMessage sets the callback for incoming messages
 func (c *PeerClient) OnMessage(fn func(*pb.SyncMessage)) {
+	c.cbMu.Lock()
+	defer c.cbMu.Unlock()
 	c.onMessage = fn
 }
 
 // OnDisconnect sets the callback for disconnection
 func (c *PeerClient) OnDisconnect(fn func()) {
+	c.cbMu.Lock()
+	defer c.cbMu.Unlock()
 	c.onDisconnect = fn
 }
 
