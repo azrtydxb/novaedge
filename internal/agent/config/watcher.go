@@ -299,8 +299,14 @@ func (w *Watcher) streamConfig(client pb.ConfigServiceClient, applyFunc ApplyFun
 		ClusterLabels:      w.clusterLabels,
 	}
 
+	// Derive a cancellable context so we can stop the recv goroutine when
+	// streamConfig returns (e.g. on force-resync). Without this the
+	// goroutine would leak until the parent context is cancelled.
+	streamCtx, streamCancel := context.WithCancel(w.ctx)
+	defer streamCancel()
+
 	// Start streaming
-	stream, err := client.StreamConfig(w.ctx, req)
+	stream, err := client.StreamConfig(streamCtx, req)
 	if err != nil {
 		return fmt.Errorf("failed to start config stream: %w", err)
 	}

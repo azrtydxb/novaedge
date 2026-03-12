@@ -226,9 +226,10 @@ func (c *Client) registerAccount(ctx context.Context, _ *User, privateKey crypto
 		PrivateKeyPEM: keyPEM,
 	}
 
-	// Save account
+	// Save account — return on error to prevent silent rate-limit exhaustion
+	// if storage is broken (re-registration would consume ACME rate limits).
 	if err := c.storage.SaveAccount(ctx, c.account); err != nil {
-		c.logger.Warn("Failed to save account", zap.Error(err))
+		return fmt.Errorf("failed to save ACME account: %w", err)
 	}
 
 	c.logger.Info("Registered new ACME account",
@@ -290,9 +291,10 @@ func (c *Client) ObtainCertificate(ctx context.Context, req *CertificateRequest)
 		Issuer:               certData.Issuer.CommonName,
 	}
 
-	// Save certificate
+	// Save certificate — return on error to prevent silent rate-limit exhaustion
+	// if storage is broken (re-issuance would consume ACME rate limits).
 	if err := c.storage.SaveCertificate(ctx, result); err != nil {
-		c.logger.Warn("Failed to save certificate", zap.Error(err))
+		return nil, fmt.Errorf("failed to save certificate: %w", err)
 	}
 
 	c.logger.Info("Certificate obtained",

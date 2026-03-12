@@ -184,7 +184,7 @@ func (a *AdminServer) Start(ctx context.Context) error {
 
 	<-ctx.Done()
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
 	defer cancel()
 
 	a.logger.Info("Shutting down admin API server")
