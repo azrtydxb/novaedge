@@ -26,8 +26,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"go.uber.org/zap"
-
 	novaedgev1alpha1 "github.com/azrtydxb/novaedge/api/v1alpha1"
 	"github.com/azrtydxb/novaedge/internal/pkg/convert"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
@@ -310,7 +308,7 @@ func convertSessionAffinity(sa *novaedgev1alpha1.SessionAffinityConfig) *pb.Sess
 	case "SourceIP":
 		affinityType = "source_ip"
 	default:
-		log.Log.Info("Unknown session affinity type, defaulting to cookie", "type", sa.Type)
+		log.Log.Error(nil, "Unknown session affinity type, defaulting to cookie", "type", sa.Type)
 	}
 
 	cookieName := sa.CookieName
@@ -369,8 +367,8 @@ func convertCompressionConfig(config *novaedgev1alpha1.CompressionConfig) *pb.Co
 
 	minSize, err := convert.ParseByteSize(config.MinSize)
 	if err != nil {
-		zap.L().Warn("failed to parse compression min size, using 0",
-			zap.String("value", config.MinSize), zap.Error(err))
+		log.Log.Error(nil, "failed to parse compression min size, using 0",
+			"value", config.MinSize, "error", err)
 	}
 
 	return &pb.CompressionConfig{
@@ -390,18 +388,18 @@ func convertRouteLimits(limits *novaedgev1alpha1.RouteLimits) *pb.RouteLimitsCon
 
 	maxBody, err := convert.ParseByteSize(limits.MaxRequestBodySize)
 	if err != nil {
-		zap.L().Warn("failed to parse max request body size, using 0",
-			zap.String("value", limits.MaxRequestBodySize), zap.Error(err))
+		log.Log.Error(nil, "failed to parse max request body size, using 0",
+			"value", limits.MaxRequestBodySize, "error", err)
 	}
 	reqTimeout, err := parseDurationMs(limits.RequestTimeout)
 	if err != nil {
-		zap.L().Warn("failed to parse request timeout, using 0",
-			zap.String("value", limits.RequestTimeout), zap.Error(err))
+		log.Log.Error(nil, "failed to parse request timeout, using 0",
+			"value", limits.RequestTimeout, "error", err)
 	}
 	idleTimeout, err := parseDurationMs(limits.IdleTimeout)
 	if err != nil {
-		zap.L().Warn("failed to parse idle timeout, using 0",
-			zap.String("value", limits.IdleTimeout), zap.Error(err))
+		log.Log.Error(nil, "failed to parse idle timeout, using 0",
+			"value", limits.IdleTimeout, "error", err)
 	}
 
 	return &pb.RouteLimitsConfig{
@@ -419,8 +417,8 @@ func convertBufferingConfig(config *novaedgev1alpha1.RouteBufferingConfig) *pb.B
 
 	maxSize, err := convert.ParseByteSize(config.MaxSize)
 	if err != nil {
-		zap.L().Warn("failed to parse max buffer size, using 0",
-			zap.String("value", config.MaxSize), zap.Error(err))
+		log.Log.Error(nil, "failed to parse max buffer size, using 0",
+			"value", config.MaxSize, "error", err)
 	}
 
 	return &pb.BufferingConfig{

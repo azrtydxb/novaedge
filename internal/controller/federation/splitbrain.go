@@ -109,22 +109,6 @@ func DefaultSplitBrainConfig() *SplitBrainConfig {
 	}
 }
 
-// AgentAssistedSplitBrainConfig returns config optimized for 2-controller deployments
-func AgentAssistedSplitBrainConfig() *SplitBrainConfig {
-	return &SplitBrainConfig{
-		PartitionTimeout:       DefaultPartitionTimeout,
-		QuorumRequired:         true,
-		QuorumSize:             0, // Will be calculated based on total agents
-		HealingGracePeriod:     DefaultHealingGracePeriod,
-		AutoResolveOnHeal:      true,
-		FencingEnabled:         true,
-		QuorumMode:             QuorumModeAgentAssisted,
-		AgentQuorumWeight:      1,
-		ControllerQuorumWeight: 10,
-		MinAgentsForQuorum:     1,
-	}
-}
-
 // PartitionState represents the current partition state
 type PartitionState string
 
@@ -167,54 +151,6 @@ type PartitionInfo struct {
 
 	// PendingConflicts is the number of conflicts to resolve
 	PendingConflicts int
-
-	// AgentQuorumInfo contains agent-based quorum information (AgentAssisted mode only)
-	AgentQuorumInfo *AgentQuorumInfo
-}
-
-// AgentQuorumInfo contains information about agent-based quorum
-type AgentQuorumInfo struct {
-	// TotalAgents is the total number of known agents across all controllers
-	TotalAgents int
-
-	// ReachableAgents is the number of agents this controller can reach
-	ReachableAgents int
-
-	// QuorumThreshold is the minimum agents needed for quorum
-	QuorumThreshold int
-
-	// OurVotes is our calculated vote count (agents + controller weight)
-	OurVotes int
-
-	// TotalVotes is the total possible votes
-	TotalVotes int
-
-	// PeerAgentCounts maps peer controller names to their connected agent counts
-	PeerAgentCounts map[string]int
-
-	// AgentsByController maps controller names to lists of agent names
-	AgentsByController map[string][]string
-}
-
-// AgentReachabilityReport is sent by agents to report which controllers they can reach
-type AgentReachabilityReport struct {
-	// AgentName is the unique identifier for this agent
-	AgentName string
-
-	// NodeName is the Kubernetes node name
-	NodeName string
-
-	// ClusterName is the cluster this agent belongs to
-	ClusterName string
-
-	// ReachableControllers is the list of controller names this agent can reach
-	ReachableControllers []string
-
-	// ControllerLatencies maps controller names to round-trip latency
-	ControllerLatencies map[string]time.Duration
-
-	// Timestamp is when this report was generated
-	Timestamp time.Time
 }
 
 // SplitBrainDetector handles split-brain detection and mitigation
@@ -235,12 +171,6 @@ type SplitBrainDetector struct {
 	reachablePeers map[string]time.Time
 	peersMu        sync.RWMutex
 
-	// Agent quorum tracking (AgentAssisted mode)
-	agentReports   map[string]*AgentReachabilityReport // agentName -> report
-	agentsMu       sync.RWMutex
-	peerAgentCount map[string]int32 // peerName -> agentCount from heartbeats
-	peerAgentMu    sync.RWMutex
-
 	// Write fencing
 	writesFenced bool
 	fenceMu      sync.RWMutex
@@ -248,12 +178,6 @@ type SplitBrainDetector struct {
 	// Context
 	ctx    context.Context
 	cancel context.CancelFunc
-
-	// Callbacks
-	onPartitionDetected func(*PartitionInfo)
-	onPartitionHealed   func(*PartitionInfo)
-	onQuorumLost        func()
-	onQuorumRestored    func()
 }
 
 // NewSplitBrainDetector creates a new split-brain detector
@@ -279,8 +203,6 @@ func NewSplitBrainDetector(config *SplitBrainConfig, server *Server, totalPeers 
 		state:          PartitionStateHealthy,
 		totalPeers:     totalPeers,
 		reachablePeers: make(map[string]time.Time),
-		agentReports:   make(map[string]*AgentReachabilityReport),
-		peerAgentCount: make(map[string]int32),
 	}
 }
 
@@ -377,26 +299,6 @@ func (d *SplitBrainDetector) CanAcceptWrite() bool {
 	return true
 }
 
-// OnPartitionDetected sets the callback for partition detection
-func (d *SplitBrainDetector) OnPartitionDetected(fn func(*PartitionInfo)) {
-	d.onPartitionDetected = fn
-}
-
-// OnPartitionHealed sets the callback for partition healing
-func (d *SplitBrainDetector) OnPartitionHealed(fn func(*PartitionInfo)) {
-	d.onPartitionHealed = fn
-}
-
-// OnQuorumLost sets the callback for quorum loss
-func (d *SplitBrainDetector) OnQuorumLost(fn func()) {
-	d.onQuorumLost = fn
-}
-
-// OnQuorumRestored sets the callback for quorum restoration
-func (d *SplitBrainDetector) OnQuorumRestored(fn func()) {
-	d.onQuorumRestored = fn
-}
-
 // runDetectionLoop runs the periodic partition detection
 func (d *SplitBrainDetector) runDetectionLoop() {
 	ticker := time.NewTicker(DefaultQuorumCheckInterval)
@@ -469,10 +371,6 @@ func (d *SplitBrainDetector) checkForPartition() {
 					d.fenceMu.Unlock()
 				}
 
-				// Notify callback
-				if d.onPartitionDetected != nil {
-					go d.onPartitionDetected(d.partitionInfo)
-				}
 			}
 		}
 	}
@@ -497,9 +395,6 @@ func (d *SplitBrainDetector) checkForPartition() {
 				d.fenceMu.Unlock()
 			}
 
-			if d.onPartitionDetected != nil {
-				go d.onPartitionDetected(d.partitionInfo)
-			}
 		}
 	}
 
@@ -597,8 +492,6 @@ func (d *SplitBrainDetector) runHealingProcess() {
 
 // transitionToHealthy transitions to healthy state
 func (d *SplitBrainDetector) transitionToHealthy() {
-	oldInfo := d.partitionInfo
-
 	d.state = PartitionStateHealthy
 	d.partitionInfo = nil
 
@@ -607,10 +500,6 @@ func (d *SplitBrainDetector) transitionToHealthy() {
 	d.fenceMu.Unlock()
 
 	d.logger.Info("Partition healed - federation healthy")
-
-	if d.onPartitionHealed != nil && oldInfo != nil {
-		go d.onPartitionHealed(oldInfo)
-	}
 }
 
 // checkQuorum checks if we have quorum and handles transitions
@@ -634,17 +523,11 @@ func (d *SplitBrainDetector) checkQuorum() {
 			zap.Int("reachable", d.countReachablePeers()),
 			zap.Int("required", d.config.QuorumSize),
 		)
-		if d.onQuorumLost != nil {
-			go d.onQuorumLost()
-		}
 	} else if !hadQuorum && haveQuorum {
 		d.logger.Info("Quorum restored",
 			zap.Int("reachable", d.countReachablePeers()),
 			zap.Int("required", d.config.QuorumSize),
 		)
-		if d.onQuorumRestored != nil {
-			go d.onQuorumRestored()
-		}
 	}
 }
 
@@ -706,205 +589,4 @@ func (d *SplitBrainDetector) getUnreachablePeerNames() []string {
 	}
 
 	return unreachable
-}
-
-// ============================================================================
-// Agent-Assisted Quorum Methods
-// ============================================================================
-
-// RecordAgentReachability records an agent's controller reachability report
-func (d *SplitBrainDetector) RecordAgentReachability(report *AgentReachabilityReport) {
-	if d.config.QuorumMode != QuorumModeAgentAssisted {
-		return
-	}
-
-	d.agentsMu.Lock()
-	defer d.agentsMu.Unlock()
-
-	report.Timestamp = time.Now()
-	d.agentReports[report.AgentName] = report
-
-	d.logger.Debug("Recorded agent reachability",
-		zap.String("agent", report.AgentName),
-		zap.Strings("reachableControllers", report.ReachableControllers),
-	)
-}
-
-// UpdatePeerAgentCount updates the agent count for a peer (from heartbeats)
-func (d *SplitBrainDetector) UpdatePeerAgentCount(peerName string, count int32) {
-	if d.config.QuorumMode != QuorumModeAgentAssisted {
-		return
-	}
-
-	d.peerAgentMu.Lock()
-	d.peerAgentCount[peerName] = count
-	d.peerAgentMu.Unlock()
-}
-
-// GetAgentQuorumInfo returns information about agent-based quorum
-func (d *SplitBrainDetector) GetAgentQuorumInfo() *AgentQuorumInfo {
-	if d.config.QuorumMode != QuorumModeAgentAssisted {
-		return nil
-	}
-
-	d.agentsMu.RLock()
-	d.peerAgentMu.RLock()
-	defer d.agentsMu.RUnlock()
-	defer d.peerAgentMu.RUnlock()
-
-	// Count agents that can reach us
-	ourControllerName := ""
-	if d.server != nil {
-		if cfg := d.server.config.Load(); cfg != nil && cfg.LocalMember != nil {
-			ourControllerName = cfg.LocalMember.Name
-		}
-	}
-
-	agentsByController := make(map[string][]string)
-	reachableAgents := 0
-	cutoff := time.Now().Add(-d.config.PartitionTimeout)
-
-	for agentName, report := range d.agentReports {
-		if report.Timestamp.Before(cutoff) {
-			continue // Stale report
-		}
-
-		for _, controller := range report.ReachableControllers {
-			agentsByController[controller] = append(agentsByController[controller], agentName)
-			if controller == ourControllerName {
-				reachableAgents++
-			}
-		}
-	}
-
-	// Get local agent count from server
-	localAgentCount := 0
-	if d.server != nil {
-		d.server.agentMu.RLock()
-		localAgentCount = int(d.server.agentCount)
-		d.server.agentMu.RUnlock()
-	}
-
-	// Use the higher of reported or connected
-	if localAgentCount > reachableAgents {
-		reachableAgents = localAgentCount
-	}
-
-	// Calculate total agents across all controllers
-	totalAgents := reachableAgents
-	peerAgentCounts := make(map[string]int)
-	for peerName, count := range d.peerAgentCount {
-		peerAgentCounts[peerName] = int(count)
-		totalAgents += int(count)
-	}
-
-	// Calculate votes
-	// Our votes = our agents + controller weight (ourselves)
-	ourVotes := reachableAgents*d.config.AgentQuorumWeight + d.config.ControllerQuorumWeight
-
-	// Total votes = all agents + all controllers
-	totalControllers := 1 + len(d.peerAgentCount) // us + peers
-	totalVotes := totalAgents*d.config.AgentQuorumWeight + totalControllers*d.config.ControllerQuorumWeight
-
-	// Quorum threshold is majority of votes
-	quorumThreshold := (totalVotes / 2) + 1
-
-	return &AgentQuorumInfo{
-		TotalAgents:        totalAgents,
-		ReachableAgents:    reachableAgents,
-		QuorumThreshold:    quorumThreshold,
-		OurVotes:           ourVotes,
-		TotalVotes:         totalVotes,
-		PeerAgentCounts:    peerAgentCounts,
-		AgentsByController: agentsByController,
-	}
-}
-
-// HaveAgentQuorum returns true if we have quorum based on agent connectivity
-func (d *SplitBrainDetector) HaveAgentQuorum() bool {
-	if d.config.QuorumMode != QuorumModeAgentAssisted {
-		return d.HaveQuorum() // Fall back to controller-based quorum
-	}
-
-	info := d.GetAgentQuorumInfo()
-	if info == nil {
-		return true // No info available, assume we have quorum
-	}
-
-	// Check minimum agents requirement
-	if info.ReachableAgents < d.config.MinAgentsForQuorum {
-		d.logger.Debug("Agent quorum check: insufficient agents",
-			zap.Int("reachable", info.ReachableAgents),
-			zap.Int("minimum", d.config.MinAgentsForQuorum),
-		)
-		return false
-	}
-
-	// Check vote threshold
-	haveQuorum := info.OurVotes >= info.QuorumThreshold
-
-	d.logger.Debug("Agent quorum check",
-		zap.Int("our_votes", info.OurVotes),
-		zap.Int("threshold", info.QuorumThreshold),
-		zap.Int("total_votes", info.TotalVotes),
-		zap.Int("reachable_agents", info.ReachableAgents),
-		zap.Bool("have_quorum", haveQuorum),
-	)
-
-	return haveQuorum
-}
-
-// CanAcceptWriteWithAgentQuorum checks if we can accept writes using agent-based quorum
-func (d *SplitBrainDetector) CanAcceptWriteWithAgentQuorum() bool {
-	// If fencing is enabled and writes are fenced, reject
-	if d.config.FencingEnabled && d.AreWritesFenced() {
-		return false
-	}
-
-	// Check agent quorum if enabled
-	if d.config.QuorumMode == QuorumModeAgentAssisted {
-		return d.HaveAgentQuorum()
-	}
-
-	// Fall back to standard quorum check
-	return d.CanAcceptWrite()
-}
-
-// CleanupStaleAgentReports removes agent reports that haven't been updated recently
-func (d *SplitBrainDetector) CleanupStaleAgentReports() {
-	d.agentsMu.Lock()
-	defer d.agentsMu.Unlock()
-
-	cutoff := time.Now().Add(-d.config.PartitionTimeout * 2) // 2x partition timeout for agents
-	for agentName, report := range d.agentReports {
-		if report.Timestamp.Before(cutoff) {
-			delete(d.agentReports, agentName)
-			d.logger.Debug("Removed stale agent report", zap.String("agent", agentName))
-		}
-	}
-}
-
-// GetAgentReachabilityStats returns statistics about agent reachability
-func (d *SplitBrainDetector) GetAgentReachabilityStats() map[string]any {
-	info := d.GetAgentQuorumInfo()
-	if info == nil {
-		return map[string]any{
-			"mode":    string(d.config.QuorumMode),
-			"enabled": false,
-		}
-	}
-
-	return map[string]any{
-		"mode":             string(d.config.QuorumMode),
-		"enabled":          true,
-		"totalAgents":      info.TotalAgents,
-		"reachableAgents":  info.ReachableAgents,
-		"ourVotes":         info.OurVotes,
-		"totalVotes":       info.TotalVotes,
-		"quorumThreshold":  info.QuorumThreshold,
-		"haveQuorum":       d.HaveAgentQuorum(),
-		"peerAgentCounts":  info.PeerAgentCounts,
-		"controllerWeight": d.config.ControllerQuorumWeight,
-		"agentWeight":      d.config.AgentQuorumWeight,
-	}
 }
