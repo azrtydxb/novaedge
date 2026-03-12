@@ -303,7 +303,7 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 
 	comp.watcher = initConfigWatcher(ctx, logger.Named("config"))
 
-	comp.gossiper = gossip.NewConfigGossiper(nodeName, comp.watcher.ForceResync, logger)
+	comp.gossiper = gossip.NewConfigGossiper(nodeName, comp.watcher.ForceResync, logger, nil)
 	if err := comp.gossiper.Start(ctx); err != nil {
 		logger.Warn("Failed to start config gossiper", zap.Error(err))
 	}

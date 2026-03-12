@@ -59,6 +59,7 @@ type CertificateManager struct {
 
 	renewalTicker *time.Ticker
 	stopCh        chan struct{}
+	stopOnce      sync.Once
 }
 
 // ManagedCertificate represents a managed certificate with hot-reload support.
@@ -405,84 +406,130 @@ func (m *CertificateManager) Start(ctx context.Context) {
 	m.logger.Info("Certificate manager started")
 }
 
-// Stop stops the certificate manager.
+// Stop stops the certificate manager. It is safe to call multiple times.
 func (m *CertificateManager) Stop() {
-	close(m.stopCh)
-	if m.renewalTicker != nil {
-		m.renewalTicker.Stop()
-	}
-	m.logger.Info("Certificate manager stopped")
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+		if m.renewalTicker != nil {
+			m.renewalTicker.Stop()
+		}
+		m.logger.Info("Certificate manager stopped")
+	})
+}
+
+// renewCandidate holds the information needed to renew a single certificate
+// outside the lock.
+type renewCandidate struct {
+	name    string
+	client  *acme.Client
+	domains []string
 }
 
 // checkRenewals checks for certificates needing renewal.
+// It collects candidates under a read lock, releases the lock for network I/O
+// (ACME operations), then re-acquires a write lock to update state.
 func (m *CertificateManager) checkRenewals(ctx context.Context) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	renewThreshold := 30 * 24 * time.Hour // 30 days
 
+	// Phase 1: collect candidates under read lock.
+	var candidates []renewCandidate
+	m.mu.RLock()
 	for name, mc := range m.certificates {
 		if mc.IssuerType != issuerTypeACME {
 			continue
 		}
-
-		if time.Until(mc.NotAfter) < renewThreshold {
-			m.logger.Info("Certificate needs renewal",
-				zap.String("name", name),
-				zap.Time("expires", mc.NotAfter),
-			)
-
-			client, ok := m.acmeClients[name]
-			if !ok {
-				m.logger.Warn("ACME client not found for certificate", zap.String("name", name))
-				continue
-			}
-
-			// Find the certificate config
-			var certConfig *CertificateConfig
-			for i := range m.config.Certificates {
-				if m.config.Certificates[i].Name == name {
-					certConfig = &m.config.Certificates[i]
-					break
-				}
-			}
-
-			if certConfig == nil {
-				m.logger.Warn("Certificate config not found", zap.String("name", name))
-				continue
-			}
-
-			// Renew certificate
-			cert, err := client.ObtainCertificate(ctx, &acme.CertificateRequest{
-				Domains: certConfig.Domains,
-			})
-			if err != nil {
-				m.logger.Error("Failed to renew certificate",
-					zap.String("name", name),
-					zap.Error(err),
-				)
-				continue
-			}
-
-			// Load new certificate
-			tlsCert, err := cert.TLSCertificate()
-			if err != nil {
-				m.logger.Error("Failed to load renewed certificate",
-					zap.String("name", name),
-					zap.Error(err),
-				)
-				continue
-			}
-
-			mc.certificate.Store(tlsCert)
-			mc.NotBefore = cert.NotBefore
-			mc.NotAfter = cert.NotAfter
-
-			m.logger.Info("Certificate renewed",
-				zap.String("name", name),
-				zap.Time("newExpiry", cert.NotAfter),
-			)
+		if time.Until(mc.NotAfter) >= renewThreshold {
+			continue
 		}
+
+		m.logger.Info("Certificate needs renewal",
+			zap.String("name", name),
+			zap.Time("expires", mc.NotAfter),
+		)
+
+		client, ok := m.acmeClients[name]
+		if !ok {
+			m.logger.Warn("ACME client not found for certificate", zap.String("name", name))
+			continue
+		}
+
+		var certConfig *CertificateConfig
+		for i := range m.config.Certificates {
+			if m.config.Certificates[i].Name == name {
+				certConfig = &m.config.Certificates[i]
+				break
+			}
+		}
+		if certConfig == nil {
+			m.logger.Warn("Certificate config not found", zap.String("name", name))
+			continue
+		}
+
+		candidates = append(candidates, renewCandidate{
+			name:    name,
+			client:  client,
+			domains: certConfig.Domains,
+		})
+	}
+	m.mu.RUnlock()
+
+	if len(candidates) == 0 {
+		return
+	}
+
+	// Phase 2: perform ACME renewals without holding any lock.
+	type renewResult struct {
+		name    string
+		cert    *acme.Certificate
+		tlsCert *tls.Certificate
+	}
+	var results []renewResult
+
+	for _, c := range candidates {
+		cert, err := c.client.ObtainCertificate(ctx, &acme.CertificateRequest{
+			Domains: c.domains,
+		})
+		if err != nil {
+			m.logger.Error("Failed to renew certificate",
+				zap.String("name", c.name),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		tlsCert, err := cert.TLSCertificate()
+		if err != nil {
+			m.logger.Error("Failed to load renewed certificate",
+				zap.String("name", c.name),
+				zap.Error(err),
+			)
+			continue
+		}
+
+		results = append(results, renewResult{name: c.name, cert: cert, tlsCert: tlsCert})
+	}
+
+	if len(results) == 0 {
+		return
+	}
+
+	// Phase 3: update state under write lock.
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	for _, r := range results {
+		mc, ok := m.certificates[r.name]
+		if !ok {
+			continue
+		}
+		mc.certificate.Store(r.tlsCert)
+		mc.NotBefore = r.cert.NotBefore
+		mc.NotAfter = r.cert.NotAfter
+
+		m.logger.Info("Certificate renewed",
+			zap.String("name", r.name),
+			zap.Time("newExpiry", r.cert.NotAfter),
+		)
 	}
 }
 

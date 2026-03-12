@@ -32,7 +32,7 @@ func TestNewConfigGossiper(t *testing.T) {
 	resyncFunc := func() { resyncCalled = true }
 	_ = resyncCalled
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 
 	require.NotNil(t, g)
 	assert.Equal(t, "test-node", g.nodeName)
@@ -43,7 +43,7 @@ func TestNewConfigGossiper(t *testing.T) {
 
 func TestConfigGossiper_UpdateGenTime(t *testing.T) {
 	logger := zap.NewNop()
-	g := NewConfigGossiper("test-node", func() {}, logger)
+	g := NewConfigGossiper("test-node", func() {}, logger, nil)
 
 	assert.Equal(t, int64(0), g.currentGenTime.Load())
 
@@ -56,7 +56,7 @@ func TestConfigGossiper_UpdateGenTime(t *testing.T) {
 
 func TestConfigGossiper_handleMessage(t *testing.T) {
 	logger := zap.NewNop()
-	g := NewConfigGossiper("test-node", func() {}, logger)
+	g := NewConfigGossiper("test-node", func() {}, logger, nil)
 
 	tests := []struct {
 		name        string
@@ -115,6 +115,7 @@ func TestConfigGossiper_handleMessage(t *testing.T) {
 				g.peerVersions.Delete(key)
 				return true
 			})
+			g.peerCount.Store(0)
 
 			g.handleMessage(tt.data)
 
@@ -138,7 +139,7 @@ func TestConfigGossiper_handleMessage(t *testing.T) {
 
 func TestConfigGossiper_handleMessage_UpdatesExistingPeer(t *testing.T) {
 	logger := zap.NewNop()
-	g := NewConfigGossiper("test-node", func() {}, logger)
+	g := NewConfigGossiper("test-node", func() {}, logger, nil)
 
 	// First message
 	g.handleMessage("config_version|peer-node|100|1609459200000000000")
@@ -166,7 +167,7 @@ func TestConfigGossiper_checkQuorum_NoConfig(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 
 	// No config applied (genTime = 0)
 	g.checkQuorum()
@@ -180,7 +181,7 @@ func TestConfigGossiper_checkQuorum_Cooldown(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Set last resync time to recent
@@ -201,7 +202,7 @@ func TestConfigGossiper_checkQuorum_ExpiredPeers(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Add expired peer
@@ -225,7 +226,7 @@ func TestConfigGossiper_checkQuorum_NoQuorum(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Add peers but not majority with newer genTime
@@ -244,7 +245,7 @@ func TestConfigGossiper_checkQuorum_QuorumTriggersResync(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Add peers where majority have significantly newer genTime
@@ -267,7 +268,7 @@ func TestConfigGossiper_checkQuorum_ExactlyHalfNotQuorum(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Add 4 peers, exactly2 are newer (not majority)
@@ -287,7 +288,7 @@ func TestConfigGossiper_checkQuorum_SingleNewerPeer(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Single peer that is newer
@@ -304,7 +305,7 @@ func TestConfigGossiper_checkQuorum_GenTimeThreshold(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Peer with genTime within threshold (1000 + 60 = 1060)
@@ -352,7 +353,7 @@ func TestConfigGossiper_checkQuorum_MultipleResyncs(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Add majority newer peers
@@ -379,7 +380,7 @@ func TestConfigGossiper_checkQuorum_InvalidPeerState(t *testing.T) {
 	resyncCalled := int32(0)
 	resyncFunc := func() { atomic.AddInt32(&resyncCalled, 1) }
 
-	g := NewConfigGossiper("test-node", resyncFunc, logger)
+	g := NewConfigGossiper("test-node", resyncFunc, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Store invalid peer state (not peerState type)
@@ -395,7 +396,7 @@ func TestConfigGossiper_checkQuorum_InvalidPeerState(t *testing.T) {
 // Benchmark tests
 func BenchmarkConfigGossiper_handleMessage(b *testing.B) {
 	logger := zap.NewNop()
-	g := NewConfigGossiper("test-node", func() {}, logger)
+	g := NewConfigGossiper("test-node", func() {}, logger, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -405,7 +406,7 @@ func BenchmarkConfigGossiper_handleMessage(b *testing.B) {
 
 func BenchmarkConfigGossiper_checkQuorum(b *testing.B) {
 	logger := zap.NewNop()
-	g := NewConfigGossiper("test-node", func() {}, logger)
+	g := NewConfigGossiper("test-node", func() {}, logger, nil)
 	g.UpdateGenTime(1000)
 
 	// Add some peers
@@ -421,7 +422,7 @@ func BenchmarkConfigGossiper_checkQuorum(b *testing.B) {
 
 func BenchmarkConfigGossiper_UpdateGenTime(b *testing.B) {
 	logger := zap.NewNop()
-	g := NewConfigGossiper("test-node", func() {}, logger)
+	g := NewConfigGossiper("test-node", func() {}, logger, nil)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

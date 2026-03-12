@@ -21,6 +21,9 @@ package gossip
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -66,6 +69,9 @@ const (
 
 	// messagePrefix identifies config gossip messages.
 	messagePrefix = "config_version"
+
+	// maxPeers is the maximum number of peers tracked in the peer table.
+	maxPeers = 256
 )
 
 // peerState tracks the last known config generation time and heartbeat of a peer.
@@ -78,9 +84,11 @@ type peerState struct {
 type ConfigGossiper struct {
 	nodeName        string
 	multicastAddr   string
+	psk             []byte // Pre-shared key for HMAC-SHA256 authentication (nil = disabled)
 	conn            *net.UDPConn
 	currentGenTime  atomic.Int64
 	peerVersions    sync.Map // map[string]peerState
+	peerCount       atomic.Int32
 	forceResyncFunc func()
 	lastResyncTime  atomic.Int64 // Unix nano timestamp of last force resync
 	logger          *zap.Logger
@@ -91,10 +99,13 @@ type ConfigGossiper struct {
 
 // NewConfigGossiper creates a new config version gossiper.
 // forceResyncFunc is called when quorum detects this agent is behind.
-func NewConfigGossiper(nodeName string, forceResyncFunc func(), logger *zap.Logger) *ConfigGossiper {
+// psk is an optional pre-shared key for HMAC-SHA256 message authentication;
+// pass nil or empty to disable authentication (backward compatible).
+func NewConfigGossiper(nodeName string, forceResyncFunc func(), logger *zap.Logger, psk []byte) *ConfigGossiper {
 	return &ConfigGossiper{
 		nodeName:        nodeName,
 		multicastAddr:   fmt.Sprintf("%s:%d", MulticastAddr, GossipPort),
+		psk:             psk,
 		forceResyncFunc: forceResyncFunc,
 		logger:          logger.Named("gossip"),
 	}
@@ -178,6 +189,12 @@ func (g *ConfigGossiper) broadcastLoop(addr *net.UDPAddr) {
 			msg := fmt.Sprintf("%s|%s|%d|%d",
 				messagePrefix, g.nodeName, genTime, time.Now().UnixNano())
 
+			if len(g.psk) > 0 {
+				mac := hmac.New(sha256.New, g.psk)
+				mac.Write([]byte(msg))
+				msg = msg + "|" + hex.EncodeToString(mac.Sum(nil))
+			}
+
 			if _, err := g.conn.WriteToUDP([]byte(msg), addr); err != nil {
 				g.logger.Debug("Failed to broadcast config version", zap.Error(err))
 			}
@@ -222,8 +239,28 @@ func (g *ConfigGossiper) receiveLoop() {
 }
 
 // handleMessage parses and processes a received gossip message.
-// Format: config_version|<nodeName>|<genTime>|<timestamp>
+// Format: config_version|<nodeName>|<genTime>|<timestamp>[|<hmac>]
 func (g *ConfigGossiper) handleMessage(data string) {
+	if len(g.psk) > 0 {
+		// Expect HMAC as 5th field
+		lastPipe := strings.LastIndex(data, "|")
+		if lastPipe < 0 {
+			return
+		}
+		payload := data[:lastPipe]
+		receivedMAC, err := hex.DecodeString(data[lastPipe+1:])
+		if err != nil {
+			return
+		}
+		mac := hmac.New(sha256.New, g.psk)
+		mac.Write([]byte(payload))
+		if !hmac.Equal(mac.Sum(nil), receivedMAC) {
+			g.logger.Debug("Gossip message HMAC verification failed, dropping")
+			return
+		}
+		data = payload
+	}
+
 	parts := strings.SplitN(data, "|", 4)
 	if len(parts) != 4 || parts[0] != messagePrefix {
 		return
@@ -240,10 +277,28 @@ func (g *ConfigGossiper) handleMessage(data string) {
 		return
 	}
 
-	g.peerVersions.Store(peerName, peerState{
+	// Cap peer table at maxPeers entries
+	if _, loaded := g.peerVersions.Load(peerName); !loaded {
+		if g.peerCount.Load() >= maxPeers {
+			g.logger.Debug("Peer table full, dropping message",
+				zap.String("peer", peerName))
+			return
+		}
+	}
+
+	if _, loaded := g.peerVersions.LoadOrStore(peerName, peerState{
 		genTime:  peerGenTime,
 		lastSeen: time.Now(),
-	})
+	}); loaded {
+		// Existing peer: just update
+		g.peerVersions.Store(peerName, peerState{
+			genTime:  peerGenTime,
+			lastSeen: time.Now(),
+		})
+	} else {
+		// New peer: increment counter
+		g.peerCount.Add(1)
+	}
 }
 
 // quorumCheckLoop periodically checks if a quorum of peers have a newer
@@ -297,6 +352,7 @@ func (g *ConfigGossiper) checkQuorum() {
 		// Expire peers not seen in PeerExpiry
 		if now.Sub(peer.lastSeen) > PeerExpiry {
 			g.peerVersions.Delete(key)
+			g.peerCount.Add(-1)
 			return true
 		}
 
