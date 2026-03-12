@@ -17,6 +17,7 @@ limitations under the License.
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -30,7 +31,7 @@ func TestNewHealthServer(t *testing.T) {
 	logger := zap.NewNop()
 	port := 8080
 
-	hs := NewHealthServer(logger, port)
+	hs := NewHealthServer(context.Background(), logger, port)
 
 	require.NotNil(t, hs)
 	assert.Equal(t, logger, hs.logger)
@@ -40,7 +41,7 @@ func TestNewHealthServer(t *testing.T) {
 
 func TestHealthServer_SetReady(t *testing.T) {
 	logger := zap.NewNop()
-	hs := NewHealthServer(logger, 8080)
+	hs := NewHealthServer(context.Background(), logger, 8080)
 
 	// Initially not ready
 	assert.False(t, hs.ready.Load())
@@ -73,7 +74,7 @@ func TestHealthServer_HealthzEndpoint(t *testing.T) {
 
 func TestHealthServer_ReadyEndpoint(t *testing.T) {
 	logger := zap.NewNop()
-	hs := NewHealthServer(logger, 8080)
+	hs := NewHealthServer(context.Background(), logger, 8080)
 
 	t.Run("not ready", func(t *testing.T) {
 		hs.SetReady(false)
@@ -121,7 +122,7 @@ func TestHealthServer_ReadyEndpoint(t *testing.T) {
 }
 
 func TestIPRateLimiter(t *testing.T) {
-	rl := NewIPRateLimiter(DefaultObservabilityRateLimitConfig())
+	rl := NewIPRateLimiter(context.Background(), DefaultObservabilityRateLimitConfig())
 
 	require.NotNil(t, rl)
 }

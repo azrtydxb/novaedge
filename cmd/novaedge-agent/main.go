@@ -328,8 +328,8 @@ func initAgentComponents(ctx context.Context, logger *zap.Logger, atomicLevel za
 	comp.dpTranslator = dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
 	logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
 
-	comp.metricsServer = server.NewMetricsServer(logger, metricsPort)
-	comp.healthServer = server.NewHealthServer(logger, healthProbePort)
+	comp.metricsServer = server.NewMetricsServer(ctx, logger, metricsPort)
+	comp.healthServer = server.NewHealthServer(ctx, logger, healthProbePort)
 	adminSrv, err := server.NewAdminServer("", logger)
 	if err != nil {
 		logger.Fatal("Failed to create admin server", zap.Error(err))

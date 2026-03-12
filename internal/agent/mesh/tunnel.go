@@ -227,7 +227,7 @@ func (ts *TunnelServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	// We wrap the ResponseWriter in a bufferedFlushWriter that batches
 	// writes into a 32KB buffer with periodic 1ms flush to reduce
 	// per-write Flush() system call overhead.
-	done := make(chan struct{})
+	done := make(chan struct{}, 1)
 	go func() {
 		defer func() { done <- struct{}{} }()
 		if _, err := io.Copy(backendConn, r.Body); err != nil {

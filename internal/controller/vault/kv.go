@@ -41,6 +41,10 @@ const (
 	KVEngineV1 KVEngine = "kv-v1"
 	// KVEngineV2 is KV secrets engine version 2.
 	KVEngineV2 KVEngine = "kv-v2"
+
+	// maxCacheSize is the maximum number of entries allowed in the secret cache.
+	// When inserting a new entry would exceed this limit, the oldest entry (by fetchedAt) is evicted.
+	maxCacheSize = 10000
 )
 
 // KVManager handles operations with the Vault KV secrets engine.
@@ -143,6 +147,20 @@ func (k *KVManager) ReadSecretCached(ctx context.Context, engine KVEngine, path 
 
 	// Update cache
 	k.mu.Lock()
+	// Evict the oldest entry if the cache is at capacity and this is a new key.
+	if _, exists := k.cache[cacheKey]; !exists && len(k.cache) >= maxCacheSize {
+		var oldestKey string
+		var oldestTime time.Time
+		first := true
+		for key, entry := range k.cache {
+			if first || entry.fetchedAt.Before(oldestTime) {
+				oldestKey = key
+				oldestTime = entry.fetchedAt
+				first = false
+			}
+		}
+		delete(k.cache, oldestKey)
+	}
 	k.cache[cacheKey] = &cachedSecret{
 		data:      data,
 		fetchedAt: time.Now(),

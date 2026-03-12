@@ -144,6 +144,7 @@ type changeWeightRequest struct {
 
 // handleAddEndpoint handles POST /api/v1/clusters/{cluster}/endpoints.
 func (api *RuntimeAPI) handleAddEndpoint(w http.ResponseWriter, r *http.Request, cluster string) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req addEndpointRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)
@@ -199,6 +200,7 @@ func (api *RuntimeAPI) handleRemoveEndpoint(w http.ResponseWriter, _ *http.Reque
 
 // handleChangeWeight handles PUT /api/v1/clusters/{cluster}/endpoints/{endpoint}/weight.
 func (api *RuntimeAPI) handleChangeWeight(w http.ResponseWriter, r *http.Request, cluster, endpoint string) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req changeWeightRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, fmt.Sprintf("invalid request body: %v", err), http.StatusBadRequest)

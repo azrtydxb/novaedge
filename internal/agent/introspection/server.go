@@ -22,6 +22,7 @@ import (
 	"math"
 	"net"
 
+	"github.com/azrtydxb/novaedge/internal/pkg/grpclimits"
 	pb "github.com/azrtydxb/novaedge/internal/proto/gen"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -106,7 +107,7 @@ func (s *Server) Start(ctx context.Context, addr string) error {
 	if err != nil {
 		return err
 	}
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(grpclimits.ServerOptions(s.logger)...)
 	pb.RegisterConfigServiceServer(grpcServer, s)
 	go func() {
 		<-ctx.Done()

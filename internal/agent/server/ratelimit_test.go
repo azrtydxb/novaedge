@@ -50,7 +50,7 @@ func TestNewIPRateLimiter(t *testing.T) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	require.NotNil(t, limiter)
 	assert.NotNil(t, limiter.limiters)
 	assert.Equal(t, config, limiter.config)
@@ -65,7 +65,7 @@ func TestIPRateLimiter_GetLimiter(t *testing.T) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	// Get limiter for new IP
@@ -92,7 +92,7 @@ func TestIPRateLimiter_GetLimiter_Concurrent(t *testing.T) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	// Concurrent access to same IP
@@ -117,7 +117,7 @@ func TestIPRateLimiter_Cleanup(t *testing.T) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	// Add many limiters
@@ -154,7 +154,7 @@ func TestIPRateLimiter_Cleanup_SmallMap(t *testing.T) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	// Add few limiters
@@ -182,7 +182,7 @@ func TestIPRateLimiter_Stop(t *testing.T) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 
 	// Stop should not panic
 	assert.NotPanics(t, func() {
@@ -199,7 +199,7 @@ func TestRateLimitMiddleware_Allow(t *testing.T) {
 		Burst:             2,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	middleware := RateLimitMiddleware(limiter)
@@ -230,7 +230,7 @@ func TestRateLimitMiddleware_RateLimited(t *testing.T) {
 		Burst:             1,  // Very low burst
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	middleware := RateLimitMiddleware(limiter)
@@ -268,7 +268,7 @@ func TestRateLimitMiddleware_DifferentIPs(t *testing.T) {
 		Burst:             1,  // Very low burst
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	middleware := RateLimitMiddleware(limiter)
@@ -297,7 +297,7 @@ func TestRateLimitMiddleware_IPExtraction(t *testing.T) {
 		Burst:             10,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	middleware := RateLimitMiddleware(limiter)
@@ -358,7 +358,7 @@ func TestRateLimiterConfig_Values(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			limiter := NewIPRateLimiter(tt.config)
+			limiter := NewIPRateLimiter(context.Background(), tt.config)
 			defer limiter.Stop()
 
 			l := limiter.getLimiter("192.168.1.1")
@@ -373,7 +373,7 @@ func TestRateLimitMiddleware_ResponseFormat(t *testing.T) {
 		Burst:             1,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	middleware := RateLimitMiddleware(limiter)
@@ -402,7 +402,7 @@ func BenchmarkIPRateLimiter_GetLimiter(b *testing.B) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	b.ResetTimer()
@@ -417,7 +417,7 @@ func BenchmarkIPRateLimiter_GetLimiter_DifferentIPs(b *testing.B) {
 		Burst:             5,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	b.ResetTimer()
@@ -432,7 +432,7 @@ func BenchmarkRateLimitMiddleware(b *testing.B) {
 		Burst:             100,
 	}
 
-	limiter := NewIPRateLimiter(config)
+	limiter := NewIPRateLimiter(context.Background(), config)
 	defer limiter.Stop()
 
 	middleware := RateLimitMiddleware(limiter)

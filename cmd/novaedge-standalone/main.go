@@ -76,7 +76,7 @@ func parseFlags() {
 }
 
 // initComponents creates all standalone agent components.
-func initComponents(logger *zap.Logger) *standaloneComponents {
+func initComponents(ctx context.Context, logger *zap.Logger) *standaloneComponents {
 	c := &standaloneComponents{logger: logger}
 
 	// Create dataplane client for Rust forwarding plane
@@ -90,8 +90,8 @@ func initComponents(logger *zap.Logger) *standaloneComponents {
 	c.dpTranslator = dpctl.NewTranslator(dpClient, logger.Named("dataplane"))
 	logger.Info("Rust forwarding plane active: delegating all forwarding to dataplane daemon")
 
-	c.metricsServer = server.NewMetricsServer(logger, metricsPort)
-	c.healthServer = server.NewHealthServer(logger, healthProbePort)
+	c.metricsServer = server.NewMetricsServer(ctx, logger, metricsPort)
+	c.healthServer = server.NewHealthServer(ctx, logger, healthProbePort)
 
 	cw, cwErr := standalone.NewConfigWatcher(configFile, nodeName, logger)
 	if cwErr != nil {
@@ -153,7 +153,7 @@ func main() {
 		cancel()
 	}()
 
-	c := initComponents(logger)
+	c := initComponents(ctx, logger)
 
 	// Start config watcher
 	configChan := make(chan error, 1)
