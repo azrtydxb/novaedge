@@ -16,6 +16,9 @@ use super::{healthy_indices, healthy_weighted, Backend, LoadBalancer, RequestCon
 /// backend index. This ensures that after a config rebuild that reorders
 /// the backend slice, the cookie still routes to the correct backend
 /// by address match rather than a stale index. (#869)
+/// Maximum number of entries in the affinity map before new inserts are skipped.
+const MAX_AFFINITY_ENTRIES: usize = 10_000;
+
 pub struct StickySession {
     /// Cookie value → backend (addr, port).
     affinity: RwLock<HashMap<String, (IpAddr, u16)>>,
@@ -72,10 +75,13 @@ impl LoadBalancer for StickySession {
         let selected = weighted[pos];
 
         // Cache the selection by (addr, port) if a cookie is present.
+        // Skip insert when the map is at capacity to prevent unbounded growth.
         if let Some(cookie) = &ctx.sticky_cookie {
             let b = &backends[selected];
             let mut map = self.affinity.write().unwrap();
-            map.insert(cookie.clone(), (b.addr, b.port));
+            if map.len() < MAX_AFFINITY_ENTRIES {
+                map.insert(cookie.clone(), (b.addr, b.port));
+            }
         }
 
         Some(selected)

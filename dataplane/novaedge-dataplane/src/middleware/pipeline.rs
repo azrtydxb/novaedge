@@ -549,7 +549,16 @@ fn run_waf(policy_name: &str, config_json: &str, req: &Request) -> MiddlewareRes
         super::waf::WafMode::Block
     };
 
-    let waf = super::waf::WafEngine::with_default_rules(mode);
+    use std::sync::OnceLock;
+    static BLOCK_WAF: OnceLock<super::waf::WafEngine> = OnceLock::new();
+    static DETECT_WAF: OnceLock<super::waf::WafEngine> = OnceLock::new();
+
+    let waf = match mode {
+        super::waf::WafMode::Block => BLOCK_WAF
+            .get_or_init(|| super::waf::WafEngine::with_default_rules(super::waf::WafMode::Block)),
+        super::waf::WafMode::Detect => DETECT_WAF
+            .get_or_init(|| super::waf::WafEngine::with_default_rules(super::waf::WafMode::Detect)),
+    };
     match waf.check(req) {
         super::waf::WafDecision::Allow => MiddlewareResult::Continue(req.clone()),
         super::waf::WafDecision::Block {
