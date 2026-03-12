@@ -150,7 +150,7 @@ func (a *AdminServer) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/ready", a.handleReady)
-	mux.HandleFunc("/health", a.handleHealth)
+	mux.HandleFunc("/healthz", a.handleHealth)
 	mux.HandleFunc("/stats", a.handleStats)
 	mux.HandleFunc("/clusters", a.handleClusters)
 	mux.HandleFunc("/config", a.handleConfig)

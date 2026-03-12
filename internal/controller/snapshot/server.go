@@ -288,11 +288,12 @@ func (s *Server) StreamConfig(req *pb.StreamConfigRequest, stream pb.ConfigServi
 			return stream.Context().Err()
 
 		case <-ticker.C:
-			// Only rebuild if a resource change event has occurred
-			if !s.dirty.Load() {
+			// Only rebuild if a resource change event has occurred.
+			// Swap(false) atomically reads and clears the flag, avoiding
+			// the TOCTOU gap of separate Load()+Store(false) calls.
+			if !s.dirty.Swap(false) {
 				continue
 			}
-			s.dirty.Store(false)
 
 			// Periodic safety-net rebuild
 			newSnapshot, err := s.builder.BuildSnapshot(stream.Context(), req.NodeName)

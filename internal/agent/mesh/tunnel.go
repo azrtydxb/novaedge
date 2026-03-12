@@ -98,6 +98,9 @@ func (ts *TunnelServer) Start(ctx context.Context) error {
 		Handler:           ts,
 		TLSConfig:         ts.tlsConfig,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	// Configure HTTP/2 on the server.
