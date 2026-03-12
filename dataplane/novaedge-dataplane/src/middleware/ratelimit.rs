@@ -1,8 +1,15 @@
 //! Rate limiting middleware using token bucket algorithm.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{Duration, Instant};
+
+/// Maximum number of tracked rate-limit keys before triggering automatic cleanup.
+const MAX_ENTRIES: usize = 100_000;
+
+/// Stale entries older than this are removed during automatic cleanup.
+const AUTO_CLEANUP_MAX_AGE: Duration = Duration::from_secs(300);
 
 /// Rate limit key extraction strategy.
 #[derive(Debug, Clone)]
@@ -34,6 +41,7 @@ pub struct RateLimitConfig {
 pub struct TokenBucket {
     config: RateLimitConfig,
     buckets: RwLock<HashMap<String, BucketState>>,
+    check_count: AtomicU64,
 }
 
 struct BucketState {
@@ -47,6 +55,7 @@ impl TokenBucket {
         Self {
             config,
             buckets: RwLock::new(HashMap::new()),
+            check_count: AtomicU64::new(0),
         }
     }
 
@@ -67,6 +76,15 @@ impl TokenBucket {
 
     /// Check whether a request identified by `key` is allowed.
     pub fn check(&self, key: &str) -> RateLimitResult {
+        // Periodically clean up stale entries to bound memory usage.
+        let count = self.check_count.fetch_add(1, Ordering::Relaxed);
+        if count.is_multiple_of(1000) {
+            let len = self.buckets.read().unwrap_or_else(|e| e.into_inner()).len();
+            if len > MAX_ENTRIES {
+                self.cleanup(AUTO_CLEANUP_MAX_AGE);
+            }
+        }
+
         let now = Instant::now();
         let mut buckets = self.buckets.write().unwrap_or_else(|e| e.into_inner());
         let state = buckets.entry(key.to_string()).or_insert(BucketState {

@@ -133,10 +133,17 @@ impl DataplaneService {
     /// Parse an IP address with optional CIDR prefix (e.g. "10.0.0.1/32" -> (10.0.0.1, 32)).
     #[allow(clippy::result_large_err)]
     fn parse_cidr_address(addr: &str) -> Result<(std::net::IpAddr, u8), Status> {
-        let (ip_str, prefix_str) = addr.split_once('/').unwrap_or((addr, "32"));
+        let (ip_str, explicit_prefix) = match addr.split_once('/') {
+            Some((ip, pfx)) => (ip, Some(pfx)),
+            None => (addr, None),
+        };
         let ip: std::net::IpAddr = ip_str
             .parse()
             .map_err(|e| Status::invalid_argument(format!("invalid address '{addr}': {e}")))?;
+        let prefix_str = explicit_prefix.unwrap_or(match ip {
+            std::net::IpAddr::V4(_) => "32",
+            std::net::IpAddr::V6(_) => "128",
+        });
         let prefix: u8 = prefix_str
             .parse()
             .map_err(|e| Status::invalid_argument(format!("invalid prefix length: {e}")))?;

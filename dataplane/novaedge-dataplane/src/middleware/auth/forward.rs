@@ -40,6 +40,13 @@ impl ForwardAuth {
     /// Check a request by forwarding it to the external auth service.
     #[allow(dead_code)]
     pub async fn check(&self, req: &super::super::Request) -> super::AuthResult {
+        if self.config.auth_url.starts_with("https://") {
+            warn!(
+                url = %self.config.auth_url,
+                "forward auth URL uses https:// but TLS is not yet supported; request sent as plaintext"
+            );
+        }
+
         let (host, port, path) = parse_url(&self.config.auth_url);
 
         // Reject CR/LF in host or path to prevent HTTP request smuggling via
