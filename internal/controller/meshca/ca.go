@@ -171,43 +171,44 @@ func (ca *MeshCA) Initialize(ctx context.Context, cl client.Client) error {
 
 // SignCSR parses a PEM-encoded CSR and issues a short-lived workload
 // certificate with a SPIFFE URI SAN identifying the agent node.
-func (ca *MeshCA) SignCSR(csrPEM []byte, nodeName string) ([]byte, error) {
+// It returns the PEM-encoded certificate and the actual NotAfter time.
+func (ca *MeshCA) SignCSR(csrPEM []byte, nodeName string) ([]byte, time.Time, error) {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 
 	if ca.caCert == nil || ca.caKey == nil {
-		return nil, errMeshCANotInitialized
+		return nil, time.Time{}, errMeshCANotInitialized
 	}
 
 	block, _ := pem.Decode(csrPEM)
 	if block == nil || block.Type != "CERTIFICATE REQUEST" {
-		return nil, errFailedToDecodeCSRPEM
+		return nil, time.Time{}, errFailedToDecodeCSRPEM
 	}
 
 	csr, err := x509.ParseCertificateRequest(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse CSR: %w", err)
+		return nil, time.Time{}, fmt.Errorf("failed to parse CSR: %w", err)
 	}
 
 	if err := csr.CheckSignature(); err != nil {
-		return nil, fmt.Errorf("CSR signature verification failed: %w", err)
+		return nil, time.Time{}, fmt.Errorf("CSR signature verification failed: %w", err)
 	}
 
 	// Validate that the nodeName matches the identity in the CSR.
 	// The CSR should contain a SPIFFE URI SAN matching the expected agent identity.
 	// If no SPIFFE URI SANs are present, the Subject CN must match the nodeName.
 	if err := validateCSRIdentity(csr, nodeName, ca.trustDomain); err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 
 	serial, err := randomSerial()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate serial number: %w", err)
+		return nil, time.Time{}, fmt.Errorf("failed to generate serial number: %w", err)
 	}
 
 	spiffeURI, err := url.Parse(fmt.Sprintf("spiffe://%s/agent/%s", ca.trustDomain, nodeName))
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse SPIFFE URI: %w", err)
+		return nil, time.Time{}, fmt.Errorf("failed to parse SPIFFE URI: %w", err)
 	}
 
 	now := time.Now()
@@ -227,7 +228,13 @@ func (ca *MeshCA) SignCSR(csrPEM []byte, nodeName string) ([]byte, error) {
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, ca.caCert, csr.PublicKey, ca.caKey)
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign certificate: %w", err)
+		return nil, time.Time{}, fmt.Errorf("failed to sign certificate: %w", err)
+	}
+
+	// Parse the signed certificate to extract the actual NotAfter time
+	signedCert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, time.Time{}, fmt.Errorf("failed to parse signed certificate: %w", err)
 	}
 
 	certPEM := pem.EncodeToMemory(&pem.Block{
@@ -238,9 +245,9 @@ func (ca *MeshCA) SignCSR(csrPEM []byte, nodeName string) ([]byte, error) {
 	ca.logger.Info("issued workload certificate",
 		zap.String("node", nodeName),
 		zap.String("spiffeID", spiffeURI.String()),
-		zap.Time("notAfter", template.NotAfter))
+		zap.Time("notAfter", signedCert.NotAfter))
 
-	return certPEM, nil
+	return certPEM, signedCert.NotAfter, nil
 }
 
 // CACertPEM returns the PEM-encoded root CA certificate (trust bundle).

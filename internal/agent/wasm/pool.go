@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/tetratelabs/wazero/api"
 	"go.uber.org/zap"
@@ -28,6 +29,7 @@ import (
 
 var (
 	errInstancePoolIsClosed = errors.New("instance pool is closed")
+	errMaxInstancesExceeded = errors.New("WASM instance limit exceeded")
 )
 
 const poolDefaultSize = 4
@@ -40,11 +42,13 @@ type Instance struct {
 // InstancePool keeps a pool of pre-instantiated WASM module instances
 // to avoid per-request instantiation overhead.
 type InstancePool struct {
-	mu     sync.Mutex
-	plugin *Plugin
-	pool   chan *Instance
-	size   int
-	closed bool
+	mu           sync.Mutex
+	plugin       *Plugin
+	pool         chan *Instance
+	size         int
+	maxInstances int
+	activeCount  atomic.Int32
+	closed       bool
 }
 
 // NewInstancePool creates a new pool. Instances are lazily created on first Get.
@@ -53,9 +57,10 @@ func NewInstancePool(plugin *Plugin, size int) *InstancePool {
 		size = poolDefaultSize
 	}
 	return &InstancePool{
-		plugin: plugin,
-		pool:   make(chan *Instance, size),
-		size:   size,
+		plugin:       plugin,
+		pool:         make(chan *Instance, size),
+		size:         size,
+		maxInstances: size * 4,
 	}
 }
 
@@ -64,12 +69,24 @@ func (p *InstancePool) Get(ctx context.Context) (*Instance, error) {
 	// Try to get an existing instance without blocking
 	select {
 	case inst := <-p.pool:
+		p.activeCount.Add(1)
 		return inst, nil
 	default:
 	}
 
+	// Check if we've exceeded the maximum number of instances
+	if int(p.activeCount.Add(1)) > p.maxInstances {
+		p.activeCount.Add(-1)
+		return nil, fmt.Errorf("%w: max %d instances", errMaxInstancesExceeded, p.maxInstances)
+	}
+
 	// Create a new instance
-	return p.createInstance(ctx)
+	inst, err := p.createInstance(ctx)
+	if err != nil {
+		p.activeCount.Add(-1)
+		return nil, err
+	}
+	return inst, nil
 }
 
 // Put returns an instance to the pool.
@@ -77,6 +94,8 @@ func (p *InstancePool) Put(inst *Instance) {
 	if inst == nil {
 		return
 	}
+
+	p.activeCount.Add(-1)
 
 	p.mu.Lock()
 	closed := p.closed

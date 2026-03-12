@@ -18,10 +18,21 @@ package wasm
 
 import (
 	"context"
+	"strings"
 
 	"github.com/tetratelabs/wazero/api"
 	"go.uber.org/zap"
 )
+
+// headerDenylist contains headers that WASM plugins are not allowed to set.
+var headerDenylist = map[string]struct{}{
+	"host":              {},
+	"authorization":     {},
+	"x-forwarded-for":   {},
+	"x-real-ip":         {},
+	"content-length":    {},
+	"transfer-encoding": {},
+}
 
 // hostLogger is the package-level logger used by host functions.
 // It is set when the Runtime is created via NewRuntime.
@@ -159,12 +170,23 @@ func hostSetRequestHeader(ctx context.Context, mod api.Module, stack []uint64) {
 		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
 		return
 	}
+
+	// Check header denylist
+	headerName := string(nameBytes)
+	if _, denied := headerDenylist[strings.ToLower(headerName)]; denied {
+		hostLogger.Debug("WASM host: header denied by denylist",
+			zap.String("function", "hostSetRequestHeader"),
+			zap.String("header", headerName))
+		stack[0] = ^uint64(0) // -1 as unsigned
+		return
+	}
+
 	valBytes, ok := mem.Read(valPtr, valLen)
 	if !ok {
 		hostLogger.Debug("WASM host: memory read failed", zap.String("function", "hostSetRequestHeader"))
 		return
 	}
-	rc.Request.Header.Set(string(nameBytes), string(valBytes))
+	rc.Request.Header.Set(headerName, string(valBytes))
 }
 
 func hostGetResponseHeader(ctx context.Context, mod api.Module, stack []uint64) {
