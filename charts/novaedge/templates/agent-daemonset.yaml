@@ -215,7 +215,7 @@ spec:
         {{- end }}
       {{- if and .Values.dataplane .Values.dataplane.enabled }}
       - name: novaedge-dataplane
-        image: "{{ .Values.dataplane.image.repository }}:{{ .Values.dataplane.image.tag }}"
+        image: "{{ .Values.dataplane.image.repository }}:{{ .Values.dataplane.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.dataplane.image.pullPolicy }}
         args:
         - --socket={{ .Values.dataplane.socketPath }}
@@ -244,6 +244,15 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 2
+          failureThreshold: 3
+        livenessProbe:
+          exec:
+            command:
+            - test
+            - -S
+            - /tmp/novaedge-dataplane.sock
+          initialDelaySeconds: 10
+          periodSeconds: 10
           failureThreshold: 3
         resources:
           {{- toYaml .Values.dataplane.resources | nindent 10 }}
