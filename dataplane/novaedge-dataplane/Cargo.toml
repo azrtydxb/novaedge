@@ -14,7 +14,7 @@ tracing-subscriber = { workspace = true }
 clap = { version = "4", features = ["derive"] }
 anyhow = { workspace = true }
 async-stream = "0.3"
-rand = "0.8"
+rand = "0.9"
 base64 = "0.22"
 dashmap = "6"
 hyper = { version = "1", features = ["client", "http1", "http2", "server"] }
