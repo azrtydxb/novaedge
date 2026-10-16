@@ -31,7 +31,7 @@ jobs:
   # Dependency review (for PRs only)
   dependency-review:
     name: Dependency Review
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
@@ -47,7 +47,7 @@ jobs:
   # Trivy vulnerability scanner for dependencies
   trivy-scan:
     name: Trivy Vulnerability Scan
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -87,7 +87,7 @@ jobs:
   # Check for outdated dependencies (scheduled/manual only)
   outdated-check:
     name: Check Outdated Dependencies
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout code
@@ -122,7 +122,7 @@ jobs:
   # Security summary
   summary:
     name: Security Summary
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [trivy-scan]
     if: always()
     steps:

@@ -142,7 +142,7 @@ jobs:
       matrix:
         arch:
           - name: amd64
-            runner: qnap-nas
+            runner: arc-azrtydxb-amd64
           - name: arm64
             runner: ubuntu-24.04-arm
         image:
@@ -258,7 +258,7 @@ jobs:
       matrix:
         arch:
           - name: amd64
-            runner: qnap-nas
+            runner: arc-azrtydxb-amd64
           - name: arm64
             runner: ubuntu-24.04-arm
     steps:

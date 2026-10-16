@@ -22,7 +22,7 @@ jobs:
   # Build multi-arch binaries
   build-binaries:
     name: Build Binaries
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     strategy:
       matrix:
         arch: [amd64, arm64]
@@ -75,7 +75,7 @@ jobs:
   # Create or update nightly pre-release
   nightly-release:
     name: Update Nightly Release
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: build-binaries
     steps:
       - name: Checkout code
@@ -199,7 +199,7 @@ jobs:
       matrix:
         arch:
           - name: amd64
-            runner: qnap-nas
+            runner: arc-azrtydxb-amd64
           - name: arm64
             runner: ubuntu-24.04-arm
         image:
@@ -249,7 +249,7 @@ jobs:
   # Create multi-arch manifests
   docker-manifest:
     name: "Docker Manifest ${{ matrix.image }}"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: docker
     strategy:
       fail-fast: false
@@ -280,7 +280,7 @@ jobs:
   # Vulnerability scanning for Docker images
   vulnerability-scan:
     name: Vulnerability Scan
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: docker-manifest
     strategy:
       matrix:
@@ -320,7 +320,7 @@ jobs:
   # Generate SBOM for images
   sbom:
     name: Generate SBOM
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: docker-manifest
     permissions:
       contents: write
@@ -353,7 +353,7 @@ jobs:
   # Sign images with cosign
   sign-images:
     name: Sign Images
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [docker-manifest, sbom]
     permissions:
       contents: write
@@ -394,7 +394,7 @@ jobs:
   # Benchmark regression detection
   benchmark:
     name: Benchmark Regression Detection
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: build-binaries
     steps:
       - name: Checkout code

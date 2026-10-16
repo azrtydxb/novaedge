@@ -16,7 +16,7 @@ permissions:
 jobs:
   benchmark:
     name: Run Benchmarks
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     steps:
       - name: Checkout PR branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

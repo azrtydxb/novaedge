@@ -29,7 +29,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase1-changes:
     name: "Phase 1: Detect Changes"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     outputs:
       go: ${{ steps.filter.outputs.go }}
       rust: ${{ steps.filter.outputs.rust }}
@@ -70,7 +70,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase1-lint-go:
     name: "Phase 1: Go Lint"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase1-changes
     if: needs.phase1-changes.outputs.go == 'true'
     steps:
@@ -117,7 +117,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase1-lint-rust:
     name: "Phase 1: Rust Lint"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase1-changes
     if: needs.phase1-changes.outputs.rust == 'true'
     steps:
@@ -153,7 +153,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase1-lint-helm:
     name: "Phase 1: Helm Lint"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase1-changes
     if: needs.phase1-changes.outputs.helm == 'true'
     steps:
@@ -187,7 +187,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase1-lint-frontend:
     name: "Phase 1: Frontend Lint"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase1-changes
     if: needs.phase1-changes.outputs.frontend == 'true'
     steps:
@@ -218,7 +218,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase1-gate:
     name: "Phase 1 Gate: Code Quality"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase1-changes, phase1-lint-go, phase1-lint-rust, phase1-lint-helm, phase1-lint-frontend]
     if: always()
     steps:
@@ -248,7 +248,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase2-docs:
     name: "Phase 2: Documentation Build"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase1-gate
     if: ${{ !cancelled() && needs.phase1-gate.result == 'success' }}
     steps:
@@ -273,7 +273,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase2-docs-freshness:
     name: "Phase 2: Documentation Freshness"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase1-gate
     if: ${{ !cancelled() && needs.phase1-gate.result == 'success' && github.event_name == 'pull_request' }}
     steps:
@@ -297,7 +297,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase2-security:
     name: "Phase 2: Security Scan"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase1-gate
     if: ${{ !cancelled() && needs.phase1-gate.result == 'success' }}
     steps:
@@ -327,7 +327,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase2-gate:
     name: "Phase 2 Gate: Compliance"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase1-gate, phase2-docs, phase2-docs-freshness, phase2-security]
     if: always()
     steps:
@@ -363,7 +363,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase3-test-go:
     name: "Phase 3: Go Unit Tests"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase2-gate
     if: ${{ !cancelled() && needs.phase2-gate.result == 'success' }}
     steps:
@@ -433,7 +433,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase3-test-rust:
     name: "Phase 3: Rust Unit Tests"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase1-changes, phase2-gate]
     if: ${{ !cancelled() && needs.phase2-gate.result == 'success' && needs.phase1-changes.outputs.rust == 'true' }}
     steps:
@@ -483,7 +483,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase3-test-frontend:
     name: "Phase 3: Frontend Tests"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase1-changes, phase2-gate]
     if: ${{ !cancelled() && needs.phase2-gate.result == 'success' && needs.phase1-changes.outputs.frontend == 'true' }}
     steps:
@@ -530,7 +530,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase3-gate:
     name: "Phase 3 Gate: Unit Testing"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase2-gate, phase3-test-go, phase3-test-rust, phase3-test-frontend]
     if: always()
     steps:
@@ -566,7 +566,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase4-build-go:
     name: "Phase 4: Build ${{ matrix.binary.name }}"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase3-gate
     if: ${{ !cancelled() && needs.phase3-gate.result == 'success' }}
     strategy:
@@ -609,7 +609,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase4-build-rust:
     name: "Phase 4: Build Rust Dataplane"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase1-changes, phase3-gate]
     if: ${{ !cancelled() && needs.phase3-gate.result == 'success' && needs.phase1-changes.outputs.rust == 'true' }}
     steps:
@@ -634,7 +634,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase4-build-frontend:
     name: "Phase 4: Build Frontend"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase1-changes, phase3-gate]
     if: ${{ !cancelled() && needs.phase3-gate.result == 'success' && needs.phase1-changes.outputs.frontend == 'true' }}
     steps:
@@ -669,7 +669,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase4-docker-test:
     name: "Phase 4: Docker Test ${{ matrix.image.name }}"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase4-build-go]
     strategy:
       matrix:
@@ -700,7 +700,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase4-gate:
     name: "Phase 4 Gate: Building"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: [phase3-gate, phase4-build-go, phase4-build-rust, phase4-build-frontend, phase4-docker-test]
     if: always()
     steps:
@@ -737,7 +737,7 @@ jobs:
   # ---------------------------------------------------------------------------
   phase5-push:
     name: "Phase 5: Push ${{ matrix.image.name }}"
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase4-gate
     if: ${{ !cancelled() && needs.phase4-gate.result == 'success' && github.ref == 'refs/heads/main' && github.event_name == 'push' }}
     permissions:
@@ -798,7 +798,7 @@ jobs:
   # =============================================================================
   status-check:
     name: Status Check
-    runs-on: qnap-nas
+    runs-on: arc-azrtydxb-amd64
     needs: phase4-gate
     if: always()
     steps:
